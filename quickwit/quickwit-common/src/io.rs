@@ -34,7 +34,7 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
-use quickwit_metrics::{Counter, Labels, counter};
+use quickwit_metrics::{Counter, counter};
 use tokio::io::AsyncWrite;
 
 use crate::metrics::MaybeRegisteredCounter;
@@ -55,8 +55,6 @@ static WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         subsystem: "",
     )
 });
-
-const COMPONENT_LABELS: Labels<1> = Labels::new(["component"]);
 
 /// Parameter used in `async_speed_limit`.
 ///
@@ -108,10 +106,11 @@ impl IoControls {
         Ok(guard)
     }
 
-    pub fn set_component(mut self, component: &str) -> Self {
-        let labels = COMPONENT_LABELS.with_values([component.to_string()]);
-        self.bytes_counter =
-            MaybeRegisteredCounter::registered(counter!(parent: WRITE_BYTES, labels: &labels));
+    pub fn set_component(mut self, component: &'static str) -> Self {
+        self.bytes_counter = MaybeRegisteredCounter::registered(counter!(
+            parent: WRITE_BYTES,
+            "component" => component,
+        ));
         self
     }
 

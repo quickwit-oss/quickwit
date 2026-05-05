@@ -14,10 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Counter, Gauge, Labels, counter, gauge};
-
-pub(crate) const INDEX_DOCS_PROCESSED_STATUS_LABELS: Labels<2> =
-    Labels::new(["index", "docs_processed_status"]);
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -42,8 +39,6 @@ pub(crate) static INDEXING_PIPELINES: LazyLock<Gauge> = LazyLock::new(|| {
         subsystem: "indexing",
     )
 });
-
-pub(crate) const INDEX_LABELS: Labels<1> = Labels::new(["index"]);
 
 pub(crate) static BACKPRESSURE_MICROS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

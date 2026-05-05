@@ -15,10 +15,7 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Counter, Gauge, Histogram, Labels, counter, gauge, histogram};
-
-pub(crate) const HTTP_REQUEST_LABELS: Labels<2> = Labels::new(["method", "status_code"]);
-pub(crate) const ENDPOINT_GROUP_LABELS: Labels<1> = Labels::new(["endpoint_group"]);
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
 pub(crate) static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

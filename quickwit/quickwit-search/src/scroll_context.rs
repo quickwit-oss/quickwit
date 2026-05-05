@@ -33,6 +33,7 @@ use ttl_cache::TtlCache;
 use ulid::Ulid;
 
 use crate::ClusterClient;
+use crate::metrics::SEARCHER_LOCAL_KV_STORE_SIZE_BYTES;
 use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
 
@@ -148,8 +149,7 @@ impl Default for MiniKV {
 
 impl MiniKV {
     pub async fn put(&self, key: Vec<u8>, payload: Vec<u8>, ttl: Duration) {
-        let metric_guard =
-            GaugeGuard::from_gauge(&crate::metrics::SEARCHER_LOCAL_KV_STORE_SIZE_BYTES);
+        let metric_guard = GaugeGuard::from_gauge(&SEARCHER_LOCAL_KV_STORE_SIZE_BYTES);
         metric_guard.increment(payload.len() as f64);
         let mut cache_lock = self.ttl_with_cache.write().await;
         cache_lock.insert(

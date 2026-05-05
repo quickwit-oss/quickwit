@@ -30,6 +30,7 @@ use super::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
 use super::metrics_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
 use crate::merge_policy::{MergeOperation, MergeTask};
+use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 
 pub struct MergePermit {
     _semaphore_permit: Option<OwnedSemaphorePermit>,
@@ -226,8 +227,8 @@ impl MergeSchedulerService {
                 _merge_permit: merge_permit,
             };
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
-            crate::metrics::PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
-            crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+            PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+            PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
             match split_downloader_mailbox.try_send_message(merge_task) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
@@ -269,10 +270,10 @@ impl MergeSchedulerService {
                 merge_permit,
             };
             self.pending_merge_bytes -= parquet_merge_task.merge_operation.total_size_bytes();
-            crate::metrics::PENDING_MERGE_OPERATIONS.set(
+            PENDING_MERGE_OPERATIONS.set(
                 (self.pending_merge_queue.len() + self.pending_parquet_merge_queue.len()) as f64,
             );
-            crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+            PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
             match split_downloader_mailbox.try_send_message(parquet_merge_task) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
@@ -286,7 +287,7 @@ impl MergeSchedulerService {
 
         let num_merges =
             self.merge_concurrency as i64 - self.merge_semaphore.available_permits() as i64;
-        crate::metrics::ONGOING_MERGE_OPERATIONS.set(num_merges as f64);
+        ONGOING_MERGE_OPERATIONS.set(num_merges as f64);
     }
 }
 
@@ -370,8 +371,8 @@ impl Handler<ScheduleMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled_merge.merge_operation.total_num_bytes();
         self.pending_merge_queue.push(scheduled_merge);
-        crate::metrics::PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
-        crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+        PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+        PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }
@@ -452,9 +453,9 @@ impl Handler<ScheduleParquetMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled.merge_operation.total_size_bytes();
         self.pending_parquet_merge_queue.push(scheduled);
-        crate::metrics::PENDING_MERGE_OPERATIONS
+        PENDING_MERGE_OPERATIONS
             .set((self.pending_merge_queue.len() + self.pending_parquet_merge_queue.len()) as f64);
-        crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+        PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }

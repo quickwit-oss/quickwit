@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,6 +31,8 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
 use serde::Serialize;
 use tracing::{debug, error, info};
+
+use crate::metrics::{GC_DELETED_BYTES, GC_DELETED_SPLITS, GC_RUNS, GC_SECONDS_TOTAL};
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -54,25 +55,21 @@ impl GcRunResult {
     }
 }
 
-fn gc_metrics(split_type: &str) -> GcMetrics {
-    let split_type = split_type.to_string();
-    let success_labels = crate::metrics::GC_RESULT_SPLIT_TYPE_LABELS
-        .with_values([Cow::Borrowed("success"), Cow::Owned(split_type.clone())]);
-    let split_type_labels = crate::metrics::GC_SPLIT_TYPE_LABELS.with_values([split_type.clone()]);
-    let error_labels = crate::metrics::GC_RESULT_SPLIT_TYPE_LABELS
-        .with_values([Cow::Borrowed("error"), Cow::Owned(split_type)]);
+fn gc_metrics(split_type: &'static str) -> GcMetrics {
     GcMetrics {
         deleted_splits: counter!(
-            parent: &crate::metrics::GC_DELETED_SPLITS,
-            labels: &success_labels,
-        ),
-        deleted_bytes: counter!(
-            parent: &crate::metrics::GC_DELETED_BYTES,
-            labels: &split_type_labels,
+            parent: GC_DELETED_SPLITS,
+            "result" => "success",
+            "split_type" => split_type,
         ),
         failed_splits: counter!(
-            parent: &crate::metrics::GC_DELETED_SPLITS,
-            labels: &error_labels,
+            parent: GC_DELETED_SPLITS,
+            "result" => "error",
+            "split_type" => split_type,
+        ),
+        deleted_bytes: counter!(
+            parent: GC_DELETED_BYTES,
+            "split_type" => split_type,
         ),
     }
 }
@@ -209,7 +206,7 @@ impl GarbageCollector {
 
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
             counter!(
-                parent: &crate::metrics::GC_SECONDS_TOTAL,
+                parent: GC_SECONDS_TOTAL,
                 "split_type" => "tantivy",
             )
             .increment(tantivy_run_duration);
@@ -218,7 +215,7 @@ impl GarbageCollector {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
-                        parent: &crate::metrics::GC_RUNS,
+                        parent: GC_RUNS,
                         "result" => "success",
                         "split_type" => "tantivy",
                     )
@@ -242,7 +239,7 @@ impl GarbageCollector {
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
-                        parent: &crate::metrics::GC_RUNS,
+                        parent: GC_RUNS,
                         "result" => "error",
                         "split_type" => "tantivy",
                     )
@@ -270,7 +267,7 @@ impl GarbageCollector {
 
             let parquet_run_duration = parquet_start.elapsed().as_secs();
             counter!(
-                parent: &crate::metrics::GC_SECONDS_TOTAL,
+                parent: GC_SECONDS_TOTAL,
                 "split_type" => "parquet",
             )
             .increment(parquet_run_duration);
@@ -279,7 +276,7 @@ impl GarbageCollector {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
-                        parent: &crate::metrics::GC_RUNS,
+                        parent: GC_RUNS,
                         "result" => "success",
                         "split_type" => "parquet",
                     )
@@ -299,7 +296,7 @@ impl GarbageCollector {
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
-                        parent: &crate::metrics::GC_RUNS,
+                        parent: GC_RUNS,
                         "result" => "error",
                         "split_type" => "parquet",
                     )

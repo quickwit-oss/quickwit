@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 use mrecordlog::ResourceUsage;
 use quickwit_common::metrics::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Counter, Gauge, Histogram, Labels, counter, gauge, histogram};
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
 static INGEST_RESULT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -79,8 +79,6 @@ pub(super) static INGEST_ATTEMPTS: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-pub(super) const AZ_ROUTING_LABELS: Labels<1> = Labels::new(["az_routing"]);
-
 pub(super) static RESET_SHARDS_OPERATIONS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "reset_shards_operations_total",
@@ -138,8 +136,6 @@ pub(super) static WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS: LazyLock<Histogram> =
             buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
         )
     });
-
-pub(super) const WAL_LOCK_METRIC_LABELS: Labels<2> = Labels::new(["operation", "type"]);
 
 pub(super) static WAL_DISK_USED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(

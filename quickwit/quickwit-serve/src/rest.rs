@@ -48,6 +48,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::metrics::{HTTP_REQUESTS_TOTAL, REQUEST_DURATION_SECS};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -140,13 +141,18 @@ pub(crate) async fn start_rest_server(
         let status = info.status();
         let method = info.method().as_str().to_string();
         let status_code = status.as_str().to_string();
-        let labels = crate::metrics::HTTP_REQUEST_LABELS.with_values([method, status_code]);
         histogram!(
-            parent: &crate::metrics::REQUEST_DURATION_SECS,
-            labels: &labels,
+            parent: REQUEST_DURATION_SECS,
+            "method" => method.clone(),
+            "status_code" => status_code.clone(),
         )
         .record(elapsed.as_secs_f64());
-        counter!(parent: &crate::metrics::HTTP_REQUESTS_TOTAL, labels: &labels).increment(1);
+        counter!(
+            parent: HTTP_REQUESTS_TOTAL,
+            "method" => method,
+            "status_code" => status_code,
+        )
+        .increment(1);
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

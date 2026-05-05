@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use prost_types::Timestamp as WellKnownTimestamp;
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_opentelemetry::otlp::{
     OTEL_TRACES_INDEX_ID, Span as QwSpan, TraceId,
     extract_otel_traces_index_id_patterns_from_metadata,
@@ -51,6 +51,10 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument};
 
+use crate::metrics::{
+    FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABELS, OPERATION_INDEX_LABELS,
+    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+};
 use crate::{
     JaegerService, TimeIntervalSecs, TracesDataStream, get_operations_impl, get_services_impl,
     json_deserialize, record_error, record_send, to_duration_millis,
@@ -61,10 +65,10 @@ macro_rules! metrics {
         let start = std::time::Instant::now();
         let operation = stringify!($operation);
         let index = $index;
-        let labels = crate::metrics::OPERATION_INDEX_LABELS.with_values([operation, index]);
+        let labels = label_values!(OPERATION_INDEX_LABELS, [operation, index]);
         counter!(
-            parent: &crate::metrics::REQUESTS_TOTAL,
-            labels: &labels,
+            parent: REQUESTS_TOTAL,
+            labels: labels,
         )
         .increment(1);
         let (res, is_error) = match $expr {
@@ -73,19 +77,17 @@ macro_rules! metrics {
             },
             err @ Err(_) => {
                 counter!(
-                    parent: &crate::metrics::REQUEST_ERRORS_TOTAL,
-                    labels: &labels,
+                    parent: REQUEST_ERRORS_TOTAL,
+                    labels: labels,
                 )
                 .increment(1);
                 (err, "true")
             },
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let duration_labels =
-            crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([operation, index, is_error]);
         histogram!(
-            parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-            labels: &duration_labels,
+            parent: REQUEST_DURATION_SECONDS,
+            labels: label_values!(OPERATION_INDEX_ERROR_LABELS, [operation, index, is_error]),
         )
         .record(elapsed);
 
@@ -441,20 +443,22 @@ async fn stream_otel_spans_impl(
 
     record_send(operation_name, num_spans, num_bytes);
 
-    let labels =
-        crate::metrics::OPERATION_INDEX_LABELS.with_values([operation_name, OTEL_TRACES_INDEX_ID]);
-    counter!(parent: &crate::metrics::FETCHED_TRACES_TOTAL, labels: &labels)
-        .increment(trace_ids.len() as u64);
+    counter!(
+        parent: FETCHED_TRACES_TOTAL,
+        labels: label_values!(
+            OPERATION_INDEX_LABELS,
+            [operation_name, OTEL_TRACES_INDEX_ID]
+        ),
+    )
+    .increment(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    let duration_labels = crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([
-        operation_name,
-        OTEL_TRACES_INDEX_ID,
-        "false",
-    ]);
     histogram!(
-        parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-        labels: &duration_labels,
+        parent: REQUEST_DURATION_SECONDS,
+        labels: label_values!(
+            OPERATION_INDEX_ERROR_LABELS,
+            [operation_name, OTEL_TRACES_INDEX_ID, "false",]
+        ),
     )
     .record(elapsed);
 

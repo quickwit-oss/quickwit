@@ -39,6 +39,8 @@ use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, Source
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::metrics::INDEXES_TOTAL;
+
 /// The control plane maintains a model in sync with the metastore.
 ///
 /// The model stays consistent with the metastore, because all
@@ -167,7 +169,7 @@ impl ControlPlaneModel {
     }
 
     fn update_metrics(&self) {
-        crate::metrics::INDEXES_TOTAL.set(self.index_table.len() as f64);
+        INDEXES_TOTAL.set(self.index_table.len() as f64);
     }
 
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {

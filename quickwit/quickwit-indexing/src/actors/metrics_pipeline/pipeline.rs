@@ -50,6 +50,7 @@ use crate::actors::pipeline_shared::{
 };
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
+use crate::metrics::INDEXING_PIPELINES;
 use crate::models::IndexingStatistics;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
@@ -144,14 +145,9 @@ impl Actor for MetricsPipeline {
 
 impl MetricsPipeline {
     pub fn new(params: MetricsPipelineParams) -> Self {
-        let labels = crate::metrics::INDEX_LABELS.with_values([params
-            .pipeline_id
-            .index_uid
-            .index_id
-            .clone()]);
         let indexing_pipelines_gauge = gauge!(
-            parent: &crate::metrics::INDEXING_PIPELINES,
-            labels: &labels,
+            parent: INDEXING_PIPELINES,
+            "index" => params.pipeline_id.index_uid.index_id.clone(),
         );
         let indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
         indexing_pipelines_gauge_guard.increment(1.0);

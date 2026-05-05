@@ -30,6 +30,11 @@ use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, Lea
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument, warn};
 
+use crate::metrics::{
+    LEAF_SEARCH_DURATION_SECONDS, LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES,
+    LEAF_SEARCH_REQUESTS_TOTAL, LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES,
+};
+
 /// Upper bound on the retry-after hint we will honor from Lambda rate-limit responses.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
 
@@ -170,15 +175,14 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
-        let labels = crate::metrics::STATUS_LABELS.with_values([status]);
         counter!(
-            parent: &crate::metrics::LEAF_SEARCH_REQUESTS_TOTAL,
-            labels: &labels,
+            parent: LEAF_SEARCH_REQUESTS_TOTAL,
+            "status" => status,
         )
         .increment(1);
         histogram!(
-            parent: &crate::metrics::LEAF_SEARCH_DURATION_SECONDS,
-            labels: &labels,
+            parent: LEAF_SEARCH_DURATION_SECONDS,
+            "status" => status,
         )
         .record(elapsed);
         result
@@ -234,7 +238,7 @@ impl AwsLambdaInvoker {
         let payload_json = serde_json::to_vec(&payload)
             .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
-        crate::metrics::LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.record(payload_json.len() as f64);
+        LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.record(payload_json.len() as f64);
 
         debug!(
             payload_size = payload_json.len(),
@@ -274,8 +278,7 @@ impl AwsLambdaInvoker {
             .payload()
             .ok_or_else(|| SearchError::Internal("no response payload from Lambda".into()))?;
 
-        crate::metrics::LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES
-            .record(response_payload.as_ref().len() as f64);
+        LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES.record(response_payload.as_ref().len() as f64);
 
         let lambda_response: LambdaSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())

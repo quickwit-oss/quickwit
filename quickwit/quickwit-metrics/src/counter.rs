@@ -270,7 +270,7 @@ macro_rules! counter {
         parent: $parent:expr,
         labels: $labels:expr $(,)?
     ) => {{
-        let label_values = $labels;
+        let label_values = &($labels);
         $crate::__metric_extension!(
             metric_type: $crate::Counter,
             register_fn: $crate::__counter_get_or_register,

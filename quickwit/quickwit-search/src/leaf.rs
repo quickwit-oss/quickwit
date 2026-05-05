@@ -54,7 +54,10 @@ use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::leaf_cache::LeafSearchCache;
-use crate::metrics::SplitSearchOutcomeCounters;
+use crate::metrics::{
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
+    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
     SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
@@ -591,7 +594,7 @@ async fn leaf_search_single_split(
             "current leaf search is consuming more memory than the initial allocation"
         );
     }
-    crate::metrics::LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.record(warmup_size.as_u64() as f64);
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.record(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1819,8 +1822,7 @@ impl SplitSearchState {
 
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
-        self.state
-            .increment(&crate::metrics::SPLIT_SEARCH_OUTCOME_TOTAL);
+        self.state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
         self.state
             .increment(&self.local_split_search_outcome_counters);
     }
@@ -1861,7 +1863,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
-    let timer = crate::metrics::LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
+    let timer = LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
             request,

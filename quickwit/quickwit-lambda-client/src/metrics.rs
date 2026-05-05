@@ -17,9 +17,7 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Counter, Histogram, Labels, counter, histogram};
-
-pub(crate) const STATUS_LABELS: Labels<1> = Labels::new(["status"]);
+use quickwit_metrics::{Counter, Histogram, counter, histogram};
 
 /// From 100ms to 73s seconds
 fn duration_buckets() -> Vec<f64> {

@@ -20,6 +20,7 @@ use quickwit_metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;
+use crate::metrics::{ERRORS_TOTAL, INGEST_BYTES_TOTAL};
 use crate::schema::validate_required_sketch_fields;
 
 /// Processor that converts Arrow IPC bytes to RecordBatch for DDSketch data.
@@ -42,7 +43,7 @@ impl SketchParquetIngestProcessor {
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         counter!(
-            parent: &crate::metrics::INGEST_BYTES_TOTAL,
+            parent: INGEST_BYTES_TOTAL,
             "kind" => "sketches",
         )
         .increment(ipc_bytes.len() as u64);
@@ -51,7 +52,7 @@ impl SketchParquetIngestProcessor {
             Ok(batch) => batch,
             Err(err) => {
                 counter!(
-                    parent: &crate::metrics::ERRORS_TOTAL,
+                    parent: ERRORS_TOTAL,
                     "operation" => "ingest",
                     "kind" => "sketches",
                 )
@@ -62,7 +63,7 @@ impl SketchParquetIngestProcessor {
 
         if let Err(err) = self.validate_schema(&batch) {
             counter!(
-                parent: &crate::metrics::ERRORS_TOTAL,
+                parent: ERRORS_TOTAL,
                 "operation" => "ingest",
                 "kind" => "sketches",
             )
@@ -72,7 +73,7 @@ impl SketchParquetIngestProcessor {
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
             counter!(
-                parent: &crate::metrics::ERRORS_TOTAL,
+                parent: ERRORS_TOTAL,
                 "operation" => "ingest",
                 "kind" => "sketches",
             )

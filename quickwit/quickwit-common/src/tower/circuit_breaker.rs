@@ -268,6 +268,7 @@ where
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use quickwit_metrics::counter;
     use tower::{ServiceBuilder, ServiceExt};
 
     use super::*;
@@ -301,7 +302,7 @@ mod tests {
 
         const TIMEOUT: Duration = Duration::from_millis(500);
 
-        let int_counter = quickwit_metrics::counter!(
+        let int_counter = counter!(
             name: "circuit_break_total_test",
             description: "test circuit breaker counter",
             subsystem: "",

@@ -35,6 +35,7 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
+use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
@@ -353,8 +354,8 @@ pub async fn leaf_list_terms(
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
-                crate::metrics::LEAF_LIST_TERMS_SPLITS_TOTAL.increment(1);
-                let timer = crate::metrics::LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
+                LEAF_LIST_TERMS_SPLITS_TOTAL.increment(1);
+                let timer = LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
                     request,

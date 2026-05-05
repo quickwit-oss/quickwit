@@ -321,7 +321,7 @@ macro_rules! gauge {
         parent: $parent:expr,
         labels: $labels:expr $(,)?
     ) => {{
-        let label_values = $labels;
+        let label_values = &($labels);
         $crate::__metric_extension!(
             metric_type: $crate::Gauge,
             register_fn: $crate::__gauge_get_or_register,

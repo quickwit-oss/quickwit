@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -20,7 +19,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::CommitType;
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
@@ -40,6 +39,10 @@ use tracing::{Span as RuntimeSpan, error, instrument, warn};
 use super::arrow_metrics::{ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder};
 use super::{OtelSignal, extract_otel_index_id_from_metadata, ingest_doc_batch_v2};
 use crate::otlp::extract_attributes;
+use crate::otlp::metrics::{
+    INGESTED_BYTES_TOTAL, INGESTED_DATA_POINTS_TOTAL, OTLP_GRPC_ERROR_LABELS, OTLP_GRPC_LABELS,
+    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+};
 
 pub const OTEL_METRICS_INDEX_ID: &str = "otel-metrics-v0_9";
 
@@ -236,19 +239,13 @@ impl OtlpGrpcMetricsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
-        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
-            Cow::Borrowed("metrics"),
-            Cow::Owned(index_id),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-        ]);
+        let labels = label_values!(OTLP_GRPC_LABELS, ["metrics", index_id, "grpc", "protobuf",]);
         counter!(
-            parent: &crate::otlp::metrics::INGESTED_DATA_POINTS_TOTAL,
-            labels: &labels,
+            parent: INGESTED_DATA_POINTS_TOTAL,
+            labels: labels,
         )
         .increment(num_data_points - num_parse_errors);
-        counter!(parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL, labels: &labels)
-            .increment(num_bytes);
+        counter!(parent: INGESTED_BYTES_TOTAL, labels: labels).increment(num_bytes);
 
         let response = ExportMetricsServiceResponse {
             partial_success: Some(ExportMetricsPartialSuccess {
@@ -337,15 +334,13 @@ impl OtlpGrpcMetricsService {
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
-            Cow::Borrowed("metrics"),
-            Cow::Owned(index_id.clone()),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-        ]);
+        let labels = label_values!(
+            OTLP_GRPC_LABELS,
+            ["metrics", index_id.clone(), "grpc", "protobuf"]
+        );
         counter!(
-            parent: &crate::otlp::metrics::REQUESTS_TOTAL,
-            labels: &labels,
+            parent: REQUESTS_TOTAL,
+            labels: labels,
         )
         .increment(1);
 
@@ -353,8 +348,8 @@ impl OtlpGrpcMetricsService {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 counter!(
-                    parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
-                    labels: &labels,
+                    parent: REQUEST_ERRORS_TOTAL,
+                    labels: labels,
                 )
                 .increment(1);
                 (err, "true")
@@ -362,16 +357,12 @@ impl OtlpGrpcMetricsService {
         };
 
         let elapsed = start.elapsed().as_secs_f64();
-        let duration_labels = crate::otlp::metrics::OTLP_GRPC_ERROR_LABELS.with_values([
-            Cow::Borrowed("metrics"),
-            Cow::Owned(index_id),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-            Cow::Borrowed(is_error),
-        ]);
         histogram!(
-            parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
-            labels: &duration_labels,
+            parent: REQUEST_DURATION_SECONDS,
+            labels: label_values!(
+                OTLP_GRPC_ERROR_LABELS,
+                ["metrics", index_id, "grpc", "protobuf", is_error]
+            ),
         )
         .record(elapsed);
 

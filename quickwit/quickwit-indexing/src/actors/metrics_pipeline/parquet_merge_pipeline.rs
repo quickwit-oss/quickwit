@@ -54,6 +54,7 @@ use super::{METRICS_PUBLISHER_NAME, ParquetUploader};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
+use crate::metrics::ONGOING_MERGE_OPERATIONS;
 use crate::models::MergeStatistics;
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
@@ -367,7 +368,7 @@ impl ParquetMergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
-        let num_ongoing_merges = crate::metrics::ONGOING_MERGE_OPERATIONS.get();
+        let num_ongoing_merges = ONGOING_MERGE_OPERATIONS.get();
         self.statistics = self
             .previous_generations_statistics
             .clone()

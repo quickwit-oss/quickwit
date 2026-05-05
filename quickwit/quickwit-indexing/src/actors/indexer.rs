@@ -51,6 +51,7 @@ use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -219,7 +220,7 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
-        let split_builders_guard = GaugeGuard::from_gauge(&crate::metrics::SPLIT_BUILDERS);
+        let split_builders_guard = GaugeGuard::from_gauge(&SPLIT_BUILDERS);
         split_builders_guard.increment(1.0);
 
         let workbench = IndexingWorkbench {

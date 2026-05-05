@@ -22,7 +22,7 @@ use itertools::{Either, Itertools};
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
     SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId,
@@ -51,6 +51,12 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
+
+use crate::metrics::{
+    FETCHED_SPANS_TOTAL, FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABELS,
+    OPERATION_INDEX_LABELS, REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL,
+    TRANSFERRED_BYTES_TOTAL,
+};
 
 mod metrics;
 mod v1;
@@ -414,20 +420,22 @@ impl JaegerService {
             current_span.record("num_spans", num_spans_total);
             current_span.record("num_bytes", num_bytes_total);
 
-            let labels = crate::metrics::OPERATION_INDEX_LABELS
-                .with_values([operation_name, OTEL_TRACES_INDEX_ID]);
-            counter!(parent: &crate::metrics::FETCHED_TRACES_TOTAL, labels: &labels)
-                .increment(num_traces);
+            counter!(
+                parent: FETCHED_TRACES_TOTAL,
+                labels: label_values!(
+                    OPERATION_INDEX_LABELS,
+                    [operation_name, OTEL_TRACES_INDEX_ID]
+                ),
+            )
+            .increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
-            let duration_labels = crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([
-                operation_name,
-                OTEL_TRACES_INDEX_ID,
-                "false",
-            ]);
             histogram!(
-                parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-                labels: &duration_labels,
+                parent: REQUEST_DURATION_SECONDS,
+                labels: label_values!(
+                    OPERATION_INDEX_ERROR_LABELS,
+                    [operation_name, OTEL_TRACES_INDEX_ID, "false",]
+                ),
             )
             .record(elapsed);
         });
@@ -436,30 +444,33 @@ impl JaegerService {
 }
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
-    let labels =
-        crate::metrics::OPERATION_INDEX_LABELS.with_values([operation_name, OTEL_TRACES_INDEX_ID]);
-    counter!(parent: &crate::metrics::REQUEST_ERRORS_TOTAL, labels: &labels).increment(1);
+    counter!(
+        parent: REQUEST_ERRORS_TOTAL,
+        labels: label_values!(
+            OPERATION_INDEX_LABELS,
+            [operation_name, OTEL_TRACES_INDEX_ID]
+        ),
+    )
+    .increment(1);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    let duration_labels = crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([
-        operation_name,
-        OTEL_TRACES_INDEX_ID,
-        "true",
-    ]);
     histogram!(
-        parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-        labels: &duration_labels,
+        parent: REQUEST_DURATION_SECONDS,
+        labels: label_values!(
+            OPERATION_INDEX_ERROR_LABELS,
+            [operation_name, OTEL_TRACES_INDEX_ID, "true",]
+        ),
     )
     .record(elapsed);
 }
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
-    let labels =
-        crate::metrics::OPERATION_INDEX_LABELS.with_values([operation_name, OTEL_TRACES_INDEX_ID]);
-    counter!(parent: &crate::metrics::FETCHED_SPANS_TOTAL, labels: &labels)
-        .increment(num_spans as u64);
-    counter!(parent: &crate::metrics::TRANSFERRED_BYTES_TOTAL, labels: &labels)
-        .increment(num_bytes as u64);
+    let labels = label_values!(
+        OPERATION_INDEX_LABELS,
+        [operation_name, OTEL_TRACES_INDEX_ID]
+    );
+    counter!(parent: FETCHED_SPANS_TOTAL, labels: labels).increment(num_spans as u64);
+    counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: labels).increment(num_bytes as u64);
 }
 
 #[allow(deprecated)]

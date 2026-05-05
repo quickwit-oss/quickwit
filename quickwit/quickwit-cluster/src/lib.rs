@@ -49,6 +49,10 @@ pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
 };
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
+use crate::metrics::{
+    GOSSIP_RECV_BYTES_TOTAL, GOSSIP_RECV_MESSAGES_TOTAL, GOSSIP_SENT_BYTES_TOTAL,
+    GOSSIP_SENT_MESSAGES_TOTAL,
+};
 pub use crate::node::ClusterNode;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -105,10 +109,10 @@ impl Transport for CountingUdpTransport {
         let socket = UdpSocket::open(listen_addr).await?;
         Ok(Box::new(CountingUdpSocket {
             socket,
-            gossip_recv: crate::metrics::GOSSIP_RECV_MESSAGES_TOTAL.clone(),
-            gossip_recv_bytes: crate::metrics::GOSSIP_RECV_BYTES_TOTAL.clone(),
-            gossip_send: crate::metrics::GOSSIP_SENT_MESSAGES_TOTAL.clone(),
-            gossip_send_bytes: crate::metrics::GOSSIP_SENT_BYTES_TOTAL.clone(),
+            gossip_recv: GOSSIP_RECV_MESSAGES_TOTAL.clone(),
+            gossip_recv_bytes: GOSSIP_RECV_BYTES_TOTAL.clone(),
+            gossip_send: GOSSIP_SENT_MESSAGES_TOTAL.clone(),
+            gossip_send_bytes: GOSSIP_SENT_BYTES_TOTAL.clone(),
         }))
     }
 }

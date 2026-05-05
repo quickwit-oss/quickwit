@@ -62,8 +62,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::report_wal_usage;
+use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, report_wal_usage};
 use crate::ingest_v2::models::IngesterShardType;
+use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, estimate_size, with_lock_metrics};
 
@@ -332,7 +333,7 @@ impl Ingester {
                     now.elapsed().pretty_display()
                 );
                 counter!(
-                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "success",
                 )
                 .increment(1);
@@ -344,7 +345,7 @@ impl Ingester {
                 warn!("advise reset shards request failed: {error}");
 
                 counter!(
-                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "error",
                 )
                 .increment(1);
@@ -353,7 +354,7 @@ impl Ingester {
                 warn!("advise reset shards request timed out");
 
                 counter!(
-                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "timeout",
                 )
                 .increment(1);
@@ -570,12 +571,12 @@ impl Ingester {
 
                 if valid_doc_batch.is_empty() {
                     counter!(
-                        parent: &crate::metrics::DOCS_TOTAL,
+                        parent: DOCS_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
-                        parent: &crate::metrics::DOCS_BYTES_TOTAL,
+                        parent: DOCS_BYTES_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(original_batch_num_bytes);
@@ -593,23 +594,23 @@ impl Ingester {
                 };
 
                 counter!(
-                    parent: &crate::metrics::DOCS_TOTAL,
+                    parent: DOCS_TOTAL,
                     "validity" => "valid",
                 )
                 .increment(valid_doc_batch.num_docs() as u64);
                 counter!(
-                    parent: &crate::metrics::DOCS_BYTES_TOTAL,
+                    parent: DOCS_BYTES_TOTAL,
                     "validity" => "valid",
                 )
                 .increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
-                        parent: &crate::metrics::DOCS_TOTAL,
+                        parent: DOCS_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
-                        parent: &crate::metrics::DOCS_BYTES_TOTAL,
+                        parent: DOCS_BYTES_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);

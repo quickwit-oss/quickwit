@@ -24,7 +24,7 @@ use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use quickwit_metrics::counter;
 
-use crate::{StorageError, StorageErrorKind};
+use crate::{OBJECT_STORAGE_GET_ERRORS_TOTAL, StorageError, StorageErrorKind};
 
 impl<E> From<SdkError<E>> for StorageError
 where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
@@ -64,8 +64,11 @@ pub trait ToStorageErrorKind {
 impl ToStorageErrorKind for GetObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         let error_code = self.code().unwrap_or("unknown").to_string();
-        let labels = crate::metrics::OBJECT_STORAGE_GET_ERROR_LABELS.with_values([error_code]);
-        counter!(parent: &crate::OBJECT_STORAGE_GET_ERRORS_TOTAL, labels: &labels).increment(1);
+        counter!(
+            parent: OBJECT_STORAGE_GET_ERRORS_TOTAL,
+            "code" => error_code,
+        )
+        .increment(1);
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,

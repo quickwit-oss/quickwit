@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -21,7 +20,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
@@ -41,6 +40,10 @@ use super::{
     extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, parse_log_record_body,
 };
 use crate::otlp::extract_attributes;
+use crate::otlp::metrics::{
+    INGESTED_BYTES_TOTAL, INGESTED_LOG_RECORDS_TOTAL, OTLP_GRPC_ERROR_LABELS, OTLP_GRPC_LABELS,
+    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+};
 
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_9";
 
@@ -240,19 +243,13 @@ impl OtlpGrpcLogsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_logs(index_id.clone(), doc_batch).await?;
 
-        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
-            Cow::Borrowed("logs"),
-            Cow::Owned(index_id),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-        ]);
+        let labels = label_values!(OTLP_GRPC_LABELS, ["logs", index_id, "grpc", "protobuf",]);
         counter!(
-            parent: &crate::otlp::metrics::INGESTED_LOG_RECORDS_TOTAL,
-            labels: &labels,
+            parent: INGESTED_LOG_RECORDS_TOTAL,
+            labels: labels,
         )
         .increment(num_log_records);
-        counter!(parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL, labels: &labels)
-            .increment(num_bytes);
+        counter!(parent: INGESTED_BYTES_TOTAL, labels: labels).increment(num_bytes);
 
         let response = ExportLogsServiceResponse {
             // `rejected_log_records=0` and `error_message=""` is consided a "full" success.
@@ -323,39 +320,33 @@ impl OtlpGrpcLogsService {
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
-            Cow::Borrowed("logs"),
-            Cow::Owned(index_id.clone()),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-        ]);
+        let labels = label_values!(
+            OTLP_GRPC_LABELS,
+            ["logs", index_id.clone(), "grpc", "protobuf",]
+        );
         counter!(
-            parent: &crate::otlp::metrics::REQUESTS_TOTAL,
-            labels: &labels,
+            parent: REQUESTS_TOTAL,
+            labels: labels,
         )
         .increment(1);
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 counter!(
-                    parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
-                    labels: &labels,
+                    parent: REQUEST_ERRORS_TOTAL,
+                    labels: labels,
                 )
                 .increment(1);
                 (err, "true")
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let duration_labels = crate::otlp::metrics::OTLP_GRPC_ERROR_LABELS.with_values([
-            Cow::Borrowed("logs"),
-            Cow::Owned(index_id),
-            Cow::Borrowed("grpc"),
-            Cow::Borrowed("protobuf"),
-            Cow::Borrowed(is_error),
-        ]);
         histogram!(
-            parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
-            labels: &duration_labels,
+            parent: REQUEST_DURATION_SECONDS,
+            labels: label_values!(
+                OTLP_GRPC_ERROR_LABELS,
+                ["logs", index_id, "grpc", "protobuf", is_error,]
+            ),
         )
         .record(elapsed);
 

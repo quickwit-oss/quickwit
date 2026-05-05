@@ -40,6 +40,7 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
+use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
 };
@@ -282,18 +283,19 @@ impl Serialize for DocProcessorCounter {
 
 impl DocProcessorCounter {
     fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
-        let index_label = quickwit_common::metrics::index_label(index);
-        let labels = crate::metrics::INDEX_DOCS_PROCESSED_STATUS_LABELS
-            .with_values([index_label.to_string(), outcome.to_string()]);
+        let index_label = quickwit_common::metrics::index_label(index).to_string();
+        let outcome = outcome.to_string();
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(
-                parent: &crate::metrics::PROCESSED_DOCS_TOTAL,
-                labels: &labels,
+                parent: PROCESSED_DOCS_TOTAL,
+                "index" => index_label.clone(),
+                "docs_processed_status" => outcome.clone(),
             ),
             num_bytes_metric: counter!(
-                parent: &crate::metrics::PROCESSED_BYTES,
-                labels: &labels,
+                parent: PROCESSED_BYTES,
+                "index" => index_label,
+                "docs_processed_status" => outcome,
             ),
         }
     }

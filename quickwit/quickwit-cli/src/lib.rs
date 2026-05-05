@@ -354,6 +354,8 @@ pub mod busy_detector {
 
     use tracing::debug;
 
+    use crate::metrics::THREAD_UNPARK_DURATION_MICROSECONDS;
+
     // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
     static TIME_REF: LazyLock<Instant> = LazyLock::new(Instant::now);
     static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -391,7 +393,7 @@ pub mod busy_detector {
                 .unwrap_or_default();
             let now = now.as_micros() as u64;
             let delta = now - time.load(Ordering::Relaxed);
-            crate::metrics::THREAD_UNPARK_DURATION_MICROSECONDS.record(delta as f64);
+            THREAD_UNPARK_DURATION_MICROSECONDS.record(delta as f64);
             if delta > ALLOWED_DELAY_MICROS {
                 emit_debug(delta, now);
             }

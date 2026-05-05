@@ -313,7 +313,7 @@ macro_rules! histogram {
         parent: $parent:expr,
         labels: $labels:expr $(,)?
     ) => {{
-        let label_values = $labels;
+        let label_values = &($labels);
         $crate::__metric_extension!(
             metric_type: $crate::Histogram,
             register_fn: $crate::__histogram_get_or_register,

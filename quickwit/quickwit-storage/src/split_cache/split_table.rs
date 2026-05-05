@@ -21,6 +21,8 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use ulid::Ulid;
 
+use crate::metrics::SEARCHER_SPLIT_CACHE;
+
 type LastAccessDate = u64;
 
 /// Maximum number of splits to track.
@@ -152,19 +154,19 @@ impl SplitTable {
             Status::Downloading { .. } => &mut self.downloading_splits,
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes -= num_bytes;
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_count
                     .decrement(1.0);
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
                     .decrement(num_bytes as f64);
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_items
                     .increment(1);
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_bytes
                     .increment(num_bytes);
@@ -216,11 +218,11 @@ impl SplitTable {
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes += num_bytes;
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_count
                     .increment(1.0);
-                crate::metrics::SEARCHER_SPLIT_CACHE
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
                     .increment(num_bytes as f64);

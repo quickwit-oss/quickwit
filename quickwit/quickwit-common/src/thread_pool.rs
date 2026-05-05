@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
-use quickwit_metrics::{Gauge, GaugeGuard, Labels, gauge};
+use quickwit_metrics::{Gauge, GaugeGuard, gauge};
 use tokio::sync::oneshot;
 use tracing::error;
 
@@ -35,8 +35,6 @@ static THREAD_POOL_PENDING_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLo
         subsystem: "thread_pool",
     )
 });
-
-const THREAD_POOL_LABELS: Labels<1> = Labels::new(["pool"]);
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///
@@ -62,9 +60,8 @@ impl ThreadPool {
         let thread_pool = rayon_pool_builder
             .build()
             .expect("failed to spawn thread pool");
-        let labels = THREAD_POOL_LABELS.with_values([name]);
-        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, labels: &labels);
-        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, labels: &labels);
+        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, "pool" => name);
+        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, "pool" => name);
         ThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,

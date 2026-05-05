@@ -27,6 +27,7 @@ use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 
+use crate::metrics::JOB_ASSIGNED_TOTAL;
 use crate::{SearchJob, SearchServiceClient, SearcherPool};
 
 /// Job.
@@ -218,8 +219,7 @@ impl SearchJobPlacer {
                 1 => "1",
                 _ => "> 1",
             };
-            let labels = crate::metrics::AFFINITY_LABELS.with_values([metric_node_idx]);
-            counter!(parent: &crate::metrics::JOB_ASSIGNED_TOTAL, labels: &labels).increment(1);
+            counter!(parent: JOB_ASSIGNED_TOTAL, "affinity" => metric_node_idx).increment(1);
             chosen_node.load += job.cost();
 
             job_assignments

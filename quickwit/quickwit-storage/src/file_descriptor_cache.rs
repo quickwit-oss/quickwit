@@ -23,6 +23,7 @@ use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use ulid::Ulid;
 
+use crate::FD_CACHE_METRICS;
 use crate::metrics::SingleCacheMetrics;
 
 pub struct FileDescriptorCache {
@@ -88,7 +89,7 @@ impl FileDescriptorCache {
         Self::new(
             NonZeroU32::new(max_fd_limit).unwrap(),
             fd_cache_capacity,
-            crate::FD_CACHE_METRICS.cache_metrics.clone(),
+            FD_CACHE_METRICS.cache_metrics.clone(),
         )
     }
 

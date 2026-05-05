@@ -38,6 +38,7 @@ use super::models::IngesterShard;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
+use crate::metrics::{REPLICATED_NUM_BYTES_TOTAL, REPLICATED_NUM_DOCS_TOTAL};
 use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
@@ -667,8 +668,8 @@ impl ReplicationTask {
                 .expect("replica shard should be initialized")
                 .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-            crate::metrics::REPLICATED_NUM_BYTES_TOTAL.increment(batch_num_bytes);
-            crate::metrics::REPLICATED_NUM_DOCS_TOTAL.increment(batch_num_docs);
+            REPLICATED_NUM_BYTES_TOTAL.increment(batch_num_bytes);
+            REPLICATED_NUM_DOCS_TOTAL.increment(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,

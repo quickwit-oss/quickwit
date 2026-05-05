@@ -22,9 +22,12 @@ use quickwit_common::metrics::index_label;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
+
+use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABELS, OPEN_SHARDS};
 
 /// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
@@ -461,15 +464,15 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            let labels = crate::metrics::INDEX_ID_LABELS.with_values([index_label.to_string()]);
-            quickwit_metrics::gauge!(
-                parent: &crate::metrics::OPEN_SHARDS,
-                labels: &labels,
+            let labels = label_values!(INDEX_ID_LABELS, [index_label.to_string()]);
+            gauge!(
+                parent: OPEN_SHARDS,
+                labels: labels,
             )
             .set(shard_stats.num_open_shards as f64);
-            quickwit_metrics::gauge!(
-                parent: &crate::metrics::CLOSED_SHARDS,
-                labels: &labels,
+            gauge!(
+                parent: CLOSED_SHARDS,
+                labels: labels,
             )
             .set(shard_stats.num_closed_shards as f64);
             return;
@@ -485,15 +488,15 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        let labels = crate::metrics::INDEX_ID_LABELS.with_values([index_label.to_string()]);
-        quickwit_metrics::gauge!(
-            parent: &crate::metrics::OPEN_SHARDS,
-            labels: &labels,
+        let labels = label_values!(INDEX_ID_LABELS, [index_label.to_string()]);
+        gauge!(
+            parent: OPEN_SHARDS,
+            labels: labels,
         )
         .set(num_open_shards as f64);
-        quickwit_metrics::gauge!(
-            parent: &crate::metrics::CLOSED_SHARDS,
-            labels: &labels,
+        gauge!(
+            parent: CLOSED_SHARDS,
+            labels: labels,
         )
         .set(num_closed_shards as f64);
     }

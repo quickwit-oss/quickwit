@@ -19,9 +19,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_config::CacheConfig;
 
-use crate::OwnedBytes;
 use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
+use crate::{FAST_FIELD_CACHE, OwnedBytes};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
@@ -41,7 +41,7 @@ impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields.
     pub fn new(cache_config: &CacheConfig) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        let fast_field_cache_counters: &'static CacheMetrics = &crate::FAST_FIELD_CACHE;
+        let fast_field_cache_counters: &'static CacheMetrics = &FAST_FIELD_CACHE;
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::from_config(

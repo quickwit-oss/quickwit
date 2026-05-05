@@ -86,22 +86,19 @@ static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyLock<Gauge> = LazyLock::new(|| {
 const ROUTE_LABELS: Labels<2> = Labels::new(["method", "path"]);
 
 fn record_request(method: &'static str, path: &'static str, duration: f64, size: f64) {
-    let route = ROUTE_LABELS.with_values([method, path]);
-    histogram!(parent: HTTP_REQUEST_DURATION, labels: &route).record(duration);
-    histogram!(parent: HTTP_RESPONSE_SIZE, labels: &route).record(size);
-    counter!(parent: HTTP_REQUESTS_TOTAL, labels: &route).increment(1);
+    let route = label_values!(ROUTE_LABELS, [method, path]);
+    histogram!(parent: HTTP_REQUEST_DURATION, labels: route).record(duration);
+    histogram!(parent: HTTP_RESPONSE_SIZE, labels: route).record(size);
+    counter!(parent: HTTP_REQUESTS_TOTAL, labels: route).increment(1);
 }
 
 fn record_dynamic_request(method: String, path: String, duration: f64) {
-    let route = ROUTE_LABELS.with_values([method, path]);
-    histogram!(parent: HTTP_REQUEST_DURATION, labels: &route).record(duration);
+    let route = label_values!(ROUTE_LABELS, [method, path]);
+    histogram!(parent: HTTP_REQUEST_DURATION, labels: route).record(duration);
 }
 
-const REGION_LABEL: Labels<1> = Labels::new(["region"]);
-
 fn track_connection(region: &'static str) -> GaugeGuard {
-    let lv = REGION_LABEL.with_values([region]);
-    let g = gauge!(parent: HTTP_ACTIVE_CONNECTIONS, labels: &lv);
+    let g = gauge!(parent: HTTP_ACTIVE_CONNECTIONS, "region" => region);
     let guard = GaugeGuard::from_gauge(&g);
     guard.increment(1.0);
     guard
