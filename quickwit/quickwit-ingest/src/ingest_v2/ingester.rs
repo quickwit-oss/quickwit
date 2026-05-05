@@ -30,7 +30,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
-use quickwit_metrics::{GaugeGuard, counter};
+use quickwit_metrics::{GaugeGuard, counter, label_values};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
@@ -63,9 +63,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, report_wal_usage};
+use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
 use crate::ingest_v2::models::IngesterShardType;
-use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL};
+use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, estimate_size, with_lock_metrics};
 
@@ -335,7 +335,7 @@ impl Ingester {
                 );
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    "status" => "success",
+                    labels: label_values!(STATUS, ["success"]),
                 )
                 .increment(1);
 
@@ -347,7 +347,7 @@ impl Ingester {
 
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    "status" => "error",
+                    labels: label_values!(STATUS, ["error"]),
                 )
                 .increment(1);
             }
@@ -356,7 +356,7 @@ impl Ingester {
 
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    "status" => "timeout",
+                    labels: label_values!(STATUS, ["timeout"]),
                 )
                 .increment(1);
             }
@@ -573,12 +573,12 @@ impl Ingester {
                 if valid_doc_batch.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
-                        "validity" => "invalid",
+                        labels: label_values!(VALIDITY, ["invalid"]),
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
-                        "validity" => "invalid",
+                        labels: label_values!(VALIDITY, ["invalid"]),
                     )
                     .increment(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
@@ -596,23 +596,23 @@ impl Ingester {
 
                 counter!(
                     parent: DOCS_TOTAL,
-                    "validity" => "valid",
+                    labels: label_values!(VALIDITY, ["valid"]),
                 )
                 .increment(valid_doc_batch.num_docs() as u64);
                 counter!(
                     parent: DOCS_BYTES_TOTAL,
-                    "validity" => "valid",
+                    labels: label_values!(VALIDITY, ["valid"]),
                 )
                 .increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
-                        "validity" => "invalid",
+                        labels: label_values!(VALIDITY, ["invalid"]),
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
-                        "validity" => "invalid",
+                        labels: label_values!(VALIDITY, ["invalid"]),
                     )
                     .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }

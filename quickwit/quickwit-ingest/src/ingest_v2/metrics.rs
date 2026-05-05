@@ -16,7 +16,10 @@ use std::sync::LazyLock;
 
 use mrecordlog::ResourceUsage;
 use quickwit_common::metrics::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
+use quickwit_common::metrics::IN_FLIGHT_WAL;
+use quickwit_metrics::{Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram};
+
+pub(super) const STATUS: LabelNames<1> = LabelNames::new(["status"]);
 
 static INGEST_RESULT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -155,6 +158,6 @@ pub(super) static WAL_MEMORY_USED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
 
 pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
     WAL_DISK_USED_BYTES.set(wal_usage.disk_used_bytes as f64);
-    quickwit_common::metrics::IN_FLIGHT_WAL.set(wal_usage.memory_allocated_bytes as f64);
+    IN_FLIGHT_WAL.set(wal_usage.memory_allocated_bytes as f64);
     WAL_MEMORY_USED_BYTES.set(wal_usage.memory_used_bytes as f64);
 }

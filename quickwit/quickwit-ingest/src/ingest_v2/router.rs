@@ -48,9 +48,16 @@ use super::debouncing::{
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
-use super::{IngesterPool, metrics, pending_subrequests};
+use super::{IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
-use crate::ingest_v2::metrics::INGEST_ATTEMPTS;
+use crate::ingest_v2::metrics::{
+    INGEST_ATTEMPTS, INGEST_RESULT_CIRCUIT_BREAKER, INGEST_RESULT_INDEX_NOT_FOUND,
+    INGEST_RESULT_INTERNAL, INGEST_RESULT_LOAD_SHEDDING, INGEST_RESULT_NO_SHARDS_AVAILABLE,
+    INGEST_RESULT_ROUTER_LOAD_SHEDDING, INGEST_RESULT_ROUTER_TIMEOUT,
+    INGEST_RESULT_SHARD_NOT_FOUND, INGEST_RESULT_SHARD_RATE_LIMITED, INGEST_RESULT_SOURCE_NOT_FOUND,
+    INGEST_RESULT_SUCCESS, INGEST_RESULT_TIMEOUT, INGEST_RESULT_UNAVAILABLE,
+    INGEST_RESULT_UNSPECIFIED, INGEST_RESULT_WAL_FULL,
+};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -495,35 +502,35 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
     let num_subrequests = num_subrequests as u64;
     match ingest_result {
         Ok(ingest_response) => {
-            metrics::INGEST_RESULT_SUCCESS.increment(ingest_response.successes.len() as u64);
+            INGEST_RESULT_SUCCESS.increment(ingest_response.successes.len() as u64);
             for ingest_failure in &ingest_response.failures {
                 match ingest_failure.reason() {
                     IngestFailureReason::CircuitBreaker => {
-                        metrics::INGEST_RESULT_CIRCUIT_BREAKER.increment(1);
+                        INGEST_RESULT_CIRCUIT_BREAKER.increment(1);
                     }
                     IngestFailureReason::Unspecified => {
-                        metrics::INGEST_RESULT_UNSPECIFIED.increment(1)
+                        INGEST_RESULT_UNSPECIFIED.increment(1)
                     }
                     IngestFailureReason::IndexNotFound => {
-                        metrics::INGEST_RESULT_INDEX_NOT_FOUND.increment(1)
+                        INGEST_RESULT_INDEX_NOT_FOUND.increment(1)
                     }
                     IngestFailureReason::SourceNotFound => {
-                        metrics::INGEST_RESULT_SOURCE_NOT_FOUND.increment(1)
+                        INGEST_RESULT_SOURCE_NOT_FOUND.increment(1)
                     }
-                    IngestFailureReason::Internal => metrics::INGEST_RESULT_INTERNAL.increment(1),
+                    IngestFailureReason::Internal => INGEST_RESULT_INTERNAL.increment(1),
                     IngestFailureReason::NoShardsAvailable => {
-                        metrics::INGEST_RESULT_NO_SHARDS_AVAILABLE.increment(1)
+                        INGEST_RESULT_NO_SHARDS_AVAILABLE.increment(1)
                     }
                     IngestFailureReason::ShardRateLimited => {
-                        metrics::INGEST_RESULT_SHARD_RATE_LIMITED.increment(1)
+                        INGEST_RESULT_SHARD_RATE_LIMITED.increment(1)
                     }
-                    IngestFailureReason::WalFull => metrics::INGEST_RESULT_WAL_FULL.increment(1),
-                    IngestFailureReason::Timeout => metrics::INGEST_RESULT_TIMEOUT.increment(1),
+                    IngestFailureReason::WalFull => INGEST_RESULT_WAL_FULL.increment(1),
+                    IngestFailureReason::Timeout => INGEST_RESULT_TIMEOUT.increment(1),
                     IngestFailureReason::RouterLoadShedding => {
-                        metrics::INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(1)
+                        INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(1)
                     }
                     IngestFailureReason::LoadShedding => {
-                        metrics::INGEST_RESULT_LOAD_SHEDDING.increment(1)
+                        INGEST_RESULT_LOAD_SHEDDING.increment(1)
                     }
                 }
             }
@@ -531,35 +538,35 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
         Err(ingest_error) => match ingest_error {
             IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
                 RateLimitingCause::RouterLoadShedding => {
-                    metrics::INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(num_subrequests);
+                    INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(num_subrequests);
                 }
                 RateLimitingCause::LoadShedding => {
-                    metrics::INGEST_RESULT_LOAD_SHEDDING.increment(num_subrequests)
+                    INGEST_RESULT_LOAD_SHEDDING.increment(num_subrequests)
                 }
                 RateLimitingCause::WalFull => {
-                    metrics::INGEST_RESULT_WAL_FULL.increment(num_subrequests);
+                    INGEST_RESULT_WAL_FULL.increment(num_subrequests);
                 }
                 RateLimitingCause::CircuitBreaker => {
-                    metrics::INGEST_RESULT_CIRCUIT_BREAKER.increment(num_subrequests);
+                    INGEST_RESULT_CIRCUIT_BREAKER.increment(num_subrequests);
                 }
                 RateLimitingCause::ShardRateLimiting => {
-                    metrics::INGEST_RESULT_SHARD_RATE_LIMITED.increment(num_subrequests);
+                    INGEST_RESULT_SHARD_RATE_LIMITED.increment(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {
-                    metrics::INGEST_RESULT_UNSPECIFIED.increment(num_subrequests);
+                    INGEST_RESULT_UNSPECIFIED.increment(num_subrequests);
                 }
             },
             IngestV2Error::Timeout(_) => {
-                metrics::INGEST_RESULT_ROUTER_TIMEOUT.increment(num_subrequests);
+                INGEST_RESULT_ROUTER_TIMEOUT.increment(num_subrequests);
             }
             IngestV2Error::ShardNotFound { .. } => {
-                metrics::INGEST_RESULT_SHARD_NOT_FOUND.increment(num_subrequests);
+                INGEST_RESULT_SHARD_NOT_FOUND.increment(num_subrequests);
             }
             IngestV2Error::Unavailable(_) => {
-                metrics::INGEST_RESULT_UNAVAILABLE.increment(num_subrequests);
+                INGEST_RESULT_UNAVAILABLE.increment(num_subrequests);
             }
             IngestV2Error::Internal(_) => {
-                metrics::INGEST_RESULT_INTERNAL.increment(num_subrequests);
+                INGEST_RESULT_INTERNAL.increment(num_subrequests);
             }
         },
     }
