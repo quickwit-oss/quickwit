@@ -206,21 +206,21 @@ impl Uploader {
                     &CONCURRENT_UPLOAD_PERMITS_INDEX,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        labels: label_values!(COMPONENT, ["indexer"]),
+                        labels: label_values!(names: COMPONENT, "indexer"),
                     ),
                 ),
                 UploaderType::MergeUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        labels: label_values!(COMPONENT, ["merger"]),
+                        labels: label_values!(names: COMPONENT, "merger"),
                     ),
                 ),
                 UploaderType::DeleteUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        labels: label_values!(COMPONENT, ["merger"]),
+                        labels: label_values!(names: COMPONENT, "merger"),
                     ),
                 ),
             };

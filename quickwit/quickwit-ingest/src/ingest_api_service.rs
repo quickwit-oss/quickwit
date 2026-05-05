@@ -202,7 +202,7 @@ impl IngestApiService {
             }
 
             num_docs += batch_num_docs;
-            let labels = label_values!(VALIDITY, ["valid"]);
+            let labels = label_values!(names: VALIDITY, "valid");
             counter!(
                 parent: DOCS_BYTES_TOTAL,
                 labels: labels,

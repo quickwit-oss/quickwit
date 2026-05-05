@@ -239,8 +239,7 @@ impl Iterator for JsonDocIterator {
 }
 
 impl<E> From<Result<JsonDoc, E>> for JsonDocIterator
-where
-    E: Into<DocProcessorError>,
+where E: Into<DocProcessorError>
 {
     fn from(result: Result<JsonDoc, E>) -> Self {
         match result {
@@ -277,9 +276,7 @@ pub struct DocProcessorCounter {
 
 impl Serialize for DocProcessorCounter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    where S: serde::Serializer {
         serializer.serialize_u64(self.get_num_docs())
     }
 }

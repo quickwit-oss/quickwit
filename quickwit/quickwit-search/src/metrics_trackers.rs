@@ -74,7 +74,7 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             ) => (*num_targeted_splits, "cancelled"),
         };
 
-        let labels = label_values!(STATUS_LABELS, [status]);
+        let labels = label_values!(names: STATUS_LABELS, status);
         counter!(
             parent: ROOT_SEARCH_REQUESTS_TOTAL,
             labels: labels,
@@ -126,7 +126,7 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 {
     fn drop(self: Pin<&mut Self>) {
         let status = self.status.unwrap_or("cancelled");
-        let labels = label_values!(STATUS_LABELS, [status]);
+        let labels = label_values!(names: STATUS_LABELS, status);
         counter!(
             parent: LEAF_SEARCH_REQUESTS_TOTAL,
             labels: labels,

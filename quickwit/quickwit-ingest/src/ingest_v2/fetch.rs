@@ -81,10 +81,8 @@ impl FetchStreamTask {
             .as_u64()
             .map(|offset| offset + 1)
             .unwrap_or_default();
-        let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded_with_gauge(
-            3,
-            &IN_FLIGHT_FETCH_STREAM,
-        );
+        let (fetch_message_tx, fetch_stream) =
+            ServiceStream::new_bounded_with_gauge(3, &IN_FLIGHT_FETCH_STREAM);
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),

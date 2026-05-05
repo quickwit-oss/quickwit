@@ -505,10 +505,8 @@ impl ReplicationTask {
             )));
         }
         let request_size_bytes = replicate_request.num_bytes();
-        let _gauge_guard = GaugeGuard::new(
-            &IN_FLIGHT_INGESTER_REPLICATE,
-            request_size_bytes as f64,
-        );
+        let _gauge_guard =
+            GaugeGuard::new(&IN_FLIGHT_INGESTER_REPLICATE, request_size_bytes as f64);
 
         self.current_replication_seqno += 1;
 

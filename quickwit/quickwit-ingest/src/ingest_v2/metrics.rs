@@ -15,11 +15,12 @@
 use std::sync::LazyLock;
 
 use mrecordlog::ResourceUsage;
-use quickwit_common::metrics::{exponential_buckets, linear_buckets};
-use quickwit_common::metrics::IN_FLIGHT_WAL;
-use quickwit_metrics::{Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram};
+use quickwit_common::metrics::{IN_FLIGHT_WAL, exponential_buckets, linear_buckets};
+use quickwit_metrics::{
+    Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram, label_names,
+};
 
-pub(super) const STATUS: LabelNames<1> = LabelNames::new(["status"]);
+pub(super) const STATUS: LabelNames<1> = label_names!("status");
 
 static INGEST_RESULT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

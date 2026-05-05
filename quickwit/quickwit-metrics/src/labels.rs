@@ -24,6 +24,20 @@ use metrics::SharedString;
 
 use crate::__key_hash;
 
+/// Creates a const [`LabelNames<N>`] from a list of label name literals.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// const ROUTE: LabelNames<2> = label_names!("method", "path");
+/// ```
+#[macro_export]
+macro_rules! label_names {
+    ($($name:expr),+ $(,)?) => {
+        $crate::LabelNames::__new([$($name),+])
+    };
+}
+
 /// Pairs a [`LabelNames<N>`] template with concrete values, one per label name.
 ///
 /// Each value is converted individually via `Into<SharedString>`, so you
@@ -36,13 +50,13 @@ use crate::__key_hash;
 /// # Example
 ///
 /// ```rust,ignore
-/// const GC_KEYS: LabelNames<2> = LabelNames::new(["status", "split_type"]);
+/// const GC_KEYS: LabelNames<2> = label_names!("status", "split_type");
 ///
 /// // All-static — zero allocation:
-/// let lv = label_values!(GC_KEYS, ["success", "tantivy"]);
+/// let lv = label_values!(names: GC_KEYS, "success", "tantivy");
 ///
 /// // Mixed types — &'static str and String — just work:
-/// let lv = label_values!(GC_KEYS, ["success", split_type.to_string()]);
+/// let lv = label_values!(names: GC_KEYS, "success", split_type.to_string());
 ///
 /// // Reuse the same Labels across multiple metrics:
 /// counter!(parent: GC_COUNTER, labels: lv).increment(1);
@@ -50,7 +64,7 @@ use crate::__key_hash;
 /// ```
 #[macro_export]
 macro_rules! label_values {
-    ($labels:expr, [$($val:expr),+ $(,)?]) => {
+    (names: $labels:expr, $($val:expr),+ $(,)?) => {
         $labels.__with_values([$(Into::<$crate::__metrics::SharedString>::into($val)),+])
     };
 }
@@ -85,13 +99,13 @@ macro_rules! labels {
 /// # Example
 ///
 /// ```rust,ignore
-/// const SPLIT_KEYS: LabelNames<2> = LabelNames::new(["source", "level"]);
+/// const SPLIT_KEYS: LabelNames<2> = label_names!("source", "level");
 ///
 /// // All the same type:
-/// let lv = label_values!(SPLIT_KEYS, ["prod", "info"]);
+/// let lv = label_values!(names: SPLIT_KEYS, "prod", "info");
 ///
 /// // Mixed types:
-/// let lv = label_values!(SPLIT_KEYS, [source_uid, level.to_string()]);
+/// let lv = label_values!(names: SPLIT_KEYS, source_uid, level.to_string());
 ///
 /// // Reuse the same Labels across metrics:
 /// let c = counter!(parent: BASE_COUNTER, labels: lv);
@@ -102,8 +116,9 @@ pub struct LabelNames<const N: usize> {
 }
 
 impl<const N: usize> LabelNames<N> {
-    /// Creates a label template from an array of label names.
-    pub const fn new(names: [&'static str; N]) -> Self {
+    /// Internal plumbing used by [`label_names!`]. Not part of the public API.
+    #[doc(hidden)]
+    pub const fn __new(names: [&'static str; N]) -> Self {
         Self { names }
     }
 

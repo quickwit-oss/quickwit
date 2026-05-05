@@ -88,17 +88,17 @@
 //! ```rust,ignore
 //! use quickwit_metrics::*;
 //!
-//! const ROUTE: LabelNames<2> = LabelNames::new(["method", "path"]);
+//! const ROUTE: LabelNames<2> = label_names!("method", "path");
 //!
 //! fn on_request(method: &'static str, path: &'static str, duration: f64) {
-//!     let route = label_values!(ROUTE, [method, path]);
+//!     let route = label_values!(names: ROUTE, method, path);
 //!     histogram!(parent: REQUEST_DURATION, labels: route).record(duration);
 //!     counter!(parent: HTTP_REQUESTS, labels: route).increment(1);
 //! }
 //!
 //! // Mixed types work too — Into<SharedString> is called per-element:
 //! fn on_dynamic_request(method: &'static str, path: String, duration: f64) {
-//!     let route = label_values!(ROUTE, [method, path]);
+//!     let route = label_values!(names: ROUTE, method, path);
 //!     histogram!(parent: REQUEST_DURATION, labels: route).record(duration);
 //! }
 //! ```

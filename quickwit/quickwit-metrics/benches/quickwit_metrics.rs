@@ -738,8 +738,8 @@ fn observable_gauge(c: &mut Criterion) {
 // LABELS
 // ---------------------------------------------------------------------------
 
-const LABELS_1: LabelNames<1> = LabelNames::new(["method"]);
-const LABELS_3: LabelNames<3> = LabelNames::new(["method", "endpoint", "status"]);
+const LABELS_1: LabelNames<1> = label_names!("method");
+const LABELS_3: LabelNames<3> = label_names!("method", "endpoint", "status");
 
 fn labels_counter(c: &mut Criterion) {
     install_recorder();
@@ -751,7 +751,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(LABELS_1, ["GET"])
+                labels: label_values!(names: LABELS_1, "GET")
             )
             .increment(1);
         });
@@ -761,7 +761,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(LABELS_3, ["GET", "/health", "200"])
+                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
             )
             .increment(1);
         });
@@ -771,7 +771,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(LABELS_1, ["GET".to_string()])
+                labels: label_values!(names: LABELS_1, "GET".to_string())
             )
             .increment(1);
         });
@@ -787,7 +787,7 @@ fn labels_counter(c: &mut Criterion) {
             idx += 1;
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(LABELS_1, [m])
+                labels: label_values!(names: LABELS_1, m)
             )
             .increment(1);
         });
@@ -806,7 +806,7 @@ fn labels_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(LABELS_1, ["GET"])
+                labels: label_values!(names: LABELS_1, "GET")
             )
             .set(42.0);
         });
@@ -816,7 +816,7 @@ fn labels_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(LABELS_3, ["GET", "/health", "200"])
+                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
             )
             .set(42.0);
         });
@@ -835,7 +835,7 @@ fn labels_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(LABELS_1, ["GET"])
+                labels: label_values!(names: LABELS_1, "GET")
             )
             .record(0.123);
         });
@@ -845,7 +845,7 @@ fn labels_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(LABELS_3, ["GET", "/health", "200"])
+                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
             )
             .record(0.123);
         });

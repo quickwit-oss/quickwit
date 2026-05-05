@@ -276,7 +276,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["merge_publisher"]),
+                labels: label_values!(names: ACTOR_NAME, "merge_publisher"),
             ))
             .spawn(merge_publisher);
 
@@ -325,7 +325,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["merge_executor"]),
+                labels: label_values!(names: ACTOR_NAME, "merge_executor"),
             ))
             .spawn(merge_executor);
 
@@ -340,7 +340,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["merge_split_downloader"]),
+                labels: label_values!(names: ACTOR_NAME, "merge_split_downloader"),
             ))
             .spawn(merge_split_downloader);
 

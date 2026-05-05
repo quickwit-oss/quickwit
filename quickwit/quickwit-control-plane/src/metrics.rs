@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Counter, Gauge, LabelNames, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, LabelNames, counter, gauge, label_names};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
@@ -51,7 +51,7 @@ pub(crate) static OPEN_SHARDS: LazyLock<Gauge> =
 pub(crate) static CLOSED_SHARDS: LazyLock<Gauge> =
     LazyLock::new(|| gauge!(parent: SHARDS, "state" => "closed"));
 
-pub(crate) const INDEX_ID_LABELS: LabelNames<1> = LabelNames::new(["index_id"]);
+pub(crate) const INDEX_ID_LABELS: LabelNames<1> = label_names!("index_id");
 
 static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(

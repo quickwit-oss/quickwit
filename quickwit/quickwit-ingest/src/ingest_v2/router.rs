@@ -54,9 +54,9 @@ use crate::ingest_v2::metrics::{
     INGEST_ATTEMPTS, INGEST_RESULT_CIRCUIT_BREAKER, INGEST_RESULT_INDEX_NOT_FOUND,
     INGEST_RESULT_INTERNAL, INGEST_RESULT_LOAD_SHEDDING, INGEST_RESULT_NO_SHARDS_AVAILABLE,
     INGEST_RESULT_ROUTER_LOAD_SHEDDING, INGEST_RESULT_ROUTER_TIMEOUT,
-    INGEST_RESULT_SHARD_NOT_FOUND, INGEST_RESULT_SHARD_RATE_LIMITED, INGEST_RESULT_SOURCE_NOT_FOUND,
-    INGEST_RESULT_SUCCESS, INGEST_RESULT_TIMEOUT, INGEST_RESULT_UNAVAILABLE,
-    INGEST_RESULT_UNSPECIFIED, INGEST_RESULT_WAL_FULL,
+    INGEST_RESULT_SHARD_NOT_FOUND, INGEST_RESULT_SHARD_RATE_LIMITED,
+    INGEST_RESULT_SOURCE_NOT_FOUND, INGEST_RESULT_SUCCESS, INGEST_RESULT_TIMEOUT,
+    INGEST_RESULT_UNAVAILABLE, INGEST_RESULT_UNSPECIFIED, INGEST_RESULT_WAL_FULL,
 };
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -508,9 +508,7 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                     IngestFailureReason::CircuitBreaker => {
                         INGEST_RESULT_CIRCUIT_BREAKER.increment(1);
                     }
-                    IngestFailureReason::Unspecified => {
-                        INGEST_RESULT_UNSPECIFIED.increment(1)
-                    }
+                    IngestFailureReason::Unspecified => INGEST_RESULT_UNSPECIFIED.increment(1),
                     IngestFailureReason::IndexNotFound => {
                         INGEST_RESULT_INDEX_NOT_FOUND.increment(1)
                     }
@@ -529,9 +527,7 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                     IngestFailureReason::RouterLoadShedding => {
                         INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(1)
                     }
-                    IngestFailureReason::LoadShedding => {
-                        INGEST_RESULT_LOAD_SHEDDING.increment(1)
-                    }
+                    IngestFailureReason::LoadShedding => INGEST_RESULT_LOAD_SHEDDING.increment(1),
                 }
             }
         }
@@ -577,10 +573,7 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let _gauge_guard = GaugeGuard::new(
-            &IN_FLIGHT_INGEST_ROUTER,
-            request_size_bytes as f64,
-        );
+        let _gauge_guard = GaugeGuard::new(&IN_FLIGHT_INGEST_ROUTER, request_size_bytes as f64);
         let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self

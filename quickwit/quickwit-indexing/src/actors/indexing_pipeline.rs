@@ -315,7 +315,7 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["publisher"]),
+                labels: label_values!(names: ACTOR_NAME, "publisher"),
             ))
             .spawn(publisher);
 
@@ -324,7 +324,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["sequencer"]),
+                labels: label_values!(names: ACTOR_NAME, "sequencer"),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -344,7 +344,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["uploader"]),
+                labels: label_values!(names: ACTOR_NAME, "uploader"),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -378,7 +378,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["indexer"]),
+                labels: label_values!(names: ACTOR_NAME, "indexer"),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -395,7 +395,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                labels: label_values!(ACTOR_NAME, ["doc_processor"]),
+                labels: label_values!(names: ACTOR_NAME, "doc_processor"),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
