@@ -285,11 +285,8 @@ fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
 
 type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
 
-pub fn init_telemetry(
-    level: Level,
-    ansi_colors: bool,
-    build_info: &BuildInfo,
-) -> anyhow::Result<TelemetryHandle> {
+pub fn init_telemetry(level: Level, ansi_colors: bool) -> anyhow::Result<TelemetryHandle> {
+    let build_info = BuildInfo::get();
     let otlp_config = load_otlp_exporter_config();
 
     let meter_provider = init_metrics_provider(build_info, &otlp_config)?;
@@ -447,6 +444,8 @@ fn init_metrics_provider(
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
     quickwit_metrics::describe_metrics();
+
+    crate::metrics::register_metrics(build_info);
     Ok(meter_provider)
 }
 

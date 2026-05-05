@@ -14,8 +14,6 @@
 
 #![recursion_limit = "256"]
 
-use std::collections::BTreeMap;
-
 use anyhow::Context;
 use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
@@ -62,8 +60,7 @@ fn main() -> anyhow::Result<()> {
     rt.block_on(async move {
         install_default_crypto_ring_provider();
 
-        let telemetry_handle =
-            init_telemetry(command.default_log_level(), ansi_colors, BuildInfo::get())?;
+        let telemetry_handle = init_telemetry(command.default_log_level(), ansi_colors)?;
 
         let runtime_handle = tokio::runtime::Handle::current();
         scrape_tokio_runtime_metrics(&runtime_handle, "main");
@@ -90,24 +87,7 @@ fn parse_cli_command() -> (CliCommand, bool) {
     (command, ansi_colors)
 }
 
-fn register_build_info_metric() {
-    use itertools::Itertools;
-    let build_info = BuildInfo::get();
-    let mut build_kvs = BTreeMap::default();
-    build_kvs.insert("build_date", build_info.build_date.to_string());
-    build_kvs.insert("commit_hash", build_info.commit_short_hash.to_string());
-    build_kvs.insert("version", build_info.version.to_string());
-    if !build_info.commit_tags.is_empty() {
-        let tags_str = build_info.commit_tags.iter().join(",");
-        build_kvs.insert("commit_tags", tags_str);
-    }
-    build_kvs.insert("target", build_info.build_target.to_string());
-    quickwit_common::metrics::register_info("build_info", "Quickwit's build info", build_kvs);
-}
-
 async fn main_impl(command: CliCommand, telemetry_handle: TelemetryHandle) -> anyhow::Result<()> {
-    register_build_info_metric();
-
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 

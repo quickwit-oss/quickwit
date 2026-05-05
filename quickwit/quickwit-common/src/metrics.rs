@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
 use std::sync::{LazyLock, OnceLock};
 #[cfg(not(test))]
 use std::time::Duration;
@@ -56,20 +55,6 @@ fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
         })
         .map(|_| ())
         .map_err(|error| format!("failed to spawn Prometheus metrics upkeep thread: {error}"))
-}
-
-pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
-    let key_name = format!("quickwit_{name}");
-    let labels = kvs
-        .into_iter()
-        .map(|(label, value)| metrics::Label::new(label, value))
-        .collect::<Vec<_>>();
-    let key = metrics::Key::from_parts(key_name.clone(), labels);
-    let metadata = metrics::Metadata::new("", metrics::Level::INFO, Some(module_path!()));
-    metrics::with_recorder(|recorder| {
-        recorder.describe_counter(metrics::KeyName::from(key_name), None, help.into());
-        recorder.register_counter(&key, &metadata).increment(1);
-    });
 }
 
 pub fn index_label(index_id: &str) -> &str {
@@ -173,7 +158,7 @@ fn in_flight_data_gauge(component: &'static str) -> Gauge {
 mod tests {
     use metrics::with_local_recorder;
     use metrics_exporter_prometheus::PrometheusBuilder;
-    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    use quickwit_metrics::labels;
 
     use super::*;
 
@@ -183,40 +168,18 @@ mod tests {
         set_prometheus_handle(recorder.handle()).expect("Prometheus handle should be set once");
 
         with_local_recorder(&recorder, || {
-            register_info(
-                "prometheus_payload_info",
-                "prometheus payload info",
-                BTreeMap::new(),
+            let info_metric = gauge!(
+                name: "prometheus_payload_info",
+                description: "prometheus payload info",
+                subsystem: "",
             );
+            quickwit_metrics::describe_metrics();
+            gauge!(parent: info_metric, labels: [labels!("version" => "test")]).set(1.0);
         });
 
         let payload = metrics_text_payload().expect("Prometheus payload should render");
         assert!(payload.contains("# HELP quickwit_prometheus_payload_info"));
-        assert!(payload.contains("quickwit_prometheus_payload_info 1"));
-    }
-
-    #[test]
-    fn register_info_records_labeled_counter() {
-        let recorder = DebuggingRecorder::new();
-        let snapshotter = recorder.snapshotter();
-        with_local_recorder(&recorder, || {
-            let labels = BTreeMap::from([("version", "test".to_string())]);
-            register_info("build_info_test", "build info test", labels);
-        });
-
-        let snapshot = snapshotter.snapshot().into_vec();
-        let (_, _, description, value) = snapshot
-            .into_iter()
-            .find(|(composite_key, _, _, _)| {
-                let (_, key) = composite_key.clone().into_parts();
-                key.name() == "quickwit_build_info_test"
-                    && key
-                        .labels()
-                        .any(|label| label.key() == "version" && label.value() == "test")
-            })
-            .expect("build info metric should be recorded");
-        assert_eq!(description.as_deref(), Some("build info test"));
-        assert_eq!(value, DebugValue::Counter(1));
+        assert!(payload.contains(r#"quickwit_prometheus_payload_info{version="test"} 1"#));
     }
 
     #[test]
