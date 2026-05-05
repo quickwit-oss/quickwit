@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// See https://prometheus.io/docs/practices/naming/
-#![allow(missing_docs)]
+//! Storage and cache metrics following
+//! [Prometheus naming conventions](https://prometheus.io/docs/practices/naming/).
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
@@ -111,13 +111,14 @@ pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyLock<Gauge> = La
     )
 });
 
-pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
-        name: "object_storage_get_slice_in_flight_num_bytes",
-        description: "Memory allocated for GetObject requests that are still in progress.",
-        subsystem: "storage",
-    )
-});
+pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES: LazyLock<Gauge> =
+    LazyLock::new(|| {
+        gauge!(
+            name: "object_storage_get_slice_in_flight_num_bytes",
+            description: "Memory allocated for GetObject requests that are still in progress.",
+            subsystem: "storage",
+        )
+    });
 
 pub(crate) static OBJECT_STORAGE_PUT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -151,25 +152,39 @@ pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyLock<Counter> = LazyLock:
     )
 });
 
-/// Counters associated to a cache.
+/// Metrics for a named cache component (e.g. "shortlived", "splitfooter").
+///
+/// Each `CacheMetrics` instance holds a set of counters and gauges scoped to a
+/// `component_name` label. It also supports virtual sub-caches keyed by
+/// [`CacheConfig`], which add `capacity` and `policy` labels.
 pub struct CacheMetrics {
-    pub component_name: String,
-    pub cache_metrics: SingleCacheMetrics,
+    component_name: String,
+    pub(crate) cache_metrics: SingleCacheMetrics,
     virtual_caches_metrics: RwLock<HashMap<CacheConfig, SingleCacheMetrics>>,
 }
 
+/// Per-cache counters and gauges tracking items in cache, hits, misses, and
+/// evictions.
 #[derive(Clone)]
 pub struct SingleCacheMetrics {
-    pub in_cache_count: Gauge,
-    pub in_cache_num_bytes: Gauge,
-    pub hits_num_items: Counter,
-    pub hits_num_bytes: Counter,
-    pub misses_num_items: Counter,
-    pub evict_num_items: Counter,
-    pub evict_num_bytes: Counter,
+    /// Current number of items stored in the cache.
+    pub(crate) in_cache_count: Gauge,
+    /// Current number of bytes stored in the cache.
+    pub(crate) in_cache_num_bytes: Gauge,
+    /// Total number of cache hits (items).
+    pub(crate) hits_num_items: Counter,
+    /// Total number of cache hit bytes.
+    pub(crate) hits_num_bytes: Counter,
+    /// Total number of cache misses (items).
+    pub(crate) misses_num_items: Counter,
+    /// Total number of evicted items.
+    pub(crate) evict_num_items: Counter,
+    /// Total number of evicted bytes.
+    pub(crate) evict_num_bytes: Counter,
 }
 
 impl CacheMetrics {
+    /// Creates a new `CacheMetrics` for the given component name.
     pub fn for_component(component_name: &str) -> Self {
         let component_name = component_name.to_string();
         let labels = label_values!(COMPONENT_NAME => component_name.clone());
@@ -188,7 +203,11 @@ impl CacheMetrics {
         }
     }
 
-    pub fn virtual_cache(&self, config: &CacheConfig) -> SingleCacheMetrics {
+    /// Returns metrics for a virtual sub-cache identified by `config`.
+    ///
+    /// Virtual caches share the same parent component but add `capacity` and
+    /// `policy` labels. Instances are cached and reused across calls.
+    pub(crate) fn virtual_cache(&self, config: &CacheConfig) -> SingleCacheMetrics {
         if let Some(virtual_cache_metrics) = self.virtual_caches_metrics.read().unwrap().get(config)
         {
             return virtual_cache_metrics.clone();
@@ -337,22 +356,28 @@ pub(crate) static FAST_FIELD_CACHE: LazyLock<CacheMetrics> =
 pub(crate) static FD_CACHE_METRICS: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("fd"));
 
+/// Cache metrics for partial-request byte ranges (used by leaf search caches).
 pub static PARTIAL_REQUEST_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("partial_request"));
 
+/// Cache metrics for predicate-evaluated content (used by leaf search caches).
 pub static PREDICATE_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("predicate"));
 
 pub(crate) static SEARCHER_SPLIT_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("searcher_split"));
 
+/// Cache metrics for short-lived byte range caches (used during leaf search
+/// and caching directory warmup).
 pub static SHORTLIVED_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("shortlived"));
 
+/// Cache metrics for split footer caches (used to cache split metadata).
 pub static SPLIT_FOOTER_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("splitfooter"));
 
 #[cfg(test)]
+/// Cache metrics for tests.
 pub static CACHE_METRICS_FOR_TESTS: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("fortest"));
 
