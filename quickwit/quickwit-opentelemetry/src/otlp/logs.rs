@@ -243,7 +243,7 @@ impl OtlpGrpcLogsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_logs(index_id.clone(), doc_batch).await?;
 
-        let labels = label_values!(OTLP_GRPC_LABELS, ["logs", index_id, "grpc", "protobuf",]);
+        let labels = label_values!(OTLP_GRPC_LABELS, ["logs", index_id, "grpc", "protobuf"]);
         counter!(
             parent: INGESTED_LOG_RECORDS_TOTAL,
             labels: labels,

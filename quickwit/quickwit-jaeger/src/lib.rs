@@ -434,7 +434,7 @@ impl JaegerService {
                 parent: REQUEST_DURATION_SECONDS,
                 labels: label_values!(
                     OPERATION_INDEX_ERROR_LABELS,
-                    [operation_name, OTEL_TRACES_INDEX_ID, "false",]
+                    [operation_name, OTEL_TRACES_INDEX_ID, "false"]
                 ),
             )
             .record(elapsed);
@@ -458,7 +458,7 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
         parent: REQUEST_DURATION_SECONDS,
         labels: label_values!(
             OPERATION_INDEX_ERROR_LABELS,
-            [operation_name, OTEL_TRACES_INDEX_ID, "true",]
+            [operation_name, OTEL_TRACES_INDEX_ID, "true"]
         ),
     )
     .record(elapsed);

@@ -239,7 +239,7 @@ impl OtlpGrpcMetricsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
-        let labels = label_values!(OTLP_GRPC_LABELS, ["metrics", index_id, "grpc", "protobuf",]);
+        let labels = label_values!(OTLP_GRPC_LABELS, ["metrics", index_id, "grpc", "protobuf"]);
         counter!(
             parent: INGESTED_DATA_POINTS_TOTAL,
             labels: labels,
