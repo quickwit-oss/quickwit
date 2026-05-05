@@ -40,6 +40,13 @@ fn get_main_runtime_num_threads() -> usize {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    unsafe {
+        // SAFETY: this is done before spawning any thread, it trivially isn't done concurrently
+        // with any other enviromnent read/write operations
+        openssl_probe::init_openssl_env_vars()
+    };
+
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -71,10 +78,6 @@ fn register_build_info_metric() {
 }
 
 async fn main_impl() -> anyhow::Result<()> {
-    #[cfg(feature = "openssl-support")]
-    unsafe {
-        openssl_probe::init_openssl_env_vars()
-    };
     register_build_info_metric();
 
     let about_text = about_text();
