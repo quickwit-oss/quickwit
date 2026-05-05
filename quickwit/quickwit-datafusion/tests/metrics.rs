@@ -875,6 +875,173 @@ async fn test_substrait_named_table_query() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_gap_fill_substrait_extension() {
+    use base64::Engine;
+    use datafusion_substrait::logical_plan::producer::to_substrait_plan;
+    use datafusion_substrait::substrait::proto::Plan;
+    use prost::Message;
+
+    const GAP_FILL_TYPE_URL: &str = "type.googleapis.com/quickwit.metrics.v1.GapFill";
+
+    fn wrap_gap_fill_plan(substrait_plan: &Plan, method: &str, limit_secs: i64) -> Plan {
+        let mut plan_json = serde_json::to_value(substrait_plan).unwrap();
+        let root = plan_json["relations"][0]["root"]
+            .as_object_mut()
+            .expect("Substrait plan root");
+        let input = root
+            .remove("input")
+            .expect("Substrait root must have an input relation");
+        let detail = serde_json::json!({
+            "method": method,
+            "time_column_index": 1,
+            "value_column_index": 2,
+            "group_column_indices": [0],
+            "step_secs": 30,
+            "limit_secs": limit_secs
+        });
+        let detail_bytes = serde_json::to_vec(&detail).unwrap();
+        root.insert(
+            "input".to_string(),
+            serde_json::json!({
+                "extensionSingle": {
+                    "input": input,
+                    "detail": {
+                        "typeUrl": GAP_FILL_TYPE_URL,
+                        "value": base64::engine::general_purpose::STANDARD.encode(detail_bytes)
+                    }
+                }
+            }),
+        );
+        serde_json::from_value(plan_json).unwrap()
+    }
+
+    async fn execute_method_with_limit(
+        builder: &DataFusionSessionBuilder,
+        substrait_plan: &Plan,
+        method: &str,
+        limit_secs: i64,
+    ) -> Vec<f64> {
+        let wrapped_plan = wrap_gap_fill_plan(substrait_plan, method, limit_secs);
+        let plan_bytes = wrapped_plan.encode_to_vec();
+        let stream = builder.execute_substrait(&plan_bytes).await.unwrap();
+        let batches = datafusion::physical_plan::common::collect(stream)
+            .await
+            .unwrap();
+        batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name("value")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap()
+                    .iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    async fn execute_method(
+        builder: &DataFusionSessionBuilder,
+        substrait_plan: &Plan,
+        method: &str,
+    ) -> Vec<f64> {
+        execute_method_with_limit(builder, substrait_plan, method, 300).await
+    }
+
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
+
+    let index_uid = create_metrics_index(&metastore, "metrics-gapfill-test", data_dir.path()).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "s1",
+        &make_batch("cpu.usage", &[0, 60], &[10.0, 70.0], Some("web")),
+    )
+    .await;
+
+    let ctx = builder.build_session().unwrap();
+    ctx.sql(
+        r#"CREATE OR REPLACE EXTERNAL TABLE "metrics-gapfill-test" (
+            metric_name VARCHAR NOT NULL,
+            metric_type TINYINT,
+            timestamp_secs BIGINT NOT NULL,
+            value DOUBLE NOT NULL,
+            service VARCHAR
+        ) STORED AS metrics LOCATION 'metrics-gapfill-test'"#,
+    )
+    .await
+    .unwrap()
+    .collect()
+    .await
+    .unwrap();
+
+    let df = ctx
+        .sql(
+            r#"
+            SELECT
+                service,
+                date_bin(INTERVAL '30 seconds', to_timestamp_seconds(timestamp_secs)) AS time_bin,
+                MAX(value) AS value
+            FROM "metrics-gapfill-test"
+            WHERE metric_name = 'cpu.usage'
+            GROUP BY service, time_bin
+            "#,
+        )
+        .await
+        .unwrap();
+    let plan = df.into_optimized_plan().unwrap();
+    let substrait_plan = to_substrait_plan(&plan, &ctx.state()).unwrap();
+
+    assert_eq!(
+        execute_method(&builder, &substrait_plan, "linear").await,
+        vec![10.0, 40.0, 70.0]
+    );
+    assert_eq!(
+        execute_method(&builder, &substrait_plan, "last").await,
+        vec![10.0, 10.0, 70.0]
+    );
+    assert_eq!(
+        execute_method(&builder, &substrait_plan, "zero").await,
+        vec![10.0, 0.0, 70.0]
+    );
+    assert_eq!(
+        execute_method_with_limit(&builder, &substrait_plan, "linear", 29).await,
+        vec![10.0, 70.0]
+    );
+
+    let no_fill_plan = wrap_gap_fill_plan(&substrait_plan, "null", 300);
+    let stream = builder
+        .execute_substrait(&no_fill_plan.encode_to_vec())
+        .await
+        .unwrap();
+    let batches = datafusion::physical_plan::common::collect(stream)
+        .await
+        .unwrap();
+    assert_eq!(total_rows(&batches), 2);
+
+    let invalid_limit_plan = wrap_gap_fill_plan(&substrait_plan, "linear", 601);
+    let err = match builder
+        .execute_substrait(&invalid_limit_plan.encode_to_vec())
+        .await
+    {
+        Ok(_) => panic!("expected gap fill planning to reject limit_secs > 600"),
+        Err(err) => err,
+    };
+    assert!(
+        err.to_string()
+            .contains("gap fill limit_secs must be between 0 and 600"),
+        "unexpected error: {err}"
+    );
+}
+
 /// Executes the user-provided Substrait rollup plan directly against real
 /// parquet data in a sandbox cluster.
 ///

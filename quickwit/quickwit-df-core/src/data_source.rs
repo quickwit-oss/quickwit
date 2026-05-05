@@ -37,6 +37,7 @@ use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_planner::ExtensionPlanner;
 use datafusion::prelude::SessionConfig;
 
 type SessionConfigSetter = Arc<dyn Fn(&mut SessionConfig) + Send + Sync>;
@@ -52,6 +53,7 @@ type SessionConfigSetter = Arc<dyn Fn(&mut SessionConfig) + Send + Sync>;
 pub struct QuickwitRuntimeRegistration {
     session_config_setters: Vec<SessionConfigSetter>,
     physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
+    extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     udfs: Vec<Arc<ScalarUDF>>,
     udafs: Vec<Arc<AggregateUDF>>,
     table_factories: Vec<(String, Arc<dyn TableProviderFactory>)>,
@@ -81,6 +83,14 @@ impl QuickwitRuntimeRegistration {
         rule: Arc<dyn PhysicalOptimizerRule + Send + Sync>,
     ) -> Self {
         self.physical_optimizer_rules.push(rule);
+        self
+    }
+
+    pub fn with_extension_planner(
+        mut self,
+        planner: Arc<dyn ExtensionPlanner + Send + Sync>,
+    ) -> Self {
+        self.extension_planners.push(planner);
         self
     }
 
@@ -115,6 +125,12 @@ impl QuickwitRuntimeRegistration {
             builder = builder.with_physical_optimizer_rule(rule);
         }
 
+        if !self.extension_planners.is_empty() {
+            builder = builder.with_query_planner(Arc::new(crate::session::QuickwitQueryPlanner {
+                extension_planners: self.extension_planners,
+            }));
+        }
+
         if !self.udfs.is_empty() {
             builder
                 .scalar_functions()
@@ -145,6 +161,7 @@ impl QuickwitRuntimeRegistration {
             .extend(other.session_config_setters);
         self.physical_optimizer_rules
             .extend(other.physical_optimizer_rules);
+        self.extension_planners.extend(other.extension_planners);
         self.udfs.extend(other.udfs);
         self.udafs.extend(other.udafs);
         self.table_factories.extend(other.table_factories);
@@ -192,6 +209,14 @@ pub trait QuickwitSubstraitConsumerExt: Send + Sync + Debug {
         _rel: &datafusion_substrait::substrait::proto::ReadRel,
         _schema_hint: Option<arrow::datatypes::SchemaRef>,
     ) -> DFResult<Option<(String, Arc<dyn TableProvider>)>> {
+        Ok(None)
+    }
+
+    async fn try_consume_extension_single_rel(
+        &self,
+        _rel: &datafusion_substrait::substrait::proto::ExtensionSingleRel,
+        _input: datafusion::logical_expr::LogicalPlan,
+    ) -> DFResult<Option<datafusion::logical_expr::LogicalPlan>> {
         Ok(None)
     }
 }

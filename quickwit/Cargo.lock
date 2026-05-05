@@ -8427,6 +8427,7 @@ version = "0.8.0"
 dependencies = [
  "arrow",
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "bytesize",
  "chrono",
@@ -8449,6 +8450,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-search",
  "quickwit-storage",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
