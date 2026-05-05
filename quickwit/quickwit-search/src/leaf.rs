@@ -1628,7 +1628,7 @@ pub async fn single_doc_mapping_leaf_search(
         make_merge_collector(&request, searcher_context.get_aggregation_limits())?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
-    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::new_unregistered());
+    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::default());
 
     // Sort out the splits that are already in the partial result cache.
     let uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
@@ -1807,7 +1807,7 @@ enum SplitSearchState {
 }
 
 impl SplitSearchState {
-    pub fn increment(self, counters: &SplitSearchOutcomeCounters) {
+    fn increment(self, counters: &SplitSearchOutcomeCounters) {
         match self {
             SplitSearchState::Start => counters.cancel_before_warmup.increment(1),
             SplitSearchState::CacheHit => counters.cache_hit.increment(1),
@@ -1838,7 +1838,7 @@ impl SplitSearchStateGuard {
     pub fn new(local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>) -> Self {
         SplitSearchStateGuard {
             state: SplitSearchState::Start,
-            local_split_search_outcome_counters: local_split_search_outcome_counters.clone(),
+            local_split_search_outcome_counters,
         }
     }
 

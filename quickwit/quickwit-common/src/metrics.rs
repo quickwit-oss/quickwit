@@ -24,49 +24,45 @@ use quickwit_metrics::{Counter, Gauge, gauge};
 
 static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
 
-#[derive(Clone)]
-pub struct MaybeRegisteredCounter {
-    inner: MaybeRegisteredCounterInner,
+#[derive(Clone, Default)]
+pub struct LocalCounter {
+    inner: Arc<AtomicU64>,
 }
 
-#[derive(Clone)]
-enum MaybeRegisteredCounterInner {
-    Local(Arc<AtomicU64>),
-    Registered(Counter),
-}
-
-impl Default for MaybeRegisteredCounter {
-    fn default() -> Self {
-        Self::local()
-    }
-}
-
-impl MaybeRegisteredCounter {
-    pub fn local() -> Self {
-        Self {
-            inner: MaybeRegisteredCounterInner::Local(Arc::new(AtomicU64::new(0))),
-        }
-    }
-
-    pub fn registered(counter: Counter) -> Self {
-        Self {
-            inner: MaybeRegisteredCounterInner::Registered(counter),
-        }
-    }
-
+impl LocalCounter {
     pub fn increment(&self, value: u64) {
-        match &self.inner {
-            MaybeRegisteredCounterInner::Local(counter) => {
-                counter.fetch_add(value, Ordering::Relaxed);
-            }
-            MaybeRegisteredCounterInner::Registered(counter) => counter.increment(value),
+        self.inner.fetch_add(value, Ordering::Relaxed);
+    }
+
+    pub fn get(&self) -> u64 {
+        self.inner.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Clone)]
+pub enum ScopedCounter {
+    Local(LocalCounter),
+    Global(Counter),
+}
+
+impl Default for ScopedCounter {
+    fn default() -> Self {
+        Self::Local(LocalCounter::default())
+    }
+}
+
+impl ScopedCounter {
+    pub fn increment(&self, value: u64) {
+        match self {
+            Self::Local(counter) => counter.increment(value),
+            Self::Global(counter) => counter.increment(value),
         }
     }
 
     pub fn get(&self) -> u64 {
-        match &self.inner {
-            MaybeRegisteredCounterInner::Local(counter) => counter.load(Ordering::Relaxed),
-            MaybeRegisteredCounterInner::Registered(counter) => counter.get(),
+        match self {
+            Self::Local(counter) => counter.get(),
+            Self::Global(counter) => counter.get(),
         }
     }
 }
@@ -227,8 +223,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maybe_registered_counter_counts_locally() {
-        let counter = MaybeRegisteredCounter::local();
+    fn local_counter_counts_locally() {
+        let counter = LocalCounter::default();
         let counter_clone = counter.clone();
 
         counter.increment(3);
@@ -239,18 +235,30 @@ mod tests {
     }
 
     #[test]
-    fn maybe_registered_counter_wraps_registered_counter() {
-        let registered_counter = counter!(
-            name: "maybe_registered_counter_test",
-            description: "Maybe registered counter test.",
+    fn scoped_counter_counts_locally() {
+        let counter = ScopedCounter::default();
+        let counter_clone = counter.clone();
+
+        counter.increment(3);
+        counter_clone.increment(4);
+
+        assert_eq!(counter.get(), 7);
+        assert_eq!(counter_clone.get(), 7);
+    }
+
+    #[test]
+    fn scoped_counter_wraps_global_counter() {
+        let global_counter = counter!(
+            name: "scoped_counter_test",
+            description: "Scoped counter test.",
             subsystem: "",
         );
-        let counter = MaybeRegisteredCounter::registered(registered_counter.clone());
+        let counter = ScopedCounter::Global(global_counter.clone());
 
         counter.increment(5);
 
         assert_eq!(counter.get(), 5);
-        assert_eq!(registered_counter.get(), 5);
+        assert_eq!(global_counter.get(), 5);
     }
 
     #[test]

@@ -18,7 +18,7 @@ use std::fmt;
 use std::sync::LazyLock;
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::{MaybeRegisteredCounter, exponential_buckets, linear_buckets};
+use quickwit_common::metrics::{ScopedCounter, exponential_buckets, linear_buckets};
 use quickwit_metrics::{
     Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram, label_names,
 };
@@ -27,7 +27,7 @@ pub(crate) const STATUS_LABELS: LabelNames<1> = label_names!("status");
 
 fn print_if_not_null(
     field_name: &'static str,
-    counter: &MaybeRegisteredCounter,
+    counter: &ScopedCounter,
     f: &mut fmt::Formatter,
 ) -> fmt::Result {
     let val = counter.get();
@@ -37,15 +37,16 @@ fn print_if_not_null(
     Ok(())
 }
 
+#[derive(Default)]
 pub struct SplitSearchOutcomeCounters {
-    pub cancel_before_warmup: MaybeRegisteredCounter,
-    pub cache_hit: MaybeRegisteredCounter,
-    pub pruned_before_warmup: MaybeRegisteredCounter,
-    pub cancel_warmup: MaybeRegisteredCounter,
-    pub pruned_after_warmup: MaybeRegisteredCounter,
-    pub cancel_cpu_queue: MaybeRegisteredCounter,
-    pub cancel_cpu: MaybeRegisteredCounter,
-    pub success: MaybeRegisteredCounter,
+    pub cancel_before_warmup: ScopedCounter,
+    pub cache_hit: ScopedCounter,
+    pub pruned_before_warmup: ScopedCounter,
+    pub cancel_warmup: ScopedCounter,
+    pub pruned_after_warmup: ScopedCounter,
+    pub cancel_cpu_queue: ScopedCounter,
+    pub cancel_cpu: ScopedCounter,
+    pub success: ScopedCounter,
 }
 
 impl fmt::Display for SplitSearchOutcomeCounters {
@@ -64,58 +65,22 @@ impl fmt::Display for SplitSearchOutcomeCounters {
 
 impl SplitSearchOutcomeCounters {
     /// Create a new SplitSearchOutcomeCounters instance, registered in prometheus.
-    pub fn new_registered() -> Self {
-        Self::new_registered_from_counter(&SPLIT_SEARCH_OUTCOME)
-    }
-
-    /// Create a new SplitSearchOutcomeCounters instance that is not reported.
-    pub fn new_unregistered() -> Self {
+    pub fn new_global() -> Self {
+        let counter = |category: &'static str| {
+            ScopedCounter::Global(counter!(
+                parent: &SPLIT_SEARCH_OUTCOME,
+                "category" => category,
+            ))
+        };
         SplitSearchOutcomeCounters {
-            cancel_before_warmup: MaybeRegisteredCounter::local(),
-            cache_hit: MaybeRegisteredCounter::local(),
-            pruned_before_warmup: MaybeRegisteredCounter::local(),
-            cancel_warmup: MaybeRegisteredCounter::local(),
-            pruned_after_warmup: MaybeRegisteredCounter::local(),
-            cancel_cpu_queue: MaybeRegisteredCounter::local(),
-            cancel_cpu: MaybeRegisteredCounter::local(),
-            success: MaybeRegisteredCounter::local(),
-        }
-    }
-
-    fn new_registered_from_counter(search_split_outcome: &Counter) -> Self {
-        SplitSearchOutcomeCounters {
-            cancel_before_warmup: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "cancel_before_warmup",
-            )),
-            cache_hit: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "cache_hit",
-            )),
-            pruned_before_warmup: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "pruned_before_warmup",
-            )),
-            cancel_warmup: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "cancel_warmup",
-            )),
-            pruned_after_warmup: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "pruned_after_warmup",
-            )),
-            cancel_cpu_queue: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "cancel_cpu_queue",
-            )),
-            cancel_cpu: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "cancel_cpu",
-            )),
-            success: MaybeRegisteredCounter::registered(counter!(
-                parent: search_split_outcome,
-                "category" => "success",
-            )),
+            cancel_before_warmup: counter("cancel_before_warmup"),
+            cache_hit: counter("cache_hit"),
+            pruned_before_warmup: counter("pruned_before_warmup"),
+            cancel_warmup: counter("cancel_warmup"),
+            pruned_after_warmup: counter("pruned_after_warmup"),
+            cancel_cpu_queue: counter("cancel_cpu_queue"),
+            cancel_cpu: counter("cancel_cpu"),
+            success: counter("success"),
         }
     }
 }
@@ -161,7 +126,7 @@ static SPLIT_SEARCH_OUTCOME: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub(crate) static SPLIT_SEARCH_OUTCOME_TOTAL: LazyLock<SplitSearchOutcomeCounters> =
-    LazyLock::new(SplitSearchOutcomeCounters::new_registered);
+    LazyLock::new(SplitSearchOutcomeCounters::new_global);
 
 static LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(

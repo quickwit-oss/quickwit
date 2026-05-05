@@ -37,7 +37,7 @@ use pin_project::pin_project;
 use quickwit_metrics::{Counter, counter};
 use tokio::io::AsyncWrite;
 
-use crate::metrics::MaybeRegisteredCounter;
+use crate::metrics::ScopedCounter;
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -79,7 +79,7 @@ pub fn limiter(throughput: ByteSize) -> Limiter {
 #[derive(Clone, Default)]
 pub struct IoControls {
     throughput_limiter_opt: Option<Limiter>,
-    bytes_counter: MaybeRegisteredCounter,
+    bytes_counter: ScopedCounter,
     progress: Progress,
     kill_switch: KillSwitch,
 }
@@ -107,7 +107,7 @@ impl IoControls {
     }
 
     pub fn set_component(mut self, component: &'static str) -> Self {
-        self.bytes_counter = MaybeRegisteredCounter::registered(counter!(
+        self.bytes_counter = ScopedCounter::Global(counter!(
             parent: WRITE_BYTES,
             "component" => component,
         ));
@@ -127,7 +127,7 @@ impl IoControls {
     }
 
     pub fn set_bytes_counter(mut self, bytes_counter: Counter) -> Self {
-        self.bytes_counter = MaybeRegisteredCounter::registered(bytes_counter);
+        self.bytes_counter = ScopedCounter::Global(bytes_counter);
         self
     }
 
@@ -357,6 +357,19 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed <= Duration::from_millis(10));
         assert_eq!(io_controls.num_bytes(), 2_000_000u64);
+    }
+
+    #[tokio::test]
+    async fn test_controlled_writer_registered_counter_async() {
+        let io_controls =
+            IoControls::default().set_component("test_controlled_writer_registered_counter_async");
+        let mut controlled_write = io_controls.clone().wrap_write(sink());
+        let buf = vec![44u8; 1_000];
+
+        controlled_write.write_all(&buf).await.unwrap();
+        controlled_write.flush().await.unwrap();
+
+        assert_eq!(io_controls.num_bytes(), 1_000u64);
     }
 
     #[test]
