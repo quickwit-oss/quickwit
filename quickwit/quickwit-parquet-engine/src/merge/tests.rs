@@ -1293,9 +1293,10 @@ fn test_merge_rejects_mismatched_rg_partition_prefix_len() {
 
 #[test]
 fn test_merge_accepts_matching_rg_partition_prefix_len() {
-    // Sanity check: when both inputs declare the same prefix_len, the
-    // merge proceeds as usual. The output is demoted to prefix_len = 0
-    // because the current writer does not enforce alignment.
+    // Sanity check: when both inputs declare the same prefix_len AND the
+    // merged output fits in a single row group, the output preserves the
+    // inputs' prefix (single-RG vacuously satisfies any alignment claim).
+    // Verify both at the MergeOutputFile struct level and on disk.
     let dir = TempDir::new().unwrap();
 
     let input1 = write_test_split_with_prefix_len(
@@ -1328,6 +1329,68 @@ fn test_merge_accepts_matching_rg_partition_prefix_len() {
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0].num_rows, 4);
+    assert_eq!(
+        outputs[0].num_row_groups, 1,
+        "4 rows fit in one row group with the default 128K threshold"
+    );
+
+    // The output file's KV metadata must record the preserved prefix.
+    let report = crate::storage::inspect_parquet_page_stats(&outputs[0].path, 0).unwrap();
+    assert_eq!(
+        report.rg_partition_prefix_len, 2,
+        "single-RG merge output should preserve the inputs' prefix in its KV metadata"
+    );
+}
+
+#[test]
+fn test_merge_demotes_prefix_when_output_is_multi_rg() {
+    // When the merged output spans more than one row group, the writer
+    // cannot guarantee the inputs' prefix alignment claim and must
+    // record prefix=0 in the output's KV. Force the multi-RG case by
+    // setting a tiny `row_group_size` in the writer config.
+    let dir = TempDir::new().unwrap();
+
+    let input1 = write_test_split_with_prefix_len(
+        dir.path(),
+        "input1.parquet",
+        &["cpu", "cpu", "cpu"],
+        &[100, 200, 300],
+        &[1.0, 2.0, 3.0],
+        &[42, 42, 42],
+        2,
+    );
+
+    let input2 = write_test_split_with_prefix_len(
+        dir.path(),
+        "input2.parquet",
+        &["mem", "mem", "mem"],
+        &[100, 200, 300],
+        &[4.0, 5.0, 6.0],
+        &[99, 99, 99],
+        2,
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default().with_row_group_size(2),
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].num_rows, 6);
+    assert!(
+        outputs[0].num_row_groups > 1,
+        "row_group_size=2 with 6 rows should produce multiple row groups, got {}",
+        outputs[0].num_row_groups
+    );
+
+    let report = crate::storage::inspect_parquet_page_stats(&outputs[0].path, 0).unwrap();
+    assert_eq!(
+        report.rg_partition_prefix_len, 0,
+        "multi-RG merge output cannot honor the inputs' prefix and must record 0"
+    );
 }
 
 /// Build a test RecordBatch from raw column data (shared by test helpers).

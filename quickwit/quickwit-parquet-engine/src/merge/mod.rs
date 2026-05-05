@@ -71,9 +71,11 @@ struct InputMetadata {
     num_merge_ops: u32,
     /// Number of leading sort columns whose transitions align with row
     /// group boundaries. All input files must agree on this value (it's
-    /// part of the compaction scope key). The current merge writer does
-    /// not enforce alignment, so the *output* file is written with prefix
-    /// 0 regardless of this value.
+    /// part of the compaction scope key). Splitting row groups at the
+    /// claimed prefix boundary is not implemented by the current merge
+    /// writer — it lands in PR-6 (streaming column-major merge engine).
+    /// Until then, the *output* file is written with prefix 0 regardless
+    /// of this value.
     #[allow(dead_code)] // wired for PR-6 streaming engine; PR-1 only validates.
     rg_partition_prefix_len: u32,
 }
@@ -91,6 +93,15 @@ pub struct MergeOutputFile {
 
     /// Number of rows in this output file.
     pub num_rows: usize,
+
+    /// Number of row groups the writer produced for this file. Used by
+    /// `merge_parquet_split_metadata` to decide whether the input prefix
+    /// alignment claim (`rg_partition_prefix_len`) can be propagated to
+    /// the output: a single-RG file vacuously satisfies any claim, so
+    /// we keep the inputs' prefix; a multi-RG file with arbitrary
+    /// boundaries (the only kind the current writer can produce) must
+    /// reset the claim to 0.
+    pub num_row_groups: usize,
 
     /// File size in bytes.
     pub size_bytes: u64,

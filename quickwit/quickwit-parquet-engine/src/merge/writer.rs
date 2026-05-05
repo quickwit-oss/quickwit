@@ -44,9 +44,9 @@ use crate::storage::split_writer::{
     extract_metric_names, extract_service_names, extract_time_range,
 };
 use crate::storage::{
-    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_ROW_KEYS, PARQUET_META_ROW_KEYS_JSON,
-    PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
-    PARQUET_META_ZONEMAP_REGEXES,
+    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_ROW_KEYS,
+    PARQUET_META_ROW_KEYS_JSON, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
+    PARQUET_META_WINDOW_START, PARQUET_META_ZONEMAP_REGEXES,
 };
 use crate::zonemap::{self, ZonemapOptions};
 
@@ -99,8 +99,29 @@ pub fn write_merge_outputs(
             zonemap::extract_zonemap_regexes(&input_meta.sort_fields, &sorted_batch, &zonemap_opts)
                 .context("extracting zonemap regexes from merge output")?;
 
+        // Predict the output's row group count. ArrowWriter rolls over a
+        // new RG every `row_group_size` rows; we don't set a byte-based
+        // threshold so the row count is the only driver. This prediction
+        // determines the prefix alignment claim we embed in the file's KV
+        // metadata: single-RG output vacuously satisfies any prefix, so
+        // we propagate the input prefix; multi-RG output (with arbitrary
+        // row-count-driven boundaries) must claim 0. PR-6 will replace
+        // this with proper sort-prefix-aligned boundaries.
+        let predicted_num_rgs =
+            predict_num_row_groups(sorted_batch.num_rows(), config.writer_config.row_group_size);
+        let output_prefix_len = if predicted_num_rgs <= 1 {
+            input_meta.rg_partition_prefix_len
+        } else {
+            0
+        };
+
         // Build KV metadata.
-        let kv_entries = build_merge_kv_metadata(input_meta, &row_keys_proto, &zonemap_regexes);
+        let kv_entries = build_merge_kv_metadata(
+            input_meta,
+            &row_keys_proto,
+            &zonemap_regexes,
+            output_prefix_len,
+        );
 
         // Build sorting_columns for Parquet metadata.
         let sorting_cols = build_sorting_columns(&sorted_batch, &input_meta.sort_fields)?;
@@ -131,12 +152,24 @@ pub fn write_merge_outputs(
             low_cardinality_tags.insert(TAG_SERVICE.to_string(), service_names);
         }
 
-        let size_bytes = write_parquet_file(&sorted_batch, &output_path, props)?;
+        let written = write_parquet_file(&sorted_batch, &output_path, props)?;
+
+        // Confirm prediction matches reality. If this ever fires, somebody
+        // enabled a byte-based RG threshold in the writer config and the
+        // KV's `rg_partition_prefix_len` will be inconsistent with the
+        // actual on-disk layout.
+        debug_assert_eq!(
+            predicted_num_rgs, written.num_row_groups,
+            "predicted RG count {} does not match actual {} — rg_partition_prefix_len in KV \
+             metadata may be wrong",
+            predicted_num_rgs, written.num_row_groups,
+        );
 
         outputs.push(MergeOutputFile {
             path: output_path,
             num_rows: sorted_batch.num_rows(),
-            size_bytes,
+            num_row_groups: written.num_row_groups,
+            size_bytes: written.size_bytes,
             row_keys_proto,
             zonemap_regexes,
             metric_names,
@@ -204,11 +237,28 @@ fn apply_merge_permutation(
     Ok(result)
 }
 
+/// Predict the number of row groups `ArrowWriter` will produce for a
+/// batch of `num_rows` rows. Assumes `row_group_size` is the only RG
+/// rollover threshold (which is the case as long as the writer config
+/// does not set `set_max_row_group_bytes`). Returns at least 1.
+fn predict_num_row_groups(num_rows: usize, row_group_size: usize) -> usize {
+    if num_rows == 0 || row_group_size == 0 {
+        return 1;
+    }
+    num_rows.div_ceil(row_group_size).max(1)
+}
+
 /// Build Parquet KV metadata entries for a merge output file.
+///
+/// `output_prefix_len` is the alignment claim to embed in the output's
+/// `qh.rg_partition_prefix_len` KV — caller computes this based on
+/// whether the file is going to be single-RG (preserve input prefix)
+/// or multi-RG (must be 0).
 fn build_merge_kv_metadata(
     input_meta: &InputMetadata,
     row_keys_proto: &Option<Vec<u8>>,
     zonemap_regexes: &std::collections::HashMap<String, String>,
+    output_prefix_len: u32,
 ) -> Vec<KeyValue> {
     let mut kvs = Vec::new();
 
@@ -237,6 +287,13 @@ fn build_merge_kv_metadata(
         PARQUET_META_NUM_MERGE_OPS.to_string(),
         input_meta.num_merge_ops.to_string(),
     ));
+
+    if output_prefix_len > 0 {
+        kvs.push(KeyValue::new(
+            PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+            output_prefix_len.to_string(),
+        ));
+    }
 
     if let Some(rk_bytes) = row_keys_proto {
         kvs.push(KeyValue::new(
@@ -393,8 +450,21 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     }
 }
 
-/// Write a RecordBatch to a Parquet file.
-fn write_parquet_file(batch: &RecordBatch, path: &Path, props: WriterProperties) -> Result<u64> {
+/// Result of writing a single Parquet output file.
+struct WrittenFile {
+    /// File size in bytes on disk after `ArrowWriter::close()`.
+    size_bytes: u64,
+    /// Number of row groups the writer produced.
+    num_row_groups: usize,
+}
+
+/// Write a RecordBatch to a Parquet file. Returns its on-disk size and
+/// the number of row groups produced by the writer.
+fn write_parquet_file(
+    batch: &RecordBatch,
+    path: &Path,
+    props: WriterProperties,
+) -> Result<WrittenFile> {
     let file = std::fs::File::create(path)
         .with_context(|| format!("creating output file: {}", path.display()))?;
 
@@ -405,13 +475,17 @@ fn write_parquet_file(batch: &RecordBatch, path: &Path, props: WriterProperties)
         .write(batch)
         .with_context(|| format!("writing batch: {}", path.display()))?;
 
-    writer
+    let metadata = writer
         .close()
         .with_context(|| format!("closing parquet writer: {}", path.display()))?;
+    let num_row_groups = metadata.num_row_groups();
 
-    let size = std::fs::metadata(path)
+    let size_bytes = std::fs::metadata(path)
         .with_context(|| format!("reading file size: {}", path.display()))?
         .len();
 
-    Ok(size)
+    Ok(WrittenFile {
+        size_bytes,
+        num_row_groups,
+    })
 }
