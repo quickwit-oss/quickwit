@@ -64,6 +64,11 @@ pub struct ParquetWriterConfig {
     pub row_group_size: usize,
     /// Target size in bytes for data pages.
     pub data_page_size: usize,
+    /// Maximum rows per data page (`0` = unbounded — let `data_page_size`
+    /// drive the rollover). Useful for tests that need to force the
+    /// metric_name column into multiple pages even when it compresses
+    /// to a handful of bytes.
+    pub data_page_row_count_limit: usize,
     /// Number of rows per write batch.
     pub write_batch_size: usize,
     /// Whether to emit page-level statistics (Parquet Column Index +
@@ -86,6 +91,7 @@ impl Default for ParquetWriterConfig {
             compression_level: Some(DEFAULT_ZSTD_LEVEL),
             row_group_size: DEFAULT_ROW_GROUP_SIZE,
             data_page_size: DEFAULT_DATA_PAGE_SIZE,
+            data_page_row_count_limit: 0,
             write_batch_size: DEFAULT_WRITE_BATCH_SIZE,
             page_statistics_enabled: true,
         }
@@ -119,6 +125,14 @@ impl ParquetWriterConfig {
     /// Set the data page size.
     pub fn with_data_page_size(mut self, size: usize) -> Self {
         self.data_page_size = size;
+        self
+    }
+
+    /// Set the per-page row count limit. `0` means unbounded (rely on
+    /// `data_page_size` for rollover). See
+    /// [`ParquetWriterConfig::data_page_row_count_limit`].
+    pub fn with_data_page_row_count_limit(mut self, limit: usize) -> Self {
+        self.data_page_row_count_limit = limit;
         self
     }
 
@@ -183,6 +197,10 @@ impl ParquetWriterConfig {
             .set_column_index_truncate_length(Some(64))
             .set_sorting_columns(Some(sorting_cols))
             .set_statistics_enabled(stats_level);
+
+        if self.data_page_row_count_limit > 0 {
+            builder = builder.set_data_page_row_count_limit(self.data_page_row_count_limit);
+        }
 
         if let Some(kvs) = kv_metadata
             && !kvs.is_empty()
