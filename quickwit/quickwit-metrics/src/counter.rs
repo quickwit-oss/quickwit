@@ -265,21 +265,21 @@ macro_rules! counter {
     };
 
     // Parent extension via one or more pre-built Labels<N> bundles.
-    // Composes hash, count, and label iterators across all labels via the
-    // __bind_labels! tt-muncher — zero allocation on the hot path.
     (
         parent: $parent:expr,
         labels: [$($labels:expr),+ $(,)?] $(,)?
-    ) => {{
-        $crate::__bind_labels!(
+    ) => {
+        $crate::__metric_extension!(
             metric_type: $crate::Counter,
             register_fn: $crate::__counter_get_or_register,
             parent: $parent,
             metric_info: $parent.__info(),
-            hash: $parent.get_hash(),
-            count: 0usize,
-            iter: std::iter::empty::<$crate::__metrics::Label>(),
-            $(next: $labels,)+
+            hash: $crate::__key_hash(
+                $parent.get_hash(),
+                std::iter::empty()$(.chain($labels.iter()))+,
+            ),
+            label_count: 0usize $(+ $labels.len())+,
+            labels_iter: std::iter::empty()$(.chain($labels.__to_labels()))+
         )
-    }};
+    };
 }
