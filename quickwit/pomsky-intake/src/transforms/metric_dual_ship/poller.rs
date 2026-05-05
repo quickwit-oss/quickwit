@@ -103,11 +103,16 @@ async fn poll_once(
     // if it fails the next successful poll will rewrite both files, and at
     // worst startup falls back to a full sync from SaaS.
     //
+    // The watermark write is gated on the CSV write succeeding (or being
+    // skipped because nothing changed). Persisting an advanced watermark
+    // alongside a stale CSV would cause a restart to load stale routing
+    // data and skip the missing records on the next incremental fetch.
+    //
     // The CSV writer takes a read lock inside the blocking task. Read locks
     // don't block other readers (the metric event hot path), and the only
     // writer is this poller — which is currently awaiting this very task —
     // so contention is impossible.
-    if change_set.total() > 0 {
+    let csv_persisted = if change_set.total() > 0 {
         let store_for_io = Arc::clone(store);
         let csv_path_owned = csv_path.to_path_buf();
         let write_result = tokio::task::spawn_blocking(move || {
@@ -116,30 +121,36 @@ async fn poll_once(
         })
         .await;
         match write_result {
-            Ok(Ok(())) => {}
+            Ok(Ok(())) => true,
             Ok(Err(err)) => {
-                warn!(%err, "failed to persist dual-ship CSV; will retry on next poll");
+                warn!(%err, "failed to persist dual-ship CSV; skipping watermark write to retry on next poll");
+                false
             }
             Err(err) => {
-                warn!(%err, "dual-ship CSV write task panicked");
+                warn!(%err, "dual-ship CSV write task panicked; skipping watermark write to retry on next poll");
+                false
             }
         }
-    }
+    } else {
+        true
+    };
 
-    // Watermark IO needs no lock at all — `new_watermark` is already an
-    // owned local. The in-memory copy was updated above.
-    let csv_path_owned = csv_path.to_path_buf();
-    let watermark_result = tokio::task::spawn_blocking(move || {
-        write_watermark_to_disk(&csv_path_owned, new_watermark)
-    })
-    .await;
-    match watermark_result {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => {
-            warn!(%err, "failed to persist dual-ship watermark; will retry on next poll");
-        }
-        Err(err) => {
-            warn!(%err, "dual-ship watermark write task panicked");
+    if csv_persisted {
+        // Watermark IO needs no lock at all — `new_watermark` is already an
+        // owned local. The in-memory copy was updated above.
+        let csv_path_owned = csv_path.to_path_buf();
+        let watermark_result = tokio::task::spawn_blocking(move || {
+            write_watermark_to_disk(&csv_path_owned, new_watermark)
+        })
+        .await;
+        match watermark_result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                warn!(%err, "failed to persist dual-ship watermark; will retry on next poll");
+            }
+            Err(err) => {
+                warn!(%err, "dual-ship watermark write task panicked");
+            }
         }
     }
 
@@ -343,6 +354,48 @@ mod tests {
         assert!(guard.is_empty());
         // Watermark file should not exist.
         assert!(std::fs::metadata(super::super::store::watermark_path(&csv)).is_err());
+    }
+
+    #[tokio::test]
+    async fn poll_once_csv_write_failure_does_not_advance_disk_watermark() {
+        // Force CSV writes to fail by making the CSV path's parent a regular
+        // file. `NamedTempFile::new_in(parent)` fails when `parent` is not a
+        // directory, so `write_csv_to_disk` returns an error.
+        let dir = tempfile::tempdir().unwrap();
+        let parent_as_file = dir.path().join("not_a_dir");
+        std::fs::write(&parent_as_file, b"").unwrap();
+        let csv = parent_as_file.join("metrics_to_saas.csv");
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(ENDPOINT_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "metrics": [
+                    { "metric_name": "alpha", "destination": 1, "last_updated_unix": 500 },
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let store = Arc::new(RwLock::new(DualShipStore::default()));
+        let fetcher = make_fetcher(&server.uri());
+
+        poll_once(&store, &fetcher, &csv).await;
+
+        // In-memory state advanced (memory is authoritative).
+        let guard = store.read().unwrap();
+        assert_eq!(guard.watermark(), 500);
+        assert_eq!(guard.lookup("alpha"), Some(Destination::Saas));
+        drop(guard);
+
+        // On-disk watermark must NOT be written when CSV persistence failed.
+        // Otherwise a crash-restart would reload an empty CSV alongside an
+        // advanced watermark and skip already-watermarked records on the next
+        // incremental fetch.
+        assert!(
+            std::fs::metadata(super::super::store::watermark_path(&csv)).is_err(),
+            "watermark file must not exist after a failed CSV write"
+        );
     }
 
     #[tokio::test]
