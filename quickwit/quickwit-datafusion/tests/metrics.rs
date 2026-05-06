@@ -278,11 +278,15 @@ async fn test_multi_statement_sql_with_semicolons_in_literals_and_comments() {
         SELECT COUNT(*) AS cnt FROM "test-semi"
     "#;
 
-    let stream = quickwit_datafusion::DataFusionService::new(Arc::clone(&builder))
-        .execute_sql(sql, &std::collections::HashMap::new())
+    let properties = std::collections::HashMap::new();
+    let execution = quickwit_datafusion::DataFusionService::new(Arc::clone(&builder))
+        .execute(quickwit_datafusion::DataFusionRequest::records(
+            quickwit_datafusion::DataFusionInput::Sql(sql),
+            &properties,
+        ))
         .await
         .unwrap();
-    let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+    let batches: Vec<RecordBatch> = execution.stream.try_collect().await.unwrap();
     assert_eq!(total_rows(&batches), 1);
     let cnt = batches[0]
         .column_by_name("cnt")
