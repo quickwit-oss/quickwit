@@ -15,7 +15,7 @@
 use std::convert::TryFrom;
 
 use quickwit_common::truncate_str;
-use quickwit_proto::search::SearchResponse;
+use quickwit_proto::search::{RootResourceStats, SearchResponse};
 use quickwit_query::aggregations::AggregationResults as AggregationResultsProxy;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,14 @@ pub struct SearchResponseRest {
     #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregations: Option<AggregationResults>,
+    /// Per-request execution telemetry. Surfaces sums/maxes of leaf-side
+    /// counters (CPU, warmup, queueing, aggregation CPU, docs matched,
+    /// bytes downloaded) plus root-side merge time. See
+    /// `RootResourceStats` in the proto definition for the diagnostic
+    /// playbook. Absent on scroll continuations and on requests that did
+    /// not exercise the distributed search path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_stats: Option<RootResourceStats>,
 }
 
 impl TryFrom<SearchResponse> for SearchResponseRest {
@@ -109,6 +117,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
             aggregations: aggregations_opt,
+            resource_stats: search_response.resource_stats,
         })
     }
 }

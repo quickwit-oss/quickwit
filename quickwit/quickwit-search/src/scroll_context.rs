@@ -25,7 +25,7 @@ use base64::prelude::BASE64_STANDARD;
 use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
+use quickwit_proto::search::{PartialHit, SearchRequest, SplitSearchError};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -107,7 +107,9 @@ impl ScrollContext {
         searcher_context: &SearcherContext,
     ) -> crate::Result<bool> {
         self.search_request.search_after = Some(previous_last_hit);
-        let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
+        // Scroll batches refill the cache; the per-leaf stats are not
+        // surfaced anywhere, so we discard them here.
+        let (leaf_search_response, _root_resource_stats) = crate::root::search_partial_hits_phase(
             searcher_context,
             &self.indexes_metas_for_leaf_search,
             &self.search_request,

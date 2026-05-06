@@ -630,6 +630,15 @@ async fn leaf_search_single_split(
                     } else {
                         searcher.search(&query, &collector)?
                     };
+                // The aggregation collector populates its own `resource_stats`
+                // with `aggregation_cpu_microsecs` summed across segments
+                // (see `QuickwitSegmentCollector::harvest`). Pull it out here
+                // so we don't lose it when we overwrite resource_stats below.
+                let aggregation_cpu_microsecs = leaf_search_response
+                    .resource_stats
+                    .as_ref()
+                    .map(|stats| stats.aggregation_cpu_microsecs)
+                    .unwrap_or(0);
                 leaf_search_response.resource_stats = Some(ResourceStats {
                     cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
                     short_lived_cache_num_bytes: warmup_size.as_u64(),
@@ -637,6 +646,12 @@ async fn leaf_search_single_split(
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
                         as u64,
+                    aggregation_cpu_microsecs,
+                    // wall_microsecs is set once per leaf request at the
+                    // `multi_index_leaf_search` boundary, not per split —
+                    // summing per-split wall times would overcount when
+                    // splits run concurrently.
+                    wall_microsecs: 0,
                 });
                 leaf_search_state_guard.set_state(SplitSearchState::Success);
                 Result::<_, TantivyError>::Ok(Some((
@@ -1248,6 +1263,12 @@ pub async fn multi_index_leaf_search(
     leaf_search_request: LeafSearchRequest,
     storage_resolver: StorageResolver,
 ) -> Result<LeafSearchResponse, SearchError> {
+    // Wall time for the leaf request: from receipt of the LeafSearchRequest
+    // (after gRPC decode) to the moment the merged response is ready to send
+    // back. This is the leaf's actual response time as observed locally,
+    // including I/O permit waits, warmup across all splits, CPU permit
+    // waits, search work, and the per-leaf merge.
+    let wall_start = Instant::now();
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
@@ -1331,11 +1352,26 @@ pub async fn multi_index_leaf_search(
         }
     }
 
-    crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+    let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
+        .run_cpu_intensive(|| -> crate::Result<LeafSearchResponse> {
+            incremental_merge_collector.finalize().map_err(Into::into)
+        })
         .instrument(info_span!("incremental_merge_finalize"))
         .await
-        .context("failed to merge split search responses")?
+        .context("failed to merge split search responses")??;
+    // Record the leaf wall time. If the leaf processed only metadata-only
+    // count splits, no `ResourceStats` was created — we synthesize a
+    // minimal one so the root still sees a wall time.
+    let wall_microsecs = wall_start.elapsed().as_micros() as u64;
+    if let Some(resource_stats) = leaf_search_response.resource_stats.as_mut() {
+        resource_stats.wall_microsecs = wall_microsecs;
+    } else {
+        leaf_search_response.resource_stats = Some(ResourceStats {
+            wall_microsecs,
+            ..ResourceStats::default()
+        });
+    }
+    Ok(leaf_search_response)
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter

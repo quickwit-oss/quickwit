@@ -32,8 +32,9 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest, SearchResponse,
-    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    LeafSearchResponse, PartialHit, RootResourceStats, SearchPlanResponse, SearchRequest,
+    SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
+    SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -569,7 +570,11 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<(LeafSearchResponse, Option<ScrollKeyAndStartOffset>)> {
+) -> crate::Result<(
+    LeafSearchResponse,
+    Option<RootResourceStats>,
+    Option<ScrollKeyAndStartOffset>,
+)> {
     let scroll_ttl_opt = get_scroll_ttl_duration(&search_request)?;
 
     if let Some(scroll_ttl) = scroll_ttl_opt {
@@ -581,7 +586,7 @@ async fn search_partial_hits_phase_with_scroll(
             .max_hits
             .max(shared_consts::SCROLL_BATCH_LEN as u64);
         search_request.scroll_ttl_secs = None;
-        let mut leaf_search_resp = search_partial_hits_phase(
+        let (mut leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -624,9 +629,13 @@ async fn search_partial_hits_phase_with_scroll(
         cluster_client
             .put_kv(&scroll_key, &payload, scroll_ttl)
             .await;
-        Ok((leaf_search_resp, Some(scroll_key_and_start_offset)))
+        Ok((
+            leaf_search_resp,
+            root_resource_stats,
+            Some(scroll_key_and_start_offset),
+        ))
     } else {
-        let leaf_search_resp = search_partial_hits_phase(
+        let (leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -634,7 +643,7 @@ async fn search_partial_hits_phase_with_scroll(
             cluster_client,
         )
         .await?;
-        Ok((leaf_search_resp, None))
+        Ok((leaf_search_resp, root_resource_stats, None))
     }
 }
 
@@ -727,6 +736,44 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     is_memory_intensive
 }
 
+/// Folds the per-leaf execution stats from a slice of `LeafSearchResponse`
+/// into a single `RootResourceStats`. Sums most fields across leaves;
+/// takes the max for `wall_microsecs` so the slowest leaf surfaces.
+///
+/// Returns `None` when no leaf reported any stats — this preserves the
+/// "no instrumentation available" case (e.g. metadata-only count
+/// requests) so the response field stays `None`.
+fn compute_root_resource_stats(leaf_responses: &[LeafSearchResponse]) -> Option<RootResourceStats> {
+    let mut any_stats = false;
+    let mut stats = RootResourceStats {
+        num_leaf_responses: leaf_responses.len() as u64,
+        ..RootResourceStats::default()
+    };
+    let mut total_num_docs_matched = 0u64;
+    for leaf_response in leaf_responses {
+        total_num_docs_matched += leaf_response.num_hits;
+        let Some(leaf_stats) = leaf_response.resource_stats.as_ref() else {
+            continue;
+        };
+        any_stats = true;
+        stats.total_cpu_microsecs += leaf_stats.cpu_microsecs;
+        stats.total_warmup_microsecs += leaf_stats.warmup_microsecs;
+        stats.total_cpu_thread_pool_wait_microsecs += leaf_stats.cpu_thread_pool_wait_microsecs;
+        stats.total_aggregation_cpu_microsecs += leaf_stats.aggregation_cpu_microsecs;
+        stats.total_short_lived_cache_num_bytes += leaf_stats.short_lived_cache_num_bytes;
+        stats.total_split_num_docs += leaf_stats.split_num_docs;
+        stats.sum_leaf_wall_microsecs += leaf_stats.wall_microsecs;
+        if leaf_stats.wall_microsecs > stats.max_leaf_wall_microsecs {
+            stats.max_leaf_wall_microsecs = leaf_stats.wall_microsecs;
+        }
+    }
+    if !any_stats {
+        return None;
+    }
+    stats.total_num_docs_matched = total_num_docs_matched;
+    Some(stats)
+}
+
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
 #[instrument(level = "debug", skip_all)]
@@ -736,7 +783,7 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<LeafSearchResponse> {
+) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
@@ -758,6 +805,11 @@ pub(crate) async fn search_partial_hits_phase(
             try_join_all(leaf_request_tasks).await?
         };
 
+    // Compute root-level resource stats from the per-leaf responses *before*
+    // they get merged, since the merge collapses leaf identity. The merge
+    // wall time itself is added below once we've measured it.
+    let mut root_resource_stats = compute_root_resource_stats(&leaf_search_responses);
+
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
 
@@ -768,6 +820,7 @@ pub(crate) async fn search_partial_hits_phase(
     let leaf_search_results: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
     let span = info_span!("merge_fruits");
+    let merge_start = Instant::now();
     let leaf_search_response = crate::search_thread_pool()
         .run_cpu_intensive(move || {
             let _span_guard = span.enter();
@@ -776,6 +829,9 @@ pub(crate) async fn search_partial_hits_phase(
         .await
         .context("failed to merge leaf search responses")?
         .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
+    if let Some(stats) = root_resource_stats.as_mut() {
+        stats.root_merge_microsecs = merge_start.elapsed().as_micros() as u64;
+    }
     debug!(
         num_hits = leaf_search_response.num_hits,
         num_failed_splits = leaf_search_response.failed_splits.len(),
@@ -804,7 +860,7 @@ pub(crate) async fn search_partial_hits_phase(
         quickwit_common::rate_limited_error!(limit_per_min=6, num_failed_splits = leaf_search_response.failed_splits.len(), failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5), "leaf search response contains failed splits");
     }
 
-    Ok(leaf_search_response)
+    Ok((leaf_search_response, root_resource_stats))
 }
 
 pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<SnippetRequest> {
@@ -979,8 +1035,9 @@ async fn root_search_aux(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
-    let (first_phase_result, scroll_key_and_start_offset_opt): (
+    let (first_phase_result, root_resource_stats, scroll_key_and_start_offset_opt): (
         LeafSearchResponse,
+        Option<RootResourceStats>,
         Option<ScrollKeyAndStartOffset>,
     ) = search_partial_hits_phase_with_scroll(
         searcher_context,
@@ -1021,6 +1078,7 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
+        resource_stats: root_resource_stats,
     })
 }
 
@@ -1809,7 +1867,7 @@ mod tests {
         ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
     };
     use quickwit_proto::search::{
-        ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
+        ResourceStats, ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
     };
     use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
     use tantivy::schema::{FAST, STORED, TEXT};
@@ -5386,5 +5444,119 @@ mod tests {
         .unwrap();
         assert!(result.is_some());
         assert_ne!(result.unwrap(), intermediate_bytes);
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_empty() {
+        assert_eq!(compute_root_resource_stats(&[]), None);
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_no_stats() {
+        // Leaf responses without `resource_stats` (e.g. metadata-only count
+        // requests) should not produce a root stats object.
+        let leaf_responses = vec![LeafSearchResponse {
+            num_hits: 42,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            intermediate_aggregation_result: None,
+            resource_stats: None,
+        }];
+        assert_eq!(compute_root_resource_stats(&leaf_responses), None);
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_aggregates() {
+        let leaf_a = LeafSearchResponse {
+            num_hits: 100,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            intermediate_aggregation_result: None,
+            resource_stats: Some(ResourceStats {
+                short_lived_cache_num_bytes: 1_000,
+                split_num_docs: 10_000,
+                warmup_microsecs: 200,
+                cpu_thread_pool_wait_microsecs: 50,
+                cpu_microsecs: 800,
+                aggregation_cpu_microsecs: 300,
+                wall_microsecs: 1_500,
+            }),
+        };
+        let leaf_b = LeafSearchResponse {
+            num_hits: 50,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            intermediate_aggregation_result: None,
+            resource_stats: Some(ResourceStats {
+                short_lived_cache_num_bytes: 4_000,
+                split_num_docs: 20_000,
+                warmup_microsecs: 700,
+                cpu_thread_pool_wait_microsecs: 150,
+                cpu_microsecs: 2_200,
+                aggregation_cpu_microsecs: 100,
+                wall_microsecs: 3_500,
+            }),
+        };
+        let stats = compute_root_resource_stats(&[leaf_a, leaf_b]).unwrap();
+        // Sums.
+        assert_eq!(stats.total_cpu_microsecs, 3_000);
+        assert_eq!(stats.total_warmup_microsecs, 900);
+        assert_eq!(stats.total_cpu_thread_pool_wait_microsecs, 200);
+        assert_eq!(stats.total_aggregation_cpu_microsecs, 400);
+        assert_eq!(stats.total_short_lived_cache_num_bytes, 5_000);
+        assert_eq!(stats.total_split_num_docs, 30_000);
+        assert_eq!(stats.total_num_docs_matched, 150);
+        assert_eq!(stats.sum_leaf_wall_microsecs, 5_000);
+        // Max — leaf_b is the slow leaf.
+        assert_eq!(stats.max_leaf_wall_microsecs, 3_500);
+        // Counter.
+        assert_eq!(stats.num_leaf_responses, 2);
+        // Root merge time is set by the caller, not by the helper.
+        assert_eq!(stats.root_merge_microsecs, 0);
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_partial() {
+        // One leaf reports stats, the other doesn't (e.g. mixed metadata
+        // count + real search). The helper should still emit a stats
+        // object aggregating what it has.
+        let leaf_with_stats = LeafSearchResponse {
+            num_hits: 7,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            intermediate_aggregation_result: None,
+            resource_stats: Some(ResourceStats {
+                short_lived_cache_num_bytes: 0,
+                split_num_docs: 1_000,
+                warmup_microsecs: 100,
+                cpu_thread_pool_wait_microsecs: 0,
+                cpu_microsecs: 250,
+                aggregation_cpu_microsecs: 0,
+                wall_microsecs: 400,
+            }),
+        };
+        let leaf_no_stats = LeafSearchResponse {
+            num_hits: 13,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            intermediate_aggregation_result: None,
+            resource_stats: None,
+        };
+        let stats = compute_root_resource_stats(&[leaf_with_stats, leaf_no_stats]).unwrap();
+        assert_eq!(stats.num_leaf_responses, 2);
+        // num_docs_matched still counts num_hits from every leaf.
+        assert_eq!(stats.total_num_docs_matched, 20);
+        assert_eq!(stats.total_cpu_microsecs, 250);
+        assert_eq!(stats.max_leaf_wall_microsecs, 400);
     }
 }

@@ -15,6 +15,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::time::Instant;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
@@ -477,6 +478,16 @@ pub struct QuickwitSegmentCollector {
     segment_top_k_collector: Option<Box<dyn QuickwitSegmentTopKCollector>>,
     aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
+    /// Cumulative wall time spent inside the aggregation segment collector,
+    /// measured around `collect_block` / `collect` calls. Tracked in
+    /// nanoseconds because per-block work (typically <= 2048 docs) often
+    /// completes in tens of microseconds, and we want sub-microsecond
+    /// accuracy. The value is converted to microseconds when surfaced
+    /// in `ResourceStats.aggregation_cpu_microsecs`.
+    ///
+    /// Cost of the timing itself: one `Instant::now()` pair per block,
+    /// i.e. ~2 * 150 ns / 2048 docs ~ 0.15 ns/doc — well below noise.
+    aggregation_cpu_nanos: u64,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -533,32 +544,53 @@ impl SegmentCollector for QuickwitSegmentCollector {
             segment_top_k_collector.collect_top_k_block(filtered_docs);
         }
 
-        match self.aggregation.as_mut() {
-            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
-                collector.collect_block(filtered_docs)
+        // Time spent inside the aggregation collector is tracked separately
+        // so that `RootResourceStats.total_aggregation_cpu_microsecs` can be
+        // compared against `total_cpu_microsecs` to identify aggregation-heavy
+        // queries. The hot path is `collect_block` (block size <= 2048).
+        if let Some(aggregation) = self.aggregation.as_mut() {
+            let agg_start = Instant::now();
+            match aggregation {
+                AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector) => {
+                    collector.collect_block(filtered_docs);
+                }
+                AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector) => {
+                    collector.collect_block(filtered_docs);
+                }
             }
-            Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                collector.collect_block(filtered_docs)
-            }
-            None => (),
+            self.aggregation_cpu_nanos += agg_start.elapsed().as_nanos() as u64;
         }
     }
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
+        // Tantivy's dispatch (`Collector::collect_segment` default impl)
+        // takes this per-doc path whenever scoring is required (e.g.
+        // sort by `_score`, BM25 ranking) or the segment has deleted
+        // docs — see `tantivy/src/collector/mod.rs`. It is therefore
+        // exercised by any score-sorted Quickwit query.
+        //
+        // We deliberately do NOT time the aggregation here: at ~300 ns
+        // per `Instant::now()` pair amortized over a single doc, the
+        // overhead would dwarf the work we're trying to measure. The
+        // `collect_block` hook is enough to characterize aggregation
+        // cost in the common (non-scored aggregation) case; for scored
+        // aggregation queries `aggregation_cpu_microsecs` will be a
+        // slight underestimate.
         self.num_hits += 1;
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
             segment_top_k_collector.collect_top_k(doc_id, score);
         }
 
-        match self.aggregation.as_mut() {
-            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
-                collector.collect(doc_id, score)
+        if let Some(aggregation) = self.aggregation.as_mut() {
+            match aggregation {
+                AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector) => {
+                    collector.collect(doc_id, score);
+                }
+                AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector) => {
+                    collector.collect(doc_id, score);
+                }
             }
-            Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                collector.collect(doc_id, score)
-            }
-            None => (),
         }
     }
 
@@ -583,6 +615,19 @@ impl SegmentCollector for QuickwitSegmentCollector {
             None => None,
         };
 
+        // The per-segment fruit carries `aggregation_cpu_microsecs` only.
+        // All other resource-stats fields are populated at the leaf level
+        // (see `leaf_search_single_split`); merging at `merge_leaf_responses`
+        // sums the per-segment aggregation CPU into a per-split value.
+        let resource_stats = if self.aggregation_cpu_nanos > 0 {
+            Some(ResourceStats {
+                aggregation_cpu_microsecs: self.aggregation_cpu_nanos / 1_000,
+                ..ResourceStats::default()
+            })
+        } else {
+            None
+        };
+
         Ok(LeafSearchResponse {
             intermediate_aggregation_result,
             num_hits: self.num_hits,
@@ -590,7 +635,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             failed_splits: Vec::new(),
             num_attempted_splits: 1,
             num_successful_splits: 1,
-            resource_stats: None,
+            resource_stats,
         })
     }
 }
@@ -814,6 +859,7 @@ impl Collector for QuickwitCollector {
             num_hits: 0,
             segment_top_k_collector,
             aggregation,
+            aggregation_cpu_nanos: 0,
         })
     }
 

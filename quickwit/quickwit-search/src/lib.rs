@@ -367,6 +367,8 @@ fn merge_resource_stats(
             stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
             stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
             stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
+            stat_accs.aggregation_cpu_microsecs += new_stats.aggregation_cpu_microsecs;
+            stat_accs.wall_microsecs += new_stats.wall_microsecs;
         } else {
             *stat_accs_opt = Some(*new_stats);
         }
@@ -390,6 +392,8 @@ mod stats_merge_tests {
             warmup_microsecs: 300,
             cpu_thread_pool_wait_microsecs: 400,
             cpu_microsecs: 500,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         merge_resource_stats(&stats, &mut acc_stats);
@@ -402,6 +406,8 @@ mod stats_merge_tests {
             warmup_microsecs: 150,
             cpu_thread_pool_wait_microsecs: 200,
             cpu_microsecs: 250,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         merge_resource_stats(&new_stats, &mut acc_stats);
@@ -412,6 +418,8 @@ mod stats_merge_tests {
             warmup_microsecs: 450,
             cpu_thread_pool_wait_microsecs: 600,
             cpu_microsecs: 750,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         assert_eq!(acc_stats, stats_plus_new_stats);
@@ -432,6 +440,8 @@ mod stats_merge_tests {
             warmup_microsecs: 300,
             cpu_thread_pool_wait_microsecs: 400,
             cpu_microsecs: 500,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         let merged_stats = merge_resource_stats_it(vec![&None, &stats1, &None]);
@@ -444,6 +454,8 @@ mod stats_merge_tests {
             warmup_microsecs: 150,
             cpu_thread_pool_wait_microsecs: 200,
             cpu_microsecs: 250,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         let stats3 = Some(ResourceStats {
@@ -452,6 +464,8 @@ mod stats_merge_tests {
             warmup_microsecs: 75,
             cpu_thread_pool_wait_microsecs: 100,
             cpu_microsecs: 125,
+            aggregation_cpu_microsecs: 0,
+            wall_microsecs: 0,
         });
 
         let merged_stats = merge_resource_stats_it(vec![&stats1, &stats2, &stats3]);
@@ -464,6 +478,8 @@ mod stats_merge_tests {
                 warmup_microsecs: 525,
                 cpu_thread_pool_wait_microsecs: 700,
                 cpu_microsecs: 875,
+                aggregation_cpu_microsecs: 0,
+                wall_microsecs: 0,
             })
         );
     }

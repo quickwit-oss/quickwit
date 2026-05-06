@@ -2723,6 +2723,7 @@ mod tests {
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
+                    resource_stats: None,
                 })
             });
 

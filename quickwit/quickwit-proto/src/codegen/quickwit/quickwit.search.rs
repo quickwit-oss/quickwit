@@ -240,6 +240,11 @@ pub struct SearchResponse {
     /// Total number of successful splits searched.
     #[prost(uint64, tag = "8")]
     pub num_successful_splits: u64,
+    /// Per-request execution telemetry. See `RootResourceStats` for the
+    /// execution model and a diagnostic playbook. Optional for backwards
+    /// compatibility — older servers / clients may omit this.
+    #[prost(message, optional, tag = "10")]
+    pub resource_stats: ::core::option::Option<RootResourceStats>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -281,19 +286,273 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Per-leaf execution stats for a single leaf search response.
+///
+/// All fields are cheap to compute (counters and `Instant::now()` calls
+/// already on the hot path). Aggregated by the root into `RootResourceStats`
+/// — see that message for the request-scoped view and the diagnostic
+/// playbook.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResourceStats {
+    /// Bytes pulled into the per-request short-lived cache during warmup.
+    /// Proxy for "bytes downloaded from object storage" by this leaf.
     #[prost(uint64, tag = "1")]
     pub short_lived_cache_num_bytes: u64,
+    /// Total number of documents in the splits the leaf actually opened
+    /// (after timestamp/tag pruning).
     #[prost(uint64, tag = "2")]
     pub split_num_docs: u64,
+    /// Wall time spent in the warmup phase (downloading metadata + hot bytes).
     #[prost(uint64, tag = "3")]
     pub warmup_microsecs: u64,
+    /// Time spent queued waiting for a permit on the search CPU thread pool.
+    /// Reflects pool saturation, not the cost of the query itself.
     #[prost(uint64, tag = "4")]
     pub cpu_thread_pool_wait_microsecs: u64,
+    /// CPU time spent on the search CPU thread pool — matching, scoring,
+    /// top-k collection, and aggregation collection combined.
     #[prost(uint64, tag = "5")]
     pub cpu_microsecs: u64,
+    /// CPU time spent specifically inside the aggregation collector,
+    /// measured around `AggregationSegmentCollector::collect_block` calls.
+    /// Zero when the request has no aggregation.
+    #[prost(uint64, tag = "6")]
+    pub aggregation_cpu_microsecs: u64,
+    /// Per-split wall time (entry to exit of `leaf_search_single_split`)
+    /// summed across all splits a single leaf processed for this request.
+    ///
+    /// This is *total work-time* on the leaf, not the leaf's wall clock —
+    /// splits run concurrently so the leaf's actual wall time is typically
+    /// less than the sum. Still a good imbalance signal: a leaf whose
+    /// total work-time dwarfs others is the bottleneck candidate.
+    ///
+    /// The root takes the max and sum of this field across leaves to
+    /// populate `RootResourceStats.max_leaf_wall_microsecs` and
+    /// `sum_leaf_wall_microsecs`.
+    #[prost(uint64, tag = "7")]
+    pub wall_microsecs: u64,
+}
+/// # =============================================================================
+/// RootResourceStats — execution telemetry for a single search request.
+///
+/// Aggregate of cheap-to-compute counters and timers, summed/maxed across all
+/// leaf responses participating in a search, plus a few root-side measurements
+/// (merge time, leaf count). The intent is to give an operator (or an AI agent)
+/// enough signal to attribute slowness to a specific stage of the search
+/// pipeline and to estimate whether the implementation has headroom.
+///
+/// This is the request-scoped sibling of the per-leaf `ResourceStats`. Where
+/// `ResourceStats` describes one leaf's view of one or more splits,
+/// `RootResourceStats` describes the whole request as observed from the root.
+///
+/// ---
+///
+/// ## Quickwit search execution model (one request, end-to-end)
+///
+/// A search request flows through the following stages. Each stage has at
+/// least one field below that exposes its cost.
+///
+/// 1. Root planning. The root server resolves the index metadata, picks the
+///    splits to search (timestamp/tag pruning), groups them by leaf, and
+///    issues a `LeafSearchRequest` to every leaf. The cost of this phase is
+///    *not* covered by RootResourceStats today (typically negligible).
+///
+/// 1. Leaf-side, per-split execution. Each leaf processes its assigned
+///    splits concurrently. Per split the lifecycle is:
+///    a. Acquire an I/O permit (admission control on concurrent
+///    downloads).
+///    b. WARMUP — download "hot" bytes from object storage (split
+///    metadata, posting list headers, term dictionary blocks needed
+///    by the query, fast-field headers). These bytes land in a
+///    per-request "short-lived cache" so subsequent reads are local.
+///    c. Acquire a CPU permit on the search CPU thread pool. Until a
+///    permit is granted the task is *queued* — this queueing time is
+///    recorded as `cpu_thread_pool_wait_microsecs`.
+///    d. Execute the query on the CPU thread pool: matching/scoring,
+///    top-k collection, and (if requested) aggregation. CPU time
+///    spent here is `cpu_microsecs`. Time spent specifically inside
+///    the aggregation collector is `aggregation_cpu_microsecs`.
+///    e. Return a partial result.
+///
+/// 1. Leaf-side merge. Each leaf merges its per-split partial results
+///    into a single `LeafSearchResponse` (top-k merge, aggregation tree
+///    merge).
+///
+/// 1. Root merge. The root collects every `LeafSearchResponse` and merges
+///    them into the final `SearchResponse`. The wall time of this stage
+///    is `root_merge_microsecs`.
+///
+/// ---
+///
+/// ## Interpreting these fields — diagnostic playbook
+///
+/// Let:
+/// wall          := elapsed_time_micros (top-level field on SearchResponse)
+/// cpu           := total_cpu_microsecs
+/// wait          := total_cpu_thread_pool_wait_microsecs
+/// warmup        := total_warmup_microsecs
+/// agg_cpu       := total_aggregation_cpu_microsecs
+/// max_leaf      := max_leaf_wall_microsecs
+/// avg_leaf      := sum_leaf_wall_microsecs / num_leaf_responses
+/// downloaded    := total_short_lived_cache_num_bytes
+/// docs_in_split := total_split_num_docs
+/// docs_matched  := total_num_docs_matched
+///
+/// Suggested rules of thumb (orient triage, not strict thresholds):
+///
+/// * CPU-bound query:      cpu  >~ 0.5 * (wall * num_search_cpu_threads)
+///   and warmup small relative to wall.
+///   => look at the query plan; check for
+///   unselective predicates, range queries on
+///   tokenized fields, phrase queries with
+///   frequent terms.
+///
+/// * I/O-bound query:      warmup >~ 0.5 * wall, or `downloaded` is large
+///   (hundreds of MB / GBs).
+///   => cold cache, large fast fields, many splits,
+///   or first-time access patterns. Check whether
+///   a different fast-field layout or a smaller
+///   time range would help.
+///
+/// * Cluster overloaded:   wait >~ cpu (waiting longer than computing).
+///   => the search CPU pool is saturated by other
+///   requests; the query itself may be fine.
+///   Re-run in isolation to confirm.
+///
+/// * Aggregation-heavy:    agg_cpu >~ 0.5 * cpu.
+///   => aggregation is the bottleneck, not matching.
+///   Look at bucket cardinality, sub-aggregations,
+///   or unbounded `terms` aggregations.
+///
+/// * Imbalance across leaves:  (max_leaf - avg_leaf) / avg_leaf >~ 1.
+///   => request fan-out is uneven. Common causes:
+///   one leaf has many more splits, one leaf has
+///   a colder cache, or other workload is
+///   starving one leaf's CPU pool.
+///
+/// * Too much work:         docs_matched >~ docs_in_split * 0.5.
+///   => query is barely selective; consider tighter
+///   filters, time pruning, or sample-based
+///   approaches.
+///
+/// * Headroom estimate:     wall * num_search_cpu_threads - cpu - wait
+///   ~ idle CPU capacity unused by this request.
+///   If positive and large, parallelism is the
+///   limiting factor (more splits, more leaves).
+///   If near zero, we are at compute saturation.
+///
+/// ## All values are sums/maxes over leaf responses unless noted. They are
+/// designed to be cheap (counters and `Instant::now()` calls already in the
+/// hot path) so they can be returned with every search response.
+///
+/// ---
+///
+/// ## Sums across leaf responses
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RootResourceStats {
+    /// Sum of `cpu_microsecs` reported by every leaf — total wall time
+    /// spent on the search CPU thread pool, summed across all leaves.
+    ///
+    /// Compare against `wall * num_search_cpu_threads_per_leaf *  num_leaf_responses` to estimate CPU utilization. A value close to
+    /// that upper bound means the request was compute-saturated.
+    ///
+    /// Includes time spent matching, scoring, top-k collection, and
+    /// aggregation collection. Does NOT include warmup or queueing.
+    #[prost(uint64, tag = "1")]
+    pub total_cpu_microsecs: u64,
+    /// Sum of `warmup_microsecs` across leaves.
+    ///
+    /// Warmup is the phase where the leaf downloads, from object storage,
+    /// the bytes it needs to evaluate the query (split metadata, posting
+    /// list / dictionary blocks, fast-field headers). It runs before the
+    /// query is dispatched to the search CPU pool.
+    ///
+    /// High values relative to `total_cpu_microsecs` signal an I/O-bound
+    /// request — cold short-lived cache, large fast fields, high split
+    /// count, or cross-region object storage latency.
+    #[prost(uint64, tag = "2")]
+    pub total_warmup_microsecs: u64,
+    /// Sum of `cpu_thread_pool_wait_microsecs` across leaves.
+    ///
+    /// Time leaves spent *queued*, waiting for a permit on the search CPU
+    /// thread pool after warmup completed. This is admission-control
+    /// queueing, not work.
+    ///
+    /// If this is comparable to or larger than `total_cpu_microsecs`, the
+    /// cluster is CPU-saturated by other workloads — the query itself may
+    /// be fine. Re-run in isolation to confirm.
+    #[prost(uint64, tag = "3")]
+    pub total_cpu_thread_pool_wait_microsecs: u64,
+    /// CPU time spent specifically inside the aggregation collector,
+    /// summed across leaves. Zero when the request has no aggregation.
+    ///
+    /// Measured by sampling `Instant::now()` around each call to
+    /// `AggregationSegmentCollector::collect_block` (block size \<= 2048
+    /// docs). Overhead is well below noise (~0.15 ns per matched doc).
+    ///
+    /// Compare to `total_cpu_microsecs` to get the fraction of CPU spent
+    /// in aggregation. A high fraction (>~ 50%) points at heavy
+    /// bucketization (terms with high cardinality, deep sub-aggregations)
+    /// rather than at predicate matching.
+    #[prost(uint64, tag = "4")]
+    pub total_aggregation_cpu_microsecs: u64,
+    /// Sum of `short_lived_cache_num_bytes` across leaves — the size of
+    /// the per-request hot-byte cache populated during warmup. A reasonable
+    /// proxy for "GB downloaded from object storage for this query".
+    ///
+    /// Useful to flag I/O-heavy queries even when `total_warmup_microsecs`
+    /// is hidden by parallelism (many splits, each downloading concurrently).
+    #[prost(uint64, tag = "5")]
+    pub total_short_lived_cache_num_bytes: u64,
+    /// Sum of `split_num_docs` across leaves — the total number of
+    /// documents in all splits searched, after timestamp/tag pruning at
+    /// the root and any further pruning at the leaf.
+    ///
+    /// This is the size of the haystack the query had to traverse. Pair
+    /// with `total_num_docs_matched` to gauge selectivity.
+    #[prost(uint64, tag = "9")]
+    pub total_split_num_docs: u64,
+    /// Sum across leaves of the number of docs that matched the query
+    /// (i.e. were passed to the collector via `collect_block` /
+    /// `collect`). For non-aggregation queries this equals the global
+    /// `num_hits` on `SearchResponse`; for aggregation queries it is the
+    /// raw match count, which `num_hits` may not surface.
+    ///
+    /// Selectivity = `total_num_docs_matched / total_split_num_docs`.
+    /// A value near 1 means the query is barely filtering and the cost
+    /// is dominated by traversal of essentially every doc.
+    #[prost(uint64, tag = "10")]
+    pub total_num_docs_matched: u64,
+    /// Number of leaf responses folded into this stats object. Useful as
+    /// the denominator when computing per-leaf averages from the sums above.
+    #[prost(uint64, tag = "6")]
+    pub num_leaf_responses: u64,
+    /// Wall time of the slowest leaf. This is a tight lower bound on the
+    /// request's wall time (modulo root merge) because the root must wait
+    /// for every leaf.
+    ///
+    /// If `max_leaf_wall_microsecs ~= elapsed_time_micros`, optimization
+    /// effort should focus on the slowest leaf, not on parallelism.
+    #[prost(uint64, tag = "7")]
+    pub max_leaf_wall_microsecs: u64,
+    /// Sum of leaf wall times across all responding leaves. Combined with
+    /// `num_leaf_responses` and `max_leaf_wall_microsecs`, lets the caller
+    /// derive the imbalance ratio:
+    /// avg = sum_leaf_wall_microsecs / num_leaf_responses
+    /// imbalance = (max_leaf_wall_microsecs - avg) / avg
+    /// A high imbalance indicates skew — uneven split assignment, cold
+    /// cache on one leaf, or competing workload pinning a single leaf's
+    /// CPU pool.
+    #[prost(uint64, tag = "8")]
+    pub sum_leaf_wall_microsecs: u64,
+    /// Wall time spent in the root's merge step — combining leaf top-k
+    /// results and intermediate aggregation results into the final
+    /// `SearchResponse`. Typically small for plain searches; non-trivial
+    /// for heavy aggregations (large bucket trees, deep sub-aggregations).
+    #[prost(uint64, tag = "11")]
+    pub root_merge_microsecs: u64,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

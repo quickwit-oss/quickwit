@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
-use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, RootResourceStats, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -39,6 +39,7 @@ use crate::{BodyFormat, with_arg};
     ),
     components(schemas(
         BodyFormat,
+        RootResourceStats,
         SearchRequestQueryString,
         SearchResponseRest,
         SearchPlanResponseRest,
@@ -502,6 +503,7 @@ mod tests {
             elapsed_time_micros: 0u64,
             errors: Vec::new(),
             aggregations: None,
+            resource_stats: None,
         };
         let search_response_json: JsonValue = serde_json::to_value(search_response)?;
         let expected_search_response_json: JsonValue = json!({
