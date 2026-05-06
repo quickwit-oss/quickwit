@@ -61,7 +61,7 @@ use crate::search_api::{
 };
 use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
-use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
+use crate::{BodyFormat, BuildInfo, EnvInfo, QuickwitServices, RuntimeInfo};
 
 #[derive(Debug)]
 pub(crate) struct InvalidJsonRequest(pub serde_json::Error);
@@ -343,6 +343,7 @@ fn api_v1_routes(
         .boxed()
         .or(node_info_handler(
             BuildInfo::get(),
+            EnvInfo::get(),
             RuntimeInfo::get(),
             quickwit_services.node_config.clone(),
         ))

@@ -19,7 +19,7 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use crate::rest::recover_fn;
-use crate::{BuildInfo, RuntimeInfo, with_arg};
+use crate::{BuildInfo, EnvInfo, RuntimeInfo, with_arg};
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(node_version_handler, node_config_handler,))]
@@ -27,10 +27,11 @@ pub struct NodeInfoApi;
 
 pub fn node_info_handler(
     build_info: &'static BuildInfo,
+    env_info: &'static EnvInfo,
     runtime_info: &'static RuntimeInfo,
     config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    node_version_handler(build_info, runtime_info)
+    node_version_handler(build_info, runtime_info, env_info)
         .or(node_config_handler(config))
         .recover(recover_fn)
         .boxed()
@@ -40,20 +41,24 @@ pub fn node_info_handler(
 fn node_version_handler(
     build_info: &'static BuildInfo,
     runtime_info: &'static RuntimeInfo,
+    env_info: &'static EnvInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("version")
         .and(warp::path::end())
         .and(with_arg(build_info))
         .and(with_arg(runtime_info))
+        .and(with_arg(env_info))
         .then(get_version)
 }
 
 async fn get_version(
     build_info: &'static BuildInfo,
     runtime_info: &'static RuntimeInfo,
+    env_info: &'static EnvInfo,
 ) -> impl warp::Reply {
     warp::reply::json(&json!({
         "build": build_info,
+        "env": env_info,
         "runtime": runtime_info,
     }))
 }
@@ -88,10 +93,12 @@ mod tests {
     async fn test_rest_node_info() {
         let build_info = BuildInfo::get();
         let runtime_info = RuntimeInfo::get();
+        let env_info = EnvInfo::get();
         let mut config = NodeConfig::for_test();
         config.metastore_uri = Uri::for_test("postgresql://username:password@db");
-        let handler = node_info_handler(build_info, runtime_info, Arc::new(config.clone()))
-            .recover(recover_fn);
+        let handler =
+            node_info_handler(build_info, env_info, runtime_info, Arc::new(config.clone()))
+                .recover(recover_fn);
         let resp = warp::test::request().path("/version").reply(&handler).await;
         assert_eq!(resp.status(), 200);
         let info_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();

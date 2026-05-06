@@ -34,7 +34,7 @@ use quickwit_proto::developer::{
 };
 use serde_json::json;
 
-use crate::{BuildInfo, QuickwitServices, RuntimeInfo};
+use crate::{BuildInfo, EnvInfo, QuickwitServices, RuntimeInfo};
 
 #[derive(Clone)]
 pub(crate) struct DeveloperApiServer {
@@ -86,6 +86,7 @@ impl DeveloperService for DeveloperApiServer {
 
         let mut debug_info = json!({
             "build_info": BuildInfo::get(),
+            "env_info": EnvInfo::get(),
             "runtime_info": RuntimeInfo::get(),
             "node_config": node_config,
             "cluster_membership_info": json!({
@@ -287,6 +288,7 @@ mod tests {
         let debug_info: JsonValue = serde_json::from_slice(&response.debug_info_json).unwrap();
 
         assert!(debug_info["build_info"].is_object());
+        assert!(debug_info["env_info"].is_object());
         assert!(debug_info["runtime_info"].is_object());
         assert!(debug_info["node_config"].is_object());
         assert!(debug_info["cluster_membership_info"].is_object());

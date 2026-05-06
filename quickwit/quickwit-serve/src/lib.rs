@@ -30,6 +30,7 @@ mod decompression;
 mod delete_task_api;
 mod developer_api;
 mod elasticsearch_api;
+mod env_info;
 mod format;
 pub(crate) mod grpc;
 mod health_check_api;
@@ -133,6 +134,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
+pub use crate::env_info::EnvInfo;
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
 pub use crate::metrics::SERVE_METRICS;
