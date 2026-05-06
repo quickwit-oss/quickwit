@@ -28,7 +28,7 @@ use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePay
 use quickwit_metrics::{counter, histogram, labels};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 
 use crate::metrics::{
     LEAF_SEARCH_DURATION_SECONDS, LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES,
@@ -202,7 +202,8 @@ impl AwsLambdaInvoker {
                 LambdaInvokeError::Permanent(_) => return Err(error.into_search_error()),
             };
 
-            warn!(
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 10,
                 num_attempts = num_attempts,
                 delay_ms = delay.as_millis(),
                 "lambda invocation failed, retrying"

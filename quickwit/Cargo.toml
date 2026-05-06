@@ -228,6 +228,7 @@ rdkafka = { version = "0.39", default-features = false, features = [
   "zstd",
 ] }
 regex = "1.12"
+regex-automata = "0.4"
 regex-syntax = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
@@ -403,7 +404,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4480cf0", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

@@ -64,7 +64,7 @@ impl BroadcastIngesterCapacityScoreTask {
         }
 
         let mut guard = state
-            .lock_fully()
+            .lock_fully("broadcast_capacity_score")
             .await
             .context("failed to acquire ingester state lock")?;
 
@@ -222,7 +222,7 @@ mod tests {
         let (_temp_dir, state) =
             IngesterState::for_test_with_disk_capacity(cluster.clone(), ByteSize::b(1000)).await;
         let index_uid = IndexUid::for_test("test-index", 0);
-        let mut state_guard = state.lock_partially().await.unwrap();
+        let mut state_guard = state.lock_partially("test").await.unwrap();
         let shard = IngesterShard::new_solo(
             index_uid.clone(),
             SourceId::from("test-source"),

@@ -141,6 +141,15 @@ pub(super) static WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS: LazyLock<Histogram> =
         )
     });
 
+pub(super) static WAL_LOCK_HOLD_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "wal_lock_hold_duration_secs",
+        description: "Duration for which the WAL lock was held in seconds.",
+        subsystem: "ingest",
+        buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+    )
+});
+
 pub(super) static WAL_DISK_USED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "wal_disk_used_bytes",
