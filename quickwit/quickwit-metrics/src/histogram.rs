@@ -58,19 +58,17 @@ pub fn __histogram_get_or_register(
         metrics::Metadata<'static>,
     ),
 ) -> Histogram {
-    let inner = HISTOGRAMS
+    let histogram_arc = HISTOGRAMS
         .entry(hash)
         .or_insert_with(|| {
             let (config, key, metadata) = build();
-            // Register with the installed recorder (e.g. Prometheus).
-            let inner =
+            let recorder_histogram =
                 metrics::with_recorder(|recorder| recorder.register_histogram(&key, &metadata));
-            let histogram_inner = HistogramInner::new(hash, config, key, inner);
-            Arc::new(histogram_inner)
+            Arc::new(HistogramInner::new(hash, config, key, recorder_histogram))
         })
         .value()
         .clone(); // Arc::clone — cheap reference count bump.
-    Histogram(inner)
+    Histogram(histogram_arc)
 }
 
 /// Internal storage for a single histogram metric.

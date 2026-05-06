@@ -44,18 +44,17 @@ pub fn __gauge_get_or_register(
         metrics::Metadata<'static>,
     ),
 ) -> Gauge {
-    let inner = GAUGES
+    let gauge_arc = GAUGES
         .entry(hash)
         .or_insert_with(|| {
             let (info, key, metadata) = build();
-            // Register with the installed recorder (e.g. Prometheus).
-            let inner = metrics::with_recorder(|recorder| recorder.register_gauge(&key, &metadata));
-            let gauge_inner = GaugeInner::new(hash, info, key, inner);
-            Arc::new(gauge_inner)
+            let recorder_gauge =
+                metrics::with_recorder(|recorder| recorder.register_gauge(&key, &metadata));
+            Arc::new(GaugeInner::new(hash, info, key, recorder_gauge))
         })
         .value()
         .clone(); // Arc::clone — cheap reference count bump.
-    Gauge(inner)
+    Gauge(gauge_arc)
 }
 
 /// Internal storage for a single gauge metric.
@@ -250,12 +249,20 @@ impl GaugeGuard {
     }
 
     /// Adds `delta` to the gauge and to the value this guard tracks.
+    ///
+    /// NOTE: if the cumulative effect of `increment` and `decrement` calls makes the
+    /// tracked delta negative, the guard's drop will effectively *increment*
+    /// the gauge (subtracting a negative value).
     pub fn increment(&self, delta: f64) {
         self.delta.fetch_add(delta, Ordering::Relaxed);
         self.gauge.increment(delta);
     }
 
     /// Subtracts `delta` from the gauge and from the value this guard tracks.
+    ///
+    /// NOTE: if the cumulative effect of `increment` and `decrement` calls makes the
+    /// tracked delta negative, the guard's drop will effectively *increment*
+    /// the gauge (subtracting a negative value).
     pub fn decrement(&self, delta: f64) {
         self.delta.fetch_sub(delta, Ordering::Relaxed);
         self.gauge.decrement(delta);

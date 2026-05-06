@@ -240,10 +240,10 @@ macro_rules! __metric_extension {
                 all_labels.extend(parent_key.labels().cloned());
                 all_labels.extend($labels_iter);
 
-                let mi = $metric_info;
-                let key = $crate::__metrics::Key::from_parts(mi.key_name, all_labels);
+                let metric_info = $metric_info;
+                let key = $crate::__metrics::Key::from_parts(metric_info.key_name, all_labels);
 
-                ($parent.__info(), key, mi.metadata.clone())
+                ($parent.__info(), key, metric_info.metadata.clone())
             });
             *slot = Some((hash, metric.clone()));
             metric

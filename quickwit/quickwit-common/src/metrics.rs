@@ -108,7 +108,7 @@ pub static IN_FLIGHT_PULSAR_SOURCE: LazyLock<Gauge> =
     LazyLock::new(|| in_flight_data_gauge("pulsar_source"));
 
 pub static IN_FLIGHT_OTHER_SOURCE: LazyLock<Gauge> =
-    LazyLock::new(|| in_flight_data_gauge("pulsar_source"));
+    LazyLock::new(|| in_flight_data_gauge("other_source"));
 
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
     gauge!(parent: IN_FLIGHT_DATA_BYTES, "component" => component)

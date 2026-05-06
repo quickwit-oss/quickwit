@@ -43,19 +43,17 @@ pub fn __counter_get_or_register(
         metrics::Metadata<'static>,
     ),
 ) -> Counter {
-    let inner = COUNTERS
+    let counter_arc = COUNTERS
         .entry(hash)
         .or_insert_with(|| {
             let (info, key, metadata) = build();
-            // Register with the installed recorder (e.g. Prometheus).
-            let inner =
+            let recorder_counter =
                 metrics::with_recorder(|recorder| recorder.register_counter(&key, &metadata));
-            let counter_inner = CounterInner::new(hash, info, key, inner);
-            Arc::new(counter_inner)
+            Arc::new(CounterInner::new(hash, info, key, recorder_counter))
         })
         .value()
         .clone(); // Arc::clone — cheap reference count bump.
-    Counter(inner)
+    Counter(counter_arc)
 }
 
 /// Internal storage for a single counter metric.

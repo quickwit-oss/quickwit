@@ -381,7 +381,13 @@ pub fn metrics_info() -> impl Iterator<Item = &'static MetricInfo> {
 /// Use this to configure per-metric bucket boundaries on your exporter
 /// before any histogram is accessed.
 pub fn histogram_buckets() -> impl Iterator<Item = (&'static str, Vec<f64>)> {
-    inventory::iter::<HistogramConfig>
-        .into_iter()
-        .map(|c| (c.info.key_name, (c.buckets_fn)()))
+    inventory::iter::<HistogramConfig>.into_iter().map(|c| {
+        let buckets = (c.buckets_fn)();
+        debug_assert!(
+            buckets.is_sorted(),
+            "histogram buckets for `{}` must be sorted in strictly ascending order",
+            c.info.key_name,
+        );
+        (c.info.key_name, buckets)
+    })
 }
