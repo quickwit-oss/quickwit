@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use quickwit_metrics::{Gauge, GaugeGuard, gauge};
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::metrics::{ONGOING_REQUESTS, PENDING_REQUESTS};
@@ -44,8 +44,9 @@ impl LoadShield {
             quickwit_common::get_from_env_opt(&max_concurrency_env_key, false);
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
-        let pending_gauge = gauge!(parent: PENDING_REQUESTS, "endpoint_group" => endpoint_group);
-        let ongoing_gauge = gauge!(parent: ONGOING_REQUESTS, "endpoint_group" => endpoint_group);
+        let labels = labels!("endpoint_group" => endpoint_group);
+        let pending_gauge = gauge!(parent: PENDING_REQUESTS, labels: [labels]);
+        let ongoing_gauge = gauge!(parent: ONGOING_REQUESTS, labels: [labels]);
         LoadShield {
             in_flight_semaphore_opt,
             concurrency_semaphore_opt,

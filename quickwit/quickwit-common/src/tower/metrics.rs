@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
-use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram, labels};
 use tower::{Layer, Service};
 
 use crate::metrics::exponential_buckets;
@@ -106,14 +106,11 @@ pub struct GrpcMetricsLayer {
 
 impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
+        let labels = labels!("service" => subsystem, "kind" => kind);
         Self {
-            requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, "service" => subsystem, "kind" => kind),
-            requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, "service" => subsystem, "kind" => kind),
-            request_duration_seconds: histogram!(
-                parent: GRPC_REQUEST_DURATION_SECONDS,
-                "service" => subsystem,
-                "kind" => kind,
-            ),
+            requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, labels: [labels]),
+            requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels]),
+            request_duration_seconds: histogram!(parent: GRPC_REQUEST_DURATION_SECONDS, labels: [labels]),
         }
     }
 }
@@ -148,19 +145,12 @@ pub struct ResponseFuture<F> {
 impl<F> PinnedDrop for ResponseFuture<F> {
     fn drop(self: Pin<&mut Self>) {
         let elapsed = self.start.elapsed().as_secs_f64();
-        counter!(parent: self.requests_total, "rpc" => self.rpc_name, "status" => self.status)
-            .increment(1);
-        histogram!(
-            parent: self.request_duration_seconds,
-            "rpc" => self.rpc_name,
-            "status" => self.status,
-        )
-        .record(elapsed);
-        gauge!(
-            parent: self.requests_in_flight,
-            "rpc" => self.rpc_name,
-        )
-        .decrement(1.0);
+        let rpc_label = labels!("rpc" => self.rpc_name);
+        let status_label = labels!("status" => self.status);
+        counter!(parent: self.requests_total, labels: [rpc_label, status_label]).increment(1);
+        histogram!(parent: self.request_duration_seconds, labels: [rpc_label, status_label])
+            .record(elapsed);
+        gauge!(parent: self.requests_in_flight, labels: [rpc_label]).decrement(1.0);
     }
 }
 

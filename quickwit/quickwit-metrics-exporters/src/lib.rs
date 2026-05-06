@@ -33,8 +33,7 @@ pub fn init_metrics_provider(
     let prometheus_recorder = prometheus::build_recorder()?;
 
     let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
-        let (otlp_recorder, meter_provider) =
-            otlp::build_recorder(service_version, otlp_config)?;
+        let (otlp_recorder, meter_provider) = otlp::build_recorder(service_version, otlp_config)?;
         let recorder = FanoutBuilder::default()
             .add_recorder(prometheus_recorder)
             .add_recorder(otlp_recorder)
