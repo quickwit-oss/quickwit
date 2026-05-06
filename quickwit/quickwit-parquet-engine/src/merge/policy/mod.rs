@@ -28,13 +28,12 @@ pub mod scope;
 use std::fmt;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
-use serde_with::{DurationMilliSeconds, serde_as};
-
 pub use const_write_amplification::{
     ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
 };
 pub use scope::{CompactionScope, group_by_compaction_scope};
+use serde::{Deserialize, Serialize};
+use serde_with::{DurationMilliSeconds, serde_as};
 
 use crate::split::{ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata};
 

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::{Duration, SystemTime};
+
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::IndexConfig;
 use quickwit_parquet_engine::merge::policy::ParquetSplitMaturity;
@@ -22,7 +24,6 @@ use quickwit_proto::metastore::{
     StageMetricsSplitsRequest,
 };
 use quickwit_proto::types::IndexUid;
-use std::time::{Duration, SystemTime};
 use time::OffsetDateTime;
 
 use super::DefaultForTest;
