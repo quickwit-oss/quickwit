@@ -29,6 +29,7 @@ google-cloud-googleapis = { workspace = true, optional = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
+metrics = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
 percent-encoding = { workspace = true }

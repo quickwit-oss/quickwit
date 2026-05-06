@@ -18,6 +18,8 @@
 //! `run_cpu_intensive()`, builds output split metadata using
 //! `merge_parquet_split_metadata()`, and sends the result to the uploader.
 
+use std::time::Instant;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -29,6 +31,7 @@ use quickwit_proto::types::IndexUid;
 use tracing::{info, instrument, warn};
 
 use super::ParquetUploader;
+use super::parquet_compaction_metrics::PARQUET_COMPACTION_METRICS;
 use super::parquet_indexer::ParquetSplitBatch;
 use super::parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask};
 use crate::models::PublishLock;
@@ -99,9 +102,14 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
         // Separate output subdirectory so the merge engine's temp files
         // don't collide with the downloaded inputs in scratch_directory.
         let output_dir = scratch.scratch_directory.path().join("merged_output");
-        std::fs::create_dir_all(&output_dir)
-            .context("failed to create merge output directory")
-            .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
+        let merge_started_at = Instant::now();
+        if let Err(error) =
+            std::fs::create_dir_all(&output_dir).context("failed to create merge output directory")
+        {
+            PARQUET_COMPACTION_METRICS
+                .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
+            return Err(error.into());
+        }
 
         // Run the CPU-intensive merge on the dedicated thread pool.
         let input_paths = scratch.downloaded_parquet_files.clone();
@@ -119,6 +127,8 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
         let outputs: Vec<MergeOutputFile> = match merge_result {
             Ok(Ok(outputs)) => outputs,
             Ok(Err(merge_err)) => {
+                PARQUET_COMPACTION_METRICS
+                    .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
                 warn!(
                     error = %merge_err,
                     merge_split_id = %merge_split_id,
@@ -132,6 +142,8 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 return Ok(());
             }
             Err(panicked) => {
+                PARQUET_COMPACTION_METRICS
+                    .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
                 warn!(
                     error = %panicked,
                     merge_split_id = %merge_split_id,
@@ -141,13 +153,19 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 return Ok(());
             }
         };
-
         let input_splits = &scratch.merge_operation.splits;
-        let index_uid: IndexUid = input_splits[0]
+        let index_uid: IndexUid = match input_splits[0]
             .index_uid
             .parse()
             .context("invalid index_uid in merge input")
-            .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
+        {
+            Ok(index_uid) => index_uid,
+            Err(error) => {
+                PARQUET_COMPACTION_METRICS
+                    .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
+                return Err(error.into());
+            }
+        };
 
         let replaced_split_ids: Vec<String> = input_splits
             .iter()
@@ -164,6 +182,10 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 num_replaced = replaced_split_ids.len(),
                 "merge produced no output — publishing replacement to clean up empty inputs"
             );
+            // Hold a refcount on the merge operation so we can record metrics
+            // after the original is moved into the batch. `TrackedObject` is
+            // Arc-backed; cloning is a cheap refcount bump.
+            let merge_op_for_metrics = scratch.merge_operation.clone();
             let batch = ParquetSplitBatch {
                 index_uid,
                 splits: Vec::new(),
@@ -178,15 +200,32 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                     merge_permit: scratch.merge_permit,
                 }),
             };
-            ctx.send_message(&self.uploader_mailbox, batch).await?;
+            if let Err(error) = ctx.send_message(&self.uploader_mailbox, batch).await {
+                PARQUET_COMPACTION_METRICS
+                    .record_merge_failure(&merge_op_for_metrics, merge_started_at.elapsed());
+                return Err(error.into());
+            }
+            PARQUET_COMPACTION_METRICS.record_merge_success(
+                &merge_op_for_metrics,
+                0,
+                0,
+                merge_started_at.elapsed(),
+            );
             return Ok(());
         }
 
         let mut merged_splits = Vec::with_capacity(outputs.len());
         for output in &outputs {
-            let mut metadata = merge_parquet_split_metadata(input_splits, output)
+            let mut metadata = match merge_parquet_split_metadata(input_splits, output)
                 .context("failed to build merge output metadata")
-                .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
+            {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    PARQUET_COMPACTION_METRICS
+                        .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
+                    return Err(error.into());
+                }
+            };
 
             // Use the split ID that was assigned when the merge operation was
             // planned, rather than the one generated inside
@@ -199,15 +238,19 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             // The uploader expects files at `output_dir/{split_id}.parquet`.
             let expected_path = output_dir.join(&metadata.parquet_file);
             if output.path != expected_path {
-                std::fs::rename(&output.path, &expected_path)
-                    .with_context(|| {
+                if let Err(error) =
+                    std::fs::rename(&output.path, &expected_path).with_context(|| {
                         format!(
                             "failed to rename merge output {} to {}",
                             output.path.display(),
                             expected_path.display()
                         )
                     })
-                    .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
+                {
+                    PARQUET_COMPACTION_METRICS
+                        .record_merge_failure(&scratch.merge_operation, merge_started_at.elapsed());
+                    return Err(error.into());
+                }
             }
 
             info!(
@@ -219,11 +262,18 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
 
             merged_splits.push(metadata);
         }
+        let output_splits = merged_splits.len() as u64;
+        let output_bytes: u64 = merged_splits.iter().map(|split| split.size_bytes).sum();
 
         // Send to uploader. Merges have no checkpoint delta, no publish lock,
         // and no publish token — they're just reorganizing existing data.
         // The scratch directory is passed along to keep it alive until the
         // uploader finishes reading the merged files.
+        //
+        // Hold a refcount on the merge operation so we can record metrics
+        // after the original is moved into the batch. `TrackedObject` is
+        // Arc-backed; cloning is a cheap refcount bump.
+        let merge_op_for_metrics = scratch.merge_operation.clone();
         let batch = ParquetSplitBatch {
             index_uid,
             splits: merged_splits,
@@ -239,7 +289,17 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             }),
         };
 
-        ctx.send_message(&self.uploader_mailbox, batch).await?;
+        if let Err(error) = ctx.send_message(&self.uploader_mailbox, batch).await {
+            PARQUET_COMPACTION_METRICS
+                .record_merge_failure(&merge_op_for_metrics, merge_started_at.elapsed());
+            return Err(error.into());
+        }
+        PARQUET_COMPACTION_METRICS.record_merge_success(
+            &merge_op_for_metrics,
+            output_splits,
+            output_bytes,
+            merge_started_at.elapsed(),
+        );
 
         // The merge task is now carried by the batch — it will be held
         // through the uploader and released when the publisher drops the

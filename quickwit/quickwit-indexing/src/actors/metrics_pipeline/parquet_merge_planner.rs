@@ -34,10 +34,11 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_parquet_engine::merge::policy::{
     CompactionScope, ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
 };
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use tantivy::Inventory;
 use tracing::{info, warn};
 
+use super::parquet_compaction_metrics::{PARQUET_COMPACTION_METRICS, index_id_from_uid};
 use super::{ParquetMergeSplitDownloader, ParquetNewSplits};
 use crate::actors::MergeSchedulerService;
 use crate::actors::merge_scheduler_service::schedule_parquet_merge;
@@ -98,6 +99,10 @@ pub struct ParquetMergePlanner {
     /// merge planning before the new planner has a consolidated view of
     /// published splits. See Tantivy MergePlanner #3847.
     incarnation_started_at: Instant,
+
+    /// Label keys whose eligible split gauge has been set before. We keep this
+    /// so keys that become empty are explicitly reset to zero.
+    last_eligible_metric_keys: HashSet<(String, ParquetSplitKind)>,
 }
 
 #[async_trait]
@@ -188,6 +193,7 @@ impl ParquetMergePlanner {
             merge_scheduler_service,
             ongoing_merge_operations_inventory: Inventory::default(),
             incarnation_started_at: Instant::now(),
+            last_eligible_metric_keys: HashSet::new(),
         };
         planner.record_splits_if_necessary(immature_splits);
         planner
@@ -205,7 +211,10 @@ impl ParquetMergePlanner {
                 .merge_policy
                 .split_maturity(split.size_bytes, split.num_merge_ops)
             {
-                ParquetSplitMaturity::Mature => continue,
+                ParquetSplitMaturity::Mature => {
+                    PARQUET_COMPACTION_METRICS.record_mature_split(&split);
+                    continue;
+                }
                 ParquetSplitMaturity::Immature {
                     maturation_period, ..
                 } => {
@@ -213,15 +222,18 @@ impl ParquetMergePlanner {
                     // effectively mature — no further merges needed. This
                     // mirrors the Tantivy merge planner's `is_mature(now)`.
                     if split.created_at + maturation_period <= now {
+                        PARQUET_COMPACTION_METRICS.record_time_matured_split(&split);
                         continue;
                     }
                 }
             }
             if !self.acknowledge_split(split.split_id.as_str()) {
+                PARQUET_COMPACTION_METRICS.record_duplicate_split(&split);
                 continue;
             }
             self.record_split(split);
         }
+        self.record_planner_state();
     }
 
     /// Returns `true` if this split ID was not previously known, and records
@@ -238,12 +250,37 @@ impl ParquetMergePlanner {
     fn record_split(&mut self, split: ParquetSplitMetadata) {
         let Some(scope) = CompactionScope::from_split(&split) else {
             // Pre-Phase-31 splits have no window — can't compact them.
+            PARQUET_COMPACTION_METRICS.record_missing_scope_split(&split);
             return;
         };
         self.scoped_young_splits
             .entry(scope)
             .or_default()
             .push(split);
+    }
+
+    fn record_planner_state(&mut self) {
+        let mut eligible_splits: HashMap<(String, ParquetSplitKind), usize> = HashMap::new();
+        for splits in self.scoped_young_splits.values() {
+            for split in splits {
+                let index_id = index_id_from_uid(&split.index_uid).to_string();
+                *eligible_splits.entry((index_id, split.kind)).or_default() += 1;
+            }
+        }
+
+        let mut current_keys: HashSet<(String, ParquetSplitKind)> =
+            eligible_splits.keys().cloned().collect();
+        for (index_id, kind) in &self.last_eligible_metric_keys {
+            current_keys.insert((index_id.clone(), *kind));
+        }
+        for (index_id, kind) in &current_keys {
+            let count = eligible_splits
+                .get(&(index_id.clone(), *kind))
+                .copied()
+                .unwrap_or_default();
+            PARQUET_COMPACTION_METRICS.set_planner_eligible_splits(index_id, *kind, count);
+        }
+        self.last_eligible_metric_keys = eligible_splits.keys().cloned().collect();
     }
 
     /// Amortized GC for `known_split_ids`.
@@ -328,6 +365,8 @@ impl ParquetMergePlanner {
     ) -> Result<(), ActorExitStatus> {
         let merge_ops = self.compute_merge_ops(is_finalize, ctx).await?;
         for merge_operation in merge_ops {
+            PARQUET_COMPACTION_METRICS.record_planned_operation(&merge_operation);
+            let merge_operation_metrics = merge_operation.clone();
             info!(
                 merge_split_id = %merge_operation.merge_split_id,
                 num_inputs = merge_operation.splits.len(),
@@ -337,13 +376,22 @@ impl ParquetMergePlanner {
             let tracked = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);
-            schedule_parquet_merge(
+            let schedule_started_at = Instant::now();
+            if let Err(error) = schedule_parquet_merge(
                 &self.merge_scheduler_service,
                 tracked,
                 self.merge_split_downloader_mailbox.clone(),
             )
-            .await?;
+            .await
+            {
+                PARQUET_COMPACTION_METRICS.record_schedule_failure(
+                    &merge_operation_metrics,
+                    schedule_started_at.elapsed(),
+                );
+                return Err(error.into());
+            }
         }
+        self.record_planner_state();
         Ok(())
     }
 }

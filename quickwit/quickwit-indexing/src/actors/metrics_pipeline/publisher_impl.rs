@@ -15,6 +15,8 @@
 //! `Handler<ParquetSplitsUpdate>` implementation for `Publisher`,
 //! specific to the metrics pipeline.
 
+use std::time::Instant;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
@@ -24,6 +26,7 @@ use quickwit_proto::metastore::{
 use tracing::{info, instrument};
 
 use super::ParquetSplitsUpdate;
+use super::parquet_compaction_metrics::{PARQUET_COMPACTION_METRICS, kind_from_index_id};
 use crate::actors::publisher::{Publisher, serialize_checkpoint_delta, suggest_truncate};
 
 pub(crate) const METRICS_PUBLISHER_NAME: &str = "ParquetPublisher";
@@ -54,31 +57,66 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             .iter()
             .map(|split| split.split_id.as_str().to_string())
             .collect();
+        let is_compaction_publish = !replaced_split_ids.is_empty();
+        let compaction_kind = new_splits
+            .first()
+            .map(|split| split.kind)
+            .unwrap_or_else(|| kind_from_index_id(&index_uid.index_id));
+        let publish_started_at = Instant::now();
         if let Some(_guard) = publish_lock.acquire().await {
-            if quickwit_common::is_sketches_index(&index_uid.index_id) {
-                let publish_request = PublishSketchSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
+            let publish_result: anyhow::Result<()> =
+                if quickwit_common::is_sketches_index(&index_uid.index_id) {
+                    let publish_request = PublishSketchSplitsRequest {
+                        index_uid: Some(index_uid.clone()),
+                        staged_split_ids: split_ids.clone(),
+                        replaced_split_ids: replaced_split_ids.clone(),
+                        index_checkpoint_delta_json_opt,
+                        publish_token_opt: publish_token_opt.clone(),
+                    };
+                    ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
+                        .await
+                        .context("failed to publish sketch splits")
+                        .map(|_| ())
+                } else {
+                    let publish_request = PublishMetricsSplitsRequest {
+                        index_uid: Some(index_uid.clone()),
+                        staged_split_ids: split_ids.clone(),
+                        replaced_split_ids: replaced_split_ids.clone(),
+                        index_checkpoint_delta_json_opt,
+                        publish_token_opt: publish_token_opt.clone(),
+                    };
+                    ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
+                        .await
+                        .context("failed to publish metrics splits")
+                        .map(|_| ())
                 };
-                ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
-                    .await
-                    .context("failed to publish sketch splits")?;
-            } else {
-                let publish_request = PublishMetricsSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
-                };
-                ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
-                    .await
-                    .context("failed to publish metrics splits")?;
+            if let Err(error) = publish_result {
+                if is_compaction_publish {
+                    PARQUET_COMPACTION_METRICS.record_publish_failure(
+                        &index_uid.index_id,
+                        compaction_kind,
+                        publish_started_at.elapsed(),
+                    );
+                }
+                return Err(error.into());
+            }
+            if is_compaction_publish {
+                PARQUET_COMPACTION_METRICS.record_publish_success(
+                    &index_uid.index_id,
+                    compaction_kind,
+                    split_ids.len(),
+                    replaced_split_ids.len(),
+                    publish_started_at.elapsed(),
+                );
             }
         } else {
+            if is_compaction_publish {
+                PARQUET_COMPACTION_METRICS.record_publish_failure(
+                    &index_uid.index_id,
+                    compaction_kind,
+                    publish_started_at.elapsed(),
+                );
+            }
             info!(
                 split_ids=?split_ids,
                 "Splits' publish lock is dead."
