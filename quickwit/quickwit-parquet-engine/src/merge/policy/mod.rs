@@ -28,6 +28,9 @@ pub mod scope;
 use std::fmt;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+use serde_with::{DurationMilliSeconds, serde_as};
+
 pub use const_write_amplification::{
     ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
 };
@@ -118,13 +121,21 @@ impl ParquetMergeOperation {
 }
 
 /// Whether a split is eligible for further merging.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_as]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum ParquetSplitMaturity {
     /// Split will not undergo further merges.
+    #[default]
     Mature,
     /// Split can still be merged. After `maturation_period` elapses from
     /// creation, the split becomes mature regardless of size.
-    Immature { maturation_period: Duration },
+    Immature {
+        #[serde_as(as = "DurationMilliSeconds<u64>")]
+        #[serde(rename = "maturation_period_millis")]
+        maturation_period: Duration,
+    },
 }
 
 /// Decides which Parquet splits to merge within a single compaction scope.
@@ -190,6 +201,7 @@ mod tests {
             low_cardinality_tags: Default::default(),
             high_cardinality_tag_keys: Default::default(),
             created_at: SystemTime::now(),
+            maturity: ParquetSplitMaturity::Mature,
             parquet_file: format!("{split_id}.parquet"),
             window: window.map(|(start, dur)| start..start + dur),
             sort_fields: sort_fields.to_string(),

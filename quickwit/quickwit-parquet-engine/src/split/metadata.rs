@@ -20,6 +20,8 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+use crate::merge::policy::ParquetSplitMaturity;
+
 // Well-known tag key constants
 pub const TAG_SERVICE: &str = "service";
 pub const TAG_ENV: &str = "env";
@@ -184,6 +186,9 @@ pub struct ParquetSplitMetadata {
     /// When this split was created.
     pub created_at: SystemTime,
 
+    /// Maturity assigned by the Parquet merge policy when the split is created.
+    pub maturity: ParquetSplitMaturity,
+
     /// Parquet file path relative to storage root.
     pub parquet_file: String,
 
@@ -227,6 +232,8 @@ struct ParquetSplitMetadataSerde {
     low_cardinality_tags: HashMap<String, HashSet<String>>,
     high_cardinality_tag_keys: HashSet<String>,
     created_at: SystemTime,
+    #[serde(default)]
+    maturity: ParquetSplitMaturity,
 
     #[serde(default)]
     parquet_file: String,
@@ -268,6 +275,7 @@ impl From<ParquetSplitMetadataSerde> for ParquetSplitMetadata {
             low_cardinality_tags: s.low_cardinality_tags,
             high_cardinality_tag_keys: s.high_cardinality_tag_keys,
             created_at: s.created_at,
+            maturity: s.maturity,
             parquet_file: s.parquet_file,
             window,
             sort_fields: s.sort_fields,
@@ -296,6 +304,7 @@ impl From<ParquetSplitMetadata> for ParquetSplitMetadataSerde {
             low_cardinality_tags: m.low_cardinality_tags,
             high_cardinality_tag_keys: m.high_cardinality_tag_keys,
             created_at: m.created_at,
+            maturity: m.maturity,
             parquet_file: m.parquet_file,
             window_start,
             window_duration_secs,
@@ -339,6 +348,34 @@ impl ParquetSplitMetadata {
         match &self.window {
             Some(w) => (w.end - w.start) as u32,
             None => 0,
+        }
+    }
+
+    /// Returns true if the split is mature at the given time.
+    pub fn is_mature(&self, datetime: SystemTime) -> bool {
+        match self.maturity {
+            ParquetSplitMaturity::Mature => true,
+            ParquetSplitMaturity::Immature { maturation_period } => datetime
+                .duration_since(self.created_at)
+                .is_ok_and(|elapsed| elapsed >= maturation_period),
+        }
+    }
+
+    /// Returns the unix timestamp at which this split becomes mature.
+    ///
+    /// Mature splits use `0`, matching the log split metastore convention.
+    pub fn maturity_timestamp_secs(&self) -> i64 {
+        match self.maturity {
+            ParquetSplitMaturity::Mature => 0,
+            ParquetSplitMaturity::Immature { maturation_period } => {
+                let created_at_secs = self
+                    .created_at
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let maturity_secs = created_at_secs.saturating_add(maturation_period.as_secs());
+                maturity_secs.min(i64::MAX as u64) as i64
+            }
         }
     }
 
@@ -405,6 +442,7 @@ pub struct ParquetSplitMetadataBuilder {
     metric_names: HashSet<String>,
     low_cardinality_tags: HashMap<String, HashSet<String>>,
     high_cardinality_tag_keys: HashSet<String>,
+    maturity: ParquetSplitMaturity,
     parquet_file: String,
     window_start: Option<i64>,
     window_duration_secs: u32,
@@ -431,6 +469,7 @@ impl ParquetSplitMetadataBuilder {
             metric_names: HashSet::new(),
             low_cardinality_tags: HashMap::new(),
             high_cardinality_tag_keys: HashSet::new(),
+            maturity: ParquetSplitMaturity::Mature,
             parquet_file: String::new(),
             window_start: None,
             window_duration_secs: 0,
@@ -508,6 +547,11 @@ impl ParquetSplitMetadataBuilder {
 
     pub fn parquet_file(mut self, path: impl Into<String>) -> Self {
         self.parquet_file = path.into();
+        self
+    }
+
+    pub fn maturity(mut self, maturity: ParquetSplitMaturity) -> Self {
+        self.maturity = maturity;
         self
     }
 
@@ -590,6 +634,7 @@ impl ParquetSplitMetadataBuilder {
             low_cardinality_tags: self.low_cardinality_tags,
             high_cardinality_tag_keys: self.high_cardinality_tag_keys,
             created_at: SystemTime::now(),
+            maturity: self.maturity,
             parquet_file: self.parquet_file,
             window,
             sort_fields: self.sort_fields,
@@ -602,6 +647,8 @@ impl ParquetSplitMetadataBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     #[test]
@@ -697,6 +744,26 @@ mod tests {
         assert_eq!(recovered.split_id.as_str(), metadata.split_id.as_str());
         assert_eq!(recovered.num_rows, 500);
         assert_eq!(recovered.kind, ParquetSplitKind::Sketches);
+    }
+
+    #[test]
+    fn test_maturity_timestamp_secs() {
+        let mut metadata = ParquetSplitMetadata::metrics_builder()
+            .index_uid("test:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(10),
+            })
+            .build();
+        metadata.created_at = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+
+        assert_eq!(metadata.maturity_timestamp_secs(), 110);
+        assert!(!metadata.is_mature(SystemTime::UNIX_EPOCH + Duration::from_secs(109)));
+        assert!(metadata.is_mature(SystemTime::UNIX_EPOCH + Duration::from_secs(110)));
+
+        metadata.maturity = ParquetSplitMaturity::Mature;
+        assert_eq!(metadata.maturity_timestamp_secs(), 0);
+        assert!(metadata.is_mature(SystemTime::UNIX_EPOCH));
     }
 
     #[test]
