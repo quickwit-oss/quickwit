@@ -18,6 +18,9 @@
 mod compaction_pipeline;
 #[allow(dead_code)]
 mod compactor_supervisor;
+#[cfg(feature = "metrics")]
+#[allow(dead_code)]
+mod parquet;
 pub mod planner;
 
 use std::sync::Arc;

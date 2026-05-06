@@ -8371,6 +8371,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "quickwit-storage",
  "serde_json",

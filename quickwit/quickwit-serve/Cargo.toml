@@ -113,6 +113,10 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 datafusion = ["dep:quickwit-datafusion"]
+metrics = [
+  "quickwit-compaction/metrics",
+  "quickwit-indexing/metrics",
+]
 pprof = [
   "dep:pprof"
 ]

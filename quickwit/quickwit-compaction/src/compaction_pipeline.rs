@@ -26,6 +26,7 @@ use quickwit_indexing::actors::{
 };
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
+use quickwit_proto::compaction::CompactionTaskKind;
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
@@ -40,6 +41,7 @@ pub enum PipelineStatus {
 
 pub struct PipelineStatusUpdate {
     pub task_id: String,
+    pub task_kind: CompactionTaskKind,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub split_ids: Vec<SplitId>,
@@ -184,6 +186,7 @@ impl CompactionPipeline {
     fn build_status_update(&self) -> PipelineStatusUpdate {
         PipelineStatusUpdate {
             task_id: self.task_id.clone(),
+            task_kind: CompactionTaskKind::Tantivy,
             index_uid: self.pipeline_id.index_uid.clone(),
             source_id: self.pipeline_id.source_id.clone(),
             split_ids: self

@@ -29,7 +29,8 @@ use quickwit_indexing::{IndexingSplitCache, IndexingSplitStore};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::compaction::{
     CompactionFailure, CompactionInProgress, CompactionPlannerService,
-    CompactionPlannerServiceClient, CompactionSuccess, MergeTaskAssignment, ReportStatusRequest,
+    CompactionPlannerServiceClient, CompactionSuccess, CompactionTaskKind, MergeTaskAssignment,
+    ReportStatusRequest,
 };
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -44,6 +45,38 @@ const CHECK_PIPELINE_STATUSES_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug)]
 struct CheckPipelineStatuses;
 
+enum RunningCompactionPipeline {
+    Tantivy(CompactionPipeline),
+    #[cfg(feature = "metrics")]
+    Parquet(crate::parquet::ParquetCompactionPipeline),
+}
+
+impl RunningCompactionPipeline {
+    fn status(&self) -> &PipelineStatus {
+        match self {
+            RunningCompactionPipeline::Tantivy(pipeline) => pipeline.status(),
+            #[cfg(feature = "metrics")]
+            RunningCompactionPipeline::Parquet(pipeline) => pipeline.status(),
+        }
+    }
+
+    fn pipeline_status_update(&mut self) -> PipelineStatusUpdate {
+        match self {
+            RunningCompactionPipeline::Tantivy(pipeline) => pipeline.pipeline_status_update(),
+            #[cfg(feature = "metrics")]
+            RunningCompactionPipeline::Parquet(pipeline) => pipeline.pipeline_status_update(),
+        }
+    }
+
+    fn spawn_pipeline(&mut self, spawn_ctx: &SpawnContext) -> anyhow::Result<()> {
+        match self {
+            RunningCompactionPipeline::Tantivy(pipeline) => pipeline.spawn_pipeline(spawn_ctx),
+            #[cfg(feature = "metrics")]
+            RunningCompactionPipeline::Parquet(pipeline) => pipeline.spawn_pipeline(spawn_ctx),
+        }
+    }
+}
+
 /// Manages a pool of `CompactionPipeline`s, each executing a single merge task.
 ///
 /// Periodically collects pipeline status updates and forwards them to the
@@ -51,7 +84,7 @@ struct CheckPipelineStatuses;
 pub struct CompactorSupervisor {
     node_id: NodeId,
     planner_client: CompactionPlannerServiceClient,
-    pipelines: Vec<Option<CompactionPipeline>>,
+    pipelines: Vec<Option<RunningCompactionPipeline>>,
 
     // Shared resources distributed to pipelines when spawning actor chains.
     io_throughput_limiter: Option<Limiter>,
@@ -149,7 +182,19 @@ impl CompactorSupervisor {
         &self,
         assignment: MergeTaskAssignment,
         scratch_directory: TempDirectory,
-    ) -> anyhow::Result<CompactionPipeline> {
+    ) -> anyhow::Result<RunningCompactionPipeline> {
+        #[cfg(feature = "metrics")]
+        if is_parquet_task_kind(assignment.task_kind) {
+            return self
+                .build_parquet_compaction_pipeline(assignment, scratch_directory)
+                .await
+                .map(RunningCompactionPipeline::Parquet);
+        }
+        #[cfg(not(feature = "metrics"))]
+        if is_parquet_task_kind(assignment.task_kind) {
+            anyhow::bail!("received parquet compaction task but metrics feature is disabled");
+        }
+
         let splits: Vec<SplitMetadata> = assignment
             .splits_metadata_json
             .iter()
@@ -183,7 +228,7 @@ impl CompactorSupervisor {
             source_id: assignment.source_id,
         };
 
-        Ok(CompactionPipeline::new(
+        Ok(RunningCompactionPipeline::Tantivy(CompactionPipeline::new(
             assignment.task_id,
             scratch_directory,
             merge_operation,
@@ -196,6 +241,42 @@ impl CompactorSupervisor {
             self.io_throughput_limiter.clone(),
             self.max_concurrent_split_uploads,
             self.event_broker.clone(),
+        )))
+    }
+
+    #[cfg(feature = "metrics")]
+    async fn build_parquet_compaction_pipeline(
+        &self,
+        assignment: MergeTaskAssignment,
+        scratch_directory: TempDirectory,
+    ) -> anyhow::Result<crate::parquet::ParquetCompactionPipeline> {
+        let splits: Vec<quickwit_parquet_engine::split::ParquetSplitMetadata> = assignment
+            .splits_metadata_json
+            .iter()
+            .map(|json| serde_json::from_str(json))
+            .collect::<Result<Vec<_>, serde_json::Error>>()?;
+        anyhow::ensure!(
+            splits.len() >= 2,
+            "parquet compaction task requires at least two input splits"
+        );
+        let index_uid = assignment
+            .index_uid
+            .ok_or_else(|| anyhow::anyhow!("missing index_uid in MergeTaskAssignment"))?;
+
+        let index_storage_uri = Uri::from_str(&assignment.index_storage_uri)?;
+        let index_storage = self.storage_resolver.resolve(&index_storage_uri).await?;
+        let merge_operation =
+            quickwit_parquet_engine::merge::policy::ParquetMergeOperation::new(splits);
+
+        Ok(crate::parquet::ParquetCompactionPipeline::new(
+            assignment.task_id,
+            scratch_directory,
+            merge_operation,
+            index_uid,
+            index_storage,
+            self.metastore.clone(),
+            self.max_concurrent_split_uploads,
+            quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
         ))
     }
 
@@ -221,18 +302,21 @@ impl CompactorSupervisor {
                         index_uid: Some(update.index_uid.clone()),
                         source_id: update.source_id.clone(),
                         split_ids: update.split_ids.clone(),
+                        task_kind: update.task_kind as i32,
                     });
                 }
                 PipelineStatus::Completed => {
                     successes.push(CompactionSuccess {
                         task_id: update.task_id.clone(),
                         merged_split_id: update.merged_split_id.clone(),
+                        task_kind: update.task_kind as i32,
                     });
                 }
                 PipelineStatus::Failed { error } => {
                     failures.push(CompactionFailure {
                         task_id: update.task_id.clone(),
                         error_message: error.clone(),
+                        task_kind: update.task_kind as i32,
                     });
                 }
             }
@@ -246,6 +330,13 @@ impl CompactorSupervisor {
             failures,
         }
     }
+}
+
+fn is_parquet_task_kind(task_kind: i32) -> bool {
+    matches!(
+        CompactionTaskKind::try_from(task_kind),
+        Ok(CompactionTaskKind::Parquet)
+    )
 }
 
 #[async_trait]
@@ -300,7 +391,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_proto::compaction::{
-        CompactionPlannerServiceClient, MockCompactionPlannerService,
+        CompactionPlannerServiceClient, CompactionTaskKind, MockCompactionPlannerService,
     };
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::NodeId;
@@ -341,11 +432,11 @@ mod tests {
 
         let mut pipeline = test_pipeline("task-1", &["split-a", "split-b"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[0] = Some(pipeline);
+        supervisor.pipelines[0] = Some(RunningCompactionPipeline::Tantivy(pipeline));
 
         let mut pipeline = test_pipeline("task-2", &["split-c"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[2] = Some(pipeline);
+        supervisor.pipelines[2] = Some(RunningCompactionPipeline::Tantivy(pipeline));
 
         let statuses = supervisor.check_pipeline_statuses();
         assert_eq!(statuses.len(), 2);
@@ -363,7 +454,7 @@ mod tests {
 
         let mut pipeline = test_pipeline("task-1", &["s1", "s2"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[0] = Some(pipeline);
+        supervisor.pipelines[0] = Some(RunningCompactionPipeline::Tantivy(pipeline));
 
         let statuses = supervisor.check_pipeline_statuses();
         let request = supervisor.build_report_status_request(&statuses);
@@ -411,6 +502,7 @@ mod tests {
             index_uid: Some(index_metadata.index_uid.clone()),
             source_id: "test-source".to_string(),
             index_storage_uri: config.index_uri.to_string(),
+            task_kind: CompactionTaskKind::Tantivy as i32,
         }
     }
 
@@ -566,6 +658,7 @@ mod tests {
         let statuses = vec![
             PipelineStatusUpdate {
                 task_id: "task-1".to_string(),
+                task_kind: CompactionTaskKind::Tantivy,
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s1".to_string(), "s2".to_string()],
@@ -574,6 +667,7 @@ mod tests {
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
+                task_kind: CompactionTaskKind::Tantivy,
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s3".to_string()],
@@ -582,6 +676,7 @@ mod tests {
             },
             PipelineStatusUpdate {
                 task_id: "task-3".to_string(),
+                task_kind: CompactionTaskKind::Tantivy,
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s4".to_string()],

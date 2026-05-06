@@ -19,6 +19,7 @@ quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-parquet-engine = { workspace = true, optional = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 serde_json = { workspace = true }
@@ -26,6 +27,14 @@ time = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 ulid = { workspace = true }
+
+[features]
+metrics = [
+  "dep:quickwit-parquet-engine",
+  "quickwit-config/metrics",
+  "quickwit-doc-mapper/metrics",
+  "quickwit-indexing/metrics",
+]
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }

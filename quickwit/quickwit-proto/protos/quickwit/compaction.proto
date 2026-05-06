@@ -22,6 +22,11 @@ service CompactionPlannerService {
   rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 }
 
+enum CompactionTaskKind {
+  COMPACTION_TASK_KIND_TANTIVY = 0;
+  COMPACTION_TASK_KIND_PARQUET = 1;
+}
+
 message ReportStatusRequest {
   string node_id = 1;
   uint32 available_slots = 2;
@@ -35,16 +40,19 @@ message CompactionInProgress {
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated string split_ids = 4;
+  CompactionTaskKind task_kind = 5;
 }
 
 message CompactionSuccess {
   string task_id = 1;
   string merged_split_id = 2;
+  CompactionTaskKind task_kind = 3;
 }
 
 message CompactionFailure {
   string task_id = 1;
   string error_message = 2;
+  CompactionTaskKind task_kind = 3;
 }
 
 message ReportStatusResponse {
@@ -61,4 +69,5 @@ message MergeTaskAssignment {
   quickwit.common.IndexUid index_uid = 7;
   string source_id = 8;
   string index_storage_uri = 9;
+  CompactionTaskKind task_kind = 10;
 }

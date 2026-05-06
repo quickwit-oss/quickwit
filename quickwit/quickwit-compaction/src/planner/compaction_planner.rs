@@ -23,7 +23,8 @@ use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
 use quickwit_proto::compaction::{
-    CompactionResult, MergeTaskAssignment, ReportStatusRequest, ReportStatusResponse,
+    CompactionResult, CompactionTaskKind, MergeTaskAssignment, ReportStatusRequest,
+    ReportStatusResponse,
 };
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, SourceId};
@@ -37,6 +38,8 @@ use super::index_config_store::{IndexConfigStore, IndexEntry};
 pub struct CompactionPlanner {
     state: CompactionState,
     index_config_store: IndexConfigStore,
+    #[cfg(feature = "metrics")]
+    parquet_planner: crate::parquet::ParquetCompactionPlanner,
     cursor: i64,
     metastore: MetastoreServiceClient,
 }
@@ -87,6 +90,8 @@ impl Handler<ScanAndPlan> for CompactionPlanner {
             error!(error=%err, "error scanning metastore and planning merges");
         }
         self.state.check_heartbeat_timeouts();
+        #[cfg(feature = "metrics")]
+        self.parquet_planner.check_heartbeat_timeouts();
         ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
         Ok(())
     }
@@ -102,11 +107,47 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
         _ctx: &ActorContext<Self>,
     ) -> Result<CompactionResult<ReportStatusResponse>, ActorExitStatus> {
         let node_id = NodeId::from(msg.node_id);
-        self.state.process_successes(&msg.successes);
-        self.state.process_failures(&msg.failures);
-        self.state.update_heartbeats(&node_id, &msg.in_progress);
-        let new_tasks = self.assign_tasks(&node_id, msg.available_slots);
-        Ok(Ok(ReportStatusResponse { new_tasks }))
+        #[cfg(feature = "metrics")]
+        {
+            let (parquet_successes, tantivy_successes): (Vec<_>, Vec<_>) = msg
+                .successes
+                .iter()
+                .cloned()
+                .partition(|success| is_parquet_task_kind(success.task_kind));
+            let (parquet_failures, tantivy_failures): (Vec<_>, Vec<_>) = msg
+                .failures
+                .iter()
+                .cloned()
+                .partition(|failure| is_parquet_task_kind(failure.task_kind));
+            let (parquet_in_progress, tantivy_in_progress): (Vec<_>, Vec<_>) = msg
+                .in_progress
+                .iter()
+                .cloned()
+                .partition(|task| is_parquet_task_kind(task.task_kind));
+
+            self.state.process_successes(&tantivy_successes);
+            self.state.process_failures(&tantivy_failures);
+            self.state.update_heartbeats(&node_id, &tantivy_in_progress);
+
+            self.parquet_planner.process_successes(&parquet_successes);
+            self.parquet_planner.process_failures(&parquet_failures);
+            self.parquet_planner
+                .update_heartbeats(&node_id, &parquet_in_progress);
+
+            let mut new_tasks = self.assign_tasks(&node_id, msg.available_slots);
+            let remaining_slots = msg.available_slots.saturating_sub(new_tasks.len() as u32);
+            new_tasks.extend(self.parquet_planner.assign_tasks(&node_id, remaining_slots));
+            return Ok(Ok(ReportStatusResponse { new_tasks }));
+        }
+
+        #[cfg(not(feature = "metrics"))]
+        {
+            self.state.process_successes(&msg.successes);
+            self.state.process_failures(&msg.failures);
+            self.state.update_heartbeats(&node_id, &msg.in_progress);
+            let new_tasks = self.assign_tasks(&node_id, msg.available_slots);
+            Ok(Ok(ReportStatusResponse { new_tasks }))
+        }
     }
 }
 
@@ -118,6 +159,8 @@ impl CompactionPlanner {
         CompactionPlanner {
             state: CompactionState::new(),
             index_config_store: IndexConfigStore::new(metastore.clone()),
+            #[cfg(feature = "metrics")]
+            parquet_planner: crate::parquet::ParquetCompactionPlanner::new(metastore.clone()),
             cursor,
             metastore,
         }
@@ -163,6 +206,8 @@ impl CompactionPlanner {
         let splits = self.scan_metastore().await?;
         self.ingest_splits(splits).await;
         self.run_merge_policies();
+        #[cfg(feature = "metrics")]
+        self.parquet_planner.scan_and_plan().await?;
         Ok(())
     }
 
@@ -207,6 +252,14 @@ impl CompactionPlanner {
     }
 }
 
+#[cfg(feature = "metrics")]
+fn is_parquet_task_kind(task_kind: i32) -> bool {
+    matches!(
+        CompactionTaskKind::try_from(task_kind),
+        Ok(CompactionTaskKind::Parquet)
+    )
+}
+
 fn build_task_assignment(
     task_id: &str,
     index_entry: &IndexEntry,
@@ -230,6 +283,7 @@ fn build_task_assignment(
         index_uid: Some(index_uid.clone()),
         source_id: source_id.to_string(),
         index_storage_uri: index_entry.index_storage_uri(),
+        task_kind: CompactionTaskKind::Tantivy as i32,
     }
 }
 
@@ -242,11 +296,15 @@ mod tests {
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig,
     };
+    #[cfg(feature = "metrics")]
+    use quickwit_metastore::ListIndexesMetadataResponseExt;
     use quickwit_metastore::{
         IndexMetadata, IndexMetadataResponseExt, ListSplitsResponseExt, Split, SplitMaturity,
         SplitMetadata, SplitState,
     };
     use quickwit_proto::compaction::CompactionSuccess;
+    #[cfg(feature = "metrics")]
+    use quickwit_proto::metastore::ListIndexesMetadataResponse;
     use quickwit_proto::metastore::{
         IndexMetadataResponse, ListSplitsResponse, MetastoreError, MockMetastoreService,
     };
@@ -415,6 +473,9 @@ mod tests {
         });
         mock.expect_index_metadata()
             .returning(move |_| Ok(index_metadata_response.clone()));
+        #[cfg(feature = "metrics")]
+        mock.expect_list_indexes_metadata()
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
         planner.cursor = 0;
@@ -504,6 +565,7 @@ mod tests {
         planner.state.process_successes(&[CompactionSuccess {
             task_id,
             merged_split_id: "merged-1".to_string(),
+            task_kind: CompactionTaskKind::Tantivy as i32,
         }]);
 
         // The original splits are no longer tracked. Re-ingesting them

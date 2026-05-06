@@ -159,6 +159,18 @@ impl ListParquetSplitsQuery {
         self
     }
 
+    /// Filter splits updated at or after the given timestamp (epoch seconds).
+    pub fn with_update_timestamp_gte(mut self, timestamp: i64) -> Self {
+        self.update_timestamp.start = Bound::Included(timestamp);
+        self
+    }
+
+    /// Retains splits that are immature at the given datetime.
+    pub fn retain_immature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Excluded(now);
+        self
+    }
+
     /// Limit number of results returned.
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);

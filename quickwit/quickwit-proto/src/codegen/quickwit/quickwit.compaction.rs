@@ -24,6 +24,8 @@ pub struct CompactionInProgress {
     pub source_id: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "4")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(enumeration = "CompactionTaskKind", tag = "5")]
+    pub task_kind: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -32,6 +34,8 @@ pub struct CompactionSuccess {
     pub task_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub merged_split_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "CompactionTaskKind", tag = "3")]
+    pub task_kind: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -40,6 +44,8 @@ pub struct CompactionFailure {
     pub task_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub error_message: ::prost::alloc::string::String,
+    #[prost(enumeration = "CompactionTaskKind", tag = "3")]
+    pub task_kind: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -68,6 +74,36 @@ pub struct MergeTaskAssignment {
     pub source_id: ::prost::alloc::string::String,
     #[prost(string, tag = "9")]
     pub index_storage_uri: ::prost::alloc::string::String,
+    #[prost(enumeration = "CompactionTaskKind", tag = "10")]
+    pub task_kind: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CompactionTaskKind {
+    Tantivy = 0,
+    Parquet = 1,
+}
+impl CompactionTaskKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Tantivy => "COMPACTION_TASK_KIND_TANTIVY",
+            Self::Parquet => "COMPACTION_TASK_KIND_PARQUET",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "COMPACTION_TASK_KIND_TANTIVY" => Some(Self::Tantivy),
+            "COMPACTION_TASK_KIND_PARQUET" => Some(Self::Parquet),
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]

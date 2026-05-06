@@ -215,6 +215,7 @@ mod tests {
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig,
     };
     use quickwit_indexing::merge_policy::merge_policy_from_settings;
+    use quickwit_proto::compaction::CompactionTaskKind;
     use quickwit_proto::types::IndexUid;
 
     use super::*;
@@ -319,6 +320,7 @@ mod tests {
         state.process_successes(&[CompactionSuccess {
             task_id: "task-1".to_string(),
             merged_split_id: "merged-1".to_string(),
+            task_kind: CompactionTaskKind::Tantivy as i32,
         }]);
         assert!(!state.is_split_known("s1"));
         assert!(!state.is_split_known("s2"));
@@ -326,6 +328,7 @@ mod tests {
         state.process_failures(&[CompactionFailure {
             task_id: "task-2".to_string(),
             error_message: "boom".to_string(),
+            task_kind: CompactionTaskKind::Tantivy as i32,
         }]);
         assert!(!state.is_split_known("s3"));
     }
@@ -348,6 +351,7 @@ mod tests {
                 index_uid: Some(index_uid),
                 source_id: "test-source".to_string(),
                 split_ids: vec!["s1".to_string()],
+                task_kind: CompactionTaskKind::Tantivy as i32,
             }],
         );
 
