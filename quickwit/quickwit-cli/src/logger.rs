@@ -268,17 +268,8 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
         .context("failed to parse DogStatsD server address")?
         .install()
         .context("failed to register DogStatsD exporter")?;
-    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
+    quickwit_dst::invariants::install_metrics_recorder();
     Ok(())
-}
-
-#[cfg(not(test))]
-fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
-    let name = invariant_id.as_str();
-    metrics::counter!("invariant.checked", "invariant" => name).increment(1);
-    if !passed {
-        metrics::counter!("invariant.violated", "invariant" => name).increment(1);
-    }
 }
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.

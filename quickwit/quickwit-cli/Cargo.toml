@@ -62,7 +62,7 @@ quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-dst = { workspace = true }
+quickwit-dst = { workspace = true, features = ["metrics-recorder"] }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }

@@ -21,9 +21,13 @@
 //!
 //! # Wiring up a metrics recorder
 //!
-//! Call [`set_invariant_recorder`] once at process startup. The OSS Quickwit
-//! binary wires a Prometheus-backed recorder in `quickwit_cli::logger`; the
-//! example below shows the minimal recorder shape:
+//! Call [`set_invariant_recorder`] once at process startup. With the
+//! `metrics-recorder` cargo feature enabled, the [`install_metrics_recorder`]
+//! convenience function registers a recorder that emits `invariant.checked`
+//! and `invariant.violated` counters via the [`metrics`] facade — pair with a
+//! configured exporter (DogStatsD, Prometheus, etc.) to surface them.
+//!
+//! For custom recorders, the example below shows the minimal shape:
 //!
 //! ```rust
 //! use quickwit_dst::invariants::{InvariantId, set_invariant_recorder};
@@ -58,6 +62,26 @@ static RECORDER: OnceLock<InvariantRecorder> = OnceLock::new();
 pub fn set_invariant_recorder(recorder: InvariantRecorder) {
     // OnceLock::set returns Err if already initialized — that's fine.
     let _ = RECORDER.set(recorder);
+}
+
+/// Register the prebuilt metrics-based invariant recorder.
+///
+/// Emits `invariant.checked{invariant=...}` and (on violation)
+/// `invariant.violated{invariant=...}` counters via the [`metrics`] facade.
+/// Whichever exporter is installed in the process (DogStatsD, Prometheus, …)
+/// catches and surfaces them. Should be called once at process startup.
+#[cfg(feature = "metrics-recorder")]
+pub fn install_metrics_recorder() {
+    set_invariant_recorder(metrics_recorder);
+}
+
+#[cfg(feature = "metrics-recorder")]
+fn metrics_recorder(invariant_id: InvariantId, passed: bool) {
+    let name = invariant_id.as_str();
+    metrics::counter!("invariant.checked", "invariant" => name).increment(1);
+    if !passed {
+        metrics::counter!("invariant.violated", "invariant" => name).increment(1);
+    }
 }
 
 /// Record an invariant check result.

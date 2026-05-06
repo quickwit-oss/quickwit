@@ -8548,6 +8548,7 @@ dependencies = [
 name = "quickwit-dst"
 version = "0.8.0"
 dependencies = [
+ "metrics",
  "stateright",
 ]
 

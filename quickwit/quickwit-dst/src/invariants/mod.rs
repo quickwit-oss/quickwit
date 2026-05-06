@@ -27,5 +27,7 @@ pub mod registry;
 pub mod sort;
 pub mod window;
 
+#[cfg(feature = "metrics-recorder")]
+pub use recorder::install_metrics_recorder;
 pub use recorder::{record_invariant_check, set_invariant_recorder};
 pub use registry::InvariantId;

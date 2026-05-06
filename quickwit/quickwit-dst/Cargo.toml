@@ -11,6 +11,8 @@ description = "Deterministic simulation testing and stateright model checking fo
 
 [features]
 model-checking = ["stateright"]
+metrics-recorder = ["dep:metrics"]
 
 [dependencies]
+metrics = { workspace = true, optional = true }
 stateright = { workspace = true, optional = true }
