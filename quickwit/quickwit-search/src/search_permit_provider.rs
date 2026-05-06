@@ -17,6 +17,7 @@ use std::collections::binary_heap::PeekMut;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
@@ -35,13 +36,15 @@ use tracing::warn;
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
+    /// Lock-free view of [`SearchPermitActor::total_job_cost`].
+    total_job_cost: Arc<AtomicUsize>,
     #[allow(dead_code)]
     actor_join_handle: Arc<tokio::task::JoinHandle<SearchPermitActor>>,
 }
 
 /// Metadata for a single split search task, bundling the estimated memory
 /// allocation with the job cost used by the search job placer.
-pub struct SplitSearchTaskMetadata {
+pub(crate) struct SplitSearchTaskMetadata {
     /// Pessimistic estimate of the memory this split search will require.
     pub memory_allocation: ByteSize,
     /// Estimated cost of this task, in the same arbitrary unit as [`Job::cost()`].
@@ -68,10 +71,6 @@ pub enum SearchPermitMessage {
     Drop {
         memory_size: u64,
         warmup_slot_freed: bool,
-        job_cost: usize,
-    },
-    GetLoad {
-        resp_tx: oneshot::Sender<usize>,
     },
 }
 
@@ -102,6 +101,7 @@ pub fn compute_initial_memory_allocation(
 impl SearchPermitProvider {
     pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let total_job_cost = Arc::new(AtomicUsize::new(0));
         let actor = SearchPermitActor {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
@@ -109,11 +109,12 @@ impl SearchPermitProvider {
             total_memory_budget: memory_budget.as_u64(),
             permits_requests: BinaryHeap::new(),
             total_memory_allocated: 0u64,
-            total_job_cost: 0,
+            total_job_cost: total_job_cost.clone(),
         };
         let actor_join_handle = Arc::new(tokio::spawn(actor.run()));
         Self {
             message_sender,
+            total_job_cost,
             actor_join_handle,
         }
     }
@@ -134,18 +135,17 @@ impl SearchPermitProvider {
     ///
     /// This value uses the same arbitrary unit as [`Job::cost()`] in the search job placer, so it
     /// can be used directly to seed the job placement algorithm.
-    pub async fn get_load(&self) -> usize {
-        let (resp_tx, resp_rx) = oneshot::channel();
-        self.message_sender
-            .send(SearchPermitMessage::GetLoad { resp_tx })
-            .expect("receiver lives longer than sender");
-        resp_rx.await.expect("receiver lives longer than sender")
+    ///
+    /// Reads a lock-free atomic snapshot updated by the actor, so callers do not contend on the
+    /// actor mailbox.
+    pub fn get_load(&self) -> usize {
+        self.total_job_cost.load(Ordering::Relaxed)
     }
 
     /// Returns permits for local splits
     ///
     /// The returned futures are guaranteed to resolve in order.
-    pub async fn get_permits(
+    pub(crate) async fn get_permits(
         &self,
         splits: Vec<SplitSearchTaskMetadata>,
     ) -> Vec<SearchPermitFuture> {
@@ -162,7 +162,7 @@ impl SearchPermitProvider {
     ///
     /// If `offload_threshold` is 0, all splits are offloaded.
     /// If `offload_threshold` is usize::MAX, all splits are processed locally.
-    pub async fn get_permits_with_offload(
+    pub(crate) async fn get_permits_with_offload(
         &self,
         splits: Vec<SplitSearchTaskMetadata>,
         offload_threshold: usize,
@@ -198,7 +198,10 @@ struct SearchPermitActor {
     /// Incremented when a task enters [`Self::permits_requests`], decremented when
     /// its [`SearchPermit`] is dropped (which happens both on normal completion and
     /// when the future is dropped before being resolved).
-    total_job_cost: usize,
+    ///
+    /// Shared with [`SearchPermitProvider`] so callers can read the load lock-free.
+    /// Only the actor mutates it, so [`Ordering::Relaxed`] is sufficient.
+    total_job_cost: Arc<AtomicUsize>,
     permits_requests: BinaryHeap<LeafPermitRequest>,
 }
 
@@ -317,7 +320,8 @@ impl SearchPermitActor {
 
                 // Increment total_job_cost for all tasks entering the queue (both pending and
                 // those that will be granted immediately by assign_available_permits below).
-                self.total_job_cost += task_metadata.iter().map(|m| m.job_cost).sum::<usize>();
+                let added: usize = task_metadata.iter().map(|m| m.job_cost).sum();
+                self.total_job_cost.fetch_add(added, Ordering::Relaxed);
 
                 let (leaf_permit_request, permit_futures) =
                     LeafPermitRequest::from_task_metadata(task_metadata);
@@ -340,8 +344,9 @@ impl SearchPermitActor {
             SearchPermitMessage::Drop {
                 memory_size,
                 warmup_slot_freed,
-                job_cost,
             } => {
+                // total_job_cost is decremented synchronously in `SearchPermit::Drop`. This eases
+                // testing (no need to wait for the queue to drain to observe the cost was updated)
                 if !warmup_slot_freed {
                     self.num_warmup_slots_available += 1;
                 }
@@ -349,20 +354,7 @@ impl SearchPermitActor {
                     .total_memory_allocated
                     .checked_sub(memory_size)
                     .expect("More memory released than allocated, should never happen.");
-                if job_cost > self.total_job_cost {
-                    warn!(
-                        job_cost,
-                        total_job_cost = self.total_job_cost,
-                        "job cost underflow: more job cost released than allocated"
-                    );
-                    self.total_job_cost = 0;
-                } else {
-                    self.total_job_cost -= job_cost;
-                }
                 self.assign_available_permits();
-            }
-            SearchPermitMessage::GetLoad { resp_tx } => {
-                let _ = resp_tx.send(self.total_job_cost);
             }
         }
     }
@@ -405,6 +397,7 @@ impl SearchPermitActor {
                     memory_allocation: permit_request.permit_size,
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
+                    total_job_cost: self.total_job_cost.clone(),
                 })
                 // if the requester dropped its receiver, we drop the newly
                 // created SearchPermit which releases the resources
@@ -416,15 +409,15 @@ impl SearchPermitActor {
 
         // Invariant: when the queue is empty and no memory is allocated, no tasks are
         // in-flight, so total_job_cost must be zero.
-        if self.permits_requests.is_empty()
-            && self.total_memory_allocated == 0
-            && self.total_job_cost != 0
-        {
-            warn!(
-                total_job_cost = self.total_job_cost,
-                "total_job_cost is non-zero with no tasks in queue or active; resetting to 0"
-            );
-            self.total_job_cost = 0;
+        if self.permits_requests.is_empty() && self.total_memory_allocated == 0 {
+            // Atomic swap so we read and reset in a single operation.
+            let prev = self.total_job_cost.swap(0, Ordering::Relaxed);
+            if prev != 0 {
+                warn!(
+                    total_job_cost = prev,
+                    "total_job_cost is non-zero with no tasks in queue or active; resetting to 0"
+                );
+            }
         }
     }
 }
@@ -435,6 +428,8 @@ pub struct SearchPermit {
     memory_allocation: u64,
     warmup_slot_freed: bool,
     job_cost: usize,
+    /// Shared with the actor; decremented in `Drop`.
+    total_job_cost: Arc<AtomicUsize>,
 }
 
 impl SearchPermit {
@@ -475,10 +470,22 @@ impl SearchPermit {
 
 impl Drop for SearchPermit {
     fn drop(&mut self) {
+        let prev = self
+            .total_job_cost
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(self.job_cost))
+            })
+            .expect("closure always returns Some");
+        if self.job_cost > prev {
+            warn!(
+                job_cost = self.job_cost,
+                total_job_cost = prev,
+                "job cost underflow: more job cost released than allocated"
+            );
+        }
         self.send_if_still_running(SearchPermitMessage::Drop {
             memory_size: self.memory_allocation,
             warmup_slot_freed: self.warmup_slot_freed,
-            job_cost: self.job_cost,
         });
     }
 }
@@ -655,6 +662,7 @@ mod tests {
         let SearchPermitProvider {
             message_sender,
             actor_join_handle,
+            ..
         } = permit_provider;
         drop(message_sender);
         Arc::into_inner(actor_join_handle).unwrap().await.unwrap();
@@ -811,7 +819,7 @@ mod tests {
     async fn test_get_load_counts_queued_and_active() {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
 
-        assert_eq!(permit_provider.get_load().await, 0);
+        assert_eq!(permit_provider.get_load(), 0);
 
         let splits = vec![
             SplitSearchTaskMetadata {
@@ -829,21 +837,21 @@ mod tests {
         ];
         let mut permit_futs = permit_provider.get_permits(splits).await;
 
-        assert_eq!(permit_provider.get_load().await, 15);
+        assert_eq!(permit_provider.get_load(), 15);
 
         let first_permit = permit_futs.remove(0).await;
-        assert_eq!(permit_provider.get_load().await, 15);
+        assert_eq!(permit_provider.get_load(), 15);
         drop(first_permit);
-        assert_eq!(permit_provider.get_load().await, 8);
+        assert_eq!(permit_provider.get_load(), 8);
 
         let second_permit = permit_futs.remove(0).await;
-        assert_eq!(permit_provider.get_load().await, 8);
+        assert_eq!(permit_provider.get_load(), 8);
         drop(second_permit);
-        assert_eq!(permit_provider.get_load().await, 5);
+        assert_eq!(permit_provider.get_load(), 5);
 
         let third_permit = permit_futs.remove(0).await;
-        assert_eq!(permit_provider.get_load().await, 5);
+        assert_eq!(permit_provider.get_load(), 5);
         drop(third_permit);
-        assert_eq!(permit_provider.get_load().await, 0);
+        assert_eq!(permit_provider.get_load(), 0);
     }
 }

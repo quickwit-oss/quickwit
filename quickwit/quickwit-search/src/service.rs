@@ -326,10 +326,7 @@ impl SearchService for SearchServiceImpl {
     }
 
     async fn get_load(&self) -> usize {
-        self.searcher_context
-            .search_permit_provider
-            .get_load()
-            .await
+        self.searcher_context.search_permit_provider.get_load()
     }
 }
 
