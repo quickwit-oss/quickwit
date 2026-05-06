@@ -26,9 +26,7 @@ static BUILD_INFO: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 pub(crate) fn register_metrics(build_info: &BuildInfo) {
-    use itertools::Itertools;
-
-    let commit_tags = build_info.commit_tags.iter().join(",");
+    let commit_tags = build_info.commit_tags.join(",");
     let labels = labels!(
         "build_date" => build_info.build_date,
         "commit_hash" => build_info.commit_short_hash,
