@@ -30,6 +30,8 @@
 //! operations return `NotSupported` — DataFusion only reads parquet files
 //! through this store.
 
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -43,7 +45,9 @@ use object_store::{
     Result as ObjectStoreResult,
 };
 use quickwit_common::uri::Uri;
-use quickwit_storage::{Storage, StorageResolver};
+use quickwit_storage::{
+    OwnedBytes, Storage, StorageCache, StorageResolver, wrap_storage_with_cache,
+};
 use tokio::sync::OnceCell;
 
 /// Adapts Quickwit's `Storage` trait to DataFusion's `ObjectStore` interface.
@@ -54,6 +58,7 @@ use tokio::sync::OnceCell;
 pub struct QuickwitObjectStore {
     index_uri: Uri,
     storage_resolver: StorageResolver,
+    storage_cache: Option<Arc<dyn StorageCache>>,
     storage: OnceCell<Arc<dyn Storage>>,
 }
 
@@ -62,8 +67,14 @@ impl QuickwitObjectStore {
         Self {
             index_uri,
             storage_resolver,
+            storage_cache: None,
             storage: OnceCell::new(),
         }
+    }
+
+    pub fn with_storage_cache(mut self, storage_cache: Arc<dyn StorageCache>) -> Self {
+        self.storage_cache = Some(storage_cache);
+        self
     }
 
     /// Returns the handle to the underlying `Storage`, resolving it via the
@@ -71,15 +82,62 @@ impl QuickwitObjectStore {
     async fn storage(&self) -> ObjectStoreResult<&Arc<dyn Storage>> {
         self.storage
             .get_or_try_init(|| async {
-                self.storage_resolver
+                let storage = self
+                    .storage_resolver
                     .resolve(&self.index_uri)
                     .await
                     .map_err(|err| object_store::Error::Generic {
                         store: "QuickwitObjectStore",
                         source: Box::new(err),
-                    })
+                    })?;
+                Ok(match &self.storage_cache {
+                    Some(cache) => wrap_storage_with_cache(
+                        Arc::new(ScopedStorageCache::new(
+                            self.index_uri.as_str().to_string(),
+                            Arc::clone(cache),
+                        )),
+                        storage,
+                    ),
+                    None => storage,
+                })
             })
             .await
+    }
+}
+
+struct ScopedStorageCache {
+    scope: String,
+    inner: Arc<dyn StorageCache>,
+}
+
+impl ScopedStorageCache {
+    fn new(scope: String, inner: Arc<dyn StorageCache>) -> Self {
+        Self { scope, inner }
+    }
+
+    fn scoped_path(&self, path: &Path) -> PathBuf {
+        PathBuf::from(format!("{}#{}", self.scope, path.to_string_lossy()))
+    }
+}
+
+#[async_trait]
+impl StorageCache for ScopedStorageCache {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        self.inner.get(&self.scoped_path(path), byte_range).await
+    }
+
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
+        self.inner.get_all(&self.scoped_path(path)).await
+    }
+
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+        self.inner
+            .put(self.scoped_path(&path), byte_range, bytes)
+            .await
+    }
+
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
+        self.inner.put_all(self.scoped_path(&path), bytes).await
     }
 }
 
@@ -262,5 +320,75 @@ impl ObjectStore for QuickwitObjectStore {
         Err(object_store::Error::NotSupported {
             source: "QuickwitObjectStore is read-only".into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingStorageCache {
+        paths: Mutex<Vec<PathBuf>>,
+    }
+
+    impl RecordingStorageCache {
+        fn paths(&self) -> Vec<PathBuf> {
+            self.paths.lock().unwrap().clone()
+        }
+
+        fn record(&self, path: &Path) {
+            self.paths.lock().unwrap().push(path.to_path_buf());
+        }
+    }
+
+    #[async_trait]
+    impl StorageCache for RecordingStorageCache {
+        async fn get(&self, path: &Path, _byte_range: Range<usize>) -> Option<OwnedBytes> {
+            self.record(path);
+            None
+        }
+
+        async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
+            self.record(path);
+            None
+        }
+
+        async fn put(&self, path: PathBuf, _byte_range: Range<usize>, _bytes: OwnedBytes) {
+            self.record(&path);
+        }
+
+        async fn put_all(&self, path: PathBuf, _bytes: OwnedBytes) {
+            self.record(&path);
+        }
+    }
+
+    #[tokio::test]
+    async fn scoped_storage_cache_prefixes_cache_keys() {
+        let inner = Arc::new(RecordingStorageCache::default());
+        let inner_cache: Arc<dyn StorageCache> = inner.clone();
+        let cache = ScopedStorageCache::new("s3://metrics-bucket".to_string(), inner_cache);
+
+        cache
+            .get(Path::new("indexes/metrics.parquet"), 10..20)
+            .await;
+        cache
+            .put(
+                Path::new("indexes/metrics.parquet").to_path_buf(),
+                10..20,
+                OwnedBytes::new(&b"bytes"[..]),
+            )
+            .await;
+
+        let paths = inner.paths();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("s3://metrics-bucket#indexes/metrics.parquet"),
+                PathBuf::from("s3://metrics-bucket#indexes/metrics.parquet"),
+            ]
+        );
     }
 }

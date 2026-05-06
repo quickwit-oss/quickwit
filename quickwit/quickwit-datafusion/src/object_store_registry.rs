@@ -51,7 +51,7 @@ use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::execution::object_store::{DefaultObjectStoreRegistry, ObjectStoreRegistry};
 use object_store::ObjectStore;
 use quickwit_common::uri::Uri;
-use quickwit_storage::StorageResolver;
+use quickwit_storage::{StorageCache, StorageResolver};
 use url::Url;
 
 use crate::storage_bridge::QuickwitObjectStore;
@@ -69,6 +69,7 @@ pub struct QuickwitObjectStoreRegistry {
     /// fallback.
     default: DefaultObjectStoreRegistry,
     storage_resolver: StorageResolver,
+    storage_cache: Option<Arc<dyn StorageCache>>,
     /// Lazy wrappers constructed by `get_store` on demand, keyed by
     /// `scheme://authority`. Plain `RwLock<HashMap>` is fine — contention
     /// is negligible because the write lock is only taken once per unique
@@ -92,8 +93,14 @@ impl QuickwitObjectStoreRegistry {
         Self {
             default: DefaultObjectStoreRegistry::new(),
             storage_resolver,
+            storage_cache: None,
             lazy_stores: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn with_storage_cache(mut self, storage_cache: Arc<dyn StorageCache>) -> Self {
+        self.storage_cache = Some(storage_cache);
+        self
     }
 
     /// Canonical cache key mirroring DataFusion's `DefaultObjectStoreRegistry`:
@@ -138,8 +145,11 @@ impl ObjectStoreRegistry for QuickwitObjectStoreRegistry {
                 "failed to build Quickwit URI from `{key}`: {err}"
             ))))
         })?;
-        let store: Arc<dyn ObjectStore> =
-            Arc::new(QuickwitObjectStore::new(uri, self.storage_resolver.clone()));
+        let mut quickwit_store = QuickwitObjectStore::new(uri, self.storage_resolver.clone());
+        if let Some(storage_cache) = &self.storage_cache {
+            quickwit_store = quickwit_store.with_storage_cache(Arc::clone(storage_cache));
+        }
+        let store: Arc<dyn ObjectStore> = Arc::new(quickwit_store);
         let mut write = self
             .lazy_stores
             .write()

@@ -30,6 +30,7 @@ pub struct StorageMetrics {
     pub predicate_cache: CacheMetrics,
     pub fd_cache_metrics: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
+    pub datafusion_parquet_range_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
     pub get_slice_timeout_successes: [IntCounter; 3],
@@ -94,6 +95,7 @@ impl Default for StorageMetrics {
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
+            datafusion_parquet_range_cache: CacheMetrics::for_component("datafusion_parquet_range"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
             predicate_cache: CacheMetrics::for_component("predicate"),
