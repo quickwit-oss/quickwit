@@ -47,9 +47,11 @@ pub use metastore::{
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
     ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
-    MetastoreServiceStreamSplitsExt, ParquetSplitRecord, PublishParquetSplitsRequestExt,
+    MetastoreServiceStreamSplitsExt, PARQUET_SPLITS_PAGE_SIZE, ParquetSplitRecord, ParquetSplitsPage,
+    PublishParquetSplitsRequestExt,
     PublishSplitsRequestExt, StageParquetSplitsRequestExt, StageSplitsRequestExt,
-    UpdateIndexRequestExt, UpdateSourceRequestExt, file_backed,
+    UpdateIndexRequestExt, UpdateSourceRequestExt, file_backed, list_parquet_splits_page,
+    list_parquet_splits_paginated,
 };
 pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;

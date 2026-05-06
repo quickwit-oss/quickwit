@@ -584,7 +584,7 @@ impl Actor for ParquetIndexer {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(10)
+        QueueCapacity::Bounded(5)
     }
 
     fn name(&self) -> String {
