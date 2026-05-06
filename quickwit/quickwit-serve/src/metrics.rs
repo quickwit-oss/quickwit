@@ -21,7 +21,7 @@ pub(crate) static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "http_requests_total",
         description: "Total number of HTTP requests processed.",
-        subsystem: "serve",
+        subsystem: "",
     )
 });
 
@@ -29,7 +29,7 @@ pub(crate) static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| 
     histogram!(
         name: "request_duration_secs",
         description: "Response time in seconds",
-        subsystem: "serve",
+        subsystem: "",
         // last bucket is 163.84s
         buckets: exponential_buckets(0.02, 2.0, 14).unwrap(),
     )
@@ -39,7 +39,7 @@ pub(crate) static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "ongoing_requests",
         description: "Number of ongoing requests.",
-        subsystem: "serve",
+        subsystem: "",
     )
 });
 
@@ -47,7 +47,7 @@ pub(crate) static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "pending_requests",
         description: "Number of pending requests.",
-        subsystem: "serve",
+        subsystem: "",
     )
 });
 
@@ -55,6 +55,6 @@ pub(crate) static CIRCUIT_BREAK_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "circuit_break_total",
         description: "Circuit breaker counter",
-        subsystem: "serve",
+        subsystem: "grpc",
     )
 });

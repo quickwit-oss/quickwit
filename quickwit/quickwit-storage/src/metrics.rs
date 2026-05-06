@@ -132,7 +132,7 @@ pub(crate) static OBJECT_STORAGE_PUT_PARTS: LazyLock<Counter> = LazyLock::new(||
     counter!(
         name: "object_storage_puts_parts",
         description: "Number of object parts uploaded.",
-        subsystem: "storage",
+        subsystem: "",
     )
 });
 
