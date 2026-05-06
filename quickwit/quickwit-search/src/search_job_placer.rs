@@ -633,28 +633,6 @@ mod tests {
         );
     }
 
-    // When one node has high existing load, jobs are redirected to lighter nodes
-    // even if that means ignoring affinity.
-    //
-    // split3 naturally prefers 1001. With 1001 pre-loaded above the target, the
-    // placer should send split3 to 1002 instead.
-    #[tokio::test]
-    async fn test_existing_load_overrides_affinity() {
-        let searcher_pool =
-            searcher_pool_with_loads_for_test([("127.0.0.1:1001", 1_000), ("127.0.0.1:1002", 0)]);
-        let search_job_placer = SearchJobPlacer::new(searcher_pool);
-        let jobs = vec![SearchJob::for_test("split3", 3)];
-        let assigned: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
-            .assign_jobs(jobs, &HashSet::default())
-            .await
-            .unwrap()
-            .map(|(client, jobs)| (client.grpc_addr(), jobs))
-            .collect();
-        assert_eq!(assigned.len(), 1);
-        let expected_addr: SocketAddr = ([127, 0, 0, 1], 1002).into();
-        assert_eq!(assigned[0].0, expected_addr);
-    }
-
     // A node with extreme existing load should receive no new jobs, and the
     // remaining idle nodes should receive a balanced share.
     //
@@ -729,8 +707,11 @@ mod tests {
         assigned_jobs.sort_unstable_by_key(|(addr, _)| *addr);
 
         assert_eq!(assigned_jobs.len(), 1);
-        let (addr, _) = &assigned_jobs[0];
+        let (addr, jobs) = &assigned_jobs[0];
         let expected_addr: SocketAddr = ([127, 0, 0, 1], 1002).into();
         assert_eq!(*addr, expected_addr);
+        let mut split_ids: Vec<&str> = jobs.iter().map(|job| job.split_id()).collect();
+        split_ids.sort_unstable();
+        assert_eq!(split_ids, vec!["split1", "split3"]);
     }
 }
