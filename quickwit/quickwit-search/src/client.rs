@@ -248,11 +248,16 @@ impl SearchServiceClient {
         match &mut self.client_impl {
             SearchServiceClientImpl::Local(service) => Ok(service.get_load().await),
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let response = grpc_client
+                match grpc_client
                     .get_load(quickwit_proto::search::GetLoadRequest {})
                     .await
-                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-                Ok(response.into_inner().load_job_cost as usize)
+                {
+                    Ok(response) => Ok(response.into_inner().load_job_cost as usize),
+                    // Older searcher nodes do not implement `get_load`. To
+                    // preserve a smooth upgrade path, treat them as unloaded
+                    Err(tonic_error) if tonic_error.code() == tonic::Code::Unimplemented => Ok(0),
+                    Err(tonic_error) => Err(parse_grpc_error(&tonic_error)),
+                }
             }
         }
     }
