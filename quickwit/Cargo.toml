@@ -27,7 +27,7 @@ members = [
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-metrics",
-  "quickwit-metrics-exporters",
+  "quickwit-telemetry-exporters",
   "quickwit-metrics-inventory",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
@@ -73,7 +73,7 @@ default-members = [
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-metrics",
-  "quickwit-metrics-exporters",
+  "quickwit-telemetry-exporters",
   "quickwit-metrics-inventory",
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
@@ -392,7 +392,7 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }
-quickwit-metrics-exporters = { path = "quickwit-metrics-exporters" }
+quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
 quickwit-parquet-engine = { path = "quickwit-parquet-engine" }

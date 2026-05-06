@@ -15,14 +15,9 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use metrics_exporter_otel::OpenTelemetryRecorder;
 use opentelemetry::KeyValue;
-use opentelemetry::metrics::MeterProvider;
-use opentelemetry_otlp::{
-    LogExporter, MetricExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
-};
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::metrics::{SdkMeterProvider as SdkMetricsProvider, Temporality};
+use opentelemetry_sdk::metrics::Temporality;
 use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
@@ -36,62 +31,10 @@ const OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY: &str =
     "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OtlpProtocol {
+pub(crate) enum OtlpProtocol {
     Grpc,
     HttpProtobuf,
     HttpJson,
-}
-
-impl OtlpProtocol {
-    pub fn log_exporter(&self) -> anyhow::Result<LogExporter> {
-        match self {
-            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP logs exporter")
-    }
-
-    pub fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
-        match self {
-            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => SpanExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => SpanExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP traces exporter")
-    }
-
-    fn metric_exporter(&self, temporality: Temporality) -> anyhow::Result<MetricExporter> {
-        match self {
-            OtlpProtocol::Grpc => MetricExporter::builder()
-                .with_tonic()
-                .with_temporality(temporality)
-                .build(),
-            OtlpProtocol::HttpProtobuf => MetricExporter::builder()
-                .with_http()
-                .with_temporality(temporality)
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => MetricExporter::builder()
-                .with_http()
-                .with_temporality(temporality)
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP metrics exporter")
-    }
 }
 
 impl FromStr for OtlpProtocol {
@@ -115,13 +58,13 @@ impl FromStr for OtlpProtocol {
     }
 }
 
-pub struct OtlpExporterConfig {
+pub(crate) struct OtlpExporterConfig {
     enabled: bool,
     default_protocol: String,
 }
 
 impl OtlpExporterConfig {
-    pub fn load_from_env() -> Self {
+    pub(crate) fn load_from_env() -> Self {
         OtlpExporterConfig {
             enabled: get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false),
             default_protocol: get_from_env(
@@ -132,23 +75,23 @@ impl OtlpExporterConfig {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
+    pub(crate) fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    pub fn traces_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+    pub(crate) fn traces_protocol(&self) -> anyhow::Result<OtlpProtocol> {
         self.resolve_protocol(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY)
     }
 
-    pub fn logs_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+    pub(crate) fn logs_protocol(&self) -> anyhow::Result<OtlpProtocol> {
         self.resolve_protocol(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY)
     }
 
-    fn metrics_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+    pub(crate) fn metrics_protocol(&self) -> anyhow::Result<OtlpProtocol> {
         self.resolve_protocol(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
     }
 
-    fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
+    pub(crate) fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
         let temporality = get_from_env_opt::<String>(
             OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY,
             false,
@@ -215,7 +158,7 @@ impl From<OtlpMetricsTemporality> for Temporality {
     }
 }
 
-pub fn quickwit_resource(service_version: &str) -> Resource {
+pub(crate) fn quickwit_resource(service_version: &str) -> Resource {
     Resource::builder()
         .with_service_name("quickwit")
         .with_attribute(KeyValue::new(
@@ -223,26 +166,6 @@ pub fn quickwit_resource(service_version: &str) -> Resource {
             service_version.to_string(),
         ))
         .build()
-}
-
-pub(crate) fn build_recorder(
-    service_version: &str,
-    otlp_config: &OtlpExporterConfig,
-) -> anyhow::Result<(OpenTelemetryRecorder, SdkMetricsProvider)> {
-    let metrics_protocol = otlp_config.metrics_protocol()?;
-    let temporality = otlp_config.metrics_temporality()?;
-    let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
-    let metrics_provider = SdkMetricsProvider::builder()
-        .with_resource(quickwit_resource(service_version))
-        .with_periodic_exporter(metric_exporter)
-        .build();
-    let meter = metrics_provider.meter("quickwit");
-
-    let recorder = OpenTelemetryRecorder::new(meter);
-    for (name, buckets) in quickwit_metrics::histogram_buckets() {
-        recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
-    }
-    Ok((recorder, metrics_provider))
 }
 
 #[cfg(test)]

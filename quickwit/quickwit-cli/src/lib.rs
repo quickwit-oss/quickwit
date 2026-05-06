@@ -49,7 +49,6 @@ pub mod cli;
 pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
-pub mod logger;
 pub mod metrics;
 pub mod service;
 pub mod source;
@@ -59,8 +58,6 @@ pub mod tool;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
-
-pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 fn config_cli_arg() -> Arg {
     Arg::new("config")

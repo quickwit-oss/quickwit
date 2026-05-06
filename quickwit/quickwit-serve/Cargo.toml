@@ -72,7 +72,7 @@ quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
-quickwit-metrics-exporters = { workspace = true }
+quickwit-telemetry-exporters = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }

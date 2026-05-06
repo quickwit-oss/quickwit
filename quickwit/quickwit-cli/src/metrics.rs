@@ -25,7 +25,7 @@ static BUILD_INFO: LazyLock<Counter> = LazyLock::new(|| {
         subsystem: "",
     )
 });
-pub(crate) fn register_metrics(build_info: &BuildInfo) {
+pub fn register_build_info_metric(build_info: &BuildInfo) {
     let commit_tags = build_info.commit_tags.join(",");
     let labels = labels!(
         "build_date" => build_info.build_date,

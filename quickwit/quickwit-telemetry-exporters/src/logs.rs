@@ -12,199 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use std::{env, fmt};
+use std::fmt;
 
 use anyhow::Context;
-use opentelemetry::global;
-use opentelemetry::trace::TracerProvider;
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_otlp::{LogExporter, Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::metrics::SdkMeterProvider as SdkMetricsProvider;
-use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
-use opentelemetry_sdk::{Resource, trace};
-#[cfg(feature = "tokio-console")]
-use quickwit_common::get_bool_from_env;
 use quickwit_common::get_from_env_opt;
-use quickwit_metrics_exporters::OtlpExporterConfig;
-use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::EnvFilter;
+use tracing::{Event, Subscriber};
 use tracing_subscriber::field::RecordFields;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::format::{
     DefaultFields, Format, FormatEvent, FormatFields, Full, Json, JsonFields, Writer,
 };
 use tracing_subscriber::fmt::time::UtcTime;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 
-pub struct TelemetryHandle {
-    env_filter_reload_fn: EnvFilterReloadFn,
-    tracer_provider: Option<SdkTracerProvider>,
-    logger_provider: Option<SdkLoggerProvider>,
-    meter_provider: Option<SdkMetricsProvider>,
-}
+use crate::config::{OtlpExporterConfig, OtlpProtocol};
 
-impl TelemetryHandle {
-    pub fn env_filter_reload_fn(&self) -> EnvFilterReloadFn {
-        self.env_filter_reload_fn.clone()
-    }
-
-    pub fn shutdown(self) -> anyhow::Result<()> {
-        if let Some(tracer_provider) = self.tracer_provider {
-            tracer_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry tracer provider")?;
-        }
-        if let Some(logger_provider) = self.logger_provider {
-            logger_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry logger provider")?;
-        }
-        if let Some(meter_provider) = self.meter_provider {
-            meter_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry meter provider")?;
-        }
-        Ok(())
-    }
-}
-
-#[cfg(feature = "tokio-console")]
-use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
-
-/// Load the default logging filter from the environment. The filter can later
-/// be updated using the result callback of [init_telemetry].
-fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
-    let env_filter = env::var("RUST_LOG")
-        .map(|_| EnvFilter::from_default_env())
-        .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
-        .context("failed to set up tracing env filter")?;
-    Ok(env_filter)
-}
-
-type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
-
-pub fn init_telemetry(level: Level, ansi_colors: bool) -> anyhow::Result<TelemetryHandle> {
-    let build_info = BuildInfo::get();
-    let otlp_config = OtlpExporterConfig::load_from_env();
-
-    let meter_provider =
-        quickwit_metrics_exporters::init_metrics_provider(&build_info.version, &otlp_config)?;
-    crate::metrics::register_metrics(build_info);
-
-    #[cfg(feature = "tokio-console")]
-    {
-        if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
-            console_subscriber::init();
-            return Ok(TelemetryHandle {
-                env_filter_reload_fn: quickwit_serve::do_nothing_env_filter_reload_fn(),
-                tracer_provider: None,
-                logger_provider: None,
-                meter_provider,
-            });
-        }
-    }
-    global::set_text_map_propagator(TraceContextPropagator::new());
-
-    let event_format = EventFormat::get_from_env();
-    let fmt_fields = event_format.format_fields();
-    let registry = tracing_subscriber::registry();
-
-    let (reloadable_env_filter, reload_handle) = ReloadLayer::new(startup_env_filter(level)?);
-
-    #[cfg(not(feature = "jemalloc-profiled"))]
-    let registry = registry.with(reloadable_env_filter).with(
-        tracing_subscriber::fmt::layer()
-            .event_format(event_format)
-            .fmt_fields(fmt_fields)
-            .with_ansi(ansi_colors),
-    );
-
-    #[cfg(feature = "jemalloc-profiled")]
-    let registry = jemalloc_profiled::configure_registry(
-        registry,
-        event_format,
-        fmt_fields,
-        ansi_colors,
-        level,
-        reloadable_env_filter,
-    )?;
-
-    let env_filter_reload_fn: EnvFilterReloadFn = Arc::new(move |env_filter_def: &str| {
-        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
-        reload_handle.reload(new_env_filter)?;
-        Ok(())
-    });
-
-    // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
-    // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    let telemetry_handle = if otlp_config.is_enabled() {
-        let resource = quickwit_metrics_exporters::otlp::quickwit_resource(&build_info.version);
-
-        let tracer_provider = init_tracer_provider(&otlp_config, resource.clone())?;
-        let logger_provider = init_logger_provider(&otlp_config, resource)?;
-
-        let tracer = tracer_provider.tracer("quickwit");
-        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
-        // Bridge between tracing logs and otel tracing events
-        let logs_otel_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-
-        registry
-            .with(telemetry_layer)
-            .with(logs_otel_layer)
-            .try_init()
-            .context("failed to register tracing subscriber")?;
-
-        TelemetryHandle {
-            env_filter_reload_fn,
-            tracer_provider: Some(tracer_provider),
-            logger_provider: Some(logger_provider),
-            meter_provider,
-        }
-    } else {
-        registry
-            .try_init()
-            .context("failed to register tracing subscriber")?;
-        TelemetryHandle {
-            env_filter_reload_fn,
-            tracer_provider: None,
-            logger_provider: None,
-            meter_provider,
-        }
-    };
-
-    Ok(telemetry_handle)
-}
-
-fn init_tracer_provider(
-    otlp_config: &OtlpExporterConfig,
-    resource: Resource,
-) -> anyhow::Result<SdkTracerProvider> {
-    let traces_protocol = otlp_config.traces_protocol()?;
-    let span_exporter = traces_protocol.span_exporter()?;
-    let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
-        .with_batch_config(
-            BatchConfigBuilder::default()
-                // Quickwit can generate a lot of spans, especially in debug mode, and the
-                // default queue size of 2048 is too small.
-                .with_max_queue_size(32_768)
+impl OtlpProtocol {
+    pub(crate) fn log_exporter(&self) -> anyhow::Result<LogExporter> {
+        match self {
+            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
+            OtlpProtocol::HttpProtobuf => LogExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
-        )
-        .build();
-
-    Ok(SdkTracerProvider::builder()
-        .with_span_processor(span_processor)
-        .with_resource(resource)
-        .build())
+            OtlpProtocol::HttpJson => LogExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpJson)
+                .build(),
+        }
+        .context("failed to initialize OTLP logs exporter")
+    }
 }
 
-fn init_logger_provider(
+pub(crate) fn init_logger_provider(
     otlp_config: &OtlpExporterConfig,
     resource: Resource,
 ) -> anyhow::Result<SdkLoggerProvider> {
@@ -218,7 +62,7 @@ fn init_logger_provider(
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
 /// See discussion here: https://github.com/time-rs/time/discussions/418
-fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
+pub(crate) fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
     let time_format = time::format_description::parse(
         "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
     )
@@ -226,7 +70,7 @@ fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
     UtcTime::new(time_format)
 }
 
-enum EventFormat<'a> {
+pub(crate) enum EventFormat<'a> {
     Full(Format<Full, UtcTime<Vec<BorrowedFormatItem<'a>>>>),
     Json(Format<Json>),
     Ddg(DdgFormat),
@@ -234,7 +78,7 @@ enum EventFormat<'a> {
 
 impl EventFormat<'_> {
     /// Gets the log format from the environment variable `QW_LOG_FORMAT`.
-    fn get_from_env() -> Self {
+    pub(crate) fn get_from_env() -> Self {
         match get_from_env_opt::<String>("QW_LOG_FORMAT", false)
             .as_deref()
             .map(str::to_ascii_lowercase)
@@ -251,7 +95,7 @@ impl EventFormat<'_> {
         }
     }
 
-    fn format_fields(&self) -> FieldFormat {
+    pub(crate) fn format_fields(&self) -> FieldFormat {
         match self {
             EventFormat::Full(_) | EventFormat::Ddg(_) => {
                 FieldFormat::Default(DefaultFields::new())
@@ -287,7 +131,7 @@ where
 /// ```json
 /// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"byoc","ddsource":"byoc","message":"INFO quickwit_search: hello"}
 /// ```
-struct DdgFormat {
+pub(crate) struct DdgFormat {
     text_format: Format<Full, ()>,
 }
 
@@ -334,7 +178,7 @@ where
     }
 }
 
-enum FieldFormat {
+pub(crate) enum FieldFormat {
     Default(DefaultFields),
     Json(JsonFields),
 }
@@ -353,7 +197,7 @@ impl FormatFields<'_> for FieldFormat {
 /// A custom event formatter is used to print the backtrace of the
 /// profiling events.
 #[cfg(feature = "jemalloc-profiled")]
-pub(super) mod jemalloc_profiled {
+pub(crate) mod jemalloc_profiled {
     use std::fmt;
 
     use quickwit_common::jemalloc_profiled::JEMALLOC_PROFILER_TARGET;
@@ -367,8 +211,8 @@ pub(super) mod jemalloc_profiled {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::registry::LookupSpan;
 
-    use super::{EventFormat, FieldFormat, startup_env_filter, time_formatter};
-    use crate::logger::ReloadLayer;
+    use super::{EventFormat, FieldFormat, time_formatter};
+    use crate::{ReloadLayer, startup_env_filter};
 
     /// An event formatter specific to the memory profiler output.
     ///
@@ -448,7 +292,7 @@ pub(super) mod jemalloc_profiled {
     /// because the [tracing_subscriber::reload::Layer] seems to overwrite the
     /// filter configured by [profiler_tracing_filter()] even though it is
     /// applied to a separate layer.
-    pub(super) fn configure_registry<S>(
+    pub(crate) fn configure_registry<S>(
         registry: S,
         event_format: EventFormat<'static>,
         fmt_fields: FieldFormat,
@@ -531,7 +375,7 @@ mod tests {
         serde_json::from_str(&output).expect("output should be valid JSON")
     }
 
-    const TARGET: &str = "quickwit_cli::logger::tests";
+    const TARGET: &str = module_path!();
 
     #[test]
     fn test_ddg_format_has_expected_fields() {

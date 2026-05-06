@@ -8350,12 +8350,10 @@ name = "quickwit-cli"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "backtrace",
  "bytesize",
  "chrono",
  "clap",
  "colored",
- "console-subscriber",
  "dialoguer",
  "futures",
  "humantime",
@@ -8363,9 +8361,6 @@ dependencies = [
  "itertools 0.14.0",
  "numfmt",
  "openssl-probe 0.1.6",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry_sdk",
  "predicates",
  "quickwit-actors",
  "quickwit-cluster",
@@ -8376,13 +8371,13 @@ dependencies = [
  "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-metrics",
- "quickwit-metrics-exporters",
  "quickwit-proto",
  "quickwit-rest-client",
  "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry",
+ "quickwit-telemetry-exporters",
  "reqwest",
  "rustls 0.23.38",
  "serde_json",
@@ -8396,8 +8391,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -9065,24 +9058,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-metrics-exporters"
-version = "0.8.0"
-dependencies = [
- "anyhow",
- "metrics",
- "metrics-exporter-dogstatsd",
- "metrics-exporter-otel",
- "metrics-exporter-prometheus",
- "metrics-util",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "quickwit-common",
- "quickwit-dst",
- "quickwit-metrics",
-]
-
-[[package]]
 name = "quickwit-metrics-inventory"
 version = "0.8.0"
 dependencies = [
@@ -9317,13 +9292,13 @@ dependencies = [
  "quickwit-lambda-client",
  "quickwit-metastore",
  "quickwit-metrics",
- "quickwit-metrics-exporters",
  "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
+ "quickwit-telemetry-exporters",
  "regex",
  "rust-embed",
  "rustls 0.23.38",
@@ -9420,6 +9395,32 @@ dependencies = [
  "tracing",
  "username",
  "uuid",
+]
+
+[[package]]
+name = "quickwit-telemetry-exporters"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "backtrace",
+ "console-subscriber",
+ "metrics",
+ "metrics-exporter-dogstatsd",
+ "metrics-exporter-otel",
+ "metrics-exporter-prometheus",
+ "metrics-util",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "quickwit-common",
+ "quickwit-dst",
+ "quickwit-metrics",
+ "serde_json",
+ "time",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]

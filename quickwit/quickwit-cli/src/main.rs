@@ -20,10 +20,11 @@ use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::logger::{TelemetryHandle, init_telemetry};
+use quickwit_cli::metrics::register_build_info_metric;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
+use quickwit_telemetry_exporters::TelemetryHandle;
 use tracing::error;
 
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
@@ -60,7 +61,13 @@ fn main() -> anyhow::Result<()> {
     rt.block_on(async move {
         install_default_crypto_ring_provider();
 
-        let telemetry_handle = init_telemetry(command.default_log_level(), ansi_colors)?;
+        let build_info = BuildInfo::get();
+        let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(
+            &build_info.version,
+            command.default_log_level(),
+            ansi_colors,
+        )?;
+        register_build_info_metric(build_info);
 
         let runtime_handle = tokio::runtime::Handle::current();
         scrape_tokio_runtime_metrics(&runtime_handle, "main");

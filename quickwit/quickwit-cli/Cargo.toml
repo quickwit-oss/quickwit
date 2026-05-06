@@ -22,12 +22,10 @@ path = "src/generate_markdown.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
-console-subscriber = { workspace = true, optional = true }
 dialoguer = { workspace = true }
 futures = { workspace = true }
 humantime = { workspace = true }
@@ -35,9 +33,6 @@ indicatif = { workspace = true }
 itertools = { workspace = true }
 numfmt = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
-opentelemetry = { workspace = true }
-opentelemetry-appender-tracing = { workspace = true }
-opentelemetry_sdk = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }
@@ -51,8 +46,6 @@ time = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
@@ -63,7 +56,7 @@ quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
-quickwit-metrics-exporters = { workspace = true }
+quickwit-telemetry-exporters = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
@@ -86,8 +79,8 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 datafusion = ["quickwit-serve/datafusion"]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 jemalloc-profiled = [
-  "dep:backtrace",
   "quickwit-common/jemalloc-profiled",
+  "quickwit-telemetry-exporters/jemalloc-profiled",
   "quickwit-serve/jemalloc-profiled"
 ]
 ci-test = []
@@ -97,7 +90,10 @@ openssl-support = ["openssl-probe"]
 # (this is not about quickwit's metrics themselves)
 metrics = [ "quickwit-indexing/metrics" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
-tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
+tokio-console = [
+  "quickwit-common/named_tasks",
+  "quickwit-telemetry-exporters/tokio-console",
+]
 release-feature-set = [
   "jemalloc",
   "openssl-support",
