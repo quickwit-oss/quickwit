@@ -2,7 +2,7 @@
 
 **Status**: Open
 **Discovered**: 2026-02-19
-**Context**: Cloud-native storage characteristics analysis ([ADR-004](../004-cloud-native-storage-characteristics.md), characteristics C14, C16)
+**Context**: Cloud-native storage characteristics analysis (leading edge prioritization, freshness)
 
 ## Problem
 
@@ -51,6 +51,5 @@ All signals equally affected. Leading edge prioritization is signal-agnostic —
 
 ## References
 
-- [ADR-004: Cloud-Native Storage Characteristics](../004-cloud-native-storage-characteristics.md)
 - [ADR-003: Time-Windowed Sorted Compaction](../003-time-windowed-sorted-compaction.md)
 - [Phase 1: Sorted Splits for Parquet](../../locality-compaction/phase-1-sorted-splits.md) — mentions hinting mechanism for compaction

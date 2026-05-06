@@ -241,18 +241,9 @@ pub fn setup_logging_and_tracing(
 /// Set up DogStatsD metrics exporter and invariant recorder.
 #[cfg(not(test))]
 pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
-    // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
-    // deprecated and can be removed after 2026-04-01.
-    let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
-        .unwrap_or_else(|| {
-            quickwit_common::get_from_env(
-                "CP_DOGSTATSD_SERVER_HOST",
-                "127.0.0.1".to_string(),
-                false,
-            )
-        });
-    let port: u16 = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_PORT", false)
-        .unwrap_or_else(|| quickwit_common::get_from_env("CP_DOGSTATSD_SERVER_PORT", 8125, false));
+    let host: String =
+        quickwit_common::get_from_env("QW_STATSD_SERVER_HOST", "127.0.0.1".to_string(), false);
+    let port: u16 = quickwit_common::get_from_env("QW_STATSD_SERVER_PORT", 8125, false);
     let addr = format!("{host}:{port}");
 
     let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
@@ -262,8 +253,8 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
         ("KUBERNETES_COMPONENT", "kube_component"),
         ("KUBERNETES_NAMESPACE", "kube_namespace"),
         ("KUBERNETES_POD_NAME", "kube_pod_name"),
-        ("QW_CLUSTER_ID", "cloudprem_cluster_id"),
-        ("QW_NODE_ID", "cloudprem_node_id"),
+        ("QW_CLUSTER_ID", "quickwit_cluster_id"),
+        ("QW_NODE_ID", "quickwit_node_id"),
     ];
     for (env_var_key, label_key) in keys {
         if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false) {
@@ -271,7 +262,7 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
         }
     }
     metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-        .set_global_prefix("cloudprem")
+        .set_global_prefix("quickwit")
         .with_global_labels(global_labels)
         .with_remote_address(addr)
         .context("failed to parse DogStatsD server address")?
@@ -284,9 +275,9 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
 #[cfg(not(test))]
 fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
     let name = invariant_id.as_str();
-    metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
+    metrics::counter!("invariant.checked", "invariant" => name).increment(1);
     if !passed {
-        metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);
+        metrics::counter!("invariant.violated", "invariant" => name).increment(1);
     }
 }
 
@@ -359,7 +350,7 @@ where
 ///
 /// Example output:
 /// ```json
-/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"byoc","ddsource":"byoc","message":"INFO quickwit_search: hello"}
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit","ddsource":"quickwit","message":"INFO quickwit_search: hello"}
 /// ```
 struct DdgFormat {
     text_format: Format<Full, ()>,
@@ -403,7 +394,7 @@ where
         let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
         writeln!(
             writer,
-            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"byoc","ddsource":"byoc","message":{escaped_message}}}"#
+            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"quickwit","ddsource":"quickwit","message":{escaped_message}}}"#
         )
     }
 }
@@ -637,8 +628,8 @@ mod tests {
     fn test_ddg_format_basic_message() {
         let json = capture_ddg_log(|| tracing::info!("hello world"));
         assert_eq!(json["level"], "INFO");
-        assert_eq!(json["service"], "byoc");
-        assert_eq!(json["ddsource"], "byoc");
+        assert_eq!(json["service"], "quickwit");
+        assert_eq!(json["ddsource"], "quickwit");
         assert_eq!(
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: hello world")

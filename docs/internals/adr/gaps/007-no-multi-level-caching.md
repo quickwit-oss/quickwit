@@ -2,7 +2,7 @@
 
 **Status**: Open
 **Discovered**: 2026-02-19
-**Context**: Cloud-native storage characteristics analysis ([ADR-004](../004-cloud-native-storage-characteristics.md), characteristic C4). Split from original multi-level caching gap; broader caching concerns tracked in [GAP-010](./010-no-data-caching-or-query-affinity.md).
+**Context**: Cloud-native storage characteristics analysis (metadata caching). Split from original multi-level caching gap; broader caching concerns tracked in [GAP-010](./010-no-data-caching-or-query-affinity.md).
 
 ## Problem
 
@@ -49,5 +49,4 @@ All signals equally affected. Parquet footer caching benefits metrics queries di
 
 ## References
 
-- [ADR-004: Cloud-Native Storage Characteristics](../004-cloud-native-storage-characteristics.md)
 - [GAP-010: No Multi-Level Data Caching or Query Affinity Optimization](./010-no-data-caching-or-query-affinity.md)

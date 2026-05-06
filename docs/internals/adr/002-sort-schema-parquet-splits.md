@@ -197,5 +197,4 @@ Phase 4 of the locality compaction roadmap extends sorting to the Tantivy pipeli
 - [Compaction Architecture](../compaction-architecture.md) — current compaction system description
 - [ADR-001: Parquet Data Model](./001-parquet-data-model.md) — point-per-row data model and timeseries_id
 - [ADR-003: Time-Windowed Sorted Compaction](./003-time-windowed-sorted-compaction.md) — compaction that depends on sort schema
-- [Husky Phase 1: Locality of Reference](https://docs.google.com/document/d/1x9BO1muCTo1TmfhPYBdIxZ-59aU0ECSiEaGPUcDZkPs/edit) — prior art
-- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
+- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/) — prior art

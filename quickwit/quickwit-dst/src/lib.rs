@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Deterministic simulation testing and shared invariants for Quickhouse-Pomsky.
+//! Deterministic simulation testing and shared invariants for Quickwit.
 //!
 //! # Invariants (always available)
 //!

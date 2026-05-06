@@ -27,9 +27,9 @@
 //! use quickwit_dst::invariants::{InvariantId, set_invariant_recorder};
 //!
 //! fn my_recorder(id: InvariantId, passed: bool) {
-//!     // statsd.count("pomsky.invariant.checked", 1, &[&format!("name:{}", id)]);
+//!     // statsd.count("invariant.checked", 1, &[&format!("name:{}", id)]);
 //!     // if !passed {
-//!     //     statsd.count("pomsky.invariant.violated", 1, &[&format!("name:{}", id)]);
+//!     //     statsd.count("invariant.violated", 1, &[&format!("name:{}", id)]);
 //!     // }
 //!     if !passed {
 //!         eprintln!("{} violated in production", id);
