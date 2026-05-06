@@ -1,16 +1,15 @@
 # CODEOWNERS — see https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
-# Last matching rule per file wins. Approval from any listed owner satisfies
-# the requirement. quickwit-core is listed on every rule so it can always
-# approve; byoc-metrics is added on metrics-specific paths so PRs scoped to
-# those paths can be approved by either team.
+# Last matching rule per file wins. Only the owners on the matching rule are
+# auto-requested for review; quickwit-core members retain repo write access
+# and can still approve any PR manually.
 
 # Default: quickwit-core owns everything
 *                                                        @quickwit-oss/quickwit-core
 
-# byoc-metrics paths — either quickwit-core or byoc-metrics can approve
-/quickwit/quickwit-parquet-engine/                       @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
-/quickwit/quickwit-datafusion/                           @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
-/quickwit/quickwit-df-core/                              @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
-/quickwit/quickwit-dst/                                  @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
-/quickwit/quickwit-indexing/src/actors/metrics_pipeline/ @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
+# byoc-metrics paths — owned by byoc-metrics
+/quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
+/quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
+/quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
+/quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
+/quickwit/quickwit-indexing/src/actors/metrics_pipeline/ @quickwit-oss/byoc-metrics
