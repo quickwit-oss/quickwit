@@ -8592,6 +8592,7 @@ dependencies = [
  "google-cloud-pubsub",
  "itertools 0.14.0",
  "libz-sys",
+ "metrics",
  "mockall",
  "oneshot 0.2.1",
  "openssl",

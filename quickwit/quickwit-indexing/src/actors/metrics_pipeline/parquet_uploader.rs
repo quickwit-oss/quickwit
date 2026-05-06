@@ -21,6 +21,7 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -33,6 +34,7 @@ use quickwit_storage::Storage;
 use tokio::sync::{Semaphore, SemaphorePermit, oneshot};
 use tracing::{Instrument, Span, debug, info, instrument, warn};
 
+use super::parquet_compaction_metrics::{PARQUET_COMPACTION_METRICS, kind_from_index_id};
 use super::{ParquetSplitBatch, ParquetSplitsUpdate};
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
@@ -163,6 +165,14 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
     ) -> Result<(), ActorExitStatus> {
         let index_uid = batch.index_uid.clone();
         let num_splits = batch.splits.len();
+        let is_compaction_upload =
+            !batch.replaced_split_ids.is_empty() || batch._merge_permit_opt.is_some();
+        let compaction_kind = batch
+            .splits
+            .first()
+            .map(|split| split.kind)
+            .unwrap_or_else(|| kind_from_index_id(&index_uid.index_id));
+        let compaction_index_id = index_uid.index_id.clone();
 
         tracing::Span::current().record("index_uid", index_uid.to_string());
         tracing::Span::current().record("num_splits", num_splits);
@@ -173,6 +183,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
             // that must reach the publisher for graceful decommission.
             let (tx, rx) = oneshot::channel::<SequencerCommand<ParquetSplitsUpdate>>();
             if let Err(e) = ctx.send_message(&self.sequencer_mailbox, rx).await {
+                if is_compaction_upload {
+                    PARQUET_COMPACTION_METRICS.record_sequencer_failure(
+                        &compaction_index_id,
+                        compaction_kind,
+                        Duration::ZERO,
+                    );
+                }
                 warn!(error = %e, "failed to reserve sequencer position for empty batch");
                 return Ok(());
             }
@@ -188,6 +205,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 _merge_permit_opt: batch._merge_permit_opt,
             };
             if tx.send(SequencerCommand::Proceed(update)).is_err() {
+                if is_compaction_upload {
+                    PARQUET_COMPACTION_METRICS.record_sequencer_failure(
+                        &compaction_index_id,
+                        compaction_kind,
+                        Duration::ZERO,
+                    );
+                }
                 warn!("sequencer receiver dropped for empty batch");
             }
             return Ok(());
@@ -198,6 +222,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         // be published in the order they were submitted.
         let (tx, rx) = oneshot::channel::<SequencerCommand<ParquetSplitsUpdate>>();
         if let Err(e) = ctx.send_message(&self.sequencer_mailbox, rx).await {
+            if is_compaction_upload {
+                PARQUET_COMPACTION_METRICS.record_sequencer_failure(
+                    &compaction_index_id,
+                    compaction_kind,
+                    Duration::ZERO,
+                );
+            }
             warn!(error = %e, "failed to reserve sequencer position");
             return Ok(());
         }
@@ -207,6 +238,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let kill_switch = ctx.kill_switch().clone();
 
         if kill_switch.is_dead() {
+            if is_compaction_upload {
+                PARQUET_COMPACTION_METRICS.record_upload_failure(
+                    &compaction_index_id,
+                    compaction_kind,
+                    Duration::ZERO,
+                );
+            }
             warn!("kill switch was activated, cancelling metrics upload");
             let _ = tx.send(SequencerCommand::Discard);
             return Err(ActorExitStatus::Killed);
@@ -246,10 +284,18 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 }
 
                 // Stage splits in metastore based on split type
+                let staging_started_at = Instant::now();
                 let stage_result =
                     stage_splits(metastore.clone(), index_uid.clone(), &splits).await;
 
                 if let Err(e) = stage_result {
+                    if is_compaction_upload {
+                        PARQUET_COMPACTION_METRICS.record_stage_failure(
+                            &compaction_index_id,
+                            compaction_kind,
+                            staging_started_at.elapsed(),
+                        );
+                    }
                     warn!(error = %e, "failed to stage splits");
                     // Discard sequencer position on error
                     let _ = tx.send(SequencerCommand::Discard);
@@ -260,6 +306,14 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 counters
                     .num_staged_splits
                     .fetch_add(splits.len() as u64, Ordering::SeqCst);
+                if is_compaction_upload {
+                    PARQUET_COMPACTION_METRICS.record_stage_success(
+                        &compaction_index_id,
+                        compaction_kind,
+                        splits.len(),
+                        staging_started_at.elapsed(),
+                    );
+                }
                 info!(
                     index_uid = %index_uid,
                     num_splits = splits.len(),
@@ -267,6 +321,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 );
 
                 // Upload Parquet files to storage
+                let upload_started_at = Instant::now();
+                let mut uploaded_bytes = 0u64;
                 for split in &splits {
                     let parquet_file = split.parquet_filename();
                     // Read the local Parquet file from output_dir
@@ -281,6 +337,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                                 parquet_file = %parquet_file,
                                 "failed to read local parquet file"
                             );
+                            if is_compaction_upload {
+                                PARQUET_COMPACTION_METRICS.record_upload_failure(
+                                    &compaction_index_id,
+                                    compaction_kind,
+                                    upload_started_at.elapsed(),
+                                );
+                            }
                             // Discard sequencer position on error
                             let _ = tx.send(SequencerCommand::Discard);
                             kill_switch.kill();
@@ -299,6 +362,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                             parquet_file = %parquet_file,
                             "failed to upload parquet file"
                         );
+                        if is_compaction_upload {
+                            PARQUET_COMPACTION_METRICS.record_upload_failure(
+                                &compaction_index_id,
+                                compaction_kind,
+                                upload_started_at.elapsed(),
+                            );
+                        }
                         // Discard sequencer position on error
                         let _ = tx.send(SequencerCommand::Discard);
                         kill_switch.kill();
@@ -306,6 +376,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     }
 
                     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
+                    uploaded_bytes += file_size as u64;
 
                     // Delete the local parquet file after successful upload.
                     if let Err(e) = tokio::fs::remove_file(&local_path).await {
@@ -321,6 +392,15 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                         parquet_file = %parquet_file,
                         file_size = file_size,
                         "uploaded parquet file to storage"
+                    );
+                }
+                if is_compaction_upload {
+                    PARQUET_COMPACTION_METRICS.record_upload_success(
+                        &compaction_index_id,
+                        compaction_kind,
+                        splits.len(),
+                        uploaded_bytes,
+                        upload_started_at.elapsed(),
                     );
                 }
 
@@ -339,6 +419,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 };
 
                 if tx.send(SequencerCommand::Proceed(update)).is_err() {
+                    if is_compaction_upload {
+                        PARQUET_COMPACTION_METRICS.record_sequencer_failure(
+                            &compaction_index_id,
+                            compaction_kind,
+                            Duration::ZERO,
+                        );
+                    }
                     warn!("sequencer receiver dropped");
                 }
 

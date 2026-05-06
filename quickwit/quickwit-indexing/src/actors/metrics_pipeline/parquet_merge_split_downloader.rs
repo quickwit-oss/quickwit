@@ -20,6 +20,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -28,6 +29,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_storage::Storage;
 use tracing::{debug, info, warn};
 
+use super::parquet_compaction_metrics::PARQUET_COMPACTION_METRICS;
 use super::parquet_merge_executor::ParquetMergeExecutor;
 use super::parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask};
 
@@ -86,6 +88,7 @@ impl Handler<ParquetMergeTask> for ParquetMergeSplitDownloader {
     ) -> Result<(), ActorExitStatus> {
         let merge_split_id = task.merge_operation.merge_split_id.to_string();
         let num_inputs = task.merge_operation.splits.len();
+        let download_started_at = Instant::now();
 
         info!(
             merge_split_id = %merge_split_id,
@@ -130,6 +133,10 @@ impl Handler<ParquetMergeTask> for ParquetMergeSplitDownloader {
                 .copy_to_file(Path::new(&parquet_filename), &local_path)
                 .await
                 .map_err(|e| {
+                    PARQUET_COMPACTION_METRICS.record_download_failure(
+                        &task.merge_operation,
+                        download_started_at.elapsed(),
+                    );
                     warn!(
                         error = %e,
                         split_id = %split.split_id,
@@ -147,6 +154,8 @@ impl Handler<ParquetMergeTask> for ParquetMergeSplitDownloader {
             num_files = downloaded_paths.len(),
             "all parquet files downloaded for merge"
         );
+        PARQUET_COMPACTION_METRICS
+            .record_download_success(&task.merge_operation, download_started_at.elapsed());
 
         let scratch = ParquetMergeScratch {
             merge_operation: task.merge_operation,
