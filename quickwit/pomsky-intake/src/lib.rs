@@ -18,6 +18,7 @@ mod config;
 pub mod host_tags;
 pub mod host_tags_poller;
 mod intake_runner;
+pub mod unix_timestamp;
 
 // Vendored agent-side protobuf types; generated code lives under
 // `src/codegen/` (checked in) and is reexported through `protos::*`.

@@ -25,6 +25,7 @@ use vector_lib::config::clone_input_definitions;
 
 use crate::host_tags::HostTagsStore;
 use crate::host_tags_poller::UnknownHostsCollector;
+use crate::unix_timestamp::UnixTimestamp;
 
 /// Adds host tags from the shared [`HostTagsStore`] to each event.
 ///
@@ -35,6 +36,10 @@ use crate::host_tags_poller::UnknownHostsCollector;
 ///
 /// When a hostname is not found in the store, it is reported to the
 /// [`UnknownHostsCollector`] so the background poller can resolve it.
+/// When a hostname is found but its entry has expired, the tags are still
+/// applied (serving stale data is better than no data), and the host is
+/// also reported to the collector so fresh tags are fetched on the next
+/// poll cycle.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddHostTagsConfig;
@@ -109,6 +114,9 @@ fn add_log_tags(store: &HostTagsStore, collector: &UnknownHostsCollector, log: &
         collector.record(hostname.to_string());
         return;
     };
+    if tags.is_expired(UnixTimestamp::now()) {
+        collector.record(hostname.to_string());
+    }
     for (key, value) in tags.iter() {
         let path = format!("tags.{key}");
 
@@ -133,6 +141,9 @@ fn add_metric_tags(store: &HostTagsStore, collector: &UnknownHostsCollector, met
             metric.replace_tag(key.to_string(), value.to_string());
         }
     }
+    if tags.is_expired(UnixTimestamp::now()) {
+        collector.record(hostname);
+    }
 }
 
 /// Traces (post-explode): hostname lives in `meta.host`.
@@ -145,7 +156,6 @@ fn add_trace_tags(
     let hostname_opt = trace
         .get("meta.host")
         .and_then(|hostname| hostname.as_str());
-
     let Some(hostname) = hostname_opt else {
         return;
     };
@@ -153,6 +163,9 @@ fn add_trace_tags(
         collector.record(hostname.to_string());
         return;
     };
+    if tags.is_expired(UnixTimestamp::now()) {
+        collector.record(hostname.to_string());
+    }
     for (key, value) in tags.iter() {
         let path = format!("meta.{key}");
 
@@ -165,27 +178,37 @@ fn add_trace_tags(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::time::Duration;
 
     use vector::event::{
         Event, LogEvent, Metric, MetricKind, MetricTags, MetricValue, TraceEvent, Value,
     };
 
     use super::*;
+    use crate::host_tags::HostTagsEntry;
+    use crate::unix_timestamp::UnixTimestamp;
 
-    fn make_store() -> Arc<HostTagsStore> {
+    fn make_store(ttl: Duration) -> Arc<HostTagsStore> {
         let store = Arc::new(HostTagsStore::default());
+        let expires_at = UnixTimestamp::now() + ttl;
         let mut entries = HashMap::new();
         entries.insert(
             "web-01".to_string(),
-            vec![
-                ("env".to_string(), "prod".to_string()),
-                ("region".to_string(), "us-east-1".to_string()),
-            ]
-            .into(),
+            HostTagsEntry {
+                tags: vec![
+                    ("env".to_string(), "prod".to_string()),
+                    ("region".to_string(), "us-east-1".to_string()),
+                ]
+                .into(),
+                expires_at,
+            },
         );
         entries.insert(
             "db-01".to_string(),
-            vec![("env".to_string(), "staging".to_string())].into(),
+            HostTagsEntry {
+                tags: vec![("env".to_string(), "staging".to_string())].into(),
+                expires_at,
+            },
         );
         store.store(entries);
         store
@@ -224,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_metric_host_tags_added() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let event = make_metric("cpu.usage", &[("host", "web-01"), ("service", "api")]);
         let events = run_transform(store, event);
         let m = events[0].as_metric();
@@ -237,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_metric_existing_tag_not_overwritten() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let event = make_metric("cpu.usage", &[("host", "web-01"), ("env", "canary")]);
         let events = run_transform(store, event);
         let m = events[0].as_metric();
@@ -247,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_metric_unknown_host_reported_to_collector() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let collector = UnknownHostsCollector::default();
         let mut transform = AddHostTags {
             store,
@@ -266,6 +289,28 @@ mod tests {
         assert_eq!(drained, vec!["unknown-42".to_string()]);
     }
 
+    #[test]
+    fn test_metric_expired_host_tags_applied_and_requeued() {
+        let store = make_store(Duration::ZERO);
+        let collector = UnknownHostsCollector::default();
+        let mut transform = AddHostTags {
+            store,
+            collector: collector.clone(),
+        };
+        let event = make_metric("cpu.usage", &[("host", "web-01")]);
+        let mut output = OutputBuffer::with_capacity(1);
+        transform.transform(&mut output, event);
+
+        let events: Vec<_> = output.into_events().collect();
+        let m = events[0].as_metric();
+        // Stale tags are still applied.
+        assert_eq!(m.tag_value("env").as_deref(), Some("prod"));
+        assert_eq!(m.tag_value("region").as_deref(), Some("us-east-1"));
+        // Host is also re-queued for refresh.
+        let drained = collector.drain(10);
+        assert_eq!(drained, vec!["web-01".to_string()]);
+    }
+
     // --- Log tests ---
 
     fn make_log(hostname: Option<&str>) -> Event {
@@ -279,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_log_host_tags_added() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let event = make_log(Some("web-01"));
         let events = run_transform(store, event);
         let log = events[0].as_log();
@@ -289,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_log_existing_tag_not_overwritten() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let mut log = LogEvent::default();
         log.insert("hostname", "web-01");
         log.insert("tags.env", "canary");
@@ -301,7 +346,7 @@ mod tests {
 
     #[test]
     fn test_log_unknown_host_reported_to_collector() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let collector = UnknownHostsCollector::default();
         let mut transform = AddHostTags {
             store,
@@ -313,6 +358,27 @@ mod tests {
 
         let drained = collector.drain(10);
         assert_eq!(drained, vec!["unknown-42".to_string()]);
+    }
+
+    #[test]
+    fn test_log_expired_host_tags_applied_and_requeued() {
+        let store = make_store(Duration::ZERO);
+        let collector = UnknownHostsCollector::default();
+        let mut transform = AddHostTags {
+            store,
+            collector: collector.clone(),
+        };
+        let event = make_log(Some("web-01"));
+        let mut output = OutputBuffer::with_capacity(1);
+        transform.transform(&mut output, event);
+
+        let events: Vec<_> = output.into_events().collect();
+        let log = events[0].as_log();
+        // Stale tags are still applied.
+        assert_eq!(log.get("tags.env"), Some(&Value::from("prod")));
+        // Host is also re-queued for refresh.
+        let drained = collector.drain(10);
+        assert_eq!(drained, vec!["web-01".to_string()]);
     }
 
     // --- Trace tests ---
@@ -329,7 +395,7 @@ mod tests {
 
     #[test]
     fn test_trace_host_tags_added() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let event = make_trace(Some("web-01"));
         let events = run_transform(store, event);
         let trace = events[0].as_trace();
@@ -339,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_trace_existing_meta_not_overwritten() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let mut trace = TraceEvent::default();
         trace.insert("meta.host", "web-01");
         trace.insert("meta.env", "canary");
@@ -351,7 +417,7 @@ mod tests {
 
     #[test]
     fn test_trace_unknown_host_reported_to_collector() {
-        let store = make_store();
+        let store = make_store(Duration::from_secs(3600));
         let collector = UnknownHostsCollector::default();
         let mut transform = AddHostTags {
             store,
@@ -363,5 +429,26 @@ mod tests {
 
         let drained = collector.drain(10);
         assert_eq!(drained, vec!["unknown-42".to_string()]);
+    }
+
+    #[test]
+    fn test_trace_expired_host_tags_applied_and_requeued() {
+        let store = make_store(Duration::ZERO);
+        let collector = UnknownHostsCollector::default();
+        let mut transform = AddHostTags {
+            store,
+            collector: collector.clone(),
+        };
+        let event = make_trace(Some("web-01"));
+        let mut output = OutputBuffer::with_capacity(1);
+        transform.transform(&mut output, event);
+
+        let events: Vec<_> = output.into_events().collect();
+        let trace = events[0].as_trace();
+        // Stale tags are still applied.
+        assert_eq!(trace.get("meta.env"), Some(&Value::from("prod")));
+        // Host is also re-queued for refresh.
+        let drained = collector.drain(10);
+        assert_eq!(drained, vec!["web-01".to_string()]);
     }
 }

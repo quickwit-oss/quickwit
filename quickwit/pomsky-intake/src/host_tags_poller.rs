@@ -19,14 +19,15 @@ use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use indexmap::IndexSet;
 use rand::RngExt as _;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::host_tags::{HostTag, HostTagsMap, HostTagsStore};
+use crate::host_tags::{HostTag, HostTagsEntry, HostTagsMap, HostTagsStore};
+use crate::unix_timestamp::UnixTimestamp;
 
 /// Maximum number of hostnames to resolve per request.
 const MAX_HOSTS_PER_REQUEST: usize = 200;
@@ -35,8 +36,9 @@ static GLOBAL_COLLECTOR: LazyLock<UnknownHostsCollector> =
     LazyLock::new(UnknownHostsCollector::default);
 
 /// FIFO collector of hostnames that the enrichment transform could not
-/// find in the store. Uses an [`IndexSet`] to maintain insertion order
-/// while deduplicating, so the oldest unknown hosts are resolved first.
+/// find in the store, or found but with an expired TTL. Uses an
+/// [`IndexSet`] to maintain insertion order while deduplicating, so the
+/// oldest unknown hosts are resolved first.
 #[derive(Clone, Default)]
 pub struct UnknownHostsCollector {
     inner: Arc<Mutex<IndexSet<String>>>,
@@ -48,9 +50,10 @@ impl UnknownHostsCollector {
         GLOBAL_COLLECTOR.clone()
     }
 
-    /// Records a hostname that was not found in the store.
-    /// Called from the synchronous transform hot path — the lock is held
-    /// only for the duration of an `IndexSet::insert`.
+    /// Records a hostname that was not found in the store, or was found
+    /// with an expired TTL. Called from the synchronous transform hot
+    /// path — the lock is held only for the duration of an
+    /// `IndexSet::insert`.
     pub fn record(&self, hostname: String) {
         let mut guard = self
             .inner
@@ -108,7 +111,7 @@ struct CacheEntry {
     /// Tags in `"key:value"` format (same as the metadata service response).
     tags: Vec<String>,
     /// Unix timestamp (seconds) at which this entry expires.
-    expires_at_unix: u64,
+    expires_at_unix: UnixTimestamp,
 }
 
 /// Parses a `"key:value"` tag string into a `(key, value)` pair.
@@ -132,35 +135,16 @@ fn random_ttl(ttl_min: Duration, ttl_max: Duration) -> Duration {
     Duration::from_secs(ttl_secs)
 }
 
-/// Returns the current unix timestamp in seconds.
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("system clock before epoch")
-        .as_secs()
-}
-
 // -- Cache persistence --
 
-/// Result of loading the cache file.
-pub struct CacheSnapshot {
-    pub tag_map: HostTagsMap,
-    /// Maps each tracked hostname to its expiry unix timestamp (seconds).
-    pub host_expiry: HashMap<String, u64>,
-    pub expired_hosts: Vec<String>,
-}
-
-/// Loads the NDJSON cache file. Returns the tag map (for non-expired
-/// entries), the expiry map, and a list of expired hosts that need
-/// immediate re-fetching.
-pub fn load_cache(path: &Path) -> anyhow::Result<CacheSnapshot> {
+/// Loads the NDJSON cache file. Expired entries are kept so their stale
+/// tags can still be served — they will be re-fetched demand-side when
+/// next seen in traffic.
+pub fn load_cache(path: &Path) -> anyhow::Result<HostTagsMap> {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let now = now_unix();
 
-    let mut tag_map = HostTagsMap::new();
-    let mut host_expiry = HashMap::new();
-    let mut expired_hosts = Vec::new();
+    let mut map = HostTagsMap::new();
 
     for (line_no, line_res) in reader.lines().enumerate() {
         let line = match line_res {
@@ -174,57 +158,46 @@ pub fn load_cache(path: &Path) -> anyhow::Result<CacheSnapshot> {
         if line.is_empty() {
             continue;
         }
-        let entry: CacheEntry = match serde_json::from_str(line) {
-            Ok(entry) => entry,
+        let cache_entry: CacheEntry = match serde_json::from_str(line) {
+            Ok(cache_entry) => cache_entry,
             Err(error) => {
                 warn!(line = line_no + 1, %error, "skipping malformed cache line");
                 continue;
             }
         };
 
-        let tags: Arc<[HostTag]> = entry.tags.iter().filter_map(|raw| parse_tag(raw)).collect();
-        let expiry_unix = entry.expires_at_unix;
-
-        if expiry_unix <= now {
-            // Expired: load the stale tags (better than nothing) and mark
-            // for immediate re-fetch.
-            expired_hosts.push(entry.hostname.clone());
-        }
-
-        tag_map.insert(entry.hostname.clone(), tags);
-        host_expiry.insert(entry.hostname, expiry_unix);
+        let tags: Arc<[HostTag]> = cache_entry
+            .tags
+            .iter()
+            .filter_map(|raw| parse_tag(raw))
+            .collect();
+        let host_tags_entry = HostTagsEntry {
+            tags,
+            expires_at: cache_entry.expires_at_unix,
+        };
+        map.insert(cache_entry.hostname, host_tags_entry);
     }
 
-    Ok(CacheSnapshot {
-        tag_map,
-        host_expiry,
-        expired_hosts,
-    })
+    Ok(map)
 }
 
 /// Atomically writes the full state to the NDJSON cache file via
 /// temp+rename.
-fn save_cache(
-    path: &Path,
-    store: &HostTagsStore,
-    host_expiry: &HashMap<String, u64>,
-) -> anyhow::Result<()> {
+fn save_cache(path: &Path, store: &HostTagsStore) -> anyhow::Result<()> {
     let parent = path.parent().unwrap_or(Path::new("."));
 
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
 
     let snapshot = store.snapshot();
-    for (host, tags) in snapshot.iter() {
-        let expires_at_unix = host_expiry.get(host).copied().unwrap_or(0);
+    for (host, entry) in snapshot.iter() {
+        let encoded_tags: Vec<String> = entry.tags.iter().map(|(k, v)| encode_tag(k, v)).collect();
 
-        let encoded_tags: Vec<String> = tags.iter().map(|(k, v)| encode_tag(k, v)).collect();
-
-        let entry = CacheEntry {
+        let cache_entry = CacheEntry {
             hostname: host.clone(),
             tags: encoded_tags,
-            expires_at_unix,
+            expires_at_unix: entry.expires_at,
         };
-        serde_json::to_writer(&mut tmp, &entry)?;
+        serde_json::to_writer(&mut tmp, &cache_entry)?;
         tmp.write_all(b"\n")?;
     }
     // Durably persist the file's data before the rename, so a crash
@@ -249,6 +222,9 @@ pub struct HostTagsPollerConfig {
     pub fetch_timeout: Duration,
     pub ttl_min: Duration,
     pub ttl_max: Duration,
+    /// How long past expiry before an entry is evicted from the store.
+    /// Must be strictly greater than `ttl_max`.
+    pub stale_threshold: Duration,
     pub cache_path: Option<PathBuf>,
 }
 
@@ -256,11 +232,16 @@ pub struct HostTagsPollerConfig {
 /// the tokio runtime shutting down).
 ///
 /// Each cycle:
-/// 1. Drains unknown hostnames from the collector (new hosts).
-/// 2. Finds tracked hosts whose TTL has expired (stale hosts).
-/// 3. Sends the combined set to the metadata service (batched).
-/// 4. Merges the response into the store and resets their TTLs.
+/// 1. Evicts entries that have been expired longer than `stale_threshold`.
+/// 2. Drains hostnames from the collector (hosts seen in traffic with no entry or an expired
+///    entry).
+/// 3. Fetches the drained set from the metadata service (batched).
+/// 4. Merges the response into the store with fresh TTLs.
 /// 5. Persists the full state to the cache file (if configured).
+///
+/// Hosts are only re-fetched when the pipeline sees them — not proactively
+/// on TTL expiry. This prevents endless re-fetching of hosts that are still
+/// tracked by the metadata service but never appear in traffic.
 pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
     let HostTagsPollerConfig {
         store,
@@ -271,9 +252,12 @@ pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
         fetch_timeout,
         ttl_min,
         ttl_max,
+        stale_threshold,
         cache_path,
     } = config;
     debug_assert!(fetch_timeout < poll_interval);
+    debug_assert!(stale_threshold > ttl_max);
+
     let client = reqwest::Client::builder()
         .timeout(fetch_timeout)
         .build()
@@ -287,150 +271,128 @@ pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
         fetch_timeout_secs = fetch_timeout.as_secs(),
         ttl_min_secs = ttl_min.as_secs(),
         ttl_max_secs = ttl_max.as_secs(),
+        stale_threshold_hours = stale_threshold.as_secs() / 3600,
         ?cache_path,
         "starting host-tags poller"
     );
 
-    // Maps each tracked hostname to its expiry unix timestamp (seconds).
-    let mut host_expiry: HashMap<String, u64> = HashMap::new();
-
-    // Load persisted state if available.
     if let Some(ref path) = cache_path {
         match load_cache(path) {
-            Ok(snapshot) => {
-                let total = snapshot.tag_map.len();
-                let expired = snapshot.expired_hosts.len();
-                info!(total, expired, "loaded host tags from cache");
-
-                host_expiry = snapshot.host_expiry;
-                store.store(snapshot.tag_map);
-
-                // Queue expired hosts for immediate re-fetch.
-                for host in snapshot.expired_hosts {
-                    collector.record(host);
-                }
+            Ok(entries) => {
+                info!(total = entries.len(), "loaded host tags from cache");
+                store.store(entries);
             }
             Err(error) => {
                 info!(%error, "no cache file loaded, starting fresh");
             }
         }
     }
+
     let mut interval = tokio::time::interval(poll_interval);
 
     loop {
         interval.tick().await;
-        let now = now_unix();
 
-        // 1. Drain newly-seen unknown hosts — they need immediate resolution.
-        let new_hosts = collector.drain(MAX_HOSTS_PER_REQUEST);
-        if !new_hosts.is_empty() {
-            debug!(count = new_hosts.len(), "discovered new unknown hosts");
-        }
-
-        // 2. Collect expired hosts that need refreshing.
-        let expired_hosts: Vec<String> = host_expiry
+        // 1. Evict entries that have been stale for longer than stale_threshold.
+        // Entries expired for less than stale_threshold are kept so the pipeline
+        // can continue serving their stale tags while a re-fetch is in flight.
+        let stale_cutoff = UnixTimestamp::now() - stale_threshold;
+        let stale_hosts: Vec<String> = store
+            .snapshot()
             .iter()
-            .filter(|(_, expiry)| **expiry <= now)
+            .filter(|(_, entry)| entry.expires_at < stale_cutoff)
             .map(|(host, _)| host.clone())
             .collect();
-        if !expired_hosts.is_empty() {
-            debug!(count = expired_hosts.len(), "hosts with expired TTL");
+        if !stale_hosts.is_empty() {
+            info!("evicting {} stale host tag entries", stale_hosts.len());
+            store.evict(&stale_hosts);
+            if let Some(ref path) = cache_path
+                && let Err(error) = save_cache(path, &store)
+            {
+                warn!(%error, "failed to persist cache after eviction");
+            }
         }
 
-        // 3. Combine new + expired into the set to query.
-        let mut to_query: Vec<String> = Vec::with_capacity(new_hosts.len() + expired_hosts.len());
-        to_query.extend(new_hosts);
-        to_query.extend(expired_hosts);
-        to_query.sort_unstable();
-        to_query.dedup();
+        // 2. Drain hostnames seen in traffic that need tag resolution.
+        // This includes both genuinely unknown hosts and hosts whose cached
+        // entry was expired when the transform last saw them.
+        let to_fetch = collector.drain(MAX_HOSTS_PER_REQUEST);
+        if to_fetch.is_empty() {
+            continue;
+        }
+        debug!("fetching tags for {} hosts seen in traffic", to_fetch.len());
 
-        if !to_query.is_empty() {
-            match fetch_host_tags(&client, &endpoint, &dd_api_key, &to_query).await {
-                Ok(fresh_tags) => {
-                    let fetched_count = fresh_tags.len();
-
-                    // Assign a random TTL to each fetched host.
-                    let fetch_completed_at = now_unix();
-                    for host in fresh_tags.keys() {
+        // 3. Fetch from metadata service and merge with fresh TTLs.
+        match fetch_host_tags(&client, &endpoint, &dd_api_key, &to_fetch).await {
+            Ok(raw_tags) => {
+                let now_after_fetch = UnixTimestamp::now();
+                let fresh_entries: HostTagsMap = raw_tags
+                    .into_iter()
+                    .map(|(host, tags)| {
                         let ttl = random_ttl(ttl_min, ttl_max);
-                        host_expiry.insert(host.clone(), fetch_completed_at + ttl.as_secs());
-                    }
-
-                    // Merge into the store (only updates the fetched subset).
-                    store.merge(fresh_tags);
-                    info!(
-                        fetched_count,
-                        total_hosts = store.len(),
-                        memory_footprint_bytes = store.memory_footprint_bytes(),
-                        "merged fresh host tags into store"
-                    );
-
-                    // Persist to disk.
-                    if let Some(ref path) = cache_path
-                        && let Err(error) = save_cache(path, &store, &host_expiry)
-                    {
-                        warn!(%error, "failed to save host-tags cache");
-                    }
+                        let expires_at = now_after_fetch + ttl;
+                        (host, HostTagsEntry { tags, expires_at })
+                    })
+                    .collect();
+                let fetched_count = fresh_entries.len();
+                store.merge(fresh_entries);
+                info!(
+                    fetched_count,
+                    total_hosts = store.len(),
+                    memory_footprint = %store.memory_footprint(),
+                    "merged fresh host tags into store"
+                );
+                if let Some(ref path) = cache_path
+                    && let Err(error) = save_cache(path, &store)
+                {
+                    warn!(%error, "failed to save host-tags cache");
                 }
-                Err(error) => {
-                    warn!(%error, "failed to fetch host tags from metadata service");
-                    // On failure, re-insert new hosts with an immediate expiry
-                    // so they're retried next cycle.
-                    for host in to_query {
-                        host_expiry.entry(host).or_insert(now);
-                    }
+            }
+            Err(error) => {
+                warn!(%error, "failed to fetch host tags from metadata service");
+                // Re-queue for retry on the next cycle.
+                for host in to_fetch {
+                    collector.record(host);
                 }
             }
         }
     }
 }
 
-/// Fetches host tags from the metadata service, batching requests if
-/// the host list exceeds [`MAX_HOSTS_PER_REQUEST`].
 async fn fetch_host_tags(
     client: &reqwest::Client,
     endpoint: &str,
     api_key: &str,
     hosts: &[String],
-) -> anyhow::Result<HostTagsMap> {
-    let mut result = HostTagsMap::with_capacity(hosts.len());
+) -> anyhow::Result<HashMap<String, Arc<[HostTag]>>> {
+    let response = client
+        .post(endpoint)
+        .header("DD-API-KEY", api_key)
+        .json(&HostTagsRequest {
+            hostnames: hosts.to_vec(),
+        })
+        .send()
+        .await?;
 
-    for chunk in hosts.chunks(MAX_HOSTS_PER_REQUEST) {
-        let request_body = HostTagsRequest {
-            hostnames: chunk.to_vec(),
-        };
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("metadata service returned HTTP {status}: {body}");
+    }
+    let body: HostTagsResponse = response.json().await?;
 
-        let response = client
-            .post(endpoint)
-            .header("DD-API-KEY", api_key)
-            .json(&request_body)
-            .send()
-            .await?;
-
-        let status = response.status();
-
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("metadata service returned HTTP {status}: {body}");
+    let mut result = HashMap::with_capacity(hosts.len());
+    for entry in body.host_tags {
+        if !entry.error.is_empty() {
+            debug!(host = %entry.hostname, error = %entry.error, "metadata service reported error for host");
         }
-        let body: HostTagsResponse = response.json().await?;
-
-        for entry in body.host_tags {
-            if !entry.error.is_empty() {
-                debug!(
-                    host = %entry.hostname,
-                    error = %entry.error,
-                    "metadata service reported error for host"
-                );
-            }
-            let tags: Arc<[HostTag]> = entry
-                .tags
-                .unwrap_or_default()
-                .iter()
-                .filter_map(|tag| parse_tag(tag))
-                .collect();
-            result.insert(entry.hostname, tags);
-        }
+        let tags: Arc<[HostTag]> = entry
+            .tags
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|tag| parse_tag(tag))
+            .collect();
+        result.insert(entry.hostname, tags);
     }
 
     Ok(result)
@@ -500,7 +462,6 @@ mod tests {
         assert_eq!(drained.len(), 2);
         assert_eq!(drained, vec!["host-a", "host-b"]); // FIFO order
 
-        // Drain again — should be empty.
         assert!(collector.drain(10).is_empty());
     }
 
@@ -512,19 +473,14 @@ mod tests {
         }
         let drained = collector.drain(3);
         assert_eq!(drained.len(), 3);
-        // First 3 in insertion order.
         assert_eq!(drained, vec!["host-0", "host-1", "host-2"]);
 
-        // Remaining 7 still in the set.
         let rest = collector.drain(100);
         assert_eq!(rest.len(), 7);
     }
 
     #[test]
     fn test_host_tags_response_accepts_null_tags() {
-        // The Go metadata service returns `"tags":null` (not `[]`) when a
-        // host has no known tags. Deserialization must accept null so the
-        // poller doesn't fail the whole batch.
         let body = r#"{"host_tags":[{"host_name":"marmoset-m3-max","tags":null}]}"#;
         let parsed: HostTagsResponse = serde_json::from_str(body).unwrap();
         assert_eq!(parsed.host_tags.len(), 1);
@@ -550,17 +506,44 @@ mod tests {
     }
 
     #[test]
+    fn test_load_cache_expired_entries_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("host_tags.ndjson");
+
+        let now = UnixTimestamp::now();
+        let future_unix = (now + Duration::from_secs(3600)).0;
+        let past_unix = (now - Duration::from_secs(100)).0;
+
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"{{"host_name":"web-01","tags":["env:prod"],"expires_at_unix":{future_unix}}}"#,
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"host_name":"db-01","tags":["env:staging"],"expires_at_unix":{past_unix}}}"#,
+        )
+        .unwrap();
+        writeln!(file, "not-json").unwrap();
+        drop(file);
+
+        let entries = load_cache(&path).unwrap();
+
+        // Both entries loaded — expired ones are kept for stale-serving.
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries["web-01"].expires_at, UnixTimestamp(future_unix));
+        assert_eq!(entries["db-01"].expires_at, UnixTimestamp(past_unix));
+    }
+
+    #[test]
     fn test_load_and_save_cache_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("host_tags.ndjson");
 
-        // Write a cache file manually.
-        let now_unix = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let future_unix = now_unix + 3600;
-        let past_unix = now_unix.saturating_sub(100);
+        let now = UnixTimestamp::now();
+        let future_unix = (now + Duration::from_secs(3600)).0;
+        let past_unix = (now - Duration::from_secs(100)).0;
 
         let mut file = std::fs::File::create(&path).unwrap();
         writeln!(
@@ -573,32 +556,27 @@ mod tests {
             r#"{{"host_name":"db-01","tags":["env:staging"],"expires_at_unix":{past_unix}}}"#,
         )
         .unwrap();
-        // Malformed line should be skipped.
         writeln!(file, "not-json").unwrap();
         drop(file);
 
-        // Load.
-        let snapshot = load_cache(&path).unwrap();
-        assert_eq!(snapshot.tag_map.len(), 2);
-        assert_eq!(snapshot.expired_hosts, vec!["db-01".to_string()]);
+        let entries = load_cache(&path).unwrap();
+        assert_eq!(entries.len(), 2);
 
-        let web_tags = &snapshot.tag_map["web-01"];
+        let web_tags = &entries["web-01"].tags;
         assert_eq!(web_tags.len(), 2);
         assert!(web_tags.contains(&("env".to_string(), "prod".to_string())));
 
-        let db_tags: &[_] = &snapshot.tag_map["db-01"];
+        let db_tags: &[_] = &entries["db-01"].tags;
         assert_eq!(db_tags, [("env".to_string(), "staging".to_string())]);
 
-        // Now save via the store + host_expiry and re-load.
         let store = HostTagsStore::default();
-        store.store(snapshot.tag_map);
-
-        save_cache(&path, &store, &snapshot.host_expiry).unwrap();
+        store.store(entries);
+        save_cache(&path, &store).unwrap();
 
         let reloaded = load_cache(&path).unwrap();
-        assert_eq!(reloaded.tag_map.len(), 2);
-        assert!(reloaded.tag_map.contains_key("web-01"));
-        assert!(reloaded.tag_map.contains_key("db-01"));
+        assert_eq!(reloaded.len(), 2);
+        assert!(reloaded.contains_key("web-01"));
+        assert!(reloaded.contains_key("db-01"));
     }
 
     #[test]
@@ -711,31 +689,5 @@ mod tests {
         assert_eq!(web.len(), 2);
         assert!(web.contains(&("env".to_string(), "prod".to_string())));
         assert!(web.contains(&("region".to_string(), "us-east-1".to_string())));
-    }
-
-    #[tokio::test]
-    async fn test_fetch_host_tags_batches_over_max_per_request() {
-        let server = MockServer::start().await;
-        let endpoint = format!("{}/host-tags", server.uri());
-
-        // Any POST returns an empty host_tags list. We only need to assert
-        // on request count, which wiremock tracks.
-        Mock::given(method("POST"))
-            .and(path("/host-tags"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "host_tags": []
-            })))
-            .expect(2)
-            .mount(&server)
-            .await;
-
-        let hosts: Vec<String> = (0..MAX_HOSTS_PER_REQUEST + 1)
-            .map(|idx| format!("host-{idx}"))
-            .collect();
-
-        let _result = fetch_host_tags(&test_client(), &endpoint, "test-key", &hosts)
-            .await
-            .expect("fetch should succeed");
-        // `expect(2)` on the mock is verified on drop.
     }
 }

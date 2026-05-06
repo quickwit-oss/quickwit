@@ -24,6 +24,7 @@ const HOST_TAGS_DEFAULT_POLL_INTERVAL_SECS: u64 = 15;
 const HOST_TAGS_DEFAULT_FETCH_TIMEOUT_SECS: u64 = 10;
 const HOST_TAGS_DEFAULT_TTL_MIN_SECS: u64 = 900; // 15 minutes
 const HOST_TAGS_DEFAULT_TTL_MAX_SECS: u64 = 3600; // 60 minutes
+const HOST_TAGS_DEFAULT_STALE_THRESHOLD_HOURS: u64 = 24;
 
 const HOST_TAGS_API_PATH: &str = "/api/unstable/byoc/ingest/metadata/host-tags";
 
@@ -161,9 +162,20 @@ pub struct HostTagsConfig {
     #[serde(default = "host_tags_default_ttl_max_secs")]
     pub ttl_max_secs: u64,
 
+    /// How long past expiry before a host entry is evicted from the store,
+    /// in hours. Must be strictly greater than `ttl_max_secs / 3600`.
+    ///
+    /// Entries expired for less than this threshold are kept so the pipeline
+    /// can continue serving their stale tags while a refresh is in flight.
+    /// Only entries that have been absent from traffic for this long get
+    /// evicted.
+    #[serde(default = "host_tags_default_stale_threshold_hours")]
+    pub stale_threshold_hours: u64,
+
     /// Path to the NDJSON cache file for persisting host tags across
-    /// restarts. When set, the poller loads non-expired entries on startup
-    /// and rewrites the file after each successful fetch.
+    /// restarts. When set, the poller loads entries on startup (including
+    /// expired ones for stale-serving) and rewrites the file after each
+    /// successful fetch or eviction.
     #[serde(default)]
     pub cache_path: Option<PathBuf>,
 }
@@ -182,6 +194,10 @@ fn host_tags_default_ttl_min_secs() -> u64 {
 
 fn host_tags_default_ttl_max_secs() -> u64 {
     HOST_TAGS_DEFAULT_TTL_MAX_SECS
+}
+
+fn host_tags_default_stale_threshold_hours() -> u64 {
+    HOST_TAGS_DEFAULT_STALE_THRESHOLD_HOURS
 }
 
 impl HostTagsConfig {
@@ -207,6 +223,10 @@ impl HostTagsConfig {
         Duration::from_secs(self.ttl_max_secs)
     }
 
+    pub fn stale_threshold(&self) -> Duration {
+        Duration::from_secs(self.stale_threshold_hours * 3600)
+    }
+
     /// Checks that the config satisfies the invariants the poller relies
     /// on. Called from [`IntakeConfig::validate`] at startup.
     fn validate(&self) -> anyhow::Result<()> {
@@ -224,6 +244,14 @@ impl HostTagsConfig {
             self.fetch_timeout_secs,
             self.poll_interval_secs,
         );
+        ensure!(
+            self.stale_threshold_hours * 3600 > self.ttl_max_secs,
+            "host_tags.stale_threshold_hours ({0}h = {1}s) must be strictly greater than \
+             host_tags.ttl_max_secs ({2}s)",
+            self.stale_threshold_hours,
+            self.stale_threshold_hours * 3600,
+            self.ttl_max_secs,
+        );
         Ok(())
     }
 }
@@ -235,6 +263,7 @@ impl Default for HostTagsConfig {
             fetch_timeout_secs: HOST_TAGS_DEFAULT_FETCH_TIMEOUT_SECS,
             ttl_min_secs: HOST_TAGS_DEFAULT_TTL_MIN_SECS,
             ttl_max_secs: HOST_TAGS_DEFAULT_TTL_MAX_SECS,
+            stale_threshold_hours: HOST_TAGS_DEFAULT_STALE_THRESHOLD_HOURS,
             cache_path: None,
         }
     }

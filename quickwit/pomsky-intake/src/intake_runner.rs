@@ -233,6 +233,7 @@ fn spawn_host_tags_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle
         fetch_timeout: host_tags_config.fetch_timeout(),
         ttl_min: host_tags_config.ttl_min(),
         ttl_max: host_tags_config.ttl_max(),
+        stale_threshold: host_tags_config.stale_threshold(),
         cache_path: host_tags_config.cache_path.clone(),
     };
     handle.spawn(host_tags_poller::run_host_tags_poller(poller_config));

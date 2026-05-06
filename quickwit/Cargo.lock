@@ -8907,6 +8907,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bytes 1.11.1",
+ "bytesize",
  "chrono",
  "clap",
  "futures 0.3.32",

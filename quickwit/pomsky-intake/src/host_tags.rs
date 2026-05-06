@@ -16,28 +16,26 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
 use arc_swap::ArcSwap;
+use bytesize::ByteSize;
+
+use crate::unix_timestamp::UnixTimestamp;
 
 /// A single host-tag entry: key-value pair like `("env", "prod")`.
 pub type HostTag = (String, String);
 
-/// Immutable snapshot of the host→tags mapping.
-///
-/// Values are `Arc<[HostTag]>` so that a [`HostTagsRef`] returned by
-/// [`HostTagsStore::lookup`] can outlive the snapshot it was taken from:
-/// refcounting keeps each host's tag list alive independently of the
-/// surrounding map. It also makes [`HostTagsStore::merge`] cheap — the
-/// map clone only bumps Arc refcounts, never copies tag data.
-pub type HostTagsMap = HashMap<String, Arc<[HostTag]>>;
-
-/// A reference to one host's tag list.
-///
-/// Holds a single `Arc<[HostTag]>` cloned out of the store — no hostname
-/// copy and no reference into the surrounding snapshot.
-pub struct HostTagsRef {
-    tags: Arc<[HostTag]>,
+/// A host's tags and expiry timestamp, stored together.
+#[derive(Clone)]
+pub struct HostTagsEntry {
+    pub tags: Arc<[HostTag]>,
+    pub expires_at: UnixTimestamp,
 }
 
-impl HostTagsRef {
+impl HostTagsEntry {
+    /// Returns `true` if this entry has expired.
+    pub fn is_expired(&self, now: UnixTimestamp) -> bool {
+        self.expires_at <= now
+    }
+
     /// Iterates over the host's tags as `(&str, &str)` key-value pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
         self.tags
@@ -46,11 +44,14 @@ impl HostTagsRef {
     }
 }
 
-/// Lock-free, in-memory store mapping hostnames to their tag sets.
+/// Immutable snapshot of the host→tags mapping.
+pub type HostTagsMap = HashMap<String, HostTagsEntry>;
+
+/// Lock-free, in-memory store mapping hostnames to their tag entries.
 ///
 /// Uses [`ArcSwap`] so readers (Vector transforms on the hot path) never
-/// block. Writers call [`store`] to swap in a new snapshot atomically
-/// after polling the metadata service.
+/// block. Writers call [`store`] or [`merge`] to swap in a new snapshot
+/// atomically after polling the metadata service.
 pub struct HostTagsStore {
     inner: ArcSwap<HostTagsMap>,
 }
@@ -72,35 +73,41 @@ impl HostTagsStore {
         GLOBAL_STORE.clone()
     }
 
-    /// Looks up the tag set for a given hostname. Returns a [`HostTagsRef`]
-    /// that yields `(&str, &str)` references without cloning tag data.
-    pub fn lookup(&self, hostname: &str) -> Option<HostTagsRef> {
+    /// Looks up the entry for a given hostname.
+    pub fn lookup(&self, hostname: &str) -> Option<HostTagsEntry> {
         let snapshot = self.inner.load_full();
-        snapshot
-            .get(hostname)
-            .cloned()
-            .map(|tags| HostTagsRef { tags })
+        snapshot.get(hostname).cloned()
     }
 
-    /// Atomically replaces the entire tag map with a new snapshot.
+    /// Atomically replaces the entire map.
     pub fn store(&self, entries: HostTagsMap) {
         self.inner.store(Arc::new(entries));
     }
 
-    /// Merges freshly-fetched entries into the current snapshot.
+    /// Merges fresh entries into the current snapshot.
     ///
-    /// Loads the existing map, clones it, applies the updates, and swaps
-    /// the result in. Hosts not present in `fresh` are left unchanged.
+    /// Hosts not present in `fresh` are left unchanged.
     pub fn merge(&self, fresh: HostTagsMap) {
-        let current = self.inner.load_full();
-        let mut merged = (*current).clone();
-        for (host, tags) in fresh {
-            merged.insert(host, tags);
-        }
-        self.inner.store(Arc::new(merged));
+        let mut updated = (*self.inner.load_full()).clone();
+        updated.extend(fresh);
+        self.inner.store(Arc::new(updated));
     }
 
-    /// Returns a clone of the current snapshot for persistence.
+    /// Removes the given hosts from the map.
+    ///
+    /// No-op if `hosts` is empty.
+    pub fn evict(&self, hosts: &[String]) {
+        if hosts.is_empty() {
+            return;
+        }
+        let mut updated = (*self.inner.load_full()).clone();
+        for host in hosts {
+            updated.remove(host);
+        }
+        self.inner.store(Arc::new(updated));
+    }
+
+    /// Returns the current map snapshot for cache persistence.
     pub fn snapshot(&self) -> Arc<HostTagsMap> {
         self.inner.load_full()
     }
@@ -120,24 +127,37 @@ impl HostTagsStore {
     /// Counts the `HashMap` bucket array, hostname string bytes, tag-list
     /// slice bytes, and every tag key/value string's bytes. Ignores
     /// small, fixed-size overheads (Arc headers, struct padding, etc.).
-    pub fn memory_footprint_bytes(&self) -> usize {
+    pub fn memory_footprint(&self) -> ByteSize {
         let snapshot = self.inner.load();
         let mut bytes = snapshot.capacity()
-            * (std::mem::size_of::<String>() + std::mem::size_of::<Arc<[HostTag]>>());
-        for (host, tags) in snapshot.iter() {
+            * (std::mem::size_of::<String>() + std::mem::size_of::<HostTagsEntry>());
+        for (host, entry) in snapshot.iter() {
             bytes += host.capacity();
-            bytes += tags.len() * std::mem::size_of::<HostTag>();
-            for (key, value) in tags.iter() {
+            bytes += entry.tags.len() * std::mem::size_of::<HostTag>();
+            for (key, value) in entry.tags.iter() {
                 bytes += key.capacity() + value.capacity();
             }
         }
-        bytes
+        ByteSize(bytes as u64)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+
+    fn entry(tags: Vec<HostTag>, expires_at: UnixTimestamp) -> HostTagsEntry {
+        HostTagsEntry {
+            tags: tags.into(),
+            expires_at,
+        }
+    }
+
+    fn fresh_entry(tags: Vec<HostTag>) -> HostTagsEntry {
+        entry(tags, UnixTimestamp::now() + Duration::from_secs(3600))
+    }
 
     #[test]
     fn test_lookup_missing_host_returns_none() {
@@ -151,31 +171,49 @@ mod tests {
         let mut entries = HashMap::new();
         entries.insert(
             "host-1".to_string(),
-            vec![
+            fresh_entry(vec![
                 ("env".to_string(), "prod".to_string()),
                 ("region".to_string(), "us-east-1".to_string()),
-            ]
-            .into(),
+            ]),
         );
         entries.insert(
             "host-2".to_string(),
-            vec![("env".to_string(), "staging".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "staging".to_string())]),
         );
         store.store(entries);
 
         assert_eq!(store.len(), 2);
 
-        let tags_ref = store.lookup("host-1").expect("host-1 should exist");
-        let tags: Vec<_> = tags_ref.iter().collect();
+        let entry = store.lookup("host-1").expect("host-1 should exist");
+        let tags: Vec<_> = entry.iter().collect();
         assert_eq!(tags.len(), 2);
         assert!(tags.contains(&("env", "prod")));
         assert!(tags.contains(&("region", "us-east-1")));
 
-        let tags_ref = store.lookup("host-2").expect("host-2 should exist");
-        let tags: Vec<_> = tags_ref.iter().collect();
+        let entry = store.lookup("host-2").expect("host-2 should exist");
+        let tags: Vec<_> = entry.iter().collect();
         assert_eq!(tags, vec![("env", "staging")]);
 
         assert!(store.lookup("host-3").is_none());
+    }
+
+    #[test]
+    fn test_lookup_returns_expiry() {
+        let store = HostTagsStore::default();
+        let mut entries = HashMap::new();
+        entries.insert(
+            "host-1".to_string(),
+            entry(
+                vec![("env".to_string(), "prod".to_string())],
+                UnixTimestamp(9999),
+            ),
+        );
+        store.store(entries);
+
+        let entry = store.lookup("host-1").expect("host-1 should exist");
+        assert!(!entry.is_expired(UnixTimestamp(1000)));
+        assert!(entry.is_expired(UnixTimestamp(9999)));
+        assert!(entry.is_expired(UnixTimestamp(10000)));
     }
 
     #[test]
@@ -185,7 +223,7 @@ mod tests {
         let mut first = HashMap::new();
         first.insert(
             "host-1".to_string(),
-            vec![("env".to_string(), "prod".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "prod".to_string())]),
         );
         store.store(first);
         assert_eq!(store.len(), 1);
@@ -193,7 +231,7 @@ mod tests {
         let mut second = HashMap::new();
         second.insert(
             "host-2".to_string(),
-            vec![("env".to_string(), "staging".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "staging".to_string())]),
         );
         store.store(second);
         assert_eq!(store.len(), 1);
@@ -208,43 +246,89 @@ mod tests {
         let mut initial = HashMap::new();
         initial.insert(
             "host-1".to_string(),
-            vec![("env".to_string(), "prod".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "prod".to_string())]),
         );
         initial.insert(
             "host-2".to_string(),
-            vec![("env".to_string(), "staging".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "staging".to_string())]),
         );
         store.store(initial);
         assert_eq!(store.len(), 2);
 
-        // Merge updates host-2 and adds host-3, but host-1 is untouched.
         let mut fresh = HashMap::new();
         fresh.insert(
             "host-2".to_string(),
-            vec![("env".to_string(), "prod".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "prod".to_string())]),
         );
         fresh.insert(
             "host-3".to_string(),
-            vec![("env".to_string(), "dev".to_string())].into(),
+            fresh_entry(vec![("env".to_string(), "dev".to_string())]),
         );
         store.merge(fresh);
 
         assert_eq!(store.len(), 3);
 
-        // host-1 unchanged.
         let host1 = store.lookup("host-1").expect("host-1");
         let tags: Vec<_> = host1.iter().collect();
         assert_eq!(tags, vec![("env", "prod")]);
 
-        // host-2 updated.
         let host2 = store.lookup("host-2").expect("host-2");
         let tags: Vec<_> = host2.iter().collect();
         assert_eq!(tags, vec![("env", "prod")]);
 
-        // host-3 added.
         let host3 = store.lookup("host-3").expect("host-3");
         let tags: Vec<_> = host3.iter().collect();
         assert_eq!(tags, vec![("env", "dev")]);
+    }
+
+    #[test]
+    fn test_merge_updates_expiry() {
+        let store = HostTagsStore::default();
+        let mut initial = HashMap::new();
+        initial.insert(
+            "host-1".to_string(),
+            entry(
+                vec![("env".to_string(), "prod".to_string())],
+                UnixTimestamp(100),
+            ),
+        );
+        store.store(initial);
+
+        let mut fresh = HashMap::new();
+        fresh.insert(
+            "host-1".to_string(),
+            entry(
+                vec![("env".to_string(), "prod".to_string())],
+                UnixTimestamp(9999),
+            ),
+        );
+        store.merge(fresh);
+
+        let entry = store.lookup("host-1").expect("host-1");
+        assert!(!entry.is_expired(UnixTimestamp(9998)));
+        assert!(entry.is_expired(UnixTimestamp(9999)));
+    }
+
+    #[test]
+    fn test_evict_removes_hosts() {
+        let store = HostTagsStore::default();
+        let mut entries = HashMap::new();
+        entries.insert(
+            "host-1".to_string(),
+            fresh_entry(vec![("env".to_string(), "prod".to_string())]),
+        );
+        entries.insert(
+            "host-2".to_string(),
+            fresh_entry(vec![("env".to_string(), "staging".to_string())]),
+        );
+        store.store(entries);
+        assert_eq!(store.len(), 2);
+
+        store.evict(&["host-1".to_string()]);
+
+        assert_eq!(store.len(), 1);
+        assert!(store.lookup("host-1").is_none());
+        assert!(store.lookup("host-2").is_some());
     }
 
     #[test]

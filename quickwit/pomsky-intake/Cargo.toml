@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+bytesize = { workspace = true }
 arc-swap = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
