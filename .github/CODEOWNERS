@@ -5,12 +5,12 @@
 # approve; an additional team is listed on the metrics Parquet pipeline paths
 # so PRs scoped to those paths can be approved by either team.
 
-# Default: quickwit-dev owns everything
-*                                                        @quickwit-oss/quickwit-dev
+# Default: quickwit-core owns everything
+*                                                        @quickwit-oss/quickwit-core
 
-# Metrics Parquet pipeline paths — either quickwit-dev or byoc-metrics can approve
-/quickwit/quickwit-parquet-engine/                       @quickwit-oss/quickwit-dev @quickwit-oss/byoc-metrics
-/quickwit/quickwit-datafusion/                           @quickwit-oss/quickwit-dev @quickwit-oss/byoc-metrics
-/quickwit/quickwit-df-core/                              @quickwit-oss/quickwit-dev @quickwit-oss/byoc-metrics
-/quickwit/quickwit-dst/                                  @quickwit-oss/quickwit-dev @quickwit-oss/byoc-metrics
-/quickwit/quickwit-indexing/src/actors/metrics_pipeline/ @quickwit-oss/quickwit-dev @quickwit-oss/byoc-metrics
+# byoc-metrics paths — owned by byoc-metrics
+/quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
+/quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
+/quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
+/quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
+/quickwit/quickwit-indexing/src/actors/metrics_pipeline/ @quickwit-oss/byoc-metrics
