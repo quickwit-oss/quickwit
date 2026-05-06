@@ -147,8 +147,30 @@ impl SearchJobPlacer {
     /// When exclude_addresses filters all clients it is ignored.
     pub async fn assign_jobs<J: Job>(
         &self,
+        jobs: Vec<J>,
+        excluded_addrs: &HashSet<SocketAddr>,
+    ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)> + use<J>> {
+        self.assign_jobs_inner(jobs, excluded_addrs, true).await
+    }
+
+    /// Same as [`Self::assign_jobs`] but does not query nodes for their current
+    /// load. This saves a round-trip for jobs that wouldn't go into a queue.
+    ///
+    /// Placement still spreads cost evenly across nodes via rendezvous hashing,
+    /// but starts from a uniform zero existing load.
+    pub async fn assign_jobs_ignoring_load<J: Job>(
+        &self,
+        jobs: Vec<J>,
+        excluded_addrs: &HashSet<SocketAddr>,
+    ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)> + use<J>> {
+        self.assign_jobs_inner(jobs, excluded_addrs, false).await
+    }
+
+    async fn assign_jobs_inner<J: Job>(
+        &self,
         mut jobs: Vec<J>,
         excluded_addrs: &HashSet<SocketAddr>,
+        load_aware: bool,
     ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)> + use<J>> {
         let mut all_nodes = self.searcher_pool.pairs();
 
@@ -183,37 +205,43 @@ impl SearchJobPlacer {
             })
             .collect();
 
-        // Seed each candidate node with its current load so the placer avoids
-        // routing work to already-loaded nodes. If a node fails to report its
-        // load (error or timeout), `load` stays `None`: we still route work
-        // there if all other nodes are overloaded, but we prefer reachable
-        // nodes first.
-        //
-        // The timeout is intentionally short: a slow response is treated the
-        // same as no response so that one unresponsive node cannot delay the
-        // entire query.
-        const GET_LOAD_TIMEOUT: Duration = Duration::from_millis(200);
-        let load_futures = candidate_nodes.iter_mut().map(|node| {
-            let mut client = node.client.clone();
-            async move { tokio::time::timeout(GET_LOAD_TIMEOUT, client.get_load()).await }
-        });
-        let loads = join_all(load_futures).await;
-        for (node, load_result) in candidate_nodes.iter_mut().zip(loads) {
-            match load_result {
-                Ok(Ok(load)) => node.load = Some(load),
-                Ok(Err(err)) => {
-                    warn!(
-                        grpc_addr=%node.grpc_addr,
-                        err=%err,
-                        "failed to get load from searcher node; node will only be used as last resort"
-                    );
+        if load_aware {
+            // Seed each candidate node with its current load so the placer avoids
+            // routing work to already-loaded nodes. If a node fails to report its
+            // load (error or timeout), `load` stays `None`: we still route work
+            // there if all other nodes are overloaded, but we prefer reachable
+            // nodes first.
+            //
+            // The timeout is intentionally short: a slow response is treated the
+            // same as no response so that one unresponsive node cannot delay the
+            // entire query.
+            const GET_LOAD_TIMEOUT: Duration = Duration::from_millis(200);
+            let load_futures = candidate_nodes.iter_mut().map(|node| {
+                let mut client = node.client.clone();
+                async move { tokio::time::timeout(GET_LOAD_TIMEOUT, client.get_load()).await }
+            });
+            let loads = join_all(load_futures).await;
+            for (node, load_result) in candidate_nodes.iter_mut().zip(loads) {
+                match load_result {
+                    Ok(Ok(load)) => node.load = Some(load),
+                    Ok(Err(err)) => {
+                        warn!(
+                            grpc_addr=%node.grpc_addr,
+                            err=%err,
+                            "failed to get load from searcher node; node will only be used as last resort"
+                        );
+                    }
+                    Err(_timeout) => {
+                        warn!(
+                            grpc_addr=%node.grpc_addr,
+                            "timed out getting load from searcher node; node will only be used as last resort"
+                        );
+                    }
                 }
-                Err(_timeout) => {
-                    warn!(
-                        grpc_addr=%node.grpc_addr,
-                        "timed out getting load from searcher node; node will only be used as last resort"
-                    );
-                }
+            }
+        } else {
+            for node in candidate_nodes.iter_mut() {
+                node.load = Some(0);
             }
         }
 
