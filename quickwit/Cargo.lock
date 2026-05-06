@@ -8361,28 +8361,22 @@ dependencies = [
  "humantime",
  "indicatif",
  "itertools 0.14.0",
- "metrics",
- "metrics-exporter-dogstatsd",
- "metrics-exporter-otel",
- "metrics-exporter-prometheus",
- "metrics-util",
  "numfmt",
  "openssl-probe 0.1.6",
  "opentelemetry",
  "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
  "opentelemetry_sdk",
  "predicates",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-dst",
  "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-metrics",
+ "quickwit-metrics-exporters",
  "quickwit-proto",
  "quickwit-rest-client",
  "quickwit-search",
@@ -8495,7 +8489,6 @@ dependencies = [
  "hyper-util",
  "itertools 0.14.0",
  "metrics",
- "metrics-exporter-prometheus",
  "metrics-util",
  "pin-project",
  "pnet",
@@ -9069,6 +9062,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-metrics-exporters"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "metrics",
+ "metrics-exporter-dogstatsd",
+ "metrics-exporter-otel",
+ "metrics-exporter-prometheus",
+ "metrics-util",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "quickwit-common",
+ "quickwit-dst",
+ "quickwit-metrics",
+]
+
+[[package]]
 name = "quickwit-metrics-inventory"
 version = "0.8.0"
 dependencies = [
@@ -9303,6 +9314,7 @@ dependencies = [
  "quickwit-lambda-client",
  "quickwit-metastore",
  "quickwit-metrics",
+ "quickwit-metrics-exporters",
  "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-query",

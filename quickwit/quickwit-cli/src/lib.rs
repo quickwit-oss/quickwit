@@ -62,9 +62,6 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
-pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
-    "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
-
 fn config_cli_arg() -> Arg {
     Arg::new("config")
         .long("config")

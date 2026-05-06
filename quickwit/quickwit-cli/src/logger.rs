@@ -12,29 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::str::FromStr;
 use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-use metrics_exporter_dogstatsd::DogStatsDRecorder;
-use metrics_exporter_otel::OpenTelemetryRecorder;
-use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusRecorder};
-use metrics_util::MetricKindMask;
-use metrics_util::layers::{FanoutBuilder, RouterBuilder};
-use opentelemetry::metrics::MeterProvider;
+use opentelemetry::global;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{
-    LogExporter, MetricExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
-};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::metrics::{SdkMeterProvider as SdkMetricsProvider, Temporality};
+use opentelemetry_sdk::metrics::SdkMeterProvider as SdkMetricsProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
-use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
+#[cfg(feature = "tokio-console")]
+use quickwit_common::get_bool_from_env;
+use quickwit_common::get_from_env_opt;
+use quickwit_metrics_exporters::OtlpExporterConfig;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Level, Subscriber};
@@ -48,195 +41,6 @@ use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
-
-use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
-
-const OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_PROTOCOL";
-const OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
-const OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL";
-const OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL";
-const OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY: &str =
-    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OtlpProtocol {
-    Grpc,
-    HttpProtobuf,
-    HttpJson,
-}
-
-impl OtlpProtocol {
-    fn log_exporter(&self) -> anyhow::Result<LogExporter> {
-        match self {
-            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP logs exporter")
-    }
-
-    fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
-        match self {
-            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => SpanExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => SpanExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP traces exporter")
-    }
-
-    fn metric_exporter(&self, temporality: Temporality) -> anyhow::Result<MetricExporter> {
-        match self {
-            OtlpProtocol::Grpc => MetricExporter::builder()
-                .with_tonic()
-                .with_temporality(temporality)
-                .build(),
-            OtlpProtocol::HttpProtobuf => MetricExporter::builder()
-                .with_http()
-                .with_temporality(temporality)
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => MetricExporter::builder()
-                .with_http()
-                .with_temporality(temporality)
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP metrics exporter")
-    }
-}
-
-impl FromStr for OtlpProtocol {
-    type Err = anyhow::Error;
-
-    fn from_str(protocol_str: &str) -> anyhow::Result<Self> {
-        const OTLP_PROTOCOL_GRPC: &str = "grpc";
-        const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
-        const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
-
-        match protocol_str {
-            OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
-            OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
-            OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
-            other => anyhow::bail!(
-                "unsupported OTLP protocol `{other}`, supported values are \
-                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and \
-                 `{OTLP_PROTOCOL_HTTP_JSON}`"
-            ),
-        }
-    }
-}
-
-struct OtlpExporterConfig {
-    enabled: bool,
-    default_protocol: String,
-}
-
-fn load_otlp_exporter_config() -> OtlpExporterConfig {
-    OtlpExporterConfig {
-        enabled: get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false),
-        default_protocol: get_from_env(
-            OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY,
-            "grpc".to_string(),
-            false,
-        ),
-    }
-}
-
-impl OtlpExporterConfig {
-    fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    fn traces_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY)
-    }
-
-    fn logs_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY)
-    }
-
-    fn metrics_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
-    }
-
-    fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
-        let temporality = get_from_env_opt::<String>(
-            OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY,
-            false,
-        );
-        temporality
-            .as_deref()
-            .map(|temporality_str| {
-                OtlpMetricsTemporality::from_str(temporality_str).with_context(|| {
-                    format!(
-                        "failed to parse environment variable \
-                         `{OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY}`"
-                    )
-                })
-            })
-            .transpose()
-            .map(|temporality| {
-                temporality
-                    .map(Temporality::from)
-                    .unwrap_or(Temporality::Cumulative)
-            })
-    }
-
-    fn resolve_protocol(&self, exporter_protocol_env_key: &str) -> anyhow::Result<OtlpProtocol> {
-        let exporter_protocol = get_from_env_opt::<String>(exporter_protocol_env_key, false);
-        let (protocol, env_key) = if let Some(protocol) = exporter_protocol {
-            (protocol, exporter_protocol_env_key)
-        } else {
-            (
-                self.default_protocol.clone(),
-                OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY,
-            )
-        };
-
-        OtlpProtocol::from_str(&protocol)
-            .with_context(|| format!("failed to parse environment variable `{env_key}`"))
-    }
-}
-
-struct OtlpMetricsTemporality(Temporality);
-
-impl FromStr for OtlpMetricsTemporality {
-    type Err = anyhow::Error;
-
-    fn from_str(temporality_str: &str) -> anyhow::Result<Self> {
-        const TEMPORALITY_DELTA: &str = "delta";
-        const TEMPORALITY_LOWMEMORY: &str = "lowmemory";
-        const TEMPORALITY_CUMULATIVE: &str = "cumulative";
-
-        match temporality_str {
-            TEMPORALITY_DELTA => Ok(Self(Temporality::Delta)),
-            TEMPORALITY_LOWMEMORY => Ok(Self(Temporality::LowMemory)),
-            TEMPORALITY_CUMULATIVE => Ok(Self(Temporality::Cumulative)),
-            other => anyhow::bail!(
-                "unsupported OTLP metrics temporality `{other}`, supported values are \
-                 `{TEMPORALITY_DELTA}`, `{TEMPORALITY_LOWMEMORY}` and `{TEMPORALITY_CUMULATIVE}`"
-            ),
-        }
-    }
-}
-
-impl From<OtlpMetricsTemporality> for Temporality {
-    fn from(temporality: OtlpMetricsTemporality) -> Self {
-        temporality.0
-    }
-}
 
 pub struct TelemetryHandle {
     env_filter_reload_fn: EnvFilterReloadFn,
@@ -287,9 +91,11 @@ type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscrib
 
 pub fn init_telemetry(level: Level, ansi_colors: bool) -> anyhow::Result<TelemetryHandle> {
     let build_info = BuildInfo::get();
-    let otlp_config = load_otlp_exporter_config();
+    let otlp_config = OtlpExporterConfig::load_from_env();
 
-    let meter_provider = init_metrics_provider(build_info, &otlp_config)?;
+    let meter_provider =
+        quickwit_metrics_exporters::init_metrics_provider(&build_info.version, &otlp_config)?;
+    crate::metrics::register_metrics(build_info);
 
     #[cfg(feature = "tokio-console")]
     {
@@ -338,10 +144,7 @@ pub fn init_telemetry(level: Level, ansi_colors: bool) -> anyhow::Result<Telemet
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     let telemetry_handle = if otlp_config.is_enabled() {
-        let resource = Resource::builder()
-            .with_service_name("quickwit")
-            .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
-            .build();
+        let resource = quickwit_metrics_exporters::otlp::quickwit_resource(&build_info.version);
 
         let tracer_provider = init_tracer_provider(&otlp_config, resource.clone())?;
         let logger_provider = init_logger_provider(&otlp_config, resource)?;
@@ -395,7 +198,7 @@ fn init_tracer_provider(
         )
         .build();
 
-    Ok(opentelemetry_sdk::trace::SdkTracerProvider::builder()
+    Ok(SdkTracerProvider::builder()
         .with_span_processor(span_processor)
         .with_resource(resource)
         .build())
@@ -411,131 +214,6 @@ fn init_logger_provider(
         .with_resource(resource)
         .with_batch_exporter(log_exporter)
         .build())
-}
-
-/// Set up the global metrics recorder and invariant recorder.
-fn init_metrics_provider(
-    build_info: &BuildInfo,
-    otlp_config: &OtlpExporterConfig,
-) -> anyhow::Result<Option<SdkMetricsProvider>> {
-    let prometheus_recorder = build_prometheus_recorder()?;
-
-    let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
-        let (otlp_recorder, meter_provider) = build_otlp_metrics_recorder(build_info, otlp_config)?;
-        let recorder = FanoutBuilder::default()
-            .add_recorder(prometheus_recorder)
-            .add_recorder(otlp_recorder)
-            .build();
-        (recorder, Some(meter_provider))
-    } else {
-        let recorder = FanoutBuilder::default()
-            .add_recorder(prometheus_recorder)
-            .build();
-        (recorder, None)
-    };
-
-    let dogstatsd_recorder = build_dogstatsd_recorder(build_info)?;
-
-    let mut router = RouterBuilder::from_recorder(metrics::NoopRecorder);
-    router
-        .add_route(MetricKindMask::ALL, "quickwit_", quickwit_recorder)
-        .add_route(MetricKindMask::ALL, "pomsky.invariant.", dogstatsd_recorder);
-    let recorder = router.build();
-    metrics::set_global_recorder(recorder)
-        .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
-    quickwit_metrics::describe_metrics();
-
-    crate::metrics::register_metrics(build_info);
-    Ok(meter_provider)
-}
-
-fn build_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
-    let mut prometheus_builder = PrometheusBuilder::new();
-    for (name, buckets) in quickwit_metrics::histogram_buckets() {
-        prometheus_builder = prometheus_builder
-            .set_buckets_for_metric(Matcher::Full(name.to_string()), &buckets)
-            .with_context(|| {
-                format!("failed to configure Prometheus histogram buckets for `{name}`")
-            })?;
-    }
-    let prometheus_recorder = prometheus_builder.build_recorder();
-    let prometheus_handle = prometheus_recorder.handle();
-    quickwit_common::metrics::set_prometheus_handle(prometheus_handle.clone())
-        .map_err(anyhow::Error::msg)?;
-    Ok(prometheus_recorder)
-}
-
-fn build_otlp_metrics_recorder(
-    build_info: &BuildInfo,
-    otlp_config: &OtlpExporterConfig,
-) -> anyhow::Result<(OpenTelemetryRecorder, SdkMetricsProvider)> {
-    let metrics_protocol = otlp_config.metrics_protocol()?;
-    let temporality = otlp_config.metrics_temporality()?;
-    let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
-    let resource = Resource::builder()
-        .with_service_name("quickwit")
-        .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
-        .build();
-    let metrics_provider = SdkMetricsProvider::builder()
-        .with_resource(resource)
-        .with_periodic_exporter(metric_exporter)
-        .build();
-    let meter = metrics_provider.meter("quickwit");
-
-    let recorder = OpenTelemetryRecorder::new(meter);
-    for (name, buckets) in quickwit_metrics::histogram_buckets() {
-        recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
-    }
-    Ok((recorder, metrics_provider))
-}
-
-fn build_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStatsDRecorder> {
-    // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
-    // deprecated and can be removed after 2026-04-01.
-    let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
-        .unwrap_or_else(|| {
-            quickwit_common::get_from_env(
-                "CP_DOGSTATSD_SERVER_HOST",
-                "127.0.0.1".to_string(),
-                false,
-            )
-        });
-    let port: u16 = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_PORT", false)
-        .unwrap_or_else(|| quickwit_common::get_from_env("CP_DOGSTATSD_SERVER_PORT", 8125, false));
-    let addr = format!("{host}:{port}");
-
-    let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
-    let keys = [
-        ("IMAGE_NAME", "image_name"),
-        ("IMAGE_TAG", "image_tag"),
-        ("KUBERNETES_COMPONENT", "kube_component"),
-        ("KUBERNETES_NAMESPACE", "kube_namespace"),
-        ("KUBERNETES_POD_NAME", "kube_pod_name"),
-        ("QW_CLUSTER_ID", "cloudprem_cluster_id"),
-        ("QW_NODE_ID", "cloudprem_node_id"),
-    ];
-    for (env_var_key, label_key) in keys {
-        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false) {
-            global_labels.push(::metrics::Label::new(label_key, label_val));
-        }
-    }
-    let recorder = metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-        .set_global_prefix("cloudprem")
-        .with_global_labels(global_labels)
-        .with_remote_address(addr)
-        .context("failed to parse DogStatsD server address")?
-        .build()
-        .context("failed to build DogStatsD exporter")?;
-    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
-    Ok(recorder)
-}
-
-fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
-    let name = invariant_id.as_str();
-    metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
-    if !passed {
-        metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);
-    }
 }
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
@@ -801,141 +479,11 @@ pub(super) mod jemalloc_profiled {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
     use std::sync::{Arc, Mutex};
 
     use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
-
-    #[test]
-    fn test_otlp_protocol_from_str() {
-        assert_eq!(OtlpProtocol::from_str("grpc").unwrap(), OtlpProtocol::Grpc);
-        assert_eq!(
-            OtlpProtocol::from_str("http/protobuf").unwrap(),
-            OtlpProtocol::HttpProtobuf
-        );
-        assert_eq!(
-            OtlpProtocol::from_str("http/json").unwrap(),
-            OtlpProtocol::HttpJson
-        );
-        assert!(OtlpProtocol::from_str("http/xml").is_err());
-    }
-
-    fn otlp_exporter_config(default_protocol: &str) -> OtlpExporterConfig {
-        OtlpExporterConfig {
-            enabled: true,
-            default_protocol: default_protocol.to_string(),
-        }
-    }
-
-    struct EnvVarGuard {
-        key: &'static str,
-        previous_value: Option<OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::set_var(key, value) };
-            guard
-        }
-
-        fn remove(key: &'static str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::remove_var(key) };
-            guard
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            if let Some(previous_value) = &self.previous_value {
-                unsafe { std::env::set_var(self.key, previous_value) };
-            } else {
-                unsafe { std::env::remove_var(self.key) };
-            }
-        }
-    }
-
-    #[test]
-    fn test_otlp_exporter_config_uses_signal_specific_protocol() {
-        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_SIGNAL_PROTOCOL";
-
-        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/json");
-
-        assert_eq!(
-            otlp_exporter_config("grpc")
-                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
-                .unwrap(),
-            OtlpProtocol::HttpJson
-        );
-    }
-
-    #[test]
-    fn test_otlp_exporter_config_falls_back_to_default_protocol() {
-        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_DEFAULT_PROTOCOL_FALLBACK";
-
-        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
-
-        assert_eq!(
-            otlp_exporter_config("http/protobuf")
-                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
-                .unwrap(),
-            OtlpProtocol::HttpProtobuf
-        );
-    }
-
-    #[test]
-    fn test_otlp_exporter_config_signal_protocol_error_names_signal_env_var() {
-        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_SIGNAL_PROTOCOL";
-
-        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/xml");
-
-        let error = otlp_exporter_config("grpc")
-            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
-            .unwrap_err();
-        let error = format!("{error:#}");
-        assert!(error.contains(TEST_PROTOCOL_ENV_KEY));
-        assert!(error.contains("unsupported OTLP protocol `http/xml`"));
-    }
-
-    #[test]
-    fn test_otlp_exporter_config_default_protocol_error_names_default_env_var() {
-        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_DEFAULT_PROTOCOL";
-
-        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
-
-        let error = otlp_exporter_config("http/xml")
-            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
-            .unwrap_err();
-        let error = format!("{error:#}");
-        assert!(error.contains(OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY));
-        assert!(error.contains("unsupported OTLP protocol `http/xml`"));
-    }
-
-    #[test]
-    fn test_otlp_metrics_temporality_from_str() {
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("delta").unwrap()),
-            Temporality::Delta
-        );
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("lowmemory").unwrap()),
-            Temporality::LowMemory
-        );
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("cumulative").unwrap()),
-            Temporality::Cumulative
-        );
-        assert!(OtlpMetricsTemporality::from_str("invalid").is_err());
-    }
 
     /// A shared buffer writer for capturing log output in tests.
     #[derive(Clone, Default)]

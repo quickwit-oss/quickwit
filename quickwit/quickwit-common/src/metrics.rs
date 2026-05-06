@@ -12,50 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{LazyLock, OnceLock};
-#[cfg(not(test))]
-use std::time::Duration;
+use std::sync::LazyLock;
 
-use metrics_exporter_prometheus::PrometheusHandle;
 pub use prometheus::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{Gauge, gauge};
-
-static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
-
-pub fn set_prometheus_handle(handle: PrometheusHandle) -> Result<(), String> {
-    #[cfg(not(test))]
-    let upkeep_handle = handle.clone();
-    PROMETHEUS_HANDLE
-        .set(handle)
-        .map_err(|_| "Prometheus metrics renderer is already installed".to_string())?;
-    #[cfg(not(test))]
-    spawn_prometheus_upkeep(upkeep_handle)?;
-    Ok(())
-}
-
-pub fn metrics_text_payload() -> Result<String, String> {
-    let handle = PROMETHEUS_HANDLE
-        .get()
-        .ok_or_else(|| "Prometheus metrics rendering is not installed yet".to_string())?;
-    Ok(handle.render())
-}
-
-#[cfg(not(test))]
-fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
-    // Quickwit serves the existing `/metrics` route itself, so we build only the
-    // Prometheus recorder instead of using the exporter's HTTP listener. That lower-level
-    // API does not spawn the upkeep task that periodically drains histogram buffers.
-    std::thread::Builder::new()
-        .name("metrics-exporter-prometheus-upkeep".to_string())
-        .spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(5));
-                handle.run_upkeep();
-            }
-        })
-        .map(|_| ())
-        .map_err(|error| format!("failed to spawn Prometheus metrics upkeep thread: {error}"))
-}
 
 pub fn index_label(index_id: &str) -> &str {
     static PER_INDEX_METRICS_ENABLED: LazyLock<bool> =
@@ -156,31 +116,7 @@ fn in_flight_data_gauge(component: &'static str) -> Gauge {
 
 #[cfg(test)]
 mod tests {
-    use metrics::with_local_recorder;
-    use metrics_exporter_prometheus::PrometheusBuilder;
-    use quickwit_metrics::labels;
-
     use super::*;
-
-    #[test]
-    fn metrics_text_payload_renders_prometheus_handle() {
-        let recorder = PrometheusBuilder::new().build_recorder();
-        set_prometheus_handle(recorder.handle()).expect("Prometheus handle should be set once");
-
-        with_local_recorder(&recorder, || {
-            let info_metric = gauge!(
-                name: "prometheus_payload_info",
-                description: "prometheus payload info",
-                subsystem: "",
-            );
-            quickwit_metrics::describe_metrics();
-            gauge!(parent: info_metric, labels: [labels!("version" => "test")]).set(1.0);
-        });
-
-        let payload = metrics_text_payload().expect("Prometheus payload should render");
-        assert!(payload.contains("# HELP quickwit_prometheus_payload_info"));
-        assert!(payload.contains(r#"quickwit_prometheus_payload_info{version="test"} 1"#));
-    }
 
     #[test]
     fn bucket_helpers_are_reexported() {
