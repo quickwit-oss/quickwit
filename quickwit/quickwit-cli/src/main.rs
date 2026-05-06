@@ -105,7 +105,7 @@ async fn main_impl() -> anyhow::Result<()> {
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
 
     #[cfg(not(test))]
-    quickwit_cli::logger::setup_metrics(build_info)?;
+    quickwit_cli::logger::install_invariant_recorder();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

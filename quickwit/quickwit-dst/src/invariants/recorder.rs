@@ -21,16 +21,14 @@
 //!
 //! # Wiring up a metrics recorder
 //!
-//! Call [`set_invariant_recorder`] once at process startup:
+//! Call [`set_invariant_recorder`] once at process startup. The OSS Quickwit
+//! binary wires a Prometheus-backed recorder in `quickwit_cli::logger`; the
+//! example below shows the minimal recorder shape:
 //!
 //! ```rust
 //! use quickwit_dst::invariants::{InvariantId, set_invariant_recorder};
 //!
 //! fn my_recorder(id: InvariantId, passed: bool) {
-//!     // statsd.count("invariant.checked", 1, &[&format!("name:{}", id)]);
-//!     // if !passed {
-//!     //     statsd.count("invariant.violated", 1, &[&format!("name:{}", id)]);
-//!     // }
 //!     if !passed {
 //!         eprintln!("{} violated in production", id);
 //!     }

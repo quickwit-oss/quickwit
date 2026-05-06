@@ -55,9 +55,6 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-metrics = { workspace = true }
-metrics-exporter-dogstatsd = { workspace = true }
-
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }

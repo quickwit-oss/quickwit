@@ -238,48 +238,47 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
-/// Set up DogStatsD metrics exporter and invariant recorder.
+/// Wire invariant checks into the Prometheus metrics exporter.
+///
+/// Counters are exposed on the existing `/metrics` endpoint served by
+/// `quickwit-serve`. No external metrics agent is required.
 #[cfg(not(test))]
-pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
-    let host: String =
-        quickwit_common::get_from_env("QW_STATSD_SERVER_HOST", "127.0.0.1".to_string(), false);
-    let port: u16 = quickwit_common::get_from_env("QW_STATSD_SERVER_PORT", 8125, false);
-    let addr = format!("{host}:{port}");
-
-    let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
-    let keys = [
-        ("IMAGE_NAME", "image_name"),
-        ("IMAGE_TAG", "image_tag"),
-        ("KUBERNETES_COMPONENT", "kube_component"),
-        ("KUBERNETES_NAMESPACE", "kube_namespace"),
-        ("KUBERNETES_POD_NAME", "kube_pod_name"),
-        ("QW_CLUSTER_ID", "quickwit_cluster_id"),
-        ("QW_NODE_ID", "quickwit_node_id"),
-    ];
-    for (env_var_key, label_key) in keys {
-        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false) {
-            global_labels.push(::metrics::Label::new(label_key, label_val));
-        }
-    }
-    metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-        .set_global_prefix("quickwit")
-        .with_global_labels(global_labels)
-        .with_remote_address(addr)
-        .context("failed to parse DogStatsD server address")?
-        .install()
-        .context("failed to register DogStatsD exporter")?;
+pub fn install_invariant_recorder() {
     quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
-    Ok(())
 }
 
 #[cfg(not(test))]
 fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
     let name = invariant_id.as_str();
-    metrics::counter!("invariant.checked", "invariant" => name).increment(1);
+    INVARIANT_CHECKED.with_label_values([name]).inc();
     if !passed {
-        metrics::counter!("invariant.violated", "invariant" => name).increment(1);
+        INVARIANT_VIOLATED.with_label_values([name]).inc();
     }
 }
+
+#[cfg(not(test))]
+static INVARIANT_CHECKED: std::sync::LazyLock<quickwit_common::metrics::IntCounterVec<1>> =
+    std::sync::LazyLock::new(|| {
+        quickwit_common::metrics::new_counter_vec(
+            "invariant_checked_total",
+            "Total number of invariant checks evaluated in production builds.",
+            "verification",
+            &[],
+            ["invariant"],
+        )
+    });
+
+#[cfg(not(test))]
+static INVARIANT_VIOLATED: std::sync::LazyLock<quickwit_common::metrics::IntCounterVec<1>> =
+    std::sync::LazyLock::new(|| {
+        quickwit_common::metrics::new_counter_vec(
+            "invariant_violated_total",
+            "Total number of invariant violations recorded in production builds.",
+            "verification",
+            &[],
+            ["invariant"],
+        )
+    });
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
 /// See discussion here: https://github.com/time-rs/time/discussions/418
