@@ -97,6 +97,32 @@ cnab_workflow(
     visibility = ["//visibility:public"],
 )
 
+# BYOC staging deployment (intake-frontend, file-backed metastore)
+dd_helm_cnab_installation(
+    name = "pomsky-byoc.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    bundle = ":pomsky",
+    description = "Pomsky BYOC Staging",
+    parameters = default_params,
+    value_files = [
+        "k8s/values/staging-byoc.yaml",
+    ],
+)
+
+cnab_workflow(
+    name = "staging-byoc",
+    description = "Deploy Pomsky BYOC to staging",
+    parallel = True,
+    tasks = [
+        ":pomsky-byoc.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:pomsky",
+        "team:logs-cloudprem",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # Release staging deployment (pomsky-release)
 dd_helm_cnab_installation(
     name = "pomsky-release.logs-cloudprem.vaporeon-b.us1.staging.dog",

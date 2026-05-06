@@ -84,14 +84,16 @@ fn default_persist_file_path() -> String {
 
 /// Configuration for the metric metadata transform.
 ///
-/// org_id and metadata_svc_url are sourced from `IntakeConfig` and interpolated
-/// into the Vector transform YAML. Operational parameters (flush intervals,
-/// batch size, TTLs, etc.) are declared here and deserialized by Vector.
+/// `api_key` and `metadata_svc_url` are sourced from `IntakeConfig` and
+/// interpolated into the Vector transform YAML (the API key via
+/// `${DD_API_KEY}` substitution against an in-memory map, not the process
+/// env). Operational parameters (flush intervals, batch size, TTLs, etc.) are
+/// declared here and deserialized by Vector.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MetricMetadataConfig {
-    /// Organization identifier passed in HTTP requests to byoc-ingest-metadata-svc.
-    pub org_id: String,
+    /// Datadog API key used to authenticate with byoc-ingest-metadata-svc.
+    pub api_key: String,
     /// Base URL of byoc-ingest-metadata-svc (e.g. "https://metadata.example.com").
     pub metadata_svc_url: String,
     /// How often (seconds) to flush pending metrics to the metadata service.
@@ -132,20 +134,10 @@ impl GenerateConfig for MetricMetadataConfig {
 #[async_trait::async_trait]
 #[typetag::serde(name = "metric_metadata")]
 impl TransformConfig for MetricMetadataConfig {
-    /// Validates that `DD_API_KEY` is present and constructs the transform.
-    ///
-    /// The API key is validated once at startup (D-02). If absent the pipeline
-    /// fails to start with a descriptive error — there is no fallback or default
-    /// key (T-01-01: spoofing mitigation).
     async fn build(&self, _context: &TransformContext) -> vector::Result<Transform> {
-        let api_key = std::env::var("DD_API_KEY").map_err(|_| {
-            "DD_API_KEY environment variable is not set; metric metadata transform cannot start \
-             without an API key"
-        })?;
-
         // Fail-fast: validate persist_file_path parent directory exists and is
-        // accessible. Matches the DD_API_KEY fail-fast pattern -- misconfigured
-        // paths fail at startup, not silently at the first persist tick.
+        // accessible -- misconfigured paths fail at startup, not silently at
+        // the first persist tick.
         let persist_path = std::path::Path::new(&self.persist_file_path);
         if let Some(parent) = persist_path.parent()
             && !parent.as_os_str().is_empty()
@@ -167,7 +159,7 @@ impl TransformConfig for MetricMetadataConfig {
         known_metrics.load_entries(entries);
 
         let flush_client = FlushClient::new(
-            api_key,
+            self.api_key.clone(),
             self.metadata_svc_url.clone(),
             Duration::from_secs(self.http_timeout_secs),
         )
@@ -400,7 +392,7 @@ mod tests {
     #[test]
     fn test_config_deserialization() {
         let yaml = r#"
-org_id: "test-org"
+api_key: "test-api-key"
 metadata_svc_url: "http://localhost:9999"
 flush_interval_secs: 5
 persist_interval_secs: 10
@@ -411,7 +403,7 @@ http_timeout_secs: 3
 persist_file_path: "/data/known.csv"
 "#;
         let cfg: MetricMetadataConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(cfg.org_id, "test-org");
+        assert_eq!(cfg.api_key, "test-api-key");
         assert_eq!(cfg.metadata_svc_url, "http://localhost:9999");
         assert_eq!(cfg.flush_interval_secs, 5);
         assert_eq!(cfg.persist_interval_secs, 10);
@@ -425,7 +417,7 @@ persist_file_path: "/data/known.csv"
     #[test]
     fn test_config_defaults() {
         let yaml = r#"
-org_id: "test-org"
+api_key: "test-api-key"
 metadata_svc_url: "http://localhost:9999"
 "#;
         let cfg: MetricMetadataConfig = serde_yaml::from_str(yaml).unwrap();
@@ -441,7 +433,7 @@ metadata_svc_url: "http://localhost:9999"
     #[test]
     fn test_config_deserialization_with_persist_path() {
         let yaml = r#"
-org_id: "test-org"
+api_key: "test-api-key"
 metadata_svc_url: "http://localhost:9999"
 persist_file_path: "/data/known.csv"
 "#;
@@ -452,59 +444,11 @@ persist_file_path: "/data/known.csv"
     #[test]
     fn test_config_defaults_persist_path() {
         let yaml = r#"
-org_id: "test-org"
+api_key: "test-api-key"
 metadata_svc_url: "http://localhost:9999"
 "#;
         let cfg: MetricMetadataConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg.persist_file_path, "/tmp/metric_metadata_known.csv");
-    }
-
-    // ----- API key validation -----
-
-    #[tokio::test]
-    #[serial_test::serial(env)]
-    async fn test_build_fails_without_api_key() {
-        let saved = std::env::var("DD_API_KEY").ok();
-        // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
-        unsafe {
-            std::env::remove_var("DD_API_KEY");
-        }
-
-        let cfg = MetricMetadataConfig {
-            org_id: "test-org".to_string(),
-            metadata_svc_url: "http://localhost:9999".to_string(),
-            flush_interval_secs: 15,
-            persist_interval_secs: 30,
-            batch_size: 200,
-            ttl_min_hours: 12,
-            ttl_max_hours: 36,
-            http_timeout_secs: 10,
-            persist_file_path: DEFAULT_PERSIST_FILE_PATH.to_string(),
-        };
-
-        // Build a minimal context. TransformContext::default is not available;
-        // we use `Default::default()` which relies on the derived impl.
-        let ctx = TransformContext::default();
-        let result = cfg.build(&ctx).await;
-
-        // Restore the env var before any assert so failures don't pollute other tests.
-        unsafe {
-            match saved {
-                Some(val) => std::env::set_var("DD_API_KEY", val),
-                None => std::env::remove_var("DD_API_KEY"),
-            }
-        }
-
-        // Transform doesn't impl Debug so we can't use unwrap_err/expect_err.
-        match result {
-            Ok(_) => panic!("build() should fail when DD_API_KEY is absent"),
-            Err(err) => {
-                assert!(
-                    err.to_string().contains("DD_API_KEY"),
-                    "expected error message to mention DD_API_KEY, got: {err}"
-                );
-            }
-        }
     }
 
     // ----- Known/unknown classification (XFRM-02) -----
@@ -601,7 +545,7 @@ metadata_svc_url: "http://localhost:9999"
     async fn test_transform_passes_events_through() {
         let transform = Box::new(MetricMetadataTransform {
             config: MetricMetadataConfig {
-                org_id: "test-org".to_string(),
+                api_key: "test-api-key".to_string(),
                 metadata_svc_url: "http://localhost:9999".to_string(),
                 flush_interval_secs: 15,
                 persist_interval_secs: 30,
@@ -614,7 +558,7 @@ metadata_svc_url: "http://localhost:9999"
             known_metrics: KnownMetrics::new(12, 36),
             pending: HashMap::new(),
             flush_client: FlushClient::new(
-                "test-key".to_string(),
+                "test-api-key".to_string(),
                 "http://localhost:9999".to_string(),
                 Duration::from_secs(10),
             )
@@ -746,11 +690,11 @@ metadata_svc_url: "http://localhost:9999"
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
-            std::env::set_var("DD_API_KEY", "test-key");
+            std::env::set_var("DD_API_KEY", "test-api-key");
         }
 
         let cfg = MetricMetadataConfig {
-            org_id: "test-org".to_string(),
+            api_key: "test-api-key".to_string(),
             metadata_svc_url: "http://localhost:9999".to_string(),
             flush_interval_secs: 15,
             persist_interval_secs: 30,
@@ -791,7 +735,7 @@ metadata_svc_url: "http://localhost:9999"
         // in the succeeded_metrics response, so it must NOT appear in the known set.
         Mock::given(method("POST"))
             .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
-            .and(header("DD-API-KEY", "test-key"))
+            .and(header("DD-API-KEY", "test-api-key"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "succeeded_metrics": ["cpu.user", "mem.free"]
             })))
@@ -801,7 +745,7 @@ metadata_svc_url: "http://localhost:9999"
 
         let transform = Box::new(MetricMetadataTransform {
             config: MetricMetadataConfig {
-                org_id: "test-org".to_string(),
+                api_key: "test-api-key".to_string(),
                 metadata_svc_url: mock_server.uri(),
                 flush_interval_secs: 60, // long -- batch_size trigger fires, not timer
                 persist_interval_secs: 60, // long -- only shutdown path persists
@@ -814,7 +758,7 @@ metadata_svc_url: "http://localhost:9999"
             known_metrics: KnownMetrics::new(12, 36),
             pending: HashMap::new(),
             flush_client: FlushClient::new(
-                "test-key".to_string(),
+                "test-api-key".to_string(),
                 mock_server.uri(),
                 Duration::from_secs(5),
             )
@@ -878,7 +822,7 @@ metadata_svc_url: "http://localhost:9999"
                 api_key_header
                     .to_str()
                     .expect("header should be valid UTF-8"),
-                "test-key",
+                "test-api-key",
                 "DD-API-KEY header mismatch"
             );
             // Verify the request body contains records
@@ -946,7 +890,7 @@ metadata_svc_url: "http://localhost:9999"
 
         let transform = Box::new(MetricMetadataTransform {
             config: MetricMetadataConfig {
-                org_id: "test-org".to_string(),
+                api_key: "test-api-key".to_string(),
                 metadata_svc_url: mock_server.uri(),
                 flush_interval_secs: 60, // long -- below batch_size, no timer trigger
                 persist_interval_secs: 60, // long -- only shutdown path persists
@@ -959,7 +903,7 @@ metadata_svc_url: "http://localhost:9999"
             known_metrics: KnownMetrics::new(12, 36),
             pending: HashMap::new(),
             flush_client: FlushClient::new(
-                "test-key".to_string(),
+                "test-api-key".to_string(),
                 mock_server.uri(),
                 Duration::from_secs(5),
             )
@@ -1005,11 +949,11 @@ metadata_svc_url: "http://localhost:9999"
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
-            std::env::set_var("DD_API_KEY", "test-key");
+            std::env::set_var("DD_API_KEY", "test-api-key");
         }
 
         let cfg = MetricMetadataConfig {
-            org_id: "test-org".to_string(),
+            api_key: "test-api-key".to_string(),
             metadata_svc_url: "http://localhost:9999".to_string(),
             flush_interval_secs: 15,
             persist_interval_secs: 30,

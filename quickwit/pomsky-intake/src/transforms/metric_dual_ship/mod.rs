@@ -81,14 +81,6 @@ impl GenerateConfig for MetricDualShipConfig {
 #[typetag::serde(name = "metric_dual_ship")]
 impl TransformConfig for MetricDualShipConfig {
     async fn build(&self, _context: &TransformContext) -> vector::Result<Transform> {
-        // Fail-fast: same DD_API_KEY guard the metric_metadata transform
-        // applies. The poller is spawned outside the build path so this is
-        // the only place where the absence is surfaced as a config error.
-        std::env::var("DD_API_KEY").map_err(|_| {
-            "DD_API_KEY environment variable is not set; metric_dual_ship transform cannot start \
-             without an API key"
-        })?;
-
         // Fail-fast on a misconfigured persist path so the operator sees the
         // problem at startup rather than at the first poll cycle.
         let persist_path = self.persist_file_path.as_path();
@@ -296,58 +288,12 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial(env)]
-    async fn build_fails_without_api_key() {
-        let saved = std::env::var("DD_API_KEY").ok();
-        // SAFETY: nextest serializes env-mutating tests via serial_test.
-        unsafe {
-            std::env::remove_var("DD_API_KEY");
-        }
-
-        let cfg = MetricDualShipConfig {
-            persist_file_path: PathBuf::from("/tmp/dual_ship_test.csv"),
-        };
-        let ctx = TransformContext::default();
-        let result = cfg.build(&ctx).await;
-
-        unsafe {
-            match saved {
-                Some(value) => std::env::set_var("DD_API_KEY", value),
-                None => std::env::remove_var("DD_API_KEY"),
-            }
-        }
-
-        match result {
-            Ok(_) => panic!("build() should fail without DD_API_KEY"),
-            Err(err) => {
-                assert!(
-                    err.to_string().contains("DD_API_KEY"),
-                    "expected DD_API_KEY mention, got: {err}"
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[serial_test::serial(env)]
     async fn build_fails_with_missing_parent_directory() {
-        let saved = std::env::var("DD_API_KEY").ok();
-        unsafe {
-            std::env::set_var("DD_API_KEY", "test-key");
-        }
-
         let cfg = MetricDualShipConfig {
             persist_file_path: PathBuf::from("/nonexistent_dir_dual_ship/path.csv"),
         };
         let ctx = TransformContext::default();
         let result = cfg.build(&ctx).await;
-
-        unsafe {
-            match saved {
-                Some(value) => std::env::set_var("DD_API_KEY", value),
-                None => std::env::remove_var("DD_API_KEY"),
-            }
-        }
 
         match result {
             Ok(_) => panic!("build() should fail with missing parent directory"),
@@ -362,13 +308,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial(env)]
     async fn build_loads_existing_csv_into_global_store() {
-        let saved = std::env::var("DD_API_KEY").ok();
-        unsafe {
-            std::env::set_var("DD_API_KEY", "test-key");
-        }
-
         let dir = tempfile::tempdir().unwrap();
         let csv = dir.path().join("metrics_to_saas.csv");
         std::fs::write(&csv, b"name,destination\npreloaded,saas\n").unwrap();
@@ -381,12 +321,5 @@ mod tests {
 
         let guard = GLOBAL_STORE.read().unwrap();
         assert_eq!(guard.lookup("preloaded"), Some(Destination::Saas));
-
-        unsafe {
-            match saved {
-                Some(value) => std::env::set_var("DD_API_KEY", value),
-                None => std::env::remove_var("DD_API_KEY"),
-            }
-        }
     }
 }

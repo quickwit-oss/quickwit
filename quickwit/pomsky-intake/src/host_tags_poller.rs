@@ -605,7 +605,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/host-tags"))
-            .and(header("DD-API-KEY", "test-key"))
+            .and(header("DD-API-KEY", "test-api-key"))
             .and(body_json(json!({ "host_names": ["web-01", "db-01"] })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "host_tags": [
@@ -626,7 +626,7 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string(), "db-01".to_string()];
-        let result = fetch_host_tags(&test_client(), &endpoint, "test-key", &hosts)
+        let result = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
             .await
             .expect("fetch should succeed");
 
@@ -653,7 +653,7 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string()];
-        let error = fetch_host_tags(&test_client(), &endpoint, "test-key", &hosts)
+        let error = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
             .await
             .expect_err("fetch should fail on 503");
         let message = error.to_string();
@@ -681,7 +681,7 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string()];
-        let result = fetch_host_tags(&test_client(), &endpoint, "test-key", &hosts)
+        let result = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
             .await
             .expect("fetch should succeed");
 

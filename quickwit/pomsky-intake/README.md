@@ -50,9 +50,6 @@ traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 site: datadoghq.com              # default: datadoghq.com; DD_SITE env var overrides
 api_key: <your-api-key>          # DD_API_KEY env var overrides
 
-# Organization identifier — used by metric_metadata.
-org_id: default                  # default: "default"
-
 # Path to the CSV used by metric_metadata to persist its known-metrics set across restarts.
 metric_metadata_persist_file_path: qwdata/intake/metric_metadata_known.csv  # default shown
 
@@ -133,8 +130,8 @@ known ones every cycle.
 
 ### Credentials
 
-The transform reads `DD_API_KEY` directly from the environment; `org_id` and the metadata service
-URL (derived from `site`) are supplied from the intake config file.
+The API key and metadata service URL (derived from `site`) are resolved by `pomsky-intake`
+once at startup and interpolated into the transform's Vector config.
 
 ## USM APM metrics extraction
 

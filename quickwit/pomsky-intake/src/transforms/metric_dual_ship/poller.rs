@@ -215,7 +215,7 @@ mod tests {
 
     fn make_fetcher(uri: &str) -> DualShipFetcher {
         DualShipFetcher::new(
-            "test-key".to_string(),
+            "test-api-key".to_string(),
             uri.to_string(),
             Duration::from_secs(2),
         )

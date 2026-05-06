@@ -179,7 +179,7 @@ mod tests {
     /// Helper: build a FlushClient pointing at the given mock server URI.
     fn build_test_client(server_uri: &str) -> FlushClient {
         FlushClient::new(
-            "test-key".to_string(),
+            "test-api-key".to_string(),
             server_uri.to_string(),
             Duration::from_secs(5),
         )
@@ -415,7 +415,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
-            .and(header("DD-API-KEY", "test-key"))
+            .and(header("DD-API-KEY", "test-api-key"))
             .and(header("Content-Type", "application/json"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "succeeded_metrics": ["cpu.user"]
@@ -523,7 +523,7 @@ mod tests {
 
         // Build client with very short timeout (1ms) so it times out.
         let client = FlushClient::new(
-            "test-key".to_string(),
+            "test-api-key".to_string(),
             mock_server.uri(),
             Duration::from_millis(1),
         )

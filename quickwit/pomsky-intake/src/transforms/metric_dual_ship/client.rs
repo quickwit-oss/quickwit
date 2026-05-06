@@ -147,7 +147,7 @@ mod tests {
     use super::*;
 
     fn make_client(uri: &str, timeout: Duration) -> DualShipFetcher {
-        DualShipFetcher::new("test-key".to_string(), uri.to_string(), timeout)
+        DualShipFetcher::new("test-api-key".to_string(), uri.to_string(), timeout)
             .expect("client build should succeed")
     }
 
@@ -157,7 +157,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path(ENDPOINT_PATH))
-            .and(header("DD-API-KEY", "test-key"))
+            .and(header("DD-API-KEY", "test-api-key"))
             .and(body_json(json!({"since_unix": 0})))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "metrics": [

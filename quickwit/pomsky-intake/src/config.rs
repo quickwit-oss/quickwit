@@ -39,8 +39,9 @@ pub struct IntakeConfig {
     #[serde(rename = "site", default = "default_dd_site")]
     pub dd_site: String,
 
-    /// Datadog API key. Falls back to the `DD_API_KEY` environment variable.
-    /// Shared across all Datadog-backed pollers.
+    /// Datadog API key. Resolved via [`Self::resolve_dd_api_key`], which
+    /// prefers `DD_API_KEY_FILE` (file contents) over `DD_API_KEY` (env)
+    /// over this config field. Shared across all Datadog-backed pollers.
     #[serde(rename = "api_key", default)]
     pub dd_api_key: Option<String>,
 
@@ -53,10 +54,6 @@ pub struct IntakeConfig {
     pub metrics_endpoint: String,
     #[serde(default = "default_traces_endpoint")]
     pub traces_endpoint: String,
-    /// Organization identifier passed to transforms that call external services.
-    #[serde(default = "default_org_id")]
-    pub org_id: String,
-
     /// Path to the CSV file used by the `metric_metadata` transform to
     /// persist its known-metrics set across restarts.
     #[serde(default = "default_metric_metadata_persist_file_path")]
@@ -78,7 +75,6 @@ impl Default for IntakeConfig {
             logs_endpoint: default_logs_endpoint(),
             metrics_endpoint: default_metrics_endpoint(),
             traces_endpoint: default_traces_endpoint(),
-            org_id: default_org_id(),
             metric_metadata_persist_file_path: default_metric_metadata_persist_file_path(),
             host_tags: HostTagsConfig::default(),
             dual_ship: DualShipConfig::default(),
@@ -93,19 +89,32 @@ impl IntakeConfig {
         std::env::var("DD_SITE").unwrap_or_else(|_| self.dd_site.clone())
     }
 
-    /// Resolves the DD API key. The `DD_API_KEY` env var takes precedence
-    /// over the config field.
+    /// Resolves the DD API key. Precedence: the file pointed to by
+    /// `DD_API_KEY_FILE`, then `DD_API_KEY`, then the config field.
     pub fn resolve_dd_api_key(&self) -> Option<String> {
+        if let Ok(path) = std::env::var("DD_API_KEY_FILE") {
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => return Some(contents.trim().to_string()),
+                Err(error) => {
+                    tracing::warn!(path, %error, "failed to read DD_API_KEY_FILE");
+                }
+            }
+        }
         std::env::var("DD_API_KEY")
             .ok()
             .or_else(|| self.dd_api_key.clone())
     }
 
-    /// Returns an error on the first invariant violation.
+    /// Returns an error on the first invariant violation. Cheap presence
+    /// checks only — the file behind `DD_API_KEY_FILE` is read once at
+    /// resolution time in [`crate::run_intake`], not here.
     pub fn validate(&self) -> anyhow::Result<()> {
         ensure!(
-            self.resolve_dd_api_key().is_some(),
-            "dd_api_key must be set via config or the DD_API_KEY environment variable",
+            std::env::var_os("DD_API_KEY_FILE").is_some()
+                || std::env::var_os("DD_API_KEY").is_some()
+                || self.dd_api_key.is_some(),
+            "dd_api_key must be set via the DD_API_KEY_FILE environment variable, the DD_API_KEY \
+             environment variable, or config",
         );
         self.host_tags.validate()?;
         self.dual_ship.validate()?;
@@ -131,10 +140,6 @@ fn default_metrics_endpoint() -> String {
 
 fn default_traces_endpoint() -> String {
     "http://127.0.0.1:7280/api/datadog/v1/byoc/traces".to_string()
-}
-
-fn default_org_id() -> String {
-    "default".to_string()
 }
 
 fn default_metric_metadata_persist_file_path() -> PathBuf {

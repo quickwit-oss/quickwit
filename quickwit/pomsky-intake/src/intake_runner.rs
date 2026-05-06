@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
 
 use anyhow::Context;
 use clap::Parser;
 use tracing::info;
 use vector::app::Application;
 use vector::cli::Opts;
+use vector::config::interpolate;
 use vector::extra_context::ExtraContext;
 
 use crate::IntakeConfig;
+use crate::config::{DualShipConfig, HostTagsConfig};
 use crate::host_tags::HostTagsStore;
 use crate::host_tags_poller::{self, HostTagsPollerConfig, UnknownHostsCollector};
 use crate::transforms::metric_dual_ship::{
@@ -30,13 +32,11 @@ use crate::transforms::metric_dual_ship::{
     run_dual_ship_poller,
 };
 
-fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> String {
-    let data_dir = data_dir.display();
+fn build_vector_config(dd_site: &str, config: &IntakeConfig, print: bool) -> String {
+    let data_dir = config.data_dir.display();
     let logs_endpoint = &config.logs_endpoint;
     let metrics_endpoint = &config.metrics_endpoint;
     let traces_endpoint = &config.traces_endpoint;
-    let org_id = &config.org_id;
-    let dd_site = config.resolve_dd_site();
     let metadata_svc_url = format!("https://{}", dd_site.trim_end_matches('/'));
     let metric_metadata_persist_file_path = config.metric_metadata_persist_file_path.display();
     let dual_ship_persist_file_path = config.dual_ship.persist_file_path.display();
@@ -123,7 +123,7 @@ transforms:
     type: metric_metadata
     inputs:
       - add_metric_host_tags
-    org_id: "{org_id}"
+    api_key: "${{DD_API_KEY}}"
     metadata_svc_url: "{metadata_svc_url}"
     persist_file_path: "{metric_metadata_persist_file_path}"
 
@@ -214,27 +214,23 @@ sinks:
 }
 
 /// Spawns the host-tags poller on the Vector runtime.
-///
-/// Panics if `dd_site` or `dd_api_key` cannot be resolved from either the
-/// intake config or the `DD_SITE` / `DD_API_KEY` environment variables —
-/// both are required for the intake service to run.
-fn spawn_host_tags_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle) {
-    let dd_site = config.resolve_dd_site();
-    let dd_api_key = config
-        .resolve_dd_api_key()
-        .expect("DD API key should be set via config or DD_API_KEY env var");
-    let host_tags_config = &config.host_tags;
+fn spawn_host_tags_poller(
+    dd_site: &str,
+    dd_api_key: &str,
+    config: &HostTagsConfig,
+    handle: &tokio::runtime::Handle,
+) {
     let poller_config = HostTagsPollerConfig {
         store: HostTagsStore::global(),
         collector: UnknownHostsCollector::global(),
-        metadata_service_url: host_tags_config.metadata_service_url(&dd_site),
-        dd_api_key,
-        poll_interval: host_tags_config.poll_interval(),
-        fetch_timeout: host_tags_config.fetch_timeout(),
-        ttl_min: host_tags_config.ttl_min(),
-        ttl_max: host_tags_config.ttl_max(),
-        stale_threshold: host_tags_config.stale_threshold(),
-        cache_path: host_tags_config.cache_path.clone(),
+        metadata_service_url: config.metadata_service_url(dd_site),
+        dd_api_key: dd_api_key.to_string(),
+        poll_interval: config.poll_interval(),
+        fetch_timeout: config.fetch_timeout(),
+        ttl_min: config.ttl_min(),
+        ttl_max: config.ttl_max(),
+        stale_threshold: config.stale_threshold(),
+        cache_path: config.cache_path.clone(),
     };
     handle.spawn(host_tags_poller::run_host_tags_poller(poller_config));
     info!("spawned host-tags poller");
@@ -242,31 +238,29 @@ fn spawn_host_tags_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle
 
 /// Spawns the dual-ship poller on the Vector runtime.
 ///
-/// Panics if `dd_api_key` cannot be resolved — the same precondition the
-/// `metric_dual_ship` transform enforces at build time. The poller writes
-/// into the same `global_store()` the transform reads from, so the routing
-/// decisions on the metric event hot path see updates as soon as they are
-/// merged in.
-fn spawn_dual_ship_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle) {
-    let dd_site = config.resolve_dd_site();
-    let dd_api_key = config
-        .resolve_dd_api_key()
-        .expect("DD API key should be set via config or DD_API_KEY env var");
-    let dual_ship_config = &config.dual_ship;
-    let metadata_service_url = dual_ship_config.metadata_service_url(&dd_site);
+/// The poller writes into the same `global_store()` the transform reads from,
+/// so the routing decisions on the metric event hot path see updates as soon
+/// as they are merged in.
+fn spawn_dual_ship_poller(
+    dd_site: &str,
+    dd_api_key: &str,
+    config: &DualShipConfig,
+    handle: &tokio::runtime::Handle,
+) {
+    let metadata_service_url = config.metadata_service_url(dd_site);
 
     let fetcher = DualShipFetcher::new(
-        dd_api_key,
+        dd_api_key.to_string(),
         metadata_service_url,
-        dual_ship_config.fetch_timeout(),
+        config.fetch_timeout(),
     )
     .expect("failed to build dual-ship HTTP client");
 
     let poller_config = DualShipPollerConfig {
         store: dual_ship_global_store(),
         fetcher,
-        poll_interval: dual_ship_config.poll_interval(),
-        csv_path: dual_ship_config.persist_file_path.clone(),
+        poll_interval: config.poll_interval(),
+        csv_path: config.persist_file_path.clone(),
     };
     handle.spawn(run_dual_ship_poller(poller_config));
     info!("spawned dual-ship poller");
@@ -283,7 +277,19 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
             config.data_dir.display()
         )
     })?;
-    let config_content = build_vector_config(&config.data_dir, &config, print);
+    let dd_site = config.resolve_dd_site();
+    let dd_api_key = config
+        .resolve_dd_api_key()
+        .context("failed to resolve DD API key")?;
+    // Substitute `${DD_API_KEY}` in the template against an in-memory map
+    // instead of relying on Vector's own env-substitution pass. The key is
+    // resolved upstream from `DD_API_KEY_FILE`, `DD_API_KEY`, or the intake
+    // config file (in that precedence order).
+    let config_template = build_vector_config(&dd_site, &config, print);
+    let vars = HashMap::from([("DD_API_KEY".to_string(), dd_api_key.clone())]);
+    let config_content = interpolate(&config_template, &vars).map_err(|errors| {
+        anyhow::anyhow!("failed to interpolate intake config: {}", errors.join(", "))
+    })?;
     let mut config_file =
         tempfile::NamedTempFile::new().context("failed to create temporary intake config file")?;
     config_file
@@ -302,8 +308,8 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     let (runtime, app) = Application::prepare_from_opts(opts, extra_context)
         .map_err(|code| anyhow::anyhow!("failed to prepare intake service (exit code {code})"))?;
 
-    spawn_host_tags_poller(&config, runtime.handle());
-    spawn_dual_ship_poller(&config, runtime.handle());
+    spawn_dual_ship_poller(&dd_site, &dd_api_key, &config.dual_ship, runtime.handle());
+    spawn_host_tags_poller(&dd_site, &dd_api_key, &config.host_tags, runtime.handle());
 
     let started = app
         .start(runtime.handle())
@@ -335,8 +341,13 @@ mod tests {
     /// that points at a non-existent transform name) without spinning up the
     /// full intake binary or hitting the network.
     fn assert_vector_config_loads(print: bool) {
-        let config = IntakeConfig::default();
-        let yaml = build_vector_config(&PathBuf::from("/tmp/pomsky-intake-test"), &config, print);
+        let config = IntakeConfig {
+            data_dir: PathBuf::from("/tmp/pomsky-intake-test"),
+            ..IntakeConfig::default()
+        };
+        let template = build_vector_config("datadoghq.com", &config, print);
+        let vars = HashMap::from([("DD_API_KEY".to_string(), "test-api-key".to_string())]);
+        let yaml = interpolate(&template, &vars).expect("interpolation should succeed");
         if let Err(errors) = load_from_str(&yaml, Format::Yaml) {
             panic!(
                 "vector rejected the generated config:\n--- yaml ---\n{yaml}\n--- errors ---\n{}",
