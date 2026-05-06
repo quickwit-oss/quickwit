@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::ops::Bound;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -26,29 +27,31 @@ use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
-    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexTemplateRequest,
-    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
-    IndexMetadataRequest, IndexMetadataResponse, IndexStats, IndexTemplateMatch,
-    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    DeleteShardsResponse, DeleteSketchSplitsRequest, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataFailure,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexStats,
+    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
     ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
-    ListShardsSubresponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
-    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    ListShardsSubresponse, ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSketchSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishMetricsSplitsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats,
-    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
-    serde_utils,
+    PublishMetricsSplitsRequest, PublishSketchSplitsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, SplitStats, StageMetricsSplitsRequest, StageSketchSplitsRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -61,6 +64,7 @@ use uuid::Uuid;
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
+use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquetSplit};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
@@ -75,9 +79,9 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
-    PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE, StageMetricsSplitsRequestExt,
-    UpdateSourceRequestExt, use_shard_api,
+    IndexesMetadataResponseExt, ListParquetSplitsQuery, ListParquetSplitsResponseExt,
+    PublishParquetSplitsRequestExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    StageParquetSplitsRequestExt, UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1774,20 +1778,150 @@ impl MetastoreService for PostgresqlMetastore {
         &self,
         request: StageMetricsSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        use quickwit_parquet_engine::split::{
-            InsertableMetricsSplit, MetricsSplitMetadata, MetricsSplitState,
-        };
-
         let index_uid = request.index_uid().clone();
+        let splits_metadata = request.deserialize_splits_metadata()?;
+        self.stage_parquet_splits_impl(ParquetSplitKind::Metrics, index_uid, splits_metadata)
+            .await
+    }
 
-        // Deserialize the splits metadata
-        let splits_metadata: Vec<MetricsSplitMetadata> = request.deserialize_splits_metadata()?;
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn publish_metrics_splits(
+        &self,
+        request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let checkpoint_delta_opt = request.deserialize_index_checkpoint()?;
+        let index_uid = request.index_uid().clone();
+        self.publish_parquet_splits_impl(
+            ParquetSplitKind::Metrics,
+            index_uid,
+            request.staged_split_ids,
+            request.replaced_split_ids,
+            checkpoint_delta_opt,
+            request.publish_token_opt,
+        )
+        .await
+    }
 
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn list_metrics_splits(
+        &self,
+        request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        let query: ListParquetSplitsQuery = serde_utils::from_json_str(&request.query_json)?;
+        let splits = self
+            .list_parquet_splits_impl(ParquetSplitKind::Metrics, query)
+            .await?;
+        ListMetricsSplitsResponse::try_from_splits(&splits)
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.mark_parquet_splits_for_deletion_impl(
+            ParquetSplitKind::Metrics,
+            request.index_uid(),
+            &request.split_ids,
+        )
+        .await
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn delete_metrics_splits(
+        &self,
+        request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.delete_parquet_splits_impl(
+            ParquetSplitKind::Metrics,
+            request.index_uid(),
+            &request.split_ids,
+        )
+        .await
+    }
+
+    async fn stage_sketch_splits(
+        &self,
+        request: StageSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let splits_metadata = request.deserialize_splits_metadata()?;
+        self.stage_parquet_splits_impl(ParquetSplitKind::Sketches, index_uid, splits_metadata)
+            .await
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn publish_sketch_splits(
+        &self,
+        request: PublishSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let checkpoint_delta_opt = request.deserialize_index_checkpoint()?;
+        let index_uid = request.index_uid().clone();
+        self.publish_parquet_splits_impl(
+            ParquetSplitKind::Sketches,
+            index_uid,
+            request.staged_split_ids,
+            request.replaced_split_ids,
+            checkpoint_delta_opt,
+            request.publish_token_opt,
+        )
+        .await
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn list_sketch_splits(
+        &self,
+        request: ListSketchSplitsRequest,
+    ) -> MetastoreResult<ListSketchSplitsResponse> {
+        let query: ListParquetSplitsQuery = serde_utils::from_json_str(&request.query_json)?;
+        let splits = self
+            .list_parquet_splits_impl(ParquetSplitKind::Sketches, query)
+            .await?;
+        ListSketchSplitsResponse::try_from_splits(&splits)
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn mark_sketch_splits_for_deletion(
+        &self,
+        request: MarkSketchSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.mark_parquet_splits_for_deletion_impl(
+            ParquetSplitKind::Sketches,
+            request.index_uid(),
+            &request.split_ids,
+        )
+        .await
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn delete_sketch_splits(
+        &self,
+        request: DeleteSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.delete_parquet_splits_impl(
+            ParquetSplitKind::Sketches,
+            request.index_uid(),
+            &request.split_ids,
+        )
+        .await
+    }
+}
+
+impl PostgresqlMetastore {
+    /// Shared implementation for staging parquet splits (metrics or sketches).
+    async fn stage_parquet_splits_impl(
+        &self,
+        kind: ParquetSplitKind,
+        index_uid: IndexUid,
+        splits_metadata: Vec<ParquetSplitMetadata>,
+    ) -> MetastoreResult<EmptyResponse> {
         if splits_metadata.is_empty() {
             return Ok(EmptyResponse {});
         }
 
-        // Convert to insertable rows - use JSON strings for array fields due to sqlx limitations
+        let table_name = kind.table_name();
+        let label = kind.label();
+
         let mut split_ids = Vec::with_capacity(splits_metadata.len());
         let mut split_states = Vec::with_capacity(splits_metadata.len());
         let mut index_uids = Vec::with_capacity(splits_metadata.len());
@@ -1803,24 +1937,28 @@ impl MetastoreService for PostgresqlMetastore {
         let mut num_rows_list = Vec::with_capacity(splits_metadata.len());
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
+        let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+        let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
+        let mut zonemap_regexes_json_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
 
         for metadata in &splits_metadata {
-            let insertable =
-                InsertableMetricsSplit::from_metadata(metadata, MetricsSplitState::Staged)
-                    .map_err(|e| MetastoreError::JsonSerializeError {
-                        struct_name: "MetricsSplitMetadata".to_string(),
-                        message: e.to_string(),
-                    })?;
+            let insertable = InsertableParquetSplit::from_metadata(metadata, SplitState::Staged)
+                .map_err(|err| MetastoreError::JsonSerializeError {
+                    struct_name: "ParquetSplitMetadata".to_string(),
+                    message: err.to_string(),
+                })?;
 
             split_ids.push(insertable.split_id);
             split_states.push(insertable.split_state);
             index_uids.push(insertable.index_uid);
             time_range_starts.push(insertable.time_range_start);
             time_range_ends.push(insertable.time_range_end);
-            // Convert array fields to JSON strings (owned)
-            let json_err = |e: serde_json::Error| MetastoreError::JsonSerializeError {
-                struct_name: "MetricsSplitMetadata".to_string(),
-                message: e.to_string(),
+            let json_err = |err: serde_json::Error| MetastoreError::JsonSerializeError {
+                struct_name: "ParquetSplitMetadata".to_string(),
+                message: err.to_string(),
             };
             metric_names_json
                 .push(serde_json::to_string(&insertable.metric_names).map_err(json_err)?);
@@ -1837,17 +1975,24 @@ impl MetastoreService for PostgresqlMetastore {
             num_rows_list.push(insertable.num_rows);
             size_bytes_list.push(insertable.size_bytes);
             split_metadata_jsons.push(insertable.split_metadata_json);
+            window_starts.push(insertable.window_start);
+            window_duration_secs_list.push(insertable.window_duration_secs);
+            sort_fields_list.push(insertable.sort_fields);
+            num_merge_ops_list.push(insertable.num_merge_ops);
+            row_keys_list.push(insertable.row_keys);
+            zonemap_regexes_json_list.push(insertable.zonemap_regexes.to_string());
         }
 
         info!(
-            index_uid = %request.index_uid(),
+            index_uid = %index_uid,
             num_splits = split_ids.len(),
-            "staging metrics splits"
+            "staging {label} splits"
         );
 
-        // Insert into metrics_splits table using JSON for array fields
-        const STAGE_METRICS_SPLITS_QUERY: &str = r#"
-            INSERT INTO metrics_splits (
+        // table_name is a &'static str from ParquetSplitKind, safe for SQL interpolation.
+        let stage_query = format!(
+            r#"
+            INSERT INTO {table_name} (
                 split_id,
                 split_state,
                 index_uid,
@@ -1863,6 +2008,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes,
                 create_timestamp,
                 update_timestamp
             )
@@ -1887,6 +2038,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json::jsonb,
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
             FROM UNNEST(
@@ -1904,7 +2061,13 @@ impl MetastoreService for PostgresqlMetastore {
                 $12::text[],
                 $13::bigint[],
                 $14::bigint[],
-                $15::text[]
+                $15::text[],
+                $16::bigint[],
+                $17::int[],
+                $18::text[],
+                $19::int[],
+                $20::bytea[],
+                $21::text[]
             ) AS staged(
                 split_id,
                 split_state,
@@ -1920,7 +2083,13 @@ impl MetastoreService for PostgresqlMetastore {
                 high_cardinality_tag_keys_json,
                 num_rows,
                 size_bytes,
-                split_metadata_json
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json
             )
             ON CONFLICT (split_id) DO UPDATE
                 SET
@@ -1937,16 +2106,25 @@ impl MetastoreService for PostgresqlMetastore {
                     num_rows = EXCLUDED.num_rows,
                     size_bytes = EXCLUDED.size_bytes,
                     split_metadata_json = EXCLUDED.split_metadata_json,
+                    window_start = EXCLUDED.window_start,
+                    window_duration_secs = EXCLUDED.window_duration_secs,
+                    sort_fields = EXCLUDED.sort_fields,
+                    num_merge_ops = EXCLUDED.num_merge_ops,
+                    row_keys = EXCLUDED.row_keys,
+                    zonemap_regexes = EXCLUDED.zonemap_regexes,
                     update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-                WHERE metrics_splits.split_state = 'Staged'
+                WHERE {table_name}.split_state = 'Staged'
             RETURNING split_id
-        "#;
+            "#,
+        );
 
         let split_ids_snapshot = split_ids.clone();
         let index_id_for_err = index_uid.index_id.clone();
-        let upserted_split_ids: Vec<String> =
-            run_with_tx!(self.connection_pool, tx, "stage metrics splits", {
-                sqlx::query_scalar(STAGE_METRICS_SPLITS_QUERY)
+        let upserted_split_ids: Vec<String> = {
+            let mut tx: Transaction<'_, Postgres> = self.connection_pool.begin().await?;
+            let tx_ref = &mut tx;
+            let op_result: MetastoreResult<Vec<String>> = async {
+                sqlx::query_scalar(&stage_query)
                     .bind(&split_ids)
                     .bind(&split_states)
                     .bind(&index_uids)
@@ -1962,10 +2140,29 @@ impl MetastoreService for PostgresqlMetastore {
                     .bind(&num_rows_list)
                     .bind(&size_bytes_list)
                     .bind(&split_metadata_jsons)
-                    .fetch_all(tx.as_mut())
+                    .bind(&window_starts)
+                    .bind(&window_duration_secs_list)
+                    .bind(&sort_fields_list)
+                    .bind(&num_merge_ops_list)
+                    .bind(&row_keys_list)
+                    .bind(&zonemap_regexes_json_list)
+                    .fetch_all(tx_ref.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))
-            })?;
+            }
+            .await;
+            match &op_result {
+                Ok(_) => {
+                    debug!("committing transaction");
+                    tx.commit().await?;
+                }
+                Err(error) => {
+                    rate_limited_error!(limit_per_min = 60, error=%error, "failed to stage {} splits, rolling transaction back", label);
+                    tx.rollback().await?;
+                }
+            }
+            op_result
+        }?;
 
         if upserted_split_ids.len() != split_ids_snapshot.len() {
             let failed_split_ids: Vec<String> = split_ids_snapshot
@@ -1979,7 +2176,7 @@ impl MetastoreService for PostgresqlMetastore {
             warn!(
                 %index_uid,
                 failed_split_ids = ?failed_split_ids,
-                "failed to stage some metrics splits"
+                "failed to stage some {label} splits"
             );
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
@@ -1987,79 +2184,93 @@ impl MetastoreService for PostgresqlMetastore {
         info!(
             %index_uid,
             num_staged = upserted_split_ids.len(),
-            "staged metrics splits successfully"
+            "staged {label} splits successfully"
         );
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
-    async fn publish_metrics_splits(
+    /// Shared implementation for publishing parquet splits.
+    async fn publish_parquet_splits_impl(
         &self,
-        request: PublishMetricsSplitsRequest,
+        kind: ParquetSplitKind,
+        index_uid: IndexUid,
+        staged_split_ids: Vec<String>,
+        replaced_split_ids: Vec<String>,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<String>,
     ) -> MetastoreResult<EmptyResponse> {
-        let checkpoint_delta_opt: Option<IndexCheckpointDelta> =
-            request.deserialize_index_checkpoint()?;
-        let index_uid = request.index_uid().clone();
-        let staged_split_ids = request.staged_split_ids;
-        let replaced_split_ids = request.replaced_split_ids;
+        let table_name = kind.table_name();
+        let label = kind.label();
 
         info!(
             %index_uid,
             staged_splits = staged_split_ids.len(),
             replaced_splits = replaced_split_ids.len(),
-            "publishing metrics splits"
+            "publishing {label} splits"
         );
 
-        run_with_tx!(self.connection_pool, tx, "publish metrics splits", {
-            let mut index_metadata = index_metadata(tx, &index_uid.index_id, true).await?;
-            let index_uid = index_metadata.index_uid.clone();
-
-            if let Some(checkpoint_delta) = checkpoint_delta_opt {
-                let source_id = checkpoint_delta.source_id.clone();
-                let source = index_metadata.sources.get(&source_id).ok_or_else(|| {
-                    MetastoreError::NotFound(EntityKind::Source {
-                        index_id: index_uid.index_id.to_string(),
-                        source_id: source_id.to_string(),
-                    })
-                })?;
-
-                if use_shard_api(&source.source_params) {
-                    let publish_token = request.publish_token_opt.ok_or_else(|| {
-                        let message = format!(
-                            "publish token is required for publishing splits for source \
-                             `{source_id}`"
-                        );
-                        MetastoreError::InvalidArgument { message }
-                    })?;
-                    try_apply_delta_v2(
-                        tx,
-                        &index_uid,
-                        &source_id,
-                        checkpoint_delta.source_delta,
-                        publish_token,
-                    )
-                    .await?;
-                } else {
-                    index_metadata
-                        .checkpoint
-                        .try_apply_delta(checkpoint_delta)
-                        .map_err(|error| {
-                            let entity = EntityKind::CheckpointDelta {
-                                index_id: index_uid.index_id.to_string(),
-                                source_id,
-                            };
-                            let message = error.to_string();
-                            MetastoreError::FailedPrecondition { entity, message }
-                        })?;
+        {
+            let mut tx: Transaction<'_, Postgres> = self.connection_pool.begin().await?;
+            let tx_ref = &mut tx;
+            let op_result: MetastoreResult<EmptyResponse> = async {
+                let mut index_metadata_inner =
+                    index_metadata(tx_ref, &index_uid.index_id, true).await?;
+                if index_metadata_inner.index_uid != index_uid {
+                    return Err(MetastoreError::NotFound(EntityKind::Index {
+                        index_id: index_uid.index_id.clone(),
+                    }));
                 }
-            }
-            let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
+                let index_uid_inner = index_metadata_inner.index_uid.clone();
 
-            // Publish staged splits, mark replaced splits for deletion, and update
-            // index metadata (checkpoint) atomically.
-            const PUBLISH_METRICS_SPLITS_QUERY: &str = r#"
+                if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                    let source_id = checkpoint_delta.source_id.clone();
+                    let source = index_metadata_inner
+                        .sources
+                        .get(&source_id)
+                        .ok_or_else(|| {
+                            MetastoreError::NotFound(EntityKind::Source {
+                                index_id: index_uid_inner.index_id.to_string(),
+                                source_id: source_id.to_string(),
+                            })
+                        })?;
+
+                    if use_shard_api(&source.source_params) {
+                        let publish_token = publish_token_opt.clone().ok_or_else(|| {
+                            let message = format!(
+                                "publish token is required for publishing splits for source \
+                                 `{source_id}`"
+                            );
+                            MetastoreError::InvalidArgument { message }
+                        })?;
+                        try_apply_delta_v2(
+                            tx_ref,
+                            &index_uid_inner,
+                            &source_id,
+                            checkpoint_delta.source_delta,
+                            publish_token,
+                        )
+                        .await?;
+                    } else {
+                        index_metadata_inner
+                            .checkpoint
+                            .try_apply_delta(checkpoint_delta)
+                            .map_err(|error| {
+                                let entity = EntityKind::CheckpointDelta {
+                                    index_id: index_uid_inner.index_id.to_string(),
+                                    source_id,
+                                };
+                                let message = error.to_string();
+                                MetastoreError::FailedPrecondition { entity, message }
+                            })?;
+                    }
+                }
+                let index_metadata_json = serde_utils::to_json_str(&index_metadata_inner)?;
+
+                // table_name is a &'static str from ParquetSplitKind, safe for SQL interpolation.
+                let publish_query = format!(
+                    r#"
                 WITH publish AS (
-                    UPDATE metrics_splits
+                    UPDATE {table_name}
                     SET
                         split_state = 'Published',
                         update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
@@ -2070,7 +2281,7 @@ impl MetastoreService for PostgresqlMetastore {
                     RETURNING split_id
                 ),
                 mark_for_deletion AS (
-                    UPDATE metrics_splits
+                    UPDATE {table_name}
                     SET
                         split_state = 'MarkedForDeletion',
                         update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
@@ -2090,68 +2301,72 @@ impl MetastoreService for PostgresqlMetastore {
                 SELECT
                     (SELECT COUNT(*) FROM publish) as published_count,
                     (SELECT COUNT(*) FROM mark_for_deletion) as marked_count
-            "#;
+                "#,
+                );
 
-            let (published_count, marked_count): (i64, i64) =
-                sqlx::query_as(PUBLISH_METRICS_SPLITS_QUERY)
-                    .bind(&index_uid)
+                let (published_count, marked_count): (i64, i64) = sqlx::query_as(&publish_query)
+                    .bind(&index_uid_inner)
                     .bind(index_metadata_json)
                     .bind(&staged_split_ids)
                     .bind(&replaced_split_ids)
-                    .fetch_one(tx.as_mut())
+                    .fetch_one(tx_ref.as_mut())
                     .await
-                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+                    .map_err(|sqlx_error| {
+                        convert_sqlx_err(&index_uid_inner.index_id, sqlx_error)
+                    })?;
 
-            // Verify all staged splits were published
-            if published_count as usize != staged_split_ids.len() {
-                let entity = EntityKind::Splits {
-                    split_ids: staged_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to publish {} splits, but only {} were in Staged state",
-                    staged_split_ids.len(),
-                    published_count
+                if published_count as usize != staged_split_ids.len() {
+                    return Err(MetastoreError::NotFound(EntityKind::Splits {
+                        split_ids: staged_split_ids.clone(),
+                    }));
+                }
+
+                if marked_count as usize != replaced_split_ids.len() {
+                    let entity = EntityKind::Splits {
+                        split_ids: replaced_split_ids.clone(),
+                    };
+                    let message = format!(
+                        "expected to mark {} splits for deletion, but only {} were in Published \
+                         state",
+                        replaced_split_ids.len(),
+                        marked_count
+                    );
+                    return Err(MetastoreError::FailedPrecondition { entity, message });
+                }
+
+                info!(
+                    index_uid = %index_uid_inner,
+                    published_count,
+                    marked_count,
+                    "published {label} splits successfully"
                 );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
+                Ok(EmptyResponse {})
             }
-
-            // Verify all replaced splits were marked for deletion
-            if marked_count as usize != replaced_split_ids.len() {
-                let entity = EntityKind::Splits {
-                    split_ids: replaced_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to mark {} splits for deletion, but only {} were in Published state",
-                    replaced_split_ids.len(),
-                    marked_count
-                );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
+            .await;
+            match &op_result {
+                Ok(_) => {
+                    debug!("committing transaction");
+                    tx.commit().await?;
+                }
+                Err(error) => {
+                    rate_limited_error!(limit_per_min = 60, error=%error, "failed to publish {} splits, rolling transaction back", label);
+                    tx.rollback().await?;
+                }
             }
-
-            info!(
-                %index_uid,
-                published_count,
-                marked_count,
-                "published metrics splits successfully"
-            );
-            Ok(EmptyResponse {})
-        })
+            op_result
+        }
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
-    async fn list_metrics_splits(
+    /// Shared implementation for listing parquet splits.
+    async fn list_parquet_splits_impl(
         &self,
-        request: ListMetricsSplitsRequest,
-    ) -> MetastoreResult<ListMetricsSplitsResponse> {
-        use quickwit_parquet_engine::split::MetricsSplitRecord;
+        kind: ParquetSplitKind,
+        query: ListParquetSplitsQuery,
+    ) -> MetastoreResult<Vec<ParquetSplitRecord>> {
+        let table_name = kind.table_name();
+        let label = kind.label();
 
-        use crate::metastore::ListMetricsSplitsQuery;
-
-        // Deserialize the query
-        let query: ListMetricsSplitsQuery = serde_utils::from_json_str(&request.query_json)?;
-
-        // Build dynamic SQL query based on filters
-        let mut sql = String::from(
+        let mut sql = format!(
             r#"
             SELECT
                 split_id,
@@ -2169,10 +2384,16 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
-                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp
-            FROM metrics_splits
+                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes
+            FROM {table_name}
             WHERE index_uid = $1
-        "#,
+            "#,
         );
 
         let mut param_idx = 2;
@@ -2183,14 +2404,39 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
-        // Add time range filter
-        if query.time_range_start.is_some() {
-            sql.push_str(&format!(" AND time_range_end >= ${}", param_idx));
-            param_idx += 1;
+        // Time range filter.
+        // When sort_fields is set this is a compaction query and time_range
+        // refers to the compaction window columns; otherwise it refers to the
+        // data time_range_start/time_range_end columns.
+        let is_compaction_query = query.sort_fields.is_some();
+        let (range_col_start, range_col_end) = if is_compaction_query {
+            ("window_start", "window_start + window_duration_secs")
+        } else {
+            ("time_range_start", "time_range_end")
+        };
+        // overlap: split_end > query_start AND split_start < query_end
+        // (using >= / <= for Included bounds, > / < for Excluded)
+        match &query.time_range.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} >= ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} > ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
-        if query.time_range_end.is_some() {
-            sql.push_str(&format!(" AND time_range_start <= ${}", param_idx));
-            param_idx += 1;
+        match &query.time_range.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} <= ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} < ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
 
         // Add metric names filter (ANY overlap)
@@ -2221,46 +2467,174 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
-        sql.push_str(" ORDER BY time_range_start ASC");
+        if query.sort_fields.is_some() {
+            sql.push_str(&format!(" AND sort_fields = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if query.node_id.is_some() {
+            sql.push_str(&format!(" AND node_id = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // delete_opstamp range filter
+        match &query.delete_opstamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp >= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp > ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp <= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp < ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // update_timestamp range filter
+        match &query.update_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // create_timestamp range filter
+        match &query.create_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // maturity filter
+        match &query.mature {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp <= TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp > TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // Add max_time_range_end filter for retention policy
+        if query.max_time_range_end.is_some() {
+            sql.push_str(&format!(" AND time_range_end <= ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // Add pagination cursor
+        if query.after_split_id.is_some() {
+            sql.push_str(&format!(" AND split_id > ${}", param_idx));
+            param_idx += 1;
+        }
+
+        sql.push_str(" ORDER BY split_id ASC");
 
         // Add limit
         if query.limit.is_some() {
             sql.push_str(&format!(" LIMIT ${}", param_idx));
         }
 
-        // Execute query with bindings
-        let mut query_builder = sqlx::query_as::<
-            _,
-            (
-                String,              // split_id
-                String,              // split_state
-                String,              // index_uid
-                i64,                 // time_range_start
-                i64,                 // time_range_end
-                Vec<String>,         // metric_names
-                Option<Vec<String>>, // tag_service
-                Option<Vec<String>>, // tag_env
-                Option<Vec<String>>, // tag_datacenter
-                Option<Vec<String>>, // tag_region
-                Option<Vec<String>>, // tag_host
-                Vec<String>,         // high_cardinality_tag_keys
-                i64,                 // num_rows
-                i64,                 // size_bytes
-                String,              // split_metadata_json
-                i64,                 // update_timestamp
-            ),
-        >(&sql);
+        // Execute query with dynamic bindings
+        let mut query_builder = sqlx::query(&sql);
 
         query_builder = query_builder.bind(query.index_uid.to_string());
 
         if !query.split_states.is_empty() {
-            query_builder = query_builder.bind(&query.split_states);
+            let state_strings: Vec<String> = query
+                .split_states
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            query_builder = query_builder.bind(state_strings);
         }
-        if let Some(start) = query.time_range_start {
-            query_builder = query_builder.bind(start);
+        match &query.time_range.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
-        if let Some(end) = query.time_range_end {
-            query_builder = query_builder.bind(end);
+        match &query.time_range.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
         if !query.metric_names.is_empty() {
             query_builder = query_builder.bind(&query.metric_names);
@@ -2280,6 +2654,60 @@ impl MetastoreService for PostgresqlMetastore {
         if let Some(ref host) = query.tag_host {
             query_builder = query_builder.bind(host);
         }
+        if let Some(ref sort_fields) = query.sort_fields {
+            query_builder = query_builder.bind(sort_fields);
+        }
+        if let Some(ref node_id) = query.node_id {
+            query_builder = query_builder.bind(node_id.as_str());
+        }
+        match &query.delete_opstamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.mature {
+            Bound::Included(evaluation_datetime) | Bound::Excluded(evaluation_datetime) => {
+                query_builder = query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
+            }
+            Bound::Unbounded => {}
+        }
+        if let Some(max_time_range_end) = query.max_time_range_end {
+            query_builder = query_builder.bind(max_time_range_end);
+        }
+        if let Some(ref after_split_id) = query.after_split_id {
+            query_builder = query_builder.bind(after_split_id);
+        }
         if let Some(limit) = query.limit {
             query_builder = query_builder.bind(limit as i64);
         }
@@ -2289,62 +2717,83 @@ impl MetastoreService for PostgresqlMetastore {
             .await
             .map_err(|sqlx_error| convert_sqlx_err(&query.index_uid.index_id, sqlx_error))?;
 
-        // Convert rows to MetricsSplitRecord
-        let splits: Vec<MetricsSplitRecord> = rows
-            .into_iter()
-            .filter_map(|row| {
-                use quickwit_parquet_engine::split::{MetricsSplitState, PgMetricsSplit};
+        // Convert rows to ParquetSplitRecord
+        let mut splits: Vec<ParquetSplitRecord> = Vec::with_capacity(rows.len());
+        for row in rows {
+            use sqlx::Row as _;
 
-                let pg_split = PgMetricsSplit {
-                    split_id: row.0,
-                    split_state: row.1,
-                    index_uid: row.2,
-                    time_range_start: row.3,
-                    time_range_end: row.4,
-                    metric_names: row.5,
-                    tag_service: row.6,
-                    tag_env: row.7,
-                    tag_datacenter: row.8,
-                    tag_region: row.9,
-                    tag_host: row.10,
-                    high_cardinality_tag_keys: row.11,
-                    num_rows: row.12,
-                    size_bytes: row.13,
-                    split_metadata_json: row.14,
-                    update_timestamp: row.15,
-                };
+            let pg_split = PgParquetSplit {
+                split_id: row.get("split_id"),
+                split_state: row.get("split_state"),
+                index_uid: row.get("index_uid"),
+                time_range_start: row.get("time_range_start"),
+                time_range_end: row.get("time_range_end"),
+                metric_names: row.get("metric_names"),
+                tag_service: row.get("tag_service"),
+                tag_env: row.get("tag_env"),
+                tag_datacenter: row.get("tag_datacenter"),
+                tag_region: row.get("tag_region"),
+                tag_host: row.get("tag_host"),
+                high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
+                num_rows: row.get("num_rows"),
+                size_bytes: row.get("size_bytes"),
+                split_metadata_json: row.get("split_metadata_json"),
+                update_timestamp: row.get("update_timestamp"),
+                window_start: row.get("window_start"),
+                window_duration_secs: row.get("window_duration_secs"),
+                sort_fields: row.get("sort_fields"),
+                num_merge_ops: row.get("num_merge_ops"),
+                row_keys: row.get("row_keys"),
+                zonemap_regexes: row.get("zonemap_regexes"),
+            };
 
-                let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
-                let metadata = pg_split.to_metadata().ok()?;
+            let state = pg_split.split_state().unwrap_or(SplitState::Staged);
+            let metadata = match pg_split.to_metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    return Err(MetastoreError::Internal {
+                        message: format!(
+                            "failed to deserialize {label} split '{}'",
+                            pg_split.split_id
+                        ),
+                        cause: error.to_string(),
+                    });
+                }
+            };
 
-                Some(MetricsSplitRecord {
-                    state,
-                    update_timestamp: row.15,
-                    metadata,
-                })
-            })
-            .collect();
+            splits.push(ParquetSplitRecord {
+                state,
+                update_timestamp: pg_split.update_timestamp,
+                metadata,
+            });
+        }
 
-        ListMetricsSplitsResponse::try_from_splits(&splits)
+        Ok(splits)
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
-    async fn mark_metrics_splits_for_deletion(
+    /// Shared implementation for marking parquet splits for deletion.
+    async fn mark_parquet_splits_for_deletion_impl(
         &self,
-        request: MarkMetricsSplitsForDeletionRequest,
+        kind: ParquetSplitKind,
+        index_uid: &IndexUid,
+        split_ids: &[String],
     ) -> MetastoreResult<EmptyResponse> {
-        if request.split_ids.is_empty() {
+        if split_ids.is_empty() {
             return Ok(EmptyResponse {});
         }
 
+        let table_name = kind.table_name();
+        let label = kind.label();
+
         info!(
-            index_uid = %request.index_uid(),
-            split_ids = ?request.split_ids,
-            "marking metrics splits for deletion"
+            index_uid = %index_uid,
+            split_ids = ?split_ids,
+            "marking {label} splits for deletion"
         );
 
-        const MARK_FOR_DELETION_QUERY: &str = r#"
-            UPDATE metrics_splits
+        let mark_query = format!(
+            r#"
+            UPDATE {table_name}
             SET
                 split_state = 'MarkedForDeletion',
                 update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
@@ -2353,82 +2802,129 @@ impl MetastoreService for PostgresqlMetastore {
                 AND split_id = ANY($2)
                 AND split_state IN ('Staged', 'Published')
             RETURNING split_id
-        "#;
+            "#,
+        );
 
-        let marked_split_ids: Vec<String> = sqlx::query_scalar(MARK_FOR_DELETION_QUERY)
-            .bind(request.index_uid())
-            .bind(&request.split_ids)
+        let marked_split_ids: Vec<String> = sqlx::query_scalar(&mark_query)
+            .bind(index_uid)
+            .bind(split_ids)
             .fetch_all(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
         info!(
-            index_uid = %request.index_uid(),
+            index_uid = %index_uid,
             marked_count = marked_split_ids.len(),
-            "marked metrics splits for deletion"
+            "marked {label} splits for deletion"
         );
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
-    async fn delete_metrics_splits(
+    /// Shared implementation for deleting parquet splits.
+    async fn delete_parquet_splits_impl(
         &self,
-        request: DeleteMetricsSplitsRequest,
+        kind: ParquetSplitKind,
+        index_uid: &IndexUid,
+        split_ids: &[String],
     ) -> MetastoreResult<EmptyResponse> {
-        if request.split_ids.is_empty() {
+        if split_ids.is_empty() {
             return Ok(EmptyResponse {});
         }
 
+        let table_name = kind.table_name();
+        let label = kind.label();
+
         info!(
-            index_uid = %request.index_uid(),
-            split_ids = ?request.split_ids,
-            "deleting metrics splits"
+            index_uid = %index_uid,
+            split_ids = ?split_ids,
+            "deleting {label} splits"
         );
 
-        // Only delete splits that are marked for deletion
-        const DELETE_SPLITS_QUERY: &str = r#"
-            DELETE FROM metrics_splits
-            WHERE
-                index_uid = $1
-                AND split_id = ANY($2)
-                AND split_state = 'MarkedForDeletion'
-            RETURNING split_id
-        "#;
+        // Match the non-metrics delete_splits pattern: CTE with FOR UPDATE
+        // to lock rows before reading state, avoiding stale-state races under
+        // concurrent mark_metrics_splits_for_deletion. Distinguishes "not found"
+        // (warn + succeed) from "not deletable" (FailedPrecondition).
+        let delete_query = format!(
+            r#"
+            WITH input_splits AS (
+                SELECT input_splits.split_id, {table_name}.split_state
+                FROM UNNEST($2::text[]) AS input_splits(split_id)
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM {table_name}
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                ) AS {table_name}
+                USING (split_id)
+            ),
+            deleted AS (
+                DELETE FROM {table_name}
+                USING input_splits
+                WHERE
+                    {table_name}.index_uid = $1
+                    AND {table_name}.split_id = input_splits.split_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM input_splits
+                        WHERE split_state IN ('Staged', 'Published')
+                    )
+                RETURNING {table_name}.split_id
+            )
+            SELECT
+                (SELECT COUNT(*) FROM input_splits WHERE split_state IS NOT NULL) as num_found,
+                (SELECT COUNT(*) FROM deleted) as num_deleted,
+                COALESCE(
+                    (SELECT ARRAY_AGG(split_id) FROM input_splits
+                     WHERE split_state IN ('Staged', 'Published')),
+                    ARRAY[]::text[]
+                ) as not_deletable,
+                COALESCE(
+                    (SELECT ARRAY_AGG(split_id) FROM input_splits
+                     WHERE split_state IS NULL),
+                    ARRAY[]::text[]
+                ) as not_found
+            "#,
+        );
 
-        let deleted_split_ids: Vec<String> = sqlx::query_scalar(DELETE_SPLITS_QUERY)
-            .bind(request.index_uid())
-            .bind(&request.split_ids)
-            .fetch_all(&self.connection_pool)
+        let (num_found, num_deleted, not_deletable_ids, not_found_ids): (
+            i64,
+            i64,
+            Vec<String>,
+            Vec<String>,
+        ) = sqlx::query_as(&delete_query)
+            .bind(index_uid)
+            .bind(split_ids)
+            .fetch_one(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
-        // Check if any splits could not be deleted
-        if deleted_split_ids.len() != request.split_ids.len() {
-            let not_deleted: Vec<String> = request
-                .split_ids
-                .iter()
-                .filter(|id| !deleted_split_ids.contains(id))
-                .cloned()
-                .collect();
-
-            if !not_deleted.is_empty() {
-                warn!(
-                    index_uid = %request.index_uid(),
-                    not_deleted = ?not_deleted,
-                    "some metrics splits were not in MarkedForDeletion state"
-                );
-                let entity = EntityKind::Splits {
-                    split_ids: not_deleted,
-                };
-                let message = "splits are not marked for deletion".to_string();
-                return Err(MetastoreError::FailedPrecondition { entity, message });
-            }
+        if !not_deletable_ids.is_empty() {
+            let message = format!(
+                "splits `{}` are not deletable",
+                not_deletable_ids.join(", ")
+            );
+            let entity = EntityKind::Splits {
+                split_ids: not_deletable_ids,
+            };
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
 
+        if !not_found_ids.is_empty() {
+            warn!(
+                index_uid = %index_uid,
+                not_found = ?not_found_ids,
+                "{} {label} splits were not found and could not be deleted",
+                not_found_ids.len()
+            );
+        }
+
+        let _ = (num_found, num_deleted); // used by the CTE logic
+
         info!(
-            index_uid = %request.index_uid(),
-            deleted_count = deleted_split_ids.len(),
-            "deleted metrics splits successfully"
+            index_uid = %index_uid,
+            num_deleted,
+            "deleted {label} splits successfully"
         );
         Ok(EmptyResponse {})
     }

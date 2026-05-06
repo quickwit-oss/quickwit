@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Inbox, Mailbox,
-    SpawnContext, Supervisable,
+    QueueCapacity, SpawnContext, Supervisable,
 };
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
@@ -38,12 +38,11 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::publisher::DisconnectMergePlanner;
-use super::{MergeSchedulerService, RunFinalizeMergePolicyAndQuit};
-use crate::actors::indexing_pipeline::wait_duration_before_retry;
-use crate::actors::merge_split_downloader::MergeSplitDownloader;
-use crate::actors::publisher::PublisherType;
-use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
+use super::merge_planner::RunFinalizeMergePolicyAndQuit;
+use super::{MergeExecutor, MergePlanner, MergeSplitDownloader, Packager};
+use crate::actors::pipeline_shared::wait_duration_before_retry;
+use crate::actors::publisher::DisconnectMergePlanner;
+use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
 use crate::models::MergeStatistics;
 use crate::split_store::IndexingSplitStore;
@@ -264,7 +263,8 @@ impl MergePipeline {
 
         // Merge publisher
         let merge_publisher = Publisher::new(
-            PublisherType::MergePublisher,
+            super::MERGE_PUBLISHER_NAME,
+            QueueCapacity::Unbounded,
             self.params.metastore.clone(),
             Some(self.merge_planner_mailbox.clone()),
             None,
@@ -592,8 +592,8 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
 
+    use super::{MergePipeline, MergePipelineParams};
     use crate::IndexingSplitStore;
-    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::actors::{MergePlanner, Publisher};
     use crate::merge_policy::default_merge_policy;
 

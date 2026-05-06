@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use aws_sdk_kinesis::Client as KinesisClient;
 use bytes::Bytes;
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_aws::get_aws_config;
 use quickwit_common::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
@@ -35,11 +35,10 @@ use tracing::{info, warn};
 
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
-use crate::actors::Processor;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, TypedSourceFactory,
+    SourceRuntime, SourceSink, TypedSourceFactory,
 };
 
 type ShardId = String;
@@ -131,9 +130,9 @@ impl KinesisSource {
         Ok(kinesis_source)
     }
 
-    fn spawn_shard_consumer<Q: crate::actors::Processor>(
+    fn spawn_shard_consumer(
         &mut self,
-        ctx: &SourceContext<Q>,
+        ctx: &SourceContext,
         shard_id: ShardId,
         checkpoint: &SourceCheckpoint,
     ) {
@@ -185,11 +184,11 @@ impl KinesisSource {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for KinesisSource {
+impl Source for KinesisSource {
     async fn initialize(
         &mut self,
-        _processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        _source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let shards = ctx
             .protect_future(list_shards(
@@ -218,8 +217,8 @@ impl<P: Processor> Source<P> for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
         let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
@@ -313,12 +312,13 @@ impl<P: Processor> Source<P> for KinesisSource {
         self.state.num_records_processed += batch_builder.docs.len() as u64;
 
         if !batch_builder.checkpoint_delta.is_empty() {
-            ctx.send_message(indexer_mailbox, batch_builder.build())
+            source_sink
+                .send_raw_doc_batch(batch_builder.build(), ctx)
                 .await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "reached end of stream");
-            ctx.send_exit_with_success(indexer_mailbox).await?;
+            source_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -443,10 +443,7 @@ mod tests {
             .await
             .unwrap();
 
-        let actor = SourceActor {
-            source: Box::new(kinesis_source),
-            processor_mailbox: doc_processor_mailbox.clone(),
-        };
+        let actor = SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
         let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
         let (exit_status, _exit_state) = handle.join().await;
         assert!(exit_status.is_success());
@@ -478,10 +475,7 @@ mod tests {
                 KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let actor = SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
@@ -531,10 +525,7 @@ mod tests {
                 KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let actor = SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
@@ -601,10 +592,7 @@ mod tests {
             let kinesis_source = KinesisSource::try_new(source_runtime, kinesis_params)
                 .await
                 .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let actor = SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());

@@ -16,7 +16,8 @@ mod chinese_compatible;
 mod code_tokenizer;
 mod tokenizer_manager;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use tantivy::tokenizer::{
     AsciiFoldingFilter, LowerCaser, RawTokenizer, RemoveLongFilter, SimpleTokenizer, TextAnalyzer,
     WhitespaceTokenizer,
@@ -97,8 +98,8 @@ fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
 }
 
 pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
-    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
-        Lazy::new(create_quickwit_fastfield_normalizer_manager);
+    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: LazyLock<TokenizerManager> =
+        LazyLock::new(create_quickwit_fastfield_normalizer_manager);
     &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
 }
 

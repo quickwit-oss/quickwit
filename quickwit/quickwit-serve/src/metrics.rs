@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
     new_gauge_vec, new_histogram_vec,
@@ -71,4 +72,4 @@ impl Default for ServeMetrics {
 }
 
 /// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static SERVE_METRICS: Lazy<ServeMetrics> = Lazy::new(ServeMetrics::default);
+pub static SERVE_METRICS: LazyLock<ServeMetrics> = LazyLock::new(ServeMetrics::default);

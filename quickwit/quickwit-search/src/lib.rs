@@ -60,7 +60,7 @@ use tantivy::schema::NamedFieldDocument;
 pub type Result<T> = std::result::Result<T, SearchError>;
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 
 pub use find_trace_ids_collector::{FindTraceIdsCollector, Span};
 use quickwit_config::SearcherConfig;
@@ -98,8 +98,9 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_THREAD_POOL: OnceLock<ThreadPool> = OnceLock::new();
-    SEARCH_THREAD_POOL.get_or_init(|| ThreadPool::new("search", None))
+    static SEARCH_THREAD_POOL: LazyLock<ThreadPool> =
+        LazyLock::new(|| ThreadPool::new("search", None));
+    &SEARCH_THREAD_POOL
 }
 
 /// GlobalDocAddress serves as a hit address.

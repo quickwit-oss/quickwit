@@ -21,7 +21,13 @@ fix:
 	@echo "Running cargo clippy --fix"
 	@cargo clippy --workspace --all-features --tests --fix --allow-dirty --allow-staged
 	@$(MAKE) fmt
+	@$(MAKE) migrations-lint
 	@$(MAKE) unused-deps
+
+migrations-lint:
+	@echo "Linting Postgres migrations with diesel-guard"
+	@(command -v diesel-guard >/dev/null || (echo "diesel-guard is not installed. Please install using 'cargo install diesel-guard'." && exit 1))
+	@diesel-guard check quickwit-metastore/migrations/postgresql/
 
 unused-deps:
 	@echo "Checking for unused dependencies"
@@ -78,4 +84,3 @@ rm-postgres:
 update-licenses:
 	 dd-rust-license-tool --config license-tool.toml write
 	 mv LICENSE-3rdparty.csv ../LICENSE-3rdparty.csv
-

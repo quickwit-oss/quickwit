@@ -37,6 +37,8 @@ use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
 use crate::merge_policy_config::MergePolicyConfig;
+#[cfg(feature = "metrics")]
+use crate::merge_policy_config::ParquetMergePolicyConfig;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -118,13 +120,106 @@ pub struct IndexingSettings {
     pub split_num_docs_target: usize,
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
+    /// Merge policy for Parquet (metrics/sketches) splits.
+    #[cfg(feature = "metrics")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parquet_merge_policy: Option<ParquetMergePolicyConfig>,
+    /// Parquet-specific indexing settings (sort schema, window duration).
+    #[cfg(feature = "metrics")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parquet_indexing: Option<ParquetIndexingConfig>,
     #[serde(default)]
     pub resources: IndexingResources,
+}
+
+/// Configuration for the Parquet indexing pipeline (metrics, sketches).
+///
+/// Controls how incoming data is sorted, windowed, and compressed before
+/// writing to Parquet split files. These settings affect both ingest-time
+/// performance and downstream query/compaction efficiency.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ParquetIndexingConfig {
+    /// Sort schema defining the physical sort order of rows in Parquet files.
+    ///
+    /// Uses Husky-style pipe-delimited syntax with a `/V2` version suffix.
+    /// Each column is sorted ascending by default; use `+` or `-` prefix/suffix
+    /// to override. Column types are inferred from well-known suffixes
+    /// (`__s` = string, `__i` = int64, `_secs` = uint64 timestamp).
+    ///
+    /// The sort order determines:
+    /// - **Query pruning**: queries that filter on leading sort columns can skip entire splits
+    ///   whose row key ranges don't match.
+    /// - **Compression**: columns with good locality (e.g., metric_name first) compress better in
+    ///   Parquet's columnar format.
+    /// - **Compaction scope**: splits with different sort schemas are never merged together.
+    ///
+    /// When `None`, the product-type default is used (see below).
+    ///
+    /// # Default (metrics/sketches)
+    /// ```text
+    /// metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2
+    /// ```
+    ///
+    /// # Examples
+    /// ```text
+    /// # Minimal: just metric name and timestamp
+    /// metric_name|timestamp_secs/V2
+    ///
+    /// # Custom tags in sort order
+    /// metric_name|service|cluster|host|timestamp_secs/V2
+    ///
+    /// # Explicit descending timestamp
+    /// metric_name|host|-timestamp_secs/V2
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_fields: Option<String>,
+
+    /// Time window duration in seconds for split partitioning.
+    ///
+    /// Incoming data is partitioned into time windows of this duration.
+    /// Splits within the same window may be compacted together; splits in
+    /// different windows are never merged. Must evenly divide 3600 (one hour).
+    ///
+    /// Larger values produce fewer, larger splits (better for bulk queries)
+    /// but coarser time-based pruning. Smaller values give finer pruning
+    /// but more splits to manage.
+    #[serde(default = "ParquetIndexingConfig::default_window_duration_secs")]
+    pub window_duration_secs: u32,
+}
+
+impl ParquetIndexingConfig {
+    fn default_window_duration_secs() -> u32 {
+        900
+    }
+}
+
+impl Default for ParquetIndexingConfig {
+    fn default() -> Self {
+        Self {
+            sort_fields: None,
+            window_duration_secs: Self::default_window_duration_secs(),
+        }
+    }
 }
 
 impl IndexingSettings {
     pub fn commit_timeout(&self) -> Duration {
         Duration::from_secs(self.commit_timeout_secs as u64)
+    }
+
+    /// Returns the Parquet merge policy config, using defaults if not
+    /// explicitly configured.
+    #[cfg(feature = "metrics")]
+    pub fn parquet_merge_policy(&self) -> ParquetMergePolicyConfig {
+        self.parquet_merge_policy.clone().unwrap_or_default()
+    }
+
+    /// Returns the Parquet indexing config, using defaults if not
+    /// explicitly configured.
+    #[cfg(feature = "metrics")]
+    pub fn parquet_indexing(&self) -> ParquetIndexingConfig {
+        self.parquet_indexing.clone().unwrap_or_default()
     }
 
     fn default_commit_timeout_secs() -> usize {
@@ -160,6 +255,10 @@ impl Default for IndexingSettings {
             docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
             merge_policy: MergePolicyConfig::default(),
+            #[cfg(feature = "metrics")]
+            parquet_merge_policy: None,
+            #[cfg(feature = "metrics")]
+            parquet_indexing: None,
             resources: IndexingResources::default(),
         }
     }

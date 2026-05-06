@@ -62,7 +62,7 @@ impl RoutingEntry {
 /// Higher capacity_score wins; tiebreak on more open_shard_count (more landing spots).
 fn power_of_two_choices<'a>(candidates: &[&'a IngesterNode]) -> &'a IngesterNode {
     debug_assert!(candidates.len() >= 2);
-    let mut iter = candidates.choose_multiple(&mut rng(), 2);
+    let mut iter = candidates.sample(&mut rng(), 2);
     let (&a, &b) = (iter.next().unwrap(), iter.next().unwrap());
 
     if (a.capacity_score, a.open_shard_count) >= (b.capacity_score, b.open_shard_count) {

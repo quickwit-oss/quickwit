@@ -14,29 +14,27 @@
 
 use std::net::{IpAddr, Ipv6Addr};
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use base64::Engine;
-use once_cell::sync::OnceCell;
 use quickwit_datetime::{DateTimeInputFormat, parse_date_time_str, parse_timestamp};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::IntoIpv6Addr;
 
 fn get_default_date_time_format() -> &'static [DateTimeInputFormat] {
-    static DEFAULT_DATE_TIME_FORMATS: OnceCell<Vec<DateTimeInputFormat>> = OnceCell::new();
-    DEFAULT_DATE_TIME_FORMATS
-        .get_or_init(|| {
-            vec![
-                DateTimeInputFormat::Rfc3339,
-                DateTimeInputFormat::Rfc2822,
-                DateTimeInputFormat::Timestamp,
-                DateTimeInputFormat::from_str("%Y-%m-%dT%H:%M:%S").unwrap(),
-                DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
-                DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
-                DateTimeInputFormat::from_str("%Y-%m-%d").unwrap(),
-                DateTimeInputFormat::from_str("%Y/%m/%d").unwrap(),
-            ]
-        })
-        .as_slice()
+    static DEFAULT_DATE_TIME_FORMATS: LazyLock<Vec<DateTimeInputFormat>> = LazyLock::new(|| {
+        vec![
+            DateTimeInputFormat::Rfc3339,
+            DateTimeInputFormat::Rfc2822,
+            DateTimeInputFormat::Timestamp,
+            DateTimeInputFormat::from_str("%Y-%m-%dT%H:%M:%S").unwrap(),
+            DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
+            DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
+            DateTimeInputFormat::from_str("%Y-%m-%d").unwrap(),
+            DateTimeInputFormat::from_str("%Y/%m/%d").unwrap(),
+        ]
+    });
+    DEFAULT_DATE_TIME_FORMATS.as_slice()
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]

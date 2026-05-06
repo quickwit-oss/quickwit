@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
     new_gauge_vec,
@@ -30,7 +31,7 @@ pub struct IndexerMetrics {
     pub pending_merge_bytes: IntGauge,
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
-    pub kafka_rebalance_total: Lazy<IntCounter>,
+    pub kafka_rebalance_total: LazyLock<IntCounter>,
 }
 
 impl Default for IndexerMetrics {
@@ -98,7 +99,7 @@ impl Default for IndexerMetrics {
                 "indexing",
                 &[],
             ),
-            kafka_rebalance_total: Lazy::new(|| {
+            kafka_rebalance_total: LazyLock::new(|| {
                 new_counter(
                     "kafka_rebalance_total",
                     "Number of kafka rebalances",
@@ -112,4 +113,4 @@ impl Default for IndexerMetrics {
 
 /// `INDEXER_METRICS` exposes indexing related metrics through a prometheus
 /// endpoint.
-pub static INDEXER_METRICS: Lazy<IndexerMetrics> = Lazy::new(IndexerMetrics::default);
+pub static INDEXER_METRICS: LazyLock<IndexerMetrics> = LazyLock::new(IndexerMetrics::default);

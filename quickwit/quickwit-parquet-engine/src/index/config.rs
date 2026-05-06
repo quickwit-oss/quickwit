@@ -14,9 +14,10 @@
 
 //! Parquet index configuration.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use crate::storage::ParquetWriterConfig;
+use crate::table_config::TableConfig;
 
 /// Default maximum rows to accumulate before flushing to split.
 const DEFAULT_MAX_ROWS: usize = 1_000_000;
@@ -26,24 +27,24 @@ const DEFAULT_MAX_BYTES: usize = 128 * 1024 * 1024;
 
 /// Get max_rows from environment variable or use default.
 fn get_max_rows_from_env() -> usize {
-    static MAX_ROWS: OnceLock<usize> = OnceLock::new();
-    *MAX_ROWS.get_or_init(|| {
+    static MAX_ROWS: LazyLock<usize> = LazyLock::new(|| {
         std::env::var("QW_METRICS_MAX_ROWS")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_ROWS)
-    })
+    });
+    *MAX_ROWS
 }
 
 /// Get max_bytes from environment variable or use default.
 fn get_max_bytes_from_env() -> usize {
-    static MAX_BYTES: OnceLock<usize> = OnceLock::new();
-    *MAX_BYTES.get_or_init(|| {
+    static MAX_BYTES: LazyLock<usize> = LazyLock::new(|| {
         std::env::var("QW_METRICS_MAX_BYTES")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_BYTES)
-    })
+    });
+    *MAX_BYTES
 }
 
 /// Configuration for parquet indexing.
@@ -58,6 +59,8 @@ pub struct ParquetIndexingConfig {
     pub max_bytes: usize,
     /// Parquet writer configuration for split creation.
     pub writer_config: ParquetWriterConfig,
+    /// Table-level configuration (sort fields, window duration, product type).
+    pub table_config: TableConfig,
 }
 
 impl Default for ParquetIndexingConfig {
@@ -66,6 +69,7 @@ impl Default for ParquetIndexingConfig {
             max_rows: get_max_rows_from_env(),
             max_bytes: get_max_bytes_from_env(),
             writer_config: ParquetWriterConfig::default(),
+            table_config: TableConfig::default(),
         }
     }
 }

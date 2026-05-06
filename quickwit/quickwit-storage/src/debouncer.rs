@@ -201,11 +201,10 @@ mod tests {
 
     use std::ops::Range;
     use std::path::PathBuf;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, LazyLock};
     use std::time::Duration;
 
-    use once_cell::sync::OnceCell;
     use tempfile::TempDir;
     use tokio::fs::{self, File};
     use tokio::io::AsyncWriteExt;
@@ -369,10 +368,10 @@ mod tests {
         "blub".to_string()
     }
 
-    pub static GLOBAL_DEBOUNCER: once_cell::sync::OnceCell<AsyncDebouncer<String, String>> =
-        OnceCell::new();
+    pub static GLOBAL_DEBOUNCER: LazyLock<AsyncDebouncer<String, String>> =
+        LazyLock::new(AsyncDebouncer::default);
     pub fn get_global_debouncer() -> &'static AsyncDebouncer<String, String> {
-        GLOBAL_DEBOUNCER.get_or_init(AsyncDebouncer::default)
+        &GLOBAL_DEBOUNCER
     }
 
     #[tokio::test]

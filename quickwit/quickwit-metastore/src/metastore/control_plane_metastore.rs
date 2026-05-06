@@ -21,19 +21,21 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
+    DeleteShardsResponse, DeleteSketchSplitsRequest, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest,
+    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
+    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageMetricsSplitsRequest,
+    ListShardsRequest, ListShardsResponse, ListSketchSplitsRequest, ListSketchSplitsResponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest, MarkSketchSplitsForDeletionRequest,
+    MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
+    PublishMetricsSplitsRequest, PublishSketchSplitsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest,
     StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
@@ -329,5 +331,42 @@ impl MetastoreService for ControlPlaneMetastore {
         request: DeleteMetricsSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
         self.metastore.delete_metrics_splits(request).await
+    }
+
+    async fn stage_sketch_splits(
+        &self,
+        request: StageSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.stage_sketch_splits(request).await
+    }
+
+    async fn publish_sketch_splits(
+        &self,
+        request: PublishSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.publish_sketch_splits(request).await
+    }
+
+    async fn list_sketch_splits(
+        &self,
+        request: ListSketchSplitsRequest,
+    ) -> MetastoreResult<ListSketchSplitsResponse> {
+        self.metastore.list_sketch_splits(request).await
+    }
+
+    async fn mark_sketch_splits_for_deletion(
+        &self,
+        request: MarkSketchSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore
+            .mark_sketch_splits_for_deletion(request)
+            .await
+    }
+
+    async fn delete_sketch_splits(
+        &self,
+        request: DeleteSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.metastore.delete_sketch_splits(request).await
     }
 }

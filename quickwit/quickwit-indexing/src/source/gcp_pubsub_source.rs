@@ -22,7 +22,7 @@ use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
@@ -33,8 +33,9 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
-use crate::actors::Processor;
-use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{
+    BatchBuilder, Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory,
+};
 
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
@@ -153,11 +154,11 @@ impl GcpPubSubSource {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for GcpPubSubSource {
+impl Source for GcpPubSubSource {
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::PubSub);
@@ -191,7 +192,7 @@ impl<P: Processor> Source<P> for GcpPubSubSource {
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
             info!(subscription=%self.subscription_name, "reached end of subscription");
-            ctx.send_exit_with_success(processor_mailbox).await?;
+            source_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         if !batch_builder.checkpoint_delta.is_empty() {
@@ -201,7 +202,7 @@ impl<P: Processor> Source<P> for GcpPubSubSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
             let message = batch_builder.build();
-            ctx.send_message(processor_mailbox, message).await?;
+            source_sink.send_raw_doc_batch(message, ctx).await?;
         }
         Ok(Duration::default())
     }
@@ -209,7 +210,7 @@ impl<P: Processor> Source<P> for GcpPubSubSource {
     async fn suggest_truncate(
         &mut self,
         _checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext<P>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         // TODO: add ack of ids
         Ok(())
@@ -292,6 +293,7 @@ mod gcp_pubsub_emulator_tests {
     use serde_json::json;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{SourceActor, quickwit_supported_sources};
@@ -388,11 +390,9 @@ mod gcp_pubsub_emulator_tests {
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let source = source_loader.load_source(source_runtime).await.unwrap();
 
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let source_actor = SourceActor {
-            source,
-            processor_mailbox: doc_processor_mailbox.clone(),
-        };
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let source_actor = SourceActor::new(source, doc_processor_mailbox);
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
         let (exit_status, exit_state) = source_handle.join().await;
         assert!(exit_status.is_success());

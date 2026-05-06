@@ -259,7 +259,7 @@ impl BroadcastLocalShardsTask {
     async fn snapshot_local_shards(&mut self) -> Option<LocalShardsSnapshot> {
         let state = self.weak_state.upgrade()?;
 
-        let Ok(mut state_guard) = state.lock_partially().await else {
+        let Ok(mut state_guard) = state.lock_partially("snapshot_local_shards").await else {
             return Some(LocalShardsSnapshot::default());
         };
         #[allow(clippy::mutable_key_type)]
@@ -542,7 +542,7 @@ mod tests {
         let previous_snapshot = task.snapshot_local_shards().await.unwrap();
         assert!(previous_snapshot.per_source_shard_infos.is_empty());
 
-        let mut state_guard = state.lock_partially().await.unwrap();
+        let mut state_guard = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let shard_00 = IngesterShard::new_solo(

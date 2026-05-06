@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use futures::{Future, TryFutureExt};
-use once_cell::sync::Lazy;
 use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
@@ -117,13 +116,11 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    static SMALL_TASK_EXECUTOR: std::sync::OnceLock<ThreadPool> = std::sync::OnceLock::new();
-    SMALL_TASK_EXECUTOR
-        .get_or_init(|| {
-            let num_threads: usize = (crate::num_cpus() / 3).max(2);
-            ThreadPool::new("small_tasks", Some(num_threads))
-        })
-        .run_cpu_intensive(cpu_intensive_fn)
+    static SMALL_TASK_EXECUTOR: std::sync::LazyLock<ThreadPool> = std::sync::LazyLock::new(|| {
+        let num_threads: usize = (crate::num_cpus() / 3).max(2);
+        ThreadPool::new("small_tasks", Some(num_threads))
+    });
+    SMALL_TASK_EXECUTOR.run_cpu_intensive(cpu_intensive_fn)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,7 +160,7 @@ impl Default for ThreadPoolMetrics {
     }
 }
 
-static THREAD_POOL_METRICS: Lazy<ThreadPoolMetrics> = Lazy::new(ThreadPoolMetrics::default);
+static THREAD_POOL_METRICS: LazyLock<ThreadPoolMetrics> = LazyLock::new(ThreadPoolMetrics::default);
 
 #[cfg(test)]
 mod tests {

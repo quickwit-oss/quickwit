@@ -15,8 +15,36 @@ sqs-localstack-tests = [
     "quickwit-indexing/sqs",
     "quickwit-indexing/sqs-localstack-tests",
 ]
+# Full-stack DataFusion integration test. Off by default so the default test
+# matrix does not pull the datafusion / arrow / proto deps. Turn on with
+# `cargo test -p quickwit-integration-tests --features datafusion`.
+#
+# The deps these activate live under `[dependencies]` rather than
+# `[dev-dependencies]` because Cargo disallows `optional = true` on dev-deps.
+# Nothing depends on `quickwit-integration-tests`, so the distinction between
+# the two tables is immaterial; the feature still only activates them when
+# turned on, and they are only referenced from `#[cfg(feature = "datafusion")]`
+# test code.
+datafusion = [
+    "dep:arrow",
+    "dep:bytesize",
+    "dep:datafusion",
+    "dep:quickwit-datafusion",
+    "dep:quickwit-parquet-engine",
+    # Turn on the server-side DataFusion gRPC wiring inside the ClusterSandbox
+    # nodes. Without this the distributed plan compiles but execution fails at
+    # worker dispatch with "Operation is not implemented or not supported".
+    "quickwit-serve/datafusion",
+]
 
 [dependencies]
+# Optional deps activated by the `datafusion` feature. See the feature comment
+# above — these live here only because dev-deps cannot be `optional`.
+arrow = { workspace = true, optional = true }
+bytesize = { workspace = true, optional = true }
+datafusion = { version = "53", optional = true }
+quickwit-datafusion = { workspace = true, features = ["testsuite"], optional = true }
+quickwit-parquet-engine = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
@@ -45,5 +73,6 @@ quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-rest-client = { workspace = true }
+quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

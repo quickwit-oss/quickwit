@@ -138,7 +138,7 @@ impl ClusterClient {
 
     /// Attempts to store a given key value pair within the cluster.
     ///
-    /// Tries to replicate the pair to [`TARGET_NUM_REPLICATION`] nodes, but this function may fail
+    /// Tries to replicate the pair to `TARGET_NUM_REPLICATION` nodes, but this function may fail
     /// silently (e.g if no client was available). Even in case of success, this storage is not
     /// persistent. For instance during a rolling upgrade, all replicas will be lost as there is no
     /// mechanism to maintain the replication count.

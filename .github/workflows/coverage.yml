@@ -19,7 +19,6 @@ env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
-  LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: 1
   PUBSUB_EMULATOR_HOST: "localhost:8681"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
@@ -38,14 +37,13 @@ jobs:
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
-        image: localstack/localstack:latest
+        image: localstack/localstack:4.14.0
         ports:
           - "4566:4566"
           - "4571:4571"
           - "8080:8080"
         env:
           SERVICES: kinesis,s3,sqs
-          LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: 1
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s
@@ -123,7 +121,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/git
@@ -160,7 +158,7 @@ jobs:
         run: rustup update stable
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@90558ad1e179036f31467972b00dec6cb80701fa # v2.66.3
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
@@ -175,7 +173,7 @@ jobs:
         working-directory: ./quickwit
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./quickwit/lcov.info

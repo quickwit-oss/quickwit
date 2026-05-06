@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use quickwit_actors::{ActorHandle, Health, SpawnContext, Supervisable};
+use quickwit_actors::{ActorHandle, Health, QueueCapacity, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
@@ -25,7 +25,7 @@ use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::MergeOperation;
-use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
+use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
@@ -208,7 +208,8 @@ impl CompactionPipeline {
 
         // Publisher (no merge planner feedback, no source)
         let merge_publisher = Publisher::new(
-            PublisherType::MergePublisher,
+            "MergePublisher",
+            QueueCapacity::Unbounded,
             self.metastore.clone(),
             None,
             None,

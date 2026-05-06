@@ -39,7 +39,7 @@ pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
-pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
+pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
@@ -181,11 +181,11 @@ pub struct BuildTantivyAstContext<'a> {
 
 impl<'a> BuildTantivyAstContext<'a> {
     pub fn for_test(schema: &'a TantivySchema) -> Self {
-        use once_cell::sync::Lazy;
+        use std::sync::LazyLock;
 
         // we do that to have a TokenizerManager with a long enough lifetime
-        static DEFAULT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
-            Lazy::new(crate::create_default_quickwit_tokenizer_manager);
+        static DEFAULT_TOKENIZER_MANAGER: LazyLock<TokenizerManager> =
+            LazyLock::new(crate::create_default_quickwit_tokenizer_manager);
 
         BuildTantivyAstContext {
             schema,

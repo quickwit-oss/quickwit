@@ -19,11 +19,9 @@
 
 mod format;
 mod metadata;
-pub mod postgres;
 
 pub use format::{CURRENT_FORMAT_VERSION, ParquetSplit};
 pub use metadata::{
-    MetricsSplitMetadata, MetricsSplitMetadataBuilder, MetricsSplitState, SplitId, TAG_DATACENTER,
-    TAG_ENV, TAG_HOST, TAG_REGION, TAG_SERVICE, TimeRange,
+    ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, ParquetSplitMetadataBuilder,
+    TAG_DATACENTER, TAG_ENV, TAG_HOST, TAG_REGION, TAG_SERVICE, TimeRange,
 };
-pub use postgres::{InsertableMetricsSplit, MetricsSplitRecord, MetricsSplits, PgMetricsSplit};

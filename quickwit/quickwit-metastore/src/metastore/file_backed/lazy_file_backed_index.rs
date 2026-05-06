@@ -24,7 +24,7 @@ use tracing::error;
 use super::file_backed_index::FileBackedIndex;
 use super::store_operations::{METASTORE_FILE_NAME, load_index};
 
-/// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex` on demand. When the index is first
+/// Lazy `FileBackedIndex`. It loads a `FileBackedIndex` on demand. When the index is first
 /// loaded, it optionally spawns a task to periodically poll the storage and update the index.
 pub(crate) struct LazyFileBackedIndex {
     index_id: IndexId,

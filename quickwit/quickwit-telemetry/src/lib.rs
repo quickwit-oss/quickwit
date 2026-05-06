@@ -20,7 +20,8 @@ pub mod payload;
 mod sender;
 pub(crate) mod sink;
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
+
 use payload::QuickwitTelemetryInfo;
 use tracing::info;
 
@@ -28,7 +29,7 @@ use crate::payload::TelemetryEvent;
 pub use crate::sender::is_telemetry_disabled;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 
-static TELEMETRY_SENDER: OnceCell<TelemetrySender> = OnceCell::new();
+static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
 
 /// Returns a `TelemetryLoopHandle` if the telemetry loop is not yet started.
 pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {

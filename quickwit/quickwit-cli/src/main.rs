@@ -40,6 +40,13 @@ fn get_main_runtime_num_threads() -> usize {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    unsafe {
+        // SAFETY: this is done before spawning any thread, it trivially isn't done concurrently
+        // with any other enviromnent read/write operations
+        openssl_probe::init_openssl_env_vars()
+    };
+
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -71,10 +78,6 @@ fn register_build_info_metric() {
 }
 
 async fn main_impl() -> anyhow::Result<()> {
-    #[cfg(feature = "openssl-support")]
-    unsafe {
-        openssl_probe::init_openssl_env_vars()
-    };
     register_build_info_metric();
 
     let about_text = about_text();
@@ -100,6 +103,9 @@ async fn main_impl() -> anyhow::Result<()> {
     let build_info = BuildInfo::get();
     let (env_filter_reload_fn, tracer_provider_opt) =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+
+    #[cfg(not(test))]
+    quickwit_cli::logger::setup_metrics(build_info)?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

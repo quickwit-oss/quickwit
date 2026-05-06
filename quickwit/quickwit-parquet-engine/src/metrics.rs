@@ -41,8 +41,9 @@ pub struct ParquetEngineMetrics {
     pub index_batches_total: IntCounter,
     /// Total number of rows accumulated during indexing.
     pub index_rows_total: IntCounter,
-    /// Total number of bytes received from IPC payloads during ingestion.
-    pub ingest_bytes_total: IntCounter,
+    /// Total number of bytes received from IPC payloads during ingestion, by kind
+    /// (points/sketches).
+    pub ingest_bytes_total: IntCounterVec<1>,
     /// Histogram of add_batch durations (seconds), including any triggered flush.
     pub index_batch_duration_seconds: Histogram,
     /// Total number of splits written to storage.
@@ -53,8 +54,8 @@ pub struct ParquetEngineMetrics {
     pub query_duration_seconds: Histogram,
     /// Total number of rows returned from queries.
     pub query_rows_returned: IntCounter,
-    /// Errors by operation type: ingest, query, storage.
-    pub errors_total: IntCounterVec<1>,
+    /// Errors by operation type and kind (points/sketches).
+    pub errors_total: IntCounterVec<2>,
 }
 
 impl Default for ParquetEngineMetrics {
@@ -72,11 +73,12 @@ impl Default for ParquetEngineMetrics {
                 SUBSYSTEM,
                 &[],
             ),
-            ingest_bytes_total: new_counter(
+            ingest_bytes_total: new_counter_vec(
                 "ingest_bytes_total",
                 "Total number of bytes received from IPC payloads during ingestion.",
                 SUBSYSTEM,
                 &[],
+                ["kind"],
             ),
             index_batch_duration_seconds: new_histogram(
                 "index_batch_duration_seconds",
@@ -110,10 +112,10 @@ impl Default for ParquetEngineMetrics {
             ),
             errors_total: new_counter_vec(
                 "errors_total",
-                "Total errors by operation type.",
+                "Total errors by operation type and kind.",
                 SUBSYSTEM,
                 &[],
-                ["operation"],
+                ["operation", "kind"],
             ),
         }
     }

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::LazyLock;
+
 use mrecordlog::ResourceUsage;
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
     linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
@@ -79,6 +80,7 @@ pub(super) struct IngestV2Metrics {
     pub shard_st_throughput_mib: Histogram,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
+    pub wal_lock_hold_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
@@ -142,6 +144,14 @@ impl Default for IngestV2Metrics {
                 ["operation", "type"],
                 exponential_buckets(0.001, 2.0, 12).unwrap(),
             ),
+            wal_lock_hold_duration_secs: new_histogram_vec(
+                "wal_lock_hold_duration_secs",
+                "Duration for which the WAL lock was held in seconds.",
+                "ingest",
+                &[],
+                ["operation", "type"],
+                exponential_buckets(0.001, 2.0, 12).unwrap(),
+            ),
             wal_disk_used_bytes: new_gauge(
                 "wal_disk_used_bytes",
                 "WAL disk space used in bytes.",
@@ -171,4 +181,5 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .set(wal_usage.memory_used_bytes as i64);
 }
 
-pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);
+pub(super) static INGEST_V2_METRICS: LazyLock<IngestV2Metrics> =
+    LazyLock::new(IngestV2Metrics::default);
