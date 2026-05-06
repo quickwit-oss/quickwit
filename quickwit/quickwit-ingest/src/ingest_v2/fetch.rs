@@ -36,8 +36,9 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 use super::models::ShardStatus;
+use super::state::{track_acquire_lock, warn_on_long_lock_hold};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{ClientId, IngesterPool, with_lock_metrics};
+use crate::{ClientId, IngesterPool};
 
 /// A fetch stream task is responsible for waiting and pushing new records written to a shard's
 /// record log into a channel named `fetch_message_tx`.
@@ -128,8 +129,8 @@ impl FetchStreamTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
-            let mrecordlog_guard =
-                with_lock_metrics!(self.mrecordlog.read().await, "fetch", "read");
+            let (mrecordlog_guard, acquired_at) =
+                track_acquire_lock("fetch_stream", "partial", self.mrecordlog.read()).await;
 
             let Ok(mrecords) = mrecordlog_guard
                 .as_ref()
@@ -152,6 +153,8 @@ impl FetchStreamTask {
             }
             // Drop the lock while we send the message.
             drop(mrecordlog_guard);
+
+            warn_on_long_lock_hold("fetch_stream", "partial", acquired_at);
 
             if !mrecord_lengths.is_empty() {
                 let from_position_exclusive = if self.from_position_inclusive == 0 {

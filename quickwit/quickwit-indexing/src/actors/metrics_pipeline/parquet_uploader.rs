@@ -38,9 +38,10 @@ use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
 use crate::metrics::INDEXER_METRICS;
 
-/// Concurrent upload permits for metrics uploader.
-/// Uses same permit pool as indexer uploads.
-static CONCURRENT_UPLOAD_PERMITS_METRICS: OnceLock<Semaphore> = OnceLock::new();
+/// Concurrent upload permits for metrics ingest uploads.
+static CONCURRENT_UPLOAD_PERMITS_METRICS_INDEX: OnceLock<Semaphore> = OnceLock::new();
+/// Concurrent upload permits for metrics merge uploads.
+static CONCURRENT_UPLOAD_PERMITS_METRICS_MERGE: OnceLock<Semaphore> = OnceLock::new();
 
 /// Stage splits in the metastore, dispatching to the correct RPC based on split kind.
 async fn stage_splits(
@@ -120,12 +121,24 @@ impl ParquetUploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS_METRICS
+        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) =
+            match self.uploader_type {
+                UploaderType::IndexUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_METRICS_INDEX,
+                    INDEXER_METRICS
+                        .available_concurrent_upload_permits
+                        .with_label_values(["metrics_indexer"]),
+                ),
+                UploaderType::MergeUploader | UploaderType::DeleteUploader => (
+                    &CONCURRENT_UPLOAD_PERMITS_METRICS_MERGE,
+                    INDEXER_METRICS
+                        .available_concurrent_upload_permits
+                        .with_label_values(["metrics_merger"]),
+                ),
+            };
+        let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
-        let gauge = INDEXER_METRICS
-            .available_concurrent_upload_permits
-            .with_label_values(["metrics"]);
-        gauge.set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
         concurrent_upload_permits
             .acquire()
             .await
@@ -185,7 +198,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 publish_lock: batch.publish_lock,
                 publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
-                _merge_permit_opt: batch._merge_permit_opt,
+                _merge_task_opt: batch._merge_task_opt,
             };
             if tx.send(SequencerCommand::Proceed(update)).is_err() {
                 warn!("sequencer receiver dropped for empty batch");
@@ -223,7 +236,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let publish_token_opt = batch.publish_token_opt;
         let splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
-        let merge_permit_opt = batch._merge_permit_opt;
+        let merge_task_opt = batch._merge_task_opt;
         // Hold the scratch directory alive until the upload task completes.
         // For the merge path, this prevents the TempDirectory from being
         // cleaned up before the upload task reads the merged files.
@@ -325,8 +338,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 }
 
                 // Create ParquetSplitsUpdate and send downstream.
-                // The merge permit (if present) transfers to the update so it
-                // stays alive until the publisher drops the message.
+                // The merge task (if present) transfers to the update so the
+                // planner guard and semaphore permit stay alive until publish.
                 let update = ParquetSplitsUpdate {
                     index_uid,
                     new_splits: splits,
@@ -335,7 +348,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     publish_lock,
                     publish_token_opt,
                     parent_span: Span::current(),
-                    _merge_permit_opt: merge_permit_opt,
+                    _merge_task_opt: merge_task_opt,
                 };
 
                 if tx.send(SequencerCommand::Proceed(update)).is_err() {
@@ -441,7 +454,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -537,7 +550,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -614,7 +627,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -687,7 +700,7 @@ mod tests {
                 publish_token_opt: None,
                 replaced_split_ids: Vec::new(),
                 _scratch_directory_opt: None,
-                _merge_permit_opt: None,
+                _merge_task_opt: None,
             };
             uploader_mailbox.send_message(batch).await.unwrap();
         }

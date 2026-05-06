@@ -30,7 +30,7 @@ use tracing::{info, instrument, warn};
 
 use super::ParquetUploader;
 use super::parquet_indexer::ParquetSplitBatch;
-use super::parquet_merge_messages::ParquetMergeScratch;
+use super::parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask};
 use crate::models::PublishLock;
 
 /// Executes Parquet merge operations using the Phase 1 k-way merge engine.
@@ -173,7 +173,10 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 publish_token_opt: None,
                 replaced_split_ids,
                 _scratch_directory_opt: Some(scratch.scratch_directory),
-                _merge_permit_opt: Some(scratch.merge_permit),
+                _merge_task_opt: Some(ParquetMergeTask {
+                    merge_operation: scratch.merge_operation,
+                    merge_permit: scratch.merge_permit,
+                }),
             };
             ctx.send_message(&self.uploader_mailbox, batch).await?;
             return Ok(());
@@ -230,12 +233,15 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             publish_token_opt: None,
             replaced_split_ids,
             _scratch_directory_opt: Some(scratch.scratch_directory),
-            _merge_permit_opt: Some(scratch.merge_permit),
+            _merge_task_opt: Some(ParquetMergeTask {
+                merge_operation: scratch.merge_operation,
+                merge_permit: scratch.merge_permit,
+            }),
         };
 
         ctx.send_message(&self.uploader_mailbox, batch).await?;
 
-        // The merge permit is now carried by the batch — it will be held
+        // The merge task is now carried by the batch — it will be held
         // through the uploader and released when the publisher drops the
         // ParquetSplitsUpdate message.
         info!(

@@ -40,6 +40,7 @@ use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
 use super::ProcessedParquetBatch;
+use super::parquet_merge_messages::ParquetMergeTask;
 use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager, PartitionedRecordBatch};
 use crate::actors::indexer::OTHER_PARTITION_ID;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
@@ -126,10 +127,10 @@ pub struct ParquetSplitBatch {
     /// `None` for the ingest path (packager manages its own temp dir).
     /// `Some` for the merge path (executor's scratch directory).
     pub _scratch_directory_opt: Option<quickwit_common::temp_dir::TempDirectory>,
-    /// Merge concurrency permit — carried through to the publisher so the
-    /// semaphore slot isn't released until the upload completes.
+    /// Merge task — carried through to the publisher so the planner inventory
+    /// guard and semaphore permit stay alive until publish completes.
     /// `None` for the ingest path. `Some` for the merge path.
-    pub _merge_permit_opt: Option<crate::actors::MergePermit>,
+    pub _merge_task_opt: Option<ParquetMergeTask>,
 }
 
 impl std::fmt::Debug for ParquetSplitBatch {
@@ -139,7 +140,7 @@ impl std::fmt::Debug for ParquetSplitBatch {
             .field("num_splits", &self.splits.len())
             .field("output_dir", &self.output_dir)
             .field("replaced_split_ids", &self.replaced_split_ids)
-            .field("has_merge_permit", &self._merge_permit_opt.is_some())
+            .field("has_merge_task", &self._merge_task_opt.is_some())
             .finish()
     }
 }

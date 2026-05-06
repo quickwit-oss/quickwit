@@ -18,7 +18,6 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 use super::state::WeakIngesterState;
-use crate::with_lock_metrics;
 
 const RUN_INTERVAL_PERIOD: Duration = if cfg!(test) {
     Duration::from_millis(50)
@@ -58,9 +57,7 @@ impl CloseIdleShardsTask {
             let Some(state) = self.weak_state.upgrade() else {
                 return;
             };
-            let Ok(mut state_guard) =
-                with_lock_metrics!(state.lock_partially(), "close_idle_shards", "write").await
-            else {
+            let Ok(mut state_guard) = state.lock_partially("close_idle_shards").await else {
                 return;
             };
 
@@ -101,7 +98,7 @@ mod tests {
         let idle_shard_timeout = RUN_INTERVAL_PERIOD * 4;
         let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
-        let mut state_guard = state.lock_partially().await.unwrap();
+        let mut state_guard = state.lock_partially("test").await.unwrap();
         let now = Instant::now();
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -127,7 +124,7 @@ mod tests {
 
         tokio::time::sleep(RUN_INTERVAL_PERIOD * 2).await;
 
-        let state_guard = state.lock_partially().await.unwrap();
+        let state_guard = state.lock_partially("test").await.unwrap();
         state_guard
             .shards
             .get(&queue_id_01)
@@ -142,7 +139,7 @@ mod tests {
 
         tokio::time::sleep(idle_shard_timeout).await;
 
-        let state_guard = state.lock_partially().await.unwrap();
+        let state_guard = state.lock_partially("test").await.unwrap();
         state_guard
             .shards
             .get(&queue_id_02)
