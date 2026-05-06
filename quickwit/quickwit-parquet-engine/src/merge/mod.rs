@@ -21,6 +21,8 @@
 //! file has non-overlapping key ranges.
 
 mod merge_order;
+pub mod metadata_aggregation;
+pub mod policy;
 mod schema;
 mod writer;
 
@@ -69,6 +71,11 @@ struct InputMetadata {
 }
 
 /// Result of a single output file from the merge.
+///
+/// Contains both physical metadata (file size, row count) and per-output
+/// logical metadata (metric names, tags, time range) extracted from the
+/// actual rows in this output file. When the merge produces multiple
+/// outputs, each has metadata reflecting only its own rows.
 pub struct MergeOutputFile {
     /// Path to the output Parquet file.
     pub path: PathBuf,
@@ -84,6 +91,16 @@ pub struct MergeOutputFile {
 
     /// Per-column zonemap regex strings.
     pub zonemap_regexes: std::collections::HashMap<String, String>,
+
+    /// Distinct metric names in this output file.
+    pub metric_names: std::collections::HashSet<String>,
+
+    /// Time range covered by rows in this output file.
+    pub time_range: crate::split::TimeRange,
+
+    /// Low-cardinality tag values extracted from this output file's rows.
+    /// Currently tracks "service" to match the ingest path.
+    pub low_cardinality_tags: std::collections::HashMap<String, std::collections::HashSet<String>>,
 }
 
 /// Merge N sorted Parquet files into M sorted output files.

@@ -37,9 +37,12 @@ use quickwit_datafusion::{
 use quickwit_search::{SearcherPool, create_search_client_from_grpc_addr};
 
 mod common;
+mod metrics_splits;
+mod worker;
 
-use common::sandbox::spawn_df_worker;
-use common::{TestSandbox, create_metrics_index, publish_split};
+use common::{TestSandbox, create_metrics_index};
+use metrics_splits::publish_split;
+use worker::spawn_df_worker;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_distributed_tasks_not_shuffles() {
@@ -170,6 +173,67 @@ async fn test_distributed_tasks_not_shuffles() {
         .unwrap()
         .value(0);
     assert_eq!(cnt, 8);
+
+    let rollup_ddl = r#"CREATE OR REPLACE EXTERNAL TABLE "dist-rollup" (
+          metric_name VARCHAR NOT NULL, metric_type TINYINT,
+          timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL,
+          sorted_series BYTEA NOT NULL, service VARCHAR
+        ) STORED AS metrics LOCATION 'dist-test'"#;
+    let rollup_sql = format!(
+        "{rollup_ddl};
+         SELECT service, MAX(value) AS max_val
+         FROM \"dist-rollup\"
+         WHERE metric_name = 'cpu.usage'
+         GROUP BY sorted_series, service"
+    );
+    let mut statements = split_sql_statements(&ctx, &rollup_sql).unwrap();
+    let query = statements.pop().unwrap();
+    for statement in statements {
+        ctx.sql(&statement).await.unwrap().collect().await.unwrap();
+    }
+
+    let df = ctx.sql(&query).await.unwrap();
+    let plan = df.clone().create_physical_plan().await.unwrap();
+    let plan_str = format!(
+        "{}",
+        datafusion::physical_plan::displayable(plan.as_ref()).indent(true)
+    );
+    assert!(
+        plan_str.contains("NetworkCoalesceExec"),
+        "expected sorted-series worker streams to be coalesced at the coordinator:\n{plan_str}"
+    );
+    assert!(
+        plan_str.contains("SortPreservingMergeExec: [sorted_series"),
+        "expected sorted-series worker streams to be merge-sorted:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("SortExec: expr=[sorted_series"),
+        "expected sorted-series worker streams to use preserved ordering without an explicit \
+         sort:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("NetworkShuffleExec"),
+        "expected no network shuffle for sorted-series finalization:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("RoundRobinBatch"),
+        "expected scan/partial stage parallelism to stay split-bounded:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("Hash([sorted_series"),
+        "expected no hash repartition by sorted_series:\n{plan_str}"
+    );
+
+    let batches = df.collect().await.unwrap();
+    assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 1);
+    let max_val = batches[0]
+        .column_by_name("max_val")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
+    assert!((max_val - 0.4).abs() < f64::EPSILON);
 
     // Keep the worker handles alive until we've finished collecting results.
     drop(worker_a);

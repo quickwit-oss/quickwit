@@ -15,7 +15,10 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+mini-moka = { workspace = true }
 prost = { workspace = true }
+regex = { workspace = true }
+regex-automata = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -43,6 +46,7 @@ object_store = "0.13"
 bytesize = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
+parquet = { workspace = true }
 prost = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

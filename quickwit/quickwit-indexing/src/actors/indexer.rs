@@ -57,7 +57,7 @@ use crate::models::{
 };
 
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
-const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
+pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
 #[derive(Debug)]
 struct CommitTimeout {

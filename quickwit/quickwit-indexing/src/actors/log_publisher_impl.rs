@@ -39,8 +39,16 @@ impl Handler<DisconnectMergePlanner> for Publisher {
         _: DisconnectMergePlanner,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        // Clear both Tantivy and Parquet planner mailboxes. Each Publisher
+        // instance only has one of these set (depending on which pipeline it
+        // serves), but clearing both is safe and avoids needing separate
+        // disconnect message types.
         info!("disconnecting merge planner mailbox");
         self.merge_planner_mailbox_opt = None;
+        #[cfg(feature = "metrics")]
+        {
+            self.parquet_merge_planner_mailbox_opt = None;
+        }
         Ok(())
     }
 }

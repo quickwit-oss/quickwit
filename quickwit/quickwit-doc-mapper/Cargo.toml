@@ -12,6 +12,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+arrow = { workspace = true, optional = true }
 base64 = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
@@ -44,6 +45,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-query = { workspace = true }
 
 [features]
+metrics = ["dep:arrow"]
 testsuite = []
 
 [[bench]]

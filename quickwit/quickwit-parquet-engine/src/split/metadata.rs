@@ -145,6 +145,13 @@ pub struct ParquetSplitMetadata {
     /// What kind of split this is (metrics or sketches).
     pub kind: ParquetSplitKind,
 
+    /// Partition to which the split belongs.
+    ///
+    /// Computed from the index config's `partition_key` routing expression.
+    /// Splits with different `partition_id` values should not be merged together.
+    #[serde(default)]
+    pub partition_id: u64,
+
     /// Unique split identifier.
     pub split_id: ParquetSplitId,
 
@@ -209,6 +216,8 @@ pub struct ParquetSplitMetadata {
 struct ParquetSplitMetadataSerde {
     #[serde(default)]
     kind: ParquetSplitKind,
+    #[serde(default)]
+    partition_id: u64,
     split_id: ParquetSplitId,
     index_uid: String,
     time_range: TimeRange,
@@ -249,6 +258,7 @@ impl From<ParquetSplitMetadataSerde> for ParquetSplitMetadata {
         };
         Self {
             kind: s.kind,
+            partition_id: s.partition_id,
             split_id: s.split_id,
             index_uid: s.index_uid,
             time_range: s.time_range,
@@ -276,6 +286,7 @@ impl From<ParquetSplitMetadata> for ParquetSplitMetadataSerde {
         };
         Self {
             kind: m.kind,
+            partition_id: m.partition_id,
             split_id: m.split_id,
             index_uid: m.index_uid,
             time_range: m.time_range,
@@ -385,6 +396,7 @@ impl ParquetSplitMetadata {
 /// [`ParquetSplitMetadata::sketches_builder`] to create an instance.
 pub struct ParquetSplitMetadataBuilder {
     kind: ParquetSplitKind,
+    partition_id: u64,
     split_id: Option<ParquetSplitId>,
     index_uid: Option<String>,
     time_range: Option<TimeRange>,
@@ -410,6 +422,7 @@ impl ParquetSplitMetadataBuilder {
     fn new(kind: ParquetSplitKind) -> Self {
         Self {
             kind,
+            partition_id: 0,
             split_id: None,
             index_uid: None,
             time_range: None,
@@ -426,6 +439,11 @@ impl ParquetSplitMetadataBuilder {
             row_keys_proto: None,
             zonemap_regexes: HashMap::new(),
         }
+    }
+
+    pub fn partition_id(mut self, partition_id: u64) -> Self {
+        self.partition_id = partition_id;
+        self
     }
 
     pub fn split_id(mut self, id: ParquetSplitId) -> Self {
@@ -560,6 +578,7 @@ impl ParquetSplitMetadataBuilder {
 
         ParquetSplitMetadata {
             kind: self.kind,
+            partition_id: self.partition_id,
             split_id: self
                 .split_id
                 .unwrap_or_else(|| ParquetSplitId::generate(self.kind)),

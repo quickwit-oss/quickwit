@@ -15,9 +15,12 @@
 /// Returns whether the given index ID corresponds to a metrics index.
 ///
 /// Metrics indexes use the Parquet/DataFusion pipeline instead of the Tantivy pipeline.
-/// An index is considered a metrics index if it starts with "otel-metrics" or "metrics-".
+/// An index is considered a metrics index if it uses one of the BYOC or OSS
+/// parquet metrics prefixes.
 pub fn is_metrics_index(index_id: &str) -> bool {
-    index_id.starts_with("otel-metrics") || index_id.starts_with("metrics-")
+    ["datadog-metrics", "metrics-", "otel-metrics"]
+        .iter()
+        .any(|prefix| index_id.starts_with(prefix))
 }
 
 /// Returns whether the given index ID corresponds to a sketches index.
@@ -25,7 +28,9 @@ pub fn is_metrics_index(index_id: &str) -> bool {
 /// Sketches indexes use the Parquet/DataFusion pipeline with sketch-specific
 /// processors and writers.
 pub fn is_sketches_index(index_id: &str) -> bool {
-    index_id.starts_with("sketches-")
+    ["datadog-sketches", "sketches-"]
+        .iter()
+        .any(|prefix| index_id.starts_with(prefix))
 }
 
 /// Returns whether the given index ID uses the Parquet/DataFusion pipeline.
@@ -44,6 +49,10 @@ mod tests {
         assert!(is_metrics_index("otel-metrics"));
         assert!(is_metrics_index("otel-metrics-custom"));
 
+        // BYOC metrics indexes
+        assert!(is_metrics_index("datadog-metrics"));
+        assert!(is_metrics_index("datadog-metrics-v2"));
+
         // Generic metrics indexes
         assert!(is_metrics_index("metrics-default"));
         assert!(is_metrics_index("metrics-"));
@@ -60,13 +69,18 @@ mod tests {
 
     #[test]
     fn test_is_sketches_index() {
+        assert!(is_sketches_index("datadog-sketches"));
+        assert!(is_sketches_index("datadog-sketches-v2"));
         assert!(is_sketches_index("sketches-default"));
+        assert!(!is_sketches_index("datadog-metrics"));
         assert!(!is_sketches_index("otel-metrics"));
         assert!(!is_sketches_index("my-index"));
     }
 
     #[test]
     fn test_is_parquet_pipeline_index() {
+        assert!(is_parquet_pipeline_index("datadog-metrics"));
+        assert!(is_parquet_pipeline_index("datadog-sketches"));
         assert!(is_parquet_pipeline_index("otel-metrics"));
         assert!(is_parquet_pipeline_index("sketches-default"));
         assert!(!is_parquet_pipeline_index("otel-logs-v0_7"));
