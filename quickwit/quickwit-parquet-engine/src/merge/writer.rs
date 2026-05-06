@@ -39,6 +39,10 @@ use super::{InputMetadata, MergeConfig, MergeOutputFile};
 use crate::row_keys;
 use crate::sort_fields::parse_sort_fields;
 use crate::sorted_series::SORTED_SERIES_COLUMN;
+use crate::split::TAG_SERVICE;
+use crate::storage::split_writer::{
+    extract_metric_names, extract_service_names, extract_time_range,
+};
 use crate::storage::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_ROW_KEYS, PARQUET_META_ROW_KEYS_JSON,
     PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
@@ -114,6 +118,19 @@ pub fn write_merge_outputs(
         let output_filename = format!("merge_output_{}.parquet", Ulid::new());
         let output_path = output_dir.join(&output_filename);
 
+        // Extract per-output logical metadata from the actual rows.
+        let metric_names = extract_metric_names(&sorted_batch)
+            .context("extracting metric names from merge output")?;
+        let time_range =
+            extract_time_range(&sorted_batch).context("extracting time range from merge output")?;
+        let service_names = extract_service_names(&sorted_batch)
+            .context("extracting service names from merge output")?;
+
+        let mut low_cardinality_tags = std::collections::HashMap::new();
+        if !service_names.is_empty() {
+            low_cardinality_tags.insert(TAG_SERVICE.to_string(), service_names);
+        }
+
         let size_bytes = write_parquet_file(&sorted_batch, &output_path, props)?;
 
         outputs.push(MergeOutputFile {
@@ -122,6 +139,9 @@ pub fn write_merge_outputs(
             size_bytes,
             row_keys_proto,
             zonemap_regexes,
+            metric_names,
+            time_range,
+            low_cardinality_tags,
         });
     }
 

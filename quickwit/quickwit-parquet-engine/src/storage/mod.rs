@@ -15,7 +15,7 @@
 //! Storage layer for Parquet files.
 
 mod config;
-mod split_writer;
+pub(crate) mod split_writer;
 mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};

@@ -45,6 +45,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
+            _merge_task_opt,
             ..
         } = split_update;
 
@@ -87,6 +88,20 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         info!("publish-metrics-splits");
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
+        // Feedback loop: notify the merge planner about all newly published
+        // splits — both ingest outputs and merge outputs — so it can plan
+        // further compaction. Infinite loops are prevented by the merge
+        // policy's maturity checks (max_merge_ops, target_split_size_bytes,
+        // maturation_period), not by filtering here. This matches the Tantivy
+        // publisher which sends NewSplits unconditionally.
+        if let Some(planner_mailbox) = &self.parquet_merge_planner_mailbox_opt
+            && !new_splits.is_empty()
+        {
+            let _ = ctx
+                .send_message(planner_mailbox, super::ParquetNewSplits { new_splits })
+                .await;
+        }
+
         if split_ids.is_empty() {
             self.counters.num_empty_splits += 1;
         } else if replaced_split_ids.is_empty() {
@@ -94,6 +109,10 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         } else {
             self.counters.num_replace_operations += 1;
         }
+        // Keep the merge task alive until after the metastore publish and
+        // planner feedback have completed. Dropping it releases both the merge
+        // semaphore permit and the planner's tracked-operation inventory guard.
+        drop(_merge_task_opt);
         Ok(())
     }
 }
@@ -161,6 +180,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -209,6 +229,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -254,6 +275,7 @@ mod tests {
             publish_lock,
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();

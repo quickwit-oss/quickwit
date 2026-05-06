@@ -274,10 +274,86 @@ fn test_merge_multiple_outputs() {
     let total_rows: usize = outputs.iter().map(|o| o.num_rows).sum();
     assert_eq!(total_rows, 6);
 
-    // Each output should have row keys.
+    // Each output should have row keys and per-output metadata.
+    let mut all_metric_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     for output in &outputs {
         assert!(output.row_keys_proto.is_some());
+        // Each output has its own metric names (subset of all inputs).
+        assert!(!output.metric_names.is_empty());
+        all_metric_names.extend(output.metric_names.iter().cloned());
+        // Time range should be valid.
+        assert!(output.time_range.start_secs <= output.time_range.end_secs);
     }
+    // The union of all output metric names should be the full set.
+    assert!(all_metric_names.contains("alpha"));
+    assert!(all_metric_names.contains("beta"));
+    assert!(all_metric_names.contains("gamma"));
+}
+
+/// Verifies that per-output metadata (metric_names, time_range) is computed
+/// from the actual rows in each output file, not aggregated from all inputs.
+#[test]
+fn test_merge_per_output_metadata_from_actual_rows() {
+    let dir = TempDir::new().unwrap();
+
+    // Input 1: metric "cpu" at timestamps 100, 200
+    let input1 = write_test_split(
+        dir.path(),
+        "in1.parquet",
+        &["cpu", "cpu"],
+        &[100, 200],
+        &[1.0, 2.0],
+        &[1, 1],
+    );
+    // Input 2: metric "mem" at timestamps 300, 400
+    let input2 = write_test_split(
+        dir.path(),
+        "in2.parquet",
+        &["mem", "mem"],
+        &[300, 400],
+        &[3.0, 4.0],
+        &[2, 2],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    // Single output: should contain all metrics and full time range.
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
+    let outputs =
+        merge_sorted_parquet_files(&[input1.clone(), input2.clone()], &output_dir, &config)
+            .unwrap();
+    assert_eq!(outputs.len(), 1);
+    let output = &outputs[0];
+    assert!(output.metric_names.contains("cpu"));
+    assert!(output.metric_names.contains("mem"));
+    assert_eq!(output.time_range.start_secs, 100);
+    assert_eq!(output.time_range.end_secs, 401); // end is exclusive
+
+    // Two outputs: each should have only its own metrics and time range.
+    let output_dir2 = dir.path().join("output2");
+    std::fs::create_dir_all(&output_dir2).unwrap();
+    let config2 = MergeConfig {
+        num_outputs: 2,
+        writer_config: ParquetWriterConfig::default(),
+    };
+    let outputs2 = merge_sorted_parquet_files(&[input1, input2], &output_dir2, &config2).unwrap();
+    assert_eq!(outputs2.len(), 2);
+
+    // After sorted merge, "cpu" (sorted_series for tsid=1) and "mem" (tsid=2)
+    // are in separate outputs. Each output should have only one metric.
+    let output_a = &outputs2[0];
+    let output_b = &outputs2[1];
+    assert_eq!(output_a.metric_names.len(), 1);
+    assert_eq!(output_b.metric_names.len(), 1);
+    assert_ne!(output_a.metric_names, output_b.metric_names);
+
+    // Time ranges should be disjoint or specific to each output's rows.
+    assert!(output_a.time_range.start_secs <= output_a.time_range.end_secs);
+    assert!(output_b.time_range.start_secs <= output_b.time_range.end_secs);
 }
 
 #[test]

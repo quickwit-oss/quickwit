@@ -37,9 +37,9 @@ use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
+use crate::estimate_size;
 use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -449,8 +449,7 @@ impl ReplicationTask {
         };
         let queue_id = replica_shard.queue_id();
 
-        let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully(), "init_replica", "write").await?;
+        let mut state_guard = self.state.lock_fully("init_replica").await?;
 
         match state_guard.mrecordlog.create_queue(&queue_id).await {
             Ok(_) => {}
@@ -522,8 +521,7 @@ impl ReplicationTask {
         // queue in the WAL and should be deleted.
         let mut shards_to_delete: HashSet<QueueId> = HashSet::new();
 
-        let mut state_guard =
-            with_lock_metrics!(self.state.lock_fully(), "replicate", "write").await?;
+        let mut state_guard = self.state.lock_fully("replicate").await?;
 
         if state_guard.status() != IngesterStatus::Ready {
             replicate_failures.reserve_exact(replicate_request.subrequests.len());
@@ -1137,7 +1135,7 @@ mod tests {
         let init_replica_response = into_init_replica_response(ack_replication_message);
         assert_eq!(init_replica_response.replication_seqno, 2);
 
-        let state_guard = state.lock_fully().await.unwrap();
+        let state_guard = state.lock_fully("test").await.unwrap();
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
 
@@ -1240,7 +1238,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.lock_fully().await.unwrap();
+        let state_guard = state.lock_fully("test").await.unwrap();
 
         state_guard
             .mrecordlog
@@ -1296,7 +1294,7 @@ mod tests {
             Position::offset(1u64)
         );
 
-        let state_guard = state.lock_fully().await.unwrap();
+        let state_guard = state.lock_fully("test").await.unwrap();
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -1346,7 +1344,7 @@ mod tests {
         .with_state(ShardState::Closed)
         .build();
         state
-            .lock_fully()
+            .lock_fully("test")
             .await
             .unwrap()
             .shards
@@ -1431,7 +1429,7 @@ mod tests {
         .build();
         let queue_id_01 = replica_shard.queue_id();
         state
-            .lock_fully()
+            .lock_fully("test")
             .await
             .unwrap()
             .shards
@@ -1473,7 +1471,7 @@ mod tests {
             ReplicateFailureReason::ShardNotFound
         );
 
-        let state_guard = state.lock_partially().await.unwrap();
+        let state_guard = state.lock_partially("test").await.unwrap();
         assert!(!state_guard.shards.contains_key(&queue_id_01));
     }
 
@@ -1526,7 +1524,7 @@ mod tests {
             leader_id,
         )
         .build();
-        let mut state_guard = state.lock_fully().await.unwrap();
+        let mut state_guard = state.lock_fully("test").await.unwrap();
 
         state_guard
             .shards
@@ -1576,7 +1574,7 @@ mod tests {
             ReplicateFailureReason::ShardClosed
         );
 
-        let state_guard = state.lock_partially().await.unwrap();
+        let state_guard = state.lock_partially("test").await.unwrap();
         let replica_shard = state_guard.shards.get(&queue_id_01).unwrap();
         replica_shard.assert_is_closed();
 
@@ -1624,7 +1622,7 @@ mod tests {
         .build();
         let queue_id_01 = replica_shard.queue_id();
         state
-            .lock_fully()
+            .lock_fully("test")
             .await
             .unwrap()
             .shards

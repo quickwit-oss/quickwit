@@ -105,7 +105,7 @@ testsuite = [
   "quickwit-proto/testsuite",
   "quickwit-storage/testsuite"
 ]
-metrics = ["dep:arrow", "dep:quickwit-parquet-engine", "quickwit-doc-mapper/metrics"]
+metrics = ["dep:arrow", "dep:quickwit-parquet-engine", "quickwit-doc-mapper/metrics", "quickwit-config/metrics"]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
 postgres = ["quickwit-metastore/postgres"]
 ci-test = []
@@ -114,6 +114,7 @@ ci-test = []
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
+parquet = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
