@@ -489,7 +489,7 @@ Phase 1 establishes the foundation for locality-aware compaction. Subsequent pha
 
 **The compaction policy is borrowed but the workload is fundamentally different.** The doc says "use StableLogMergePolicy adapted for Parquet splits" but StableLogMergePolicy was designed for Tantivy splits in a logs/traces pipeline. Metrics have very different characteristics: higher write rates, smaller individual events, more predictable schemas, time-series structure. The doc acknowledges the need for experiments but doesn't discuss *why* the existing policy might be wrong for metrics, which makes it hard to know what the experiments should be testing for.
 
-**Late-arriving data for old windows is "acceptable because rare" but the scale section suggests otherwise.** At 10 GiB/s, even a small percentage of late data is a lot of data. If 0.1% of data arrives late, that's 10 MiB/s of late data triggering merges of already-compacted windows. The doc assumes this is negligible, but at Alexey's scale numbers, it may not be.
+**Late-arriving data for old windows is "acceptable because rare" but the scale section suggests otherwise.** At 10 GiB/s, even a small percentage of late data is a lot of data. If 0.1% of data arrives late, that's 10 MiB/s of late data triggering merges of already-compacted windows. The doc assumes this is negligible, but at the scale numbers cited in the Scale Considerations section, it may not be.
 
 ### The "so what"
 
