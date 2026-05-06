@@ -8159,7 +8159,6 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-dst",
  "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest",
