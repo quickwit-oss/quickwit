@@ -17,9 +17,8 @@ use quickwit_common::is_sketches_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
-    ListParquetSplitsQuery, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, ParquetSplitRecord, SplitMetadata, SplitState,
-    list_parquet_splits_paginated,
+    ListParquetSplitsQuery, ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
+    ParquetSplitRecord, SplitMetadata, SplitState, list_parquet_splits_paginated,
 };
 use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{

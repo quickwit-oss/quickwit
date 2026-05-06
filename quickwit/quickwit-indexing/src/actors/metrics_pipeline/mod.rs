@@ -23,7 +23,6 @@
 //! ```
 
 mod indexing_service_impl;
-mod parquet_compaction_metrics;
 mod parquet_doc_processor;
 mod parquet_indexer;
 mod parquet_merge_executor;
