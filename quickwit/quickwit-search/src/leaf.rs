@@ -39,8 +39,8 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SplitCache,
+    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -530,6 +530,11 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let byte_range_cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    // Wrap storage at request scope so we observe per-split download volume.
+    // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
+    // BELOW this wrapper, so reads served from cache do not contribute to the
+    // counters — that is the desired "downloaded from object storage" semantics.
+    let (storage, download_counters) = CountingStorage::instrument_storage(storage);
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
@@ -604,6 +609,7 @@ async fn leaf_search_single_split(
     let split_clone = split.clone();
 
     let ctx_clone = ctx.clone();
+    let download_counters_clone = download_counters.clone();
     leaf_search_state_guard.set_state(SplitSearchState::CpuQueue);
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
@@ -630,10 +636,13 @@ async fn leaf_search_single_split(
                     } else {
                         searcher.search(&query, &collector)?
                     };
+                let (downloaded_bytes, downloaded_req) = download_counters_clone.snapshot();
                 let split_stats = SplitResourceStats {
                     split_num_docs,
                     matched_doc: leaf_search_response.num_hits,
                     input_memory_bytes: warmup_size.as_u64(),
+                    downloaded_bytes,
+                    downloaded_req,
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
