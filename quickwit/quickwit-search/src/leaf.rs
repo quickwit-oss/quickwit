@@ -501,6 +501,7 @@ async fn leaf_search_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     search_permit: &mut SearchPermit,
+    wait_for_search_permit: Duration,
 ) -> crate::Result<Option<LeafSearchResponse>> {
     let mut leaf_search_state_guard =
         SplitSearchStateGuard::new(ctx.split_outcome_counters.clone());
@@ -643,6 +644,7 @@ async fn leaf_search_single_split(
                     input_memory_bytes: warmup_size.as_u64(),
                     downloaded_bytes,
                     downloaded_req,
+                    wait_for_search_permit_microsecs: wait_for_search_permit.as_micros() as u64,
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
@@ -1545,6 +1547,10 @@ struct LocalSearchTask {
     split: SplitIdAndFooterOffsets,
     search_request: SearchRequest,
     search_permit_future: SearchPermitFuture,
+    // When the permit future was created. Used to measure
+    // `wait_for_search_permit_microsecs` from the moment the permit was
+    // requested until it was granted.
+    permit_requested_at: Instant,
 }
 
 struct ScheduleSearchTaskResult {
@@ -1592,6 +1598,7 @@ async fn schedule_search_tasks(
     let splits_to_run_on_lambda: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         splits.drain(search_permit_futures.len()..).collect();
 
+    let permit_requested_at = Instant::now();
     let splits_to_run_locally: Vec<LocalSearchTask> = splits
         .into_iter()
         .zip(search_permit_futures)
@@ -1600,6 +1607,7 @@ async fn schedule_search_tasks(
                 split,
                 search_request,
                 search_permit_future,
+                permit_requested_at,
             },
         )
         .collect();
@@ -1720,11 +1728,13 @@ async fn run_local_search_tasks(
         split,
         search_request,
         search_permit_future,
+        permit_requested_at,
     } in local_search_tasks
     {
         let leaf_split_search_permit = search_permit_future
             .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
             .await;
+        let wait_for_search_permit = permit_requested_at.elapsed();
 
         // We run simplify search request again: as we push split into the merge collector,
         // we may have discovered that we won't find any better candidates for top hits in this
@@ -1745,6 +1755,7 @@ async fn run_local_search_tasks(
                 index_storage.clone(),
                 split.clone(),
                 leaf_split_search_permit,
+                wait_for_search_permit,
             )
             .in_current_span(),
         );
@@ -1878,6 +1889,7 @@ async fn leaf_search_single_split_wrapper(
     index_storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
+    wait_for_search_permit: Duration,
 ) {
     let timer = crate::SEARCH_METRICS
         .leaf_search_split_duration_secs
@@ -1889,6 +1901,7 @@ async fn leaf_search_single_split_wrapper(
             index_storage,
             split.clone(),
             &mut search_permit,
+            wait_for_search_permit,
         )
         .await;
 
