@@ -44,15 +44,18 @@ Stateright      DST Tests      Production Metrics
 (exhaustive)    (simulation)   (Observability)
 ```
 
-## When a Verification Check Fails — STOP, Don't Weaken
+## STOP, Don't Weaken — Specs are Load-Bearing
 
-**MUST**: when a TLA+ invariant, Stateright property, or DST assertion fails,
-the **first** action is diagnosis, not modification. Verification properties
-are load-bearing — they encode the safety claim the system has to satisfy.
-Silently weakening them to make the check pass loses the proof obligation
-and hides future bugs.
+Whether the load-bearing claim is a formal property (TLA+ invariant,
+Stateright property, DST assertion) or an English-language user
+requirement, the rule is the same: **MUST NOT** silently weaken it.
+First action is diagnosis and an explicit conversation with the user,
+not modification.
 
-The failure has exactly two possible causes:
+### Verification check fails
+
+When a TLA+ invariant, Stateright property, or DST assertion fails, the
+failure has exactly two possible causes:
 
 1. **The implementation/model has a real bug.** Fix the bug.
 2. **The property is over-strong** — it asserts something the design does not
@@ -79,10 +82,49 @@ The failure has exactly two possible causes:
 - Changing `\A` to `\E`, `[]` to `<>`, or similar quantifier flips, when the
   motive is to suppress a violation rather than to capture a different claim
 
-**Why**: invariants describe *the system's promise to its users*. When TLC
-finds a counter-example, it has just told you either that the implementation
-is wrong, or that you've been claiming a stronger promise than you actually
-keep. Both deserve a conscious decision, never a silent edit.
+### User requirement seems hard or out-of-scope
+
+The same rule applies when translating from the user's spec into a plan,
+or from the plan into implementation. If a stated requirement looks hard,
+expensive, or "more than this PR needs," **stop and ask first** — do not
+decide unilaterally that "close enough" is acceptable.
+
+Silent-weakening moves to watch for:
+- **Granularity downgrade**: user asked for page-by-page streaming;
+  plan says "column-chunk granularity is the natural unit." The memory
+  bound the user actually wanted is gone.
+- **Constraint dropping**: user said "must not OOM under load"; plan
+  treats it as "bounded in the typical case." The qualifier was doing
+  load-bearing work and you removed it.
+- **Strength reduction**: user said "byte-identical metadata"; plan
+  says "logically equivalent metadata." Test passes; spec is gone.
+- **MUST → SHOULD**: user said "one GET per file"; plan allows "two in
+  the rare retry case." May be reasonable, but only the user can
+  authorize it.
+- **Reframing as out-of-scope**: user described a property as part of
+  the goal; plan declares it a follow-up PR. If the user didn't say
+  "split it," you don't get to.
+
+**Required protocol** mirrors the verification case: quote the user's
+original phrasing back to yourself; if you cannot point at the source
+phrase that authorizes the weaker version, you are not authorized to
+ship it. Surface the gap explicitly: *"you asked for X; my plan does
+Y; here's why I considered Y; ok to weaken, or do you want X?"* The
+default answer is X.
+
+**Plan-document approval is not spec approval.** When the plan you write
+diverges from the spec at write time, the user reviews the diverged
+plan, not the original requirement. Accountability for the divergence
+is on you — they approved what you wrote, not what they asked for.
+Re-read the user's original message before writing code.
+
+### Why this matters
+
+Specs — formal or English — describe the system's promise to its
+users. When a check fails or a requirement seems too strict, that has
+just told you either that the implementation is wrong, or that you've
+been claiming a stronger promise than you actually keep. Both deserve
+a conscious decision, never a silent edit.
 
 ## Testing Through Production Path
 
