@@ -15,13 +15,14 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 prost = { workspace = true }            # substrait Plan::decode (runtime only)
 serde_json = { workspace = true }
+siphasher = { workspace = true }
 tracing = { workspace = true }
 url = "2"
 
 arrow = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
-datafusion-distributed = "1.0"
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed.git", rev = "d7de9c3fb99fd7fa99da925b460dc2d4529c04a2" }
 object_store = "0.13"
 
 # gRPC surface is opt-in. The extension traits + session builder do not need
