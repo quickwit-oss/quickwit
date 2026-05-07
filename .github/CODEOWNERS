@@ -1,17 +1,23 @@
 # CODEOWNERS — see https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Last matching rule per file wins. Approval from any listed owner satisfies
-# the requirement. quickwit-dev is listed on every rule so it can always
-# approve; an additional team is listed on the metrics Parquet pipeline paths
-# so PRs scoped to those paths can be approved by either team.
+# the requirement. A path with NO team after it has no required owners — any
+# user with write access can approve.
 
 # Default: quickwit-core owns everything
 *                                                        @quickwit-oss/quickwit-core
 
 # byoc-metrics paths — owned by byoc-metrics
-/docs/internals/                                         @quickwit-oss/byoc-metrics
 /quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
 /quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
 /quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
 /quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
 /quickwit/quickwit-indexing/src/actors/parquet_pipeline/ @quickwit-oss/byoc-metrics
+
+# Paths with no required owner — anyone with write access can approve.
+# `docs/internals/` is shared design + verification docs that any team
+# working on the codebase may need to update; gating on a single team
+# blocks unrelated work. `Cargo.lock` churns on routine dependency
+# updates and shouldn't require a specific team's review.
+/docs/internals/
+/quickwit/Cargo.lock
