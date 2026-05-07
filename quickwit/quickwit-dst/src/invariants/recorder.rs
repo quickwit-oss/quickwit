@@ -16,21 +16,19 @@
 //!
 //! Every call to [`check_invariant!`](crate::check_invariant) evaluates the
 //! condition in **all** build profiles (debug and release). The result is
-//! forwarded to a recorder function that can emit Datadog metrics, log
-//! violations, or take any other action.
+//! forwarded to a recorder function that can emit metrics (StatsD/DogStatsD,
+//! Prometheus, etc.), log violations, or take any other action.
 //!
-//! # Wiring up Datadog metrics
+//! # Wiring up a metrics recorder
 //!
-//! Call [`set_invariant_recorder`] once at process startup:
+//! Call [`set_invariant_recorder`] once at process startup. The OSS Quickwit
+//! binary wires a Prometheus-backed recorder in `quickwit_cli::logger`; the
+//! example below shows the minimal recorder shape:
 //!
 //! ```rust
 //! use quickwit_dst::invariants::{InvariantId, set_invariant_recorder};
 //!
 //! fn my_recorder(id: InvariantId, passed: bool) {
-//!     // statsd.count("pomsky.invariant.checked", 1, &[&format!("name:{}", id)]);
-//!     // if !passed {
-//!     //     statsd.count("pomsky.invariant.violated", 1, &[&format!("name:{}", id)]);
-//!     // }
 //!     if !passed {
 //!         eprintln!("{} violated in production", id);
 //!     }

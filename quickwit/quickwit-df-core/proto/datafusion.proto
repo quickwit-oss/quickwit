@@ -20,8 +20,8 @@ option java_package = "com.quickwit.datafusion";
 
 // Service for executing DataFusion queries over Quickwit data.
 //
-// This is the OSS entry point for Substrait and SQL execution.
-// Pomsky wraps this service inside CloudPremService.SubstraitSearch.
+// This is the entry point for Substrait and SQL execution. Downstream
+// distributions may wrap or rename this service inside their own gRPC layer.
 service DataFusionService {
   // Execute a Substrait plan and stream results as Arrow IPC batches.
   rpc ExecuteSubstrait(ExecuteSubstraitRequest) returns (stream ExecuteSubstraitResponse);
@@ -34,7 +34,7 @@ service DataFusionService {
 
 message ExecuteSubstraitRequest {
   // Substrait plan encoded as protobuf bytes (prost::Message::encode).
-  // Used by Pomsky and other production callers that already hold an encoded plan.
+  // Used by production callers that already hold an encoded plan.
   bytes substrait_plan_bytes = 1;
 
   // Optional per-request session overrides (e.g. target_partitions).

@@ -920,7 +920,7 @@ async fn test_rollup_nested_aggregation() {
 /// Demonstrates the Substrait query path using standard `NamedTable` read
 /// relations — no custom protos, no type URLs.
 ///
-/// A producer (Pomsky, df-executor, or any Substrait client) builds a plan
+/// A producer (df-executor or any Substrait client) builds a plan
 /// using vanilla Substrait, naming the index in `NamedTable.names`.  The
 /// `QuickwitSubstraitConsumer` resolves the index from the metastore, uses the
 /// `ReadRel.base_schema` for schema injection, and executes the plan exactly
@@ -1232,7 +1232,7 @@ async fn test_rollup_substrait_from_file() {
 /// Verifies that a query works correctly when the DDL schema declares only a
 /// SUBSET of the columns present in the parquet files.
 ///
-/// This is the typical BYOC case: a coordinator generates a Substrait plan
+/// This is the typical thin-schema case: a coordinator generates a Substrait plan
 /// that only references the columns it needs for the query (`metric_name`,
 /// `timestamp_secs`, `value`, `service`).  The parquet files contain many
 /// more tag columns (`env`, `host`, `datacenter`, `region`) that the query
