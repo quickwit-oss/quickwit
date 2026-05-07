@@ -6098,21 +6098,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics-exporter-dogstatsd"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "961f3712d8a7cfe14caaf74c3af503fe701cee6439ff49a7a3ebd04bf49c0502"
-dependencies = [
- "bytes",
- "itoa",
- "metrics",
- "metrics-util",
- "ryu",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "metrics-exporter-otel"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9405,7 +9390,6 @@ dependencies = [
  "backtrace",
  "console-subscriber",
  "metrics",
- "metrics-exporter-dogstatsd",
  "metrics-exporter-otel",
  "metrics-exporter-prometheus",
  "metrics-util",
@@ -9414,7 +9398,6 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "quickwit-common",
- "quickwit-dst",
  "quickwit-metrics",
  "serde_json",
  "time",

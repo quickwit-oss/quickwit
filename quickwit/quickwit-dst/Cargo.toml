@@ -7,7 +7,7 @@ documentation.workspace = true
 repository.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Deterministic simulation testing and stateright model checking for Quickhouse-Pomsky"
+description = "Deterministic simulation testing and stateright model checking for Quickwit"
 
 [features]
 model-checking = ["stateright"]

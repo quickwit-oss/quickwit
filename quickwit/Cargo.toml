@@ -172,7 +172,6 @@ lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
-metrics-exporter-dogstatsd = "0.9"
 metrics-exporter-otel = "0.3"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"

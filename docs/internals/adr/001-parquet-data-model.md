@@ -93,11 +93,9 @@ This is a **schema-on-read** approach: the storage layer stores data in whatever
 
 **Transition.** The current OTel map-based ingestion format is the starting point. The indexing pipeline can extract attributes into columns at write time, presenting the original OTel map interface at the API boundary while storing columnar data internally. This is transparent to ingest clients — they continue sending OTel-format data. Queries can access attributes either by the original map path (for compatibility) or by direct column access (for performance). The storage representation is an internal optimization, not a change to the external data model.
 
-### 6. RLE/Dictionary Encoding and the Flurry Project
+### 6. RLE/Dictionary Encoding Preservation
 
-The point-per-row model's performance depends on columnar encodings being preserved through the query pipeline. Currently, RLE and dictionary encoding are decoded to plain arrays early in DataFusion's execution. There is significant ongoing investment in **Flurry** (the metrics equivalent of Bolt) to preserve these encodings through more operators.
-
-As Flurry matures, the performance benefits of sorted point-per-row data increase: longer runs in sorted columns translate directly to better RLE compression ratios that are maintained through query execution. This makes point-per-row a bet that improves over time rather than a static trade-off.
+The point-per-row model's performance depends on columnar encodings being preserved through the query pipeline. Currently, RLE and dictionary encoding are decoded to plain arrays early in DataFusion's execution. As DataFusion grows operator-level support for these encodings, the performance benefits of sorted point-per-row data increase: longer runs in sorted columns translate directly to better RLE compression ratios that are maintained through query execution. This makes point-per-row a bet that improves over time rather than a static trade-off.
 
 ## Invariants
 
@@ -123,14 +121,14 @@ These invariants must hold across all code paths (ingestion, compaction, query).
 
 ### Negative
 
-- **Tag redundancy.** Every row for the same timeseries repeats all tag values. In timeseries-per-row, tags are stored once per series. With good columnar encoding on sorted data, this redundancy compresses away, but it is still present in the uncompressed representation and affects memory usage during query execution until Flurry-style encoding preservation is complete.
+- **Tag redundancy.** Every row for the same timeseries repeats all tag values. In timeseries-per-row, tags are stored once per series. With good columnar encoding on sorted data, this redundancy compresses away, but it is still present in the uncompressed representation and affects memory usage during query execution until DataFusion preserves dictionary/RLE encoding through more operators.
 - **OTel map attributes defeat columnar benefits.** The current OTel ingest schema stores attributes as key-value maps. Until schema-on-read column extraction is implemented, attributes cannot participate in sorting, page-level pruning, or efficient columnar compression. This is the most significant near-term limitation of the data model.
 - **No intra-series locality guarantee.** Without `timeseries_id` in the sort schema, points from the same series may be interleaved with points from other series that share the same sort-column values. This is a configuration choice, not an inherent limitation.
 - **Duplicate points are stored.** Without LWW or per-point dedup, retried ingestion or overlapping sources can produce duplicate points. Existing batch-level dedup (WAL checkpoints, file-level tracking) prevents most duplicates, but cross-request duplicates are possible. See [GAP-005](./gaps/005-no-per-point-deduplication.md).
 
 ### Risks
 
-- **Flurry dependency for performance parity.** Until RLE/dictionary encoding is preserved through DataFusion, point-per-row may scan more data than timeseries-per-row for series-centric queries (e.g., "plot CPU for host X"). The magnitude depends on the encoding preservation timeline.
+- **Encoding-preservation dependency for performance parity.** Until RLE/dictionary encoding is preserved through DataFusion, point-per-row may scan more data than timeseries-per-row for series-centric queries (e.g., "plot CPU for host X"). The magnitude depends on the encoding-preservation timeline.
 - **Wide tables (future research).** Metrics from the same source share nearly identical tags. Multiple metric names could be stored as separate value columns in a single wide row (e.g., `k8s.cpu.usage`, `k8s.cpu.limit`, `k8s.mem.usage` as columns sharing one tag set). This is the approach taken by TimescaleDB's hypertables. It would amortize tag storage further but requires significant compactor changes. Worth investigating as future research; it is compatible with point-per-row as an evolution, not a replacement.
 
 ## Signal Generalization
@@ -147,7 +145,7 @@ The no-LWW and no-storage-interpolation decisions are universal across signals. 
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-02-19 | Initial ADR created | Establish foundational data model for Parquet metrics pipeline |
-| 2026-02-19 | Point-per-row chosen over timeseries-per-row | Simpler compaction, no LWW, standard DataFusion operators. Performance parity via columnar encoding + Flurry |
+| 2026-02-19 | Point-per-row chosen over timeseries-per-row | Simpler compaction, no LWW, standard DataFusion operators. Performance parity via columnar encoding and dictionary/RLE preservation through more operators |
 | 2026-02-19 | No LWW semantics | Eliminates sticky routing and series-level dedup. Simplifies ingestion and compaction |
 | 2026-02-19 | Dedup clarified: batch-level exists, per-point does not | WAL checkpoints provide exactly-once at the batch level. File-level dedup for queue sources. Per-point dedup not implemented; identified as GAP-005 if needed |
 | 2026-02-19 | timeseries_id defined as optional synthetic column | Provides intra-group locality tiebreaker without adding complexity to the core data model |

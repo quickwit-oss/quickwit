@@ -24,7 +24,6 @@ ADRs will be created here as we implement new systems. Start with the metrics pi
 | [001](./001-parquet-data-model.md) | Parquet Metrics Data Model | Proposed | `storage`, `metrics`, `parquet`, `data-model` | quickwit-parquet-engine |
 | [002](./002-sort-schema-parquet-splits.md) | Configurable Sort Schema for Parquet Splits | Proposed | `storage`, `metrics`, `compaction`, `parquet`, `sorting` | quickwit-parquet-engine, quickwit-indexing |
 | [003](./003-time-windowed-sorted-compaction.md) | Time-Windowed Sorted Compaction for Parquet | Proposed | `storage`, `metrics`, `compaction`, `parquet`, `time-windowing` | quickwit-parquet-engine, quickwit-indexing, quickwit-metastore |
-| [004](./004-cloud-native-storage-characteristics.md) | Cloud-Native Storage Characteristics | Proposed | `architecture`, `storage`, `cloud-native`, `observability` | all |
 
 ## Supplements & Roadmaps
 
@@ -49,7 +48,7 @@ Quickwit tracks architectural change through three lenses. See **[EVOLUTION.md](
 
 ### Characteristics (What we need)
 
-Product requirements and capabilities we must have. See [ADR-004](./004-cloud-native-storage-characteristics.md) for the full characteristic status matrix.
+Product requirements and capabilities we must have.
 
 ### Gaps (What we learned)
 

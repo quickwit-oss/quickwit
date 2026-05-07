@@ -2,7 +2,7 @@
 
 **Status**: Open
 **Discovered**: 2026-02-19
-**Context**: Cloud-native storage characteristics analysis ([ADR-004](../004-cloud-native-storage-characteristics.md), characteristics C1, C17)
+**Context**: Cloud-native storage characteristics analysis (independent scaling, burst handling)
 
 ## Problem
 
@@ -45,7 +45,3 @@ All signals equally affected. Independent scaling is signal-agnostic.
 - [ ] Evaluate separating the merge pipeline into a standalone compactor service
 - [ ] Design auto-scaling policies for each workload type (ingest QPS, query QPS, file backlog)
 - [ ] Investigate burst handling for ingest (overflow buffer, backpressure, burst lane)
-
-## References
-
-- [ADR-004: Cloud-Native Storage Characteristics](../004-cloud-native-storage-characteristics.md)

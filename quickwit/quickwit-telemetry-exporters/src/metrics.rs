@@ -17,13 +17,11 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::Context;
-use metrics_exporter_dogstatsd::DogStatsDRecorder;
 use metrics_exporter_otel::OpenTelemetryRecorder;
 use metrics_exporter_prometheus::{
     Matcher, PrometheusBuilder, PrometheusHandle, PrometheusRecorder,
 };
-use metrics_util::MetricKindMask;
-use metrics_util::layers::{FanoutBuilder, RouterBuilder};
+use metrics_util::layers::FanoutBuilder;
 use opentelemetry::metrics::MeterProvider;
 use opentelemetry_otlp::{MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
@@ -57,14 +55,14 @@ impl OtlpProtocol {
     }
 }
 
-/// Sets up the global metrics recorder and invariant recorder.
+/// Sets up the global metrics recorder.
 pub(crate) fn init_metrics_provider(
     service_version: &str,
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<Option<SdkMeterProvider>> {
     let prometheus_recorder = build_prometheus_recorder()?;
 
-    let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
+    let (recorder, meter_provider) = if otlp_config.is_enabled() {
         let (otlp_recorder, meter_provider) = build_otlp_recorder(service_version, otlp_config)?;
         let recorder = FanoutBuilder::default()
             .add_recorder(prometheus_recorder)
@@ -78,13 +76,6 @@ pub(crate) fn init_metrics_provider(
         (recorder, None)
     };
 
-    let dogstatsd_recorder = build_dogstatsd_recorder(service_version)?;
-
-    let mut router = RouterBuilder::from_recorder(metrics::NoopRecorder);
-    router
-        .add_route(MetricKindMask::ALL, "quickwit_", quickwit_recorder)
-        .add_route(MetricKindMask::ALL, "pomsky.invariant.", dogstatsd_recorder);
-    let recorder = router.build();
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
     quickwit_metrics::describe_metrics();
@@ -140,58 +131,6 @@ fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
         })
         .map(|_| ())
         .map_err(|error| format!("failed to spawn Prometheus metrics upkeep thread: {error}"))
-}
-
-fn build_dogstatsd_recorder(service_version: &str) -> anyhow::Result<DogStatsDRecorder> {
-    // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
-    // deprecated and can be removed after 2026-04-01.
-    let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
-        .unwrap_or_else(|| {
-            quickwit_common::get_from_env(
-                "CP_DOGSTATSD_SERVER_HOST",
-                "127.0.0.1".to_string(),
-                false,
-            )
-        });
-    let port: u16 = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_PORT", false)
-        .unwrap_or_else(|| quickwit_common::get_from_env("CP_DOGSTATSD_SERVER_PORT", 8125, false));
-    let addr = format!("{host}:{port}");
-
-    let mut global_labels = vec![::metrics::Label::new(
-        "version",
-        service_version.to_string(),
-    )];
-    let keys = [
-        ("IMAGE_NAME", "image_name"),
-        ("IMAGE_TAG", "image_tag"),
-        ("KUBERNETES_COMPONENT", "kube_component"),
-        ("KUBERNETES_NAMESPACE", "kube_namespace"),
-        ("KUBERNETES_POD_NAME", "kube_pod_name"),
-        ("QW_CLUSTER_ID", "cloudprem_cluster_id"),
-        ("QW_NODE_ID", "cloudprem_node_id"),
-    ];
-    for (env_var_key, label_key) in keys {
-        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false) {
-            global_labels.push(::metrics::Label::new(label_key, label_val));
-        }
-    }
-    let recorder = metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-        .set_global_prefix("cloudprem")
-        .with_global_labels(global_labels)
-        .with_remote_address(addr)
-        .context("failed to parse DogStatsD server address")?
-        .build()
-        .context("failed to build DogStatsD exporter")?;
-    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
-    Ok(recorder)
-}
-
-fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
-    let name = invariant_id.as_str();
-    metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
-    if !passed {
-        metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);
-    }
 }
 
 fn build_otlp_recorder(

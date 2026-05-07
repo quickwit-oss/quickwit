@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 backtrace = { workspace = true, optional = true }
 console-subscriber = { workspace = true, optional = true }
 metrics = { workspace = true }
-metrics-exporter-dogstatsd = { workspace = true }
 metrics-exporter-otel = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-util = { workspace = true }
@@ -30,7 +29,6 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 quickwit-common = { workspace = true }
-quickwit-dst = { workspace = true }
 quickwit-metrics = { workspace = true }
 
 [features]

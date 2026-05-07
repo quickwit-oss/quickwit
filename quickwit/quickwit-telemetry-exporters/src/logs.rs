@@ -129,7 +129,7 @@ where
 ///
 /// Example output:
 /// ```json
-/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"byoc","ddsource":"byoc","message":"INFO quickwit_search: hello"}
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit","ddsource":"quickwit","message":"INFO quickwit_search: hello"}
 /// ```
 pub(crate) struct DdgFormat {
     text_format: Format<Full, ()>,
@@ -173,7 +173,7 @@ where
         let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
         writeln!(
             writer,
-            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"byoc","ddsource":"byoc","message":{escaped_message}}}"#
+            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"quickwit","ddsource":"quickwit","message":{escaped_message}}}"#
         )
     }
 }
@@ -393,8 +393,8 @@ mod tests {
     fn test_ddg_format_basic_message() {
         let json = capture_ddg_log(|| tracing::info!("hello world"));
         assert_eq!(json["level"], "INFO");
-        assert_eq!(json["service"], "byoc");
-        assert_eq!(json["ddsource"], "byoc");
+        assert_eq!(json["service"], "quickwit");
+        assert_eq!(json["ddsource"], "quickwit");
         assert_eq!(
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: hello world")
