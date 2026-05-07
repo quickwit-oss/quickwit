@@ -142,11 +142,11 @@ impl DeveloperService for DeveloperApiServer {
         &self,
         _: GetNodeDiagnosticsRequest,
     ) -> DeveloperResult<GetNodeDiagnosticsResponse> {
-        let build_info = crate::BuildInfo::get();
+        let build_info = BuildInfo::get();
         let build_info_json = serde_json::to_string(build_info)
             .map_err(|e| DeveloperError::Internal(e.to_string()))?;
 
-        let runtime_info = crate::RuntimeInfo::get();
+        let runtime_info = RuntimeInfo::get();
         let runtime_info_json = serde_json::to_string(runtime_info)
             .map_err(|e| DeveloperError::Internal(e.to_string()))?;
 
@@ -155,10 +155,15 @@ impl DeveloperService for DeveloperApiServer {
         let node_config_json = serde_json::to_string(&node_config)
             .map_err(|e| DeveloperError::Internal(e.to_string()))?;
 
+        let env_info = EnvInfo::get();
+        let env_info_json =
+            serde_json::to_string(env_info).map_err(|e| DeveloperError::Internal(e.to_string()))?;
+
         Ok(GetNodeDiagnosticsResponse {
             build_info_json,
             runtime_info_json,
             node_config_json,
+            env_info_json,
         })
     }
 }

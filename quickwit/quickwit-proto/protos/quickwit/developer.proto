@@ -45,4 +45,5 @@ message GetNodeDiagnosticsResponse {
     string build_info_json = 1;
     string runtime_info_json = 2;
     string node_config_json = 3;
+    string env_info_json = 4;
 }

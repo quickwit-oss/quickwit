@@ -267,6 +267,7 @@ message NodeDiagnostics {
   string build_info_json = 2;
   string runtime_info_json = 3;
   string node_config_json = 4;
+  string env_info_json = 5;
 }
 
 message GetClusterDiagnosticsRequest {

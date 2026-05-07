@@ -35,6 +35,8 @@ pub struct GetNodeDiagnosticsResponse {
     pub runtime_info_json: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub node_config_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub env_info_json: ::prost::alloc::string::String,
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
