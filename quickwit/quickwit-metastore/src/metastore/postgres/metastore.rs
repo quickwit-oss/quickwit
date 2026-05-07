@@ -30,20 +30,21 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    DeleteIndexTemplatesRequest, DeleteKvRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, GetKvRequest, GetKvResponse, IndexMetadataFailure,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexStats,
+    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SoftDeleteDocumentsRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SetKvRequest, SoftDeleteDocumentsRequest,
     SoftDeleteDocumentsResponse, SplitStats, StageSplitsRequest, ToggleSourceRequest,
     UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
@@ -1880,6 +1881,39 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         sqlx::query("DELETE FROM index_templates WHERE template_id = ANY($1)")
             .bind(&request.template_ids)
+            .execute(&self.connection_pool)
+            .await?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn get_kv(&self, request: GetKvRequest) -> MetastoreResult<GetKvResponse> {
+        let value: Option<(String,)> = sqlx::query_as("SELECT value FROM kv WHERE key = $1")
+            .bind(&request.key)
+            .fetch_optional(&self.connection_pool)
+            .await?;
+        Ok(GetKvResponse {
+            value: value.map(|(v,)| v),
+        })
+    }
+
+    async fn set_kv(&self, request: SetKvRequest) -> MetastoreResult<EmptyResponse> {
+        sqlx::query(
+            r"
+                INSERT INTO kv (key, value)
+                VALUES ($1, $2)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            ",
+        )
+        .bind(&request.key)
+        .bind(&request.value)
+        .execute(&self.connection_pool)
+        .await?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn delete_kv(&self, request: DeleteKvRequest) -> MetastoreResult<EmptyResponse> {
+        sqlx::query("DELETE FROM kv WHERE key = $1")
+            .bind(&request.key)
             .execute(&self.connection_pool)
             .await?;
         Ok(EmptyResponse {})

@@ -16,6 +16,7 @@ pub mod control_plane;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;
+pub mod maintenance;
 pub(crate) mod metrics;
 pub(crate) mod model;
 

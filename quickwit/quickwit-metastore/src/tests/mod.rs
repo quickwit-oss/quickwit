@@ -28,6 +28,7 @@ use quickwit_proto::types::IndexUid;
 pub(crate) mod delete_task;
 pub(crate) mod get_identity;
 pub(crate) mod index;
+pub(crate) mod kv;
 pub(crate) mod list_splits;
 pub(crate) mod shard;
 pub(crate) mod source;
@@ -574,6 +575,64 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_get_identity() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::get_identity::test_metastore_get_identity::<$metastore_type>().await;
+            }
+
+            /// KV API tests
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_set_get() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_set_get::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_get_non_existent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_get_non_existent::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_set_overwrite() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_set_overwrite::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_delete() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_delete::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_delete_non_existent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_delete_non_existent::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_multiple_keys() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_multiple_keys::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_empty_key() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_empty_key::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_kv_empty_value() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::kv::test_metastore_kv_empty_value::<$metastore_type>().await;
             }
 
             /// Soft-delete documents API tests

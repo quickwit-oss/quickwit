@@ -1006,6 +1006,10 @@ impl IngestController {
     /// Moving a shard consists of closing the shard on the source ingester and opening a new
     /// one on the target ingester.
     ///
+    /// When in maintenance mode (`is_maintenance` is true), this function exits early to keep
+    /// the indexing plan frozen. This design provides a simple safeguard to prevent unintended
+    /// plan modifications during maintenance.
+    ///
     /// This method is guarded by a lock to ensure that only one rebalance operation is performed at
     /// a time.
     pub(crate) async fn rebalance_shards(
@@ -1013,7 +1017,11 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         mailbox: &Mailbox<ControlPlane>,
         progress: &Progress,
+        is_maintenance: bool,
     ) -> MetastoreResult<Option<JoinHandle<()>>> {
+        if is_maintenance {
+            return Ok(None);
+        }
         let Ok(rebalance_guard) = self.rebalance_lock.clone().try_lock_owned() else {
             debug!("skipping rebalance: another rebalance is already in progress");
             return Ok(None);
@@ -3262,7 +3270,7 @@ mod tests {
         let progress = Progress::default();
 
         let close_shards_task_opt = controller
-            .rebalance_shards(&mut model, &control_plane_mailbox, &progress)
+            .rebalance_shards(&mut model, &control_plane_mailbox, &progress, false)
             .await
             .unwrap();
         assert!(close_shards_task_opt.is_none());
@@ -3386,7 +3394,7 @@ mod tests {
         ingester_pool.insert(ingester_id_1.clone(), ingester_1);
 
         let close_shards_task = controller
-            .rebalance_shards(&mut model, &control_plane_mailbox, &progress)
+            .rebalance_shards(&mut model, &control_plane_mailbox, &progress, false)
             .await
             .unwrap()
             .unwrap();

@@ -293,6 +293,10 @@ impl QuickwitClient {
         ClusterClient::new(&self.transport, self.timeout)
     }
 
+    pub fn maintenance(&self) -> MaintenanceClient<'_> {
+        MaintenanceClient::new(&self.transport, self.timeout)
+    }
+
     pub fn node_stats(&self) -> NodeStatsClient<'_> {
         NodeStatsClient::new(&self.transport, self.timeout)
     }
@@ -778,6 +782,79 @@ impl<'a> NodeHealthClient<'a> {
             .await?;
         let result: bool = response.deserialize().await?;
         Ok(result)
+    }
+}
+
+/// Response from the maintenance status endpoint.
+#[derive(Debug, serde::Deserialize)]
+pub struct MaintenanceStatusResponse {
+    pub is_maintenance_mode: bool,
+    pub enabled_at: Option<String>,
+}
+
+/// Response from the enable maintenance endpoint.
+#[derive(Debug, serde::Deserialize)]
+pub struct EnableMaintenanceResponse {
+    pub frozen_plan_json: String,
+}
+
+/// Client for maintenance mode APIs.
+pub struct MaintenanceClient<'a> {
+    transport: &'a Transport,
+    timeout: Timeout,
+}
+
+impl<'a> MaintenanceClient<'a> {
+    fn new(transport: &'a Transport, timeout: Timeout) -> Self {
+        Self { transport, timeout }
+    }
+
+    pub async fn status(&self) -> Result<MaintenanceStatusResponse, Error> {
+        let response = self
+            .transport
+            .send::<()>(
+                Method::GET,
+                "cluster/maintenance",
+                None,
+                None,
+                None,
+                self.timeout,
+            )
+            .await?;
+        let status = response.deserialize().await?;
+        Ok(status)
+    }
+
+    pub async fn enable(&self) -> Result<EnableMaintenanceResponse, Error> {
+        let response = self
+            .transport
+            .send::<()>(
+                Method::PUT,
+                "cluster/maintenance",
+                None,
+                None,
+                None,
+                self.timeout,
+            )
+            .await?;
+        let result = response.deserialize().await?;
+        Ok(result)
+    }
+
+    pub async fn disable(&self) -> Result<(), Error> {
+        let response = self
+            .transport
+            .send::<()>(
+                Method::DELETE,
+                "cluster/maintenance",
+                None,
+                None,
+                None,
+                self.timeout,
+            )
+            .await?;
+        response.check().await?;
+        Ok(())
     }
 }
 

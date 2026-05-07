@@ -312,12 +312,30 @@ impl IndexingScheduler {
         self.state.clone()
     }
 
-    // Should be called whenever a change in the list of index/shard
-    // has happened.
-    //
-    // Prefer not calling this method directly, and instead call
-    // `ControlPlane::rebuild_indexing_plan_debounced`.
-    pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
+    /// Loads a frozen indexing plan without applying it
+    /// to indexers or triggering any scheduling logic.
+    ///
+    /// This is used during control plane initialization when maintenance mode is active:
+    /// the frozen plan is restored as the `current_targeted_physical_plan` so that the
+    /// `control_running_plan` loop can re-apply it to indexers that restart during the
+    /// maintenance window.
+    pub(crate) fn load_frozen_plan(&mut self, plan: crate::indexing_plan::PhysicalIndexingPlan) {
+        self.state.current_targeted_physical_plan = Some(plan);
+    }
+
+    /// Should be called whenever a change in the list of index/shard has
+    /// happened.
+    ///
+    /// When in maintenance mode (`is_maintenance` is true), this function exits
+    /// early to keep the indexing plan frozen. This design provides a simple
+    /// safeguard to prevent unintended plan modifications during maintenance.
+    ///
+    /// Prefer not calling this method directly, and instead call
+    /// `ControlPlane::rebuild_indexing_plan_debounced`.
+    pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel, is_maintenance: bool) {
+        if is_maintenance {
+            return;
+        }
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
@@ -372,7 +390,7 @@ impl IndexingScheduler {
     /// chitchat cluster state. If true, do nothing.
     /// - If node IDs differ, schedule a new indexing plan.
     /// - If indexing tasks differ, apply again the last plan.
-    pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
+    pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel, is_maintenance: bool) {
         let current_targeted_plan =
             if let Some(current_targeted) = &self.state.current_targeted_physical_plan {
                 current_targeted
@@ -380,7 +398,7 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.rebuild_plan(model);
+                self.rebuild_plan(model, is_maintenance);
                 return;
             };
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp
@@ -401,7 +419,7 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
-            self.rebuild_plan(model);
+            self.rebuild_plan(model, is_maintenance);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");

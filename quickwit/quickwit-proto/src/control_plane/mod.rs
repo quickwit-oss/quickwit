@@ -160,6 +160,24 @@ impl GetOrCreateOpenShardsFailureReason {
     }
 }
 
+impl RpcName for EnableMaintenanceModeRequest {
+    fn rpc_name() -> &'static str {
+        "enable_maintenance_mode"
+    }
+}
+
+impl RpcName for DisableMaintenanceModeRequest {
+    fn rpc_name() -> &'static str {
+        "disable_maintenance_mode"
+    }
+}
+
+impl RpcName for GetMaintenanceModeRequest {
+    fn rpc_name() -> &'static str {
+        "get_maintenance_mode"
+    }
+}
+
 impl From<crate::metastore::OpenShardSubrequest> for GetOrCreateOpenShardsSubrequest {
     fn from(metastore_open_shard_subrequest: OpenShardSubrequest) -> Self {
         let index_id = metastore_open_shard_subrequest.index_uid().index_id.clone();

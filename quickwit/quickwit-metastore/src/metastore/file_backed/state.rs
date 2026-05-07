@@ -33,6 +33,7 @@ pub(super) struct MetastoreState {
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
     pub template_matcher: IndexTemplateMatcher,
     pub identity: Uuid,
+    pub kv_store: HashMap<String, String>,
 }
 
 impl MetastoreState {
@@ -67,6 +68,7 @@ impl MetastoreState {
             templates: manifest.templates,
             template_matcher,
             identity: manifest.identity,
+            kv_store: manifest.kv_store,
         };
         Ok(state)
     }
@@ -89,6 +91,7 @@ impl MetastoreState {
             indexes,
             templates,
             identity: self.identity,
+            kv_store: self.kv_store.clone(),
         }
     }
 }

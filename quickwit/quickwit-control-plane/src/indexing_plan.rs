@@ -14,13 +14,13 @@
 
 use fnv::FnvHashMap;
 use quickwit_proto::indexing::IndexingTask;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A [`PhysicalIndexingPlan`] defines the list of indexing tasks
 /// each indexer, identified by its node ID, should run.
 /// TODO(fmassot): a metastore version number will be attached to the plan
 /// to identify if the plan is up to date with the metastore.
-#[derive(Debug, PartialEq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct PhysicalIndexingPlan {
     indexing_tasks_per_indexer_id: FnvHashMap<String, Vec<IndexingTask>>,
 }

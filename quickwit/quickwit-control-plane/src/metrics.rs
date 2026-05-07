@@ -42,6 +42,9 @@ pub struct ControlPlaneMetrics {
     // Indexing plan metrics.
     pub local_shards: IntGauge,
     pub remote_shards: IntGauge,
+
+    // Maintenance mode.
+    pub maintenance_mode: IntGauge,
 }
 
 impl ControlPlaneMetrics {
@@ -128,6 +131,12 @@ impl Default for ControlPlaneMetrics {
             ),
             local_shards,
             remote_shards,
+            maintenance_mode: new_gauge(
+                "maintenance_mode",
+                "Whether the control plane is in maintenance mode (1 = enabled, 0 = disabled).",
+                "control_plane",
+                &[],
+            ),
         }
     }
 }

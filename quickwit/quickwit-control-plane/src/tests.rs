@@ -29,7 +29,8 @@ use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
 use quickwit_proto::metastore::{
-    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient, MockMetastoreService,
+    GetKvResponse, ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
+    MockMetastoreService,
 };
 use quickwit_proto::types::NodeId;
 use serde_json::json;
@@ -121,6 +122,9 @@ async fn start_control_plane(
             subresponses: Vec::new(),
         })
     });
+    mock_metastore
+        .expect_get_kv()
+        .returning(|_| Ok(GetKvResponse { value: None }));
     let mut indexer_inboxes = Vec::new();
 
     let indexer_pool = Pool::default();

@@ -205,6 +205,17 @@ service MetastoreService {
   // Deletes index templates.
   rpc DeleteIndexTemplates(DeleteIndexTemplatesRequest) returns (EmptyResponse);
 
+  // Key-Value API (for cluster-wide settings like maintenance mode)
+
+  // Gets a value by key from the cluster-wide key-value store.
+  rpc GetKv(GetKvRequest) returns (GetKvResponse);
+
+  // Sets a key-value pair in the cluster-wide key-value store.
+  rpc SetKv(SetKvRequest) returns (EmptyResponse);
+
+  // Deletes a key from the cluster-wide key-value store.
+  rpc DeleteKv(DeleteKvRequest) returns (EmptyResponse);
+
   // Get cluster identity
   rpc GetClusterIdentity(GetClusterIdentityRequest) returns (GetClusterIdentityResponse);
 }
@@ -576,6 +587,26 @@ message ListIndexTemplatesResponse {
 
 message DeleteIndexTemplatesRequest {
   repeated string template_ids = 1;
+}
+
+// Key-Value API
+
+message GetKvRequest {
+  string key = 1;
+}
+
+message GetKvResponse {
+  // Empty if the key does not exist.
+  optional string value = 1;
+}
+
+message SetKvRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message DeleteKvRequest {
+  string key = 1;
 }
 
 message GetClusterIdentityRequest {

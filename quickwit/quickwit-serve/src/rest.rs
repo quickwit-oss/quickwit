@@ -400,7 +400,10 @@ fn api_v1_routes(
             !disable_ingest_v1(),
             enable_ingest_v2(),
         )
-        .or(cluster_handler(quickwit_services.cluster.clone()))
+        .or(cluster_handler(
+            quickwit_services.cluster.clone(),
+            quickwit_services.control_plane_client.clone(),
+        ))
         .boxed()
         .or(node_info_handler(
             BuildInfo::get(),

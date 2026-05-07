@@ -18,6 +18,7 @@ use quickwit_serve::EnvFilterReloadFn;
 use tracing::Level;
 
 use crate::index::{IndexCliCommand, build_index_command};
+use crate::maintenance::{MaintenanceCliCommand, build_maintenance_command};
 use crate::service::{RunCliCommand, build_run_command};
 use crate::source::{SourceCliCommand, build_source_command};
 use crate::split::{SplitCliCommand, build_split_command};
@@ -47,6 +48,7 @@ pub fn build_cli() -> Command {
         .subcommand(build_source_command().display_order(3))
         .subcommand(build_split_command().display_order(4))
         .subcommand(build_tool_command().display_order(5))
+        .subcommand(build_maintenance_command().display_order(6))
         .arg_required_else_help(true)
         .disable_help_subcommand(true)
         .subcommand_required(true)
@@ -59,6 +61,7 @@ pub enum CliCommand {
     Split(SplitCliCommand),
     Source(SourceCliCommand),
     Tool(ToolCliCommand),
+    Maintenance(MaintenanceCliCommand),
 }
 
 impl CliCommand {
@@ -69,6 +72,7 @@ impl CliCommand {
             CliCommand::Source(_) => Level::ERROR,
             CliCommand::Split(_) => Level::ERROR,
             CliCommand::Tool(_) => Level::ERROR,
+            CliCommand::Maintenance(_) => Level::ERROR,
         }
     }
 
@@ -82,6 +86,9 @@ impl CliCommand {
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
             "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
             "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
+            "maintenance" => {
+                MaintenanceCliCommand::parse_cli_args(submatches).map(CliCommand::Maintenance)
+            }
             _ => bail!("unknown command `{subcommand}`"),
         }
     }
@@ -93,6 +100,7 @@ impl CliCommand {
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
             CliCommand::Tool(subcommand) => subcommand.execute().await,
+            CliCommand::Maintenance(subcommand) => subcommand.execute().await,
         }
     }
 }

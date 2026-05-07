@@ -6545,6 +6545,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "bytesize",
  "fnv",
  "futures",
@@ -6553,6 +6554,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "proptest",
+ "prost 0.14.1",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
@@ -6565,6 +6567,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "time",
  "tokio",
  "tracing",
  "ulid",

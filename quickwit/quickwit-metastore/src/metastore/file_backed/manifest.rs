@@ -42,6 +42,7 @@ impl LegacyManifest {
             indexes: self.indexes,
             templates: HashMap::new(),
             identity: Uuid::nil(),
+            kv_store: HashMap::new(),
         }
     }
 }
@@ -67,6 +68,7 @@ pub(crate) struct Manifest {
     // unnecessary here and we can pass the hash map as is to the `MetastoreState`
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
     pub identity: Uuid,
+    pub kv_store: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +110,8 @@ struct ManifestV0_8 {
     templates: Vec<IndexTemplate>,
     #[serde(default, skip_serializing_if = "Uuid::is_nil")]
     identity: Uuid,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    kv_store: HashMap<String, String>,
 }
 
 impl From<Manifest> for ManifestV0_8 {
@@ -121,6 +125,7 @@ impl From<Manifest> for ManifestV0_8 {
             indexes: manifest.indexes,
             templates,
             identity: manifest.identity,
+            kv_store: manifest.kv_store,
         }
     }
 }
@@ -137,6 +142,7 @@ impl From<ManifestV0_8> for Manifest {
             indexes,
             templates,
             identity: manifest.identity,
+            kv_store: manifest.kv_store,
         }
     }
 }
@@ -158,12 +164,14 @@ impl quickwit_config::TestableForRegression for Manifest {
             indexes,
             templates,
             identity: Uuid::nil(),
+            kv_store: HashMap::new(),
         }
     }
 
     fn assert_equality(&self, other: &Self) {
         assert_eq!(self.indexes, other.indexes);
         assert_eq!(self.templates, other.templates);
+        assert_eq!(self.kv_store, other.kv_store);
     }
 }
 
@@ -338,6 +346,7 @@ mod tests {
             indexes,
             templates,
             identity: Uuid::nil(),
+            kv_store: HashMap::new(),
         };
         let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
         let manifest_deserialized: Manifest = serde_json::from_str(&manifest_json).unwrap();

@@ -28,6 +28,7 @@ mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
 mod load_shield;
+
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
