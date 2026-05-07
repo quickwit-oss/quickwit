@@ -44,7 +44,7 @@ use quickwit_proto::types::{
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::IngesterPool;
 use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
@@ -271,6 +271,7 @@ impl Ingester {
     ///
     /// This operation should be triggered very rarely when the ingester has not been able to delete
     /// or truncate its shards by other means (RPCs from indexers, gossip, etc.).
+    #[instrument(name = "ingester.reset_shards", skip_all)]
     async fn reset_shards(&mut self) {
         let Ok(_permit) = self.reset_shards_permits.try_acquire() else {
             return;
@@ -1248,6 +1249,7 @@ impl IngesterService for Ingester {
 
 #[async_trait]
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
+    #[instrument(name = "ingester.shard_positions_gossip", skip_all)]
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
         let Some(state) = self.upgrade() else {
             warn!("ingester state update failed");

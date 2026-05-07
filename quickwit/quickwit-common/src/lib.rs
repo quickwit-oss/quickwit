@@ -46,6 +46,7 @@ pub mod temp_dir;
 pub mod test_utils;
 pub mod thread_pool;
 pub mod tower;
+pub mod tracing_utils;
 pub mod type_map;
 pub mod uri;
 
