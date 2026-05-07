@@ -71,19 +71,35 @@ impl TaskEstimator for DataSourceExecPartitionEstimator {
 
     fn route_tasks(&self, routing_ctx: &TaskRoutingContext<'_>) -> DFResult<Option<Vec<Url>>> {
         if routing_ctx.available_urls.is_empty() {
+            log_routing_fallback(routing_ctx, "no_available_workers");
             return Ok(None);
         }
-        let Some(file_scan) = single_file_scan_config(routing_ctx.plan) else {
+        let mut file_scans = Vec::new();
+        collect_file_scan_configs(routing_ctx.plan, &mut file_scans);
+        let [file_scan] = file_scans.as_slice() else {
+            let reason = if file_scans.is_empty() {
+                "no_file_scan_config"
+            } else {
+                "multiple_file_scan_configs"
+            };
+            log_routing_fallback(routing_ctx, reason);
             return Ok(None);
         };
         let task_affinities = file_scan_task_affinities(file_scan, routing_ctx.task_count);
         if task_affinities.len() != routing_ctx.task_count {
+            tracing::info!(
+                strategy = "file_rendezvous",
+                reason = "task_affinity_count_mismatch",
+                task_count = routing_ctx.task_count,
+                task_affinity_count = task_affinities.len(),
+                available_worker_count = routing_ctx.available_urls.len(),
+                "datafusion task routing fell back to default routing"
+            );
             return Ok(None);
         }
-        Ok(Some(route_by_rendezvous(
-            &task_affinities,
-            routing_ctx.available_urls,
-        )))
+        let routes = route_by_rendezvous(&task_affinities, routing_ctx.available_urls);
+        log_rendezvous_routes(routing_ctx, &task_affinities, &routes);
+        Ok(Some(routes))
     }
 }
 
@@ -91,15 +107,6 @@ impl TaskEstimator for DataSourceExecPartitionEstimator {
 struct TaskAffinity {
     task_index: usize,
     affinity_key: String,
-}
-
-fn single_file_scan_config(plan: &Arc<dyn ExecutionPlan>) -> Option<&FileScanConfig> {
-    let mut file_scans = Vec::new();
-    collect_file_scan_configs(plan, &mut file_scans);
-    match file_scans.as_slice() {
-        [file_scan] => Some(*file_scan),
-        _ => None,
-    }
 }
 
 fn collect_file_scan_configs<'a>(
@@ -209,6 +216,67 @@ fn rendezvous_affinity(url: &Url, key: &str) -> u64 {
     key.hash(&mut state);
     url.as_str().hash(&mut state);
     state.finish()
+}
+
+fn affinity_fingerprint(key: &str) -> u64 {
+    let mut state = SipHasher::new();
+    key.hash(&mut state);
+    state.finish()
+}
+
+fn log_routing_fallback(routing_ctx: &TaskRoutingContext<'_>, reason: &'static str) {
+    tracing::info!(
+        strategy = "file_rendezvous",
+        reason,
+        task_count = routing_ctx.task_count,
+        available_worker_count = routing_ctx.available_urls.len(),
+        "datafusion task routing fell back to default routing"
+    );
+}
+
+fn log_rendezvous_routes(
+    routing_ctx: &TaskRoutingContext<'_>,
+    task_affinities: &[TaskAffinity],
+    routes: &[Url],
+) {
+    const ROUTE_SAMPLE_SIZE: usize = 16;
+
+    let mut route_distribution: Vec<(&str, usize)> = Vec::new();
+    for route in routes {
+        let route = route.as_str();
+        match route_distribution
+            .iter_mut()
+            .find(|(worker_url, _)| *worker_url == route)
+        {
+            Some((_, task_count)) => *task_count += 1,
+            None => route_distribution.push((route, 1)),
+        }
+    }
+    route_distribution.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+
+    let route_sample: Vec<(usize, u64, &str)> = task_affinities
+        .iter()
+        .take(ROUTE_SAMPLE_SIZE)
+        .filter_map(|task_affinity| {
+            routes.get(task_affinity.task_index).map(|route| {
+                (
+                    task_affinity.task_index,
+                    affinity_fingerprint(&task_affinity.affinity_key),
+                    route.as_str(),
+                )
+            })
+        })
+        .collect();
+
+    tracing::info!(
+        strategy = "file_rendezvous",
+        task_count = routes.len(),
+        available_worker_count = routing_ctx.available_urls.len(),
+        route_sample_size = route_sample.len(),
+        route_distribution = ?route_distribution,
+        route_sample = ?route_sample,
+        "datafusion task routing selected workers"
+    );
 }
 
 #[cfg(test)]
