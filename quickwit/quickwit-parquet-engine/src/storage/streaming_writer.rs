@@ -226,20 +226,35 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
     /// merge engine.
     ///
     /// Each item in the iterator is one batch worth of values for the
-    /// current column; the writer concatenates them into a single
-    /// column chunk and re-pages the output per its
-    /// [`WriterProperties`] (`data_page_size_limit` /
-    /// `data_page_row_count_limit`). Output page boundaries do not
-    /// match the input partition; logical values round-trip.
+    /// current column. Pages are flushed to the underlying file sink
+    /// **as they are encoded** via [`SerializedColumnWriter`], so peak
+    /// in-memory state stays at one in-progress page (bounded by
+    /// `data_page_size_limit` / `data_page_row_count_limit`) plus a
+    /// small amount of column-writer bookkeeping. Memory does NOT grow
+    /// with the column chunk size.
     ///
-    /// Memory: at most one input array's values plus the writer's
-    /// internal page accumulator (~one output-page worth) — bounded
-    /// by *page* size, not column-chunk size.
+    /// This contrasts with [`Self::write_next_column`], which uses
+    /// `ArrowColumnWriter` and buffers the entire column chunk in
+    /// memory before flushing on close. Use this method when the
+    /// caller can stream the column in pieces (e.g., PR-6's merge
+    /// driver, which produces one arrow array per input page) and
+    /// where the column chunk would be large enough to matter.
     ///
-    /// The sum of input array lengths defines this column's row
-    /// count, which must match the row count established by the first
-    /// call into the row group. An empty iterator is allowed (the
-    /// column contributes zero rows).
+    /// Output page boundaries are determined by the writer's
+    /// `WriterProperties`, not by the input partition; logical values
+    /// round-trip. The sum of input array lengths defines this
+    /// column's row count, which must match the row count established
+    /// by the first call into the row group. An empty iterator is
+    /// allowed (the column contributes zero rows).
+    ///
+    /// # Limitations
+    /// Per-physical-type dispatch covers what the metrics schema
+    /// needs: `Boolean`, `Int8/16/32` and `UInt8/16` (mapped to
+    /// parquet `Int32`), `Int64`/`UInt32`/`UInt64` (mapped to parquet
+    /// `Int64`), `Float32`, `Float64`, `Utf8`/`LargeUtf8`/`Binary`/
+    /// `LargeBinary` (mapped to parquet `ByteArray`), and
+    /// `Dictionary` over any of the above (materialized via `take`).
+    /// Other types return [`ParquetWriteError::SchemaValidation`].
     pub(crate) fn write_next_column_arrays<I>(
         &mut self,
         arrays: I,
@@ -257,27 +272,44 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
         }
         let field = &fields[self.next_field_idx];
 
-        let mut writer = self.pending_writers.pop_front().expect(
+        // Drop the pre-allocated `ArrowColumnWriter` for this column —
+        // we use `next_column()` to get a `SerializedColumnWriter`
+        // instead, whose `SerializedPageWriter` flushes pages directly
+        // to the file sink as they are encoded. The pre-allocated
+        // `ArrowColumnWriter`'s internal `ArrowPageWriter` would
+        // accumulate all pages of the column into a `SharedColumnChunk`
+        // buffer until `close + append_to_row_group`, which scales
+        // memory with column-chunk size, not page size.
+        let _discarded = self.pending_writers.pop_front().expect(
             "pending_writers length matched arrow_schema fields at start_row_group; field index \
              checked against fields above",
         );
+
+        let mut col_writer = self.row_group_writer.next_column()?.ok_or_else(|| {
+            ParquetWriteError::SchemaValidation(
+                "row group writer exhausted columns; field count mismatch with parquet schema"
+                    .to_string(),
+            )
+        })?;
+
         let mut total_rows = 0usize;
         for array in arrays {
-            let leaves = compute_leaves(field.as_ref(), &array)?;
-            if leaves.len() != 1 {
-                return Err(ParquetWriteError::SchemaValidation(format!(
-                    "field '{}' produces {} parquet leaves; PR-2 streaming writer requires \
-                     exactly 1 (no nested types)",
-                    field.name(),
-                    leaves.len(),
-                )));
-            }
-            for leaf in &leaves {
-                writer.write(leaf)?;
-            }
+            write_array_via_serialized_column_writer(&mut col_writer, field.as_ref(), &array)?;
             total_rows += array.len();
         }
 
+        // Check row-count consistency BEFORE close.
+        // `SerializedRowGroupWriter::on_close` also detects a mismatch
+        // (against the first closed column's row count), but reports
+        // it as a generic `ParquetError`. Surfacing the caller-
+        // friendly `SchemaValidation` first lets clients match on the
+        // contract violation explicitly.
+        //
+        // On the error path, `col_writer` drops without `close`. That
+        // leaves `row_group_writer` in a "column open, never
+        // finalized" state — subsequent operations on this
+        // `RowGroupBuilder` will fail. The caller is already on an
+        // error path; we don't try to recover.
         match self.expected_num_rows {
             None => self.expected_num_rows = Some(total_rows),
             Some(expected) if expected == total_rows => {}
@@ -293,8 +325,7 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
             }
         }
 
-        let chunk = writer.close()?;
-        chunk.append_to_row_group(&mut self.row_group_writer)?;
+        col_writer.close()?;
         self.next_field_idx += 1;
         Ok(())
     }
@@ -324,9 +355,294 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
     }
 }
 
+/// Dispatch one arrow `array` through `col_writer` based on the
+/// arrow field's data type. Each call goes through one
+/// `write_batch` invocation on the typed column writer; pages flush
+/// to the underlying sink as `data_page_size_limit` /
+/// `data_page_row_count_limit` thresholds are reached. Memory is
+/// bounded by the in-progress page plus level-vector allocations
+/// proportional to the input array length.
+fn write_array_via_serialized_column_writer(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    array: &ArrayRef,
+) -> Result<(), ParquetWriteError> {
+    use arrow::array::{
+        Array as _, AsArray, BinaryArray, BooleanArray, Float32Array, Float64Array, Int8Array,
+        Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray, StringArray,
+        UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    };
+    use arrow::datatypes::DataType;
+    use parquet::data_type::{BoolType, ByteArray, DoubleType, FloatType};
+
+    match field.data_type() {
+        DataType::Boolean => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .expect("data_type() == Boolean implies BooleanArray");
+            let typed = col_writer.typed::<BoolType>();
+            if field.is_nullable() {
+                let (def_levels, values) =
+                    build_levels_and_filter_values(arr.len(), |i| arr.is_null(i), |i| arr.value(i));
+                typed.write_batch(&values, Some(&def_levels), None)?;
+            } else {
+                let values: Vec<bool> = (0..arr.len()).map(|i| arr.value(i)).collect();
+                typed.write_batch(&values, None, None)?;
+            }
+        }
+        DataType::Int8 => write_int32_compatible(col_writer, field, array, |i| {
+            array.as_any().downcast_ref::<Int8Array>().unwrap().value(i) as i32
+        })?,
+        DataType::Int16 => write_int32_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<Int16Array>()
+                .unwrap()
+                .value(i) as i32
+        })?,
+        DataType::Int32 => write_int32_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap()
+                .value(i)
+        })?,
+        DataType::UInt8 => write_int32_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap()
+                .value(i) as i32
+        })?,
+        DataType::UInt16 => write_int32_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<UInt16Array>()
+                .unwrap()
+                .value(i) as i32
+        })?,
+        DataType::Int64 => write_int64_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(i)
+        })?,
+        DataType::UInt32 => write_int64_compatible(col_writer, field, array, |i| {
+            array
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .unwrap()
+                .value(i) as i64
+        })?,
+        DataType::UInt64 => write_int64_compatible(col_writer, field, array, |i| {
+            // UInt64 → Int64: caller's responsibility to ensure
+            // values fit in i64 (true for timestamp_secs and other
+            // metrics use cases).
+            array
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .value(i) as i64
+        })?,
+        DataType::Float32 => {
+            let arr = array.as_any().downcast_ref::<Float32Array>().unwrap();
+            let typed = col_writer.typed::<FloatType>();
+            if field.is_nullable() {
+                let (defs, values) =
+                    build_levels_and_filter_values(arr.len(), |i| arr.is_null(i), |i| arr.value(i));
+                typed.write_batch(&values, Some(&defs), None)?;
+            } else {
+                typed.write_batch(arr.values(), None, None)?;
+            }
+        }
+        DataType::Float64 => {
+            let arr = array.as_any().downcast_ref::<Float64Array>().unwrap();
+            let typed = col_writer.typed::<DoubleType>();
+            if field.is_nullable() {
+                let (defs, values) =
+                    build_levels_and_filter_values(arr.len(), |i| arr.is_null(i), |i| arr.value(i));
+                typed.write_batch(&values, Some(&defs), None)?;
+            } else {
+                typed.write_batch(arr.values(), None, None)?;
+            }
+        }
+        DataType::Utf8 => {
+            let arr = array.as_any().downcast_ref::<StringArray>().unwrap();
+            write_byte_array(
+                col_writer,
+                field,
+                arr.len(),
+                |i| arr.is_null(i),
+                |i| ByteArray::from(arr.value(i).as_bytes()),
+            )?;
+        }
+        DataType::LargeUtf8 => {
+            let arr = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
+            write_byte_array(
+                col_writer,
+                field,
+                arr.len(),
+                |i| arr.is_null(i),
+                |i| ByteArray::from(arr.value(i).as_bytes()),
+            )?;
+        }
+        DataType::Binary => {
+            let arr = array.as_any().downcast_ref::<BinaryArray>().unwrap();
+            write_byte_array(
+                col_writer,
+                field,
+                arr.len(),
+                |i| arr.is_null(i),
+                |i| ByteArray::from(arr.value(i)),
+            )?;
+        }
+        DataType::LargeBinary => {
+            let arr = array.as_any().downcast_ref::<LargeBinaryArray>().unwrap();
+            write_byte_array(
+                col_writer,
+                field,
+                arr.len(),
+                |i| arr.is_null(i),
+                |i| ByteArray::from(arr.value(i)),
+            )?;
+        }
+        DataType::Dictionary(_, value_type) => {
+            // Materialize via `take(values, keys)` and recurse on the
+            // resulting flat array. The materialized array preserves
+            // the original null mask (taken from the dictionary's
+            // keys).
+            let dict = array.as_any_dictionary_opt().ok_or_else(|| {
+                ParquetWriteError::SchemaValidation(format!(
+                    "field '{}' has Dictionary data type but the array is not a DictionaryArray",
+                    field.name(),
+                ))
+            })?;
+            let materialized =
+                arrow::compute::kernels::take::take(dict.values().as_ref(), dict.keys(), None)?;
+            let materialized_field = arrow::datatypes::Field::new(
+                field.name(),
+                value_type.as_ref().clone(),
+                field.is_nullable(),
+            );
+            let materialized_ref: ArrayRef = materialized;
+            // SAFETY-equivalent: dispatch on the materialized type. If
+            // it's still nested (e.g., Dictionary of Dictionary), this
+            // recursion handles it.
+            return write_array_via_serialized_column_writer(
+                col_writer,
+                &materialized_field,
+                &materialized_ref,
+            );
+        }
+        // Quoted to make the rejection message readable. Nested types
+        // (Struct, List, Map) and decimal are out of scope for PR-2.
+        other => {
+            return Err(ParquetWriteError::SchemaValidation(format!(
+                "field '{}' has unsupported data type {other:?} for write_next_column_arrays \
+                 (PR-2 covers Boolean, Int8/16/32/64, UInt8/16/32/64, Float32/64, Utf8/LargeUtf8, \
+                 Binary/LargeBinary, and Dictionary over those)",
+                field.name(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Helper for arrow types that map to parquet `Int32` (Int8, Int16,
+/// Int32, UInt8, UInt16). Caller provides a closure that extracts
+/// the i32 value at row `i`.
+fn write_int32_compatible(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    array: &ArrayRef,
+    extract: impl Fn(usize) -> i32,
+) -> Result<(), ParquetWriteError> {
+    use parquet::data_type::Int32Type;
+    let len = array.len();
+    let typed = col_writer.typed::<Int32Type>();
+    if field.is_nullable() {
+        let (def_levels, values) =
+            build_levels_and_filter_values(len, |i| array.is_null(i), extract);
+        typed.write_batch(&values, Some(&def_levels), None)?;
+    } else {
+        let values: Vec<i32> = (0..len).map(extract).collect();
+        typed.write_batch(&values, None, None)?;
+    }
+    Ok(())
+}
+
+/// Helper for arrow types that map to parquet `Int64`.
+fn write_int64_compatible(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    array: &ArrayRef,
+    extract: impl Fn(usize) -> i64,
+) -> Result<(), ParquetWriteError> {
+    use parquet::data_type::Int64Type;
+    let len = array.len();
+    let typed = col_writer.typed::<Int64Type>();
+    if field.is_nullable() {
+        let (def_levels, values) =
+            build_levels_and_filter_values(len, |i| array.is_null(i), extract);
+        typed.write_batch(&values, Some(&def_levels), None)?;
+    } else {
+        let values: Vec<i64> = (0..len).map(extract).collect();
+        typed.write_batch(&values, None, None)?;
+    }
+    Ok(())
+}
+
+/// Helper for byte-array-style arrow types (Utf8, LargeUtf8, Binary,
+/// LargeBinary). Caller provides closures for null check and value
+/// extraction (which produces a `ByteArray`).
+fn write_byte_array(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    len: usize,
+    is_null: impl Fn(usize) -> bool,
+    extract: impl Fn(usize) -> parquet::data_type::ByteArray,
+) -> Result<(), ParquetWriteError> {
+    use parquet::data_type::ByteArrayType;
+    let typed = col_writer.typed::<ByteArrayType>();
+    if field.is_nullable() {
+        let (def_levels, values) = build_levels_and_filter_values(len, is_null, extract);
+        typed.write_batch(&values, Some(&def_levels), None)?;
+    } else {
+        let values: Vec<_> = (0..len).map(extract).collect();
+        typed.write_batch(&values, None, None)?;
+    }
+    Ok(())
+}
+
+/// Build parquet definition levels (1 = present, 0 = null at the
+/// top-level of a non-nested column) and the matching filtered
+/// values vector.
+///
+/// `is_null(i)` returns whether row `i` is null. `extract(i)` is
+/// only called for non-null rows.
+fn build_levels_and_filter_values<T>(
+    len: usize,
+    is_null: impl Fn(usize) -> bool,
+    extract: impl Fn(usize) -> T,
+) -> (Vec<i16>, Vec<T>) {
+    let mut def_levels = Vec::with_capacity(len);
+    let mut values = Vec::with_capacity(len);
+    for i in 0..len {
+        if is_null(i) {
+            def_levels.push(0);
+        } else {
+            def_levels.push(1);
+            values.push(extract(i));
+        }
+    }
+    (def_levels, values)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use arrow::array::{
         Array, ArrayRef, DictionaryArray, Float64Array, Int64Array, RecordBatch, StringArray,
@@ -1336,13 +1652,21 @@ mod tests {
         }
     }
 
-    /// PB-C bounded memory: feeding a column as many small chunks
-    /// must NOT cause `pending_writers_memory_size` to scale with the
-    /// number of input chunks. After each `write_next_column_arrays`
-    /// returns, the writer for that column has been consumed and
-    /// dropped, so the pending memory is monotone non-increasing.
+    /// PB-C-1 (pending-writers cleanup): feeding a column as many
+    /// small chunks must NOT cause `pending_writers_memory_size` to
+    /// scale with the number of input chunks. After each
+    /// `write_next_column_arrays` returns, the pre-allocated writer
+    /// for that column has been popped and dropped, so the pending
+    /// total is monotone non-increasing.
+    ///
+    /// Note: this is necessary but **not sufficient** for page-bounded
+    /// memory — `pending_writers_memory_size` only sees the
+    /// pre-allocated `ArrowColumnWriter`s for *future* columns, never
+    /// the in-flight `SerializedColumnWriter` of the currently-writing
+    /// column. The actual page-bounded contract is verified by
+    /// `test_array_stream_pages_flush_incrementally`.
     #[test]
-    fn test_array_stream_bounded_memory_per_column() {
+    fn test_array_stream_pending_writers_drained_per_column() {
         let batch = make_metrics_batch(2048);
         let arrow_schema = batch.schema();
         let props = writer_props_with_kv(&arrow_schema, Vec::new());
@@ -1370,6 +1694,105 @@ mod tests {
             assert_eq!(rg.pending_writers_memory_size(), 0);
             rg.finish().unwrap();
             w.close().unwrap();
+        }
+    }
+
+    /// PB-C-2 (pages flush through to sink during write): indirect
+    /// evidence that the implementation uses `SerializedColumnWriter`
+    /// (page-bounded) rather than `ArrowColumnWriter` (column-chunk-
+    /// bounded). The strong claim — peak in-memory state stays at one
+    /// page — follows from the choice of `next_column()` over the
+    /// pre-allocated `ArrowColumnWriter`, which is a code-review
+    /// observation. This test is a runtime sanity check.
+    ///
+    /// Setup: a single UInt64 column, 32 768 rows = 256 KiB
+    /// uncompressed, paged at 4 096 rows (32 KiB per page). Each page
+    /// is larger than the 8 KiB `BufWriter` that `TrackedWrite`
+    /// interposes between `SerializedPageWriter` and the user-supplied
+    /// sink, so each page-write call passes through directly:
+    /// `SerializedColumnWriter` → 1 sink write per page (≈ 8 total).
+    /// `ArrowColumnWriter`'s `io::copy` at column-close goes in 8 KiB
+    /// chunks regardless, producing ≈ 32 writes for the same volume.
+    /// Bounds below reject both extremes:
+    ///
+    /// - `>= expected_pages`: pages did flow through the sink during the column write;
+    ///   `ArrowColumnWriter` would also pass this.
+    /// - `<= 3 × expected_pages`: count is page-shaped, not chunk-copy-shaped.
+    ///   `ArrowColumnWriter`'s path with `io::copy` would exceed this.
+    ///
+    /// If parquet 58 changes its internal `BufWriter` capacity or
+    /// `io::copy`'s default chunk size, these bounds may need tuning.
+    #[test]
+    fn test_array_stream_pages_flush_incrementally() {
+        use arrow::array::UInt64Array;
+        use parquet::basic::Compression;
+
+        let schema = Arc::new(ArrowSchema::new(vec![Field::new(
+            "v",
+            DataType::UInt64,
+            false,
+        )]));
+        let values: Vec<u64> = (0..32_768u64).collect();
+        let array: ArrayRef = Arc::new(UInt64Array::from(values));
+        let arrays_input: Vec<ArrayRef> = (0..8).map(|i| array.slice(i * 4096, 4096)).collect();
+        let expected_pages = arrays_input.len();
+
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_compression(Compression::UNCOMPRESSED)
+            .set_data_page_row_count_limit(4096)
+            .set_data_page_size_limit(64 * 1024)
+            .set_write_batch_size(4096)
+            .set_max_row_group_row_count(Some(usize::MAX))
+            .build();
+
+        let inner = Arc::new(Mutex::new(InspectableSinkInner::default()));
+        let sink = SharedSink(Arc::clone(&inner));
+        let mut w = StreamingParquetWriter::try_new(sink, Arc::clone(&schema), props).unwrap();
+        let mut rg = w.start_row_group().unwrap();
+
+        let writes_before_col0 = inner.lock().unwrap().num_writes;
+        rg.write_next_column_arrays(arrays_input).unwrap();
+        let writes_after_col0 = inner.lock().unwrap().num_writes;
+        let writes_during_col0 = writes_after_col0 - writes_before_col0;
+
+        assert!(
+            writes_during_col0 >= expected_pages,
+            "expected at least {expected_pages} sink writes during column-0 write, got \
+             {writes_during_col0}; pages may not be flushing to sink during the column write",
+        );
+        assert!(
+            writes_during_col0 <= expected_pages * 3,
+            "got {writes_during_col0} sink writes for {expected_pages} pages; the count is larger \
+             than expected, suggesting an io::copy-style chunk-by-chunk path (consistent with \
+             column-chunk-buffered writes via append_column rather than per-page streaming)",
+        );
+
+        rg.finish().unwrap();
+        w.close().unwrap();
+    }
+
+    /// Mutex-shared sink that records every `write` call, used by the
+    /// page-flush-incremental test. Wraps an `Arc<Mutex<...>>` so the
+    /// test can read sink state during the writer's lifetime (the
+    /// writer holds the wrapper; the test holds a clone of the Arc).
+    struct SharedSink(Arc<Mutex<InspectableSinkInner>>);
+
+    #[derive(Default)]
+    struct InspectableSinkInner {
+        bytes: Vec<u8>,
+        num_writes: usize,
+    }
+
+    impl std::io::Write for SharedSink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut g = self.0.lock().unwrap();
+            g.bytes.extend_from_slice(buf);
+            g.num_writes += 1;
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
         }
     }
 }
