@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageParquetSplitsRequestExt;
+use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_storage::Storage;
@@ -93,6 +94,7 @@ pub struct ParquetUploader {
     split_store: Arc<dyn Storage>,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     max_concurrent_uploads: usize,
+    merge_policy: Arc<dyn ParquetMergePolicy>,
     counters: UploaderCounters,
 }
 
@@ -104,6 +106,7 @@ impl ParquetUploader {
         split_store: Arc<dyn Storage>,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
         max_concurrent_uploads: usize,
+        merge_policy: Arc<dyn ParquetMergePolicy>,
     ) -> Self {
         Self {
             uploader_type,
@@ -111,6 +114,7 @@ impl ParquetUploader {
             split_store,
             sequencer_mailbox,
             max_concurrent_uploads,
+            merge_policy,
             counters: Default::default(),
         }
     }
@@ -228,13 +232,14 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         // Clone what we need for the async task
         let metastore = self.metastore.clone();
         let split_store = self.split_store.clone();
+        let merge_policy = self.merge_policy.clone();
         let counters = self.counters.clone();
 
         let output_dir = batch.output_dir;
         let checkpoint_delta_opt = batch.checkpoint_delta_opt;
         let publish_lock = batch.publish_lock;
         let publish_token_opt = batch.publish_token_opt;
-        let splits = batch.splits;
+        let mut splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
         let merge_task_opt = batch._merge_task_opt;
         // Hold the scratch directory alive until the upload task completes.
@@ -256,6 +261,11 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     info!("splits' publish lock is dead");
                     let _ = tx.send(SequencerCommand::Discard);
                     return;
+                }
+
+                for split in &mut splits {
+                    split.maturity =
+                        merge_policy.split_maturity(split.size_bytes, split.num_merge_ops);
                 }
 
                 // Stage splits in metastore based on split type
@@ -422,7 +432,20 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_metrics_splits()
-            .withf(|request| request.index_uid().index_id == "test-index")
+            .withf(|request| {
+                if request.index_uid().index_id != "test-index" {
+                    return false;
+                }
+                let splits = request.deserialize_splits_metadata().unwrap();
+                matches!(
+                    splits.as_slice(),
+                    [split]
+                        if matches!(
+                            split.maturity,
+                            quickwit_parquet_engine::merge::policy::ParquetSplitMaturity::Immature { .. }
+                        )
+                )
+            })
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -433,6 +456,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -522,6 +548,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -609,6 +638,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -675,6 +707,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);

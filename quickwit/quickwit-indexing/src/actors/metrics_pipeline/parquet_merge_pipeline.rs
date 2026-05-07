@@ -44,6 +44,7 @@ use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
+use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
@@ -289,6 +290,7 @@ impl ParquetMergePipeline {
             self.params.storage.clone(),
             sequencer_mailbox,
             self.params.max_concurrent_split_uploads,
+            self.params.merge_policy.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handle) = ctx
             .spawn_actor()
@@ -405,15 +407,16 @@ impl ParquetMergePipeline {
         Ok(())
     }
 
-    /// Fetch published Parquet splits from the metastore for merge planning.
+    /// Fetch immature published Parquet splits from the metastore for merge planning.
     ///
     /// On first spawn, uses the initial splits provided by the IndexingService
     /// (avoids per-pipeline metastore queries when many pipelines start).
     /// On subsequent spawns (after crash/respawn), queries the metastore
     /// directly to recover splits that were in-flight during the crash.
     ///
-    /// The planner's `record_splits_if_necessary` filters out mature splits,
-    /// so we don't need to filter here.
+    /// The planner re-checks maturity before recording splits, so this DB-side
+    /// filter is an optimization and crash-recovery guard, not the only line of
+    /// defense.
     async fn fetch_immature_splits(
         &mut self,
         ctx: &ActorContext<Self>,
@@ -426,7 +429,8 @@ impl ParquetMergePipeline {
         // Dispatch to the correct RPC based on whether this is a metrics or
         // sketches index — they use separate Postgres tables.
         let index_uid = self.params.index_uid.clone();
-        let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
+        let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone())
+            .retain_immature(OffsetDateTime::now_utc());
         let is_sketch = quickwit_common::is_sketches_index(&index_uid.index_id);
         let records = if is_sketch {
             let list_request = quickwit_proto::metastore::ListSketchSplitsRequest::try_from_query(
@@ -588,7 +592,7 @@ mod tests {
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_parquet_engine::merge::policy::{
-        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
     };
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
@@ -638,6 +642,9 @@ mod tests {
             .sort_fields("metric_name|host|timestamp_secs/V2")
             .window_start_secs(0)
             .window_duration_secs(3600)
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            })
             .build()
     }
 
