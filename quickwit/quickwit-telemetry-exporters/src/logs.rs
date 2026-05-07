@@ -14,10 +14,6 @@
 
 use std::fmt;
 
-use anyhow::Context;
-use opentelemetry_otlp::{LogExporter, Protocol as OtlpWireProtocol, WithExportConfig};
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::logs::SdkLoggerProvider;
 use quickwit_common::get_from_env_opt;
 use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Subscriber};
@@ -28,37 +24,6 @@ use tracing_subscriber::fmt::format::{
 };
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::registry::LookupSpan;
-
-use crate::config::{OtlpExporterConfig, OtlpProtocol};
-
-impl OtlpProtocol {
-    pub(crate) fn log_exporter(&self) -> anyhow::Result<LogExporter> {
-        match self {
-            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpBinary)
-                .build(),
-            OtlpProtocol::HttpJson => LogExporter::builder()
-                .with_http()
-                .with_protocol(OtlpWireProtocol::HttpJson)
-                .build(),
-        }
-        .context("failed to initialize OTLP logs exporter")
-    }
-}
-
-pub(crate) fn init_logger_provider(
-    otlp_config: &OtlpExporterConfig,
-    resource: Resource,
-) -> anyhow::Result<SdkLoggerProvider> {
-    let logs_protocol = otlp_config.logs_protocol()?;
-    let log_exporter = logs_protocol.log_exporter()?;
-    Ok(SdkLoggerProvider::builder()
-        .with_resource(resource)
-        .with_batch_exporter(log_exporter)
-        .build())
-}
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
 /// See discussion here: https://github.com/time-rs/time/discussions/418

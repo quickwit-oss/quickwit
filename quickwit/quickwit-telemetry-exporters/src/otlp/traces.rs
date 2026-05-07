@@ -17,7 +17,7 @@ use opentelemetry_otlp::{Protocol as OtlpWireProtocol, SpanExporter, WithExportC
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
 
-use crate::config::{OtlpExporterConfig, OtlpProtocol};
+use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 
 impl OtlpProtocol {
     pub(crate) fn span_exporter(&self) -> anyhow::Result<SpanExporter> {

@@ -31,10 +31,10 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 
-mod config;
 mod logs;
-pub mod metrics;
-mod trace;
+mod metrics;
+mod otlp;
+pub mod prometheus;
 
 #[cfg(feature = "tokio-console")]
 const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
@@ -95,7 +95,7 @@ pub fn init_telemetry(
     level: Level,
     ansi_colors: bool,
 ) -> anyhow::Result<TelemetryHandle> {
-    let otlp_config = config::OtlpExporterConfig::load_from_env();
+    let otlp_config = otlp::OtlpExporterConfig::load_from_env();
 
     let meter_provider = metrics::init_metrics_provider(service_version, &otlp_config)?;
 
@@ -146,10 +146,10 @@ pub fn init_telemetry(
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     let telemetry_handle = if otlp_config.is_enabled() {
-        let resource = config::quickwit_resource(service_version);
+        let resource = otlp::quickwit_resource(service_version);
 
-        let tracer_provider = trace::init_tracer_provider(&otlp_config, resource.clone())?;
-        let logger_provider = logs::init_logger_provider(&otlp_config, resource)?;
+        let tracer_provider = otlp::traces::init_tracer_provider(&otlp_config, resource.clone())?;
+        let logger_provider = otlp::logs::init_logger_provider(&otlp_config, resource)?;
 
         let tracer = tracer_provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
