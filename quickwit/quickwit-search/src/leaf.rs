@@ -1267,6 +1267,7 @@ pub async fn multi_index_leaf_search(
     leaf_search_request: LeafSearchRequest,
     storage_resolver: StorageResolver,
 ) -> Result<LeafSearchResponse, SearchError> {
+    let leaf_start = Instant::now();
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
@@ -1350,11 +1351,21 @@ pub async fn multi_index_leaf_search(
         }
     }
 
-    crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+    let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
+        .run_cpu_intensive(|| {
+            incremental_merge_collector
+                .finalize()
+                .map_err(SearchError::from)
+        })
         .instrument(info_span!("incremental_merge_finalize"))
         .await
-        .context("failed to merge split search responses")?
+        .context("failed to merge split search responses")??;
+    let wall_time_microsecs = leaf_start.elapsed().as_micros() as u64;
+    leaf_search_response
+        .resource_stats
+        .get_or_insert_with(LeafResourceStats::default)
+        .wall_time_microsecs = wall_time_microsecs;
+    Ok(leaf_search_response)
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter
