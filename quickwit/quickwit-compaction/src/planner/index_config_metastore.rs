@@ -26,6 +26,7 @@ use tracing::error;
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 /// Everything the planner needs to know about a single index.
+#[derive(Debug)]
 pub struct IndexEntry {
     config: IndexConfig,
     merge_policy: Arc<dyn MergePolicy>,
@@ -76,6 +77,7 @@ impl IndexEntry {
 /// Caches per-index configuration, merge policies, and doc mappers.
 /// Fetches from the metastore on demand. All accessors panic if called
 /// for an index that hasn't been loaded.
+#[derive(Debug)]
 pub struct IndexConfigMetastore {
     indexes: HashMap<IndexUid, IndexEntry>,
     metastore_client: MetastoreServiceClient,

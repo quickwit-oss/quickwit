@@ -38,20 +38,14 @@ use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 /// Cap on splits fetched per tick. Every tick, the planner re-scans the immature published set,
 /// sorted by `maturity_timestamp` ASC  so the most-urgent splits are processed first when a backlog
-/// exists.  Splits beyond this cap aren't lost -- they bubble into range as the front  of the queue
+/// exists. Splits beyond this cap aren't lost -- they bubble into range as the front of the queue
 /// is merged off.
-const SCAN_PAGE_SIZE: usize = 10_000;
-
+const SCAN_PAGE_SIZE: usize = 5_000;
+#[derive(Debug)]
 pub struct CompactionPlanner {
     state: CompactionState,
     index_config_metastore: IndexConfigMetastore,
     metastore: MetastoreServiceClient,
-}
-
-impl Debug for CompactionPlanner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CompactionPlanner").finish()
-    }
 }
 
 const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);

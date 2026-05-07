@@ -49,6 +49,7 @@ impl CompactionPartitionKey {
     }
 }
 
+#[derive(Debug)]
 struct InFlightCompaction {
     task_id: TaskId,
     split_ids: Vec<SplitId>,
@@ -59,6 +60,7 @@ struct InFlightCompaction {
 /// Tracks all split-level state for the compaction planner:
 /// which splits need compaction, which are in-flight, and which
 /// operations are pending assignment to workers.
+#[derive(Debug)]
 pub struct CompactionState {
     needs_compaction: HashMap<CompactionPartitionKey, Vec<SplitMetadata>>,
     needs_compaction_split_ids: HashSet<SplitId>,
