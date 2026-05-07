@@ -439,9 +439,14 @@ async fn parse_page_header_streaming(
     // Start small; grow geometrically up to the configured cap.
     let mut target = 256.min(max_header_bytes);
     loop {
-        // Don't insist on `target` bytes if EOF is closer — rely on
-        // try_parse to surface the right error.
-        let _ = fill_pending_best_effort(state, target).await;
+        // `fill_pending_best_effort` returns `Ok(())` on EOF (treating
+        // a short read as success), so propagating with `?` only
+        // surfaces real I/O errors from the body stream — exactly the
+        // signal callers need for transient-storage retry / backoff.
+        // The earlier `let _ = ...` form silenced those errors and
+        // re-reported them as `ThriftPageHeader` or
+        // `PageHeaderTooLarge`, hiding the underlying cause.
+        fill_pending_best_effort(state, target).await?;
         match try_parse_page_header(&state.pending) {
             Ok((header, consumed)) => {
                 state.pending.drain(..consumed);
@@ -1253,6 +1258,78 @@ mod tests {
 
         let _ = drain_pages(&mut reader).await;
         assert_eq!(source.stream_calls.load(Ordering::SeqCst), 1);
+    }
+
+    // -------- Body stream failure --------
+
+    /// A transient failure on the body stream while reading bytes for
+    /// a page header MUST surface as `ParquetReadError::Io`, not be
+    /// silenced and re-reported as a thrift/header error. Callers in
+    /// production rely on `Io` to drive retry/backoff decisions; if
+    /// it shows up as `ThriftPageHeader` or `PageHeaderTooLarge`, the
+    /// caller has no way to distinguish "network blip, retry" from
+    /// "file is malformed, give up."
+    #[tokio::test]
+    async fn test_body_read_failure_surfaces_as_io_error() {
+        let batch = make_metrics_batch(64);
+        let bytes = write_test_file(std::slice::from_ref(&batch), Vec::new());
+        let source: Arc<dyn RemoteByteSource> = Arc::new(FailingBodySource { bytes });
+
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .expect("footer fetch must succeed; only the body stream is wired to fail");
+
+        match reader.next_page().await {
+            Err(ParquetReadError::Io(err)) => {
+                assert!(
+                    err.to_string().contains("simulated"),
+                    "expected the simulated body error to be propagated; got {err}",
+                );
+            }
+            other => panic!(
+                "expected ParquetReadError::Io to surface from a failing body stream; got \
+                 {other:?}",
+            ),
+        }
+    }
+
+    /// `RemoteByteSource` that succeeds for `file_size` and `get_slice`
+    /// (so `try_open`'s footer fetch works), but returns a body stream
+    /// that always errors on read. Used by
+    /// `test_body_read_failure_surfaces_as_io_error`.
+    struct FailingBodySource {
+        bytes: Bytes,
+    }
+
+    #[async_trait]
+    impl RemoteByteSource for FailingBodySource {
+        async fn file_size(&self, _path: &Path) -> io::Result<u64> {
+            Ok(self.bytes.len() as u64)
+        }
+
+        async fn get_slice(&self, _path: &Path, range: Range<u64>) -> io::Result<Bytes> {
+            Ok(self.bytes.slice(range.start as usize..range.end as usize))
+        }
+
+        async fn get_slice_stream(
+            &self,
+            _path: &Path,
+            _range: Range<u64>,
+        ) -> io::Result<Box<dyn AsyncRead + Send + Unpin>> {
+            Ok(Box::new(AlwaysFailRead))
+        }
+    }
+
+    struct AlwaysFailRead;
+
+    impl AsyncRead for AlwaysFailRead {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            std::task::Poll::Ready(Err(io::Error::other("simulated body read failure")))
+        }
     }
 
     // -------- Truncated file --------
