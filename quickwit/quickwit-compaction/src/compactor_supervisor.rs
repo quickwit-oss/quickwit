@@ -57,7 +57,6 @@ pub struct CompactorSupervisor {
 
     // Shared resources distributed to pipelines when spawning actor chains.
     io_throughput_limiter: Option<Limiter>,
-    split_cache: Arc<IndexingSplitCache>,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     max_concurrent_split_uploads: usize,
@@ -74,7 +73,6 @@ impl CompactorSupervisor {
         planner_client: CompactionPlannerServiceClient,
         num_pipeline_slots: usize,
         io_throughput_limiter: Option<Limiter>,
-        split_cache: Arc<IndexingSplitCache>,
         metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
         max_concurrent_split_uploads: usize,
@@ -87,7 +85,6 @@ impl CompactorSupervisor {
             planner_client,
             pipelines,
             io_throughput_limiter,
-            split_cache,
             metastore,
             storage_resolver,
             max_concurrent_split_uploads,
@@ -185,7 +182,8 @@ impl CompactorSupervisor {
 
         let index_storage_uri = Uri::from_str(&assignment.index_storage_uri)?;
         let index_storage = self.storage_resolver.resolve(&index_storage_uri).await?;
-        let split_store = IndexingSplitStore::new(index_storage, self.split_cache.clone());
+        let split_cache = Arc::new(IndexingSplitCache::no_caching());
+        let split_store = IndexingSplitStore::new(index_storage, split_cache);
 
         let doc_mapper = build_doc_mapper(&doc_mapping, &search_settings)?;
         let merge_policy = merge_policy_from_settings(&indexing_settings);
@@ -311,8 +309,6 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use quickwit_actors::Universe;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_proto::compaction::{
@@ -334,7 +330,6 @@ mod tests {
             compaction_client,
             num_slots,
             None,
-            Arc::new(IndexingSplitCache::no_caching()),
             metastore,
             StorageResolver::for_test(),
             2,
@@ -544,7 +539,6 @@ mod tests {
             client,
             3,
             None,
-            Arc::new(IndexingSplitCache::no_caching()),
             metastore,
             StorageResolver::for_test(),
             2,

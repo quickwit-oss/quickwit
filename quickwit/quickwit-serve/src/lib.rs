@@ -794,7 +794,6 @@ pub async fn serve_quickwit(
         let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
             .tempdir_in(&compaction_dir)
             .context("failed to create compaction temp directory")?;
-        let split_cache = Arc::new(quickwit_indexing::IndexingSplitCache::no_caching());
         let compaction_client = compaction_service_client_opt
             .clone()
             .expect("compactor service enabled but no compaction client available");
@@ -803,7 +802,6 @@ pub async fn serve_quickwit(
             cluster.self_node_id().into(),
             compaction_client,
             &node_config.compactor_config,
-            split_cache,
             metastore_client.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
