@@ -45,3 +45,4 @@ All signals equally affected. Independent scaling is signal-agnostic.
 - [ ] Evaluate separating the merge pipeline into a standalone compactor service
 - [ ] Design auto-scaling policies for each workload type (ingest QPS, query QPS, file backlog)
 - [ ] Investigate burst handling for ingest (overflow buffer, backpressure, burst lane)
+
