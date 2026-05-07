@@ -25,7 +25,7 @@ mod merge_planner;
 mod merge_scheduler_service;
 mod merge_split_downloader;
 #[cfg(feature = "metrics")]
-pub(crate) mod metrics_pipeline;
+pub(crate) mod parquet_pipeline;
 mod packager;
 pub(crate) mod pipeline_shared;
 mod publisher;
@@ -54,7 +54,7 @@ pub use merge_scheduler_service::schedule_parquet_merge;
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
-pub use metrics_pipeline::*;
+pub use parquet_pipeline::*;
 pub use packager::Packager;
 pub use publisher::{Publisher, PublisherCounters};
 pub use quickwit_proto::indexing::IndexingError;

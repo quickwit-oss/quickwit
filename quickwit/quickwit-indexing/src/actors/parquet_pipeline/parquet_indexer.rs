@@ -761,7 +761,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
+    use crate::actors::parquet_pipeline::{ParquetPackager, ParquetUploader};
     use crate::actors::{Publisher, UploaderType};
 
     fn create_test_batch_with_service_values(service_values: &[&str]) -> RecordBatch {

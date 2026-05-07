@@ -9,8 +9,9 @@
 *                                                        @quickwit-oss/quickwit-core
 
 # byoc-metrics paths — owned by byoc-metrics
+/docs/internals/                                         @quickwit-oss/byoc-metrics
 /quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
 /quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
 /quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
 /quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
-/quickwit/quickwit-indexing/src/actors/metrics_pipeline/ @quickwit-oss/byoc-metrics
+/quickwit/quickwit-indexing/src/actors/parquet_pipeline/ @quickwit-oss/byoc-metrics

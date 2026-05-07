@@ -440,7 +440,7 @@ mod tests {
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
     use super::*;
-    use crate::actors::metrics_pipeline::ParquetMergeTask;
+    use crate::actors::parquet_pipeline::ParquetMergeTask;
 
     fn make_split(split_id: &str, size_bytes: u64, num_merge_ops: u32) -> ParquetSplitMetadata {
         ParquetSplitMetadata::metrics_builder()
