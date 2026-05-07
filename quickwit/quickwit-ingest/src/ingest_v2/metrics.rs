@@ -80,6 +80,7 @@ pub(super) struct IngestV2Metrics {
     pub shard_st_throughput_mib: Histogram,
     pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
+    pub wal_lock_hold_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
@@ -138,6 +139,14 @@ impl Default for IngestV2Metrics {
             wal_acquire_lock_request_duration_secs: new_histogram_vec(
                 "wal_acquire_lock_request_duration_secs",
                 "Duration of acquire lock requests in seconds.",
+                "ingest",
+                &[],
+                ["operation", "type"],
+                exponential_buckets(0.001, 2.0, 12).unwrap(),
+            ),
+            wal_lock_hold_duration_secs: new_histogram_vec(
+                "wal_lock_hold_duration_secs",
+                "Duration for which the WAL lock was held in seconds.",
                 "ingest",
                 &[],
                 ["operation", "type"],

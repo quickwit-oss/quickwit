@@ -46,6 +46,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
+            _merge_task_opt,
             ..
         } = split_update;
 
@@ -145,6 +146,10 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         } else {
             self.counters.num_replace_operations += 1;
         }
+        // Keep the merge task alive until after the metastore publish and
+        // planner feedback have completed. Dropping it releases both the merge
+        // semaphore permit and the planner's tracked-operation inventory guard.
+        drop(_merge_task_opt);
         Ok(())
     }
 }
@@ -212,7 +217,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -261,7 +266,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -307,7 +312,7 @@ mod tests {
             publish_lock,
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();

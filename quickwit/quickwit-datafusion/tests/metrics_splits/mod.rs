@@ -38,7 +38,18 @@ pub async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let (parquet_bytes, _) =
+    publish_split_with_tag_metadata(metastore, index_uid, data_dir, split_name, batch, true).await;
+}
+
+pub(crate) async fn publish_split_with_tag_metadata(
+    metastore: &MetastoreServiceClient,
+    index_uid: &IndexUid,
+    data_dir: &std::path::Path,
+    split_name: &str,
+    batch: &RecordBatch,
+    include_low_cardinality_tags: bool,
+) {
+    let (parquet_bytes, (row_keys_proto, zonemap_regexes)) =
         ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
             .unwrap()
             .write_to_bytes(batch, None)
@@ -92,33 +103,41 @@ pub async fn publish_split(
     for name in &metric_names {
         builder = builder.add_metric_name(name.clone());
     }
+    if let Some(row_keys_proto) = row_keys_proto {
+        builder = builder.row_keys_proto(row_keys_proto);
+    }
+    for (column, regex) in zonemap_regexes {
+        builder = builder.add_zonemap_regex(column, regex);
+    }
 
-    for tag_col in &["service", "env", "datacenter", "region", "host"] {
-        if let Ok(col_idx) = batch_schema.index_of(tag_col) {
-            let col = batch.column(col_idx);
-            let values: HashSet<String> = if let Some(dict) =
-                col.as_any()
-                    .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
-            {
-                let keys = dict
-                    .keys()
-                    .as_any()
-                    .downcast_ref::<arrow::array::Int32Array>()
-                    .unwrap();
-                let vals = dict
-                    .values()
-                    .as_any()
-                    .downcast_ref::<arrow::array::StringArray>()
-                    .unwrap();
-                (0..batch.num_rows())
-                    .filter(|i| !keys.is_null(*i))
-                    .map(|i| vals.value(keys.value(i) as usize).to_string())
-                    .collect()
-            } else {
-                HashSet::new()
-            };
-            for v in values {
-                builder = builder.add_low_cardinality_tag(tag_col.to_string(), v);
+    if include_low_cardinality_tags {
+        for tag_col in &["service", "env", "datacenter", "region", "host"] {
+            if let Ok(col_idx) = batch_schema.index_of(tag_col) {
+                let col = batch.column(col_idx);
+                let values: HashSet<String> = if let Some(dict) =
+                    col.as_any()
+                        .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
+                {
+                    let keys = dict
+                        .keys()
+                        .as_any()
+                        .downcast_ref::<arrow::array::Int32Array>()
+                        .unwrap();
+                    let vals = dict
+                        .values()
+                        .as_any()
+                        .downcast_ref::<arrow::array::StringArray>()
+                        .unwrap();
+                    (0..batch.num_rows())
+                        .filter(|i| !keys.is_null(*i))
+                        .map(|i| vals.value(keys.value(i) as usize).to_string())
+                        .collect()
+                } else {
+                    HashSet::new()
+                };
+                for v in values {
+                    builder = builder.add_low_cardinality_tag(tag_col.to_string(), v);
+                }
             }
         }
     }

@@ -6,7 +6,7 @@
 
 This document describes Phase 1 of locality-aware compaction for Quickwit, focused on the Parquet-format data in the metrics pipeline. Phase 1 introduces a configurable **sort schema** for Parquet-format indexes and ensures that all Parquet splits \-- whether produced at ingestion or by compaction \-- contain rows in sorted order according to that schema. It also introduces **time windowing**: all data is partitioned into fixed-duration, epoch-aligned time windows (default 15 minutes), and compaction is scoped to individual windows so that data is never merged across window boundaries.
 
-This is directly analogous to [Phase 1 of the Husky locality project](https://docs.google.com/document/d/1x9BO1muCTo1TmfhPYBdIxZ-59aU0ECSiEaGPUcDZkPs/edit), where sorting individual fragment files by a subset of columns achieved 25-33% compression improvement and measurable reductions in query latency and network bandwidth.
+This is directly analogous to Phase 1 of the [Husky locality project](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/), where sorting individual fragment files by a subset of columns achieved 25-33% compression improvement and measurable reductions in query latency and network bandwidth.
 
 Phase 1 does not change the compaction planning algorithm or introduce cross-node coordination. It modifies only how individual splits are written, so that the data within each split is physically organized in an order aligned with the most common query predicates. Compaction continues to use size-tiered merging (m:1), but the merge process is modified to produce sorted output from sorted inputs via k-way merge.
 
@@ -56,7 +56,7 @@ Point-per-row is the right starting point for several reasons:
 - **Performance equivalence with good encoding.** With sorted data, columnar encodings like RLE (run-length encoding) and dictionary encoding produce long runs of repeated values in the sort columns -- the same runs that timeseries-per-row would capture by grouping values into arrays. When these encodings are preserved through query execution, point-per-row achieves comparable scan performance to timeseries-per-row without the implementation complexity.
 - **Generic DataFusion improvements over custom code.** Timeseries-per-row requires significant custom DataFusion operator support (nested array types, custom aggregation kernels). Point-per-row uses standard columnar operations, allowing us to contribute generic improvements to DataFusion rather than maintaining timeseries-specific extensions.
 
-**RLE and dictionary encoding in DataFusion.** Currently, RLE and dictionary encoding are lost relatively quickly through generic DataFusion operators -- decoded to plain arrays early in the query pipeline. There is significant ongoing investment in the **Flurry** project (the metrics equivalent of Bolt) to preserve these encodings through more of the execution pipeline. As Flurry matures, the performance benefits of sorted point-per-row data will increase, since longer runs in sorted columns translate directly to better RLE compression ratios that are maintained through query execution.
+**RLE and dictionary encoding in DataFusion.** Currently, RLE and dictionary encoding are lost relatively quickly through generic DataFusion operators -- decoded to plain arrays early in the query pipeline. As DataFusion grows operator-level support for dictionary/RLE encodings, the performance benefits of sorted point-per-row data will increase, since longer runs in sorted columns translate directly to better RLE compression ratios that are maintained through query execution.
 
 ## Sort Schema Definition
 
@@ -458,12 +458,7 @@ Phase 1 establishes the foundation for locality-aware compaction. Subsequent pha
 
 ## References
 
-- [Quickwit Split Compaction Architecture](https://docs.google.com/document/d/110XhPgBYyDVpmVtbUhYFFEIvbgFRTNjEfVy7DF0doBg/edit?pli=1&tab=t.0#heading=h.l153qiq0ul1j)
-- [Husky Phase 1: Locality of Reference](https://docs.google.com/document/d/1x9BO1muCTo1TmfhPYBdIxZ-59aU0ECSiEaGPUcDZkPs/edit)
-- [Husky Phase 2: Locality of Reference (Summary)](https://docs.google.com/document/d/1vax-vv0wbhfddo4n5obhlVJxsmUa9N_62tKs5ZmYC6k/edit?tab=t.0#heading=h.o5gstqo08gu5)
-- [Husky Phase 2: Locality of Reference (RFC)](https://docs.google.com/document/d/1FTiF2BNUjBMZ0tc2-vokXRwMH7J_rWm6Ikjf6S-ZJSg/edit?tab=t.0#heading=h.43mgnu7vcd3h)
-- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
-- [Single-File Locality Analysis](https://docs.google.com/document/d/1XaKsBCL7hcZSrJFck2GU9tBYFXGDUsePx_iWRiPJB-8/edit?tab=t.0#heading=h.cfmyc1w1736s) -- Adam's analysis showing datacenter, service, host locality works well within single files; relative scores should transfer to global locality.
+- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/) -- prior art for sorted-merge compaction at petabyte scale
 
 ---
 
@@ -494,7 +489,7 @@ Phase 1 establishes the foundation for locality-aware compaction. Subsequent pha
 
 **The compaction policy is borrowed but the workload is fundamentally different.** The doc says "use StableLogMergePolicy adapted for Parquet splits" but StableLogMergePolicy was designed for Tantivy splits in a logs/traces pipeline. Metrics have very different characteristics: higher write rates, smaller individual events, more predictable schemas, time-series structure. The doc acknowledges the need for experiments but doesn't discuss *why* the existing policy might be wrong for metrics, which makes it hard to know what the experiments should be testing for.
 
-**Late-arriving data for old windows is "acceptable because rare" but the scale section suggests otherwise.** At 10 GiB/s, even a small percentage of late data is a lot of data. If 0.1% of data arrives late, that's 10 MiB/s of late data triggering merges of already-compacted windows. The doc assumes this is negligible, but at Alexey's scale numbers, it may not be.
+**Late-arriving data for old windows is "acceptable because rare" but the scale section suggests otherwise.** At 10 GiB/s, even a small percentage of late data is a lot of data. If 0.1% of data arrives late, that's 10 MiB/s of late data triggering merges of already-compacted windows. The doc assumes this is negligible, but at the scale numbers cited in the Scale Considerations section, it may not be.
 
 ### The "so what"
 
