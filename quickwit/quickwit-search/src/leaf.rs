@@ -19,6 +19,7 @@ use std::num::NonZeroUsize;
 use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -1706,9 +1707,26 @@ pub async fn single_doc_mapping_leaf_search(
         leaf_search_context,
     );
 
-    let (offloaded_res, _) =
-        tokio::join!(run_offloaded_search_tasks_fut, run_local_search_tasks_fut);
+    // Each path stores its own outcome on completion (offloaded → true,
+    // local → false). The load after `tokio::join!` therefore observes the
+    // value written by whichever future finished last: lambda was the
+    // bottleneck iff the offloaded path is the last one to write.
+    let offloaded_is_bottleneck = Arc::new(AtomicBool::new(false));
+    let flag_local_writer = offloaded_is_bottleneck.clone();
+    let flag_offloaded_writer = offloaded_is_bottleneck.clone();
+    let timed_local_fut = async move {
+        run_local_search_tasks_fut.await;
+        flag_local_writer.store(false, Ordering::Relaxed);
+    };
+    let timed_offloaded_fut = async move {
+        let result = run_offloaded_search_tasks_fut.await;
+        flag_offloaded_writer.store(true, Ordering::Relaxed);
+        result
+    };
+    let (offloaded_res, ()) = tokio::join!(timed_offloaded_fut, timed_local_fut);
     offloaded_res?;
+
+    let lambda_bottleneck = u64::from(offloaded_is_bottleneck.load(Ordering::Relaxed));
 
     // we can't use unwrap_or_clone because mutexes aren't Clone
     let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector_arc) {
@@ -1723,7 +1741,12 @@ pub async fn single_doc_mapping_leaf_search(
             .await
             .context("failed to merge split search responses: thread panicked")?;
 
-    Ok(leaf_search_response_result?)
+    let mut leaf_search_response = leaf_search_response_result?;
+    leaf_search_response
+        .resource_stats
+        .get_or_insert_default()
+        .lambda_bottleneck = lambda_bottleneck;
+    Ok(leaf_search_response)
 }
 
 async fn run_local_search_tasks(
