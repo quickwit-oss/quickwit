@@ -632,12 +632,11 @@ async fn leaf_search_single_split(
                     };
                 let split_stats = SplitResourceStats {
                     split_num_docs,
+                    matched_doc: leaf_search_response.num_hits,
                     input_memory_bytes: warmup_size.as_u64(),
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
-                    // Phase 2 placeholder: total CPU time is reported as `cpu_predicate_microsecs`
-                    // until Phase 3 splits it into predicate / collection / harvest.
-                    cpu_predicate_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
                     ..Default::default()
                 };
                 leaf_search_response.resource_stats = Some(LeafResourceStats {

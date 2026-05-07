@@ -1956,11 +1956,11 @@ mod tests {
                     intermediate_aggregation_result: None,
                     resource_stats: Some(LeafResourceStats {
                         sum_split_resource: Some(SplitResourceStats {
-                            cpu_predicate_microsecs: 100,
+                            cpu_search_microsecs: 100,
                             ..Default::default()
                         }),
                         worst_split: Some(SplitResourceStats {
-                            cpu_predicate_microsecs: 100,
+                            cpu_search_microsecs: 100,
                             ..Default::default()
                         }),
                         num_localexec_splits: 1,
@@ -1986,11 +1986,11 @@ mod tests {
                     intermediate_aggregation_result: None,
                     resource_stats: Some(LeafResourceStats {
                         sum_split_resource: Some(SplitResourceStats {
-                            cpu_predicate_microsecs: 50,
+                            cpu_search_microsecs: 50,
                             ..Default::default()
                         }),
                         worst_split: Some(SplitResourceStats {
-                            cpu_predicate_microsecs: 50,
+                            cpu_search_microsecs: 50,
                             ..Default::default()
                         }),
                         num_localexec_splits: 1,
@@ -2030,11 +2030,11 @@ mod tests {
                 intermediate_aggregation_result: None,
                 resource_stats: Some(LeafResourceStats {
                     sum_split_resource: Some(SplitResourceStats {
-                        cpu_predicate_microsecs: 150,
+                        cpu_search_microsecs: 150,
                         ..Default::default()
                     }),
                     worst_split: Some(SplitResourceStats {
-                        cpu_predicate_microsecs: 100,
+                        cpu_search_microsecs: 100,
                         ..Default::default()
                     }),
                     num_localexec_splits: 2,

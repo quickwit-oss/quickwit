@@ -350,11 +350,7 @@ pub fn searcher_pool_for_test(
 /// Sum of the per-phase microsecond fields used to rank `worst_split`.
 /// Intentionally excludes `wait_for_search_permit_microsecs`.
 pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
-    stats.warmup_microsecs
-        + stats.wait_for_cpu_pool_microsecs
-        + stats.cpu_predicate_microsecs
-        + stats.cpu_collection_microsecs
-        + stats.cpu_harvest_microsecs
+    stats.warmup_microsecs + stats.wait_for_cpu_pool_microsecs + stats.cpu_search_microsecs
 }
 
 /// Field-wise sum of two `SplitResourceStats` (every field is extensive).
@@ -367,9 +363,7 @@ pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourc
     acc.wait_for_search_permit_microsecs += other.wait_for_search_permit_microsecs;
     acc.warmup_microsecs += other.warmup_microsecs;
     acc.wait_for_cpu_pool_microsecs += other.wait_for_cpu_pool_microsecs;
-    acc.cpu_predicate_microsecs += other.cpu_predicate_microsecs;
-    acc.cpu_collection_microsecs += other.cpu_collection_microsecs;
-    acc.cpu_harvest_microsecs += other.cpu_harvest_microsecs;
+    acc.cpu_search_microsecs += other.cpu_search_microsecs;
 }
 
 /// Merge another `LeafResourceStats` into `acc`.
@@ -423,11 +417,11 @@ pub(crate) fn merge_leaf_stats_it<'a>(
 mod stats_merge_tests {
     use super::*;
 
-    fn split_stats(num_docs: u64, warmup: u64, predicate: u64) -> SplitResourceStats {
+    fn split_stats(num_docs: u64, warmup: u64, search: u64) -> SplitResourceStats {
         SplitResourceStats {
             split_num_docs: num_docs,
             warmup_microsecs: warmup,
-            cpu_predicate_microsecs: predicate,
+            cpu_search_microsecs: search,
             ..Default::default()
         }
     }
@@ -449,7 +443,7 @@ mod stats_merge_tests {
         add_split_stats(&mut acc, &other);
         assert_eq!(acc.split_num_docs, 300);
         assert_eq!(acc.warmup_microsecs, 130);
-        assert_eq!(acc.cpu_predicate_microsecs, 500);
+        assert_eq!(acc.cpu_search_microsecs, 500);
     }
 
     #[test]
@@ -467,7 +461,7 @@ mod stats_merge_tests {
         let summed = acc.sum_split_resource.unwrap();
         assert_eq!(summed.split_num_docs, 300);
         assert_eq!(summed.warmup_microsecs, 130);
-        assert_eq!(summed.cpu_predicate_microsecs, 500);
+        assert_eq!(summed.cpu_search_microsecs, 500);
 
         // worst_split is the one with the largest phase-sum (split_b: 80 + 300 = 380).
         let worst = acc.worst_split.unwrap();

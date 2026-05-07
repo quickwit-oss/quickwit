@@ -320,15 +320,12 @@ pub struct SplitResourceStats {
     /// Time the split spent waiting for a slot on the CPU pool after warmup.
     #[prost(uint64, tag = "8")]
     pub wait_for_cpu_pool_microsecs: u64,
-    /// CPU time spent on predicate matching (tantivy search loop minus collection/harvest).
+    /// CPU time spent in the search itself (predicate matching + collection +
+    /// per-segment harvest), as measured around the tantivy search call.
+    /// Excludes any cross-split finalize work performed outside the single-split
+    /// search.
     #[prost(uint64, tag = "9")]
-    pub cpu_predicate_microsecs: u64,
-    /// CPU time spent collecting matched docs (collect_block / collect callbacks).
-    #[prost(uint64, tag = "10")]
-    pub cpu_collection_microsecs: u64,
-    /// CPU time spent harvesting segment results (top-K extraction, aggregation finalization).
-    #[prost(uint64, tag = "11")]
-    pub cpu_harvest_microsecs: u64,
+    pub cpu_search_microsecs: u64,
 }
 /// Resource statistics for a single leaf-search call (over one or more splits).
 ///
