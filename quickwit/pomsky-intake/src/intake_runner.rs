@@ -73,6 +73,7 @@ sources:
     disable_logs: false
     disable_metrics: false
     disable_traces: false
+    split_metric_namespace: false
 
   http:
     type: http_server
