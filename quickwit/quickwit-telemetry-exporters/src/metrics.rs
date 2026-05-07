@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::sync::OnceLock;
-#[cfg(not(test))]
 use std::time::Duration;
 
 use anyhow::Context;
@@ -94,19 +93,11 @@ fn build_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     }
     let prometheus_recorder = prometheus_builder.build_recorder();
     let prometheus_handle = prometheus_recorder.handle();
-    set_prometheus_handle(prometheus_handle.clone()).map_err(anyhow::Error::msg)?;
-    Ok(prometheus_recorder)
-}
-
-fn set_prometheus_handle(handle: PrometheusHandle) -> Result<(), String> {
-    #[cfg(not(test))]
-    let upkeep_handle = handle.clone();
     PROMETHEUS_HANDLE
-        .set(handle)
-        .map_err(|_| "Prometheus metrics renderer is already installed".to_string())?;
-    #[cfg(not(test))]
-    spawn_prometheus_upkeep(upkeep_handle)?;
-    Ok(())
+        .set(prometheus_handle.clone())
+        .map_err(|_| anyhow::anyhow!("Prometheus metrics renderer is already installed"))?;
+    spawn_prometheus_upkeep(prometheus_handle).map_err(anyhow::Error::msg)?;
+    Ok(prometheus_recorder)
 }
 
 pub fn metrics_text_payload() -> Result<String, String> {
@@ -116,13 +107,12 @@ pub fn metrics_text_payload() -> Result<String, String> {
     Ok(handle.render())
 }
 
-#[cfg(not(test))]
 fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
     // Quickwit serves the existing `/metrics` route itself, so we build only the
     // Prometheus recorder instead of using the exporter's HTTP listener. That lower-level
     // API does not spawn the upkeep task that periodically drains histogram buffers.
     std::thread::Builder::new()
-        .name("metrics-exporter-prometheus-upkeep".to_string())
+        .name("telemetry-exporter-prometheus-upkeep".to_string())
         .spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_secs(5));
@@ -164,7 +154,9 @@ mod tests {
     #[test]
     fn metrics_text_payload_renders_prometheus_handle() {
         let recorder = PrometheusBuilder::new().build_recorder();
-        set_prometheus_handle(recorder.handle()).expect("Prometheus handle should be set once");
+        PROMETHEUS_HANDLE
+            .set(recorder.handle())
+            .expect("Prometheus handle should be set once");
 
         with_local_recorder(&recorder, || {
             let info_metric = gauge!(
