@@ -77,16 +77,19 @@ impl ClusterClient {
     }
 
     /// Leaf search with retry on another node client.
+    ///
+    /// Returns the response and the number of leaf attempts that produced it
+    /// (1 for a no-retry path, 2 if a retry was issued).
     pub async fn leaf_search(
         &self,
         request: LeafSearchRequest,
         mut client: SearchServiceClient,
-    ) -> crate::Result<LeafSearchResponse> {
-        let mut response_res = client.leaf_search(request.clone()).await;
+    ) -> crate::Result<(LeafSearchResponse, u64)> {
+        let response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
         // We retry only once.
         let Some(retry_request) = retry_policy.retry_request(request, &response_res) else {
-            return response_res;
+            return response_res.map(|response| (response, 1));
         };
         let Some(first_split) = retry_request
             .leaf_requests
@@ -98,7 +101,7 @@ impl ClusterClient {
                 "the retry request did not contain any split to retry. this should never happen, \
                  please report"
             );
-            return response_res;
+            return response_res.map(|response| (response, 1));
         };
         // There could be more than one split in the retry request. We pick a single client
         // arbitrarily only considering the affinity of the first split.
@@ -113,8 +116,8 @@ impl ClusterClient {
             response_res, retry_request, client
         );
         let retry_result = client.leaf_search(retry_request).await;
-        response_res = merge_original_with_retry_leaf_search_results(response_res, retry_result);
-        response_res
+        let merged = merge_original_with_retry_leaf_search_results(response_res, retry_result)?;
+        Ok((merged, 2))
     }
 
     /// Leaf search with retry on another node client.
@@ -462,11 +465,12 @@ mod tests {
             .await
             .unwrap();
         let cluster_client = ClusterClient::new(search_job_placer);
-        let leaf_search_response = cluster_client
+        let (leaf_search_response, num_attempts) = cluster_client
             .leaf_search(request, first_client)
             .await
             .unwrap();
         assert_eq!(leaf_search_response.num_attempted_splits, 1);
+        assert_eq!(num_attempts, 1);
     }
 
     #[tokio::test]
@@ -511,9 +515,12 @@ mod tests {
             .await
             .unwrap();
         let cluster_client = ClusterClient::new(search_job_placer);
-        let result = cluster_client.leaf_search(request, first_client).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().num_hits, 2);
+        let (response, num_attempts) = cluster_client
+            .leaf_search(request, first_client)
+            .await
+            .unwrap();
+        assert_eq!(response.num_hits, 2);
+        assert_eq!(num_attempts, 2);
     }
 
     #[test]

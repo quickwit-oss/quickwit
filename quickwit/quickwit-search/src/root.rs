@@ -745,11 +745,10 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
 /// `leaf_worst` is the leaf with the largest `wall_time_microsecs`. `leaf_sum`
 /// is a field-wise sum of every leaf's stats. `wall_time_microsecs` on
 /// `leaf_sum` is summed (not maxed) — see the proto comment on `leaf_sum`.
-/// `num_retry_round` is set to 0 here; populating it requires a retry counter
-/// threaded through `cluster_client::leaf_search` and will be wired in a
-/// follow-up.
 fn compute_root_resource_stats(
     leaf_responses: &[LeafSearchResponse],
+    leaf_num_calls: u64,
+    num_retry_round: u64,
     num_failed_splits: u64,
 ) -> Option<RootResourceStats> {
     let leaf_stats: Vec<&LeafResourceStats> = leaf_responses
@@ -780,8 +779,8 @@ fn compute_root_resource_stats(
     Some(RootResourceStats {
         leaf_worst,
         leaf_sum: Some(leaf_sum),
-        leaf_num_calls: leaf_responses.len() as u64,
-        num_retry_round: 0,
+        leaf_num_calls,
+        num_retry_round,
         num_failed_splits,
     })
 }
@@ -793,9 +792,14 @@ pub(crate) async fn search_partial_hits_phase(
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
 ) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
-    let leaf_search_responses: Vec<LeafSearchResponse> =
+    // Each entry is (leaf response, number of leaf attempts made to obtain it).
+    // Metadata-count responses are synthesised locally and contribute 0 attempts.
+    let leaf_outcomes: Vec<(LeafSearchResponse, u64)> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
+                .into_iter()
+                .map(|response| (response, 0))
+                .collect()
         } else {
             let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
             let assigned_leaf_search_jobs = cluster_client
@@ -814,12 +818,24 @@ pub(crate) async fn search_partial_hits_phase(
             try_join_all(leaf_request_tasks).await?
         };
 
+    let leaf_num_calls: u64 = leaf_outcomes.iter().map(|(_, attempts)| attempts).sum();
+    let num_retry_round: u64 = leaf_outcomes
+        .iter()
+        .filter(|(_, attempts)| *attempts > 1)
+        .count() as u64;
+    let leaf_search_responses: Vec<LeafSearchResponse> =
+        leaf_outcomes.into_iter().map(|(response, _)| response).collect();
+
     let num_failed_splits: u64 = leaf_search_responses
         .iter()
         .map(|resp| resp.failed_splits.len() as u64)
         .sum();
-    let root_resource_stats =
-        compute_root_resource_stats(&leaf_search_responses, num_failed_splits);
+    let root_resource_stats = compute_root_resource_stats(
+        &leaf_search_responses,
+        leaf_num_calls,
+        num_retry_round,
+        num_failed_splits,
+    );
 
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
