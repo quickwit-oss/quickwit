@@ -37,6 +37,11 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResponse);
 
+  /// Streams document contents from the document store.
+  /// This method takes `PartialHit`s and streams back `LeafHit`s in batches
+  /// to avoid hitting gRPC message size limits.
+  rpc StreamFetchDocs(FetchDocsRequest) returns (stream FetchDocsResponse);
+
   // Root list terms API.
   // This RPC identifies the set of splits on which the query should run on,
   // and dispatches the several calls to `LeafListTerms`.

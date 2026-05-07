@@ -15,14 +15,17 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::stream;
 use quickwit_proto::error::convert_to_grpc_result;
 use quickwit_proto::search::{
     GetKvRequest, GetKvResponse, LeafListFieldsRequest, ListFieldsRequest, ListFieldsResponse,
     ReportSplitsRequest, ReportSplitsResponse, search_service_server as grpc,
 };
-use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
+use quickwit_proto::{GrpcServiceError, set_parent_span_from_request_metadata, tonic};
 use quickwit_search::SearchService;
 use tracing::instrument;
+
+const FETCH_DOCS_BATCH_SIZE: usize = 100;
 
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
@@ -66,6 +69,50 @@ impl grpc::SearchService for GrpcSearchAdapter {
         let fetch_docs_request = request.into_inner();
         let fetch_docs_result = self.0.fetch_docs(fetch_docs_request).await;
         convert_to_grpc_result(fetch_docs_result)
+    }
+
+    type StreamFetchDocsStream =
+        quickwit_proto::tonic::codegen::BoxStream<quickwit_proto::search::FetchDocsResponse>;
+
+    #[instrument(skip(self, request))]
+    async fn stream_fetch_docs(
+        &self,
+        request: tonic::Request<quickwit_proto::search::FetchDocsRequest>,
+    ) -> Result<tonic::Response<Self::StreamFetchDocsStream>, tonic::Status> {
+        set_parent_span_from_request_metadata(request.metadata());
+        let fetch_docs_request = request.into_inner();
+
+        // Call the regular fetch_docs method
+        let fetch_docs_result = self.0.fetch_docs(fetch_docs_request).await;
+
+        if let Err(err) = fetch_docs_result {
+            return Err(err.into_grpc_status());
+        }
+
+        let fetch_docs_response = match fetch_docs_result {
+            Ok(response) => response,
+            Err(err) => return Err(err.into_grpc_status()),
+        };
+
+        let batches = if fetch_docs_response.hits.is_empty() {
+            vec![Ok(quickwit_proto::search::FetchDocsResponse {
+                hits: vec![],
+            })]
+        } else {
+            fetch_docs_response
+                .hits
+                .chunks(FETCH_DOCS_BATCH_SIZE)
+                .map(|chunk| {
+                    Ok(quickwit_proto::search::FetchDocsResponse {
+                        hits: chunk.to_vec(),
+                    })
+                })
+                .collect()
+        };
+
+        let grpc_stream = stream::iter(batches);
+
+        Ok(tonic::Response::new(Box::pin(grpc_stream)))
     }
 
     #[instrument(skip(self, request))]
