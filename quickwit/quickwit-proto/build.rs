@@ -199,6 +199,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
         .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
+        // The `Response` variant carries a `LeafSearchResponse` which now
+        // embeds `LeafResourceStats`.
+        .type_attribute(
+            "LambdaSingleSplitResult.outcome",
+            "#[allow(clippy::large_enum_variant)]",
+        )
         .out_dir("src/codegen/quickwit")
         .compile_with_config(
             prost_config,

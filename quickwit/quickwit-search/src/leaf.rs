@@ -31,8 +31,8 @@ use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
-    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats, SplitSearchError,
 };
 use quickwit_query::query_ast::{
     BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
@@ -630,13 +630,22 @@ async fn leaf_search_single_split(
                     } else {
                         searcher.search(&query, &collector)?
                     };
-                leaf_search_response.resource_stats = Some(ResourceStats {
-                    cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
-                    short_lived_cache_num_bytes: warmup_size.as_u64(),
+                let split_stats = SplitResourceStats {
                     split_num_docs,
+                    input_memory_bytes: warmup_size.as_u64(),
                     warmup_microsecs: warmup_duration.as_micros() as u64,
-                    cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
-                        as u64,
+                    wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
+                    // Phase 2 placeholder: total CPU time is reported as `cpu_predicate_microsecs`
+                    // until Phase 3 splits it into predicate / collection / harvest.
+                    cpu_predicate_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    ..Default::default()
+                };
+                leaf_search_response.resource_stats = Some(LeafResourceStats {
+                    num_localexec_splits: 1,
+                    num_localexec_num_docs: split_num_docs,
+                    sum_split_resource: Some(split_stats),
+                    worst_split: Some(split_stats),
+                    ..Default::default()
                 });
                 leaf_search_state_guard.set_state(SplitSearchState::Success);
                 Result::<_, TantivyError>::Ok(Some((

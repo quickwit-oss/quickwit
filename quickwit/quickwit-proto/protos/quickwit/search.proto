@@ -319,6 +319,9 @@ message SearchResponse {
 
   // Total number of successful splits searched.
   uint64 num_successful_splits = 8;
+
+  // Resource statistics for the root search.
+  RootResourceStats resource_stats = 10;
 }
 
 message SearchPlanResponse {
@@ -355,12 +358,92 @@ message LeafSearchRequest {
   repeated string index_uris = 9;
 }
 
-message ResourceStats {
-    uint64 short_lived_cache_num_bytes = 1;
-    uint64 split_num_docs = 2;
-    uint64 warmup_microsecs = 3;
-    uint64 cpu_thread_pool_wait_microsecs = 4;
-    uint64 cpu_microsecs = 5;
+// Per-split resource statistics.
+//
+// All fields are extensive (sum across splits is meaningful) except where noted.
+//
+// `worst_split` / `sum_split_resource` aggregations on `LeafResourceStats` are
+// only computed for locally-executed splits. Splits offloaded to lambda are
+// counted at the leaf level only and do not contribute here.
+message SplitResourceStats {
+    // Number of documents in the split.
+    uint64 split_num_docs = 1;
+    // Bytes resident in the warmup short-lived cache after warmup
+    // (measure of input data the search needed to process).
+    uint64 input_memory_bytes = 2;
+    // Bytes downloaded from storage during the request, as measured
+    // by a request-scoped storage wrapper.
+    uint64 downloaded_bytes = 3;
+    // Number of storage GET requests issued during the request.
+    uint64 downloaded_req = 4;
+    // Number of documents matched by the query in this split (we always count).
+    uint64 matched_doc = 5;
+
+    // Time the split spent waiting to acquire its search permit.
+    uint64 wait_for_search_permit_microsecs = 6;
+    // Time spent in the warmup phase (downloading and indexing data into caches).
+    uint64 warmup_microsecs = 7;
+    // Time the split spent waiting for a slot on the CPU pool after warmup.
+    uint64 wait_for_cpu_pool_microsecs = 8;
+    // CPU time spent on predicate matching (tantivy search loop minus collection/harvest).
+    uint64 cpu_predicate_microsecs = 9;
+    // CPU time spent collecting matched docs (collect_block / collect callbacks).
+    uint64 cpu_collection_microsecs = 10;
+    // CPU time spent harvesting segment results (top-K extraction, aggregation finalization).
+    uint64 cpu_harvest_microsecs = 11;
+}
+
+// Resource statistics for a single leaf-search call (over one or more splits).
+//
+// All fields are extensive apart from `worst_split`, `lambda_bottleneck`, and
+// `wall_time_microsecs` which are leaf-level scalars.
+message LeafResourceStats {
+    // Number of splits whose results came from the partial result cache.
+    uint64 partial_result_cache_num_splits = 1;
+    // Sum of `split.num_docs` across cache-hit splits.
+    uint64 partial_result_cache_num_docs = 2;
+
+    // Number of splits dispatched to lambda (offloaded execution).
+    uint64 lambda_num_splits = 3;
+    // Sum of `split.num_docs` across lambda-dispatched splits.
+    uint64 lambda_num_docs = 4;
+    // Number of lambda-dispatched splits that succeeded.
+    uint64 lambda_success_num_splits = 5;
+    // Sum of `split.num_docs` across successful lambda-dispatched splits.
+    uint64 lambda_success_num_docs = 6;
+    // 1 if the offloaded path finished after the local path (lambda was the bottleneck), 0 otherwise.
+    // Forced to 0 when `lambda_num_splits == 0`.
+    uint64 lambda_bottleneck = 7;
+
+    // Number of splits executed locally (excluding cache hits and lambda).
+    uint64 num_localexec_splits = 8;
+    // Sum of `split.num_docs` across locally-executed splits.
+    uint64 num_localexec_num_docs = 9;
+
+    // The worst single-split contribution, ranked by
+    // `warmup + wait_for_cpu_pool + cpu_predicate + cpu_collection + cpu_harvest`
+    // (intentionally excludes `wait_for_search_permit`).
+    SplitResourceStats worst_split = 10;
+    // Field-wise sum of `SplitResourceStats` across all locally-executed splits.
+    SplitResourceStats sum_split_resource = 11;
+
+    // Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
+    uint64 wall_time_microsecs = 12;
+}
+
+// Resource statistics for a root search.
+message RootResourceStats {
+    // The leaf with the largest `wall_time_microsecs`.
+    LeafResourceStats leaf_worst = 1;
+    // Field-wise sum of all leaf stats. `wall_time_microsecs` is summed even though
+    // it is not strictly extensive — the sum still gives a useful view of total leaf time.
+    LeafResourceStats leaf_sum = 2;
+    // Number of leaf calls (including retries).
+    uint64 leaf_num_calls = 3;
+    // Number of leaf retry rounds.
+    uint64 num_retry_round = 4;
+    // Number of failed splits across all leaves.
+    uint64 num_failed_splits = 5;
 }
 
 // LeafRequestRef references data in LeafSearchRequest to deduplicate data.
@@ -496,7 +579,7 @@ message LeafSearchResponse {
   // postcard serialized intermediate aggregation_result.
   optional bytes intermediate_aggregation_result = 6;
 
-  ResourceStats resource_stats = 8;
+  LeafResourceStats resource_stats = 8;
 }
 
 // The result of searching a single split in a Lambda invocation.

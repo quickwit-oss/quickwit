@@ -26,7 +26,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
-use crate::{SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
+use crate::{SearchJobPlacer, SearchServiceClient, merge_leaf_stats_it};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -260,7 +260,7 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
-    let resource_stats = merge_resource_stats_it([
+    let resource_stats = merge_leaf_stats_it([
         &original_response.resource_stats,
         &retry_response.resource_stats,
     ]);

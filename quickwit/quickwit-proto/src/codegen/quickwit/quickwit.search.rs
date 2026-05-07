@@ -240,6 +240,9 @@ pub struct SearchResponse {
     /// Total number of successful splits searched.
     #[prost(uint64, tag = "8")]
     pub num_successful_splits: u64,
+    /// Resource statistics for the root search.
+    #[prost(message, optional, tag = "10")]
+    pub resource_stats: ::core::option::Option<RootResourceStats>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -281,19 +284,119 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Per-split resource statistics.
+///
+/// All fields are extensive (sum across splits is meaningful) except where noted.
+///
+/// `worst_split` / `sum_split_resource` aggregations on `LeafResourceStats` are
+/// only computed for locally-executed splits. Splits offloaded to lambda are
+/// counted at the leaf level only and do not contribute here.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ResourceStats {
+pub struct SplitResourceStats {
+    /// Number of documents in the split.
     #[prost(uint64, tag = "1")]
-    pub short_lived_cache_num_bytes: u64,
-    #[prost(uint64, tag = "2")]
     pub split_num_docs: u64,
+    /// Bytes resident in the warmup short-lived cache after warmup
+    /// (measure of input data the search needed to process).
+    #[prost(uint64, tag = "2")]
+    pub input_memory_bytes: u64,
+    /// Bytes downloaded from storage during the request, as measured
+    /// by a request-scoped storage wrapper.
     #[prost(uint64, tag = "3")]
-    pub warmup_microsecs: u64,
+    pub downloaded_bytes: u64,
+    /// Number of storage GET requests issued during the request.
     #[prost(uint64, tag = "4")]
-    pub cpu_thread_pool_wait_microsecs: u64,
+    pub downloaded_req: u64,
+    /// Number of documents matched by the query in this split (we always count).
     #[prost(uint64, tag = "5")]
-    pub cpu_microsecs: u64,
+    pub matched_doc: u64,
+    /// Time the split spent waiting to acquire its search permit.
+    #[prost(uint64, tag = "6")]
+    pub wait_for_search_permit_microsecs: u64,
+    /// Time spent in the warmup phase (downloading and indexing data into caches).
+    #[prost(uint64, tag = "7")]
+    pub warmup_microsecs: u64,
+    /// Time the split spent waiting for a slot on the CPU pool after warmup.
+    #[prost(uint64, tag = "8")]
+    pub wait_for_cpu_pool_microsecs: u64,
+    /// CPU time spent on predicate matching (tantivy search loop minus collection/harvest).
+    #[prost(uint64, tag = "9")]
+    pub cpu_predicate_microsecs: u64,
+    /// CPU time spent collecting matched docs (collect_block / collect callbacks).
+    #[prost(uint64, tag = "10")]
+    pub cpu_collection_microsecs: u64,
+    /// CPU time spent harvesting segment results (top-K extraction, aggregation finalization).
+    #[prost(uint64, tag = "11")]
+    pub cpu_harvest_microsecs: u64,
+}
+/// Resource statistics for a single leaf-search call (over one or more splits).
+///
+/// All fields are extensive apart from `worst_split`, `lambda_bottleneck`, and
+/// `wall_time_microsecs` which are leaf-level scalars.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LeafResourceStats {
+    /// Number of splits whose results came from the partial result cache.
+    #[prost(uint64, tag = "1")]
+    pub partial_result_cache_num_splits: u64,
+    /// Sum of `split.num_docs` across cache-hit splits.
+    #[prost(uint64, tag = "2")]
+    pub partial_result_cache_num_docs: u64,
+    /// Number of splits dispatched to lambda (offloaded execution).
+    #[prost(uint64, tag = "3")]
+    pub lambda_num_splits: u64,
+    /// Sum of `split.num_docs` across lambda-dispatched splits.
+    #[prost(uint64, tag = "4")]
+    pub lambda_num_docs: u64,
+    /// Number of lambda-dispatched splits that succeeded.
+    #[prost(uint64, tag = "5")]
+    pub lambda_success_num_splits: u64,
+    /// Sum of `split.num_docs` across successful lambda-dispatched splits.
+    #[prost(uint64, tag = "6")]
+    pub lambda_success_num_docs: u64,
+    /// 1 if the offloaded path finished after the local path (lambda was the bottleneck), 0 otherwise.
+    /// Forced to 0 when `lambda_num_splits == 0`.
+    #[prost(uint64, tag = "7")]
+    pub lambda_bottleneck: u64,
+    /// Number of splits executed locally (excluding cache hits and lambda).
+    #[prost(uint64, tag = "8")]
+    pub num_localexec_splits: u64,
+    /// Sum of `split.num_docs` across locally-executed splits.
+    #[prost(uint64, tag = "9")]
+    pub num_localexec_num_docs: u64,
+    /// The worst single-split contribution, ranked by
+    /// `warmup + wait_for_cpu_pool + cpu_predicate + cpu_collection + cpu_harvest`
+    /// (intentionally excludes `wait_for_search_permit`).
+    #[prost(message, optional, tag = "10")]
+    pub worst_split: ::core::option::Option<SplitResourceStats>,
+    /// Field-wise sum of `SplitResourceStats` across all locally-executed splits.
+    #[prost(message, optional, tag = "11")]
+    pub sum_split_resource: ::core::option::Option<SplitResourceStats>,
+    /// Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
+    #[prost(uint64, tag = "12")]
+    pub wall_time_microsecs: u64,
+}
+/// Resource statistics for a root search.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RootResourceStats {
+    /// The leaf with the largest `wall_time_microsecs`.
+    #[prost(message, optional, tag = "1")]
+    pub leaf_worst: ::core::option::Option<LeafResourceStats>,
+    /// Field-wise sum of all leaf stats. `wall_time_microsecs` is summed even though
+    /// it is not strictly extensive — the sum still gives a useful view of total leaf time.
+    #[prost(message, optional, tag = "2")]
+    pub leaf_sum: ::core::option::Option<LeafResourceStats>,
+    /// Number of leaf calls (including retries).
+    #[prost(uint64, tag = "3")]
+    pub leaf_num_calls: u64,
+    /// Number of leaf retry rounds.
+    #[prost(uint64, tag = "4")]
+    pub num_retry_round: u64,
+    /// Number of failed splits across all leaves.
+    #[prost(uint64, tag = "5")]
+    pub num_failed_splits: u64,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -461,7 +564,7 @@ pub struct LeafSearchResponse {
         ::prost::alloc::vec::Vec<u8>,
     >,
     #[prost(message, optional, tag = "8")]
-    pub resource_stats: ::core::option::Option<ResourceStats>,
+    pub resource_stats: ::core::option::Option<LeafResourceStats>,
 }
 /// The result of searching a single split in a Lambda invocation.
 /// Each result is tagged with its split_id so that ordering is irrelevant.
@@ -477,6 +580,7 @@ pub struct LambdaSingleSplitResult {
 /// Nested message and enum types in `LambdaSingleSplitResult`.
 pub mod lambda_single_split_result {
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[allow(clippy::large_enum_variant)]
     #[serde(rename_all = "snake_case")]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Outcome {

@@ -70,7 +70,8 @@ use quickwit_metastore::{
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::search::{
-    PartialHit, ResourceStats, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    SplitResourceStats,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::StorageResolver;
@@ -346,125 +347,144 @@ pub fn searcher_pool_for_test(
     )
 }
 
-pub(crate) fn merge_resource_stats_it<'a>(
-    stats_it: impl IntoIterator<Item = &'a Option<ResourceStats>>,
-) -> Option<ResourceStats> {
-    let mut acc_stats: Option<ResourceStats> = None;
-    for new_stats in stats_it {
-        merge_resource_stats(new_stats, &mut acc_stats);
-    }
-    acc_stats
+/// Sum of the per-phase microsecond fields used to rank `worst_split`.
+/// Intentionally excludes `wait_for_search_permit_microsecs`.
+pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
+    stats.warmup_microsecs
+        + stats.wait_for_cpu_pool_microsecs
+        + stats.cpu_predicate_microsecs
+        + stats.cpu_collection_microsecs
+        + stats.cpu_harvest_microsecs
 }
 
-fn merge_resource_stats(
-    new_stats_opt: &Option<ResourceStats>,
-    stat_accs_opt: &mut Option<ResourceStats>,
-) {
-    if let Some(new_stats) = new_stats_opt {
-        if let Some(stat_accs) = stat_accs_opt {
-            stat_accs.short_lived_cache_num_bytes += new_stats.short_lived_cache_num_bytes;
-            stat_accs.split_num_docs += new_stats.split_num_docs;
-            stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
-            stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
-            stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
-        } else {
-            *stat_accs_opt = Some(*new_stats);
-        }
-    }
+/// Field-wise sum of two `SplitResourceStats` (every field is extensive).
+pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourceStats) {
+    acc.split_num_docs += other.split_num_docs;
+    acc.input_memory_bytes += other.input_memory_bytes;
+    acc.downloaded_bytes += other.downloaded_bytes;
+    acc.downloaded_req += other.downloaded_req;
+    acc.matched_doc += other.matched_doc;
+    acc.wait_for_search_permit_microsecs += other.wait_for_search_permit_microsecs;
+    acc.warmup_microsecs += other.warmup_microsecs;
+    acc.wait_for_cpu_pool_microsecs += other.wait_for_cpu_pool_microsecs;
+    acc.cpu_predicate_microsecs += other.cpu_predicate_microsecs;
+    acc.cpu_collection_microsecs += other.cpu_collection_microsecs;
+    acc.cpu_harvest_microsecs += other.cpu_harvest_microsecs;
 }
+
+/// Merge another `LeafResourceStats` into `acc`.
+///
+/// Phase 2 plumbing: every numeric field is summed except `lambda_bottleneck` and
+/// `wall_time_microsecs` which take the maximum (these are leaf-level scalars and
+/// will be set authoritatively in later phases). `worst_split` is selected by
+/// `split_phase_sum_microsecs`; `sum_split_resource` is field-wise summed.
+pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceStats) {
+    acc.partial_result_cache_num_splits += other.partial_result_cache_num_splits;
+    acc.partial_result_cache_num_docs += other.partial_result_cache_num_docs;
+    acc.lambda_num_splits += other.lambda_num_splits;
+    acc.lambda_num_docs += other.lambda_num_docs;
+    acc.lambda_success_num_splits += other.lambda_success_num_splits;
+    acc.lambda_success_num_docs += other.lambda_success_num_docs;
+    acc.lambda_bottleneck = acc.lambda_bottleneck.max(other.lambda_bottleneck);
+    acc.num_localexec_splits += other.num_localexec_splits;
+    acc.num_localexec_num_docs += other.num_localexec_num_docs;
+    acc.wall_time_microsecs = acc.wall_time_microsecs.max(other.wall_time_microsecs);
+    if let Some(other_split) = &other.sum_split_resource {
+        let acc_split = acc
+            .sum_split_resource
+            .get_or_insert_with(SplitResourceStats::default);
+        add_split_stats(acc_split, other_split);
+    }
+    acc.worst_split = [acc.worst_split, other.worst_split]
+        .into_iter()
+        .flatten()
+        .max_by_key(split_phase_sum_microsecs);
+}
+
+/// Merge an iterator of `Option<LeafResourceStats>` into a single `Option<LeafResourceStats>`.
+///
+/// `None` entries are skipped. The accumulator is materialized lazily on the first
+/// non-`None` entry so a fully-empty iterator still returns `None`.
+pub(crate) fn merge_leaf_stats_it<'a>(
+    stats_it: impl IntoIterator<Item = &'a Option<LeafResourceStats>>,
+) -> Option<LeafResourceStats> {
+    let mut acc: Option<LeafResourceStats> = None;
+    for new_stats in stats_it {
+        let Some(new_stats) = new_stats else {
+            continue;
+        };
+        let acc = acc.get_or_insert_with(LeafResourceStats::default);
+        add_leaf_stats(acc, new_stats);
+    }
+    acc
+}
+
 #[cfg(test)]
 mod stats_merge_tests {
     use super::*;
 
-    #[test]
-    fn test_merge_resource_stats() {
-        let mut acc_stats = None;
+    fn split_stats(num_docs: u64, warmup: u64, predicate: u64) -> SplitResourceStats {
+        SplitResourceStats {
+            split_num_docs: num_docs,
+            warmup_microsecs: warmup,
+            cpu_predicate_microsecs: predicate,
+            ..Default::default()
+        }
+    }
 
-        merge_resource_stats(&None, &mut acc_stats);
-
-        assert_eq!(acc_stats, None);
-
-        let stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 100,
-            split_num_docs: 200,
-            warmup_microsecs: 300,
-            cpu_thread_pool_wait_microsecs: 400,
-            cpu_microsecs: 500,
-        });
-
-        merge_resource_stats(&stats, &mut acc_stats);
-
-        assert_eq!(acc_stats, stats);
-
-        let new_stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 50,
-            split_num_docs: 100,
-            warmup_microsecs: 150,
-            cpu_thread_pool_wait_microsecs: 200,
-            cpu_microsecs: 250,
-        });
-
-        merge_resource_stats(&new_stats, &mut acc_stats);
-
-        let stats_plus_new_stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 150,
-            split_num_docs: 300,
-            warmup_microsecs: 450,
-            cpu_thread_pool_wait_microsecs: 600,
-            cpu_microsecs: 750,
-        });
-
-        assert_eq!(acc_stats, stats_plus_new_stats);
-
-        merge_resource_stats(&None, &mut acc_stats);
-
-        assert_eq!(acc_stats, stats_plus_new_stats);
+    fn leaf_stats_one_split(split: SplitResourceStats) -> LeafResourceStats {
+        LeafResourceStats {
+            num_localexec_splits: 1,
+            num_localexec_num_docs: split.split_num_docs,
+            sum_split_resource: Some(split),
+            worst_split: Some(split),
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn test_merge_resource_stats_it() {
-        let merged_stats = merge_resource_stats_it(Vec::<&Option<ResourceStats>>::new());
-        assert_eq!(merged_stats, None);
+    fn test_add_split_stats_sums_every_field() {
+        let mut acc = split_stats(100, 50, 200);
+        let other = split_stats(200, 80, 300);
+        add_split_stats(&mut acc, &other);
+        assert_eq!(acc.split_num_docs, 300);
+        assert_eq!(acc.warmup_microsecs, 130);
+        assert_eq!(acc.cpu_predicate_microsecs, 500);
+    }
 
-        let stats1 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 100,
-            split_num_docs: 200,
-            warmup_microsecs: 300,
-            cpu_thread_pool_wait_microsecs: 400,
-            cpu_microsecs: 500,
-        });
+    #[test]
+    fn test_add_leaf_stats_sums_extensives_and_picks_worst_split() {
+        let split_a = split_stats(100, 50, 200);
+        let split_b = split_stats(200, 80, 300);
 
-        let merged_stats = merge_resource_stats_it(vec![&None, &stats1, &None]);
+        let mut acc = leaf_stats_one_split(split_a);
+        let other = leaf_stats_one_split(split_b);
+        add_leaf_stats(&mut acc, &other);
 
-        assert_eq!(merged_stats, stats1);
+        assert_eq!(acc.num_localexec_splits, 2);
+        assert_eq!(acc.num_localexec_num_docs, 300);
 
-        let stats2 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 50,
-            split_num_docs: 100,
-            warmup_microsecs: 150,
-            cpu_thread_pool_wait_microsecs: 200,
-            cpu_microsecs: 250,
-        });
+        let summed = acc.sum_split_resource.unwrap();
+        assert_eq!(summed.split_num_docs, 300);
+        assert_eq!(summed.warmup_microsecs, 130);
+        assert_eq!(summed.cpu_predicate_microsecs, 500);
 
-        let stats3 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 25,
-            split_num_docs: 50,
-            warmup_microsecs: 75,
-            cpu_thread_pool_wait_microsecs: 100,
-            cpu_microsecs: 125,
-        });
+        // worst_split is the one with the largest phase-sum (split_b: 80 + 300 = 380).
+        let worst = acc.worst_split.unwrap();
+        assert_eq!(worst.split_num_docs, 200);
+    }
 
-        let merged_stats = merge_resource_stats_it(vec![&stats1, &stats2, &stats3]);
+    #[test]
+    fn test_merge_leaf_stats_it() {
+        let merged = merge_leaf_stats_it(Vec::<&Option<LeafResourceStats>>::new());
+        assert_eq!(merged, None);
 
-        assert_eq!(
-            merged_stats,
-            Some(ResourceStats {
-                short_lived_cache_num_bytes: 175,
-                split_num_docs: 350,
-                warmup_microsecs: 525,
-                cpu_thread_pool_wait_microsecs: 700,
-                cpu_microsecs: 875,
-            })
-        );
+        let leaf_a = Some(leaf_stats_one_split(split_stats(10, 1, 2)));
+        let leaf_b = Some(leaf_stats_one_split(split_stats(20, 3, 4)));
+
+        let merged = merge_leaf_stats_it(vec![&None, &leaf_a, &None, &leaf_b]);
+        let merged = merged.unwrap();
+        assert_eq!(merged.num_localexec_splits, 2);
+        assert_eq!(merged.num_localexec_num_docs, 30);
     }
 }

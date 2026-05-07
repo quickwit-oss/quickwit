@@ -394,6 +394,7 @@ pub(crate) async fn scroll(
         aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,
+        resource_stats: None,
     })
 }
 /// [`SearcherContext`] provides a common set of variables

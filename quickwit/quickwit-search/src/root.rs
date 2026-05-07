@@ -786,16 +786,17 @@ pub(crate) async fn search_partial_hits_phase(
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats
+        && let Some(sum_split_resource) = &resource_stats.sum_split_resource
         && is_top_5pct_memory_intensive(
-            resource_stats.short_lived_cache_num_bytes,
-            resource_stats.split_num_docs,
+            sum_split_resource.input_memory_bytes,
+            sum_split_resource.split_num_docs,
         )
     {
         // We log at most 5 times per minute.
         quickwit_common::rate_limited_info!(
             limit_per_min = 5,
-            split_num_docs = resource_stats.split_num_docs,
-            short_lived_cached_num_bytes = resource_stats.short_lived_cache_num_bytes,
+            split_num_docs = sum_split_resource.split_num_docs,
+            input_memory_bytes = sum_split_resource.input_memory_bytes,
             "memory intensive query"
         );
     }
@@ -1021,6 +1022,8 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
+        // Phase 2 plumbing: populated authoritatively in Phase 8.
+        resource_stats: None,
     })
 }
 

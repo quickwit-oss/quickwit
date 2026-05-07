@@ -237,7 +237,7 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
 mod tests {
     use bytesize::ByteSize;
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortValue,
+        LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
 
@@ -389,7 +389,7 @@ mod tests {
                 sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
-            resource_stats: Some(ResourceStats::default()),
+            resource_stats: Some(LeafResourceStats::default()),
         };
 
         // for split_1, 1 and 1bis cover different timestamp ranges
