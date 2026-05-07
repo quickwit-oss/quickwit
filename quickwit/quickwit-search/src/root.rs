@@ -31,9 +31,10 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest, SearchResponse,
-    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafResourceStats,
+    LeafSearchRequest, LeafSearchResponse, PartialHit, RootResourceStats, SearchPlanResponse,
+    SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
+    SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -569,7 +570,11 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<(LeafSearchResponse, Option<ScrollKeyAndStartOffset>)> {
+) -> crate::Result<(
+    LeafSearchResponse,
+    Option<ScrollKeyAndStartOffset>,
+    Option<RootResourceStats>,
+)> {
     let scroll_ttl_opt = get_scroll_ttl_duration(&search_request)?;
 
     if let Some(scroll_ttl) = scroll_ttl_opt {
@@ -581,7 +586,7 @@ async fn search_partial_hits_phase_with_scroll(
             .max_hits
             .max(shared_consts::SCROLL_BATCH_LEN as u64);
         search_request.scroll_ttl_secs = None;
-        let mut leaf_search_resp = search_partial_hits_phase(
+        let (mut leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -624,9 +629,13 @@ async fn search_partial_hits_phase_with_scroll(
         cluster_client
             .put_kv(&scroll_key, &payload, scroll_ttl)
             .await;
-        Ok((leaf_search_resp, Some(scroll_key_and_start_offset)))
+        Ok((
+            leaf_search_resp,
+            Some(scroll_key_and_start_offset),
+            root_resource_stats,
+        ))
     } else {
-        let leaf_search_resp = search_partial_hits_phase(
+        let (leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -634,7 +643,7 @@ async fn search_partial_hits_phase_with_scroll(
             cluster_client,
         )
         .await?;
-        Ok((leaf_search_resp, None))
+        Ok((leaf_search_resp, None, root_resource_stats))
     }
 }
 
@@ -730,13 +739,60 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
 #[instrument(level = "debug", skip_all)]
+/// Build a `RootResourceStats` from the per-leaf responses captured before
+/// they are merged.
+///
+/// `leaf_worst` is the leaf with the largest `wall_time_microsecs`. `leaf_sum`
+/// is a field-wise sum of every leaf's stats. `wall_time_microsecs` on
+/// `leaf_sum` is summed (not maxed) — see the proto comment on `leaf_sum`.
+/// `num_retry_round` is set to 0 here; populating it requires a retry counter
+/// threaded through `cluster_client::leaf_search` and will be wired in a
+/// follow-up.
+fn compute_root_resource_stats(
+    leaf_responses: &[LeafSearchResponse],
+    num_failed_splits: u64,
+) -> Option<RootResourceStats> {
+    let leaf_stats: Vec<&LeafResourceStats> = leaf_responses
+        .iter()
+        .filter_map(|resp| resp.resource_stats.as_ref())
+        .collect();
+    if leaf_stats.is_empty() {
+        return None;
+    }
+
+    let leaf_worst = leaf_stats
+        .iter()
+        .copied()
+        .max_by_key(|stats| stats.wall_time_microsecs)
+        .cloned();
+
+    let mut leaf_sum = LeafResourceStats::default();
+    let mut total_wall_time_microsecs: u64 = 0;
+    for stats in &leaf_stats {
+        total_wall_time_microsecs =
+            total_wall_time_microsecs.saturating_add(stats.wall_time_microsecs);
+        crate::add_leaf_stats(&mut leaf_sum, stats);
+    }
+    // `add_leaf_stats` takes the max of `wall_time_microsecs`; for
+    // `leaf_sum` we want the actual sum.
+    leaf_sum.wall_time_microsecs = total_wall_time_microsecs;
+
+    Some(RootResourceStats {
+        leaf_worst,
+        leaf_sum: Some(leaf_sum),
+        leaf_num_calls: leaf_responses.len() as u64,
+        num_retry_round: 0,
+        num_failed_splits,
+    })
+}
+
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<LeafSearchResponse> {
+) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
@@ -757,6 +813,13 @@ pub(crate) async fn search_partial_hits_phase(
             }
             try_join_all(leaf_request_tasks).await?
         };
+
+    let num_failed_splits: u64 = leaf_search_responses
+        .iter()
+        .map(|resp| resp.failed_splits.len() as u64)
+        .sum();
+    let root_resource_stats =
+        compute_root_resource_stats(&leaf_search_responses, num_failed_splits);
 
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
@@ -805,7 +868,7 @@ pub(crate) async fn search_partial_hits_phase(
         quickwit_common::rate_limited_error!(limit_per_min=6, num_failed_splits = leaf_search_response.failed_splits.len(), failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5), "leaf search response contains failed splits");
     }
 
-    Ok(leaf_search_response)
+    Ok((leaf_search_response, root_resource_stats))
 }
 
 pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<SnippetRequest> {
@@ -980,9 +1043,10 @@ async fn root_search_aux(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
-    let (first_phase_result, scroll_key_and_start_offset_opt): (
+    let (first_phase_result, scroll_key_and_start_offset_opt, root_resource_stats): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
+        Option<RootResourceStats>,
     ) = search_partial_hits_phase_with_scroll(
         searcher_context,
         indexes_metas_for_leaf_search,
@@ -1022,8 +1086,7 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
-        // Phase 2 plumbing: populated authoritatively in Phase 8.
-        resource_stats: None,
+        resource_stats: root_resource_stats,
     })
 }
 

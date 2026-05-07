@@ -107,14 +107,15 @@ impl ScrollContext {
         searcher_context: &SearcherContext,
     ) -> crate::Result<bool> {
         self.search_request.search_after = Some(previous_last_hit);
-        let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
-            searcher_context,
-            &self.indexes_metas_for_leaf_search,
-            &self.search_request,
-            &self.split_metadatas[..],
-            cluster_client,
-        )
-        .await?;
+        let (leaf_search_response, _root_resource_stats): (LeafSearchResponse, _) =
+            crate::root::search_partial_hits_phase(
+                searcher_context,
+                &self.indexes_metas_for_leaf_search,
+                &self.search_request,
+                &self.split_metadatas[..],
+                cluster_client,
+            )
+            .await?;
         self.cached_partial_hits_start_offset = start_offset;
         self.cached_partial_hits = leaf_search_response.partial_hits;
         Ok(true)
