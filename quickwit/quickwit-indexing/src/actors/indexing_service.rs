@@ -722,6 +722,10 @@ impl IndexingService {
             merge_scheduler_service: self.merge_scheduler_service.clone(),
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
+            skip_initial_seed: quickwit_common::get_bool_from_env(
+                super::metrics_pipeline::PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY,
+                false,
+            ),
             writer_config,
         };
 

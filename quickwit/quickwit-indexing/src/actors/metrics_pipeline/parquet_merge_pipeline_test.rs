@@ -381,6 +381,7 @@ async fn test_merge_pipeline_end_to_end() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
     };
 
