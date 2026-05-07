@@ -170,14 +170,18 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let start = std::time::Instant::now();
         let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
-        let status = if result.is_ok() { "success" } else { "error" };
+        let outcome = match &result {
+            Ok(_) => "success",
+            Err(SearchError::Timeout(_)) => "timeout",
+            Err(_) => "other",
+        };
         LAMBDA_METRICS
             .leaf_search_requests_total
-            .with_label_values([status])
+            .with_label_values([outcome])
             .inc();
         LAMBDA_METRICS
             .leaf_search_duration_seconds
-            .with_label_values([status])
+            .with_label_values([outcome])
             .observe(elapsed);
         result
     }
