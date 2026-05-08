@@ -27,7 +27,7 @@ use quickwit_proto::compaction::{
     CompactionResult, MergeTaskAssignment, ReportStatusRequest, ReportStatusResponse,
 };
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, NodeId, SourceId};
+use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 use tracing::{error, info};
 use ulid::Ulid;
@@ -190,20 +190,13 @@ impl CompactionPlanner {
         let pending = self.state.pop_pending(available_slots as usize);
         let mut assignments = Vec::with_capacity(pending.len());
 
-        for (partition_key, operation) in pending {
+        for operation in pending {
             let task_id = Ulid::new().to_string();
-            let Some(index_entry) = self.index_config_metastore.get(&partition_key.index_uid)
-            else {
-                error!(index_uid=%partition_key.index_uid, "index config not found for pending operation, skipping");
+            let Some(index_entry) = self.index_config_metastore.get(&operation.index_uid) else {
+                error!(index_uid=%operation.index_uid, "index config not found for pending operation, skipping");
                 continue;
             };
-            let assignment = build_task_assignment(
-                &task_id,
-                index_entry,
-                &operation,
-                &partition_key.index_uid,
-                &partition_key.source_id,
-            );
+            let assignment = build_task_assignment(&task_id, index_entry, &operation);
 
             let split_ids = operation
                 .splits_as_slice()
@@ -237,8 +230,6 @@ fn build_task_assignment(
     task_id: &str,
     index_entry: &IndexEntry,
     operation: &MergeOperation,
-    index_uid: &IndexUid,
-    source_id: &SourceId,
 ) -> MergeTaskAssignment {
     MergeTaskAssignment {
         task_id: task_id.to_string(),
@@ -253,8 +244,8 @@ fn build_task_assignment(
         search_settings_json: index_entry.search_settings_json(),
         indexing_settings_json: index_entry.indexing_settings_json(),
         retention_policy_json: index_entry.retention_policy_json(),
-        index_uid: Some(index_uid.clone()),
-        source_id: source_id.to_string(),
+        index_uid: Some(operation.index_uid.clone()),
+        source_id: operation.source_id.clone(),
         index_storage_uri: index_entry.index_storage_uri(),
         merge_level: operation.merge_level() as u64,
     }
