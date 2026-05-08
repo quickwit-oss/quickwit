@@ -476,7 +476,12 @@ mod tests {
     #[tokio::test]
     async fn test_drain_single_rg_matches_canonical() {
         let batch = make_metrics_batch(64);
-        let bytes = write_parquet(std::slice::from_ref(&batch), None, None, Compression::SNAPPY);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
         let canonical = read_canonical(&bytes);
 
         let source = InMemorySource::new(bytes);
