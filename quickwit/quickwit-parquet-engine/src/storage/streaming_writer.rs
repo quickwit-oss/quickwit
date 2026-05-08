@@ -1007,19 +1007,20 @@ mod tests {
 
     /// PW-B (statistics_enabled): the writer must propagate the
     /// per-column statistics_enabled level from properties. Default
-    /// config uses `EnabledStatistics::Chunk`; we assert it shows up
-    /// at the column-chunk metadata level identically vs ArrowWriter.
+    /// config switched from `Chunk` to `Page` in #6377 (PR-1). `Page`
+    /// implies stats at both the column-chunk *and* page levels, so
+    /// chunk-level stats remain present and the page index now lands
+    /// in the file too.
     #[test]
     fn test_statistics_enabled_propagates() {
         let batch = make_metrics_batch(32);
         let arrow_schema = batch.schema();
         let props = writer_props_with_kv(&arrow_schema, Vec::new());
-        // Default ParquetWriterConfig sets EnabledStatistics::Chunk.
         let metric_name_path =
             parquet::schema::types::ColumnPath::new(vec!["metric_name".to_string()]);
         assert_eq!(
             props.statistics_enabled(&metric_name_path),
-            EnabledStatistics::Chunk,
+            EnabledStatistics::Page,
         );
 
         let bytes = write_streaming(arrow_schema, props, std::slice::from_ref(&batch));
@@ -1032,10 +1033,36 @@ mod tests {
             .iter()
             .find(|c| c.column_descr().name() == "metric_name")
             .unwrap();
-        // Chunk-level stats present, page index absent.
         assert!(
             mn_col.statistics().is_some(),
-            "chunk-level statistics expected"
+            "chunk-level statistics expected (Page implies Chunk)",
+        );
+        // PR-1 also enables the column / offset indexes for query
+        // pruning; verify they show up.
+        let metric_name_idx = rg
+            .columns()
+            .iter()
+            .position(|c| c.column_descr().name() == "metric_name")
+            .unwrap();
+        let column_index_present = match reader.metadata().column_index() {
+            Some(ci) => !ci.is_empty() && !ci[0].is_empty(),
+            None => false,
+        };
+        assert!(
+            column_index_present,
+            "page-level column index expected with EnabledStatistics::Page",
+        );
+        let offset_index_has_pages = match reader.metadata().offset_index() {
+            Some(oi) => {
+                !oi.is_empty()
+                    && !oi[0].is_empty()
+                    && !oi[0][metric_name_idx].page_locations.is_empty()
+            }
+            None => false,
+        };
+        assert!(
+            offset_index_has_pages,
+            "offset index with non-empty page locations expected with EnabledStatistics::Page",
         );
     }
 
