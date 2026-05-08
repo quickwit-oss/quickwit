@@ -51,7 +51,6 @@ impl CompactionPartitionKey {
 
 #[derive(Debug)]
 struct InFlightCompaction {
-    task_id: TaskId,
     split_ids: Vec<SplitId>,
     node_id: NodeId,
     last_heartbeat: Instant,
@@ -66,8 +65,6 @@ pub struct CompactionState {
     needs_compaction_split_ids: HashSet<SplitId>,
     in_flight: HashMap<TaskId, InFlightCompaction>,
     in_flight_split_ids: HashSet<SplitId>,
-    /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key
-    /// here.
     pending_operations: PendingOperations,
 }
 
@@ -123,8 +120,7 @@ impl CompactionState {
                     self.in_flight_split_ids
                         .insert(split.split_id().to_string());
                 }
-                self.pending_operations
-                    .push(partition_key.clone(), operation);
+                self.pending_operations.push(operation);
             }
         }
         if splits.is_empty() {
@@ -170,7 +166,6 @@ impl CompactionState {
                 self.in_flight.insert(
                     task.task_id.clone(),
                     InFlightCompaction {
-                        task_id: task.task_id.clone(),
                         split_ids: task.split_ids.clone(),
                         node_id: node_id.clone(),
                         last_heartbeat: Instant::now(),
@@ -201,8 +196,8 @@ impl CompactionState {
         }
     }
 
-    /// Pops up to `count` pending operations for assignment.
-    pub fn pop_pending(&mut self, count: usize) -> Vec<(CompactionPartitionKey, MergeOperation)> {
+    /// Pops up to `count` pending operations for assignment, highest-score first.
+    pub fn pop_pending(&mut self, count: usize) -> Vec<MergeOperation> {
         let count = count.min(self.pending_operations.len());
         let mut operations = Vec::with_capacity(count);
         for _ in 0..count {
@@ -214,9 +209,8 @@ impl CompactionState {
     /// Records that an operation has been assigned to a worker.
     pub fn record_assignment(&mut self, task_id: TaskId, split_ids: Vec<SplitId>, node_id: NodeId) {
         self.in_flight.insert(
-            task_id.clone(),
+            task_id,
             InFlightCompaction {
-                task_id,
                 split_ids,
                 node_id,
                 last_heartbeat: Instant::now(),
@@ -330,7 +324,7 @@ mod tests {
 
         // Splits moved from needs_compaction to in_flight.
         assert!(!state.pending_operations.is_empty());
-        for (_, op) in state.pending_operations.iter() {
+        for op in state.pending_operations.iter() {
             for split in op.splits_as_slice() {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
                 assert!(state.in_flight_split_ids.contains(split.split_id()));
@@ -413,7 +407,7 @@ mod tests {
         let pending = state.pop_pending(1);
         assert_eq!(pending.len(), 1);
 
-        let (_, operation) = &pending[0];
+        let operation = &pending[0];
         let split_ids: Vec<String> = operation
             .splits_as_slice()
             .iter()

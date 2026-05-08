@@ -209,30 +209,12 @@ struct ScheduleMerge {
     split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
 
-/// The higher, the sooner we will execute the merge operation.
-/// A good merge operation
-/// - strongly reduces the number splits
-/// - is light.
-fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
-    let total_num_bytes: u64 = merge_operation.total_num_bytes();
-    if total_num_bytes == 0 {
-        // Silly corner case that should never happen.
-        return u64::MAX;
-    }
-    // We will remove splits.len() and add 1 merge splits.
-    let delta_num_splits = (merge_operation.splits.len() - 1) as u64;
-    // We use integer arithmetic to avoid `f64 are not ordered` silliness.
-    (delta_num_splits << 48)
-        .checked_div(total_num_bytes)
-        .unwrap_or(1u64)
-}
-
 impl ScheduleMerge {
     pub fn new(
         merge_operation: TrackedObject<MergeOperation>,
         split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> ScheduleMerge {
-        let score = score_merge_operation(&merge_operation);
+        let score = merge_operation.score;
         ScheduleMerge {
             score,
             merge_operation,
@@ -313,24 +295,6 @@ mod tests {
         .take(num_splits)
         .collect();
         MergeOperation::new_merge_operation(splits)
-    }
-
-    #[test]
-    fn test_score_merge_operation() {
-        let score_merge_operation_aux = |num_splits, num_bytes_per_split| {
-            let merge_operation = build_merge_operation(num_splits, num_bytes_per_split);
-            score_merge_operation(&merge_operation)
-        };
-        assert!(score_merge_operation_aux(10, 10_000_000) < score_merge_operation_aux(10, 999_999));
-        assert!(
-            score_merge_operation_aux(10, 10_000_000) > score_merge_operation_aux(9, 10_000_000)
-        );
-        assert_eq!(
-            // 9 - 1 = 8 splits removed.
-            score_merge_operation_aux(9, 10_000_000),
-            // 5 - 1  = 4 splits removed.
-            score_merge_operation_aux(5, 10_000_000 * 9 / 10)
-        );
     }
 
     #[tokio::test]
