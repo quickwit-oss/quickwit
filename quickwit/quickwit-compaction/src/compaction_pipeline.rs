@@ -56,7 +56,6 @@ pub struct PipelineStatusUpdate {
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub split_ids: Vec<SplitId>,
-    pub merge_level: u64,
     pub status: PipelineStatus,
 }
 
@@ -270,7 +269,6 @@ impl CompactionPipeline {
                 .map(|split| split.split_id().to_string())
                 .collect(),
             status: self.status.clone(),
-            merge_level: self.merge_operation.merge_level() as u64,
         }
     }
 

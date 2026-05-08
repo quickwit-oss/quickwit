@@ -21,7 +21,9 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
 use bytesize::ByteSize;
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::split_file;
+use quickwit_config::IndexerConfig;
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::StorageResult;
 use tantivy::Directory;
@@ -364,6 +366,31 @@ impl IndexingSplitCache {
         IndexingSplitCache { inner }
     }
 
+    /// Builds an [`IndexingSplitCache`] from an [`IndexerConfig`].
+    ///
+    /// A zero quota for either dimension produces a [`IndexingSplitCache::no_caching`]
+    /// instance — useful when compaction runs on dedicated nodes and indexers no
+    /// longer benefit from caching freshly produced splits. Otherwise, opens the
+    /// cache rooted at `<data_dir>/indexer-split-cache/splits`.
+    pub async fn from_config(
+        indexer_config: &IndexerConfig,
+        data_dir_path: &Path,
+    ) -> anyhow::Result<IndexingSplitCache> {
+        if indexer_config.split_store_max_num_bytes.as_u64() == 0
+            || indexer_config.split_store_max_num_splits == 0
+        {
+            return Ok(IndexingSplitCache::no_caching());
+        }
+        let cache_path = get_cache_directory_path(data_dir_path);
+        let quota = SplitStoreQuota::try_new(
+            indexer_config.split_store_max_num_splits,
+            indexer_config.split_store_max_num_bytes,
+        )?;
+        IndexingSplitCache::open(cache_path, quota)
+            .await
+            .context("failed to open indexing split cache")
+    }
+
     /// Try to open an existing local split store directory.
     ///
     /// If the directory does not exists, it will be created.
@@ -511,6 +538,7 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
+    use quickwit_config::IndexerConfig;
     use quickwit_directories::BundleDirectory;
     use quickwit_storage::{PutPayload, SplitPayloadBuilder};
     use tantivy::Directory;
@@ -531,6 +559,54 @@ mod tests {
         fs::create_dir(&split_path).await?;
         fs::write(split_path.join("splitdata"), &vec![0u8; len]).await?;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_from_config() {
+        // A zero quota in either dimension yields a no-caching cache that does
+        // not touch the filesystem; a positive quota opens (and creates) the
+        // cache directory at `<data_dir>/indexer-split-cache/splits`.
+        let zero_bytes = {
+            let mut config = IndexerConfig::for_test().unwrap();
+            config.split_store_max_num_bytes = ByteSize(0);
+            config
+        };
+        let zero_splits = {
+            let mut config = IndexerConfig::for_test().unwrap();
+            config.split_store_max_num_splits = 0;
+            config
+        };
+        let both_zero = {
+            let mut config = IndexerConfig::for_test().unwrap();
+            config.split_store_max_num_bytes = ByteSize(0);
+            config.split_store_max_num_splits = 0;
+            config
+        };
+        for config in [zero_bytes, zero_splits, both_zero] {
+            let data_dir = tempdir().unwrap();
+            let _cache = IndexingSplitCache::from_config(&config, data_dir.path())
+                .await
+                .unwrap();
+            assert!(
+                !data_dir
+                    .path()
+                    .join("indexer-split-cache")
+                    .try_exists()
+                    .unwrap(),
+                "no-caching variant must not create the cache directory",
+            );
+        }
+
+        let data_dir = tempdir().unwrap();
+        let config = IndexerConfig::for_test().unwrap();
+        let _cache = IndexingSplitCache::from_config(&config, data_dir.path())
+            .await
+            .unwrap();
+        let cache_dir = data_dir.path().join("indexer-split-cache").join("splits");
+        assert!(
+            cache_dir.is_dir(),
+            "positive quota must open (and create) the cache directory",
+        );
     }
 
     #[tokio::test]
