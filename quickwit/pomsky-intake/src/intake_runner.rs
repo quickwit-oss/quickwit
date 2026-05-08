@@ -36,6 +36,7 @@ fn build_vector_config(dd_site: &str, config: &IntakeConfig, print: bool) -> Str
     let data_dir = config.data_dir.display();
     let logs_endpoint = &config.logs_endpoint;
     let metrics_endpoint = &config.metrics_endpoint;
+    let sketches_endpoint = &config.sketches_endpoint;
     let traces_endpoint = &config.traces_endpoint;
     let metadata_svc_url = format!("https://{}", dd_site.trim_end_matches('/'));
     let metric_metadata_persist_file_path = config.metric_metadata_persist_file_path.display();
@@ -190,7 +191,8 @@ sinks:
     type: arrow_ipc_metrics
     inputs:
       - metric_metadata
-    uri: "{metrics_endpoint}"
+    metrics_uri: "{metrics_endpoint}"
+    sketches_uri: "{sketches_endpoint}"
 
   datadog_metrics:
     type: datadog_metrics

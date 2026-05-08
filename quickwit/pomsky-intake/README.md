@@ -44,6 +44,7 @@ The config file is a YAML file with the following fields (all optional with defa
 data_dir: qwdata/intake          # default: qwdata/intake
 logs_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/logs
 metrics_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/metrics
+sketches_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/sketches
 traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 
 # Datadog credentials — shared across all Datadog-backed pollers.

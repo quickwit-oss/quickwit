@@ -1,6 +1,7 @@
 data_dir: ./pomsky-intake/local-test/sandbox
 logs_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/logs
 metrics_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/metrics
+sketches_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/sketches
 traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 metric_metadata_persist_file_path: ./pomsky-intake/local-test/sandbox/metric_metadata_known.csv
 host_tags:

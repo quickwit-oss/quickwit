@@ -88,6 +88,7 @@ pub(crate) fn byoc_api_handlers(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     byoc_logs_handler(ingest_router.clone(), index_router)
         .or(byoc_metrics_handler(ingest_router.clone()))
+        .or(byoc_sketches_handler(ingest_router.clone()))
         .or(byoc_temp_metrics_handler(ingest_router.clone()))
         .or(byoc_traces_handler(ingest_router))
         .boxed()
@@ -431,6 +432,85 @@ async fn byoc_ingest_metrics(
         &BYOC_METRICS.metric_requests_total,
         &BYOC_METRICS.metric_request_duration_seconds,
         &BYOC_METRICS.metric_bytes_total,
+        &ingest_result,
+        start,
+        num_bytes,
+    );
+    ingest_result
+}
+
+// ---------------------------------------------------------------------------
+// Sketches
+// ---------------------------------------------------------------------------
+
+fn byoc_sketches_handler(
+    ingest_router: IngestRouterServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("api" / "datadog" / "v1" / "byoc" / "sketches")
+        .and(warp::post())
+        .and(get_body_bytes())
+        .and(with_arg(ingest_router))
+        .then(byoc_ingest_sketches)
+        .map(|result| into_rest_api_response(result, BodyFormat::default()))
+}
+
+#[cfg(not(feature = "metrics"))]
+async fn byoc_ingest_sketches(
+    _body: Body,
+    _ingest_router: IngestRouterServiceClient,
+) -> Result<(), ByocApiError> {
+    Err(ByocApiError::MetricsNotSupported)
+}
+
+#[cfg(feature = "metrics")]
+async fn byoc_ingest_sketches(
+    body: Body,
+    ingest_router: IngestRouterServiceClient,
+) -> Result<(), ByocApiError> {
+    debug!("received sketches request from intake");
+    let start = Instant::now();
+
+    if body.content.is_empty() {
+        rate_limited_warn!(
+            limit_per_min = 6,
+            "received empty sketches request from intake"
+        );
+        record_metrics(
+            &BYOC_METRICS.sketch_requests_total,
+            &BYOC_METRICS.sketch_request_duration_seconds,
+            &BYOC_METRICS.sketch_bytes_total,
+            &Ok(()),
+            start,
+            0,
+        );
+        return Ok(());
+    }
+    let num_bytes = body.content.len() as u64;
+    let doc_lengths = vec![body.content.len() as u32];
+    let doc_batch = quickwit_proto::ingest::DocBatchV2 {
+        doc_uids: vec![quickwit_proto::types::DocUid::random()],
+        doc_buffer: body.content,
+        doc_lengths,
+        doc_format: quickwit_proto::ingest::DocFormat::ArrowIpc as i32,
+    };
+    let subrequest = IngestSubrequest {
+        subrequest_id: 0,
+        index_id: BYOC_SKETCHES_INDEX.to_string(),
+        source_id: INGEST_V2_SOURCE_ID.to_string(),
+        doc_batch: Some(doc_batch),
+    };
+    let request = IngestRequestV2 {
+        commit_type: CommitTypeV2::Auto as i32,
+        subrequests: vec![subrequest],
+    };
+    let ingest_result = match ingest_router.ingest(request).await {
+        Ok(response) => process_ingest_response(response, "sketches"),
+        Err(error) => Err(ByocApiError::IngestError(error)),
+    };
+    record_metrics(
+        &BYOC_METRICS.sketch_requests_total,
+        &BYOC_METRICS.sketch_request_duration_seconds,
+        &BYOC_METRICS.sketch_bytes_total,
         &ingest_result,
         start,
         num_bytes,

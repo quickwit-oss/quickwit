@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 pub struct IntakeConfig {
     pub logs_endpoint: String,
     pub metrics_endpoint: String,
+    pub sketches_endpoint: String,
     pub traces_endpoint: String,
 }
 
@@ -32,6 +33,11 @@ impl Default for IntakeConfig {
             ),
             metrics_endpoint: format!(
                 "http://{}:{}/api/datadog/v1/byoc/metrics",
+                Host::default(),
+                7280
+            ),
+            sketches_endpoint: format!(
+                "http://{}:{}/api/datadog/v1/byoc/sketches",
                 Host::default(),
                 7280
             ),

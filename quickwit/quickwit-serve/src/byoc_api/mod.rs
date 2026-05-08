@@ -28,6 +28,9 @@ pub(crate) struct ByocApiMetrics {
     pub metric_requests_total: DDCounters,
     pub metric_request_duration_seconds: DDHistograms,
     pub metric_bytes_total: Counter,
+    pub sketch_requests_total: DDCounters,
+    pub sketch_request_duration_seconds: DDHistograms,
+    pub sketch_bytes_total: Counter,
     pub trace_requests_total: DDCounters,
     pub trace_request_duration_seconds: DDHistograms,
     pub trace_bytes_total: Counter,
@@ -37,6 +40,7 @@ impl Default for ByocApiMetrics {
     fn default() -> Self {
         let log = Label::new("signal", "log");
         let metric = Label::new("signal", "metric");
+        let sketch = Label::new("signal", "sketch");
         let trace = Label::new("signal", "trace");
 
         Self {
@@ -68,6 +72,20 @@ impl Default for ByocApiMetrics {
                 std::slice::from_ref(&metric),
             ),
             metric_bytes_total: counter!("byoc_ingest_bytes.count", vec![metric]),
+
+            sketch_requests_total: DDCounters::new(
+                "byoc_ingest_requests.count",
+                "status_code",
+                DD_STATUS_CODES,
+                std::slice::from_ref(&sketch),
+            ),
+            sketch_request_duration_seconds: DDHistograms::new(
+                "byoc_ingest_requests.duration_seconds",
+                "status_code",
+                DD_STATUS_CODES,
+                std::slice::from_ref(&sketch),
+            ),
+            sketch_bytes_total: counter!("byoc_ingest_bytes.count", vec![sketch]),
 
             trace_requests_total: DDCounters::new(
                 "byoc_ingest_requests.count",
