@@ -871,6 +871,52 @@ mod tests {
         }
     }
 
+    /// Cell-equal data round trip through the re-encode helper.
+    ///
+    /// `test_data_roundtrip_through_adapter` checks row count + schema
+    /// names through the streaming path; that catches dropped rows but
+    /// not value-level corruption (e.g., a hypothetical dictionary key
+    /// XOR or column-value swap during the decode/concat/re-encode
+    /// chain). This test calls `reencode_as_single_row_group` directly
+    /// against a fixture with both nullable and dictionary-encoded
+    /// columns, reads the re-encoded bytes back via the standard
+    /// reader, and asserts each column equals the oracle byte-for-byte.
+    #[test]
+    fn test_reencode_preserves_arrays_byte_equal() {
+        // Three RGs (50 rows each) so the consolidator actually has
+        // multiple input batches to concatenate. The fixture exercises
+        // dict columns and nulls in `service`.
+        let batch_a = make_metrics_batch(50);
+        let batch_b = make_metrics_batch(50);
+        let batch_c = make_metrics_batch(50);
+        let arrow_schema = batch_a.schema();
+        let bytes = write_multi_rg_file(
+            &[batch_a, batch_b, batch_c],
+            Vec::new(),
+            default_sorting_cols(&arrow_schema),
+            50,
+        );
+        let oracle = read_back_to_single_batch(bytes.clone());
+
+        let reencoded = reencode_as_single_row_group(bytes).expect("reencode helper");
+        let reencoded_batch = read_back_to_single_batch(Bytes::from(reencoded));
+
+        assert_eq!(reencoded_batch.num_rows(), oracle.num_rows());
+        assert_eq!(reencoded_batch.num_columns(), oracle.num_columns());
+
+        let oracle_schema = oracle.schema();
+        for col_idx in 0..oracle.num_columns() {
+            let oracle_col = oracle.column(col_idx);
+            let reencoded_col = reencoded_batch.column(col_idx);
+            assert_eq!(
+                oracle_col.as_ref(),
+                reencoded_col.as_ref(),
+                "column '{}' (index {col_idx}) differs after re-encode",
+                oracle_schema.field(col_idx).name(),
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_satisfies_column_page_stream_trait() {
         let batch_a = make_metrics_batch(80);
