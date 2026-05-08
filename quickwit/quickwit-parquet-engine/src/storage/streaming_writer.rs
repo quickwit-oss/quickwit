@@ -249,12 +249,14 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
     ///
     /// # Limitations
     /// Per-physical-type dispatch covers what the metrics schema
-    /// needs: `Boolean`, `Int8/16/32` and `UInt8/16` (mapped to
-    /// parquet `Int32`), `Int64`/`UInt32`/`UInt64` (mapped to parquet
-    /// `Int64`), `Float32`, `Float64`, `Utf8`/`LargeUtf8`/`Binary`/
-    /// `LargeBinary` (mapped to parquet `ByteArray`), and
-    /// `Dictionary` over any of the above (materialized via `take`).
-    /// Other types return [`ParquetWriteError::SchemaValidation`].
+    /// needs: `Boolean`, `Int8/16/32` and `UInt8/16/32` (mapped to
+    /// parquet `Int32` physical with the appropriate logical
+    /// annotation per [`ArrowSchemaConverter`]), `Int64`/`UInt64`
+    /// (mapped to parquet `Int64`), `Float32`, `Float64`,
+    /// `Utf8`/`LargeUtf8`/`Binary`/`LargeBinary` (mapped to parquet
+    /// `ByteArray`), and `Dictionary` over any of the above
+    /// (materialized via `take`). Other types return
+    /// [`ParquetWriteError::SchemaValidation`].
     pub(crate) fn write_next_column_arrays<I>(
         &mut self,
         arrays: I,
@@ -429,12 +431,18 @@ fn write_array_via_serialized_column_writer(
                 .unwrap()
                 .value(i)
         })?,
-        DataType::UInt32 => write_int64_compatible(col_writer, field, array, |i| {
+        DataType::UInt32 => write_int32_compatible(col_writer, field, array, |i| {
+            // ArrowSchemaConverter maps `UInt32` to a parquet INT32
+            // *physical* type with an unsigned logical annotation, so
+            // the on-wire writer is `Int32Type`. The `u32 -> i32`
+            // cast reinterprets bits; the unsigned logical annotation
+            // tells readers to interpret those 32 bits back as `u32`,
+            // so the round trip is bit-exact.
             array
                 .as_any()
                 .downcast_ref::<UInt32Array>()
                 .unwrap()
-                .value(i) as i64
+                .value(i) as i32
         })?,
         DataType::UInt64 => write_int64_compatible(col_writer, field, array, |i| {
             // UInt64 → Int64: caller's responsibility to ensure
@@ -646,7 +654,7 @@ mod tests {
 
     use arrow::array::{
         Array, ArrayRef, DictionaryArray, Float64Array, Int64Array, RecordBatch, StringArray,
-        UInt8Array, UInt64Array,
+        UInt8Array, UInt32Array, UInt64Array,
     };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
     use parquet::arrow::ArrowWriter;
@@ -1504,6 +1512,115 @@ mod tests {
         assert!(
             column_as_strings(svc_in).iter().any(|v| v.is_none()),
             "fixture must have at least one null",
+        );
+    }
+
+    /// `UInt32` columns must round trip through `write_next_column_arrays`.
+    ///
+    /// Regression test: an earlier dispatch routed `UInt32` through the
+    /// `Int64` writer path. `ArrowSchemaConverter` maps Arrow `UInt32`
+    /// to a parquet INT32 *physical* type with an unsigned logical
+    /// annotation, so an `Int64` writer over an INT32 column hits a
+    /// runtime physical-type mismatch — affecting any production
+    /// schema with a `UInt32` field (e.g., the sketch `flags` column
+    /// in `quickwit-parquet-engine/src/schema/sketch_fields.rs`).
+    ///
+    /// The fixture includes values `>= 2^31` to verify the
+    /// `u32 -> i32` cast preserves bits and the unsigned logical
+    /// annotation is honoured on read-back.
+    #[test]
+    fn test_uint32_round_trip_through_array_stream() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+            Field::new("flags", DataType::UInt32, false),
+        ]));
+
+        let num_rows = 8;
+        let metric_keys: Vec<i32> = (0..num_rows as i32).map(|i| i % 2).collect();
+        let metric_values = StringArray::from(vec!["cpu.usage", "memory.used"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .unwrap(),
+        );
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
+        let timestamp_secs: ArrayRef =
+            Arc::new(UInt64Array::from((0..num_rows as u64).collect::<Vec<_>>()));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..num_rows).map(|i| i as f64).collect::<Vec<_>>(),
+        ));
+        let timeseries_id: ArrayRef =
+            Arc::new(Int64Array::from((0..num_rows as i64).collect::<Vec<_>>()));
+        let svc_keys: Vec<Option<i32>> = (0..num_rows as i32).map(|i| Some(i % 3)).collect();
+        let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(svc_keys),
+                Arc::new(svc_values),
+            )
+            .unwrap(),
+        );
+        // Includes the high-bit-set range that would clip if written
+        // through an `i32` writer without the unsigned logical
+        // annotation.
+        let flag_values: Vec<u32> = vec![
+            0,
+            1,
+            42,
+            0x7FFF_FFFF,
+            0x8000_0000,
+            0xFFFF_FFFE,
+            0xFFFF_FFFF,
+            0xCAFE_F00D,
+        ];
+        let flags: ArrayRef = Arc::new(UInt32Array::from(flag_values.clone()));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+                flags,
+            ],
+        )
+        .unwrap();
+
+        let props = writer_props_with_kv(&schema, Vec::new());
+        let mut out: Vec<u8> = Vec::new();
+        {
+            let mut w = StreamingParquetWriter::try_new(&mut out, schema.clone(), props).unwrap();
+            let mut rg = w.start_row_group().unwrap();
+            for col_idx in 0..batch.num_columns() {
+                rg.write_next_column_arrays([batch.column(col_idx).clone()])
+                    .unwrap();
+            }
+            rg.finish().unwrap();
+            w.close().unwrap();
+        }
+
+        let actual = read_back(&out);
+        let flags_idx = actual.schema().index_of("flags").unwrap();
+        let flags_col = actual
+            .column(flags_idx)
+            .as_any()
+            .downcast_ref::<UInt32Array>()
+            .expect("flags column must round trip as UInt32");
+        let actual_values: Vec<u32> = (0..flags_col.len()).map(|i| flags_col.value(i)).collect();
+        assert_eq!(
+            actual_values, flag_values,
+            "UInt32 round trip diverged — likely INT32-vs-INT64 physical-type mismatch",
         );
     }
 
