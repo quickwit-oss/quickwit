@@ -17,6 +17,7 @@ use std::io::{IsTerminal, Stdout, Write, stdout};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -37,9 +38,9 @@ use quickwit_config::{
     TransformConfig,
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
-use quickwit_indexing::IndexingPipeline;
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
+use quickwit_indexing::{IndexingPipeline, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
@@ -417,6 +418,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
     let universe = Universe::new();
+    let split_cache =
+        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -428,6 +431,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        split_cache,
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
