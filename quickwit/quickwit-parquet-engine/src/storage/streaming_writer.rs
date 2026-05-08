@@ -122,14 +122,20 @@ impl<W: Write + Send> StreamingParquetWriter<W> {
     /// Open a new row group. The returned [`RowGroupBuilder`] borrows
     /// `self` for the lifetime of the row group.
     ///
-    /// Returns an error if the arrow schema contains a field that maps
-    /// to more or fewer than one parquet leaf column.
+    /// Returns an error if any top-level arrow field expands to more
+    /// than one parquet leaf — i.e. multi-leaf nested types such as
+    /// `Struct` with several primitive children. Single-leaf nested
+    /// types (e.g. `List<UInt64>` for the DDSketch `counts` column)
+    /// are accepted; see
+    /// [`RowGroupBuilder::write_next_column_arrays`] for how those
+    /// columns are routed.
     pub(crate) fn start_row_group(&mut self) -> Result<RowGroupBuilder<'_, W>, ParquetWriteError> {
         let column_writers = self.factory.create_column_writers(self.next_rg_idx)?;
         if column_writers.len() != self.arrow_schema.fields().len() {
             return Err(ParquetWriteError::SchemaValidation(format!(
-                "streaming writer requires one parquet leaf per arrow field; arrow schema has {} \
-                 fields but produced {} parquet leaves (nested types are not supported in PR-2)",
+                "streaming writer requires exactly one parquet leaf per arrow field; arrow schema \
+                 has {} fields but produced {} parquet leaves (multi-leaf nested types — e.g. \
+                 Struct with multiple children — are not supported)",
                 self.arrow_schema.fields().len(),
                 column_writers.len(),
             )));
@@ -247,16 +253,36 @@ impl<'a, W: Write + Send> RowGroupBuilder<'a, W> {
     /// by the first call into the row group. An empty iterator is
     /// allowed (the column contributes zero rows).
     ///
-    /// # Limitations
-    /// Per-physical-type dispatch covers what the metrics schema
-    /// needs: `Boolean`, `Int8/16/32` and `UInt8/16/32` (mapped to
-    /// parquet `Int32` physical with the appropriate logical
-    /// annotation per [`ArrowSchemaConverter`]), `Int64`/`UInt64`
-    /// (mapped to parquet `Int64`), `Float32`, `Float64`,
-    /// `Utf8`/`LargeUtf8`/`Binary`/`LargeBinary` (mapped to parquet
-    /// `ByteArray`), and `Dictionary` over any of the above
-    /// (materialized via `take`). Other types return
-    /// [`ParquetWriteError::SchemaValidation`].
+    /// # Supported types
+    /// Flat physical types: `Boolean`, `Int8/16/32` and
+    /// `UInt8/16/32` (mapped to parquet `Int32` physical with the
+    /// appropriate logical annotation per [`ArrowSchemaConverter`]),
+    /// `Int64`/`UInt64` (mapped to parquet `Int64`), `Float32`,
+    /// `Float64`, `Utf8`/`LargeUtf8`/`Binary`/`LargeBinary` (mapped
+    /// to parquet `ByteArray`), and `Dictionary` over any of the
+    /// above (materialized via `take`).
+    ///
+    /// `List<T>` / `LargeList<T>` where the outer field is
+    /// **non-nullable** and the inner field is **non-nullable** and
+    /// one of the flat primitives above. This covers the DDSketch
+    /// `keys` (`List<Int16>`) and `counts` (`List<UInt64>`) columns.
+    /// The list path computes Dremel definition + repetition levels
+    /// from each input array and pushes them through the same
+    /// [`SerializedColumnWriter::write_batch`] call the flat path
+    /// uses, so memory stays bounded by one in-flight page —
+    /// pages flush directly to the file sink as
+    /// `data_page_size_limit` / `data_page_row_count_limit`
+    /// thresholds are reached, identical to the flat-primitive path.
+    ///
+    /// Other types — nullable list inner, nullable list outer,
+    /// `Struct`, `Map`, `FixedSizeList`, multi-leaf nested — return
+    /// [`ParquetWriteError::SchemaValidation`]. Multi-leaf nested
+    /// (`Struct` with multiple primitive children, etc.) is also
+    /// rejected up front by
+    /// [`StreamingParquetWriter::start_row_group`] so the row group
+    /// is never opened.
+    ///
+    /// [`SerializedColumnWriter::write_batch`]: parquet::file::writer::SerializedColumnWriter
     pub(crate) fn write_next_column_arrays<I>(
         &mut self,
         arrays: I,
@@ -544,14 +570,326 @@ fn write_array_via_serialized_column_writer(
                 &materialized_ref,
             );
         }
-        // Quoted to make the rejection message readable. Nested types
-        // (Struct, List, Map) and decimal are out of scope for PR-2.
+        // `List<T>` / `LargeList<T>` with non-nullable outer + inner.
+        // The DDSketch `keys` (`List<Int16>`) and `counts`
+        // (`List<UInt64>`) columns are this shape. We compute Dremel
+        // def/rep levels from each input array and write them through
+        // the same `SerializedColumnWriter::write_batch` call the flat
+        // path uses, so memory stays bounded by one in-flight page.
+        DataType::List(_) | DataType::LargeList(_) => {
+            write_non_nullable_list_via_serialized_column_writer(col_writer, field, array)?;
+        }
+        // Multi-leaf nested (Struct, Map) and other unsupported types.
+        // Single-leaf multi-child Structs are rejected at
+        // `start_row_group` with a different error message; this arm
+        // catches anything that slipped through (FixedSizeList,
+        // ListView, decimals, etc.).
         other => {
             return Err(ParquetWriteError::SchemaValidation(format!(
                 "field '{}' has unsupported data type {other:?} for write_next_column_arrays \
-                 (PR-2 covers Boolean, Int8/16/32/64, UInt8/16/32/64, Float32/64, Utf8/LargeUtf8, \
-                 Binary/LargeBinary, and Dictionary over those)",
+                 (supported: Boolean, Int8/16/32/64, UInt8/16/32/64, Float32/64, \
+                 Utf8/LargeUtf8/Binary/LargeBinary, Dictionary over those, and List/LargeList<T> \
+                 with non-nullable outer + inner where T is one of the flat primitives above)",
                 field.name(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Page-bounded write for `List<T>` / `LargeList<T>` where the outer
+/// field is non-nullable and the inner field is non-nullable. Computes
+/// Dremel def/rep levels (max_def = 1, max_rep = 1) and dispatches the
+/// flat inner values through the same typed `write_batch` call the flat
+/// arms use. Pages flush as the writer's
+/// `data_page_size_limit` / `data_page_row_count_limit` thresholds are
+/// reached — same memory-bound contract as the flat path.
+fn write_non_nullable_list_via_serialized_column_writer(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    array: &arrow::array::ArrayRef,
+) -> Result<(), ParquetWriteError> {
+    use arrow::array::{Array, LargeListArray, ListArray};
+    use arrow::datatypes::DataType;
+
+    if field.is_nullable() {
+        return Err(ParquetWriteError::SchemaValidation(format!(
+            "field '{}' is a nullable List; only non-nullable List is supported on the streaming \
+             write path",
+            field.name(),
+        )));
+    }
+
+    // Resolve inner field + values + per-row offsets uniformly across
+    // List<T> and LargeList<T>. Offsets coerce to i64 so a single
+    // function body handles both representations.
+    let (inner_field, inner_values, offsets): (
+        &arrow::datatypes::Field,
+        &arrow::array::ArrayRef,
+        Vec<i64>,
+    ) = match field.data_type() {
+        DataType::List(inner_field_ref) => {
+            let arr = array.as_any().downcast_ref::<ListArray>().ok_or_else(|| {
+                ParquetWriteError::SchemaValidation(format!(
+                    "field '{}' has data type List but array is not a ListArray",
+                    field.name(),
+                ))
+            })?;
+            let offsets: Vec<i64> = arr.value_offsets().iter().map(|&o| o as i64).collect();
+            (inner_field_ref.as_ref(), arr.values(), offsets)
+        }
+        DataType::LargeList(inner_field_ref) => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<LargeListArray>()
+                .ok_or_else(|| {
+                    ParquetWriteError::SchemaValidation(format!(
+                        "field '{}' has data type LargeList but array is not a LargeListArray",
+                        field.name(),
+                    ))
+                })?;
+            let offsets: Vec<i64> = arr.value_offsets().to_vec();
+            (inner_field_ref.as_ref(), arr.values(), offsets)
+        }
+        other => {
+            return Err(ParquetWriteError::SchemaValidation(format!(
+                "internal: write_non_nullable_list called with non-list type {other:?}",
+            )));
+        }
+    };
+
+    if inner_field.is_nullable() {
+        return Err(ParquetWriteError::SchemaValidation(format!(
+            "field '{}' has nullable list inner; only non-nullable inner is supported on the \
+             streaming write path",
+            field.name(),
+        )));
+    }
+
+    // Walk per-row to build Dremel levels.
+    //
+    // Path: required outer group → repeated `list` → required `element`.
+    // - max_rep_level = 1 (only `list` is repeated).
+    // - max_def_level = 1 (the repeated `list` group can occur 0 times, which is how parquet
+    //   encodes an empty list; 1 marks "element present").
+    //
+    // Per row:
+    //  - empty list: emit one slot with def = 0, rep = 0, no value
+    //  - list of N elements: emit N slots, def = 1 each, rep = 0 for the first and rep = 1 for the
+    //    rest, plus N values.
+    let num_rows = array.len();
+    let total_present: usize = (0..num_rows)
+        .map(|row| (offsets[row + 1] - offsets[row]).max(0) as usize)
+        .sum();
+    // Each row contributes either 1 level (empty) or list_len levels.
+    let total_levels = (0..num_rows)
+        .map(|row| {
+            let len = (offsets[row + 1] - offsets[row]).max(0) as usize;
+            if len == 0 { 1 } else { len }
+        })
+        .sum::<usize>();
+    let mut def_levels: Vec<i16> = Vec::with_capacity(total_levels);
+    let mut rep_levels: Vec<i16> = Vec::with_capacity(total_levels);
+    for row in 0..num_rows {
+        let start = offsets[row];
+        let end = offsets[row + 1];
+        let len = (end - start).max(0) as usize;
+        if len == 0 {
+            def_levels.push(0);
+            rep_levels.push(0);
+        } else {
+            for i in 0..len {
+                def_levels.push(1);
+                rep_levels.push(if i == 0 { 0 } else { 1 });
+            }
+        }
+    }
+
+    // Dispatch the inner primitive through the appropriate typed
+    // writer. Indexing iterates only the present (non-empty-list) rows
+    // — start..end ranges, walked once for the whole array — so we
+    // emit exactly `total_present` values.
+    write_list_inner_values(
+        col_writer,
+        field,
+        inner_field,
+        inner_values,
+        &offsets,
+        total_present,
+        &def_levels,
+        &rep_levels,
+    )
+}
+
+/// Type-dispatch for the flat inner values of a non-nullable List.
+/// Calls `write_batch(values, def, rep)` on the typed writer matching
+/// the inner physical type. Same shape as the flat-primitive arms in
+/// [`write_array_via_serialized_column_writer`], just with def/rep
+/// levels attached.
+#[allow(clippy::too_many_arguments)]
+fn write_list_inner_values(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    outer_field: &arrow::datatypes::Field,
+    inner_field: &arrow::datatypes::Field,
+    inner_values: &arrow::array::ArrayRef,
+    offsets: &[i64],
+    total_present: usize,
+    def_levels: &[i16],
+    rep_levels: &[i16],
+) -> Result<(), ParquetWriteError> {
+    use arrow::array::{
+        Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, UInt8Array,
+        UInt16Array, UInt32Array, UInt64Array,
+    };
+    use arrow::datatypes::DataType;
+    use parquet::data_type::{DoubleType, FloatType, Int32Type, Int64Type};
+
+    // Walk the per-row [start, end) ranges once and gather the
+    // present-only values into a contiguous Vec for `write_batch`.
+    let collect_i32 = |extract: &dyn Fn(usize) -> i32| -> Vec<i32> {
+        let mut out = Vec::with_capacity(total_present);
+        for row in 0..(offsets.len() - 1) {
+            let start = offsets[row].max(0) as usize;
+            let end = offsets[row + 1].max(0) as usize;
+            for i in start..end {
+                out.push(extract(i));
+            }
+        }
+        out
+    };
+    let collect_i64 = |extract: &dyn Fn(usize) -> i64| -> Vec<i64> {
+        let mut out = Vec::with_capacity(total_present);
+        for row in 0..(offsets.len() - 1) {
+            let start = offsets[row].max(0) as usize;
+            let end = offsets[row + 1].max(0) as usize;
+            for i in start..end {
+                out.push(extract(i));
+            }
+        }
+        out
+    };
+
+    match inner_field.data_type() {
+        DataType::Int8 => {
+            let arr = inner_values.as_any().downcast_ref::<Int8Array>().unwrap();
+            let values = collect_i32(&|i| arr.value(i) as i32);
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::Int16 => {
+            let arr = inner_values.as_any().downcast_ref::<Int16Array>().unwrap();
+            let values = collect_i32(&|i| arr.value(i) as i32);
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::Int32 => {
+            let arr = inner_values.as_any().downcast_ref::<Int32Array>().unwrap();
+            let values = collect_i32(&|i| arr.value(i));
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::UInt8 => {
+            let arr = inner_values.as_any().downcast_ref::<UInt8Array>().unwrap();
+            let values = collect_i32(&|i| arr.value(i) as i32);
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::UInt16 => {
+            let arr = inner_values.as_any().downcast_ref::<UInt16Array>().unwrap();
+            let values = collect_i32(&|i| arr.value(i) as i32);
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::UInt32 => {
+            let arr = inner_values.as_any().downcast_ref::<UInt32Array>().unwrap();
+            // Bit-reinterpret cast: the unsigned logical annotation
+            // tells readers to interpret the on-wire i32 as u32.
+            let values = collect_i32(&|i| arr.value(i) as i32);
+            col_writer.typed::<Int32Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::Int64 => {
+            let arr = inner_values.as_any().downcast_ref::<Int64Array>().unwrap();
+            let values = collect_i64(&|i| arr.value(i));
+            col_writer.typed::<Int64Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::UInt64 => {
+            let arr = inner_values.as_any().downcast_ref::<UInt64Array>().unwrap();
+            let values = collect_i64(&|i| arr.value(i) as i64);
+            col_writer.typed::<Int64Type>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::Float32 => {
+            let arr = inner_values
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap();
+            let mut values = Vec::with_capacity(total_present);
+            for row in 0..(offsets.len() - 1) {
+                let start = offsets[row].max(0) as usize;
+                let end = offsets[row + 1].max(0) as usize;
+                for i in start..end {
+                    values.push(arr.value(i));
+                }
+            }
+            col_writer.typed::<FloatType>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        DataType::Float64 => {
+            let arr = inner_values
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap();
+            let mut values = Vec::with_capacity(total_present);
+            for row in 0..(offsets.len() - 1) {
+                let start = offsets[row].max(0) as usize;
+                let end = offsets[row + 1].max(0) as usize;
+                for i in start..end {
+                    values.push(arr.value(i));
+                }
+            }
+            col_writer.typed::<DoubleType>().write_batch(
+                &values,
+                Some(def_levels),
+                Some(rep_levels),
+            )?;
+        }
+        // Sketches don't need byte-array list inners; they use Int16 /
+        // UInt64. Reject other inner types explicitly so the contract
+        // is clear.
+        other => {
+            return Err(ParquetWriteError::SchemaValidation(format!(
+                "field '{}' has List inner type {other:?}; only flat numeric primitive inners are \
+                 supported (Int8/16/32/64, UInt8/16/32/64, Float32/64)",
+                outer_field.name(),
             )));
         }
     }
@@ -1319,12 +1657,14 @@ mod tests {
         );
     }
 
-    /// A schema whose top-level fields produce more than one parquet
-    /// leaf (e.g., a Struct field) must be rejected at start_row_group.
-    /// The metrics schema is flat in the relevant sense; PR-2 is not
-    /// required to support nested types.
+    /// A schema with a *multi-leaf* nested top-level field (e.g. a
+    /// Struct with several primitive children) must be rejected at
+    /// `start_row_group`. Single-leaf nested fields (List<primitive>,
+    /// LargeList<primitive>) ARE supported — see
+    /// `test_list_uint64_round_trip_through_array_stream` for the
+    /// DDSketch shape.
     #[test]
-    fn test_nested_type_rejected_at_start_row_group() {
+    fn test_multi_leaf_nested_type_rejected_at_start_row_group() {
         let inner_fields = arrow::datatypes::Fields::from(vec![
             Field::new("a", DataType::Int32, false),
             Field::new("b", DataType::Int32, false),
@@ -1339,11 +1679,11 @@ mod tests {
         let mut out: Vec<u8> = Vec::new();
         let mut w = StreamingParquetWriter::try_new(&mut out, schema, props).unwrap();
         match w.start_row_group() {
-            Ok(_) => panic!("expected nested type to be rejected"),
+            Ok(_) => panic!("expected multi-leaf nested type to be rejected"),
             Err(ParquetWriteError::SchemaValidation(msg)) => {
                 assert!(
-                    msg.contains("nested types are not supported"),
-                    "error message should mention nested types: {msg}",
+                    msg.contains("multi-leaf nested"),
+                    "error message should mention multi-leaf nested: {msg}",
                 );
             }
             Err(other) => panic!("expected SchemaValidation, got {other:?}"),
@@ -1651,6 +1991,91 @@ mod tests {
         );
     }
 
+    /// `List<UInt64>` columns must round-trip through
+    /// `write_next_column_arrays`. This is the shape of the DDSketch
+    /// `counts` and `keys` columns
+    /// (`quickwit-parquet-engine/src/schema/sketch_fields.rs:68`).
+    /// Multiple input arrays are fed in to exercise the per-array
+    /// loop in the nested fallback. Variable list lengths catch
+    /// def/rep level bugs.
+    #[test]
+    fn test_list_uint64_round_trip_through_array_stream() {
+        use arrow::array::ListBuilder;
+
+        let item_field = Arc::new(Field::new("item", DataType::UInt64, false));
+        let schema = Arc::new(ArrowSchema::new(vec![Field::new(
+            "counts",
+            DataType::List(Arc::clone(&item_field)),
+            false,
+        )]));
+
+        // Two input arrays simulating two pages worth of merge input.
+        // List lengths vary across rows.
+        let make_list = |rows: &[&[u64]]| -> ArrayRef {
+            let mut builder = ListBuilder::new(arrow::array::UInt64Builder::new())
+                .with_field(Arc::clone(&item_field));
+            for row in rows {
+                for &v in *row {
+                    builder.values().append_value(v);
+                }
+                builder.append(true);
+            }
+            Arc::new(builder.finish())
+        };
+        let arr_a = make_list(&[&[1, 2, 3], &[], &[42, 7]]);
+        let arr_b = make_list(&[&[100, 200], &[u64::MAX, 0]]);
+        let total_rows = arr_a.len() + arr_b.len();
+        assert_eq!(total_rows, 5);
+
+        let props = WriterProperties::builder().build();
+        let mut out: Vec<u8> = Vec::new();
+        {
+            let mut w = StreamingParquetWriter::try_new(&mut out, schema.clone(), props).unwrap();
+            let mut rg = w.start_row_group().unwrap();
+            rg.write_next_column_arrays([arr_a.clone(), arr_b.clone()])
+                .unwrap();
+            rg.finish().unwrap();
+            w.close().unwrap();
+        }
+
+        let actual = read_back(&out);
+        assert_eq!(actual.num_rows(), total_rows);
+        let counts_idx = actual.schema().index_of("counts").unwrap();
+        let actual_list = actual
+            .column(counts_idx)
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .expect("counts must round-trip as ListArray");
+
+        // Compare row by row: concatenate input arrays and compare to
+        // the round-tripped output.
+        let combined = arrow::compute::concat(&[arr_a.as_ref(), arr_b.as_ref()]).unwrap();
+        let combined_list = combined
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap();
+        for row in 0..total_rows {
+            let want = combined_list.value(row);
+            let got = actual_list.value(row);
+            let want_u64 = want
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .values()
+                .to_vec();
+            let got_u64 = got
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .values()
+                .to_vec();
+            assert_eq!(
+                want_u64, got_u64,
+                "row {row}: List<UInt64> round trip diverged",
+            );
+        }
+    }
+
     /// PB-D edge: empty iterator produces a zero-row column. The whole
     /// row group becomes zero rows if every column is fed empty.
     #[test]
@@ -1909,6 +2334,83 @@ mod tests {
             "got {writes_during_col0} sink writes for {expected_pages} pages; the count is larger \
              than expected, suggesting an io::copy-style chunk-by-chunk path (consistent with \
              column-chunk-buffered writes via append_column rather than per-page streaming)",
+        );
+
+        rg.finish().unwrap();
+        w.close().unwrap();
+    }
+
+    /// Page-bounded contract for the `List<primitive>` path. Same
+    /// shape as `test_array_stream_pages_flush_incrementally` but
+    /// against `List<UInt64>` (the DDSketch `counts` shape). If the
+    /// list path fell back to an `ArrowColumnWriter` (column-chunk-
+    /// buffered), the sink would see one large `io::copy` burst at
+    /// column close instead of per-page writes during the call.
+    ///
+    /// Setup: lists of length 1 so the inner-value count equals the
+    /// outer-row count; that lets us reuse the same row-count page
+    /// limit shape as the flat-primitive test (8 pages of 4096
+    /// values each). `data_page_size_limit` is set well above the
+    /// per-page byte cost (4096 values × 8 B = 32 KiB) so it doesn't
+    /// interfere with the row-count-driven flushes we want to count.
+    #[test]
+    fn test_list_uint64_pages_flush_incrementally() {
+        use arrow::array::ListBuilder;
+        use parquet::basic::Compression;
+
+        let item_field = Arc::new(Field::new("item", DataType::UInt64, false));
+        let schema = Arc::new(ArrowSchema::new(vec![Field::new(
+            "counts",
+            DataType::List(Arc::clone(&item_field)),
+            false,
+        )]));
+
+        // 32 768 rows, each with a 1-element list. Per-page values =
+        // per-page rows = 4096; per-page size ≈ 32 KiB << 256 KiB
+        // size limit, so row-count drives page flushing.
+        let make_array = |start_row: usize, n_rows: usize| -> ArrayRef {
+            let mut builder = ListBuilder::new(arrow::array::UInt64Builder::new())
+                .with_field(Arc::clone(&item_field));
+            for r in 0..n_rows {
+                builder.values().append_value((start_row + r) as u64);
+                builder.append(true);
+            }
+            Arc::new(builder.finish())
+        };
+        // 8 input arrays × 4096 rows each = 32 768 rows = 32 768 levels.
+        let arrays_input: Vec<ArrayRef> = (0..8).map(|i| make_array(i * 4096, 4096)).collect();
+        let total_levels: usize = 32_768;
+        let expected_pages = total_levels.div_ceil(4096);
+
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_compression(Compression::UNCOMPRESSED)
+            .set_data_page_row_count_limit(4096)
+            .set_data_page_size_limit(256 * 1024)
+            .set_write_batch_size(4096)
+            .set_max_row_group_row_count(Some(usize::MAX))
+            .build();
+
+        let inner = Arc::new(Mutex::new(InspectableSinkInner::default()));
+        let sink = SharedSink(Arc::clone(&inner));
+        let mut w = StreamingParquetWriter::try_new(sink, Arc::clone(&schema), props).unwrap();
+        let mut rg = w.start_row_group().unwrap();
+
+        let writes_before = inner.lock().unwrap().num_writes;
+        rg.write_next_column_arrays(arrays_input).unwrap();
+        let writes_after = inner.lock().unwrap().num_writes;
+        let writes_during = writes_after - writes_before;
+
+        assert!(
+            writes_during >= expected_pages,
+            "expected at least {expected_pages} sink writes during list column write, got \
+             {writes_during}; List<UInt64> pages may not be flushing during the column write \
+             (suggests fallback to a column-chunk-buffered path)",
+        );
+        assert!(
+            writes_during <= expected_pages * 3,
+            "got {writes_during} sink writes for {expected_pages} expected pages on the list \
+             column; count is too large for a per-page-streaming path (suggests a chunk-copy \
+             fallback)",
         );
 
         rg.finish().unwrap();
