@@ -27,6 +27,10 @@ pub use inspect::{
     verify_partition_prefix,
 };
 pub use split_writer::ParquetSplitWriter;
+pub use streaming_reader::{
+    ColumnPageStream, Page, ParquetReadError, RemoteByteSource, StreamingParquetReader,
+    StreamingReaderConfig,
+};
 // Re-export metadata constants for use by the merge module and tests.
 pub(crate) use writer::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_ROW_KEYS,
