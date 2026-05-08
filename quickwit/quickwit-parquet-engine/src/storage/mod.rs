@@ -17,6 +17,7 @@
 mod config;
 pub mod inspect;
 pub(crate) mod legacy_adapter;
+pub(crate) mod page_decoder;
 pub(crate) mod split_writer;
 pub(crate) mod streaming_reader;
 pub(crate) mod streaming_writer;
@@ -28,6 +29,7 @@ pub use inspect::{
     verify_partition_prefix,
 };
 pub use legacy_adapter::{LegacyAdapterError, LegacyInputAdapter};
+pub use page_decoder::{PageDecodeError, StreamDecoder};
 pub use split_writer::ParquetSplitWriter;
 pub use streaming_reader::{
     ColumnPageStream, Page, ParquetReadError, RemoteByteSource, StreamingParquetReader,
