@@ -34,7 +34,7 @@ use quickwit_opentelemetry::otlp::{
 use quickwit_parquet_engine::ingest::{ArrowSketchBatchBuilder, SketchDataPoint};
 use quickwit_parquet_engine::schema::{REQUIRED_FIELDS, SketchParquetField};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 use vector::config::{AcknowledgementsConfig, GenerateConfig, Input, SinkConfig, SinkContext};
 use vector::event::{EventArray, EventStatus, Finalizable, Metric, MetricValue};
 use vector::sinks::Healthcheck;
@@ -375,11 +375,7 @@ fn vector_sketch_to_data_point(metric: &Metric) -> Option<SketchDataPoint> {
     };
 
     if ddsketch.is_empty() {
-        quickwit_common::rate_limited_warn!(
-            limit_per_min = 6,
-            metric = metric.name(),
-            "skipping empty agent ddsketch"
-        );
+        warn!(metric = metric.name(), "skipping empty agent ddsketch");
         return None;
     }
 
