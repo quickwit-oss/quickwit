@@ -67,8 +67,7 @@ impl PendingOperations {
     }
 
     fn adjust_gauge(operation: &MergeOperation, delta: i64) {
-        let source_uid_label =
-            source_uid_metrics_label(&operation.index_uid, &operation.source_id);
+        let source_uid_label = source_uid_metrics_label(&operation.index_uid, &operation.source_id);
         let merge_level = operation.merge_level().to_string();
         COMPACTION_PLANNER_METRICS
             .pending_merge_operations
