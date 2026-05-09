@@ -225,18 +225,18 @@ pub struct DataFusionRatioStatistics {
 }
 
 impl DataFusionExecutionMetadata {
-    pub fn physical_plan_display(&self) -> String {
-        physical_plan_display(&self.physical_plan)
+    pub async fn physical_plan_display(&self) -> String {
+        physical_plan_display(&self.physical_plan).await
     }
 
-    pub fn physical_plan_metadata(&self) -> DataFusionPhysicalPlanMetadata {
-        physical_plan_metadata(&self.physical_plan)
+    pub async fn physical_plan_metadata(&self) -> DataFusionPhysicalPlanMetadata {
+        physical_plan_metadata(&self.physical_plan).await
     }
 }
 
 impl SubstraitExecutionMetadata {
-    pub fn physical_plan_display(&self) -> String {
-        physical_plan_display(&self.physical_plan)
+    pub async fn physical_plan_display(&self) -> String {
+        physical_plan_display(&self.physical_plan).await
     }
 }
 
@@ -461,7 +461,7 @@ impl DataFusionService {
                 execute_stream(Arc::clone(&physical_plan), ctx.task_ctx())?
             }
             DataFusionOutput::Explain => {
-                explain_stream(&logical_plan_display, &physical_plan, None)?
+                explain_stream(&logical_plan_display, &physical_plan, None).await?
             }
             DataFusionOutput::ExplainAnalyze => {
                 let analyze_execution_start = Instant::now();
@@ -469,12 +469,13 @@ impl DataFusionService {
                     execute_plan_for_metrics(Arc::clone(&physical_plan), ctx.task_ctx()).await?;
                 analyze_execution_duration = Some(analyze_execution_start.elapsed());
                 analyze_output_rows = Some(num_rows);
-                let physical_plan_metadata = physical_plan_metadata(&physical_plan);
+                let physical_plan_metadata = physical_plan_metadata(&physical_plan).await;
                 explain_stream(
                     &logical_plan_display,
                     &physical_plan,
                     Some(&physical_plan_metadata),
-                )?
+                )
+                .await?
             }
         };
         let stream_creation_duration = stream_creation_start.elapsed();
@@ -813,7 +814,7 @@ async fn execute_plan_for_metrics(
     Ok(num_rows)
 }
 
-fn explain_stream(
+async fn explain_stream(
     logical_plan: &str,
     physical_plan: &Arc<dyn ExecutionPlan>,
     physical_plan_metadata: Option<&DataFusionPhysicalPlanMetadata>,
@@ -827,7 +828,7 @@ fn explain_stream(
         plan_types.push("execution_statistics_json".to_string());
         plans.push(physical_plan_metadata.statistics.to_json_string());
     } else {
-        physical_plan_display_text = physical_plan_display(physical_plan);
+        physical_plan_display_text = physical_plan_display(physical_plan).await;
         plans.push(physical_plan_display_text);
     }
     let plan_type: ArrayRef = Arc::new(StringArray::from(plan_types));
@@ -850,10 +851,10 @@ fn explain_schema() -> SchemaRef {
     ]))
 }
 
-fn physical_plan_metadata(
+async fn physical_plan_metadata(
     physical_plan: &Arc<dyn ExecutionPlan>,
 ) -> DataFusionPhysicalPlanMetadata {
-    let (physical_plan, show_metrics) = physical_plan_with_metrics(physical_plan);
+    let (physical_plan, show_metrics) = physical_plan_with_metrics(physical_plan).await;
     let display = if physical_plan.as_any().is::<DistributedExec>() {
         display_plan_ascii(physical_plan.as_ref(), show_metrics)
     } else {
@@ -868,18 +869,20 @@ fn physical_plan_metadata(
     }
 }
 
-fn physical_plan_display(physical_plan: &Arc<dyn ExecutionPlan>) -> String {
-    physical_plan_metadata(physical_plan).display
+async fn physical_plan_display(physical_plan: &Arc<dyn ExecutionPlan>) -> String {
+    physical_plan_metadata(physical_plan).await.display
 }
 
-fn physical_plan_with_metrics(
+async fn physical_plan_with_metrics(
     physical_plan: &Arc<dyn ExecutionPlan>,
 ) -> (Arc<dyn ExecutionPlan>, bool) {
     if physical_plan.as_any().is::<DistributedExec>() {
         return match rewrite_distributed_plan_with_metrics(
             Arc::clone(physical_plan),
             DistributedMetricsFormat::PerTask,
-        ) {
+        )
+        .await
+        {
             Ok(physical_plan) => (physical_plan, true),
             Err(_) => (Arc::clone(physical_plan), false),
         };

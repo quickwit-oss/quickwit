@@ -80,9 +80,25 @@ async fn execute_datafusion_sql(
     client: &mut DataFusionServiceClient<tonic::transport::Channel>,
     sql: impl Into<String>,
 ) -> Vec<RecordBatch> {
+    execute_datafusion_sql_with_explain(client, sql, false).await
+}
+
+async fn explain_datafusion_sql(
+    client: &mut DataFusionServiceClient<tonic::transport::Channel>,
+    sql: impl Into<String>,
+) -> Vec<RecordBatch> {
+    execute_datafusion_sql_with_explain(client, sql, true).await
+}
+
+async fn execute_datafusion_sql_with_explain(
+    client: &mut DataFusionServiceClient<tonic::transport::Channel>,
+    sql: impl Into<String>,
+    explain: bool,
+) -> Vec<RecordBatch> {
     let request = ExecuteSqlRequest {
         sql: sql.into(),
         properties: Default::default(),
+        explain,
     };
     let mut stream = client.execute_sql(request).await.unwrap().into_inner();
     let mut batches = Vec::new();
@@ -234,8 +250,7 @@ async fn test_distributed_tasks_not_shuffles() {
     let query = r#"SELECT SUM(value) as total, COUNT(*) as cnt FROM "dist-test""#;
 
     let mut client = datafusion_client(&sandbox);
-    let explain_batches =
-        execute_datafusion_sql(&mut client, format!("{ddl}; EXPLAIN VERBOSE {query}")).await;
+    let explain_batches = explain_datafusion_sql(&mut client, format!("{ddl}; {query}")).await;
     let plan_str = explain_plan_text(&explain_batches);
     println!("=== DataFusion EXPLAIN output ===\n{plan_str}");
 
