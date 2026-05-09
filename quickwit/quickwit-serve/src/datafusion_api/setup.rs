@@ -37,7 +37,9 @@ use quickwit_datafusion::grpc::DataFusionServiceGrpcImpl;
 use quickwit_datafusion::proto::data_fusion_service_server::{
     DataFusionServiceServer, SERVICE_NAME as DATAFUSION_SERVICE_NAME,
 };
-use quickwit_datafusion::sources::metrics::MetricsDataSource;
+use quickwit_datafusion::sources::metrics::{
+    MetricsDataSource, instrument_parquet_range_cache_metrics,
+};
 use quickwit_datafusion::{
     DataFusionService, DataFusionSessionBuilder, QuickwitObjectStoreRegistry,
     QuickwitWorkerResolver, build_worker,
@@ -265,7 +267,8 @@ impl DataFusionMount {
         .max_decoding_message_size(self.max_message_size_bytes)
         .max_encoding_message_size(self.max_message_size_bytes);
 
-        let worker = build_worker(session_builder);
+        let mut worker = build_worker(session_builder);
+        worker.add_on_plan_hook(instrument_parquet_range_cache_metrics);
 
         router
             .add_service(query_server)

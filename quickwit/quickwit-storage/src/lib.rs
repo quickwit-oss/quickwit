@@ -64,7 +64,8 @@ pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
+    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, StorageCacheMetrics,
+    StorageCacheMetricsSnapshot, with_storage_cache_metrics, wrap_storage_with_cache,
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]

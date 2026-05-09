@@ -50,6 +50,7 @@ use regex_automata::dfa::{Automaton, dense};
 use regex_automata::{Anchored, Input};
 use tracing::debug;
 
+use super::parquet_cache_metrics::instrument_parquet_file_reader_factory;
 use super::predicate;
 
 const METRICS_SORT_ORDER: &[&str] = &[
@@ -278,9 +279,8 @@ impl TableProvider for MetricsTableProvider {
         let object_store = state
             .runtime_env()
             .object_store(self.object_store_url.clone())?;
-        let reader_factory = Arc::new(CachedParquetFileReaderFactory::new(
-            object_store,
-            metadata_cache,
+        let reader_factory = instrument_parquet_file_reader_factory(Arc::new(
+            CachedParquetFileReaderFactory::new(object_store, metadata_cache),
         ));
         let parquet_source = ParquetSource::new(table_schema)
             .with_bloom_filter_on_read(true)

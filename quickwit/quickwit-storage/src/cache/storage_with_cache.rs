@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 
-use crate::cache::StorageCache;
+use crate::cache::{StorageCache, record_storage_cache_hit, record_storage_cache_miss};
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, OwnedBytes, Storage, StorageResult};
 
@@ -57,9 +57,11 @@ impl Storage for StorageWithCache {
 
     async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
+            record_storage_cache_hit(bytes.len());
             Ok(bytes)
         } else {
             let bytes = self.storage.get_slice(path, byte_range.clone()).await?;
+            record_storage_cache_miss(bytes.len());
             self.cache
                 .put(path.to_owned(), byte_range, bytes.clone())
                 .await;
@@ -80,9 +82,11 @@ impl Storage for StorageWithCache {
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get_all(path).await {
+            record_storage_cache_hit(bytes.len());
             Ok(bytes)
         } else {
             let bytes = self.storage.get_all(path).await?;
+            record_storage_cache_miss(bytes.len());
             self.cache.put_all(path.to_owned(), bytes.clone()).await;
             Ok(bytes)
         }
@@ -116,7 +120,10 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{MockStorage, MockStorageCache, OwnedBytes};
+    use crate::{
+        MockStorage, MockStorageCache, OwnedBytes, StorageCacheMetrics,
+        StorageCacheMetricsSnapshot, with_storage_cache_metrics,
+    };
 
     #[tokio::test]
     async fn put_in_cache_test() {
@@ -158,5 +165,59 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(data1, data2);
+    }
+
+    #[tokio::test]
+    async fn storage_cache_metrics_record_hits_and_misses() {
+        let mut mock_storage = MockStorage::default();
+        let mut mock_cache = MockStorageCache::default();
+        let actual_cache: Arc<Mutex<HashMap<PathBuf, OwnedBytes>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        let cache1 = actual_cache.clone();
+        mock_cache
+            .expect_get_all()
+            .times(2)
+            .returning(move |path| cache1.lock().unwrap().get(path).cloned());
+        mock_cache
+            .expect_put_all()
+            .times(1)
+            .returning(move |path, data| {
+                let actual_cache = actual_cache.clone();
+                actual_cache.lock().unwrap().insert(path, data);
+            });
+
+        mock_storage
+            .expect_get_all()
+            .times(1)
+            .returning(|_path| Ok(OwnedBytes::new(vec![1, 2, 3])));
+
+        let storage_with_cache = StorageWithCache {
+            storage: Arc::new(mock_storage),
+            cache: Arc::new(mock_cache),
+        };
+        let metrics = Arc::new(StorageCacheMetrics::default());
+
+        with_storage_cache_metrics(Arc::clone(&metrics), async {
+            storage_with_cache
+                .get_all(Path::new("cool_file"))
+                .await
+                .unwrap();
+            storage_with_cache
+                .get_all(Path::new("cool_file"))
+                .await
+                .unwrap();
+        })
+        .await;
+
+        assert_eq!(
+            metrics.snapshot(),
+            StorageCacheMetricsSnapshot {
+                hit_bytes: 3,
+                miss_bytes: 3,
+                hit_count: 1,
+                miss_count: 1,
+            }
+        );
     }
 }

@@ -17,6 +17,7 @@ mod byte_range_cache;
 mod memory_sized_cache;
 mod quickwit_cache;
 mod slice_address;
+mod storage_cache_metrics;
 mod storage_with_cache;
 mod stored_item;
 
@@ -30,6 +31,10 @@ pub use storage_with_cache::StorageWithCache;
 
 pub use self::byte_range_cache::ByteRangeCache;
 pub use self::memory_sized_cache::MemorySizedCache;
+pub use self::storage_cache_metrics::{
+    StorageCacheMetrics, StorageCacheMetricsSnapshot, with_storage_cache_metrics,
+};
+pub(crate) use self::storage_cache_metrics::{record_storage_cache_hit, record_storage_cache_miss};
 use crate::{OwnedBytes, Storage};
 
 /// Wraps the given directory with a slice cache that is actually global
