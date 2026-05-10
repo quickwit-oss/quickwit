@@ -68,6 +68,11 @@ message ExecuteSqlRequest {
 
   // Optional per-request session overrides.
   map<string, string> properties = 2;
+
+  // When true, the server returns the service-level EXPLAIN output for the
+  // final SQL statement instead of executing it. DDL statements before the
+  // final query are still executed for side effects.
+  bool explain = 3;
 }
 
 message ExecuteSqlResponse {

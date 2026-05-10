@@ -208,11 +208,17 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
+        let output = if req.explain {
+            DataFusionOutput::Explain
+        } else {
+            DataFusionOutput::Records
+        };
         let execution = service
-            .execute(DataFusionRequest::records(
-                DataFusionInput::Sql(&req.sql),
-                &req.properties,
-            ))
+            .execute(DataFusionRequest {
+                input: DataFusionInput::Sql(&req.sql),
+                output,
+                properties: &req.properties,
+            })
             .await
             .map_err(|err| {
                 warn!(error = %err, "DataFusion SQL execution error");

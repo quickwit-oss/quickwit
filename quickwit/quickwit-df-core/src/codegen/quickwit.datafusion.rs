@@ -45,6 +45,11 @@ pub struct ExecuteSqlRequest {
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
+    /// When true, the server returns the service-level EXPLAIN output for the
+    /// final SQL statement instead of executing it. DDL statements before the
+    /// final query are still executed for side effects.
+    #[prost(bool, tag = "3")]
+    pub explain: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExecuteSqlResponse {

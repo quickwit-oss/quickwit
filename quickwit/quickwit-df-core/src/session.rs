@@ -45,7 +45,7 @@ use datafusion::execution::object_store::ObjectStoreRegistry;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{
-    DistributedExt, DistributedPhysicalOptimizerRule, TaskEstimator, WorkerResolver,
+    DistributedExt, SessionStateBuilderExt, TaskEstimator, TaskRoutingContext, WorkerResolver,
 };
 
 use crate::data_source::{
@@ -346,7 +346,7 @@ impl DataFusionSessionBuilder {
             builder = builder
                 .with_distributed_worker_resolver(ArcWorkerResolver(Arc::clone(resolver)))
                 .with_distributed_task_estimator(ArcTaskEstimator(Arc::clone(&self.task_estimator)))
-                .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
+                .with_distributed_planner();
         }
 
         Ok(SessionContext::new_with_state(builder.build()))
@@ -385,6 +385,10 @@ impl TaskEstimator for ArcTaskEstimator {
         cfg: &datafusion::config::ConfigOptions,
     ) -> Option<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
         self.0.scale_up_leaf_node(plan, task_count, cfg)
+    }
+
+    fn route_tasks(&self, routing_ctx: &TaskRoutingContext<'_>) -> DFResult<Option<Vec<url::Url>>> {
+        self.0.route_tasks(routing_ctx)
     }
 }
 
