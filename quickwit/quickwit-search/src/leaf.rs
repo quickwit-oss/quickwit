@@ -526,7 +526,6 @@ async fn leaf_search_single_split(
         .leaf_search_single_split_warmup_num_bytes
         .observe(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
-    search_permit.free_warmup_slot();
 
     let split_num_docs = split.num_docs;
 
