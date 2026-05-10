@@ -893,6 +893,35 @@ pub mod search_service_client {
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
             self.inner.unary(req, path, codec).await
         }
+        /// Streams document contents from the document store.
+        /// This method takes `PartialHit`s and streams back `LeafHit`s in batches
+        /// to avoid hitting gRPC message size limits.
+        pub async fn stream_fetch_docs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FetchDocsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::FetchDocsResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/StreamFetchDocs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "StreamFetchDocs"),
+                );
+            self.inner.server_streaming(req, path, codec).await
+        }
         /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
         /// and dispatches the several calls to `LeafListTerms`.
@@ -1172,6 +1201,22 @@ pub mod search_service_server {
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FetchDocsResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the StreamFetchDocs method.
+        type StreamFetchDocsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::FetchDocsResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Streams document contents from the document store.
+        /// This method takes `PartialHit`s and streams back `LeafHit`s in batches
+        /// to avoid hitting gRPC message size limits.
+        async fn stream_fetch_docs(
+            &self,
+            request: tonic::Request<super::FetchDocsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::StreamFetchDocsStream>,
             tonic::Status,
         >;
         /// Root list terms API.
@@ -1454,6 +1499,53 @@ pub mod search_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/StreamFetchDocs" => {
+                    #[allow(non_camel_case_types)]
+                    struct StreamFetchDocsSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::ServerStreamingService<super::FetchDocsRequest>
+                    for StreamFetchDocsSvc<T> {
+                        type Response = super::FetchDocsResponse;
+                        type ResponseStream = T::StreamFetchDocsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FetchDocsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SearchService>::stream_fetch_docs(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = StreamFetchDocsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
