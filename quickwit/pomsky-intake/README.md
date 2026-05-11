@@ -194,7 +194,7 @@ All IDs are normalized to unsigned 64-bit decimal strings:
 | `span_id` (i64) | `span_id` | Unsigned decimal |
 | `parent_id` (i64) | `parent_id` | Unsigned decimal |
 
-### Schema remapping (`remap_dd_span_to_schema`)
+### Schema remapping (`span_to_schema`)
 
 After normalization, spans are remapped to the `datadog-spans` index schema:
 
