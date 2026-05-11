@@ -24,6 +24,7 @@ mod merge_order;
 pub mod metadata_aggregation;
 pub mod policy;
 mod schema;
+pub mod streaming;
 mod writer;
 
 #[cfg(test)]
