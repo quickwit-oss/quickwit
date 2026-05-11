@@ -682,7 +682,6 @@ pnet_sys,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,"Robert Clipsham <
 pnet_transport,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,Robert Clipsham <robert@octarineparrot.com>
 polling,https://github.com/smol-rs/polling,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, John Nunley <dev@notgull.net>"
 poly1305,https://github.com/RustCrypto/universal-hashes,Apache-2.0 OR MIT,RustCrypto Developers
-pomchi,ssh://git@github.com/DataDog/PomChi,Datadog,The pomchi Authors
 portable-atomic,https://github.com/taiki-e/portable-atomic,Apache-2.0 OR MIT,The portable-atomic Authors
 portable-atomic-util,https://github.com/taiki-e/portable-atomic-util,Apache-2.0 OR MIT,The portable-atomic-util Authors
 postcard,https://github.com/jamesmunns/postcard,MIT OR Apache-2.0,James Munns <james@onevariable.com>
