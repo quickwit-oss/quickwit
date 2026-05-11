@@ -6311,14 +6311,13 @@ dependencies = [
 
 [[package]]
 name = "mrecordlog"
-version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=306c0a7#306c0a708db03ee23b37288308cf03abe29b3cd9"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=3b3562ef#3b3562efea468a3a72a244b16d3c555db0ddc95b"
 dependencies = [
  "bytes",
  "crc32fast",
  "serde",
- "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -8401,6 +8400,7 @@ dependencies = [
  "numfmt",
  "openssl-probe",
  "predicates",
+ "procfs",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",

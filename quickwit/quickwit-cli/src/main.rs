@@ -21,6 +21,8 @@ use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::metrics::register_build_info_metric;
+#[cfg(target_os = "linux")]
+use quickwit_cli::proc_io::start_proc_io_metrics_loop;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
@@ -128,6 +130,9 @@ async fn main_impl() -> anyhow::Result<()> {
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
+
+    #[cfg(target_os = "linux")]
+    start_proc_io_metrics_loop();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
