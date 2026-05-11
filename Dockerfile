@@ -72,7 +72,9 @@ RUN --mount=type=secret,id=ddoctosts_oidc,required=false \
       && git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"; \
     fi
 # Fall back to CI_JOB_TOKEN via GitLab mirror for remaining DataDog repos
-RUN git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"
+RUN if [ -n "$CI_JOB_TOKEN" ]; then \
+      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"; \
+    fi
 
 RUN rustup toolchain install
 
