@@ -1,0 +1,904 @@
+id: "crest_data_systems_sysdig"
+tests:
+ -
+  sample: |-
+    {
+      "severity" : 0,
+      "agentId" : 13530,
+      "description" : "Identified notable filesystem activity that might change sensitive/important files. This differs from Suspicious Filesystem Changes in that it looks more broadly at filesystem activity, and might have more false positives as a result.",
+      "originator" : "policy",
+      "source" : "syscall",
+      "type" : "policy",
+      "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+      "content" : {
+        "output" : "File below /etc opened for writing (user=root command=touch /etc/ard parent=bash pcmdline=bash file=/etc/ard program=touch gparent=su ggparent=sudo gggparent=bash container_id=host image=<NA>)",
+        "policyVersion" : 2,
+        "policyId" : 544,
+        "ruleTags" : [ "NIST_800-190", "NIST_800-53", "ISO", "NIST_800-53_CA-9", "NIST_800-53_SC-4", "NIST", "ISO_27001", "MITRE_T1552_unsecured_credentials", "MITRE_T1552.001_credentials_in_files" ],
+        "policyOrigin" : "Sysdig",
+        "matchedOnDefault" : false,
+        "falsePositive" : false,
+        "ruleType" : "RULE_TYPE_FALCO",
+        "ruleName" : "Write below etc",
+        "fields" : {
+          "container" : {
+            "image" : {
+              "repository" : "<NA>"
+            },
+            "id" : "host"
+          },
+          "proc" : {
+            "cmdline" : "touch /etc/ard",
+            "pname" : "bash",
+            "name" : "touch",
+            "aname[4]" : "bash",
+            "aname[3]" : "sudo",
+            "aname[2]" : "su",
+            "pcmdline" : "bash"
+          },
+          "falco" : {
+            "rule" : "Write below etc"
+          },
+          "user" : {
+            "name" : "root"
+          },
+          "fd" : {
+            "name" : "/etc/ard",
+            "directory" : "/etc/pam.d"
+          },
+          "group" : {
+            "gid" : "8589935592",
+            "name" : "sysdig"
+          }
+        },
+        "baselineId" : ""
+      },
+      "labels" : {
+        "process" : {
+          "name" : "touch /etc/ard"
+        },
+        "host" : {
+          "hostName" : "ardbox"
+        }
+      },
+      "machineId" : "08:00:27:54:f3:9d",
+      "name" : "Notable Filesystem Changes",
+      "id" : "164ace360cc3cfbc26ec22d61b439500",
+      "category" : "runtime",
+      "containerId" : "",
+      "actions" : [ {
+        "beforeEventNs" : 5000000000,
+        "afterEventNs" : 5000000000,
+        "type" : "POLICY_ACTION_CAPTURE",
+        "successful" : true,
+        "token" : "abffffdd-fba8-42c7-b922-85364b00eeeb"
+      } ],
+      "timestamp" : 1606322948648718300
+    }
+  result:
+    custom:
+      actions:
+       -
+        beforeEventNs: 5000000000
+        afterEventNs: 5000000000
+        type: "POLICY_ACTION_CAPTURE"
+        successful: true
+        token: "abffffdd-fba8-42c7-b922-85364b00eeeb"
+      agentId: 13530
+      category: "runtime"
+      containerId: ""
+      content:
+        baselineId: ""
+        falsePositive: false
+        fields:
+          container:
+            id: "host"
+            image:
+              repository: "<NA>"
+          falco:
+            rule: "Write below etc"
+          fd:
+            directory: "/etc/pam.d"
+            name: "/etc/ard"
+          group:
+            gid: "8589935592"
+            name: "sysdig"
+          proc:
+            aname[2]: "su"
+            aname[3]: "sudo"
+            aname[4]: "bash"
+            cmdline: "touch /etc/ard"
+            name: "touch"
+            pcmdline: "bash"
+            pname: "bash"
+          user:
+            name: "root"
+        matchedOnDefault: false
+        output: "File below /etc opened for writing (user=root command=touch /etc/ard parent=bash pcmdline=bash file=/etc/ard program=touch gparent=su ggparent=sudo gggparent=bash container_id=host image=<NA>)"
+        policyId: 544
+        policyOrigin: "Sysdig"
+        policyVersion: 2
+        ruleName: "Write below etc"
+        ruleTags:
+         - "NIST_800-190"
+         - "NIST_800-53"
+         - "ISO"
+         - "NIST_800-53_CA-9"
+         - "NIST_800-53_SC-4"
+         - "NIST"
+         - "ISO_27001"
+         - "MITRE_T1552_unsecured_credentials"
+         - "MITRE_T1552.001_credentials_in_files"
+        ruleType: "RULE_TYPE_FALCO"
+      description: "Identified notable filesystem activity that might change sensitive/important files. This differs from Suspicious Filesystem Changes in that it looks more broadly at filesystem activity, and might have more false positives as a result."
+      id: "164ace360cc3cfbc26ec22d61b439500"
+      labels:
+        process:
+          name: "touch /etc/ard"
+      machineId: "08:00:27:54:f3:9d"
+      originator: "policy"
+      severity: 0
+      source: "syscall"
+      sysdig_hostName: "ardbox"
+      sysdig_policy_name: "Notable Filesystem Changes"
+      sysdig_severity: "High"
+      sysdig_type: "policy"
+      timestamp: 1606322948648718300
+      timestampRFC3339Nano: "2020-11-25T16:49:08.648718268Z"
+    message: |-
+      {
+        "severity" : 0,
+        "agentId" : 13530,
+        "description" : "Identified notable filesystem activity that might change sensitive/important files. This differs from Suspicious Filesystem Changes in that it looks more broadly at filesystem activity, and might have more false positives as a result.",
+        "originator" : "policy",
+        "source" : "syscall",
+        "type" : "policy",
+        "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+        "content" : {
+          "output" : "File below /etc opened for writing (user=root command=touch /etc/ard parent=bash pcmdline=bash file=/etc/ard program=touch gparent=su ggparent=sudo gggparent=bash container_id=host image=<NA>)",
+          "policyVersion" : 2,
+          "policyId" : 544,
+          "ruleTags" : [ "NIST_800-190", "NIST_800-53", "ISO", "NIST_800-53_CA-9", "NIST_800-53_SC-4", "NIST", "ISO_27001", "MITRE_T1552_unsecured_credentials", "MITRE_T1552.001_credentials_in_files" ],
+          "policyOrigin" : "Sysdig",
+          "matchedOnDefault" : false,
+          "falsePositive" : false,
+          "ruleType" : "RULE_TYPE_FALCO",
+          "ruleName" : "Write below etc",
+          "fields" : {
+            "container" : {
+              "image" : {
+                "repository" : "<NA>"
+              },
+              "id" : "host"
+            },
+            "proc" : {
+              "cmdline" : "touch /etc/ard",
+              "pname" : "bash",
+              "name" : "touch",
+              "aname[4]" : "bash",
+              "aname[3]" : "sudo",
+              "aname[2]" : "su",
+              "pcmdline" : "bash"
+            },
+            "falco" : {
+              "rule" : "Write below etc"
+            },
+            "user" : {
+              "name" : "root"
+            },
+            "fd" : {
+              "name" : "/etc/ard",
+              "directory" : "/etc/pam.d"
+            },
+            "group" : {
+              "gid" : "8589935592",
+              "name" : "sysdig"
+            }
+          },
+          "baselineId" : ""
+        },
+        "labels" : {
+          "process" : {
+            "name" : "touch /etc/ard"
+          },
+          "host" : {
+            "hostName" : "ardbox"
+          }
+        },
+        "machineId" : "08:00:27:54:f3:9d",
+        "name" : "Notable Filesystem Changes",
+        "id" : "164ace360cc3cfbc26ec22d61b439500",
+        "category" : "runtime",
+        "containerId" : "",
+        "actions" : [ {
+          "beforeEventNs" : 5000000000,
+          "afterEventNs" : 5000000000,
+          "type" : "POLICY_ACTION_CAPTURE",
+          "successful" : true,
+          "token" : "abffffdd-fba8-42c7-b922-85364b00eeeb"
+        } ],
+        "timestamp" : 1606322948648718300
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "hostName" : "ardbox",
+      "connectionEvents" : [ {
+        "clientIpv4" : 167772687,
+        "clientPid" : 45904,
+        "clientPort" : 35170,
+        "serverPort" : 6443,
+        "serverIpv4" : 875399709,
+        "status" : 2,
+        "timestamp" : 1600932914066
+      } ],
+      "environmentVariables" : [ {
+        "variables" : [ "TAGS=", "HOSTNAME=ardbox", "SYSDIG_HOST_ROOT=/host", "PWD=/", "ACCESS_KEY=35da3ab0-0a8d-4673-b268-a60ced78a488", "HOME=/root", "SYSDI - sample: _LAUNCH_DRAGENT=1", "SYSDIG_BUILD_KERNEL_MODULE=1", "SECURE=true", "SYSDIG_REPOSITORY=stable", "SHLVL=0", "COLLECTOR=collector-staging2.sysdigcloud.com", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "GLIBCPP_FORCE_NEW=1", "GLIBCXX_FORCE_NEW=1" ],
+        "hash" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      } ],
+      "hostMac" : "08:00:27:29:18:2c",
+      "newProcessEvents" : [ {
+        "envVariablesHash" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "parentPid" : 14149,
+        "name" : "/opt/draios/bin/dragent",
+        "pid" : 45904,
+        "commandLine" : [ "--noipcns" ],
+        "containerId" : "bb636303ee8f",
+        "event_labels" : {
+          "container" : {
+            "image" : {
+              "repo" : "sysdig/ - sample: gent",
+              "digest" : "sha256:6f175e10af9ff1d66f13efab20abb9d10ee748302c38d3c06626f55446bbc8ee",
+              "id" : "0bcf3939db09",
+              "tag" : "latest"
+            },
+            "name" : "sysdig-agent"
+          },
+          "host" : {
+            "hostName" : "ardbox",
+            "mac" : "08:00:27:29:18:2c"
+          }
+        },
+        "timestamp" : 1600932893460
+      } ],
+      "timestamp" : 1600932920051
+    }
+  result:
+    custom:
+      connectionEvents:
+       -
+        clientIpv4: 167772687
+        clientPid: 45904
+        clientPort: 35170
+        serverPort: 6443
+        serverIpv4: 875399709
+        status: 2
+        timestamp: 1600932914066
+      environmentVariables:
+       -
+        variables:
+         - "TAGS="
+         - "HOSTNAME=ardbox"
+         - "SYSDIG_HOST_ROOT=/host"
+         - "PWD=/"
+         - "ACCESS_KEY=35da3ab0-0a8d-4673-b268-a60ced78a488"
+         - "HOME=/root"
+         - "SYSDI - sample: _LAUNCH_DRAGENT=1"
+         - "SYSDIG_BUILD_KERNEL_MODULE=1"
+         - "SECURE=true"
+         - "SYSDIG_REPOSITORY=stable"
+         - "SHLVL=0"
+         - "COLLECTOR=collector-staging2.sysdigcloud.com"
+         - "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+         - "GLIBCPP_FORCE_NEW=1"
+         - "GLIBCXX_FORCE_NEW=1"
+        hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      hostMac: "08:00:27:29:18:2c"
+      newProcessEvents:
+       -
+        envVariablesHash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        parentPid: 14149
+        name: "/opt/draios/bin/dragent"
+        pid: 45904
+        commandLine:
+         - "--noipcns"
+        containerId: "bb636303ee8f"
+        event_labels:
+          container:
+            image:
+              repo: "sysdig/ - sample: gent"
+              digest: "sha256:6f175e10af9ff1d66f13efab20abb9d10ee748302c38d3c06626f55446bbc8ee"
+              id: "0bcf3939db09"
+              tag: "latest"
+            name: "sysdig-agent"
+          host:
+            hostName: "ardbox"
+            mac: "08:00:27:29:18:2c"
+        timestamp: 1600932893460
+      sysdig_hostName: "ardbox"
+      timestamp: 1600932920051
+    message: |-
+      {
+        "hostName" : "ardbox",
+        "connectionEvents" : [ {
+          "clientIpv4" : 167772687,
+          "clientPid" : 45904,
+          "clientPort" : 35170,
+          "serverPort" : 6443,
+          "serverIpv4" : 875399709,
+          "status" : 2,
+          "timestamp" : 1600932914066
+        } ],
+        "environmentVariables" : [ {
+          "variables" : [ "TAGS=", "HOSTNAME=ardbox", "SYSDIG_HOST_ROOT=/host", "PWD=/", "ACCESS_KEY=35da3ab0-0a8d-4673-b268-a60ced78a488", "HOME=/root", "SYSDI - sample: _LAUNCH_DRAGENT=1", "SYSDIG_BUILD_KERNEL_MODULE=1", "SECURE=true", "SYSDIG_REPOSITORY=stable", "SHLVL=0", "COLLECTOR=collector-staging2.sysdigcloud.com", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "GLIBCPP_FORCE_NEW=1", "GLIBCXX_FORCE_NEW=1" ],
+          "hash" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        } ],
+        "hostMac" : "08:00:27:29:18:2c",
+        "newProcessEvents" : [ {
+          "envVariablesHash" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "parentPid" : 14149,
+          "name" : "/opt/draios/bin/dragent",
+          "pid" : 45904,
+          "commandLine" : [ "--noipcns" ],
+          "containerId" : "bb636303ee8f",
+          "event_labels" : {
+            "container" : {
+              "image" : {
+                "repo" : "sysdig/ - sample: gent",
+                "digest" : "sha256:6f175e10af9ff1d66f13efab20abb9d10ee748302c38d3c06626f55446bbc8ee",
+                "id" : "0bcf3939db09",
+                "tag" : "latest"
+              },
+              "name" : "sysdig-agent"
+            },
+            "host" : {
+              "hostName" : "ardbox",
+              "mac" : "08:00:27:29:18:2c"
+            }
+          },
+          "timestamp" : 1600932893460
+        } ],
+        "timestamp" : 1600932920051
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "clientIpv4" : 2886795285,
+      "agentId" : 32212,
+      "serverIpv4Dot" : "10.96.0.1",
+      "clientIpv4Dot" : "172.17.0.21",
+      "pid" : 2452,
+      "l4protocol" : 6,
+      "serverPort" : 443,
+      "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+      "type" : "connection",
+      "serverIpv4" : 174063617,
+      "rxTimestamp" : 0,
+      "labels" : {
+        "container" : {
+          "image" : {
+            "digest" : "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d",
+            "id" : "d2e4e1f51132"
+          }
+        },
+        "kubernetes" : {
+          "cluster" : {
+            "name" : "k8s-onprem"
+          },
+          "node" : {
+            "name" : "ip-172-20-46-221.ec2.internal"
+          },
+          "pod" : {
+            "name" : "bash"
+          },
+          "namespace" : {
+            "name" : "default"
+          }
+        },
+        "host" : {
+          "hostName" : "ip-172-20-46-221",
+          "mac" : "12:9f:a1:c9:76:87"
+        },
+        "aws" : {
+          "accountId" : "0597975781 - sample: 6",
+          "instanceId" : "i-053b1f0509fdbc15a",
+          "region" : "us-east-1"
+        }
+      },
+      "hostname" : "qa-k8smetrics",
+      "processName" : "kubectl",
+      "clientPort" : 60720,
+      "customerId" : 1,
+      "tty" : 34816,
+      "id" : "164806f43b4d7e8c6708f40cdbb47838",
+      "containerId" : "da3abd373c7a",
+      "direction" : "out",
+      "timestamp" : 1606322948648718300
+    }
+  result:
+    custom:
+      agentId: 32212
+      clientIpv4: 2886795285
+      containerId: "da3abd373c7a"
+      customerId: 1
+      direction: "out"
+      id: "164806f43b4d7e8c6708f40cdbb47838"
+      l4protocol: 6
+      labels:
+        aws:
+          accountId: "0597975781 - sample: 6"
+          instanceId: "i-053b1f0509fdbc15a"
+          region: "us-east-1"
+        container:
+          image:
+            digest: "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d"
+            id: "d2e4e1f51132"
+        host:
+          mac: "12:9f:a1:c9:76:87"
+        kubernetes:
+          cluster:
+            name: "k8s-onprem"
+          namespace:
+            name: "default"
+          node:
+            name: "ip-172-20-46-221.ec2.internal"
+          pod:
+            name: "bash"
+      network:
+        client:
+          ip: "172.17.0.21"
+          port: 60720
+        destination:
+          ip: "10.96.0.1"
+          port: 443
+      pid: 2452
+      processName: "kubectl"
+      rxTimestamp: 0
+      serverIpv4: 174063617
+      sysdig_hostName: "ip-172-20-46-221"
+      sysdig_type: "connection"
+      timestamp: 1606322948648718300
+      timestampRFC3339Nano: "2020-11-25T16:49:08.648718268Z"
+      tty: 34816
+    message: |-
+      {
+        "clientIpv4" : 2886795285,
+        "agentId" : 32212,
+        "serverIpv4Dot" : "10.96.0.1",
+        "clientIpv4Dot" : "172.17.0.21",
+        "pid" : 2452,
+        "l4protocol" : 6,
+        "serverPort" : 443,
+        "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+        "type" : "connection",
+        "serverIpv4" : 174063617,
+        "rxTimestamp" : 0,
+        "labels" : {
+          "container" : {
+            "image" : {
+              "digest" : "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d",
+              "id" : "d2e4e1f51132"
+            }
+          },
+          "kubernetes" : {
+            "cluster" : {
+              "name" : "k8s-onprem"
+            },
+            "node" : {
+              "name" : "ip-172-20-46-221.ec2.internal"
+            },
+            "pod" : {
+              "name" : "bash"
+            },
+            "namespace" : {
+              "name" : "default"
+            }
+          },
+          "host" : {
+            "hostName" : "ip-172-20-46-221",
+            "mac" : "12:9f:a1:c9:76:87"
+          },
+          "aws" : {
+            "accountId" : "0597975781 - sample: 6",
+            "instanceId" : "i-053b1f0509fdbc15a",
+            "region" : "us-east-1"
+          }
+        },
+        "hostname" : "qa-k8smetrics",
+        "processName" : "kubectl",
+        "clientPort" : 60720,
+        "customerId" : 1,
+        "tty" : 34816,
+        "id" : "164806f43b4d7e8c6708f40cdbb47838",
+        "containerId" : "da3abd373c7a",
+        "direction" : "out",
+        "timestamp" : 1606322948648718300
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "agentId" : 32212,
+      "comm" : "dpkg",
+      "pid" : 414661,
+      "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+      "type" : "fileaccess",
+      "directory" : "/var/lib/dpkg/updates/",
+      "labels" : {
+        "container" : {
+          "image" : {
+            "repo" : "docker.io/library/ - sample: buntu",
+            "digest" : "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d",
+            "id" : "d2e4e1f51132"
+          },
+          "name" : "bash"
+        },
+        "kubernetes" : {
+          "cluster" : {
+            "name" : "k8s-onprem"
+          },
+          "node" : {
+            "name" : "ip-172-20-46-221.ec2.internal"
+          },
+          "pod" : {
+            "name" : "bash"
+          },
+          "namespace" : {
+            "name" : "default"
+          }
+        },
+        "host" : {
+          "hostName" : "ip-172-20-46-221",
+          "mac" : "12:9f:a1:c9:76:87"
+        },
+        "aws" : {
+          "accountId" : "059797578166",
+          "instanceId" : "i-053b1f0509fdbc15a",
+          "region" : "us-east-1"
+        }
+      },
+      "hostname" : "qa-k8smetrics",
+      "filename" : "tmp.i",
+      "permissions" : "w",
+      "customerId" : 1,
+      "tty" : 34817,
+      "id" : "164806c161a5dd221c4ee79d6b5dd1ce",
+      "metrics" : [ "default", "", "k8s-onpre - sample: ", "bash", "", "ip-172-20-46-221", "12:9f:a1:c9:76:87" ],
+      "containerId" : "a407fb17332b",
+      "timestamp" : 1606322948648718300
+    }
+  result:
+    custom:
+      agentId: 32212
+      comm: "dpkg"
+      containerId: "a407fb17332b"
+      customerId: 1
+      directory: "/var/lib/dpkg/updates/"
+      filename: "tmp.i"
+      id: "164806c161a5dd221c4ee79d6b5dd1ce"
+      labels:
+        aws:
+          accountId: "059797578166"
+          instanceId: "i-053b1f0509fdbc15a"
+          region: "us-east-1"
+        container:
+          image:
+            digest: "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d"
+            id: "d2e4e1f51132"
+            repo: "docker.io/library/ - sample: buntu"
+          name: "bash"
+        host:
+          mac: "12:9f:a1:c9:76:87"
+        kubernetes:
+          cluster:
+            name: "k8s-onprem"
+          namespace:
+            name: "default"
+          node:
+            name: "ip-172-20-46-221.ec2.internal"
+          pod:
+            name: "bash"
+      metrics:
+       - "default"
+       - ""
+       - "k8s-onpre - sample: "
+       - "bash"
+       - ""
+       - "ip-172-20-46-221"
+       - "12:9f:a1:c9:76:87"
+      permissions: "w"
+      pid: 414661
+      sysdig_hostName: "ip-172-20-46-221"
+      sysdig_type: "fileaccess"
+      timestamp: 1606322948648718300
+      timestampRFC3339Nano: "2020-11-25T16:49:08.648718268Z"
+      tty: 34817
+    message: |-
+      {
+        "agentId" : 32212,
+        "comm" : "dpkg",
+        "pid" : 414661,
+        "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+        "type" : "fileaccess",
+        "directory" : "/var/lib/dpkg/updates/",
+        "labels" : {
+          "container" : {
+            "image" : {
+              "repo" : "docker.io/library/ - sample: buntu",
+              "digest" : "sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d",
+              "id" : "d2e4e1f51132"
+            },
+            "name" : "bash"
+          },
+          "kubernetes" : {
+            "cluster" : {
+              "name" : "k8s-onprem"
+            },
+            "node" : {
+              "name" : "ip-172-20-46-221.ec2.internal"
+            },
+            "pod" : {
+              "name" : "bash"
+            },
+            "namespace" : {
+              "name" : "default"
+            }
+          },
+          "host" : {
+            "hostName" : "ip-172-20-46-221",
+            "mac" : "12:9f:a1:c9:76:87"
+          },
+          "aws" : {
+            "accountId" : "059797578166",
+            "instanceId" : "i-053b1f0509fdbc15a",
+            "region" : "us-east-1"
+          }
+        },
+        "hostname" : "qa-k8smetrics",
+        "filename" : "tmp.i",
+        "permissions" : "w",
+        "customerId" : 1,
+        "tty" : 34817,
+        "id" : "164806c161a5dd221c4ee79d6b5dd1ce",
+        "metrics" : [ "default", "", "k8s-onpre - sample: ", "bash", "", "ip-172-20-46-221", "12:9f:a1:c9:76:87" ],
+        "containerId" : "a407fb17332b",
+        "timestamp" : 1606322948648718300
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "auditId" : "c474d1de-c764-445a-8142-a0142505868e",
+      "agentId" : 32212,
+      "resource" : "pods",
+      "userAgent" : "kubectl/v1.16.2 (linux/amd64) kubernetes/c97fe50",
+      "subResource" : "exec",
+      "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+      "type" : "kubernet - sample: s",
+      "labels" : {
+        "container" : {
+          "image" : {
+            "repo" : "docker.io/library/ - sample: ginx",
+            "tag" : "1.21.6"
+          },
+          "name" : "nginx",
+          "label" : {
+            "io" : {
+              "kubernetes" : {
+                "container" : {
+                  "name" : "nginx"
+                },
+                "pod" : {
+                  "name" : "nginx-76f9cf7469-k5kf7",
+                  "namespace" : "nginx"
+                }
+              }
+            }
+          }
+        },
+        "kubernetes" : {
+          "cluster" : {
+            "name" : "demo-env-prom"
+          },
+          "pod" : {
+            "name" : "nginx-76f9cf7469-k5kf7"
+          },
+          "namespace" : {
+            "name" : "nginx"
+          },
+          "replicaSet" : {
+            "name" : "nginx- - sample: eployment-5677bff5b7"
+          },
+          "deployment" : {
+            "name" : "nginx-deployment"
+          }
+        },
+        "agent" : {
+          "tag" : {
+            "cluster" : "k8s-onprem",
+            "sysdig_secure" : {
+              "enabled" : "true"
+            }
+          }
+        },
+        "host" : {
+          "hostName" : "qa-k8smetrics",
+          "mac" : "12:09:c7:7d:8b:25"
+        }
+      },
+      "args" : {
+        "container" : "nginx",
+        "command" : "bash"
+      },
+      "sourceAddresses" : [ "172.17.0.21" ],
+      "hostname" : "qa-k8smetrics",
+      "name" : "nginx-76f9cf7469-k5kf7",
+      "namespace" : "nginx",
+      "stages" : {
+        "started" : 1605540915526159000,
+        "completed" : 1605540915660084000
+      },
+      "id" : "164806f4c47ad9101117d87f8b574ecf",
+      "containerId" : "397be1762fba",
+      "user" : {
+        "groups" : [ "system:serviceaccounts", "system:serviceaccounts:default", "system:authenticated" ],
+        "username" : "system:serviceaccount:default:default-kubectl-trigger"
+      },
+      "timestamp" : 1606322948648718300
+    }
+  result:
+    custom:
+      agentId: 32212
+      args:
+        command: "bash"
+        container: "nginx"
+      auditId: "c474d1de-c764-445a-8142-a0142505868e"
+      containerId: "397be1762fba"
+      id: "164806f4c47ad9101117d87f8b574ecf"
+      labels:
+        agent:
+          tag:
+            cluster: "k8s-onprem"
+            sysdig_secure:
+              enabled: "true"
+        container:
+          image:
+            repo: "docker.io/library/ - sample: ginx"
+            tag: "1.21.6"
+          label:
+            io:
+              kubernetes:
+                container:
+                  name: "nginx"
+                pod:
+                  name: "nginx-76f9cf7469-k5kf7"
+                  namespace: "nginx"
+          name: "nginx"
+        host:
+          mac: "12:09:c7:7d:8b:25"
+        kubernetes:
+          cluster:
+            name: "demo-env-prom"
+          deployment:
+            name: "nginx-deployment"
+          namespace:
+            name: "nginx"
+          pod:
+            name: "nginx-76f9cf7469-k5kf7"
+          replicaSet:
+            name: "nginx- - sample: eployment-5677bff5b7"
+      namespace: "nginx"
+      resource: "pods"
+      sourceAddresses:
+       - "172.17.0.21"
+      stages:
+        completed: 1605540915660084000
+        started: 1605540915526159000
+      subResource: "exec"
+      sysdig_hostName: "qa-k8smetrics"
+      sysdig_policy_name: "nginx-76f9cf7469-k5kf7"
+      sysdig_type: "kubernet - sample: s"
+      timestamp: 1606322948648718300
+      timestampRFC3339Nano: "2020-11-25T16:49:08.648718268Z"
+      user:
+        groups:
+         - "system:serviceaccounts"
+         - "system:serviceaccounts:default"
+         - "system:authenticated"
+      userAgent: "kubectl/v1.16.2 (linux/amd64) kubernetes/c97fe50"
+      usr:
+        name: "system:serviceaccount:default:default-kubectl-trigger"
+    message: |-
+      {
+        "auditId" : "c474d1de-c764-445a-8142-a0142505868e",
+        "agentId" : 32212,
+        "resource" : "pods",
+        "userAgent" : "kubectl/v1.16.2 (linux/amd64) kubernetes/c97fe50",
+        "subResource" : "exec",
+        "timestampRFC3339Nano" : "2020-11-25T16:49:08.648718268Z",
+        "type" : "kubernet - sample: s",
+        "labels" : {
+          "container" : {
+            "image" : {
+              "repo" : "docker.io/library/ - sample: ginx",
+              "tag" : "1.21.6"
+            },
+            "name" : "nginx",
+            "label" : {
+              "io" : {
+                "kubernetes" : {
+                  "container" : {
+                    "name" : "nginx"
+                  },
+                  "pod" : {
+                    "name" : "nginx-76f9cf7469-k5kf7",
+                    "namespace" : "nginx"
+                  }
+                }
+              }
+            }
+          },
+          "kubernetes" : {
+            "cluster" : {
+              "name" : "demo-env-prom"
+            },
+            "pod" : {
+              "name" : "nginx-76f9cf7469-k5kf7"
+            },
+            "namespace" : {
+              "name" : "nginx"
+            },
+            "replicaSet" : {
+              "name" : "nginx- - sample: eployment-5677bff5b7"
+            },
+            "deployment" : {
+              "name" : "nginx-deployment"
+            }
+          },
+          "agent" : {
+            "tag" : {
+              "cluster" : "k8s-onprem",
+              "sysdig_secure" : {
+                "enabled" : "true"
+              }
+            }
+          },
+          "host" : {
+            "hostName" : "qa-k8smetrics",
+            "mac" : "12:09:c7:7d:8b:25"
+          }
+        },
+        "args" : {
+          "container" : "nginx",
+          "command" : "bash"
+        },
+        "sourceAddresses" : [ "172.17.0.21" ],
+        "hostname" : "qa-k8smetrics",
+        "name" : "nginx-76f9cf7469-k5kf7",
+        "namespace" : "nginx",
+        "stages" : {
+          "started" : 1605540915526159000,
+          "completed" : 1605540915660084000
+        },
+        "id" : "164806f4c47ad9101117d87f8b574ecf",
+        "containerId" : "397be1762fba",
+        "user" : {
+          "groups" : [ "system:serviceaccounts", "system:serviceaccounts:default", "system:authenticated" ],
+          "username" : "system:serviceaccount:default:default-kubectl-trigger"
+        },
+        "timestamp" : 1606322948648718300
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

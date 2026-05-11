@@ -1,0 +1,30 @@
+id: tekton
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Tekton
+  enabled: true
+  filter:
+    query: source:tekton
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: trace-id-remapper
+      name: Define `knative.dev/traceid` as the official trace ID of the log
+      enabled: true
+      sources:
+        - knative.dev/traceid

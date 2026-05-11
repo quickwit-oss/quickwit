@@ -1,0 +1,1557 @@
+id: "guardduty"
+tests:
+ -
+  sample: |-
+    {
+      "service" : "guardduty",
+      "detail-type" : "GuardDuty Finding",
+      "detail" : {
+        "severity" : 2,
+        "schemaVersion" : "2.0",
+        "resource" : {
+          "instanceDetails" : {
+            "launchTime" : "2019-08-06T14:05:18Z",
+            "imageId" : "ami-02f7926796f4fb6a7",
+            "instanceId" : "i-08182560bc5286fde",
+            "instanceState" : "running",
+            "networkInterfaces" : [ {
+              "networkInterfaceId" : "eni-07bad8317c205d2c0",
+              "privateIpAddresses" : [ {
+                "privateDnsName" : "ip-172-31-92-233.ec2.internal",
+                "privateIpAddress" : "172.31.92.233"
+              } ],
+              "subnetId" : "subnet-886f26a6",
+              "vpcId" : "vpc-9024bbea",
+              "privateDnsName" : "ip-172-31-92-233.ec2.internal",
+              "publicIp" : "3.95.208.195",
+              "securityGroups" : [ {
+                "groupName" : "allow_ssh",
+                "groupId" : "sg-06579d958d5a2863c"
+              }, {
+                "groupName" : "allow_all_egress",
+                "groupId" : "sg-08b22c05e270c6dbb"
+              }, {
+                "groupName" : "allow_web",
+                "groupId" : "sg-0c75ad26a6020fa12"
+              } ],
+              "publicDnsName" : "ec2-3-95-208-195.compute-1.amazonaws.com",
+              "privateIpAddress" : "172.31.92.233"
+            } ],
+            "imageDescription" : "Ubuntu Bionic image with Datadog 6.13 setup and configured to send metrics to mabuto",
+            "instanceType" : "t2.micro",
+            "availabilityZone" : "us-east-1b",
+            "tags" : [ {
+              "value" : "ubuntu_1",
+              "key" : "Name"
+            }, {
+              "value" : "true",
+              "key" : "TF"
+            } ]
+          },
+          "resourceType" : "Instance"
+        },
+        "description" : "172.31.41.191 is performing SSH brute force attacks against i-08182560bc5286fde. Brute force attacks are used to gain unauthorized access to your instance by guessing the SSH password.",
+        "title" : "172.31.41.191 is performing SSH brute force attacks against i-08182560bc5286fde. ",
+        "type" : "UnauthorizedAccess:EC2/SSHBruteForce",
+        "accountId" : "862849134031",
+        "createdAt" : "2019-08-27T18:09:08.272Z",
+        "partition" : "aws",
+        "service" : {
+          "archived" : false,
+          "resourceRole" : "TARGET",
+          "detectorId" : "04b631bbabe21aa9f0b31098e3e12688",
+          "eventFirstSeen" : "2019-08-27T17:53:11Z",
+          "eventLastSeen" : "2019-08-28T19:50:26Z",
+          "count" : 137,
+          "action" : {
+            "actionType" : "NETWORK_CONNECTION",
+            "networkConnectionAction" : {
+              "protocol" : "TCP",
+              "blocked" : false,
+              "connectionDirection" : "INBOUND",
+              "localPortDetails" : {
+                "port" : 22,
+                "portName" : "SSH"
+              },
+              "remotePortDetails" : {
+                "port" : 35026,
+                "portName" : "Unknown"
+              },
+              "remoteIpDetails" : {
+                "city" : {
+                  "cityName" : ""
+                },
+                "geoLocation" : {
+                  "lon" : 0,
+                  "lat" : 0
+                },
+                "organization" : {
+                  "asnOrg" : "",
+                  "org" : "",
+                  "isp" : "",
+                  "asn" : "0"
+                },
+                "ipAddressV4" : "172.31.41.191"
+              }
+            }
+          },
+          "serviceName" : "guardduty"
+        },
+        "id" : "e2b66a22335877a90336c75b2ff84b5c",
+        "arn" : "arn:aws:guardduty:us-east-1:862849134031:detector/04b631bbabe21aa9f0b31098e3e12688/finding/e2b66a22335877a90336c75b2ff84b5c",
+        "region" : "us-east-1",
+        "updatedAt" : "2019-08-28T20:24:31.747Z"
+      },
+      "id" : "b27c4274-fce2-6627-57a4-c6911a03d2da",
+      "source" : "aws.guardduty",
+      "time" : "2019-08-28T20:30:02Z",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:862849134031:function:DatadogLambdaFunction",
+        "function_version" : "$LATEST"
+      },
+      "region" : "us-east-1",
+      "version" : "0",
+      "account" : "862849134031"
+    }
+  result:
+    custom:
+      account: "862849134031"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:862849134031:function:DatadogLambdaFunction"
+      detail:
+        accountId: "862849134031"
+        arn: "arn:aws:guardduty:us-east-1:862849134031:detector/04b631bbabe21aa9f0b31098e3e12688/finding/e2b66a22335877a90336c75b2ff84b5c"
+        createdAt: "2019-08-27T18:09:08.272Z"
+        id: "e2b66a22335877a90336c75b2ff84b5c"
+        partition: "aws"
+        region: "us-east-1"
+        resource:
+          instanceDetails:
+            availabilityZone: "us-east-1b"
+            imageDescription: "Ubuntu Bionic image with Datadog 6.13 setup and configured to send metrics to mabuto"
+            imageId: "ami-02f7926796f4fb6a7"
+            instanceId: "i-08182560bc5286fde"
+            instanceState: "running"
+            instanceType: "t2.micro"
+            launchTime: "2019-08-06T14:05:18Z"
+            networkInterfaces:
+             -
+              networkInterfaceId: "eni-07bad8317c205d2c0"
+              privateIpAddresses:
+               -
+                privateDnsName: "ip-172-31-92-233.ec2.internal"
+                privateIpAddress: "172.31.92.233"
+              subnetId: "subnet-886f26a6"
+              vpcId: "vpc-9024bbea"
+              privateDnsName: "ip-172-31-92-233.ec2.internal"
+              publicIp: "3.95.208.195"
+              securityGroups:
+               -
+                groupName: "allow_ssh"
+                groupId: "sg-06579d958d5a2863c"
+               -
+                groupName: "allow_all_egress"
+                groupId: "sg-08b22c05e270c6dbb"
+               -
+                groupName: "allow_web"
+                groupId: "sg-0c75ad26a6020fa12"
+              publicDnsName: "ec2-3-95-208-195.compute-1.amazonaws.com"
+              privateIpAddress: "172.31.92.233"
+            tags:
+             -
+              value: "ubuntu_1"
+              key: "Name"
+             -
+              value: "true"
+              key: "TF"
+          resourceType: "Instance"
+        schemaVersion: "2.0"
+        service:
+          action:
+            actionType: "NETWORK_CONNECTION"
+            networkConnectionAction:
+              blocked: false
+              connectionDirection: "INBOUND"
+              localPortDetails:
+                port: 22
+                portName: "SSH"
+              remoteIpDetails:
+                city:
+                  cityName: ""
+                geoLocation:
+                  lat: 0
+                  lon: 0
+                organization:
+                  asn: "0"
+                  asnOrg: ""
+                  isp: ""
+                  org: ""
+          archived: false
+          count: 137
+          detectorId: "04b631bbabe21aa9f0b31098e3e12688"
+          eventFirstSeen: "2019-08-27T17:53:11Z"
+          eventLastSeen: "2019-08-28T19:50:26Z"
+          resourceRole: "TARGET"
+          serviceName: "guardduty"
+        severity: 2
+        updatedAt: "2019-08-28T20:24:31.747Z"
+      detail-type: "GuardDuty Finding"
+      evt:
+        name: "UnauthorizedAccess:EC2/SSHBruteForce"
+      id: "b27c4274-fce2-6627-57a4-c6911a03d2da"
+      network:
+        client:
+          geoip: {}
+          ip: "172.31.41.191"
+          port:
+            name: "Unknown"
+        transport: "TCP"
+      region: "us-east-1"
+      resource:
+        type: "Instance"
+      service: "guardduty"
+      source: "aws.guardduty"
+      time: "2019-08-28T20:30:02Z"
+      title: "172.31.41.191 is performing SSH brute force attacks against i-08182560bc5286fde. "
+      version: "0"
+    message: "172.31.41.191 is performing SSH brute force attacks against i-08182560bc5286fde. Brute force attacks are used to gain unauthorized access to your instance by guessing the SSH password."
+    tags:
+     - "source:LOGS_SOURCE"
+     - "availability-zone:us-east-1b"
+     - "image:ami-02f7926796f4fb6a7"
+     - "instance-id:i-08182560bc5286fde"
+     - "instance-type:t2.micro"
+    timestamp: 1567024202000
+ -
+  sample: |-
+    {
+      "service" : "guardduty",
+      "detail-type" : "GuardDuty Finding",
+      "id" : "1153d2dc-ae2d-f25c-1b1e-7abc96922bdf",
+      "time" : "2023-03-16T23:25:06Z",
+      "detail" : {
+        "severity" : 8,
+        "accountId" : "894249079049",
+        "createdAt" : "2023-03-02T20:24:34.782Z",
+        "schemaVersion" : "2.0",
+        "partition" : "aws",
+        "resource" : {
+          "rdsDbInstanceDetails" : {
+            "engineVersion" : "13.6",
+            "dbClusterIdentifier" : "GeneratedFindingDBClusterId",
+            "dbInstanceIdentifier" : "GeneratedFindingDBInstanceId",
+            "engine" : "GeneratedFindingEngine",
+            "dbInstanceArn" : "arn:aws:rds:us-east-1:123456789000:db:GeneratedFindingDBInstanceId"
+          },
+          "rdsDbUserDetails" : {
+            "database" : "GeneratedFindingDatabaseName",
+            "application" : "GeneratedFindingApplicationName",
+            "authMethod" : "GeneratedFindingAuthMethod",
+            "user" : "GeneratedFindingUserName",
+            "ssl" : "GeneratedSSLValue"
+          },
+          "resourceType" : "RDSDBInstance"
+        },
+        "service" : {
+          "archived" : false,
+          "resourceRole" : "TARGET",
+          "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+          "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+          "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+          "additionalInfo" : {
+            "profiledBehavior" : {
+              "profiledSuccessfulUserNamesClusterProfiling" : [ {
+                "count" : 1,
+                "userName" : "GeneratedFindingUserName1"
+              }, {
+                "count" : 1,
+                "userName" : "GeneratedFindingUserName2"
+              }, {
+                "count" : 1,
+                "userName" : "GeneratedFindingUserName3"
+              } ],
+              "profiledSuccessfulDatabaseNamesClusterProfiling" : [ {
+                "databaseName" : "GeneratedFindingDatabaseName1",
+                "count" : 1
+              }, {
+                "databaseName" : "GeneratedFindingDatabaseName2",
+                "count" : 1
+              }, {
+                "databaseName" : "GeneratedFindingDatabaseName3",
+                "count" : 1
+              } ],
+              "profiledSuccessfulAsnOrgsClusterProfiling" : [ {
+                "asnOrg" : "GeneratedFindingAsnOrg",
+                "count" : 1
+              } ],
+              "profiledSuccessfulApplicationNamesClusterProfiling" : [ {
+                "count" : 1,
+                "applicationName" : "GeneratedFindingApplicationName"
+              } ]
+            },
+            "type" : "default",
+            "sample" : true,
+            "value" : "{\"unusualBehavior\":{\"unusualUserNameClusterProfiling\":{\"userName\":\"GeneratedFindingUserName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualASNClusterProfiling\":{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualApplicationNameClusterProfiling\":{\"applicationName\":\"GeneratedFindingApplicationName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualDatabaseNameClusterProfiling\":{\"databaseName\":\"GeneratedFindingDatabaseName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0}},\"profiledBehavior\":{\"profiledSuccessfulAsnOrgsClusterProfiling\":[{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"count\":1}],\"profiledSuccessfulApplicationNamesClusterProfiling\":[{\"applicationName\":\"GeneratedFindingApplicationName\",\"count\":1}],\"profiledSuccessfulUserNamesClusterProfiling\":[{\"userName\":\"GeneratedFindingUserName1\",\"count\":1},{\"userName\":\"GeneratedFindingUserName2\",\"count\":1},{\"userName\":\"GeneratedFindingUserName3\",\"count\":1}],\"profiledSuccessfulDatabaseNamesClusterProfiling\":[{\"databaseName\":\"GeneratedFindingDatabaseName1\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName2\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName3\",\"count\":1}]},\"sample\":true}",
+            "unusualBehavior" : {
+              "unusualUserNameClusterProfiling" : {
+                "failedLoginCount" : 0,
+                "successfulLoginCount" : 1,
+                "userName" : "GeneratedFindingUserName",
+                "incompleteConnectionCount" : 0
+              },
+              "unusualApplicationNameClusterProfiling" : {
+                "failedLoginCount" : 0,
+                "successfulLoginCount" : 1,
+                "applicationName" : "GeneratedFindingApplicationName",
+                "incompleteConnectionCount" : 0
+              },
+              "unusualDatabaseNameClusterProfiling" : {
+                "databaseName" : "GeneratedFindingDatabaseName",
+                "failedLoginCount" : 0,
+                "successfulLoginCount" : 1,
+                "incompleteConnectionCount" : 0
+              },
+              "unusualASNClusterProfiling" : {
+                "asnOrg" : "GeneratedFindingAsnOrg",
+                "failedLoginCount" : 0,
+                "successfulLoginCount" : 1,
+                "incompleteConnectionCount" : 0
+              }
+            }
+          },
+          "count" : 11,
+          "action" : {
+            "actionType" : "RDS_LOGIN_ATTEMPT",
+            "rdsLoginAttemptAction" : {
+              "remoteIpDetails" : {
+                "country" : {
+                  "countryName" : "GeneratedFindingCountryName"
+                },
+                "city" : {
+                  "cityName" : "GeneratedFindingCityName"
+                },
+                "geoLocation" : {
+                  "lon" : 0,
+                  "lat" : 0
+                },
+                "organization" : {
+                  "asnOrg" : "GeneratedFindingAsnOrg",
+                  "org" : "GeneratedFindingOrg",
+                  "isp" : "GeneratedFindingIsp",
+                  "asn" : "0"
+                },
+                "ipAddressV4" : "1.2.3.4"
+              }
+            }
+          },
+          "serviceName" : "guardduty"
+        },
+        "id" : "44a505437f1c49249a9070a6753330c8",
+        "type" : "CredentialAccess:RDS/AnomalousBehavior.SuccessfulLogin",
+        "region" : "us-east-1",
+        "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/44a505437f1c49249a9070a6753330c8",
+        "updatedAt" : "2023-03-16T23:22:38.661Z"
+      },
+      "region" : "us-east-1",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+        "function_version" : "$LATEST"
+      },
+      "version" : "0",
+      "account" : "894249079049"
+    }
+  result:
+    custom:
+      account: "894249079049"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB"
+      detail:
+        accountId: "894249079049"
+        arn: "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/44a505437f1c49249a9070a6753330c8"
+        createdAt: "2023-03-02T20:24:34.782Z"
+        id: "44a505437f1c49249a9070a6753330c8"
+        partition: "aws"
+        region: "us-east-1"
+        resource:
+          rdsDbInstanceDetails:
+            dbClusterIdentifier: "GeneratedFindingDBClusterId"
+            dbInstanceArn: "arn:aws:rds:us-east-1:123456789000:db:GeneratedFindingDBInstanceId"
+            dbInstanceIdentifier: "GeneratedFindingDBInstanceId"
+            engine: "GeneratedFindingEngine"
+            engineVersion: "13.6"
+          rdsDbUserDetails:
+            application: "GeneratedFindingApplicationName"
+            authMethod: "GeneratedFindingAuthMethod"
+            database: "GeneratedFindingDatabaseName"
+            ssl: "GeneratedSSLValue"
+            user: "GeneratedFindingUserName"
+          resourceType: "RDSDBInstance"
+        schemaVersion: "2.0"
+        service:
+          action:
+            actionType: "RDS_LOGIN_ATTEMPT"
+            rdsLoginAttemptAction:
+              remoteIpDetails:
+                city:
+                  cityName: "GeneratedFindingCityName"
+                country:
+                  countryName: "GeneratedFindingCountryName"
+                geoLocation:
+                  lat: 0
+                  lon: 0
+                ipAddressV4: "1.2.3.4"
+                organization:
+                  asn: "0"
+                  asnOrg: "GeneratedFindingAsnOrg"
+                  isp: "GeneratedFindingIsp"
+                  org: "GeneratedFindingOrg"
+          additionalInfo:
+            profiledBehavior:
+              profiledSuccessfulApplicationNamesClusterProfiling:
+               -
+                count: 1
+                applicationName: "GeneratedFindingApplicationName"
+              profiledSuccessfulAsnOrgsClusterProfiling:
+               -
+                asnOrg: "GeneratedFindingAsnOrg"
+                count: 1
+              profiledSuccessfulDatabaseNamesClusterProfiling:
+               -
+                databaseName: "GeneratedFindingDatabaseName1"
+                count: 1
+               -
+                databaseName: "GeneratedFindingDatabaseName2"
+                count: 1
+               -
+                databaseName: "GeneratedFindingDatabaseName3"
+                count: 1
+              profiledSuccessfulUserNamesClusterProfiling:
+               -
+                count: 1
+                userName: "GeneratedFindingUserName1"
+               -
+                count: 1
+                userName: "GeneratedFindingUserName2"
+               -
+                count: 1
+                userName: "GeneratedFindingUserName3"
+            sample: true
+            type: "default"
+            unusualBehavior:
+              unusualASNClusterProfiling:
+                asnOrg: "GeneratedFindingAsnOrg"
+                failedLoginCount: 0
+                incompleteConnectionCount: 0
+                successfulLoginCount: 1
+              unusualApplicationNameClusterProfiling:
+                applicationName: "GeneratedFindingApplicationName"
+                failedLoginCount: 0
+                incompleteConnectionCount: 0
+                successfulLoginCount: 1
+              unusualDatabaseNameClusterProfiling:
+                databaseName: "GeneratedFindingDatabaseName"
+                failedLoginCount: 0
+                incompleteConnectionCount: 0
+                successfulLoginCount: 1
+              unusualUserNameClusterProfiling:
+                failedLoginCount: 0
+                incompleteConnectionCount: 0
+                successfulLoginCount: 1
+                userName: "GeneratedFindingUserName"
+            value: "{\"unusualBehavior\":{\"unusualUserNameClusterProfiling\":{\"userName\":\"GeneratedFindingUserName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualASNClusterProfiling\":{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualApplicationNameClusterProfiling\":{\"applicationName\":\"GeneratedFindingApplicationName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualDatabaseNameClusterProfiling\":{\"databaseName\":\"GeneratedFindingDatabaseName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0}},\"profiledBehavior\":{\"profiledSuccessfulAsnOrgsClusterProfiling\":[{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"count\":1}],\"profiledSuccessfulApplicationNamesClusterProfiling\":[{\"applicationName\":\"GeneratedFindingApplicationName\",\"count\":1}],\"profiledSuccessfulUserNamesClusterProfiling\":[{\"userName\":\"GeneratedFindingUserName1\",\"count\":1},{\"userName\":\"GeneratedFindingUserName2\",\"count\":1},{\"userName\":\"GeneratedFindingUserName3\",\"count\":1}],\"profiledSuccessfulDatabaseNamesClusterProfiling\":[{\"databaseName\":\"GeneratedFindingDatabaseName1\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName2\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName3\",\"count\":1}]},\"sample\":true}"
+          archived: false
+          count: 11
+          detectorId: "54c08877447e9e4f9c5a879e62d15a19"
+          eventFirstSeen: "2023-03-02T20:24:34.000Z"
+          eventLastSeen: "2023-03-16T23:22:38.000Z"
+          resourceRole: "TARGET"
+          serviceName: "guardduty"
+        severity: 8
+        updatedAt: "2023-03-16T23:22:38.661Z"
+      detail-type: "GuardDuty Finding"
+      evt:
+        name: "CredentialAccess:RDS/AnomalousBehavior.SuccessfulLogin"
+      id: "1153d2dc-ae2d-f25c-1b1e-7abc96922bdf"
+      region: "us-east-1"
+      resource:
+        type: "RDSDBInstance"
+      service: "guardduty"
+      time: "2023-03-16T23:25:06Z"
+      version: "0"
+    message: |-
+      {
+        "service" : "guardduty",
+        "detail-type" : "GuardDuty Finding",
+        "id" : "1153d2dc-ae2d-f25c-1b1e-7abc96922bdf",
+        "time" : "2023-03-16T23:25:06Z",
+        "detail" : {
+          "severity" : 8,
+          "accountId" : "894249079049",
+          "createdAt" : "2023-03-02T20:24:34.782Z",
+          "schemaVersion" : "2.0",
+          "partition" : "aws",
+          "resource" : {
+            "rdsDbInstanceDetails" : {
+              "engineVersion" : "13.6",
+              "dbClusterIdentifier" : "GeneratedFindingDBClusterId",
+              "dbInstanceIdentifier" : "GeneratedFindingDBInstanceId",
+              "engine" : "GeneratedFindingEngine",
+              "dbInstanceArn" : "arn:aws:rds:us-east-1:123456789000:db:GeneratedFindingDBInstanceId"
+            },
+            "rdsDbUserDetails" : {
+              "database" : "GeneratedFindingDatabaseName",
+              "application" : "GeneratedFindingApplicationName",
+              "authMethod" : "GeneratedFindingAuthMethod",
+              "user" : "GeneratedFindingUserName",
+              "ssl" : "GeneratedSSLValue"
+            },
+            "resourceType" : "RDSDBInstance"
+          },
+          "service" : {
+            "archived" : false,
+            "resourceRole" : "TARGET",
+            "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+            "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+            "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+            "additionalInfo" : {
+              "profiledBehavior" : {
+                "profiledSuccessfulUserNamesClusterProfiling" : [ {
+                  "count" : 1,
+                  "userName" : "GeneratedFindingUserName1"
+                }, {
+                  "count" : 1,
+                  "userName" : "GeneratedFindingUserName2"
+                }, {
+                  "count" : 1,
+                  "userName" : "GeneratedFindingUserName3"
+                } ],
+                "profiledSuccessfulDatabaseNamesClusterProfiling" : [ {
+                  "databaseName" : "GeneratedFindingDatabaseName1",
+                  "count" : 1
+                }, {
+                  "databaseName" : "GeneratedFindingDatabaseName2",
+                  "count" : 1
+                }, {
+                  "databaseName" : "GeneratedFindingDatabaseName3",
+                  "count" : 1
+                } ],
+                "profiledSuccessfulAsnOrgsClusterProfiling" : [ {
+                  "asnOrg" : "GeneratedFindingAsnOrg",
+                  "count" : 1
+                } ],
+                "profiledSuccessfulApplicationNamesClusterProfiling" : [ {
+                  "count" : 1,
+                  "applicationName" : "GeneratedFindingApplicationName"
+                } ]
+              },
+              "type" : "default",
+              "sample" : true,
+              "value" : "{\"unusualBehavior\":{\"unusualUserNameClusterProfiling\":{\"userName\":\"GeneratedFindingUserName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualASNClusterProfiling\":{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualApplicationNameClusterProfiling\":{\"applicationName\":\"GeneratedFindingApplicationName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0},\"unusualDatabaseNameClusterProfiling\":{\"databaseName\":\"GeneratedFindingDatabaseName\",\"failedLoginCount\":0,\"successfulLoginCount\":1,\"incompleteConnectionCount\":0}},\"profiledBehavior\":{\"profiledSuccessfulAsnOrgsClusterProfiling\":[{\"asnOrg\":\"GeneratedFindingAsnOrg\",\"count\":1}],\"profiledSuccessfulApplicationNamesClusterProfiling\":[{\"applicationName\":\"GeneratedFindingApplicationName\",\"count\":1}],\"profiledSuccessfulUserNamesClusterProfiling\":[{\"userName\":\"GeneratedFindingUserName1\",\"count\":1},{\"userName\":\"GeneratedFindingUserName2\",\"count\":1},{\"userName\":\"GeneratedFindingUserName3\",\"count\":1}],\"profiledSuccessfulDatabaseNamesClusterProfiling\":[{\"databaseName\":\"GeneratedFindingDatabaseName1\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName2\",\"count\":1},{\"databaseName\":\"GeneratedFindingDatabaseName3\",\"count\":1}]},\"sample\":true}",
+              "unusualBehavior" : {
+                "unusualUserNameClusterProfiling" : {
+                  "failedLoginCount" : 0,
+                  "successfulLoginCount" : 1,
+                  "userName" : "GeneratedFindingUserName",
+                  "incompleteConnectionCount" : 0
+                },
+                "unusualApplicationNameClusterProfiling" : {
+                  "failedLoginCount" : 0,
+                  "successfulLoginCount" : 1,
+                  "applicationName" : "GeneratedFindingApplicationName",
+                  "incompleteConnectionCount" : 0
+                },
+                "unusualDatabaseNameClusterProfiling" : {
+                  "databaseName" : "GeneratedFindingDatabaseName",
+                  "failedLoginCount" : 0,
+                  "successfulLoginCount" : 1,
+                  "incompleteConnectionCount" : 0
+                },
+                "unusualASNClusterProfiling" : {
+                  "asnOrg" : "GeneratedFindingAsnOrg",
+                  "failedLoginCount" : 0,
+                  "successfulLoginCount" : 1,
+                  "incompleteConnectionCount" : 0
+                }
+              }
+            },
+            "count" : 11,
+            "action" : {
+              "actionType" : "RDS_LOGIN_ATTEMPT",
+              "rdsLoginAttemptAction" : {
+                "remoteIpDetails" : {
+                  "country" : {
+                    "countryName" : "GeneratedFindingCountryName"
+                  },
+                  "city" : {
+                    "cityName" : "GeneratedFindingCityName"
+                  },
+                  "geoLocation" : {
+                    "lon" : 0,
+                    "lat" : 0
+                  },
+                  "organization" : {
+                    "asnOrg" : "GeneratedFindingAsnOrg",
+                    "org" : "GeneratedFindingOrg",
+                    "isp" : "GeneratedFindingIsp",
+                    "asn" : "0"
+                  },
+                  "ipAddressV4" : "1.2.3.4"
+                }
+              }
+            },
+            "serviceName" : "guardduty"
+          },
+          "id" : "44a505437f1c49249a9070a6753330c8",
+          "type" : "CredentialAccess:RDS/AnomalousBehavior.SuccessfulLogin",
+          "region" : "us-east-1",
+          "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/44a505437f1c49249a9070a6753330c8",
+          "updatedAt" : "2023-03-16T23:22:38.661Z"
+        },
+        "region" : "us-east-1",
+        "aws" : {
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+          "function_version" : "$LATEST"
+        },
+        "version" : "0",
+        "account" : "894249079049"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679009106000
+ -
+  sample: |-
+    {
+      "service" : "guardduty",
+      "detail-type" : "GuardDuty Finding",
+      "id" : "6afaee6b-6aaf-bb7b-ef15-dd11098970da",
+      "time" : "2023-03-16T23:25:06Z",
+      "detail" : {
+        "severity" : 8,
+        "accountId" : "894249079049",
+        "createdAt" : "2023-03-16T21:28:36.614Z",
+        "schemaVersion" : "2.0",
+        "partition" : "aws",
+        "resource" : {
+          "lambdaDetails" : {
+            "revisionId" : "28f0fb31-5c5c-43d3-8955-03e76c5c1075",
+            "role" : "GeneratedFindingLambdaExecutionRole",
+            "functionVersion" : "$LATEST",
+            "functionName" : "GeneratedFindingLambdaFunctionName",
+            "vpcId" : "GeneratedFindingVPCId",
+            "description" : "GeneratedFindingLambdaFunctionDescription",
+            "lastModified" : "2022-05-24T19:32:13.000Z",
+            "functionArn" : "GeneratedFindingLambdaFunctionArn",
+            "tags" : [ {
+              "value" : "GeneratedFindingInstanceValue1",
+              "key" : "GeneratedFindingInstanceTag1"
+            }, {
+              "value" : "GeneratedFindingInstanceTagValue2",
+              "key" : "GeneratedFindingInstanceTag2"
+            } ]
+          },
+          "resourceType" : "Lambda"
+        },
+        "service" : {
+          "archived" : false,
+          "resourceRole" : "TARGET",
+          "evidence" : {
+            "threatIntelligenceDetails" : [ {
+              "threatNames" : [ "GeneratedFindingThreatName" ],
+              "threatListName" : "GeneratedFindingThreatListName"
+            } ]
+          },
+          "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+          "eventFirstSeen" : "2023-03-16T21:28:36.000Z",
+          "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+          "additionalInfo" : {
+            "threatListName" : "GeneratedFindingThreatListName",
+            "type" : "default",
+            "sample" : true,
+            "value" : "{\"threatListName\":\"GeneratedFindingThreatListName\",\"sample\":true}"
+          },
+          "count" : 6,
+          "action" : {
+            "actionType" : "NETWORK_CONNECTION",
+            "networkConnectionAction" : {
+              "blocked" : false,
+              "connectionDirection" : "OUTBOUND",
+              "remoteIpDetails" : {
+                "country" : {
+                  "countryName" : "United States"
+                },
+                "city" : {
+                  "cityName" : "GeneratedFindingCityName"
+                },
+                "geoLocation" : {
+                  "lon" : 0,
+                  "lat" : 0
+                },
+                "organization" : {
+                  "asnOrg" : "GeneratedFindingASNOrg",
+                  "org" : "GeneratedFindingORG",
+                  "isp" : "GeneratedFindingISP",
+                  "asn" : "-1"
+                }
+              }
+            }
+          },
+          "serviceName" : "guardduty"
+        },
+        "id" : "718d92e172c146ecab68699f28942f30",
+        "type" : "CryptoCurrency:Lambda/BitcoinTool.B",
+        "region" : "us-east-1",
+        "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/718d92e172c146ecab68699f28942f30",
+        "updatedAt" : "2023-03-16T23:22:38.637Z"
+      },
+      "region" : "us-east-1",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+        "function_version" : "$LATEST"
+      },
+      "version" : "0",
+      "account" : "894249079049"
+    }
+  result:
+    custom:
+      account: "894249079049"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB"
+      detail:
+        accountId: "894249079049"
+        arn: "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/718d92e172c146ecab68699f28942f30"
+        createdAt: "2023-03-16T21:28:36.614Z"
+        id: "718d92e172c146ecab68699f28942f30"
+        partition: "aws"
+        region: "us-east-1"
+        resource:
+          lambdaDetails:
+            description: "GeneratedFindingLambdaFunctionDescription"
+            functionArn: "GeneratedFindingLambdaFunctionArn"
+            functionName: "GeneratedFindingLambdaFunctionName"
+            functionVersion: "$LATEST"
+            lastModified: "2022-05-24T19:32:13.000Z"
+            revisionId: "28f0fb31-5c5c-43d3-8955-03e76c5c1075"
+            role: "GeneratedFindingLambdaExecutionRole"
+            tags:
+             -
+              value: "GeneratedFindingInstanceValue1"
+              key: "GeneratedFindingInstanceTag1"
+             -
+              value: "GeneratedFindingInstanceTagValue2"
+              key: "GeneratedFindingInstanceTag2"
+            vpcId: "GeneratedFindingVPCId"
+          resourceType: "Lambda"
+        schemaVersion: "2.0"
+        service:
+          action:
+            actionType: "NETWORK_CONNECTION"
+            networkConnectionAction:
+              blocked: false
+              connectionDirection: "OUTBOUND"
+              remoteIpDetails:
+                city:
+                  cityName: "GeneratedFindingCityName"
+                country:
+                  countryName: "United States"
+                geoLocation:
+                  lat: 0
+                  lon: 0
+                organization:
+                  asn: "-1"
+                  asnOrg: "GeneratedFindingASNOrg"
+                  isp: "GeneratedFindingISP"
+                  org: "GeneratedFindingORG"
+          additionalInfo:
+            sample: true
+            threatListName: "GeneratedFindingThreatListName"
+            type: "default"
+            value: "{\"threatListName\":\"GeneratedFindingThreatListName\",\"sample\":true}"
+          archived: false
+          count: 6
+          detectorId: "54c08877447e9e4f9c5a879e62d15a19"
+          eventFirstSeen: "2023-03-16T21:28:36.000Z"
+          eventLastSeen: "2023-03-16T23:22:38.000Z"
+          evidence:
+            threatIntelligenceDetails:
+             -
+              threatNames:
+               - "GeneratedFindingThreatName"
+              threatListName: "GeneratedFindingThreatListName"
+          resourceRole: "TARGET"
+          serviceName: "guardduty"
+        severity: 8
+        updatedAt: "2023-03-16T23:22:38.637Z"
+      detail-type: "GuardDuty Finding"
+      evt:
+        name: "CryptoCurrency:Lambda/BitcoinTool.B"
+      id: "6afaee6b-6aaf-bb7b-ef15-dd11098970da"
+      region: "us-east-1"
+      resource:
+        type: "Lambda"
+      service: "guardduty"
+      time: "2023-03-16T23:25:06Z"
+      version: "0"
+    message: |-
+      {
+        "service" : "guardduty",
+        "detail-type" : "GuardDuty Finding",
+        "id" : "6afaee6b-6aaf-bb7b-ef15-dd11098970da",
+        "time" : "2023-03-16T23:25:06Z",
+        "detail" : {
+          "severity" : 8,
+          "accountId" : "894249079049",
+          "createdAt" : "2023-03-16T21:28:36.614Z",
+          "schemaVersion" : "2.0",
+          "partition" : "aws",
+          "resource" : {
+            "lambdaDetails" : {
+              "revisionId" : "28f0fb31-5c5c-43d3-8955-03e76c5c1075",
+              "role" : "GeneratedFindingLambdaExecutionRole",
+              "functionVersion" : "$LATEST",
+              "functionName" : "GeneratedFindingLambdaFunctionName",
+              "vpcId" : "GeneratedFindingVPCId",
+              "description" : "GeneratedFindingLambdaFunctionDescription",
+              "lastModified" : "2022-05-24T19:32:13.000Z",
+              "functionArn" : "GeneratedFindingLambdaFunctionArn",
+              "tags" : [ {
+                "value" : "GeneratedFindingInstanceValue1",
+                "key" : "GeneratedFindingInstanceTag1"
+              }, {
+                "value" : "GeneratedFindingInstanceTagValue2",
+                "key" : "GeneratedFindingInstanceTag2"
+              } ]
+            },
+            "resourceType" : "Lambda"
+          },
+          "service" : {
+            "archived" : false,
+            "resourceRole" : "TARGET",
+            "evidence" : {
+              "threatIntelligenceDetails" : [ {
+                "threatNames" : [ "GeneratedFindingThreatName" ],
+                "threatListName" : "GeneratedFindingThreatListName"
+              } ]
+            },
+            "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+            "eventFirstSeen" : "2023-03-16T21:28:36.000Z",
+            "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+            "additionalInfo" : {
+              "threatListName" : "GeneratedFindingThreatListName",
+              "type" : "default",
+              "sample" : true,
+              "value" : "{\"threatListName\":\"GeneratedFindingThreatListName\",\"sample\":true}"
+            },
+            "count" : 6,
+            "action" : {
+              "actionType" : "NETWORK_CONNECTION",
+              "networkConnectionAction" : {
+                "blocked" : false,
+                "connectionDirection" : "OUTBOUND",
+                "remoteIpDetails" : {
+                  "country" : {
+                    "countryName" : "United States"
+                  },
+                  "city" : {
+                    "cityName" : "GeneratedFindingCityName"
+                  },
+                  "geoLocation" : {
+                    "lon" : 0,
+                    "lat" : 0
+                  },
+                  "organization" : {
+                    "asnOrg" : "GeneratedFindingASNOrg",
+                    "org" : "GeneratedFindingORG",
+                    "isp" : "GeneratedFindingISP",
+                    "asn" : "-1"
+                  }
+                }
+              }
+            },
+            "serviceName" : "guardduty"
+          },
+          "id" : "718d92e172c146ecab68699f28942f30",
+          "type" : "CryptoCurrency:Lambda/BitcoinTool.B",
+          "region" : "us-east-1",
+          "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/718d92e172c146ecab68699f28942f30",
+          "updatedAt" : "2023-03-16T23:22:38.637Z"
+        },
+        "region" : "us-east-1",
+        "aws" : {
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+          "function_version" : "$LATEST"
+        },
+        "version" : "0",
+        "account" : "894249079049"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679009106000
+ -
+  sample: |-
+    {
+      "service" : "guardduty",
+      "detail-type" : "GuardDuty Finding",
+      "id" : "c22c5d16-3487-f905-f2b8-05962fe1f830",
+      "time" : "2023-03-16T23:25:02Z",
+      "detail" : {
+        "severity" : 6,
+        "accountId" : "894249079049",
+        "createdAt" : "2023-03-02T20:24:34.742Z",
+        "schemaVersion" : "2.0",
+        "partition" : "aws",
+        "resource" : {
+          "containerDetails" : {
+            "image" : "GeneratedFindingContainerImage",
+            "name" : "GeneratedFindingContainerName",
+            "id" : "e6cf2e24515c1df7f4"
+          },
+          "ebsVolumeDetails" : {
+            "scannedVolumeDetails" : [ {
+              "volumeType" : "GeneratedScannedVolumeType",
+              "volumeSizeInGB" : 8,
+              "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+              "encryptionType" : "UNENCRYPTED",
+              "snapshotArn" : "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567",
+              "deviceName" : "GeneratedScannedDeviceName"
+            } ]
+          },
+          "resourceType" : "Container"
+        },
+        "service" : {
+          "archived" : false,
+          "ebsVolumeScanDetails" : {
+            "scanStartedAt" : 1639010703,
+            "sources" : [ "Bitdefender" ],
+            "scanId" : "bd6ce77dcacb163330a1a40ec143f557",
+            "scanCompletedAt" : 1639011226,
+            "triggerFindingId" : "aebf726700725c2ffe5a2418d71b95ca",
+            "scanType" : "ON_DEMAND",
+            "scanDetections" : {
+              "scannedItemCount" : {
+                "totalGb" : 1,
+                "volumes" : 1,
+                "files" : 65226
+              },
+              "threatsDetectedItemCount" : {
+                "files" : 2
+              },
+              "threatDetectedByName" : {
+                "threatNames" : [ {
+                  "severity" : "MEDIUM",
+                  "name" : "EICAR-Test-File",
+                  "filePaths" : [ {
+                    "fileName" : "eicar.com",
+                    "filePath" : "tmp/eicar.com",
+                    "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                    "hash" : "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                  }, {
+                    "fileName" : "eicar-2.txt",
+                    "filePath" : "tmp/eicar-2.txt",
+                    "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                    "hash" : "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                  } ],
+                  "itemCount" : 2
+                } ],
+                "shortened" : false,
+                "uniqueThreatNameCount" : 1,
+                "itemCount" : 2
+              },
+              "highestSeverityThreatDetails" : {
+                "severity" : "MEDIUM",
+                "threatName" : "EICAR-Test-File",
+                "count" : 2
+              }
+            }
+          },
+          "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+          "featureName" : "EbsVolumeScan",
+          "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+          "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+          "additionalInfo" : {
+            "type" : "default",
+            "sample" : true,
+            "value" : "{\"sample\":true}"
+          },
+          "count" : 11,
+          "serviceName" : "guardduty"
+        },
+        "id" : "921e2276160d43cdb39211a6224a065e",
+        "type" : "Execution:Container/SuspiciousFile",
+        "region" : "us-east-1",
+        "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/921e2276160d43cdb39211a6224a065e",
+        "updatedAt" : "2023-03-16T23:22:38.640Z"
+      },
+      "region" : "us-east-1",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+        "function_version" : "$LATEST"
+      },
+      "version" : "0",
+      "account" : "894249079049"
+    }
+  result:
+    custom:
+      account: "894249079049"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB"
+      detail:
+        accountId: "894249079049"
+        arn: "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/921e2276160d43cdb39211a6224a065e"
+        createdAt: "2023-03-02T20:24:34.742Z"
+        id: "921e2276160d43cdb39211a6224a065e"
+        partition: "aws"
+        region: "us-east-1"
+        resource:
+          containerDetails:
+            id: "e6cf2e24515c1df7f4"
+            image: "GeneratedFindingContainerImage"
+            name: "GeneratedFindingContainerName"
+          ebsVolumeDetails:
+            scannedVolumeDetails:
+             -
+              volumeType: "GeneratedScannedVolumeType"
+              volumeSizeInGB: 8
+              volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+              encryptionType: "UNENCRYPTED"
+              snapshotArn: "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567"
+              deviceName: "GeneratedScannedDeviceName"
+          resourceType: "Container"
+        schemaVersion: "2.0"
+        service:
+          additionalInfo:
+            sample: true
+            type: "default"
+            value: "{\"sample\":true}"
+          archived: false
+          count: 11
+          detectorId: "54c08877447e9e4f9c5a879e62d15a19"
+          ebsVolumeScanDetails:
+            scanCompletedAt: 1639011226
+            scanDetections:
+              highestSeverityThreatDetails:
+                count: 2
+                severity: "MEDIUM"
+                threatName: "EICAR-Test-File"
+              scannedItemCount:
+                files: 65226
+                totalGb: 1
+                volumes: 1
+              threatDetectedByName:
+                itemCount: 2
+                shortened: false
+                threatNames:
+                 -
+                  severity: "MEDIUM"
+                  name: "EICAR-Test-File"
+                  filePaths:
+                   -
+                    fileName: "eicar.com"
+                    filePath: "tmp/eicar.com"
+                    volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+                    hash: "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                   -
+                    fileName: "eicar-2.txt"
+                    filePath: "tmp/eicar-2.txt"
+                    volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+                    hash: "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                  itemCount: 2
+                uniqueThreatNameCount: 1
+              threatsDetectedItemCount:
+                files: 2
+            scanId: "bd6ce77dcacb163330a1a40ec143f557"
+            scanStartedAt: 1639010703
+            scanType: "ON_DEMAND"
+            sources:
+             - "Bitdefender"
+            triggerFindingId: "aebf726700725c2ffe5a2418d71b95ca"
+          eventFirstSeen: "2023-03-02T20:24:34.000Z"
+          eventLastSeen: "2023-03-16T23:22:38.000Z"
+          featureName: "EbsVolumeScan"
+          serviceName: "guardduty"
+        severity: 6
+        updatedAt: "2023-03-16T23:22:38.640Z"
+      detail-type: "GuardDuty Finding"
+      evt:
+        name: "Execution:Container/SuspiciousFile"
+      id: "c22c5d16-3487-f905-f2b8-05962fe1f830"
+      region: "us-east-1"
+      resource:
+        type: "Container"
+      service: "guardduty"
+      time: "2023-03-16T23:25:02Z"
+      version: "0"
+    message: |-
+      {
+        "service" : "guardduty",
+        "detail-type" : "GuardDuty Finding",
+        "id" : "c22c5d16-3487-f905-f2b8-05962fe1f830",
+        "time" : "2023-03-16T23:25:02Z",
+        "detail" : {
+          "severity" : 6,
+          "accountId" : "894249079049",
+          "createdAt" : "2023-03-02T20:24:34.742Z",
+          "schemaVersion" : "2.0",
+          "partition" : "aws",
+          "resource" : {
+            "containerDetails" : {
+              "image" : "GeneratedFindingContainerImage",
+              "name" : "GeneratedFindingContainerName",
+              "id" : "e6cf2e24515c1df7f4"
+            },
+            "ebsVolumeDetails" : {
+              "scannedVolumeDetails" : [ {
+                "volumeType" : "GeneratedScannedVolumeType",
+                "volumeSizeInGB" : 8,
+                "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                "encryptionType" : "UNENCRYPTED",
+                "snapshotArn" : "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567",
+                "deviceName" : "GeneratedScannedDeviceName"
+              } ]
+            },
+            "resourceType" : "Container"
+          },
+          "service" : {
+            "archived" : false,
+            "ebsVolumeScanDetails" : {
+              "scanStartedAt" : 1639010703,
+              "sources" : [ "Bitdefender" ],
+              "scanId" : "bd6ce77dcacb163330a1a40ec143f557",
+              "scanCompletedAt" : 1639011226,
+              "triggerFindingId" : "aebf726700725c2ffe5a2418d71b95ca",
+              "scanType" : "ON_DEMAND",
+              "scanDetections" : {
+                "scannedItemCount" : {
+                  "totalGb" : 1,
+                  "volumes" : 1,
+                  "files" : 65226
+                },
+                "threatsDetectedItemCount" : {
+                  "files" : 2
+                },
+                "threatDetectedByName" : {
+                  "threatNames" : [ {
+                    "severity" : "MEDIUM",
+                    "name" : "EICAR-Test-File",
+                    "filePaths" : [ {
+                      "fileName" : "eicar.com",
+                      "filePath" : "tmp/eicar.com",
+                      "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                      "hash" : "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                    }, {
+                      "fileName" : "eicar-2.txt",
+                      "filePath" : "tmp/eicar-2.txt",
+                      "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                      "hash" : "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                    } ],
+                    "itemCount" : 2
+                  } ],
+                  "shortened" : false,
+                  "uniqueThreatNameCount" : 1,
+                  "itemCount" : 2
+                },
+                "highestSeverityThreatDetails" : {
+                  "severity" : "MEDIUM",
+                  "threatName" : "EICAR-Test-File",
+                  "count" : 2
+                }
+              }
+            },
+            "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+            "featureName" : "EbsVolumeScan",
+            "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+            "eventLastSeen" : "2023-03-16T23:22:38.000Z",
+            "additionalInfo" : {
+              "type" : "default",
+              "sample" : true,
+              "value" : "{\"sample\":true}"
+            },
+            "count" : 11,
+            "serviceName" : "guardduty"
+          },
+          "id" : "921e2276160d43cdb39211a6224a065e",
+          "type" : "Execution:Container/SuspiciousFile",
+          "region" : "us-east-1",
+          "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/921e2276160d43cdb39211a6224a065e",
+          "updatedAt" : "2023-03-16T23:22:38.640Z"
+        },
+        "region" : "us-east-1",
+        "aws" : {
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+          "function_version" : "$LATEST"
+        },
+        "version" : "0",
+        "account" : "894249079049"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679009102000
+ -
+  sample: |-
+    {
+      "service" : "guardduty",
+      "detail-type" : "GuardDuty Finding",
+      "id" : "63a173e2-158b-807f-9bd2-e781cc172f6c",
+      "time" : "2023-03-16T21:40:00Z",
+      "detail" : {
+        "severity" : 8,
+        "accountId" : "894249079049",
+        "createdAt" : "2023-03-02T20:24:34.771Z",
+        "schemaVersion" : "2.0",
+        "partition" : "aws",
+        "resource" : {
+          "ecsClusterDetails" : {
+            "name" : "GeneratedFindingECSClusterName",
+            "arn" : "arn:aws:ecs:region:123456789000:cluster/clusterName",
+            "status" : "ACTIVE",
+            "tags" : [ {
+              "value" : "GeneratedFindingECSClusterTagValue1",
+              "key" : "GeneratedFindingECSClusterTag1"
+            }, {
+              "value" : "GeneratedFindingECSClusterTagValue2",
+              "key" : "GeneratedFindingECSClusterTag2"
+            }, {
+              "value" : "GeneratedFindingECSClusterTagValue3",
+              "key" : "GeneratedFindingECSClusterTag3"
+            } ],
+            "taskDetails" : {
+              "createdAt" : 1639005830,
+              "startedBy" : "GeneratedFindingECSTaskStartedBy",
+              "startedAt" : 1639005830,
+              "containers" : [ {
+                "image" : "GeneratedFindingContainerImage",
+                "name" : "GeneratedFindingContainerName"
+              } ],
+              "arn" : "arn:aws:ecs:region:123456789000:task/mycluster/043de9ab3",
+              "version" : "1",
+              "definitionArn" : "arn:aws:ecs:region:123456789000:task-definition/mycluster/76f1f1asdf"
+            }
+          },
+          "ebsVolumeDetails" : {
+            "scannedVolumeDetails" : [ {
+              "volumeType" : "GeneratedScannedVolumeType",
+              "volumeSizeInGB" : 8,
+              "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+              "encryptionType" : "UNENCRYPTED",
+              "snapshotArn" : "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567",
+              "deviceName" : "GeneratedScannedDeviceName"
+            } ]
+          },
+          "resourceType" : "ECSCluster"
+        },
+        "service" : {
+          "archived" : false,
+          "ebsVolumeScanDetails" : {
+            "scanStartedAt" : 1639010703,
+            "sources" : [ "Bitdefender" ],
+            "scanId" : "bd6ce77dcacb163330a1a40ec143f851",
+            "scanCompletedAt" : 1639011226,
+            "triggerFindingId" : "aebf726700725c2ffe5a2418d71b91wd",
+            "scanType" : "ON_DEMAND",
+            "scanDetections" : {
+              "scannedItemCount" : {
+                "totalGb" : 1,
+                "volumes" : 1,
+                "files" : 65226
+              },
+              "threatsDetectedItemCount" : {
+                "files" : 2
+              },
+              "threatDetectedByName" : {
+                "threatNames" : [ {
+                  "severity" : "HIGH",
+                  "name" : "EICAR-Test-File",
+                  "filePaths" : [ {
+                    "fileName" : "eicar.com",
+                    "filePath" : "tmp/eicar.com",
+                    "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                    "hash" : "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                  }, {
+                    "fileName" : "eicar-2.txt",
+                    "filePath" : "tmp/eicar-2.txt",
+                    "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                    "hash" : "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                  } ],
+                  "itemCount" : 2
+                } ],
+                "shortened" : false,
+                "uniqueThreatNameCount" : 1,
+                "itemCount" : 2
+              },
+              "highestSeverityThreatDetails" : {
+                "severity" : "HIGH",
+                "threatName" : "EICAR-Test-File",
+                "count" : 2
+              }
+            }
+          },
+          "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+          "featureName" : "EbsVolumeScan",
+          "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+          "eventLastSeen" : "2023-03-16T21:37:05.000Z",
+          "additionalInfo" : {
+            "type" : "default",
+            "sample" : true,
+            "value" : "{\"sample\":true}"
+          },
+          "count" : 10,
+          "serviceName" : "guardduty"
+        },
+        "id" : "f0bd34680ca54c7aae6cad1056c8626e",
+        "type" : "Execution:ECS/maliciousfile",
+        "region" : "us-east-1",
+        "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/f0bd34680ca54c7aae6cad1056c8626e",
+        "updatedAt" : "2023-03-16T21:37:05.488Z"
+      },
+      "region" : "us-east-1",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+        "function_version" : "$LATEST"
+      },
+      "version" : "0",
+      "account" : "894249079049"
+    }
+  result:
+    custom:
+      account: "894249079049"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB"
+      detail:
+        accountId: "894249079049"
+        arn: "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/f0bd34680ca54c7aae6cad1056c8626e"
+        createdAt: "2023-03-02T20:24:34.771Z"
+        id: "f0bd34680ca54c7aae6cad1056c8626e"
+        partition: "aws"
+        region: "us-east-1"
+        resource:
+          ebsVolumeDetails:
+            scannedVolumeDetails:
+             -
+              volumeType: "GeneratedScannedVolumeType"
+              volumeSizeInGB: 8
+              volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+              encryptionType: "UNENCRYPTED"
+              snapshotArn: "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567"
+              deviceName: "GeneratedScannedDeviceName"
+          ecsClusterDetails:
+            arn: "arn:aws:ecs:region:123456789000:cluster/clusterName"
+            name: "GeneratedFindingECSClusterName"
+            status: "ACTIVE"
+            tags:
+             -
+              value: "GeneratedFindingECSClusterTagValue1"
+              key: "GeneratedFindingECSClusterTag1"
+             -
+              value: "GeneratedFindingECSClusterTagValue2"
+              key: "GeneratedFindingECSClusterTag2"
+             -
+              value: "GeneratedFindingECSClusterTagValue3"
+              key: "GeneratedFindingECSClusterTag3"
+            taskDetails:
+              arn: "arn:aws:ecs:region:123456789000:task/mycluster/043de9ab3"
+              containers:
+               -
+                image: "GeneratedFindingContainerImage"
+                name: "GeneratedFindingContainerName"
+              createdAt: 1639005830
+              definitionArn: "arn:aws:ecs:region:123456789000:task-definition/mycluster/76f1f1asdf"
+              startedAt: 1639005830
+              startedBy: "GeneratedFindingECSTaskStartedBy"
+              version: "1"
+          resourceType: "ECSCluster"
+        schemaVersion: "2.0"
+        service:
+          additionalInfo:
+            sample: true
+            type: "default"
+            value: "{\"sample\":true}"
+          archived: false
+          count: 10
+          detectorId: "54c08877447e9e4f9c5a879e62d15a19"
+          ebsVolumeScanDetails:
+            scanCompletedAt: 1639011226
+            scanDetections:
+              highestSeverityThreatDetails:
+                count: 2
+                severity: "HIGH"
+                threatName: "EICAR-Test-File"
+              scannedItemCount:
+                files: 65226
+                totalGb: 1
+                volumes: 1
+              threatDetectedByName:
+                itemCount: 2
+                shortened: false
+                threatNames:
+                 -
+                  severity: "HIGH"
+                  name: "EICAR-Test-File"
+                  filePaths:
+                   -
+                    fileName: "eicar.com"
+                    filePath: "tmp/eicar.com"
+                    volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+                    hash: "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                   -
+                    fileName: "eicar-2.txt"
+                    filePath: "tmp/eicar-2.txt"
+                    volumeArn: "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d"
+                    hash: "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                  itemCount: 2
+                uniqueThreatNameCount: 1
+              threatsDetectedItemCount:
+                files: 2
+            scanId: "bd6ce77dcacb163330a1a40ec143f851"
+            scanStartedAt: 1639010703
+            scanType: "ON_DEMAND"
+            sources:
+             - "Bitdefender"
+            triggerFindingId: "aebf726700725c2ffe5a2418d71b91wd"
+          eventFirstSeen: "2023-03-02T20:24:34.000Z"
+          eventLastSeen: "2023-03-16T21:37:05.000Z"
+          featureName: "EbsVolumeScan"
+          serviceName: "guardduty"
+        severity: 8
+        updatedAt: "2023-03-16T21:37:05.488Z"
+      detail-type: "GuardDuty Finding"
+      evt:
+        name: "Execution:ECS/maliciousfile"
+      id: "63a173e2-158b-807f-9bd2-e781cc172f6c"
+      region: "us-east-1"
+      resource:
+        type: "ECSCluster"
+      service: "guardduty"
+      time: "2023-03-16T21:40:00Z"
+      version: "0"
+    message: |-
+      {
+        "service" : "guardduty",
+        "detail-type" : "GuardDuty Finding",
+        "id" : "63a173e2-158b-807f-9bd2-e781cc172f6c",
+        "time" : "2023-03-16T21:40:00Z",
+        "detail" : {
+          "severity" : 8,
+          "accountId" : "894249079049",
+          "createdAt" : "2023-03-02T20:24:34.771Z",
+          "schemaVersion" : "2.0",
+          "partition" : "aws",
+          "resource" : {
+            "ecsClusterDetails" : {
+              "name" : "GeneratedFindingECSClusterName",
+              "arn" : "arn:aws:ecs:region:123456789000:cluster/clusterName",
+              "status" : "ACTIVE",
+              "tags" : [ {
+                "value" : "GeneratedFindingECSClusterTagValue1",
+                "key" : "GeneratedFindingECSClusterTag1"
+              }, {
+                "value" : "GeneratedFindingECSClusterTagValue2",
+                "key" : "GeneratedFindingECSClusterTag2"
+              }, {
+                "value" : "GeneratedFindingECSClusterTagValue3",
+                "key" : "GeneratedFindingECSClusterTag3"
+              } ],
+              "taskDetails" : {
+                "createdAt" : 1639005830,
+                "startedBy" : "GeneratedFindingECSTaskStartedBy",
+                "startedAt" : 1639005830,
+                "containers" : [ {
+                  "image" : "GeneratedFindingContainerImage",
+                  "name" : "GeneratedFindingContainerName"
+                } ],
+                "arn" : "arn:aws:ecs:region:123456789000:task/mycluster/043de9ab3",
+                "version" : "1",
+                "definitionArn" : "arn:aws:ecs:region:123456789000:task-definition/mycluster/76f1f1asdf"
+              }
+            },
+            "ebsVolumeDetails" : {
+              "scannedVolumeDetails" : [ {
+                "volumeType" : "GeneratedScannedVolumeType",
+                "volumeSizeInGB" : 8,
+                "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                "encryptionType" : "UNENCRYPTED",
+                "snapshotArn" : "arn:aws:ec2:us-east-2:123456789000:snapshot/snap-12345678901234567",
+                "deviceName" : "GeneratedScannedDeviceName"
+              } ]
+            },
+            "resourceType" : "ECSCluster"
+          },
+          "service" : {
+            "archived" : false,
+            "ebsVolumeScanDetails" : {
+              "scanStartedAt" : 1639010703,
+              "sources" : [ "Bitdefender" ],
+              "scanId" : "bd6ce77dcacb163330a1a40ec143f851",
+              "scanCompletedAt" : 1639011226,
+              "triggerFindingId" : "aebf726700725c2ffe5a2418d71b91wd",
+              "scanType" : "ON_DEMAND",
+              "scanDetections" : {
+                "scannedItemCount" : {
+                  "totalGb" : 1,
+                  "volumes" : 1,
+                  "files" : 65226
+                },
+                "threatsDetectedItemCount" : {
+                  "files" : 2
+                },
+                "threatDetectedByName" : {
+                  "threatNames" : [ {
+                    "severity" : "HIGH",
+                    "name" : "EICAR-Test-File",
+                    "filePaths" : [ {
+                      "fileName" : "eicar.com",
+                      "filePath" : "tmp/eicar.com",
+                      "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                      "hash" : "275a021bbfb6489e54d471899f7db9d1663fc345ec2fe2a2c4538aabf651fd0f"
+                    }, {
+                      "fileName" : "eicar-2.txt",
+                      "filePath" : "tmp/eicar-2.txt",
+                      "volumeArn" : "arn:aws:ec2:us-west-2:123456789000:volume/vol-09d5050dea915943d",
+                      "hash" : "275a021bbfb6489e54d471899f7db9d2363fc345ec2fe2a2c4538aabf651ad0x"
+                    } ],
+                    "itemCount" : 2
+                  } ],
+                  "shortened" : false,
+                  "uniqueThreatNameCount" : 1,
+                  "itemCount" : 2
+                },
+                "highestSeverityThreatDetails" : {
+                  "severity" : "HIGH",
+                  "threatName" : "EICAR-Test-File",
+                  "count" : 2
+                }
+              }
+            },
+            "detectorId" : "54c08877447e9e4f9c5a879e62d15a19",
+            "featureName" : "EbsVolumeScan",
+            "eventFirstSeen" : "2023-03-02T20:24:34.000Z",
+            "eventLastSeen" : "2023-03-16T21:37:05.000Z",
+            "additionalInfo" : {
+              "type" : "default",
+              "sample" : true,
+              "value" : "{\"sample\":true}"
+            },
+            "count" : 10,
+            "serviceName" : "guardduty"
+          },
+          "id" : "f0bd34680ca54c7aae6cad1056c8626e",
+          "type" : "Execution:ECS/maliciousfile",
+          "region" : "us-east-1",
+          "arn" : "arn:aws:guardduty:us-east-1:894249079049:detector/54c08877447e9e4f9c5a879e62d15a19/finding/f0bd34680ca54c7aae6cad1056c8626e",
+          "updatedAt" : "2023-03-16T21:37:05.488Z"
+        },
+        "region" : "us-east-1",
+        "aws" : {
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:894249079049:function:DatadogIntegration-ForwarderStack-1V2OLM-Forwarder-pJ9Wz5J6R6mB",
+          "function_version" : "$LATEST"
+        },
+        "version" : "0",
+        "account" : "894249079049"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1679002800000
+

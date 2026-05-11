@@ -1,0 +1,101 @@
+id: ossec
+backend_only: true # this integration doesn't exist outside logs-backend
+facets:
+  - groups:
+      - OSSEC
+    name: Program Name
+    path: program_name
+    source: log
+  - groups:
+      - OSSEC
+    name: Rule Level
+    path: rule.level
+    source: log
+pipeline:
+  type: pipeline
+  name: OSSEC
+  enabled: true
+  filter:
+    query: source:ossec
+  processors:
+    - type: grok-parser
+      name: Parsing Ossec CEF log
+      enabled: true
+      source: message
+      samples:
+        - |-
+          ** Alert 1510376401.0: - syslog,errors,
+          2017 Nov 11 00:00:01 ix->/var/log/messages
+          Rule: 1005 (level 5) -> 'Syslogd restarted.'
+          Nov 11 00:00:01 ix syslogd[72090]: restart
+        - |-
+          ** Alert 1563374748.162530: - ossec,rootcheck,
+          2019 Jul 17 14:45:48 (prod-machine-one) any->rootcheck
+          Rule: 310 (level 7) -> 'Host-based anomaly detection event (rootcheck).'
+          File '/dev/.blk.bat.old' present on /dev. Possible hidden file.
+      grok:
+        supportRules: |
+          _id %{regex("[0-9.]+"):id}
+          _group %{notSpace:rule.group}
+          _timestamp %{date("yyyy MMM dd HH:mm:ss"):timestamp}
+          _hostname %{notSpace:hostname}
+          _location %{notSpace:location}
+          _sidid %{number:rule.sidid}
+          _level %{number:rule.level}
+          _title %{data:title}
+        matchRules: |
+          ossec_type1 \*\* Alert %{_id}: - %{_group}\s*%{_timestamp} %{_hostname}->%{_location}\s*Rule: %{_sidid} \(level %{_level}\) -> '%{_title}'\s*%{data:full_log}
+
+          ossec_type2 \*\* Alert %{_id}: - %{_group}\s*%{_timestamp} \(%{_hostname}\) %{data}->%{_location}\s*Rule: %{_sidid} \(level %{_level}\) -> '%{_title}'\s*%{data:full_log}
+
+          # This parses Ossec CEF format to Ossec JSON format so rest of the pipeline works on Ossec JSON as well.
+          # https://www.ossec.net/docs/formats/alerts.html
+
+    - type: date-remapper
+      name: Define `timestamp`, `TimeStamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+        - TimeStamp
+
+    - type: message-remapper
+      name: Define `full_log` as the official message of the log
+      enabled: true
+      sources:
+        - full_log
+
+    - type: attribute-remapper
+      name: Map `rule.comment` to `title`
+      enabled: true
+      sources:
+        - rule.comment
+      target: title
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise status based on ossec level
+      enabled: true
+      categories:
+        - filter:
+            query: '@rule.level:[0 TO 1]'
+          name: notice
+        - filter:
+            query: '@rule.level:[2 TO 6]'
+          name: info
+        - filter:
+            query: '@rule.level:[7 TO 10]'
+          name: warning
+        - filter:
+            query: '@rule.level:>11'
+          name: critical
+      target: rule.status
+
+    - type: status-remapper
+      name: Define `rule.status` as the official status of the log
+      enabled: true
+      sources:
+        - rule.status
+

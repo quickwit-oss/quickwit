@@ -1,0 +1,126 @@
+id: zendesk
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Zendesk
+    name: Source Label
+    path: source_label
+    source: log
+  - groups:
+      - Zendesk
+    name: Source Type
+    path: source_type
+    source: log
+pipeline:
+  type: pipeline
+  name: Zendesk
+  enabled: true
+  filter:
+    query: source:zendesk
+  processors:
+    - type: date-remapper
+      name: Define `created_at` as the official date of the log
+      enabled: true
+      sources:
+        - created_at
+    - type: attribute-remapper
+      name: Map `actor_id` to `usr.id`
+      enabled: true
+      sources:
+        - actor_id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor_name` to `usr.name`
+      enabled: true
+      sources:
+        - actor_name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ip_address` to `network.client.ip`
+      enabled: true
+      sources:
+        - ip_address
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: attribute-remapper
+      name: Map `action` to `evt.category`
+      enabled: true
+      sources:
+        - action
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: message-remapper
+      name: Define `change_description` as the official message of the log
+      enabled: true
+      sources:
+        - change_description

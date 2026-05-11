@@ -1,0 +1,156 @@
+id: openstack
+metric_id: openstack
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: openstack
+  enabled: true
+  filter:
+    query: source:openstack
+  processors:
+    - type: grok-parser
+      name: Parsing Openstack logs
+      enabled: true
+      source: message
+      samples:
+        - 192.168.42.11 - - [05/Apr/2019:15:21:40 +0000] "GET /placement/resource_providers/fe0a06b8-9d03-4bb5-9790-3e142edbd996/allocations HTTP/1.1" 200 346 "-" "nova-compute keystoneauth1/3.13.1 python-requests/2.21.0 CPython/2.7.12"
+        - '[Tue Apr 06 06:25:03.726614 2021] [mpm_event:notice] [pid 19269:tid 140081481041792] AH00489: Apache/2.4.18 (Ubuntu) mod_wsgi/4.3.0 Python/2.7.12 configured -- resuming normal operations'
+        - '2020-04-08 14:10:08.946981 AH02454: uwsgi: attempt to connect to Unix domain socket /var/run/uwsgi/nova-api-wsgi.socket (uwsgi-uds-nova-api-wsgi) failed'
+      grok:
+        supportRules: |
+          _bytes_written %{integer:network.bytes_written}
+          _status_code %{integer:http.status_code}
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP(S)?\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+          _error_date (%{_wsgi_date}|%{_horizon_date})
+          _wsgi_date \[(%{date("EEE MMM dd HH:mm:ss.SSSSSS yyyy"):date_access}|%{date("EEE MMM  d HH:mm:ss yyyy"):date_access})\]
+          _horizon_date %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):date_access}
+          _error_module_level \[%{_module}:%{_level}\]
+          _module %{notSpace:module}
+          _pid_tid \[pid\s+%{number:pid}:tid\s+%{number:tid}\]
+          _level %{word:level}
+          _libvirt_date %{date("yyyy-MM-dd HH:mm:ss.SSSZ"):date_access}
+          _libvirt_module %{notSpace:filename}:%{number:lineno}
+          _cinder_date %{date("yyyy-MM-dd HH:mm:ss"):date_access}
+        matchRules: |
+          ## This parser supports all logs from Openstack. More info here: https://docs.openstack.org/operations-guide/ops-logging.html
+
+          error_default %{_wsgi_date} %{_error_module_level} %{_pid_tid} %{data:msg}
+
+          error_horizon %{_horizon_date} %{data:msg}
+
+          libvirt_default %{_libvirt_date}:\s+%{number:thread_no}:\s+%{_level}\s+:\s+%{_libvirt_module}\s+:\s+%{data:msg}
+
+          cinder_volume %{_cinder_date} %{number} %{_level} %{notSpace:module}\s+(\[-\])?\s+%{data:msg}
+
+          access.common %{_client_ip} %{_ident} (?>%{_auth} )?\[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-) "%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?
+
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

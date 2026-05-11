@@ -1,0 +1,58 @@
+id: "nvidia_nim"
+tests:
+  # This log sample satisfies the validation.
+ -
+  sample: |-
+    2024-10-30 21:56:25,295 [INFO] PyTorch version 2.3.1 available.
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1730325385295
+    message: "PyTorch version 2.3.1 available."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730325385295
+ - 
+  sample: |-
+    2024-10-30 21:58:26,914 [WARNING] [TRT-LLM] [W] Logger level already set from environment. Discard new verbosity: error
+  result:
+    custom:
+      level: "WARNING"
+      timestamp: 1730325506914
+      component_name: "TRT-LLM"
+    message: "Logger level already set from environment. Discard new verbosity: error"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730325506914
+ -
+  sample: |-
+    INFO 2024-10-30 21:56:28.831 ngc_injector.py:152] Valid profile: e45b4b991bbc51d0df3ce53e87060fc3a7f76555406ed534a8479c6faa706987 (tensorrt_llm-a10g-bf16-tp4-latency) on GPUs [0, 1, 2, 3]
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1730325388831
+      logger:
+        line: "152"
+        name: "ngc_injector.py"
+    message: "Valid profile: e45b4b991bbc51d0df3ce53e87060fc3a7f76555406ed534a8479c6faa706987 (tensorrt_llm-a10g-bf16-tp4-latency) on GPUs [0, 1, 2, 3]"
+    status: "info"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1730325388831
+ -
+  sample: |-
+    WARNING 2024-10-30 21:58:27.670 arg_utils.py:775] Chunked prefill is enabled by default for models with max_model_len > 32K. Currently, chunked prefill might not work with some features or models. If you encounter any issues, please disable chunked prefill by setting --enable-chunked-prefill=False.
+  result:
+    custom:
+      level: "WARNING"
+      timestamp: 1730325507670
+      logger:
+        line: "775"
+        name: "arg_utils.py"
+    message: "Chunked prefill is enabled by default for models with max_model_len > 32K. Currently, chunked prefill might not work with some features or models. If you encounter any issues, please disable chunked prefill by setting --enable-chunked-prefill=False."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730325507670

@@ -1,0 +1,253 @@
+id: "crest_data_systems_cyberark_identity"
+tests:
+ -
+  sample: |-
+    {
+      "app-gateway" : "N/A",
+      "app-provision" : "N/A",
+      "app-category" : "IT and Administration",
+      "app-display-name" : "User Portal",
+      "app-state" : "Active",
+      "app-version-name" : "N/A",
+      "app-type-display-name" : "Web - Portal",
+      "app-type" : "Web",
+      "app-name" : "User Portal",
+      "app-version" : "N/A"
+    }
+  result:
+    custom:
+      app-category: "IT and Administration"
+      app-display-name: "User Portal"
+      app-gateway: "N/A"
+      app-name: "User Portal"
+      app-provision: "N/A"
+      app-state: "Active"
+      app-type: "Web"
+      app-type-display-name: "Web - Portal"
+      app-version: "N/A"
+      app-version-name: "N/A"
+    message: |-
+      {
+        "app-gateway" : "N/A",
+        "app-provision" : "N/A",
+        "app-category" : "IT and Administration",
+        "app-display-name" : "User Portal",
+        "app-state" : "Active",
+        "app-version-name" : "N/A",
+        "app-type-display-name" : "Web - Portal",
+        "app-type" : "Web",
+        "app-name" : "User Portal",
+        "app-version" : "N/A"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "user-type" : "OAuth2",
+      "last-login" : "N/A",
+      "source-ds" : "CyberArk Cloud Directory",
+      "user-name" : "sws-integration-user$@aax4885",
+      "display-name" : "Sws-Integration-User$",
+      "risk-level" : "Unknown",
+      "user-id" : "bbf12ef1-bb2c-433a-a46c-783b6d3b99cc",
+      "email-verification-status" : "Not Applicable",
+      "last-login-timestamp" : "N/A",
+      "user-status" : "Not Invited",
+      "email" : "N/A"
+    }
+  result:
+    custom:
+      display-name: "Sws-Integration-User$"
+      email-verification-status: "Not Applicable"
+      last-login: "N/A"
+      last-login-timestamp: "N/A"
+      risk-level: "Unknown"
+      source-ds: "CyberArk Cloud Directory"
+      user-status: "Not Invited"
+      user-type: "OAuth2"
+      usr:
+        email: "N/A"
+        id: "bbf12ef1-bb2c-433a-a46c-783b6d3b99cc"
+        name: "sws-integration-user$@aax4885"
+    message: |-
+      {
+        "user-type" : "OAuth2",
+        "last-login" : "N/A",
+        "source-ds" : "CyberArk Cloud Directory",
+        "user-name" : "sws-integration-user$@aax4885",
+        "display-name" : "Sws-Integration-User$",
+        "risk-level" : "Unknown",
+        "user-id" : "bbf12ef1-bb2c-433a-a46c-783b6d3b99cc",
+        "email-verification-status" : "Not Applicable",
+        "last-login-timestamp" : "N/A",
+        "user-status" : "Not Invited",
+        "email" : "N/A"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "mfa-reason" : "Authentication using authentication profile \"Default Other Login Profile\".",
+      "mfa-initiator" : "Authentication",
+      "mfa-unlock" : false,
+      "ip-address" : "163.116.205.120",
+      "mfa-result" : "Failed",
+      "when-occurred-timestamp" : "2023-06-01T13:37:30Z",
+      "normalized-user" : "cloudadmin",
+      "when-occurred" : 1685606850227,
+      "forgot-password" : false,
+      "factors" : "UP"
+    }
+  result:
+    custom:
+      category: "MFA Login"
+      cds:
+        cyberark:
+          identity:
+            category: "MFA Login"
+      factors: "UP"
+      forgot-password: false
+      mfa-initiator: "Authentication"
+      mfa-reason: "Authentication using authentication profile \"Default Other Login Profile\"."
+      mfa-result: "Failed"
+      mfa-unlock: false
+      network:
+        client:
+          geoip: {}
+          ip: "163.116.205.120"
+      normalized-user: "cloudadmin"
+      when-occurred: 1685606850227
+      when-occurred-timestamp: "2023-06-01T13:37:30Z"
+    message: |-
+      {
+        "mfa-reason" : "Authentication using authentication profile \"Default Other Login Profile\".",
+        "mfa-initiator" : "Authentication",
+        "mfa-unlock" : false,
+        "ip-address" : "163.116.205.120",
+        "mfa-result" : "Failed",
+        "when-occurred-timestamp" : "2023-06-01T13:37:30Z",
+        "normalized-user" : "cloudadmin",
+        "when-occurred" : 1685606850227,
+        "forgot-password" : false,
+        "factors" : "UP"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1685606850227
+ -
+  sample: |-
+    {
+      "owner" : "***************************5814e$@nisarg",
+      "os-version" : "Windows",
+      "ip-address" : "N/A",
+      "device-state" : "Enrolled",
+      "serial" : "VMware-42 03 1a a0 03 39 8f 51-28 20 a7 3d c9 2f 88 fd",
+      "latitude" : "N/A",
+      "name" : "DESKTOP-O80LB5I",
+      "model-name" : "VMware7,1",
+      "available-device-capacity" : "N/A",
+      "longitude" : "N/A"
+    }
+  result:
+    custom:
+      available-device-capacity: "N/A"
+      device-state: "Enrolled"
+      http:
+        useragent_details:
+          device:
+            family: "VMware7,1"
+          os:
+            family: "Windows"
+      latitude: "N/A"
+      longitude: "N/A"
+      name: "DESKTOP-O80LB5I"
+      network:
+        client:
+          geoip:
+            invalidAddress: "N/A"
+          ip: "N/A"
+      serial: "VMware-42 03 1a a0 03 39 8f 51-28 20 a7 3d c9 2f 88 fd"
+      usr:
+        name: "***************************5814e$@nisarg"
+    message: |-
+      {
+        "owner" : "***************************5814e$@nisarg",
+        "os-version" : "Windows",
+        "ip-address" : "N/A",
+        "device-state" : "Enrolled",
+        "serial" : "VMware-42 03 1a a0 03 39 8f 51-28 20 a7 3d c9 2f 88 fd",
+        "latitude" : "N/A",
+        "name" : "DESKTOP-O80LB5I",
+        "model-name" : "VMware7,1",
+        "available-device-capacity" : "N/A",
+        "longitude" : "N/A"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "request-hostname" : "10.21.184.30",
+      "level" : "Info",
+      "client-ip-address" : "13.228.148.108",
+      "event-type" : "Cloud.Core.Login",
+      "request-browser-name" : "Chrome",
+      "event-message" : "User grabsing-test_admin@cyberark.cloud.4165 logged in from 13.228.148.108",
+      "request-device-os" : "Mac",
+      "request-user-agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+      "when-occurred-timestamp" : "2025-03-20T06:32:11Z",
+      "auth-method" : "MultiAuth",
+      "az-role-name" : "WebRole",
+      "normalized-user" : "grabsing-test_admin@cyberark.cloud.4165",
+      "when-occurred" : 1742452331059,
+      "request-is-mobile-device" : false
+    }
+  result:
+    custom:
+      auth-method: "MultiAuth"
+      az-role-name: "WebRole"
+      cds:
+        cyberark:
+          identity:
+            auth-method: "MultiAuth"
+            az-role-name: "WebRole"
+      event-message: "User grabsing-test_admin@cyberark.cloud.4165 logged in from 13.228.148.108"
+      event-type: "Cloud.Core.Login"
+      level: "Info"
+      network:
+        client:
+          geoip: {}
+          ip: "13.228.148.108"
+      normalized-user: "grabsing-test_admin@cyberark.cloud.4165"
+      request-browser-name: "Chrome"
+      request-device-os: "Mac"
+      request-hostname: "10.21.184.30"
+      request-is-mobile-device: false
+      request-user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+      when-occurred: 1742452331059
+      when-occurred-timestamp: "2025-03-20T06:32:11Z"
+    message: |-
+      {
+        "request-hostname" : "10.21.184.30",
+        "level" : "Info",
+        "client-ip-address" : "13.228.148.108",
+        "event-type" : "Cloud.Core.Login",
+        "request-browser-name" : "Chrome",
+        "event-message" : "User grabsing-test_admin@cyberark.cloud.4165 logged in from 13.228.148.108",
+        "request-device-os" : "Mac",
+        "request-user-agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        "when-occurred-timestamp" : "2025-03-20T06:32:11Z",
+        "auth-method" : "MultiAuth",
+        "az-role-name" : "WebRole",
+        "normalized-user" : "grabsing-test_admin@cyberark.cloud.4165",
+        "when-occurred" : 1742452331059,
+        "request-is-mobile-device" : false
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1742452331059

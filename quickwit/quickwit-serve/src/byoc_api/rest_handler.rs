@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use bytes::Bytes;
 use metrics::Counter;
-use pomchi::DatadogLogMsg;
+use quickwit_processing::DatadogLogMsg;
 use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
@@ -142,7 +142,7 @@ impl TryFrom<VectorLog> for DatadogLogMsg {
     type Error = ByocApiError;
 
     fn try_from(log: VectorLog) -> Result<Self, Self::Error> {
-        let ddtags = build_pomchi_ddtags(log.ddtags_opt, log.tags_opt);
+        let ddtags = build_processing_ddtags(log.ddtags_opt, log.tags_opt);
 
         let timestamp_opt = log
             .timestamp_iso8601_opt
@@ -158,7 +158,7 @@ impl TryFrom<VectorLog> for DatadogLogMsg {
             ddsource: log.ddsource_opt,
             ddtags,
             hostname: log.hostname_opt,
-            message: pomchi::MessageValue::Str(log.message),
+            message: quickwit_processing::MessageValue::Str(log.message),
             service: log.service_opt,
             status: log.status_opt,
             timestamp: timestamp_opt,
@@ -169,7 +169,7 @@ impl TryFrom<VectorLog> for DatadogLogMsg {
 
 /// Builds a list of tags for the Pomchi [`DatadogLogMsg`] from the [`VectorLog`] `ddtags` and
 /// `tags` fields.
-fn build_pomchi_ddtags(ddtags_opt: Option<String>, tags_opt: Option<JsonValue>) -> Vec<String> {
+fn build_processing_ddtags(ddtags_opt: Option<String>, tags_opt: Option<JsonValue>) -> Vec<String> {
     let mut accumulator = Vec::new();
 
     if let Some(ddtags) = ddtags_opt {

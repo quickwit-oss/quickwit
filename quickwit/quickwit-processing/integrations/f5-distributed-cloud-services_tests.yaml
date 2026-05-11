@@ -1,0 +1,1593 @@
+id: "f5-distributed-cloud-services"
+tests:
+ -
+  sample: |-
+    {
+      "country" : "PRIVATE",
+      "kubernetes" : {
+        "container_name" : "obelix",
+        "host" : "master-1",
+        "pod_id" : "132fa205-2e95-4992-9946-3d5c564e00c7",
+        "labels" : {
+          "app" : "obelix"
+        },
+        "namespace_name" : "ves-system",
+        "pod_name" : "obelix-jmmxx"
+      },
+      "app_type" : "",
+      "browser_type" : "Go-http-client",
+      "_visitor_id" : "3787e39f1bc8ab68dea0852628e057fe",
+      "device_type" : "Other",
+      "req_headers_size" : 281,
+      "req_id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+      "path" : "/",
+      "enforcement_mode" : "Blocking",
+      "hostname" : "master-1",
+      "app_firewall_name" : "kristyfw",
+      "src_instance" : "UNKNOWN",
+      "req_headers" : {
+        "Scheme" : "https",
+        "X-Request-Id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+        "User-Agent" : "Go-http-client/1.1",
+        "X-Forwarded-Proto" : "https",
+        "X-Forwarded-For" : "10.10.10.10",
+        "Host" : "kristy.xc.aserracorp.com",
+        "Accept-Encoding" : "gzip",
+        "Method" : "GET",
+        "X-F5-Request-Id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+        "X-Envoy-External-Address" : "10.10.10.10"
+      },
+      "action" : "allow",
+      "tag" : "svcfw.obelixd.secevent",
+      "vhost_id" : "ef858b1f-10f0-4495-9553-ade94535e3bd",
+      "tenant" : "f5-bd-rwaldxii",
+      "longitude" : "PRIVATE",
+      "app" : "obelix",
+      "method" : "GET",
+      "as_number" : "0",
+      "http_version" : "HTTP/1.1",
+      "dst_instance" : "",
+      "x_forwarded_for" : "10.10.10.10",
+      "rsp_size" : "300",
+      "api_endpoint" : "UNKNOWN",
+      "sec_event_name" : "WAF",
+      "authority" : "kristy.xc.aserracorp.com",
+      "domain" : "kristy.xc.aserracorp.com",
+      "region" : "PRIVATE",
+      "rsp_code_class" : "",
+      "waf_mode" : "report",
+      "bot_info" : {
+        "name" : "Go-http-client",
+        "classification" : "suspicious",
+        "type" : "HTTP Library"
+      },
+      "dst" : "",
+      "city" : "PRIVATE",
+      "dst_site" : "",
+      "recommended_action" : "report",
+      "latitude" : "PRIVATE",
+      "messageid" : "c102667e-dea5-4551-b495-71bf4217a9f6",
+      "no_active_detections" : false,
+      "dst_ip" : "10.10.10.10",
+      "network" : {
+        "ip" : {
+          "attributes" : [ {
+            "ip" : "10.10.10.10",
+            "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip", "@user" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@dst_ip" ]
+          } ],
+          "list" : [ "10.10.10.10", "10.10.10.10" ]
+        }
+      },
+      "src_site" : "dc12-ash",
+      "as_org" : "PRIVATE",
+      "src_ip" : "10.10.10.10",
+      "stream" : "svcfw",
+      "violation_rating" : "2",
+      "original_path" : "/",
+      "req_size" : "281",
+      "user_agent" : "Go-http-client/1.1",
+      "severity" : "info",
+      "cluster_name" : "dc12-ash-int-ves-io",
+      "tls_fingerprint" : "473cd7cb9faa642487833865d516e578",
+      "src" : "N:public",
+      "rsp_code" : "503",
+      "sni" : "kristy.xc.aserracorp.com",
+      "src_port" : "42154",
+      "site" : "dc12-ash",
+      "@timestamp" : "2024-07-15T09:58:23.696643Z",
+      "req_params" : "",
+      "dst_port" : "0",
+      "namespace" : "k-melton",
+      "req_path" : "/",
+      "time" : "2024-07-15T09:58:23.696Z",
+      "asn" : "PRIVATE",
+      "sec_event_type" : "waf_sec_event",
+      "user" : "IP-10.10.10.10",
+      "vh_name" : "ves-io-http-loadbalancer-k-melton-loadbalancer"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-07-15T09:58:23.696643Z"
+      _visitor_id: "3787e39f1bc8ab68dea0852628e057fe"
+      action: "allow"
+      api_endpoint: "UNKNOWN"
+      app: "obelix"
+      app_firewall_name: "kristyfw"
+      app_type: ""
+      as_number: "0"
+      as_org: "PRIVATE"
+      asn: "PRIVATE"
+      authority: "kristy.xc.aserracorp.com"
+      bot_info:
+        classification: "suspicious"
+        name: "Go-http-client"
+        type: "HTTP Library"
+      browser_type: "Go-http-client"
+      city: "PRIVATE"
+      cluster_name: "dc12-ash-int-ves-io"
+      country: "PRIVATE"
+      device_type: "Other"
+      domain: "kristy.xc.aserracorp.com"
+      dst: ""
+      dst_instance: ""
+      dst_port: "0"
+      dst_site: ""
+      enforcement_mode: "Blocking"
+      host: "master-1"
+      hostname: "master-1"
+      http:
+        method: "GET"
+        status_code: "503"
+        useragent: "Go-http-client/1.1"
+        useragent_details:
+          browser:
+            family: "Go-http-client"
+            major: "1"
+            minor: "1"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      http_version: "HTTP/1.1"
+      kubernetes:
+        container_name: "obelix"
+        host: "master-1"
+        labels:
+          app: "obelix"
+        namespace_name: "ves-system"
+        pod_id: "132fa205-2e95-4992-9946-3d5c564e00c7"
+        pod_name: "obelix-jmmxx"
+      latitude: "PRIVATE"
+      longitude: "PRIVATE"
+      messageid: "c102667e-dea5-4551-b495-71bf4217a9f6"
+      method: "GET"
+      namespace: "k-melton"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "42154"
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "0"
+        ip:
+          attributes:
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@req_headers"
+             - "@x_forwarded_for"
+             - "@src_ip"
+             - "@user"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@dst_ip"
+          list:
+           - "10.10.10.10"
+           - "10.10.10.10"
+      no_active_detections: false
+      original_path: "/"
+      path: "/"
+      recommended_action: "report"
+      region: "PRIVATE"
+      req_headers:
+        Accept-Encoding: "gzip"
+        Host: "kristy.xc.aserracorp.com"
+        Method: "GET"
+        Scheme: "https"
+        User-Agent: "Go-http-client/1.1"
+        X-Envoy-External-Address: "10.10.10.10"
+        X-F5-Request-Id: "0bde7c0d-9d71-424f-bda1-d2eb083ea115"
+        X-Forwarded-For: "10.10.10.10"
+        X-Forwarded-Proto: "https"
+        X-Request-Id: "0bde7c0d-9d71-424f-bda1-d2eb083ea115"
+      req_headers_size: 281
+      req_id: "0bde7c0d-9d71-424f-bda1-d2eb083ea115"
+      req_params: ""
+      req_path: "/"
+      req_size: "281"
+      rsp_code: "503"
+      rsp_code_class: ""
+      rsp_size: "300"
+      sec_event_name: "WAF"
+      sec_event_type: "waf_sec_event"
+      severity: "info"
+      site: "dc12-ash"
+      sni: "kristy.xc.aserracorp.com"
+      source: "N:public"
+      src: "N:public"
+      src_instance: "UNKNOWN"
+      src_ip: "10.10.10.10"
+      src_site: "dc12-ash"
+      stream: "svcfw"
+      tag: "svcfw.obelixd.secevent"
+      tenant: "f5-bd-rwaldxii"
+      time: "2024-07-15T09:58:23.696Z"
+      tls_fingerprint: "473cd7cb9faa642487833865d516e578"
+      usr:
+        id: "IP-10.10.10.10"
+      vh_name: "ves-io-http-loadbalancer-k-melton-loadbalancer"
+      vhost_id: "ef858b1f-10f0-4495-9553-ade94535e3bd"
+      violation_rating: "2"
+      waf_mode: "report"
+      x_forwarded_for: "10.10.10.10"
+    message: |-
+      {
+        "country" : "PRIVATE",
+        "kubernetes" : {
+          "container_name" : "obelix",
+          "host" : "master-1",
+          "pod_id" : "132fa205-2e95-4992-9946-3d5c564e00c7",
+          "labels" : {
+            "app" : "obelix"
+          },
+          "namespace_name" : "ves-system",
+          "pod_name" : "obelix-jmmxx"
+        },
+        "app_type" : "",
+        "browser_type" : "Go-http-client",
+        "_visitor_id" : "3787e39f1bc8ab68dea0852628e057fe",
+        "device_type" : "Other",
+        "req_headers_size" : 281,
+        "req_id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+        "path" : "/",
+        "enforcement_mode" : "Blocking",
+        "hostname" : "master-1",
+        "app_firewall_name" : "kristyfw",
+        "src_instance" : "UNKNOWN",
+        "req_headers" : {
+          "Scheme" : "https",
+          "X-Request-Id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+          "User-Agent" : "Go-http-client/1.1",
+          "X-Forwarded-Proto" : "https",
+          "X-Forwarded-For" : "10.10.10.10",
+          "Host" : "kristy.xc.aserracorp.com",
+          "Accept-Encoding" : "gzip",
+          "Method" : "GET",
+          "X-F5-Request-Id" : "0bde7c0d-9d71-424f-bda1-d2eb083ea115",
+          "X-Envoy-External-Address" : "10.10.10.10"
+        },
+        "action" : "allow",
+        "tag" : "svcfw.obelixd.secevent",
+        "vhost_id" : "ef858b1f-10f0-4495-9553-ade94535e3bd",
+        "tenant" : "f5-bd-rwaldxii",
+        "longitude" : "PRIVATE",
+        "app" : "obelix",
+        "method" : "GET",
+        "as_number" : "0",
+        "http_version" : "HTTP/1.1",
+        "dst_instance" : "",
+        "x_forwarded_for" : "10.10.10.10",
+        "rsp_size" : "300",
+        "api_endpoint" : "UNKNOWN",
+        "sec_event_name" : "WAF",
+        "authority" : "kristy.xc.aserracorp.com",
+        "domain" : "kristy.xc.aserracorp.com",
+        "region" : "PRIVATE",
+        "rsp_code_class" : "",
+        "waf_mode" : "report",
+        "bot_info" : {
+          "name" : "Go-http-client",
+          "classification" : "suspicious",
+          "type" : "HTTP Library"
+        },
+        "dst" : "",
+        "city" : "PRIVATE",
+        "dst_site" : "",
+        "recommended_action" : "report",
+        "latitude" : "PRIVATE",
+        "messageid" : "c102667e-dea5-4551-b495-71bf4217a9f6",
+        "no_active_detections" : false,
+        "dst_ip" : "10.10.10.10",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "10.10.10.10",
+              "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip", "@user" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@dst_ip" ]
+            } ],
+            "list" : [ "10.10.10.10", "10.10.10.10" ]
+          }
+        },
+        "src_site" : "dc12-ash",
+        "as_org" : "PRIVATE",
+        "src_ip" : "10.10.10.10",
+        "stream" : "svcfw",
+        "violation_rating" : "2",
+        "original_path" : "/",
+        "req_size" : "281",
+        "user_agent" : "Go-http-client/1.1",
+        "severity" : "info",
+        "cluster_name" : "dc12-ash-int-ves-io",
+        "tls_fingerprint" : "473cd7cb9faa642487833865d516e578",
+        "src" : "N:public",
+        "rsp_code" : "503",
+        "sni" : "kristy.xc.aserracorp.com",
+        "src_port" : "42154",
+        "site" : "dc12-ash",
+        "@timestamp" : "2024-07-15T09:58:23.696643Z",
+        "req_params" : "",
+        "dst_port" : "0",
+        "namespace" : "k-melton",
+        "req_path" : "/",
+        "time" : "2024-07-15T09:58:23.696Z",
+        "asn" : "PRIVATE",
+        "sec_event_type" : "waf_sec_event",
+        "user" : "IP-10.10.10.10",
+        "vh_name" : "ves-io-http-loadbalancer-k-melton-loadbalancer"
+      }
+    service: "waf_sec_event"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721037503696
+ -
+  sample: |-
+    {
+      "country" : "HR",
+      "kubernetes" : {
+        "container_name" : "obelix",
+        "host" : "master-15",
+        "pod_id" : "c01cdc01-db54-4f89-82e1-8c1ba1339ee8",
+        "labels" : {
+          "app" : "obelix"
+        },
+        "namespace_name" : "ves-system",
+        "pod_name" : "obelix-ckpxx"
+      },
+      "app_type" : "ves-io-demo-shop-demo-shop-fe",
+      "browser_type" : "Safari",
+      "_visitor_id" : "4c60cf41ee6a5d641c2578ff26f75348",
+      "device_type" : "Mac",
+      "signatures" : [ {
+        "attack_type" : "ATTACK_TYPE_PATH_TRAVERSAL",
+        "matching_info" : "Matched 8 characters on offset 0 against value: 'GET /../../../../etc/shadow HTTP/1.1rnhost: demo.xc.f5demo.netr'. ",
+        "context" : "url",
+        "name" : "Directory Traversal attempt \"../\" (URI)",
+        "accuracy" : "medium_accuracy",
+        "id" : "200007029",
+        "state" : "Enabled",
+        "id_name" : "200007029, Directory Traversal attempt \"../\" (URI)"
+      } ],
+      "req_headers_size" : 861,
+      "req_id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+      "path" : "/",
+      "enforcement_mode" : "Blocking",
+      "hostname" : "master-15",
+      "app_firewall_name" : "demo-shop-app-firewall",
+      "src_instance" : "HR",
+      "req_headers" : {
+        "Cookie" : "shop_session-id=cc48e9dc-1982-40cd-8c4d-ed43935cd4de; eea603=avFLCsxEJHG7a9XR7c90kXTaz0PAQDNDV90VFa/VVJ5EysN4iaNcWnPyRRXVMI7gKsj10ZZHrNA+2wlW6koDfUTAvqdJcsIfoD44fkY0KFFJ9wQj8Oj7x+MmWulkcOAAbp4XQ8XZDD6jYp1MFLJCt02XPGsXY6mA2FfRzOFf1oGZGO5U; TS01dc4fc6=0154c3a378f3a5f229879d1e544a7edb4d1c198e1eda9b45be49b2ab9460a119125f5d9994d84c7dd7feb551def427c5ed96c4864d; OClmoOot=AyC10rWQAQAAk3dIJ-owmZsfGf0p1kn2NJ2QVRUfLTzSU0kTTuUVQedrxRQIAS1fqeCucsP1wH8AAEB3AAAAAA|1|0|36fbfe7dbafd5f4ca07b5d5adb782b21746df047",
+        "Scheme" : "https",
+        "X-Request-Id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+        "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+        "X-Forwarded-Proto" : "https",
+        "X-Forwarded-For" : "10.10.10.10",
+        "Host" : "demo.xc.f5demo.net",
+        "Method" : "GET",
+        "X-F5-Request-Id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+        "X-Envoy-External-Address" : "10.10.10.10"
+      },
+      "action" : "block",
+      "tag" : "svcfw.obelixd.secevent",
+      "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+      "tenant" : "f5-bd-rwaldxii",
+      "longitude" : "16.370001",
+      "app" : "obelix",
+      "method" : "GET",
+      "violations" : [ {
+        "attack_type" : "ATTACK_TYPE_DETECTION_EVASION",
+        "matching_info" : "Matched 13 characters on offset 0 against value: '/../../../../etc/shadow'. ",
+        "context" : "url",
+        "name" : "VIOL_EVASION_DIRECTORY_TRAVERSALS",
+        "state" : "Enabled"
+      } ],
+      "as_number" : "211619",
+      "http_version" : "HTTP/1.1",
+      "threat_intel" : {
+        "indicators_matched" : [ "IP" ],
+        "results" : [ {
+          "indicator" : "10.10.10.10",
+          "additional_data" : {
+            "ipsets" : "tor_exit_nodes",
+            "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+          },
+          "source" : {
+            "name" : "Tor Exit Nodes",
+            "url" : "https://www.dan.me.uk/torlist/?exit"
+          },
+          "type" : "IP",
+          "category" : "tor",
+          "intention" : "unknown"
+        } ]
+      },
+      "dst_instance" : "",
+      "x_forwarded_for" : "10.10.10.10",
+      "rsp_size" : "0",
+      "api_endpoint" : "UNKNOWN",
+      "sec_event_name" : "WAF",
+      "authority" : "demo.xc.f5demo.net",
+      "domain" : "demo.xc.f5demo.net",
+      "region" : "HR-03",
+      "rsp_code_class" : "2xx",
+      "waf_mode" : "block",
+      "dst" : "",
+      "city" : "Sisak",
+      "dst_site" : "",
+      "recommended_action" : "block",
+      "latitude" : "45.480000",
+      "messageid" : "c102667e-dea5-4551-b495-71bf4217a9f6",
+      "no_active_detections" : false,
+      "dst_ip" : "10.10.10.10",
+      "network" : {
+        "ip" : {
+          "attributes" : [ {
+            "ip" : "10.10.10.10",
+            "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@dst_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@network" ]
+          } ],
+          "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+        }
+      },
+      "src_site" : "fr4-fra",
+      "as_org" : "maxko d.o.o.",
+      "src_ip" : "10.10.10.10",
+      "stream" : "svcfw",
+      "violation_rating" : "5",
+      "original_path" : "/../../../../etc/shadow",
+      "req_size" : "861",
+      "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+      "severity" : "info",
+      "cluster_name" : "fr4-fra-int-ves-io",
+      "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+      "src" : "N:public",
+      "rsp_code" : "200",
+      "attack_types" : [ {
+        "name" : "ATTACK_TYPE_DETECTION_EVASION"
+      }, {
+        "name" : "ATTACK_TYPE_PATH_TRAVERSAL"
+      } ],
+      "sni" : "demo.xc.f5demo.net",
+      "src_port" : "35608",
+      "site" : "fr4-fra",
+      "@timestamp" : "2024-07-15T09:56:47.281376Z",
+      "req_params" : "",
+      "dst_port" : "0",
+      "namespace" : "demo-shop",
+      "req_path" : "/../../../../etc/shadow",
+      "time" : "2024-07-15T09:56:47.281Z",
+      "asn" : "maxko d.o.o.(211619)",
+      "sec_event_type" : "waf_sec_event",
+      "user" : "Cookie-shop_session-id-cc48e9dc-1982-40cd-8c4d-ed43935cd4de",
+      "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-07-15T09:56:47.281376Z"
+      _visitor_id: "4c60cf41ee6a5d641c2578ff26f75348"
+      action: "block"
+      api_endpoint: "UNKNOWN"
+      app: "obelix"
+      app_firewall_name: "demo-shop-app-firewall"
+      app_type: "ves-io-demo-shop-demo-shop-fe"
+      as_number: "211619"
+      as_org: "maxko d.o.o."
+      asn: "maxko d.o.o.(211619)"
+      attack_types:
+       -
+        name: "ATTACK_TYPE_DETECTION_EVASION"
+       -
+        name: "ATTACK_TYPE_PATH_TRAVERSAL"
+      authority: "demo.xc.f5demo.net"
+      browser_type: "Safari"
+      city: "Sisak"
+      cluster_name: "fr4-fra-int-ves-io"
+      country: "HR"
+      device_type: "Mac"
+      domain: "demo.xc.f5demo.net"
+      dst: ""
+      dst_instance: ""
+      dst_port: "0"
+      dst_site: ""
+      enforcement_mode: "Blocking"
+      host: "master-15"
+      hostname: "master-15"
+      http:
+        method: "GET"
+        status_code: "200"
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
+        useragent_details:
+          browser:
+            family: "Safari"
+            major: "14"
+            minor: "0"
+            patch: "3"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      http_version: "HTTP/1.1"
+      kubernetes:
+        container_name: "obelix"
+        host: "master-15"
+        labels:
+          app: "obelix"
+        namespace_name: "ves-system"
+        pod_id: "c01cdc01-db54-4f89-82e1-8c1ba1339ee8"
+        pod_name: "obelix-ckpxx"
+      latitude: "45.480000"
+      longitude: "16.370001"
+      messageid: "c102667e-dea5-4551-b495-71bf4217a9f6"
+      method: "GET"
+      namespace: "demo-shop"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "35608"
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "0"
+        ip:
+          attributes:
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@req_headers"
+             - "@x_forwarded_for"
+             - "@src_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@dst_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@network"
+          list:
+           - "10.10.10.10"
+           - "10.10.10.10"
+           - "10.10.10.10"
+      no_active_detections: false
+      original_path: "/../../../../etc/shadow"
+      path: "/"
+      recommended_action: "block"
+      region: "HR-03"
+      req_headers:
+        Cookie: "shop_session-id=cc48e9dc-1982-40cd-8c4d-ed43935cd4de; eea603=avFLCsxEJHG7a9XR7c90kXTaz0PAQDNDV90VFa/VVJ5EysN4iaNcWnPyRRXVMI7gKsj10ZZHrNA+2wlW6koDfUTAvqdJcsIfoD44fkY0KFFJ9wQj8Oj7x+MmWulkcOAAbp4XQ8XZDD6jYp1MFLJCt02XPGsXY6mA2FfRzOFf1oGZGO5U; TS01dc4fc6=0154c3a378f3a5f229879d1e544a7edb4d1c198e1eda9b45be49b2ab9460a119125f5d9994d84c7dd7feb551def427c5ed96c4864d; OClmoOot=AyC10rWQAQAAk3dIJ-owmZsfGf0p1kn2NJ2QVRUfLTzSU0kTTuUVQedrxRQIAS1fqeCucsP1wH8AAEB3AAAAAA|1|0|36fbfe7dbafd5f4ca07b5d5adb782b21746df047"
+        Host: "demo.xc.f5demo.net"
+        Method: "GET"
+        Scheme: "https"
+        User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
+        X-Envoy-External-Address: "10.10.10.10"
+        X-F5-Request-Id: "e322fcfc-791e-4edf-9613-140eb1473bbe"
+        X-Forwarded-For: "10.10.10.10"
+        X-Forwarded-Proto: "https"
+        X-Request-Id: "e322fcfc-791e-4edf-9613-140eb1473bbe"
+      req_headers_size: 861
+      req_id: "e322fcfc-791e-4edf-9613-140eb1473bbe"
+      req_params: ""
+      req_path: "/../../../../etc/shadow"
+      req_size: "861"
+      rsp_code: "200"
+      rsp_code_class: "2xx"
+      rsp_size: "0"
+      sec_event_name: "WAF"
+      sec_event_type: "waf_sec_event"
+      severity: "info"
+      signatures:
+       -
+        attack_type: "ATTACK_TYPE_PATH_TRAVERSAL"
+        matching_info: "Matched 8 characters on offset 0 against value: 'GET /../../../../etc/shadow HTTP/1.1rnhost: demo.xc.f5demo.netr'. "
+        context: "url"
+        name: "Directory Traversal attempt \"../\" (URI)"
+        accuracy: "medium_accuracy"
+        id: "200007029"
+        state: "Enabled"
+        id_name: "200007029, Directory Traversal attempt \"../\" (URI)"
+      site: "fr4-fra"
+      sni: "demo.xc.f5demo.net"
+      source: "N:public"
+      src: "N:public"
+      src_instance: "HR"
+      src_ip: "10.10.10.10"
+      src_site: "fr4-fra"
+      stream: "svcfw"
+      tag: "svcfw.obelixd.secevent"
+      tenant: "f5-bd-rwaldxii"
+      threat_intel:
+        indicators_matched:
+         - "IP"
+        results:
+         -
+          indicator: "10.10.10.10"
+          additional_data:
+            ipsets: "tor_exit_nodes"
+            ipsets_about: "An ipset made from tor exit nodes updated every 30 minutes."
+          source:
+            name: "Tor Exit Nodes"
+            url: "https://www.dan.me.uk/torlist/?exit"
+          type: "IP"
+          category: "tor"
+          intention: "unknown"
+      time: "2024-07-15T09:56:47.281Z"
+      tls_fingerprint: "d0ee3237a14bbd89ca4d2b5356ab20ba"
+      usr:
+        id: "Cookie-shop_session-id-cc48e9dc-1982-40cd-8c4d-ed43935cd4de"
+      vh_name: "ves-io-http-loadbalancer-demo-shop-fe"
+      vhost_id: "78c99480-5004-4fb7-96b9-f4e8efe7eea6"
+      violation_rating: "5"
+      violations:
+       -
+        attack_type: "ATTACK_TYPE_DETECTION_EVASION"
+        matching_info: "Matched 13 characters on offset 0 against value: '/../../../../etc/shadow'. "
+        context: "url"
+        name: "VIOL_EVASION_DIRECTORY_TRAVERSALS"
+        state: "Enabled"
+      waf_mode: "block"
+      x_forwarded_for: "10.10.10.10"
+    message: |-
+      {
+        "country" : "HR",
+        "kubernetes" : {
+          "container_name" : "obelix",
+          "host" : "master-15",
+          "pod_id" : "c01cdc01-db54-4f89-82e1-8c1ba1339ee8",
+          "labels" : {
+            "app" : "obelix"
+          },
+          "namespace_name" : "ves-system",
+          "pod_name" : "obelix-ckpxx"
+        },
+        "app_type" : "ves-io-demo-shop-demo-shop-fe",
+        "browser_type" : "Safari",
+        "_visitor_id" : "4c60cf41ee6a5d641c2578ff26f75348",
+        "device_type" : "Mac",
+        "signatures" : [ {
+          "attack_type" : "ATTACK_TYPE_PATH_TRAVERSAL",
+          "matching_info" : "Matched 8 characters on offset 0 against value: 'GET /../../../../etc/shadow HTTP/1.1rnhost: demo.xc.f5demo.netr'. ",
+          "context" : "url",
+          "name" : "Directory Traversal attempt \"../\" (URI)",
+          "accuracy" : "medium_accuracy",
+          "id" : "200007029",
+          "state" : "Enabled",
+          "id_name" : "200007029, Directory Traversal attempt \"../\" (URI)"
+        } ],
+        "req_headers_size" : 861,
+        "req_id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+        "path" : "/",
+        "enforcement_mode" : "Blocking",
+        "hostname" : "master-15",
+        "app_firewall_name" : "demo-shop-app-firewall",
+        "src_instance" : "HR",
+        "req_headers" : {
+          "Cookie" : "shop_session-id=cc48e9dc-1982-40cd-8c4d-ed43935cd4de; eea603=avFLCsxEJHG7a9XR7c90kXTaz0PAQDNDV90VFa/VVJ5EysN4iaNcWnPyRRXVMI7gKsj10ZZHrNA+2wlW6koDfUTAvqdJcsIfoD44fkY0KFFJ9wQj8Oj7x+MmWulkcOAAbp4XQ8XZDD6jYp1MFLJCt02XPGsXY6mA2FfRzOFf1oGZGO5U; TS01dc4fc6=0154c3a378f3a5f229879d1e544a7edb4d1c198e1eda9b45be49b2ab9460a119125f5d9994d84c7dd7feb551def427c5ed96c4864d; OClmoOot=AyC10rWQAQAAk3dIJ-owmZsfGf0p1kn2NJ2QVRUfLTzSU0kTTuUVQedrxRQIAS1fqeCucsP1wH8AAEB3AAAAAA|1|0|36fbfe7dbafd5f4ca07b5d5adb782b21746df047",
+          "Scheme" : "https",
+          "X-Request-Id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+          "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+          "X-Forwarded-Proto" : "https",
+          "X-Forwarded-For" : "10.10.10.10",
+          "Host" : "demo.xc.f5demo.net",
+          "Method" : "GET",
+          "X-F5-Request-Id" : "e322fcfc-791e-4edf-9613-140eb1473bbe",
+          "X-Envoy-External-Address" : "10.10.10.10"
+        },
+        "action" : "block",
+        "tag" : "svcfw.obelixd.secevent",
+        "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+        "tenant" : "f5-bd-rwaldxii",
+        "longitude" : "16.370001",
+        "app" : "obelix",
+        "method" : "GET",
+        "violations" : [ {
+          "attack_type" : "ATTACK_TYPE_DETECTION_EVASION",
+          "matching_info" : "Matched 13 characters on offset 0 against value: '/../../../../etc/shadow'. ",
+          "context" : "url",
+          "name" : "VIOL_EVASION_DIRECTORY_TRAVERSALS",
+          "state" : "Enabled"
+        } ],
+        "as_number" : "211619",
+        "http_version" : "HTTP/1.1",
+        "threat_intel" : {
+          "indicators_matched" : [ "IP" ],
+          "results" : [ {
+            "indicator" : "10.10.10.10",
+            "additional_data" : {
+              "ipsets" : "tor_exit_nodes",
+              "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+            },
+            "source" : {
+              "name" : "Tor Exit Nodes",
+              "url" : "https://www.dan.me.uk/torlist/?exit"
+            },
+            "type" : "IP",
+            "category" : "tor",
+            "intention" : "unknown"
+          } ]
+        },
+        "dst_instance" : "",
+        "x_forwarded_for" : "10.10.10.10",
+        "rsp_size" : "0",
+        "api_endpoint" : "UNKNOWN",
+        "sec_event_name" : "WAF",
+        "authority" : "demo.xc.f5demo.net",
+        "domain" : "demo.xc.f5demo.net",
+        "region" : "HR-03",
+        "rsp_code_class" : "2xx",
+        "waf_mode" : "block",
+        "dst" : "",
+        "city" : "Sisak",
+        "dst_site" : "",
+        "recommended_action" : "block",
+        "latitude" : "45.480000",
+        "messageid" : "c102667e-dea5-4551-b495-71bf4217a9f6",
+        "no_active_detections" : false,
+        "dst_ip" : "10.10.10.10",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "10.10.10.10",
+              "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@dst_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@network" ]
+            } ],
+            "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+          }
+        },
+        "src_site" : "fr4-fra",
+        "as_org" : "maxko d.o.o.",
+        "src_ip" : "10.10.10.10",
+        "stream" : "svcfw",
+        "violation_rating" : "5",
+        "original_path" : "/../../../../etc/shadow",
+        "req_size" : "861",
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+        "severity" : "info",
+        "cluster_name" : "fr4-fra-int-ves-io",
+        "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+        "src" : "N:public",
+        "rsp_code" : "200",
+        "attack_types" : [ {
+          "name" : "ATTACK_TYPE_DETECTION_EVASION"
+        }, {
+          "name" : "ATTACK_TYPE_PATH_TRAVERSAL"
+        } ],
+        "sni" : "demo.xc.f5demo.net",
+        "src_port" : "35608",
+        "site" : "fr4-fra",
+        "@timestamp" : "2024-07-15T09:56:47.281376Z",
+        "req_params" : "",
+        "dst_port" : "0",
+        "namespace" : "demo-shop",
+        "req_path" : "/../../../../etc/shadow",
+        "time" : "2024-07-15T09:56:47.281Z",
+        "asn" : "maxko d.o.o.(211619)",
+        "sec_event_type" : "waf_sec_event",
+        "user" : "Cookie-shop_session-id-cc48e9dc-1982-40cd-8c4d-ed43935cd4de",
+        "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+      }
+    service: "waf_sec_event"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721037407281
+ -
+  sample: |-
+    {
+      "country" : "HR",
+      "kubernetes" : {
+        "container_name" : "obelix",
+        "host" : "master-6",
+        "pod_id" : "91ee25f7-d2dc-410c-be9f-4f9f186b169f",
+        "labels" : {
+          "app" : "obelix"
+        },
+        "namespace_name" : "ves-system",
+        "pod_name" : "obelix-f5hnv"
+      },
+      "app_type" : "ves-io-demo-shop-demo-shop-fe",
+      "browser_type" : "YandexAccessibilityBot",
+      "_visitor_id" : "3004e2a018f0a2735816337cb4afb7f5",
+      "device_type" : "Spider",
+      "req_headers_size" : 818,
+      "req_id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+      "path" : "/",
+      "hostname" : "master-6",
+      "src_instance" : "HR",
+      "req_headers" : {
+        "Cookie" : "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=h5SnzAK8ASeac+oNhM0VUkzlK9PozY3z8XB/hCnqDPG8xjYJYAXdzwoRvr/oujeBT54XWJDB5JdCY5XkDdxGPeBmHYQMpgh7aiFzdcXObsx/+Zau0nG4shpmvCQiL4lfW86+pWk5o/t6b/UIktwNAd8FFzCXK3NdNPkTWl5QQUmjHi78; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5",
+        "Scheme" : "https",
+        "X-Request-Id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+        "User-Agent" : "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots",
+        "X-Forwarded-Proto" : "https",
+        "X-Forwarded-For" : "10.10.10.10",
+        "Host" : "demo.xc.f5demo.net",
+        "Method" : "GET",
+        "X-F5-Request-Id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+        "X-Envoy-External-Address" : "10.10.10.10"
+      },
+      "action" : "allow",
+      "tag" : "svcfw.obelixd.secevent",
+      "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+      "tenant" : "f5-bd-rwaldxii",
+      "longitude" : "16.370001",
+      "app" : "obelix",
+      "method" : "GET",
+      "as_number" : "211619",
+      "http_version" : "HTTP/1.1",
+      "threat_intel" : {
+        "indicators_matched" : [ "IP" ],
+        "results" : [ {
+          "indicator" : "10.10.10.10",
+          "additional_data" : {
+            "ipsets" : "tor_exit_nodes",
+            "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+          },
+          "source" : {
+            "name" : "Tor Exit Nodes",
+            "url" : "https://www.dan.me.uk/torlist/?exit"
+          },
+          "type" : "IP",
+          "category" : "tor",
+          "intention" : "unknown"
+        } ]
+      },
+      "dst_instance" : "",
+      "x_forwarded_for" : "10.10.10.10",
+      "rsp_size" : "8968",
+      "sec_event_name" : "BOT Defense Violation",
+      "authority" : "demo.xc.f5demo.net",
+      "domain" : "demo.xc.f5demo.net",
+      "region" : "HR-03",
+      "rsp_code_class" : "UNKNOWN",
+      "bot_defense" : {
+        "insight" : "MALICIOUS",
+        "automation_type" : "Token Missing",
+        "status_code" : "0",
+        "recommendation" : "Action_alert"
+      },
+      "dst" : "",
+      "city" : "Sisak",
+      "dst_site" : "",
+      "latitude" : "45.480000",
+      "messageid" : "149c116e-c6ed-11ec-9d64-0242ac120002",
+      "dst_ip" : "10.10.10.10",
+      "network" : {
+        "ip" : {
+          "attributes" : [ {
+            "ip" : "10.10.10.10",
+            "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@dst_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@network" ]
+          } ],
+          "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+        }
+      },
+      "src_site" : "fr4-fra",
+      "as_org" : "maxko d.o.o.",
+      "src_ip" : "10.10.10.10",
+      "stream" : "svcfw",
+      "req_size" : "818",
+      "user_agent" : "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots",
+      "severity" : "info",
+      "cluster_name" : "fr4-fra-int-ves-io",
+      "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+      "src" : "N:public",
+      "rsp_code" : "0",
+      "sni" : "demo.xc.f5demo.net",
+      "src_port" : "34488",
+      "site" : "fr4-fra",
+      "@timestamp" : "2024-07-15T09:58:23.671945Z",
+      "req_params" : "",
+      "dst_port" : "0",
+      "namespace" : "demo-shop",
+      "req_path" : "/product/LS4PSXUNUM",
+      "time" : "2024-07-15T09:58:23.671Z",
+      "asn" : "maxko d.o.o.(211619)",
+      "sec_event_type" : "bot_defense_sec_event",
+      "user" : "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b",
+      "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-07-15T09:58:23.671945Z"
+      _visitor_id: "3004e2a018f0a2735816337cb4afb7f5"
+      action: "allow"
+      app: "obelix"
+      app_type: "ves-io-demo-shop-demo-shop-fe"
+      as_number: "211619"
+      as_org: "maxko d.o.o."
+      asn: "maxko d.o.o.(211619)"
+      authority: "demo.xc.f5demo.net"
+      bot_defense:
+        automation_type: "Token Missing"
+        insight: "MALICIOUS"
+        recommendation: "Action_alert"
+        status_code: "0"
+      browser_type: "YandexAccessibilityBot"
+      city: "Sisak"
+      cluster_name: "fr4-fra-int-ves-io"
+      country: "HR"
+      device_type: "Spider"
+      domain: "demo.xc.f5demo.net"
+      dst: ""
+      dst_instance: ""
+      dst_port: "0"
+      dst_site: ""
+      host: "master-6"
+      hostname: "master-6"
+      http:
+        method: "GET"
+        status_code: "0"
+        useragent: "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots"
+        useragent_details:
+          browser:
+            family: "YandexAccessibilityBot"
+            major: "3"
+            minor: "0"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+      http_version: "HTTP/1.1"
+      kubernetes:
+        container_name: "obelix"
+        host: "master-6"
+        labels:
+          app: "obelix"
+        namespace_name: "ves-system"
+        pod_id: "91ee25f7-d2dc-410c-be9f-4f9f186b169f"
+        pod_name: "obelix-f5hnv"
+      latitude: "45.480000"
+      longitude: "16.370001"
+      messageid: "149c116e-c6ed-11ec-9d64-0242ac120002"
+      method: "GET"
+      namespace: "demo-shop"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "34488"
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "0"
+        ip:
+          attributes:
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@req_headers"
+             - "@x_forwarded_for"
+             - "@src_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@dst_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@network"
+          list:
+           - "10.10.10.10"
+           - "10.10.10.10"
+           - "10.10.10.10"
+      path: "/"
+      region: "HR-03"
+      req_headers:
+        Cookie: "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=h5SnzAK8ASeac+oNhM0VUkzlK9PozY3z8XB/hCnqDPG8xjYJYAXdzwoRvr/oujeBT54XWJDB5JdCY5XkDdxGPeBmHYQMpgh7aiFzdcXObsx/+Zau0nG4shpmvCQiL4lfW86+pWk5o/t6b/UIktwNAd8FFzCXK3NdNPkTWl5QQUmjHi78; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5"
+        Host: "demo.xc.f5demo.net"
+        Method: "GET"
+        Scheme: "https"
+        User-Agent: "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots"
+        X-Envoy-External-Address: "10.10.10.10"
+        X-F5-Request-Id: "e6123a2a-7d1f-475e-983e-29a0fd708218"
+        X-Forwarded-For: "10.10.10.10"
+        X-Forwarded-Proto: "https"
+        X-Request-Id: "e6123a2a-7d1f-475e-983e-29a0fd708218"
+      req_headers_size: 818
+      req_id: "e6123a2a-7d1f-475e-983e-29a0fd708218"
+      req_params: ""
+      req_path: "/product/LS4PSXUNUM"
+      req_size: "818"
+      rsp_code: "0"
+      rsp_code_class: "UNKNOWN"
+      rsp_size: "8968"
+      sec_event_name: "BOT Defense Violation"
+      sec_event_type: "bot_defense_sec_event"
+      severity: "info"
+      site: "fr4-fra"
+      sni: "demo.xc.f5demo.net"
+      source: "N:public"
+      src: "N:public"
+      src_instance: "HR"
+      src_ip: "10.10.10.10"
+      src_site: "fr4-fra"
+      stream: "svcfw"
+      tag: "svcfw.obelixd.secevent"
+      tenant: "f5-bd-rwaldxii"
+      threat_intel:
+        indicators_matched:
+         - "IP"
+        results:
+         -
+          indicator: "10.10.10.10"
+          additional_data:
+            ipsets: "tor_exit_nodes"
+            ipsets_about: "An ipset made from tor exit nodes updated every 30 minutes."
+          source:
+            name: "Tor Exit Nodes"
+            url: "https://www.dan.me.uk/torlist/?exit"
+          type: "IP"
+          category: "tor"
+          intention: "unknown"
+      time: "2024-07-15T09:58:23.671Z"
+      tls_fingerprint: "d0ee3237a14bbd89ca4d2b5356ab20ba"
+      usr:
+        id: "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b"
+      vh_name: "ves-io-http-loadbalancer-demo-shop-fe"
+      vhost_id: "78c99480-5004-4fb7-96b9-f4e8efe7eea6"
+      x_forwarded_for: "10.10.10.10"
+    message: |-
+      {
+        "country" : "HR",
+        "kubernetes" : {
+          "container_name" : "obelix",
+          "host" : "master-6",
+          "pod_id" : "91ee25f7-d2dc-410c-be9f-4f9f186b169f",
+          "labels" : {
+            "app" : "obelix"
+          },
+          "namespace_name" : "ves-system",
+          "pod_name" : "obelix-f5hnv"
+        },
+        "app_type" : "ves-io-demo-shop-demo-shop-fe",
+        "browser_type" : "YandexAccessibilityBot",
+        "_visitor_id" : "3004e2a018f0a2735816337cb4afb7f5",
+        "device_type" : "Spider",
+        "req_headers_size" : 818,
+        "req_id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+        "path" : "/",
+        "hostname" : "master-6",
+        "src_instance" : "HR",
+        "req_headers" : {
+          "Cookie" : "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=h5SnzAK8ASeac+oNhM0VUkzlK9PozY3z8XB/hCnqDPG8xjYJYAXdzwoRvr/oujeBT54XWJDB5JdCY5XkDdxGPeBmHYQMpgh7aiFzdcXObsx/+Zau0nG4shpmvCQiL4lfW86+pWk5o/t6b/UIktwNAd8FFzCXK3NdNPkTWl5QQUmjHi78; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5",
+          "Scheme" : "https",
+          "X-Request-Id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+          "User-Agent" : "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots",
+          "X-Forwarded-Proto" : "https",
+          "X-Forwarded-For" : "10.10.10.10",
+          "Host" : "demo.xc.f5demo.net",
+          "Method" : "GET",
+          "X-F5-Request-Id" : "e6123a2a-7d1f-475e-983e-29a0fd708218",
+          "X-Envoy-External-Address" : "10.10.10.10"
+        },
+        "action" : "allow",
+        "tag" : "svcfw.obelixd.secevent",
+        "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+        "tenant" : "f5-bd-rwaldxii",
+        "longitude" : "16.370001",
+        "app" : "obelix",
+        "method" : "GET",
+        "as_number" : "211619",
+        "http_version" : "HTTP/1.1",
+        "threat_intel" : {
+          "indicators_matched" : [ "IP" ],
+          "results" : [ {
+            "indicator" : "10.10.10.10",
+            "additional_data" : {
+              "ipsets" : "tor_exit_nodes",
+              "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+            },
+            "source" : {
+              "name" : "Tor Exit Nodes",
+              "url" : "https://www.dan.me.uk/torlist/?exit"
+            },
+            "type" : "IP",
+            "category" : "tor",
+            "intention" : "unknown"
+          } ]
+        },
+        "dst_instance" : "",
+        "x_forwarded_for" : "10.10.10.10",
+        "rsp_size" : "8968",
+        "sec_event_name" : "BOT Defense Violation",
+        "authority" : "demo.xc.f5demo.net",
+        "domain" : "demo.xc.f5demo.net",
+        "region" : "HR-03",
+        "rsp_code_class" : "UNKNOWN",
+        "bot_defense" : {
+          "insight" : "MALICIOUS",
+          "automation_type" : "Token Missing",
+          "status_code" : "0",
+          "recommendation" : "Action_alert"
+        },
+        "dst" : "",
+        "city" : "Sisak",
+        "dst_site" : "",
+        "latitude" : "45.480000",
+        "messageid" : "149c116e-c6ed-11ec-9d64-0242ac120002",
+        "dst_ip" : "10.10.10.10",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "10.10.10.10",
+              "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@dst_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@network" ]
+            } ],
+            "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+          }
+        },
+        "src_site" : "fr4-fra",
+        "as_org" : "maxko d.o.o.",
+        "src_ip" : "10.10.10.10",
+        "stream" : "svcfw",
+        "req_size" : "818",
+        "user_agent" : "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots",
+        "severity" : "info",
+        "cluster_name" : "fr4-fra-int-ves-io",
+        "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+        "src" : "N:public",
+        "rsp_code" : "0",
+        "sni" : "demo.xc.f5demo.net",
+        "src_port" : "34488",
+        "site" : "fr4-fra",
+        "@timestamp" : "2024-07-15T09:58:23.671945Z",
+        "req_params" : "",
+        "dst_port" : "0",
+        "namespace" : "demo-shop",
+        "req_path" : "/product/LS4PSXUNUM",
+        "time" : "2024-07-15T09:58:23.671Z",
+        "asn" : "maxko d.o.o.(211619)",
+        "sec_event_type" : "bot_defense_sec_event",
+        "user" : "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b",
+        "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+      }
+    service: "bot_defense_sec_event"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721037503671
+ -
+  sample: |-
+    {
+      "country" : "HR",
+      "kubernetes" : {
+        "container_name" : "obelix",
+        "host" : "master-6",
+        "pod_id" : "91ee25f7-d2dc-410c-be9f-4f9f186b169f",
+        "labels" : {
+          "app" : "obelix"
+        },
+        "namespace_name" : "ves-system",
+        "pod_name" : "obelix-f5hnv"
+      },
+      "app_type" : "ves-io-demo-shop-demo-shop-fe",
+      "browser_type" : "Mediatoolkitbot",
+      "_visitor_id" : "9d8bd9210d47f9bd053a9079aa40c07f",
+      "device_type" : "Spider",
+      "req_headers_size" : 787,
+      "req_id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+      "path" : "/",
+      "hostname" : "master-6",
+      "src_instance" : "HR",
+      "req_headers" : {
+        "Cookie" : "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=FDEJO3PjXxW7CVjevCKt9f3+y0E/cfDftn0JQPGoeIpnIlPGsoM8cH5dLfPOymOOc1AbE5JQG5eM87Cl/OZsqUABHuFoGIfoOG54jeC7Pnc8+Q+7XvMiAlbqc0RQtqBB1ZKcPk9k1epqeoAeYeHaaPdXTSc+r1LeW3CQ03yoQNhQpHRa; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5",
+        "Scheme" : "https",
+        "X-Request-Id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+        "User-Agent" : "Mediatoolkitbot (complaints@mediatoolkit.com)",
+        "X-Forwarded-Proto" : "https",
+        "X-Forwarded-For" : "10.10.10.10",
+        "Host" : "demo.xc.f5demo.net",
+        "Method" : "GET",
+        "X-F5-Request-Id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+        "X-Envoy-External-Address" : "10.10.10.10"
+      },
+      "action" : "allow",
+      "tag" : "svcfw.obelixd.secevent",
+      "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+      "tenant" : "f5-bd-rwaldxii",
+      "longitude" : "16.370001",
+      "app" : "obelix",
+      "method" : "GET",
+      "as_number" : "211619",
+      "http_version" : "HTTP/1.1",
+      "threat_intel" : {
+        "indicators_matched" : [ "IP" ],
+        "results" : [ {
+          "indicator" : "10.10.10.10",
+          "additional_data" : {
+            "ipsets" : "tor_exit_nodes",
+            "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+          },
+          "source" : {
+            "name" : "Tor Exit Nodes",
+            "url" : "https://www.dan.me.uk/torlist/?exit"
+          },
+          "type" : "IP",
+          "category" : "tor",
+          "intention" : "unknown"
+        } ]
+      },
+      "dst_instance" : "",
+      "x_forwarded_for" : "10.10.10.10",
+      "rsp_size" : "8971",
+      "sec_event_name" : "BOT Defense Violation",
+      "authority" : "demo.xc.f5demo.net",
+      "domain" : "demo.xc.f5demo.net",
+      "region" : "HR-03",
+      "rsp_code_class" : "UNKNOWN",
+      "bot_defense" : {
+        "insight" : "MALICIOUS",
+        "automation_type" : "Token Missing",
+        "status_code" : "0",
+        "recommendation" : "Action_alert"
+      },
+      "dst" : "",
+      "city" : "Sisak",
+      "dst_site" : "",
+      "latitude" : "45.480000",
+      "messageid" : "149c116e-c6ed-11ec-9d64-0242ac120002",
+      "dst_ip" : "10.10.10.10",
+      "network" : {
+        "ip" : {
+          "attributes" : [ {
+            "ip" : "10.10.10.10",
+            "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@dst_ip" ]
+          }, {
+            "ip" : "10.10.10.10",
+            "source" : [ "@network" ]
+          } ],
+          "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+        }
+      },
+      "src_site" : "fr4-fra",
+      "as_org" : "maxko d.o.o.",
+      "src_ip" : "10.10.10.10",
+      "stream" : "svcfw",
+      "req_size" : "787",
+      "user_agent" : "Mediatoolkitbot (complaints@mediatoolkit.com)",
+      "severity" : "info",
+      "cluster_name" : "fr4-fra-int-ves-io",
+      "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+      "src" : "N:public",
+      "rsp_code" : "0",
+      "sni" : "demo.xc.f5demo.net",
+      "src_port" : "34488",
+      "site" : "fr4-fra",
+      "@timestamp" : "2024-07-15T09:58:20.672373Z",
+      "req_params" : "",
+      "dst_port" : "0",
+      "namespace" : "demo-shop",
+      "req_path" : "/product/2ZYFJ3GM2N",
+      "time" : "2024-07-15T09:58:20.672Z",
+      "asn" : "maxko d.o.o.(211619)",
+      "sec_event_type" : "bot_defense_sec_event",
+      "user" : "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b",
+      "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+    }
+  result:
+    custom:
+      '@timestamp': "2024-07-15T09:58:20.672373Z"
+      _visitor_id: "9d8bd9210d47f9bd053a9079aa40c07f"
+      action: "allow"
+      app: "obelix"
+      app_type: "ves-io-demo-shop-demo-shop-fe"
+      as_number: "211619"
+      as_org: "maxko d.o.o."
+      asn: "maxko d.o.o.(211619)"
+      authority: "demo.xc.f5demo.net"
+      bot_defense:
+        automation_type: "Token Missing"
+        insight: "MALICIOUS"
+        recommendation: "Action_alert"
+        status_code: "0"
+      browser_type: "Mediatoolkitbot"
+      city: "Sisak"
+      cluster_name: "fr4-fra-int-ves-io"
+      country: "HR"
+      device_type: "Spider"
+      domain: "demo.xc.f5demo.net"
+      dst: ""
+      dst_instance: ""
+      dst_port: "0"
+      dst_site: ""
+      host: "master-6"
+      hostname: "master-6"
+      http:
+        method: "GET"
+        status_code: "0"
+        useragent: "Mediatoolkitbot (complaints@mediatoolkit.com)"
+        useragent_details:
+          browser:
+            family: "Mediatoolkitbot"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+      http_version: "HTTP/1.1"
+      kubernetes:
+        container_name: "obelix"
+        host: "master-6"
+        labels:
+          app: "obelix"
+        namespace_name: "ves-system"
+        pod_id: "91ee25f7-d2dc-410c-be9f-4f9f186b169f"
+        pod_name: "obelix-f5hnv"
+      latitude: "45.480000"
+      longitude: "16.370001"
+      messageid: "149c116e-c6ed-11ec-9d64-0242ac120002"
+      method: "GET"
+      namespace: "demo-shop"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "34488"
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "0"
+        ip:
+          attributes:
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@req_headers"
+             - "@x_forwarded_for"
+             - "@src_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@dst_ip"
+           -
+            ip: "10.10.10.10"
+            source:
+             - "@network"
+          list:
+           - "10.10.10.10"
+           - "10.10.10.10"
+           - "10.10.10.10"
+      path: "/"
+      region: "HR-03"
+      req_headers:
+        Cookie: "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=FDEJO3PjXxW7CVjevCKt9f3+y0E/cfDftn0JQPGoeIpnIlPGsoM8cH5dLfPOymOOc1AbE5JQG5eM87Cl/OZsqUABHuFoGIfoOG54jeC7Pnc8+Q+7XvMiAlbqc0RQtqBB1ZKcPk9k1epqeoAeYeHaaPdXTSc+r1LeW3CQ03yoQNhQpHRa; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5"
+        Host: "demo.xc.f5demo.net"
+        Method: "GET"
+        Scheme: "https"
+        User-Agent: "Mediatoolkitbot (complaints@mediatoolkit.com)"
+        X-Envoy-External-Address: "10.10.10.10"
+        X-F5-Request-Id: "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960"
+        X-Forwarded-For: "10.10.10.10"
+        X-Forwarded-Proto: "https"
+        X-Request-Id: "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960"
+      req_headers_size: 787
+      req_id: "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960"
+      req_params: ""
+      req_path: "/product/2ZYFJ3GM2N"
+      req_size: "787"
+      rsp_code: "0"
+      rsp_code_class: "UNKNOWN"
+      rsp_size: "8971"
+      sec_event_name: "BOT Defense Violation"
+      sec_event_type: "bot_defense_sec_event"
+      severity: "info"
+      site: "fr4-fra"
+      sni: "demo.xc.f5demo.net"
+      source: "N:public"
+      src: "N:public"
+      src_instance: "HR"
+      src_ip: "10.10.10.10"
+      src_site: "fr4-fra"
+      stream: "svcfw"
+      tag: "svcfw.obelixd.secevent"
+      tenant: "f5-bd-rwaldxii"
+      threat_intel:
+        indicators_matched:
+         - "IP"
+        results:
+         -
+          indicator: "10.10.10.10"
+          additional_data:
+            ipsets: "tor_exit_nodes"
+            ipsets_about: "An ipset made from tor exit nodes updated every 30 minutes."
+          source:
+            name: "Tor Exit Nodes"
+            url: "https://www.dan.me.uk/torlist/?exit"
+          type: "IP"
+          category: "tor"
+          intention: "unknown"
+      time: "2024-07-15T09:58:20.672Z"
+      tls_fingerprint: "d0ee3237a14bbd89ca4d2b5356ab20ba"
+      usr:
+        id: "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b"
+      vh_name: "ves-io-http-loadbalancer-demo-shop-fe"
+      vhost_id: "78c99480-5004-4fb7-96b9-f4e8efe7eea6"
+      x_forwarded_for: "10.10.10.10"
+    message: |-
+      {
+        "country" : "HR",
+        "kubernetes" : {
+          "container_name" : "obelix",
+          "host" : "master-6",
+          "pod_id" : "91ee25f7-d2dc-410c-be9f-4f9f186b169f",
+          "labels" : {
+            "app" : "obelix"
+          },
+          "namespace_name" : "ves-system",
+          "pod_name" : "obelix-f5hnv"
+        },
+        "app_type" : "ves-io-demo-shop-demo-shop-fe",
+        "browser_type" : "Mediatoolkitbot",
+        "_visitor_id" : "9d8bd9210d47f9bd053a9079aa40c07f",
+        "device_type" : "Spider",
+        "req_headers_size" : 787,
+        "req_id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+        "path" : "/",
+        "hostname" : "master-6",
+        "src_instance" : "HR",
+        "req_headers" : {
+          "Cookie" : "shop_session-id=ecb35441-450d-4596-83ac-7d3f1a17448b; eea603=FDEJO3PjXxW7CVjevCKt9f3+y0E/cfDftn0JQPGoeIpnIlPGsoM8cH5dLfPOymOOc1AbE5JQG5eM87Cl/OZsqUABHuFoGIfoOG54jeC7Pnc8+Q+7XvMiAlbqc0RQtqBB1ZKcPk9k1epqeoAeYeHaaPdXTSc+r1LeW3CQ03yoQNhQpHRa; TS01dc4fc6=01840e5ff3e0ae0f01a0125351ffe80aa6b16ecb4bcdc7a650642d892787ea58bca33d00f1354f6409b21724a2595709160f6a663f; OClmoOot=A7ZQ07WQAQAAhEaKuHy_Y-M0_oUEuwksRZTCLjhRBJFVxfWsTY0MZB_h5emsAS1fqeCucg00wH8AAEB3AAAAAA|1|0|b103139ef94bb873977ce82dc8a4b658fefb3ba5",
+          "Scheme" : "https",
+          "X-Request-Id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+          "User-Agent" : "Mediatoolkitbot (complaints@mediatoolkit.com)",
+          "X-Forwarded-Proto" : "https",
+          "X-Forwarded-For" : "10.10.10.10",
+          "Host" : "demo.xc.f5demo.net",
+          "Method" : "GET",
+          "X-F5-Request-Id" : "bb0bb0b1-9c8a-4c8f-a841-b9cf6655b960",
+          "X-Envoy-External-Address" : "10.10.10.10"
+        },
+        "action" : "allow",
+        "tag" : "svcfw.obelixd.secevent",
+        "vhost_id" : "78c99480-5004-4fb7-96b9-f4e8efe7eea6",
+        "tenant" : "f5-bd-rwaldxii",
+        "longitude" : "16.370001",
+        "app" : "obelix",
+        "method" : "GET",
+        "as_number" : "211619",
+        "http_version" : "HTTP/1.1",
+        "threat_intel" : {
+          "indicators_matched" : [ "IP" ],
+          "results" : [ {
+            "indicator" : "10.10.10.10",
+            "additional_data" : {
+              "ipsets" : "tor_exit_nodes",
+              "ipsets_about" : "An ipset made from tor exit nodes updated every 30 minutes."
+            },
+            "source" : {
+              "name" : "Tor Exit Nodes",
+              "url" : "https://www.dan.me.uk/torlist/?exit"
+            },
+            "type" : "IP",
+            "category" : "tor",
+            "intention" : "unknown"
+          } ]
+        },
+        "dst_instance" : "",
+        "x_forwarded_for" : "10.10.10.10",
+        "rsp_size" : "8971",
+        "sec_event_name" : "BOT Defense Violation",
+        "authority" : "demo.xc.f5demo.net",
+        "domain" : "demo.xc.f5demo.net",
+        "region" : "HR-03",
+        "rsp_code_class" : "UNKNOWN",
+        "bot_defense" : {
+          "insight" : "MALICIOUS",
+          "automation_type" : "Token Missing",
+          "status_code" : "0",
+          "recommendation" : "Action_alert"
+        },
+        "dst" : "",
+        "city" : "Sisak",
+        "dst_site" : "",
+        "latitude" : "45.480000",
+        "messageid" : "149c116e-c6ed-11ec-9d64-0242ac120002",
+        "dst_ip" : "10.10.10.10",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "10.10.10.10",
+              "source" : [ "@req_headers", "@x_forwarded_for", "@src_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@dst_ip" ]
+            }, {
+              "ip" : "10.10.10.10",
+              "source" : [ "@network" ]
+            } ],
+            "list" : [ "10.10.10.10", "10.10.10.10", "10.10.10.10" ]
+          }
+        },
+        "src_site" : "fr4-fra",
+        "as_org" : "maxko d.o.o.",
+        "src_ip" : "10.10.10.10",
+        "stream" : "svcfw",
+        "req_size" : "787",
+        "user_agent" : "Mediatoolkitbot (complaints@mediatoolkit.com)",
+        "severity" : "info",
+        "cluster_name" : "fr4-fra-int-ves-io",
+        "tls_fingerprint" : "d0ee3237a14bbd89ca4d2b5356ab20ba",
+        "src" : "N:public",
+        "rsp_code" : "0",
+        "sni" : "demo.xc.f5demo.net",
+        "src_port" : "34488",
+        "site" : "fr4-fra",
+        "@timestamp" : "2024-07-15T09:58:20.672373Z",
+        "req_params" : "",
+        "dst_port" : "0",
+        "namespace" : "demo-shop",
+        "req_path" : "/product/2ZYFJ3GM2N",
+        "time" : "2024-07-15T09:58:20.672Z",
+        "asn" : "maxko d.o.o.(211619)",
+        "sec_event_type" : "bot_defense_sec_event",
+        "user" : "Cookie-shop_session-id-ecb35441-450d-4596-83ac-7d3f1a17448b",
+        "vh_name" : "ves-io-http-loadbalancer-demo-shop-fe"
+      }
+    service: "bot_defense_sec_event"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721037500672

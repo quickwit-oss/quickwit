@@ -1,0 +1,239 @@
+id: lambda
+metric_id: amazon-lambda
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Lambda
+    name: Request Id
+    path: lambda.request_id
+    source: log
+  - groups:
+      - Lambda
+    name: Step
+    path: lambda.step
+    source: log
+  - facetType: range
+    groups:
+      - Lambda
+    name: Billed Duration
+    path: lambda.billed_duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Lambda
+    name: Init Duration
+    path: lambda.init_duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Lambda
+    name: Max Memory Used
+    path: lambda.max_memory_used
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: kibibyte
+  - facetType: range
+    groups:
+      - Lambda
+    name: Max Memory Used %
+    path: lambda.memory_pct
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Lambda
+    name: Memory Left
+    path: lambda.memory_left
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: kibibyte
+  - facetType: range
+    groups:
+      - Lambda
+    name: Runtime Duration
+    path: lambda.runtime_duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Lambda
+    name: Post Runtime Duration
+    path: lambda.post_runtime_duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - groups:
+      - Lambda
+    name: Function Name
+    path: functionname
+    source: tag
+  - groups:
+      - AWS
+    name: Log Group
+    path: aws.awslogs.logGroup
+    source: log
+  - groups:
+      - Lambda
+    name: Lambda ARN
+    path: lambda.arn
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Lambda
+  enabled: true
+  filter:
+    query: source:lambda
+  processors:
+    - type: grok-parser
+      name: Parsing Lambda logs
+      enabled: true
+      source: message
+      samples:
+        - 'START RequestId: c9a3b892-c2ca-4391-82fe-a47570039262 Version: $LATEST'
+        - 'REPORT RequestId: ece907e2-848d-11e8-b0d2-01bad55f3174    Duration: 3056.26 ms      Billed Duration: 3100 ms      Memory Size: 128 MB       Max Memory Used: 85 MB     Runtime Duration: 550 ms    Post Runtime Duration: 2506.26 ms'
+        - "2019-07-18T18:58:55.265Z\t189a9433-fb77-4659-90d4-bc06edb890e0\tERROR\tInvoke Error\t{\"errorType\":\"Error\",\"errorMessage\":\"A test error\"}"
+        - "[ERROR]\t2019-07-18T21:30:46.599Z\tffbce4c2-d80e-4ffa-a0bc-505361e28b8a\tThis is a regular python error"
+        - "2019-07-18T19:47:18.146Z\t95ce2ab7-cf99-4030-bede-2055a69cedec\tERROR\tThis is a regular node error"
+      grok:
+        supportRules: |
+          _timestamp (?:%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SZ"):timestamp})
+          _request_id RequestId: %{notSpace:lambda.request_id}
+          _trace_context (\s+\[dd.trace_id=%{word:dd.trace_id} dd.span_id=%{word:dd.span_id}\])
+        matchRules: |
+          # Common
+          report_rule REPORT %{_request_id}\s+Duration: %{number:duration:scale(1000000)} ms\s+Billed Duration: %{number:lambda.billed_duration} ms\s+Memory Size: %{number:lambda. memorysize} MB\s+Max Memory Used: %{number:lambda.max_memory_used} MB(\s+Init Duration: %{number:lambda.init_duration} ms)?(\s+Runtime Duration: %{number:lambda.runtime_duration} ms\s+Post Runtime Duration: %{number:lambda.post_runtime_duration} ms)?%{data:xray:keyvalue(": ")}
+          # with slightly different order of attributes
+          report_rule_v2 REPORT %{_request_id}\s+Duration: %{number:duration:scale(1000000)} ms(\s+Runtime Duration: %{number:lambda.runtime_duration} ms\s+Post Runtime Duration: %{number:lambda.post_runtime_duration} ms)?\s+Billed Duration: %{number:lambda.billed_duration} ms\s+Memory Size: %{number:lambda. memorysize} MB\s+Max Memory Used: %{number:lambda.max_memory_used} MB(\s+Init Duration: %{number:lambda.init_duration} ms)?%{data:xray:keyvalue(": ")}
+
+          default_request_rule %{word:lambda.step}\s+%{_request_id}(\s+Version: %{notSpace:lambda.version})?
+
+          timeout_rule %{_timestamp}\s+%{notSpace:lambda.request_id:nullIf("undefined")}\s+%{regex("Task timed out"):error.message} after (%{number:duration:scale(1000000000)} seconds|%{number:duration:scale(1000000)} milliseconds)
+
+          process_error_rule %{_request_id} (%{regex("Process exited before completing request"):error.message}|%{regex("Error"):level}:%{data:error.message})
+
+          # Node
+          node_json_rule %{_timestamp}\s+%{notSpace:lambda.request_id:nullIf("undefined")}\s+(\[)?+%{word:level}+(\])?%{_trace_context}?(\s*Invoke Error\s*)?%{data::json}
+
+          # Python
+          python_rule \[%{word:level}\]?\s+%{_timestamp}\s+%{notSpace:lambda.request_id:nullIf("datadog_lambda_wrapper")}%{_trace_context}?.*
+          python_error %{regex("[^:]*"):error.message}: %{notSpace:error.kind}(\n|\s|\t)*Traceback \(most recent call last\):(?s)\s*%{data:error.stack}
+          python37_error \[%{regex("ERROR"):level}\] %{notSpace:error.kind}(: %{data:error.message})?(\n|\s|\t)*Traceback \(most recent call last\):(?s)\s*%{data:error.stack}
+
+          # Ruby
+          ruby_basic %{regex("[\\w]")},\s\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"):timestamp} #%{number}\]\s+%{word:level} --\s*: %{data::keyvalue}
+
+          fallback_json (%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSZ"):timestamp})\s+%{notSpace:lambda.request_id}\s+(%{word:level}:)?(%{data::json})
+
+          # Extra samples:
+          # 2019-07-18T18:58:22.286Z b5264ab7-2056-4f5b-bb0f-a06a70f6205d Task timed out after 30.03 seconds
+          # [INFO]	2019-07-18T21:30:46.599Z	ffbce4c2-d80e-4ffa-a0bc-505361e28b8a [dd.trace_id=7063307899004166955 dd.span_id=1811285018776771759] This is a regular python info
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+
+    - type: attribute-remapper
+      name: Map `errorType` to `error.kind`
+      enabled: true
+      sources:
+        - errorType
+      target: error.kind
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `errorMessage` to `error.message`
+      enabled: true
+      sources:
+        - errorMessage
+      target: error.message
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: arithmetic-processor
+      name: Calculate memory left
+      enabled: true
+      expression: (lambda.memorysize - lambda.max_memory_used)
+      target: lambda.memory_left
+      replaceMissing: false
+
+    - type: arithmetic-processor
+      name: Calculate memory usage
+      enabled: true
+      expression: ((lambda.max_memory_used/lambda.memorysize)*100)
+      target: lambda.memory_pct
+      replaceMissing: false
+
+    - type: category-processor
+      name: Identify timeout errors
+      enabled: true
+      categories:
+        - filter:
+            query: message:"*Task timed out*"
+          name: TimeOut
+      target: error.kind
+
+    - type: category-processor
+      name: Recognize Runtime Panics
+      enabled: true
+      categories:
+        - filter:
+            query: '"runtime error"'
+          name: Panic
+      target: error.kind
+
+    - type: category-processor
+      name: Define logs as error if they have an error kind or message
+      enabled: true
+      categories:
+        - filter:
+            query: (@error.kind:* OR @error.message:*)
+          name: error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id

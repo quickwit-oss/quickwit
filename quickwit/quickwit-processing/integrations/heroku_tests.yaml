@@ -1,0 +1,215 @@
+id: "heroku"
+tests:
+ -
+  sample: "at=info method=POST path=\"/en/admin/post/1/edit?k0=v0&k1=v1\" host=logmatic-symfony.herokuapp.com request_id=e8843b25-3587-4229-a430-c93360a0e89f fwd=\"82.239.107.161\" dyno=web.1 connect=1ms service=243ms status=302 bytes=559 protocol=https"
+  result:
+    custom:
+      duration: 2.43E8
+      http:
+        method: "POST"
+        request_id: "e8843b25-3587-4229-a430-c93360a0e89f"
+        server:
+          name: "logmatic-symfony.herokuapp.com"
+        status_category: "notice"
+        status_code: 302
+        url: "/en/admin/post/1/edit?k0=v0&k1=v1"
+        url_details:
+          path: "/en/admin/post/1/edit"
+          queryString:
+            k0: "v0"
+            k1: "v1"
+      load_balancer:
+        connect_time_unit: "ms"
+        time_backend_connect: 1
+      network:
+        bytes_written: 559
+        client:
+          ip: "82.239.107.161"
+      status: "info"
+    message: "at=info method=POST path=\"/en/admin/post/1/edit?k0=v0&k1=v1\" host=logmatic-symfony.herokuapp.com request_id=e8843b25-3587-4229-a430-c93360a0e89f fwd=\"82.239.107.161\" dyno=web.1 connect=1ms service=243ms status=302 bytes=559 protocol=https"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "appname:logmatic-symfony"
+     - "dynotype:web"
+     - "dyno:web.1"
+ -
+  sample: "source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#memory_total=124.17MB sample#memory_rss=124.16MB sample#memory_cache=0.01MB sample#memory_swap=0.00MB sample#memory_pgpgin=35470pages sample#memory_pgpgout=3682pages sample#memory_quota=512.00MB"
+  result:
+    custom:
+      heroku:
+        memory:
+          cache: 10000.0
+          quota: 5.12E8
+          rss: 1.2416E8
+          swap: 0.0
+          total: 1.2417E8
+      syslog:
+        hostname: "web.1"
+    message: "source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#memory_total=124.17MB sample#memory_rss=124.16MB sample#memory_cache=0.01MB sample#memory_swap=0.00MB sample#memory_pgpgin=35470pages sample#memory_pgpgout=3682pages sample#memory_quota=512.00MB"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "dynotype:heroku"
+     - "dyno:heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b"
+ -
+  sample: "source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#load_avg_1m=0.00 sample#load_avg_5m=0.00 sample#load_avg_15m=0.00"
+  result:
+    custom:
+      heroku:
+        cpu:
+          "15m": 0.0
+          "1m": 0.0
+          "5m": 0.0
+      syslog:
+        hostname: "web.1"
+    message: "source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#load_avg_1m=0.00 sample#load_avg_5m=0.00 sample#load_avg_15m=0.00"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "dynotype:heroku"
+     - "dyno:heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b"
+ -
+  sample: "level=info message=\"Channel expiry job firing now\""
+  result:
+    custom:
+      level: "info"
+    message: "Channel expiry job firing now"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "at=info method=GET path=\"/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it\" host=www.homair.com request_id=db0f3030-293d-4bdc-9823-ac5f71bc6e8f fwd=\"85.35.42.161,188.114.102.114\" dyno=web.4 connect=0ms service=65ms status=200 bytes=1016 protocol=https"
+  result:
+    custom:
+      duration: 6.5E7
+      http:
+        method: "GET"
+        request_id: "db0f3030-293d-4bdc-9823-ac5f71bc6e8f"
+        server:
+          name: "www.homair.com"
+        status_category: "OK"
+        status_code: 200
+        url: "/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it"
+        url_details:
+          path: "/api/filters"
+          queryString:
+            end_date: "2019-07-06"
+            lang: "it"
+            start_date: "2019-06-29"
+      load_balancer:
+        connect_time_unit: "ms"
+        time_backend_connect: 0
+      network:
+        bytes_written: 1016
+        client:
+          ip: "85.35.42.161"
+      status: "info"
+    message: "at=info method=GET path=\"/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it\" host=www.homair.com request_id=db0f3030-293d-4bdc-9823-ac5f71bc6e8f fwd=\"85.35.42.161,188.114.102.114\" dyno=web.4 connect=0ms service=65ms status=200 bytes=1016 protocol=https"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "dynotype:web"
+     - "dyno:web.4"
+ -
+  sample: "at=info method=GET path=\"/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it\" host=www.homair.com request_id=db0f3030-293d-4bdc-9823-ac5f71bc6e8f fwd=\"85.35.42.161, 188.114.102.114, 127.0.0.1\" dyno=web.4 connect=0ms service=65ms status=200 bytes=1016 protocol=https"
+  result:
+    custom:
+      duration: 6.5E7
+      http:
+        method: "GET"
+        request_id: "db0f3030-293d-4bdc-9823-ac5f71bc6e8f"
+        server:
+          name: "www.homair.com"
+        status_category: "OK"
+        status_code: 200
+        url: "/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it"
+        url_details:
+          path: "/api/filters"
+          queryString:
+            end_date: "2019-07-06"
+            lang: "it"
+            start_date: "2019-06-29"
+      load_balancer:
+        connect_time_unit: "ms"
+        time_backend_connect: 0
+      network:
+        bytes_written: 1016
+        client:
+          ip: "85.35.42.161"
+      status: "info"
+    message: "at=info method=GET path=\"/api/filters?start_date=2019-06-29&end_date=2019-07-06&lang=it\" host=www.homair.com request_id=db0f3030-293d-4bdc-9823-ac5f71bc6e8f fwd=\"85.35.42.161, 188.114.102.114, 127.0.0.1\" dyno=web.4 connect=0ms service=65ms status=200 bytes=1016 protocol=https"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "dynotype:web"
+     - "dyno:web.4"
+ -
+  sample: "2013-05-07T17:41:06+00:00 source=HEROKU_POSTGRESQL_VIOLET addon=postgres-metric-68904 sample#current_transaction=1873 sample#db_size=26219348792bytes sample#tables=13 sample#active-connections=92 sample#waiting-connections=1 sample#index-cache-hit-rate=0.99723 sample#table-cache-hit-rate=0.99118 sample#load-avg-1m=1.42 sample#load-avg-5m=1.45 sample#load-avg-15m=1.34 sample#read-iops=0 sample#write-iops=2.875 sample#memory-total=1692568kB sample#memory-free=73876kB sample#memory-cached=1344128kB sample#memory-postgres=22388kB"
+  result:
+    custom:
+      date: 1367948466000
+      heroku:
+        addon: "postgres-metric-68904"
+        cpu:
+          "15m": 1.34
+          "1m": 1.42
+          "5m": 1.45
+        db:
+          active_connections: 92.0
+          cache_hit_rate:
+            index: 0.99723
+            table: 0.99118
+          size: 2.6219348792E10
+          tables: 13.0
+          transaction_id: "1873"
+          waiting_connections: 1.0
+        iops:
+          read: 0.0
+          write: 2.875
+        memory:
+          cache: 1.344128E9
+          free: 7.3876E7
+          total: 1.692568E9
+      syslog:
+        hostname: "HEROKU_POSTGRESQL_VIOLET"
+    message: "2013-05-07T17:41:06+00:00 source=HEROKU_POSTGRESQL_VIOLET addon=postgres-metric-68904 sample#current_transaction=1873 sample#db_size=26219348792bytes sample#tables=13 sample#active-connections=92 sample#waiting-connections=1 sample#index-cache-hit-rate=0.99723 sample#table-cache-hit-rate=0.99118 sample#load-avg-1m=1.42 sample#load-avg-5m=1.45 sample#load-avg-15m=1.34 sample#read-iops=0 sample#write-iops=2.875 sample#memory-total=1692568kB sample#memory-free=73876kB sample#memory-cached=1344128kB sample#memory-postgres=22388kB"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "Nov 09 23:56:02 source=HEROKU_POSTGRESQL_SILVER addon=postgresql-devcenter-123456 sample#current_transaction=54017686 sample#db_size=16012956319bytes sample#tables=97 sample#active-connections=7 sample#waiting-connections=0 sample#index-cache-hit-rate=0.9239 sample#table-cache-hit-rate=0.93609 sample#load-avg-1m=0 sample#load-avg-5m=0 sample#load-avg-15m=0 sample#read-iops=0 sample#write-iops=0.13333 sample#tmp-disk-used=33849344 sample#tmp-disk-available=72944943104 sample#memory-total=4044960kB sample#memory-free=46920kB sample#memory-cached=3667532kB sample#memory-postgres=20824kB sample#wal-percentage-used=0.06512959334021144"
+  result:
+    custom:
+      date: 27042962000
+      heroku:
+        addon: "postgresql-devcenter-123456"
+        cpu:
+          "15m": 0.0
+          "1m": 0.0
+          "5m": 0.0
+        db:
+          active_connections: 7.0
+          cache_hit_rate:
+            index: 0.9239
+            table: 0.93609
+          size: 1.6012956319E10
+          tables: 97.0
+          transaction_id: "54017686"
+          waiting_connections: 0.0
+        iops:
+          read: 0.0
+          write: 0.13333
+        memory:
+          cache: 3.667532E9
+          free: 4.692E7
+          postgres: 2.0824E7
+          total: 4.04496E9
+        tmp_disk:
+          available: 7.2944943104E10
+          used: 3.3849344E7
+        wal:
+          percentage_used: 0.06512959334021144
+      syslog:
+        hostname: "HEROKU_POSTGRESQL_SILVER"
+    message: "Nov 09 23:56:02 source=HEROKU_POSTGRESQL_SILVER addon=postgresql-devcenter-123456 sample#current_transaction=54017686 sample#db_size=16012956319bytes sample#tables=97 sample#active-connections=7 sample#waiting-connections=0 sample#index-cache-hit-rate=0.9239 sample#table-cache-hit-rate=0.93609 sample#load-avg-1m=0 sample#load-avg-5m=0 sample#load-avg-15m=0 sample#read-iops=0 sample#write-iops=0.13333 sample#tmp-disk-used=33849344 sample#tmp-disk-available=72944943104 sample#memory-total=4044960kB sample#memory-free=46920kB sample#memory-cached=3667532kB sample#memory-postgres=20824kB sample#wal-percentage-used=0.06512959334021144"
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,279 @@
+id: google.workspace.alert.center
+metric_id: google-workspace-alert-center
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Assignee
+    path: metadata.assignee
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Customer ID
+    path: metadata.customerId
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Malicious Email
+    path: data.maliciousEntity.emailAddress
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Domain
+    path: data.domainId.customerPrimaryDomain
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Device ID
+    path: data.events.deviceId
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Serial Number
+    path: data.events.serialNumber
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Device Type
+    path: data.events.deviceType
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Device Model
+    path: data.events.deviceModel
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Data Source
+    path: data.ruleViolationInfo.dataSource
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Trigger
+    path: data.ruleViolationInfo.trigger
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Recipient
+    path: data.ruleViolationInfo.recipients
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Product
+    path: data.products
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Status
+    path: data.status
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Incident Tracking ID
+    path: data.incidentTrackingId
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Alert ID
+    path: alertId
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: Start Time
+    path: startTime
+    source: log
+  - groups:
+      - Google Workspace Alert Center
+    name: End Time
+    path: endTime
+    source: log
+pipeline:
+  type: pipeline
+  name: Google Workspace Alert Center
+  enabled: true
+  filter:
+    query: source:google.workspace.alert.center
+  processors:
+    - type: attribute-remapper
+      name: Map `data.displayName`, `data.ruleViolationInfo.ruleInfo.displayName`, `data.name`, `type` to `evt.name`
+      enabled: true
+      sources:
+        - data.displayName
+        - data.ruleViolationInfo.ruleInfo.displayName
+        - data.name
+        - type
+      target: evt.name
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `source` to `evt.category`
+      enabled: true
+      sources:
+        - source
+      target: evt.category
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.email`, `data.ruleViolationInfo.triggeringUserEmail`, `data.affectedUserEmails`, `data.actorEmail` to `usr.email`
+      enabled: true
+      sources:
+        - data.email
+        - data.ruleViolationInfo.triggeringUserEmail
+        - data.affectedUserEmails
+        - data.actorEmail
+      target: usr.email
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.sourceIp`, `data.loginDetails.ipAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.sourceIp
+        - data.loginDetails.ipAddress
+      target: network.client.ip
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: message-remapper
+      name: Define `title` as the official message of the log
+      enabled: true
+      sources:
+        - title
+    - type: attribute-remapper
+      name: Map `data.maliciousEntity.fromHeader`, `data.maliciousEntity.entity.emailAddress` to `data.maliciousEntity.emailAddress`
+      enabled: true
+      sources:
+        - data.maliciousEntity.fromHeader
+        - data.maliciousEntity.entity.emailAddress
+      target: data.maliciousEntity.emailAddress
+      preserveSource: true
+      sourceType: attribute
+      targetType: attribute
+      overrideOnConflict: false
+    - type: pipeline
+      name: Alert Created
+      enabled: true
+      filter:
+        query: event_type:alert_created
+      processors:
+        - type: date-remapper
+          name: Define `createTime` as the official date of the log
+          enabled: true
+          sources:
+            - createTime
+          preserveSource: true
+        - type: string-builder-processor
+          name: Set title
+          enabled: true
+          target: title
+          template: '%{evt.category}: %{evt.name} alert created'
+          replaceMissing: true
+    - type: pipeline
+      name: Alert Started
+      enabled: true
+      filter:
+        query: event_type:alert_started
+      processors:
+        - type: date-remapper
+          name: Define `startTime` as the official date of the log
+          enabled: true
+          sources:
+            - startTime
+          preserveSource: true
+        - type: string-builder-processor
+          name: Set title
+          enabled: true
+          target: title
+          template: '%{evt.category}: %{evt.name} alert started'
+          replaceMissing: true
+    - type: pipeline
+      name: Alert Ended
+      enabled: true
+      filter:
+        query: event_type:alert_ended
+      processors:
+        - type: date-remapper
+          name: Define `endTime` as the official date of the log
+          enabled: true
+          sources:
+            - endTime
+          preserveSource: true
+        - type: string-builder-processor
+          name: Set title
+          enabled: true
+          target: title
+          template: '%{evt.category}: %{evt.name} alert ended'
+          replaceMissing: true

@@ -1,0 +1,135 @@
+id: ping-federate
+metric_id: ping-federate
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - facetType: list
+    groups:
+      - PingFederate
+    name: Role
+    path: ping_federate.transaction.role
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - PingFederate
+    name: Subject
+    path: ping_federate.transaction.subject
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: PingFederate
+  enabled: true
+  filter:
+    query: "source:ping-federate"
+  processors:
+    - type: pipeline
+      name: admin logs
+      enabled: true
+      filter:
+        query: "service:admin"
+      processors:
+        - type: grok-parser
+          name: Parsing PingFederate admin Logs
+          enabled: true
+          source: message
+          samples:
+            - 2024-06-04 11:19:53,283 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 142.251.46.174 | USER | LOGIN_ATTEMPT | testevdentdetailid | Login was successful
+            - 2024-07-03 11:57:16,661 | Administrator | UserAdmin,Admin,CryptoAdmin,ExpressionAdmin | 142.251.46.174 | USER | ROLE_CHANGE | 5af978fkj8-80a2-44d6-ad56-ee0ecbe392af | testuser | CryptoAdmin | UserAdmin,Admin,CryptoAdmin
+          grok:
+            supportRules: ""
+            matchRules: admin_log_parser %{date("yyyy-MM-dd' 'HH:mm:ss,SSS"):timestamp} \| %{regex("[^|]*"):usr.name} \| (%{regex("[^|]*"):roles:array("[]",",")})? \| (%{ip:network.client.ip})? \| (%{regex("[^|]*"):component})? \| (%{regex("[^|]*"):evt.name}) \| (%{regex("[^|]*"):evt.id})? \| (%{regex(".+"):description})?
+        - type: geo-ip-parser
+          name: Extracting Geo Location from IP Address
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: audit logs
+      enabled: true
+      filter:
+        query: "service:audit"
+      processors:
+        - type: grok-parser
+          name: Parsing PingFederate audit Logs
+          enabled: true
+          source: message
+          samples:
+            - 2024-04-18 07:25:22,936| tid:SKOWnnUHVF95L8Q9jN0fscZ0A3A| AUTHN_ATTEMPT| analyst| 142.251.46.174 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| inprogress| OpenLDAP| [source:LDAP-05C40EAB2BCCC297D747FBC293eE1DA554118DD9] Invalid Credentials| 8| qwerty-1234-asdfgh-5678| email=john.doe@example.com, name=John Doe, role=admin| authorization_code| SP| Request| response-123456| john.doe| req-abcdef123456| 1617692015000| resp-7890ghijkl| sts-processor-1234| [spAdapter.SAML2, spConnection.PartnerSP]| [adapter.HTMLFormSimplePCV, idpConnection.IdP, localIdentity.A8me9rySDn1aIM48]| pcv-ldap| virtualserver-01| MyOAuthClient| req-1234567890abcdef
+            - 2024-04-18 07:25:22,936| tid:SKOWnnUHVF95L8Q9jN0fscZ0A3A| AUTHN_ATTEMPT| analyst| 142.251.46.174 | PingApp| connection1| SAML20| crest-pingfederate.com| IdP| inprogress| OpenLDAP| [source:LDAP-05C40EAB2BCCC297D747FBC293eE1DA554118DD9] Invalid Credentials| 8
+          grok:
+            supportRules: >-
+              parse_optional_source (\[source:%{notSpace:description.source}]( )?)?
+
+              parse_description_field (%{parse_optional_source}%{regex("[^|]*"):error.message})?
+
+              parse_default_audit_log %{date("yyyy-MM-dd' 'HH:mm:ss,SSS"):timestamp}\| tid:%{regex("[^|]*"):trackingid}\| (%{regex("[^|]*"):evt.name})?\| (%{word:ping_federate.transaction.subject})?\| (%{ip:network.client.ip})? \| %{regex("[^|]*"):app}\| (%{word:ping_federate.transaction.connection.id})?\| (%{word:protocol})?\| (%{hostname:http.url_details.host})?\| (%{word:ping_federate.transaction.role})?\| (%{word:evt.outcome})?\| %{regex("[^|]*"):adapterid}\| %{parse_description_field}\|( %{number:duration})?
+            matchRules: >
+              default_audit_log_parser %{parse_default_audit_log}
+
+              additional_fields_audit_log_parser %{parse_default_audit_log}\| %{regex("[^|]*"):oauth.attrackingid}\| %{regex("[^|]*"):attributes:keyvalue("=",",")}\| %{regex("[^|]*"):oauth.granttype}\| %{regex("[^|]*"):ping_federate.transaction.initiator}\| %{regex("[^|]*"):inmessagetype}\| %{regex("[^|]*"):inresponseto}\| %{regex("[^|]*"):usr.id}\| %{regex("[^|]*"):saml.requestid}\| %{regex("[^|]*"):http.requeststarttime}\| %{regex("[^|]*"):saml.responseid}\| %{regex("[^|]*"):ping_federate.transaction.stspluginid}\| %{regex("[^|]*"):authentication.targetsessionid:array("[]",",")}\| %{regex("[^|]*"):authentication.sourceid:array("[]",",")}\| %{regex("[^|]*"):validatorid}\| %{regex("[^|]*"): virtualserverid}\| %{regex("[^|]*"):ping_federate.transaction.connection.name}\|( %{regex("[^|]*"):http.request_id})?
+        - type: geo-ip-parser
+          name: Extracting Geo Location from IP Address
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: arithmetic-processor
+          name: Convert the total duration of a request in nanoseconds
+          enabled: true
+          expression: duration*1000000
+          target: duration
+          replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

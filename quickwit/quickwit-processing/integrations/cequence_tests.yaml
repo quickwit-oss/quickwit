@@ -1,0 +1,617 @@
+id: "cequence"
+tests:
+ -
+  sample: |-
+    {
+      "transaction_id" : "ec3a81394c1f2bf3fbf784df427e4ee5",
+      "country" : "US",
+      "status_code" : 502,
+      "successful_login" : "UNKNOWN",
+      "experimental_confidence" : 89,
+      "method" : "GET",
+      "request_body_len" : 0,
+      "isp" : "Quintex Alliance Consulting",
+      "confidence" : 89,
+      "sessionid" : "-",
+      "uri" : "/api/v3/pet/9",
+      "failed_login" : "UNKNOWN",
+      "query_params" : "",
+      "organization" : "Quintex Alliance Consulting",
+      "server_ip" : "10.0.172.186",
+      "fingerprint" : 1525356519,
+      "rule_info" : [ {
+        "rule_id" : "HR4",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N17",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N22",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N3",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N9",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "R1",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R104",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R111",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R112",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R115",
+        "weight" : 9,
+        "experimental" : false
+      }, {
+        "rule_id" : "R128",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R13",
+        "weight" : 8,
+        "experimental" : false
+      }, {
+        "rule_id" : "R131",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R166",
+        "weight" : 4,
+        "experimental" : false
+      }, {
+        "rule_id" : "R167",
+        "weight" : 0,
+        "experimental" : false
+      }, {
+        "rule_id" : "R38",
+        "weight" : 8,
+        "experimental" : false
+      } ],
+      "host" : "d1tg4x7uyt0fri.cloudfront.net",
+      "request_headers" : {
+        "referer" : "",
+        "accept-language" : "en-US;q=0.6,en;q=0.4",
+        "accept" : "*/*"
+      },
+      "client_ip" : "199.249.230.144",
+      "asn" : 62744,
+      "user_agent" : "",
+      "username" : "-",
+      "timestamp" : "2022-07-18T15:02:57.102"
+    }
+  result:
+    custom:
+      asn: 62744
+      botdefense_rule_id: "HR4,N17,N22,N3,N9,R1,R104,R111,R112,R115,R128,R13,R131,R166,R167,R38"
+      botdefense_rule_id_array:
+       - "HR4"
+       - "N17"
+       - "N22"
+       - "N3"
+       - "N9"
+       - "R1"
+       - "R104"
+       - "R111"
+       - "R112"
+       - "R115"
+       - "R128"
+       - "R13"
+       - "R131"
+       - "R166"
+       - "R167"
+       - "R38"
+      confidence: 89
+      country: "US"
+      experimental_confidence: 89
+      failed_login: "UNKNOWN"
+      fingerprint: 1525356519
+      host: "d1tg4x7uyt0fri.cloudfront.net"
+      isp: "Quintex Alliance Consulting"
+      method: "GET"
+      network:
+        client:
+          geoip: {}
+          ip: "199.249.230.144"
+      organization: "Quintex Alliance Consulting"
+      query_params: ""
+      request_body_len: 0
+      request_headers:
+        accept: "*/*"
+        accept-language: "en-US;q=0.6,en;q=0.4"
+        referer: ""
+      rule_info:
+       -
+        rule_id: "HR4"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N17"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N22"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N3"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N9"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "R1"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R104"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R111"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R112"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R115"
+        weight: 9
+        experimental: false
+       -
+        rule_id: "R128"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R13"
+        weight: 8
+        experimental: false
+       -
+        rule_id: "R131"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R166"
+        weight: 4
+        experimental: false
+       -
+        rule_id: "R167"
+        weight: 0
+        experimental: false
+       -
+        rule_id: "R38"
+        weight: 8
+        experimental: false
+      server_ip: "10.0.172.186"
+      sessionid: "-"
+      status_code: 502
+      successful_login: "UNKNOWN"
+      timestamp: "2022-07-18T15:02:57.102"
+      transaction_id: "ec3a81394c1f2bf3fbf784df427e4ee5"
+      uri: "/api/v3/pet/9"
+      user_agent: ""
+      username: "-"
+    message: |-
+      {
+        "transaction_id" : "ec3a81394c1f2bf3fbf784df427e4ee5",
+        "country" : "US",
+        "status_code" : 502,
+        "successful_login" : "UNKNOWN",
+        "experimental_confidence" : 89,
+        "method" : "GET",
+        "request_body_len" : 0,
+        "isp" : "Quintex Alliance Consulting",
+        "confidence" : 89,
+        "sessionid" : "-",
+        "uri" : "/api/v3/pet/9",
+        "failed_login" : "UNKNOWN",
+        "query_params" : "",
+        "organization" : "Quintex Alliance Consulting",
+        "server_ip" : "10.0.172.186",
+        "fingerprint" : 1525356519,
+        "rule_info" : [ {
+          "rule_id" : "HR4",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N17",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N22",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N3",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N9",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "R1",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R104",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R111",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R112",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R115",
+          "weight" : 9,
+          "experimental" : false
+        }, {
+          "rule_id" : "R128",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R13",
+          "weight" : 8,
+          "experimental" : false
+        }, {
+          "rule_id" : "R131",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R166",
+          "weight" : 4,
+          "experimental" : false
+        }, {
+          "rule_id" : "R167",
+          "weight" : 0,
+          "experimental" : false
+        }, {
+          "rule_id" : "R38",
+          "weight" : 8,
+          "experimental" : false
+        } ],
+        "host" : "d1tg4x7uyt0fri.cloudfront.net",
+        "request_headers" : {
+          "referer" : "",
+          "accept-language" : "en-US;q=0.6,en;q=0.4",
+          "accept" : "*/*"
+        },
+        "client_ip" : "199.249.230.144",
+        "asn" : 62744,
+        "user_agent" : "",
+        "username" : "-",
+        "timestamp" : "2022-07-18T15:02:57.102"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "transaction_id" : "ec3a81394c1f2bf3fbf784df427e4ee5",
+      "country" : "US",
+      "status_code" : 502,
+      "successful_login" : "UNKNOWN",
+      "experimental_confidence" : 89,
+      "method" : "GET",
+      "request_body_len" : 0,
+      "isp" : "Quintex Alliance Consulting",
+      "confidence" : 89,
+      "sessionid" : "-",
+      "uri" : "/api/v3/pet/9",
+      "failed_login" : "UNKNOWN",
+      "query_params" : "",
+      "organization" : "Quintex Alliance Consulting",
+      "server_ip" : "10.0.172.186",
+      "fingerprint" : 1525356519,
+      "rule_info" : [ {
+        "rule_id" : "HR4",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N17",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N22",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N3",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "N9",
+        "weight" : 0,
+        "experimental" : true
+      }, {
+        "rule_id" : "R1",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R104",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R111",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R112",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R115",
+        "weight" : 9,
+        "experimental" : false
+      }, {
+        "rule_id" : "R128",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R13",
+        "weight" : 8,
+        "experimental" : false
+      }, {
+        "rule_id" : "R131",
+        "weight" : 10,
+        "experimental" : false
+      }, {
+        "rule_id" : "R166",
+        "weight" : 4,
+        "experimental" : false
+      }, {
+        "rule_id" : "R167",
+        "weight" : 0,
+        "experimental" : false
+      }, {
+        "rule_id" : "R38",
+        "weight" : 8,
+        "experimental" : false
+      } ],
+      "host" : "d1tg4x7uyt0fri.cloudfront.net",
+      "request_headers" : {
+        "referer" : "",
+        "accept-language" : "en-US;q=0.6,en;q=0.4",
+        "accept" : "*/*"
+      },
+      "client_ip" : "199.249.230.144",
+      "asn" : 62744,
+      "user_agent" : "",
+      "username" : "-",
+      "timestamp" : "2022-07-18T15:02:57.102"
+    }
+  result:
+    custom:
+      asn: 62744
+      botdefense_rule_id: "HR4,N17,N22,N3,N9,R1,R104,R111,R112,R115,R128,R13,R131,R166,R167,R38"
+      botdefense_rule_id_array:
+       - "HR4"
+       - "N17"
+       - "N22"
+       - "N3"
+       - "N9"
+       - "R1"
+       - "R104"
+       - "R111"
+       - "R112"
+       - "R115"
+       - "R128"
+       - "R13"
+       - "R131"
+       - "R166"
+       - "R167"
+       - "R38"
+      confidence: 89
+      country: "US"
+      experimental_confidence: 89
+      failed_login: "UNKNOWN"
+      fingerprint: 1525356519
+      host: "d1tg4x7uyt0fri.cloudfront.net"
+      isp: "Quintex Alliance Consulting"
+      method: "GET"
+      network:
+        client:
+          geoip: {}
+          ip: "199.249.230.144"
+      organization: "Quintex Alliance Consulting"
+      query_params: ""
+      request_body_len: 0
+      request_headers:
+        accept: "*/*"
+        accept-language: "en-US;q=0.6,en;q=0.4"
+        referer: ""
+      rule_info:
+       -
+        rule_id: "HR4"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N17"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N22"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N3"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "N9"
+        weight: 0
+        experimental: true
+       -
+        rule_id: "R1"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R104"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R111"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R112"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R115"
+        weight: 9
+        experimental: false
+       -
+        rule_id: "R128"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R13"
+        weight: 8
+        experimental: false
+       -
+        rule_id: "R131"
+        weight: 10
+        experimental: false
+       -
+        rule_id: "R166"
+        weight: 4
+        experimental: false
+       -
+        rule_id: "R167"
+        weight: 0
+        experimental: false
+       -
+        rule_id: "R38"
+        weight: 8
+        experimental: false
+      server_ip: "10.0.172.186"
+      sessionid: "-"
+      status_code: 502
+      successful_login: "UNKNOWN"
+      timestamp: "2022-07-18T15:02:57.102"
+      transaction_id: "ec3a81394c1f2bf3fbf784df427e4ee5"
+      uri: "/api/v3/pet/9"
+      user_agent: ""
+      username: "-"
+    message: |-
+      {
+        "transaction_id" : "ec3a81394c1f2bf3fbf784df427e4ee5",
+        "country" : "US",
+        "status_code" : 502,
+        "successful_login" : "UNKNOWN",
+        "experimental_confidence" : 89,
+        "method" : "GET",
+        "request_body_len" : 0,
+        "isp" : "Quintex Alliance Consulting",
+        "confidence" : 89,
+        "sessionid" : "-",
+        "uri" : "/api/v3/pet/9",
+        "failed_login" : "UNKNOWN",
+        "query_params" : "",
+        "organization" : "Quintex Alliance Consulting",
+        "server_ip" : "10.0.172.186",
+        "fingerprint" : 1525356519,
+        "rule_info" : [ {
+          "rule_id" : "HR4",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N17",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N22",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N3",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "N9",
+          "weight" : 0,
+          "experimental" : true
+        }, {
+          "rule_id" : "R1",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R104",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R111",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R112",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R115",
+          "weight" : 9,
+          "experimental" : false
+        }, {
+          "rule_id" : "R128",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R13",
+          "weight" : 8,
+          "experimental" : false
+        }, {
+          "rule_id" : "R131",
+          "weight" : 10,
+          "experimental" : false
+        }, {
+          "rule_id" : "R166",
+          "weight" : 4,
+          "experimental" : false
+        }, {
+          "rule_id" : "R167",
+          "weight" : 0,
+          "experimental" : false
+        }, {
+          "rule_id" : "R38",
+          "weight" : 8,
+          "experimental" : false
+        } ],
+        "host" : "d1tg4x7uyt0fri.cloudfront.net",
+        "request_headers" : {
+          "referer" : "",
+          "accept-language" : "en-US;q=0.6,en;q=0.4",
+          "accept" : "*/*"
+        },
+        "client_ip" : "199.249.230.144",
+        "asn" : 62744,
+        "user_agent" : "",
+        "username" : "-",
+        "timestamp" : "2022-07-18T15:02:57.102"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

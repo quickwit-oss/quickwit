@@ -1,0 +1,481 @@
+id: crest-data-systems-cisco-mds
+metric_id: crest-data-systems-cisco-mds
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: CPU Utilization (Past 1 minute)
+    path: cds.cisco_mds.onemin
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: CPU Utilization (Past 1 second)
+    path: cds.cisco_mds.onesec
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: CPU Utilization (Past 5 minutes)
+    path: cds.cisco_mds.fivemin
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: CPU Utilization (Past 5 seconds)
+    path: cds.cisco_mds.fivesec
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Diagnostic Status
+    path: cds.cisco_mds.diagstatus
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Distribute Status
+    path: cds.cisco_mds.distribute
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Input Frames 1
+    path: cds.cisco_mds.eth_inframes1
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Input Frames 2
+    path: cds.cisco_mds.eth_inframes2
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Input Rate 1
+    path: cds.cisco_mds.eth_inrate1
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Input Rate 2
+    path: cds.cisco_mds.eth_inrate2
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Output Frames 1
+    path: cds.cisco_mds.eth_outframes1
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Output Frames 2
+    path: cds.cisco_mds.eth_outframes2
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Output Rate 1
+    path: cds.cisco_mds.eth_outrate1
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Ethernet Output Rate 2
+    path: cds.cisco_mds.eth_outrate2
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Facility (Log Type)
+    path: cds.cisco_mds.facility
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Memory Allocated
+    path: cds.cisco_mds.mem_alloc
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Crest Data Cisco MDS
+    name: Memory Used
+    path: cds.cisco_mds.mem_used
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Module Power Status
+    path: cds.cisco_mds.modstatus
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Neighbor ID
+    path: cds.cisco_mds.device_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Power Summary Operational Mode Status
+    path: cds.cisco_mds.ps_oper_mode
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Power Summary Redundant Mode Status
+    path: cds.cisco_mds.ps_redun_mode
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Cisco MDS
+    name: Temperature Alarm Status
+    path: cds.cisco_mds.alarm_status
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Cisco MDS by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-cisco-mds"
+  processors:
+    - type: pipeline
+      name: Syslog
+      enabled: true
+      filter:
+        query: "service:cds.cisco.mds.syslog"
+      processors:
+        - type: grok-parser
+          name: Parsing Attributes for Cisco MDS
+          enabled: true
+          source: message
+          samples:
+            - "2009 Oct 11 08:05:06 MDS9148S-S4 %MODULE-5-ACTIVE_SUP_OK:
+              Supervisor 1 is active (Serial number: JAF1751BLHC)"
+            - "2009 Oct 11 08:05:55 MDS9148S-S4 %PORT-5-IF_DOWN_NONE: %$VSAN 1%$
+              Interface fc1/35 is down (None) "
+            - "2009 Oct 11 08:05:22 MDS9148S-S4 Oct 11 08:05:22
+              %KERN-3-SYSTEM_MSG: [  164.416341] **** TOTAL PORTS = 48 ***** -
+              kernel"
+            - "2009  Oct 11 08:04:42 MDS9148S-S4 Oct 11 08:04:42
+              %KERN-2-SYSTEM_MSG: [  120.734485]  ****<6>Initializing fc2
+              proto  - kernel"
+          grok:
+            supportRules: ""
+            matchRules: mds_log (%{date("yyyy MMM dd HH:mm:ss"):date}|%{date("yyyy  MMM dd
+              HH:mm:ss"):date})%{regex("(\\s)*"):}%{regex("[a-zA-Z0-9-]*"):switchname}%{regex("(\\s)*"):}(%{date("MMM
+              dd
+              HH:mm:ss"):})?%{regex("(\\s)*"):}%{regex("[%]"):}%{regex("[a-zA-Z0-9-]*"):facility}-%{integer:severity}-%{word:mnemonic}:%{regex("(\\s)*"):}%{data:description}
+        - type: status-remapper
+          name: Define `severity` as the official status of the log
+          enabled: true
+          sources:
+            - severity
+        - type: date-remapper
+          name: Define `date` as the official date of the log
+          enabled: true
+          sources:
+            - date
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: attribute-remapper
+          name: Map `facility` to `cds.cisco_mds.facility`
+          enabled: true
+          sources:
+            - facility
+          sourceType: attribute
+          target: cds.cisco_mds.facility
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: CPU
+      enabled: true
+      filter:
+        query: "@type:cpu"
+      processors:
+        - type: attribute-remapper
+          name: Map `onemin` to `cds.cisco_mds.onemin`
+          enabled: true
+          sources:
+            - onemin
+          sourceType: attribute
+          target: cds.cisco_mds.onemin
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `fivemin` to `cds.cisco_mds.fivemin`
+          enabled: true
+          sources:
+            - fivemin
+          sourceType: attribute
+          target: cds.cisco_mds.fivemin
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `onesec` to `cds.cisco_mds.onesec`
+          enabled: true
+          sources:
+            - onesec
+          sourceType: attribute
+          target: cds.cisco_mds.onesec
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `fivesec` to `cds.cisco_mds.fivesec`
+          enabled: true
+          sources:
+            - fivesec
+          sourceType: attribute
+          target: cds.cisco_mds.fivesec
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Interface
+      enabled: true
+      filter:
+        query: "@type:brief_interface_info"
+      processors:
+        - type: attribute-remapper
+          name: Map `eth_inframes1` to `cds.cisco_mds.eth_inframes1`
+          enabled: true
+          sources:
+            - eth_inframes1
+          sourceType: attribute
+          target: cds.cisco_mds.eth_inframes1
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_inframes2` to `cds.cisco_mds.eth_inframes2`
+          enabled: true
+          sources:
+            - eth_inframes2
+          sourceType: attribute
+          target: cds.cisco_mds.eth_inframes2
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_outframes1` to `cds.cisco_mds.eth_outframes1`
+          enabled: true
+          sources:
+            - eth_outframes1
+          sourceType: attribute
+          target: cds.cisco_mds.eth_outframes1
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_outframes2` to `cds.cisco_mds.eth_outframes2`
+          enabled: true
+          sources:
+            - eth_outframes2
+          sourceType: attribute
+          target: cds.cisco_mds.eth_outframes2
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_inrate1` to `cds.cisco_mds.eth_inrate1`
+          enabled: true
+          sources:
+            - eth_inrate1
+          sourceType: attribute
+          target: cds.cisco_mds.eth_inrate1
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_inrate2` to `cds.cisco_mds.eth_inrate2`
+          enabled: true
+          sources:
+            - eth_inrate2
+          sourceType: attribute
+          target: cds.cisco_mds.eth_inrate2
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_outrate1` to `cds.cisco_mds.eth_outrate1`
+          enabled: true
+          sources:
+            - eth_outrate1
+          sourceType: attribute
+          target: cds.cisco_mds.eth_outrate1
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eth_outrate2` to `cds.cisco_mds.eth_outrate2`
+          enabled: true
+          sources:
+            - eth_outrate2
+          sourceType: attribute
+          target: cds.cisco_mds.eth_outrate2
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Memory
+      enabled: true
+      filter:
+        query: "@type:memory"
+      processors:
+        - type: attribute-remapper
+          name: Map `mem_alloc` to `cds.cisco_mds.mem_alloc`
+          enabled: true
+          sources:
+            - mem_alloc
+          sourceType: attribute
+          target: cds.cisco_mds.mem_alloc
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `mem_used` to `cds.cisco_mds.mem_used`
+          enabled: true
+          sources:
+            - mem_used
+          sourceType: attribute
+          target: cds.cisco_mds.mem_used
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Diagnostic Tests
+      enabled: true
+      filter:
+        query: "@type:diagnostic_info"
+      processors:
+        - type: attribute-remapper
+          name: Map `diagstatus` to `cds.cisco_mds.diagstatus`
+          enabled: true
+          sources:
+            - diagstatus
+          sourceType: attribute
+          target: cds.cisco_mds.diagstatus
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zone
+      enabled: true
+      filter:
+        query: "@type:(zone_status OR zone_policy)"
+      processors:
+        - type: attribute-remapper
+          name: Map `distribute` to `cds.cisco_mds.distribute`
+          enabled: true
+          sources:
+            - distribute
+          sourceType: attribute
+          target: cds.cisco_mds.distribute
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Power
+      enabled: true
+      filter:
+        query: "@type:(module_power_info OR power_summary)"
+      processors:
+        - type: attribute-remapper
+          name: Map `modstatus` to `cds.cisco_mds.modstatus`
+          enabled: true
+          sources:
+            - modstatus
+          sourceType: attribute
+          target: cds.cisco_mds.modstatus
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ps_oper_mode` to `cds.cisco_mds.ps_oper_mode`
+          enabled: true
+          sources:
+            - ps_oper_mode
+          sourceType: attribute
+          target: cds.cisco_mds.ps_oper_mode
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ps_redun_mode` to `cds.cisco_mds.ps_redun_mode`
+          enabled: true
+          sources:
+            - ps_redun_mode
+          sourceType: attribute
+          target: cds.cisco_mds.ps_redun_mode
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Temperature
+      enabled: true
+      filter:
+        query: "@type:temperature"
+      processors:
+        - type: attribute-remapper
+          name: Map `alarm_status` to `cds.cisco_mds.alarm_status`
+          enabled: true
+          sources:
+            - alarm_status
+          sourceType: attribute
+          target: cds.cisco_mds.alarm_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: CDP
+      enabled: true
+      filter:
+        query: "@type:neighbors"
+      processors:
+        - type: attribute-remapper
+          name: Map `device_id` to `cds.cisco_mds.device_id`
+          enabled: true
+          sources:
+            - device_id
+          sourceType: attribute
+          target: cds.cisco_mds.device_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

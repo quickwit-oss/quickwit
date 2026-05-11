@@ -1,0 +1,399 @@
+id: forcepoint-secure-web-gateway
+tests:
+ -
+  sample: |-
+    {
+      "ipaddress" : "10.10.10.10",
+      "country" : "India",
+      "requestmethod" : "POST",
+      "firstname" : "John",
+      "devicehostname" : "desktop-gno7jr8",
+      "regioncode" : "MH",
+      "city" : "Mumbai",
+      "customlocation" : "[\"CDS\",\"Guest\"]",
+      "deviceguid" : "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1",
+      "countrycode" : "IN",
+      "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "requestport" : "443",
+      "webcategoryclass" : "[\"General Information\",\"Social Media/Internet Communication\"]",
+      "bgcloudscore" : "7.00",
+      "long" : "72.88559999",
+      "protocol" : "https",
+      "customcategories" : "[\"Github\"]",
+      "indexedtime" : "2025-01-10 12:02:13",
+      "policyid" : "369036",
+      "action" : "block",
+      "email" : "john.doe@test.com",
+      "lat" : "19.07480000",
+      "syslogheader" : "<110>1 2025-01-10T11:55:00.000000Z api.bitglass.com NILVALUE NILVALUE swgweb",
+      "webcategories" : "[\"WR:Image and Video Search\",\"WR:Social Networking\"]",
+      "uploadedbytes" : "0",
+      "bgcategories" : "[\"BG:Business Applications\",\"BG:Content and Publishing\",\"BG:Internet Services\",\"BG:Media and Entertainment\",\"BG:Mobile\"]",
+      "uri" : "/ajax/bz",
+      "url" : "www.instagram.com/ajax/bz?__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253...",
+      "setransactionid" : "190E18BD-ECB8-4FE5-9CFD-D5DAE9783017",
+      "lastname" : "Doe",
+      "destinationip" : "",
+      "referrer" : "https://www.instagram.com/",
+      "requestdomain" : "www.instagram.com",
+      "size" : "0",
+      "application" : "Instagram",
+      "webreputation" : "81.00",
+      "usergroup" : "['355160', 'All Users', 'Bitglass Admins', 'crestdatasys']",
+      "arguments" : "__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253...",
+      "time" : "10 Jan 2025 11:55:00",
+      "region" : "Maharashtra"
+    }
+  result:
+    custom:
+      action: "block"
+      application: "Instagram"
+      arguments: "__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253..."
+      bgcategories:
+       - "\"BG:Business Applications\""
+       - "\"BG:Content and Publishing\""
+       - "\"BG:Internet Services\""
+       - "\"BG:Media and Entertainment\""
+       - "\"BG:Mobile\""
+      bgcloudscore: "7.00"
+      city: "Mumbai"
+      country: "India"
+      countrycode: "IN"
+      customcategories:
+       - "\"Github\""
+      customlocation:
+       - "\"CDS\""
+       - "\"Guest\""
+      deviceguid: "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1"
+      devicehostname: "desktop-gno7jr8"
+      dns:
+        question:
+          name: "www.instagram.com"
+      http:
+        method: "POST"
+        url: "www.instagram.com/ajax/bz?__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253..."
+        url_details:
+          path: "www.instagram.com/ajax/bz"
+          queryString:
+            __a: "1"
+            __ccg: "EXCELLENT"
+            __comet_req: "7"
+            __d: "www"
+            __hs: "20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0"
+            __hsi: "7458216500016125819"
+            __req: "15"
+            __rev: "1019252539"
+            __s: "%3Acyql2x%3At9l688"
+            __spin_b: "trunk"
+            __spin_r: "101925253..."
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "131"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      indexedtime: 1736510533000
+      lastname: "Doe"
+      lat: "19.07480000"
+      long: "72.88559999"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "443"
+        destination:
+          ip: ""
+      policyid: "369036"
+      protocol: "https"
+      referrer: "https://www.instagram.com/"
+      region: "Maharashtra"
+      regioncode: "MH"
+      setransactionid: "190E18BD-ECB8-4FE5-9CFD-D5DAE9783017"
+      size: "0"
+      syslog:
+        hostname: "api.bitglass.com"
+        msgid: "swgweb"
+        priority: 110
+      syslogheader: "<110>1 2025-01-10T11:55:00.000000Z api.bitglass.com NILVALUE NILVALUE swgweb"
+      time: "10 Jan 2025 11:55:00"
+      uploadedbytes: "0"
+      uri: "/ajax/bz"
+      usergroup:
+       - "'355160'"
+       - "'All Users'"
+       - "'Bitglass Admins'"
+       - "'crestdatasys'"
+      usr:
+        email: "john.doe@test.com"
+        name: "John"
+      webcategories:
+       - "\"WR:Image and Video Search\""
+       - "\"WR:Social Networking\""
+      webcategoryclass:
+       - "\"General Information\""
+       - "\"Social Media/Internet Communication\""
+      webreputation: "81.00"
+    message: |-
+      {
+        "ipaddress" : "10.10.10.10",
+        "country" : "India",
+        "requestmethod" : "POST",
+        "firstname" : "John",
+        "devicehostname" : "desktop-gno7jr8",
+        "regioncode" : "MH",
+        "city" : "Mumbai",
+        "customlocation" : "[\"CDS\",\"Guest\"]",
+        "deviceguid" : "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1",
+        "countrycode" : "IN",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "requestport" : "443",
+        "webcategoryclass" : "[\"General Information\",\"Social Media/Internet Communication\"]",
+        "bgcloudscore" : "7.00",
+        "long" : "72.88559999",
+        "protocol" : "https",
+        "customcategories" : "[\"Github\"]",
+        "indexedtime" : "2025-01-10 12:02:13",
+        "policyid" : "369036",
+        "action" : "block",
+        "email" : "john.doe@test.com",
+        "lat" : "19.07480000",
+        "syslogheader" : "<110>1 2025-01-10T11:55:00.000000Z api.bitglass.com NILVALUE NILVALUE swgweb",
+        "webcategories" : "[\"WR:Image and Video Search\",\"WR:Social Networking\"]",
+        "uploadedbytes" : "0",
+        "bgcategories" : "[\"BG:Business Applications\",\"BG:Content and Publishing\",\"BG:Internet Services\",\"BG:Media and Entertainment\",\"BG:Mobile\"]",
+        "uri" : "/ajax/bz",
+        "url" : "www.instagram.com/ajax/bz?__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253...",
+        "setransactionid" : "190E18BD-ECB8-4FE5-9CFD-D5DAE9783017",
+        "lastname" : "Doe",
+        "destinationip" : "",
+        "referrer" : "https://www.instagram.com/",
+        "requestdomain" : "www.instagram.com",
+        "size" : "0",
+        "application" : "Instagram",
+        "webreputation" : "81.00",
+        "usergroup" : "['355160', 'All Users', 'Bitglass Admins', 'crestdatasys']",
+        "arguments" : "__a=1&__ccg=EXCELLENT&__comet_req=7&__d=www&__hs=20098.HYP%3Ainstagram_web_pkg.2.1.0.0.0&__hsi=7458216500016125819&__req=15&__rev=1019252539&__s=%3Acyql2x%3At9l688&__spin_b=trunk&__spin_r=101925253...",
+        "time" : "10 Jan 2025 11:55:00",
+        "region" : "Maharashtra"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736510533000
+ -
+  sample: |-
+    {
+      "country" : "India",
+      "requestmethod" : "POST",
+      "devicehostname" : "desktop-gno7jr8",
+      "regioncode" : "MH",
+      "countrycode" : "IN",
+      "requestport" : "443",
+      "protocol" : "https",
+      "customcategories" : "[\"Github\"]",
+      "action" : "fail",
+      "keyword" : "[\"politics\"]",
+      "lat" : "19.07480000",
+      "syslogheader" : "<110>1 2025-01-10T05:34:22.000000Z api.bitglass.com NILVALUE NILVALUE swgwebdlp",
+      "webcategories" : "[\"WR:Computer and Internet Info\"]",
+      "docmd5" : "",
+      "setransactionid" : "7E6651D9-64FA-42E5-AFC9-B6ACA339FE29",
+      "lastname" : "Doe",
+      "filename" : "[\"test_file\"]",
+      "size" : "520",
+      "webreputation" : "92.00",
+      "usergroup" : "['355160', 'All Users', 'Bitglass Admins', 'crestdatasys']",
+      "region" : "Maharashtra",
+      "docsha1" : "",
+      "ipaddress" : "10.10.10.10",
+      "firstname" : "John",
+      "dlppattern" : "[\"Pol-keyword\"]",
+      "activity" : "[\"Uploaded\",\"Cloudstorage\",\"Denied\"]",
+      "city" : "Mumbai",
+      "customlocation" : "[\"CDS\",\"Guest\"]",
+      "threatindicator" : "[\"threatindicator1\",\"threatindicator2\"]",
+      "deviceguid" : "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1",
+      "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "webcategoryclass" : "[\"Business/Government/Services\"]",
+      "bgcloudscore" : "0.00",
+      "long" : "72.88559999",
+      "transactionid" : "Z4CxX-VpniOk7uwOVWDvBQAABc0",
+      "indexedtime" : "2025-01-10 05:44:54",
+      "policyid" : "368630",
+      "docsha256" : "1a1d1484d3cbc721070469e555f6a0cc89c03d60181e1f13694014e9249d19b6",
+      "email" : "john.doe@test.com",
+      "uploadedbytes" : "1967",
+      "bgcategories" : "[\"BG:Uncategorized\"]",
+      "uri" : "/wp-admin/admin-ajax.php",
+      "url" : "dlptest.com/wp-admin/admin-ajax.php",
+      "destinationip" : "",
+      "doctype" : "text",
+      "referrer" : "https://dlptest.com/https-post/",
+      "requestdomain" : "dlptest.com",
+      "application" : "",
+      "docextension" : "txt",
+      "arguments" : "",
+      "time" : "10 Jan 2025 05:34:22"
+    }
+  result:
+    custom:
+      action: "fail"
+      activity:
+       - "\"Uploaded\""
+       - "\"Cloudstorage\""
+       - "\"Denied\""
+      application: ""
+      arguments: ""
+      bgcategories:
+       - "\"BG:Uncategorized\""
+      bgcloudscore: "0.00"
+      city: "Mumbai"
+      country: "India"
+      countrycode: "IN"
+      customcategories:
+       - "\"Github\""
+      customlocation:
+       - "\"CDS\""
+       - "\"Guest\""
+      deviceguid: "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1"
+      devicehostname: "desktop-gno7jr8"
+      dlppattern:
+       - "\"Pol-keyword\""
+      dns:
+        question:
+          name: "dlptest.com"
+      docextension: "txt"
+      docmd5: ""
+      docsha1: ""
+      docsha256: "1a1d1484d3cbc721070469e555f6a0cc89c03d60181e1f13694014e9249d19b6"
+      doctype: "text"
+      filename:
+       - "\"test_file\""
+      http:
+        method: "POST"
+        url: "dlptest.com/wp-admin/admin-ajax.php"
+        url_details:
+          path: "dlptest.com/wp-admin/admin-ajax.php"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "131"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      indexedtime: 1736487894000
+      keyword:
+       - "\"politics\""
+      lastname: "Doe"
+      lat: "19.07480000"
+      long: "72.88559999"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "443"
+        destination:
+          ip: ""
+      policyid: "368630"
+      protocol: "https"
+      referrer: "https://dlptest.com/https-post/"
+      region: "Maharashtra"
+      regioncode: "MH"
+      setransactionid: "7E6651D9-64FA-42E5-AFC9-B6ACA339FE29"
+      size: "520"
+      syslog:
+        hostname: "api.bitglass.com"
+        msgid: "swgwebdlp"
+        priority: 110
+      syslogheader: "<110>1 2025-01-10T05:34:22.000000Z api.bitglass.com NILVALUE NILVALUE swgwebdlp"
+      threatindicator:
+       - "\"threatindicator1\""
+       - "\"threatindicator2\""
+      time: "10 Jan 2025 05:34:22"
+      transactionid: "Z4CxX-VpniOk7uwOVWDvBQAABc0"
+      uploadedbytes: "1967"
+      uri: "/wp-admin/admin-ajax.php"
+      usergroup:
+       - "'355160'"
+       - "'All Users'"
+       - "'Bitglass Admins'"
+       - "'crestdatasys'"
+      usr:
+        email: "john.doe@test.com"
+        name: "John"
+      webcategories:
+       - "\"WR:Computer and Internet Info\""
+      webcategoryclass:
+       - "\"Business/Government/Services\""
+      webreputation: "92.00"
+    message: |-
+      {
+        "country" : "India",
+        "requestmethod" : "POST",
+        "devicehostname" : "desktop-gno7jr8",
+        "regioncode" : "MH",
+        "countrycode" : "IN",
+        "requestport" : "443",
+        "protocol" : "https",
+        "customcategories" : "[\"Github\"]",
+        "action" : "fail",
+        "keyword" : "[\"politics\"]",
+        "lat" : "19.07480000",
+        "syslogheader" : "<110>1 2025-01-10T05:34:22.000000Z api.bitglass.com NILVALUE NILVALUE swgwebdlp",
+        "webcategories" : "[\"WR:Computer and Internet Info\"]",
+        "docmd5" : "",
+        "setransactionid" : "7E6651D9-64FA-42E5-AFC9-B6ACA339FE29",
+        "lastname" : "Doe",
+        "filename" : "[\"test_file\"]",
+        "size" : "520",
+        "webreputation" : "92.00",
+        "usergroup" : "['355160', 'All Users', 'Bitglass Admins', 'crestdatasys']",
+        "region" : "Maharashtra",
+        "docsha1" : "",
+        "ipaddress" : "10.10.10.10",
+        "firstname" : "John",
+        "dlppattern" : "[\"Pol-keyword\"]",
+        "activity" : "[\"Uploaded\",\"Cloudstorage\",\"Denied\"]",
+        "city" : "Mumbai",
+        "customlocation" : "[\"CDS\",\"Guest\"]",
+        "threatindicator" : "[\"threatindicator1\",\"threatindicator2\"]",
+        "deviceguid" : "F47F4D56-3BED-FF67-00FD-D240EEE2F7A1",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "webcategoryclass" : "[\"Business/Government/Services\"]",
+        "bgcloudscore" : "0.00",
+        "long" : "72.88559999",
+        "transactionid" : "Z4CxX-VpniOk7uwOVWDvBQAABc0",
+        "indexedtime" : "2025-01-10 05:44:54",
+        "policyid" : "368630",
+        "docsha256" : "1a1d1484d3cbc721070469e555f6a0cc89c03d60181e1f13694014e9249d19b6",
+        "email" : "john.doe@test.com",
+        "uploadedbytes" : "1967",
+        "bgcategories" : "[\"BG:Uncategorized\"]",
+        "uri" : "/wp-admin/admin-ajax.php",
+        "url" : "dlptest.com/wp-admin/admin-ajax.php",
+        "destinationip" : "",
+        "doctype" : "text",
+        "referrer" : "https://dlptest.com/https-post/",
+        "requestdomain" : "dlptest.com",
+        "application" : "",
+        "docextension" : "txt",
+        "arguments" : "",
+        "time" : "10 Jan 2025 05:34:22"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736487894000

@@ -1,0 +1,547 @@
+id: crest-data-systems-cisco-mds
+tests:
+  - sample: "2024 Apr 04 08:05:06 MDS9148S-S4 %MODULE-5-ACTIVE_SUP_OK: Supervisor 1
+      is active (Serial number: JAF1751BLHC)"
+    service: cds.cisco.mds.syslog
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            facility: "MODULE"
+        date: 1712217906000
+        description: "Supervisor 1 is active (Serial number: JAF1751BLHC)"
+        mnemonic: "ACTIVE_SUP_OK"
+        severity: 5
+        switchname: "MDS9148S-S4"
+      message: "2024 Apr 04 08:05:06 MDS9148S-S4 %MODULE-5-ACTIVE_SUP_OK: Supervisor 1 is active (Serial number: JAF1751BLHC)"
+      service: "cds.cisco.mds.syslog"
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1712217906000
+  - sample: "2024 Apr 04 08:05:06 MDS9148S-S4 %PORT-5-IF_DOWN_NONE: %$VSAN 1%$
+      Interface fc1/35 is down (None)"
+    service: cds.cisco.mds.syslog
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            facility: "PORT"
+        date: 1712217906000
+        description: "%$VSAN 1%$ Interface fc1/35 is down (None)"
+        mnemonic: "IF_DOWN_NONE"
+        severity: 5
+        switchname: "MDS9148S-S4"
+      message: "2024 Apr 04 08:05:06 MDS9148S-S4 %PORT-5-IF_DOWN_NONE: %$VSAN 1%$ Interface fc1/35 is down (None)"
+      service: "cds.cisco.mds.syslog"
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1712217906000
+  - sample: "2024 Apr 04 08:05:06 MDS9148S-S4 Oct 11 08:05:22 %KERN-3-SYSTEM_MSG:
+      [  164.416341] **** TOTAL PORTS = 48 ***** - kernel"
+    service: cds.cisco.mds.syslog
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            facility: "KERN"
+        date: 1712217906000
+        description: "[  164.416341] **** TOTAL PORTS = 48 ***** - kernel"
+        mnemonic: "SYSTEM_MSG"
+        severity: 3
+        switchname: "MDS9148S-S4"
+      message: "2024 Apr 04 08:05:06 MDS9148S-S4 Oct 11 08:05:22 %KERN-3-SYSTEM_MSG: [  164.416341] **** TOTAL PORTS = 48 ***** - kernel"
+      service: "cds.cisco.mds.syslog"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1712217906000
+  - sample: "2024 Apr 04 08:05:06 MDS9148S-S4 %SYSMGR-SLOT1-4-READCONF_STARTED:
+      Configuration update started (PID 3297)."
+    service: cds.cisco.mds.syslog
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            facility: "SYSMGR-SLOT1"
+        date: 1712217906000
+        description: "Configuration update started (PID 3297)."
+        mnemonic: "READCONF_STARTED"
+        severity: 4
+        switchname: "MDS9148S-S4"
+      message: "2024 Apr 04 08:05:06 MDS9148S-S4 %SYSMGR-SLOT1-4-READCONF_STARTED: Configuration update started (PID 3297)."
+      service: "cds.cisco.mds.syslog"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1712217906000
+  - sample: "2024 Apr 04 08:05:06 MDS9148S-S4 Oct 11 08:04:42 %KERN-2-SYSTEM_MSG:
+      [  120.734485]  ****<6>Initializing fc2 proto  - kernel"
+    service: cds.cisco.mds.syslog
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            facility: "KERN"
+        date: 1712217906000
+        description: "[  120.734485]  ****<6>Initializing fc2 proto  - kernel"
+        mnemonic: "SYSTEM_MSG"
+        severity: 2
+        switchname: "MDS9148S-S4"
+      message: "2024 Apr 04 08:05:06 MDS9148S-S4 Oct 11 08:04:42 %KERN-2-SYSTEM_MSG: [  120.734485]  ****<6>Initializing fc2 proto  - kernel"
+      service: "cds.cisco.mds.syslog"
+      status: "critical"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1712217906000
+  - sample: |-
+      {
+        "capability": ["switch", "IGMP_cnd_filtering"],
+        "device_id": "SW-JWALA-ECBU-JJ22",
+        "interface": "mgmt0",
+        "platform_id": "cisco WS-C2960S-48TS-L",
+        "port_id": "GigabitEthernet1/0/29",
+        "ttl": 124,
+        "type": "neighbors"
+      }
+    result:
+      custom:
+        capability:
+        - "switch"
+        - "IGMP_cnd_filtering"
+        cds:
+          cisco_mds:
+            device_id: "SW-JWALA-ECBU-JJ22"
+        interface: "mgmt0"
+        platform_id: "cisco WS-C2960S-48TS-L"
+        port_id: "GigabitEthernet1/0/29"
+        ttl: 124
+        type: "neighbors"
+      message: |-
+        {
+          "capability" : [ "switch", "IGMP_cnd_filtering" ],
+          "device_id" : "SW-JWALA-ECBU-JJ22",
+          "platform_id" : "cisco WS-C2960S-48TS-L",
+          "port_id" : "GigabitEthernet1/0/29",
+          "interface" : "mgmt0",
+          "type" : "neighbors",
+          "ttl" : 124
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "fivemin": 0,
+        "fivesec": 0,
+        "invoked": 2721,
+        "onemin": 0,
+        "onesec": 0,
+        "pid": 1,
+        "process": "init",
+        "runtime": 1210,
+        "tty": "-",
+        "usecs": 0,
+        "type": "cpu"
+      }
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            fivemin: 0
+            fivesec: 0
+            onemin: 0
+            onesec: 0
+        invoked: 2721
+        pid: 1
+        process: "init"
+        runtime: 1210
+        tty: "-"
+        type: "cpu"
+        usecs: 0
+      message: |-
+        {
+          "usecs" : 0,
+          "process" : "init",
+          "fivemin" : 0,
+          "tty" : "-",
+          "fivesec" : 0,
+          "runtime" : 1210,
+          "invoked" : 2721,
+          "pid" : 1,
+          "onemin" : 0,
+          "onesec" : 0,
+          "type" : "cpu"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "eth_inframes1": 0,
+        "eth_inframes2": 0,
+        "eth_inrate1": 0, 
+        "eth_inrate2": 0, 
+        "eth_load_intv1": 30,
+        "eth_load_intv2": 300,
+        "eth_outframes1": 0,
+        "eth_outframes2": 0,
+        "eth_outrate1": 0,
+        "eth_outrate2": 0,
+        "interface": "Ethernet1/1",
+        "type": "brief_interface_info"
+      }
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            eth_inframes1: 0
+            eth_inframes2: 0
+            eth_inrate1: 0
+            eth_inrate2: 0
+            eth_outframes1: 0
+            eth_outframes2: 0
+            eth_outrate1: 0
+            eth_outrate2: 0
+        eth_load_intv1: 30
+        eth_load_intv2: 300
+        interface: "Ethernet1/1"
+        type: "brief_interface_info"
+      message: |-
+        {
+          "eth_inrate1" : 0,
+          "eth_inrate2" : 0,
+          "eth_load_intv2" : 300,
+          "eth_inframes1" : 0,
+          "eth_outframes2" : 0,
+          "eth_inframes2" : 0,
+          "interface" : "Ethernet1/1",
+          "type" : "brief_interface_info",
+          "eth_outframes1" : 0,
+          "eth_outrate1" : 0,
+          "eth_load_intv1" : 30,
+          "eth_outrate2" : 0
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "mem_alloc": 167936,
+        "mem_limit": 0,
+        "mem_pid": 1,
+        "mem_used": 2052096,
+        "process": "init",
+        "stack_base_ptr": "ffa3a920/ffa3a2a0",
+        "type": "memory"
+      }
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            mem_alloc: 167936
+            mem_used: 2052096
+        mem_limit: 0
+        mem_pid: 1
+        process: "init"
+        stack_base_ptr: "ffa3a920/ffa3a2a0"
+        type: "memory"
+      message: |-
+        {
+          "mem_used" : 2052096,
+          "mem_limit" : 0,
+          "process" : "init",
+          "stack_base_ptr" : "ffa3a920/ffa3a2a0",
+          "mem_alloc" : 167936,
+          "mem_pid" : 1,
+          "type" : "memory"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "diagstatus": "Pass",
+        "mod": 2,
+        "module_number": 2,
+        "type": "diagnostic_info"
+      }
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            diagstatus: "Pass"
+        mod: 2
+        module_number: 2
+        type: "diagnostic_info"
+      message: |-
+        {
+          "mod" : 2,
+          "module_number" : 2,
+          "type" : "diagnostic_info",
+          "diagstatus" : "Pass"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "activation_overwrite_control": "disabled",
+        "activedb_dbsize": 48,
+        "activedb_zone_count": 1,
+        "activedb_zoneset_count": 1,
+        "activedb_zoneset_name": "zoneset1",
+        "broadcast": "unsupported",
+        "default_zone": "deny",
+        "default_zone_broadcast": "unsupported",
+        "default_zone_qos": "none",
+        "default_zone_ronly": "unsupported",
+        "distribute": "active only",
+        "effectivedb_dbsize": 324,
+        "fulldb_aliases": 0,
+        "fulldb_dbsize": 276,
+        "fulldb_zone_count": 2,
+        "fulldb_zoneset_count": 1,
+        "hard_zoning": "enabled",
+        "interop": "default",
+        "max_sfcsize": 2097152,
+        "maxdb_dbsize": 2097152,
+        "merge_control": "allow",
+        "mode": "basic",
+        "percent_effectivedbsize": 0,
+        "percent_sfcsize": 0,
+        "rscn_format": "fabric-address",
+        "session": " none",
+        "sfcsize": 324,
+        "single-session": "unsupported",
+        "smart_zoning": "disabled",
+        "status": "",
+        "vsan": 2,
+        "vsan_id": 2,
+        "zone_mode": "basic",
+        "zone_status": "-",
+        "type": "zone_status"
+      }
+    result:
+      custom:
+        activation_overwrite_control: "disabled"
+        activedb_dbsize: 48
+        activedb_zone_count: 1
+        activedb_zoneset_count: 1
+        activedb_zoneset_name: "zoneset1"
+        broadcast: "unsupported"
+        cds:
+          cisco_mds:
+            distribute: "active only"
+        default_zone: "deny"
+        default_zone_broadcast: "unsupported"
+        default_zone_qos: "none"
+        default_zone_ronly: "unsupported"
+        effectivedb_dbsize: 324
+        fulldb_aliases: 0
+        fulldb_dbsize: 276
+        fulldb_zone_count: 2
+        fulldb_zoneset_count: 1
+        hard_zoning: "enabled"
+        interop: "default"
+        max_sfcsize: 2097152
+        maxdb_dbsize: 2097152
+        merge_control: "allow"
+        mode: "basic"
+        percent_effectivedbsize: 0
+        percent_sfcsize: 0
+        rscn_format: "fabric-address"
+        session: " none"
+        sfcsize: 324
+        single-session: "unsupported"
+        smart_zoning: "disabled"
+        status: ""
+        type: "zone_status"
+        vsan: 2
+        vsan_id: 2
+        zone_mode: "basic"
+        zone_status: "-"
+      message: |-
+        {
+          "broadcast" : "unsupported",
+          "session" : " none",
+          "interop" : "default",
+          "single-session" : "unsupported",
+          "activation_overwrite_control" : "disabled",
+          "fulldb_dbsize" : 276,
+          "type" : "zone_status",
+          "mode" : "basic",
+          "fulldb_aliases" : 0,
+          "sfcsize" : 324,
+          "default_zone_ronly" : "unsupported",
+          "distribute" : "active only",
+          "merge_control" : "allow",
+          "vsan" : 2,
+          "fulldb_zone_count" : 2,
+          "percent_effectivedbsize" : 0,
+          "zone_mode" : "basic",
+          "default_zone_broadcast" : "unsupported",
+          "fulldb_zoneset_count" : 1,
+          "hard_zoning" : "enabled",
+          "activedb_zoneset_name" : "zoneset1",
+          "activedb_zone_count" : 1,
+          "default_zone" : "deny",
+          "maxdb_dbsize" : 2097152,
+          "max_sfcsize" : 2097152,
+          "smart_zoning" : "disabled",
+          "zone_status" : "-",
+          "vsan_id" : 2,
+          "effectivedb_dbsize" : 324,
+          "rscn_format" : "fabric-address",
+          "activedb_dbsize" : 48,
+          "default_zone_qos" : "none",
+          "activedb_zoneset_count" : 1,
+          "percent_sfcsize" : 0,
+          "status" : ""
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "broadcast": "unsupported",
+        "default_zone": "deny",
+        "distribute": "full",
+        "generic_service": "read-write",
+        "merge_control": "allow",
+        "smart_zone": "enabled",
+        "vsan": 1,
+        "vsan_id": 1,
+        "type": "zone_policy"
+      }
+    result:
+      custom:
+        broadcast: "unsupported"
+        cds:
+          cisco_mds:
+            distribute: "full"
+        default_zone: "deny"
+        generic_service: "read-write"
+        merge_control: "allow"
+        smart_zone: "enabled"
+        type: "zone_policy"
+        vsan: 1
+        vsan_id: 1
+      message: |-
+        {
+          "broadcast" : "unsupported",
+          "generic_service" : "read-write",
+          "vsan_id" : 1,
+          "default_zone" : "deny",
+          "distribute" : "full",
+          "merge_control" : "allow",
+          "type" : "zone_policy",
+          "smart_zone" : "enabled",
+          "vsan" : 1
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "actual_draw": "383 W",
+        "allocated": "650 W",
+        "model": "DS-X9448-768K9",
+        "modstatus": "Powered-Up",
+        "num": "2",
+        "module_number": "2",
+        "type": "module_power_info"
+      }
+    result:
+      custom:
+        actual_draw: "383 W"
+        allocated: "650 W"
+        cds:
+          cisco_mds:
+            modstatus: "Powered-Up"
+        model: "DS-X9448-768K9"
+        module_number: "2"
+        num: "2"
+        type: "module_power_info"
+      message: |-
+        {
+          "modstatus" : "Powered-Up",
+          "num" : "2",
+          "actual_draw" : "383 W",
+          "module_number" : "2",
+          "model" : "DS-X9448-768K9",
+          "type" : "module_power_info",
+          "allocated" : "650 W"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "available_pow": "3560 W",
+        "cumulative_power": "9000 W",
+        "ps_oper_mode": "PS-Redundant",
+        "ps_redun_mode": "PS-Redundant",
+        "tot_pow_alloc_budgeted": "2440 W",
+        "tot_pow_capacity": "6000 W",
+        "tot_pow_in_actual_draw": "968 W",
+        "tot_pow_out_actual_draw": "782 W",
+        "type": "power_summary"
+      }
+    result:
+      custom:
+        available_pow: "3560 W"
+        cds:
+          cisco_mds:
+            ps_oper_mode: "PS-Redundant"
+            ps_redun_mode: "PS-Redundant"
+        cumulative_power: "9000 W"
+        tot_pow_alloc_budgeted: "2440 W"
+        tot_pow_capacity: "6000 W"
+        tot_pow_in_actual_draw: "968 W"
+        tot_pow_out_actual_draw: "782 W"
+        type: "power_summary"
+      message: |-
+        {
+          "ps_redun_mode" : "PS-Redundant",
+          "tot_pow_in_actual_draw" : "968 W",
+          "cumulative_power" : "9000 W",
+          "ps_oper_mode" : "PS-Redundant",
+          "tot_pow_alloc_budgeted" : "2440 W",
+          "tot_pow_out_actual_draw" : "782 W",
+          "available_pow" : "3560 W",
+          "type" : "power_summary",
+          "tot_pow_capacity" : "6000 W"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "alarm_status": "Ok",
+        "cur_temp": "58",
+        "major_thres": "125",
+        "minor_thres": "115",
+        "mod": "2",
+        "sensor": "IOSlice0 (s1)",
+        "module_number": "2",
+        "type": "temperature"
+      }
+    result:
+      custom:
+        cds:
+          cisco_mds:
+            alarm_status: "Ok"
+        cur_temp: "58"
+        major_thres: "125"
+        minor_thres: "115"
+        mod: "2"
+        module_number: "2"
+        sensor: "IOSlice0 (s1)"
+        type: "temperature"
+      message: |-
+        {
+          "minor_thres" : "115",
+          "mod" : "2",
+          "major_thres" : "125",
+          "cur_temp" : "58",
+          "alarm_status" : "Ok",
+          "module_number" : "2",
+          "sensor" : "IOSlice0 (s1)",
+          "type" : "temperature"
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+  

@@ -1,0 +1,498 @@
+id: crest-data-systems-palo-alto-prisma-cloud-enterprise
+metric_id: crest-data-systems-palo-alto-prisma-cloud-enterprise
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Alert ID
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Application ID
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Application Name
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.application_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Asset ID
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Asset Name
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Compliance ID
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Compliance Name
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.name
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Critical Alert Count
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_alert_counts
+    source: log
+    type: integer
+  - description: ""
+    facetType: range
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Critical Vulnerability Count
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_vulnerability_counts
+    source: log
+    type: integer
+  - description: This facet is used to filter Cloud Security Vulnerability CVE IDs.
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: CVE ID
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.cveId
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Reason
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.reason
+    source: log
+    type: string
+  - description: This facet is used to filter Cloud Security Vulnerability Severity.
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Severity
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.severity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems palo alto prisma cloud enterprise - Cloud security
+    name: Status
+    path: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.status
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - crest data systems palo alto prisma cloud enterprise - runtime security
+    name: Compliance ID
+    path: cd_palo_alto_prisma_cloud_enterprise.runtime_security_compliance_issues.id
+    source: log
+    type: string
+  - description: This facet is used to filter Runtime Security Vulnerability CVEs.
+    facetType: list
+    groups:
+      - crest data systems palo alto prisma cloud enterprise - runtime security
+    name: CVE
+    path: cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.cve
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - crest data systems palo alto prisma cloud enterprise - runtime security
+    name: Package Name
+    path: cd_palo_alto_prisma_cloud_enterprise.runtime_security_packages.name
+    source: log
+    type: string
+  - description: This facet is used to filter Runtime Security Vulnerability Severity.
+    facetType: list
+    groups:
+      - crest data systems palo alto prisma cloud enterprise - runtime security
+    name: Severity
+    path: cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.severity
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Palo Alto Prisma Cloud Enterprise
+  enabled: true
+  filter:
+    query: source:crest-data-systems-palo-alto-prisma-cloud-enterprise
+  processors:
+    - type: pipeline
+      name: Cloud Security Alerts
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_alerts
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `reason` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.reason`
+          enabled: true
+          sources:
+            - reason
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.reason
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.status`
+            to `status`
+          enabled: true
+          source: cd_palo_alto_prisma_cloud_enterprise.cloud_security_alerts.status
+          target: status
+          lookupTable: |-
+            open, alert
+            dismissed, info
+            snoozed, info
+            resolved, info
+            pending_resolution, debug
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: attribute-remapper
+          name: Map `lastSeen` to `timestamp`
+          enabled: true
+          sources:
+            - lastSeen
+          sourceType: attribute
+          target: timestamp
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cloud Security Vulnerabilities
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_vulnerabilities
+      processors:
+        - type: attribute-remapper
+          name: Map `cveId` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.cveId`
+          enabled: true
+          sources:
+            - cveId
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.cveId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `severity` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_vulnerabilities.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cloud Security Assets
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_assets
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_assets.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cloud Security Applications
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_applications
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `summary.alertCountsBySeverity.critical` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_alert_counts`
+          enabled: true
+          sources:
+            - summary.alertCountsBySeverity.critical
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_alert_counts
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `summary.vulnCountsBySeverity.critical` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_vulnerability_counts`
+          enabled: true
+          sources:
+            - summary.vulnCountsBySeverity.critical
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.critical_vulnerability_counts
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Define
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.application_name`
+            equal to %{metadata.displayName}
+          enabled: true
+          template: "%{metadata.displayName}"
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_applications.application_name
+          replaceMissing: false
+    - type: pipeline
+      name: Cloud Security Compliance
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_compliance_standards
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to
+            `cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.cloud_security_compliance_standards.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Cloud Security Audits
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.cloud_security_audits
+      processors:
+        - type: attribute-remapper
+          name: Map `ipAddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipAddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user` to `usr.email`
+          enabled: true
+          sources:
+            - user
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Runtime Security Vulnerabilities
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.runtime_security_vulnerabilities
+      processors:
+        - type: attribute-remapper
+          name: Map `cve` to
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.cve`
+          enabled: true
+          sources:
+            - cve
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.cve
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `severity` to
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.severity`
+            to `status`
+          enabled: true
+          source: cd_palo_alto_prisma_cloud_enterprise.runtime_security_vulnerabilities.severity
+          target: status
+          lookupTable: |-
+            critical, critical
+            high, warning
+            medium, warning
+            low, notice
+            negligible, info
+            unassigned, notice
+            unimportant, info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: grok-parser
+          name: "Grok Parser: extract vulnerability status"
+          enabled: true
+          source: vulnerability_status
+          samples:
+            - Fixed in SH28222
+            - fixed in BS86869
+            - Fixed in VL879992
+          grok:
+            supportRules: ""
+            matchRules: rule %{regex("^Fixed|^fixed"):vulnerability_status:lowercase} .*?
+    - type: pipeline
+      name: Runtime Security Compliances
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.runtime_security_compliance_issues
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_compliance_issues.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.runtime_security_compliance_issues.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Runtime Security Packages
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.runtime_security_packages
+      processors:
+        - type: attribute-remapper
+          name: Map `name` to
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_packages.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cd_palo_alto_prisma_cloud_enterprise.runtime_security_packages.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Runtime Security Images
+      enabled: true
+      filter:
+        query: service:cd.palo.alto.prisma.cloud.enterprise.runtime_security_images
+      processors:
+        - type: string-builder-processor
+          name: Define
+            `cd_palo_alto_prisma_cloud_enterprise.runtime_security_images.hostname`
+            equal to %{instances.host}
+          enabled: true
+          template: "%{instances.host}"
+          target: cd_palo_alto_prisma_cloud_enterprise.runtime_security_images.hostname
+          replaceMissing: false
+    - type: service-remapper
+      name: "Define `service` as the official service of the log"
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

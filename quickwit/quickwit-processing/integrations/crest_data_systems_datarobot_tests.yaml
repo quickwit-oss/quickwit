@@ -1,0 +1,833 @@
+id: "crest_data_systems_datarobot"
+tests:
+  - sample: |-
+      {
+          "modelId": "663b733c040038ab1250cdfc",
+          "deploymentId": "6790d255a2d792bfbac63d7e",
+          "metrics": {
+              "totalPredictions": 2076,
+              "totalRequests": 30,
+              "slowRequests": 24,
+              "executionTime": 60156.0,
+              "responseTime": 60157.0,
+              "userErrorRate": 0.0,
+              "serverErrorRate": 0.0,
+              "numConsumers": 1,
+              "cacheHitRatio": 0.9666666666666667,
+              "medianLoad": 0.0,
+              "peakLoad": 13
+          },
+          "label": "[Hugging Face] Zero-shot Classifier",
+          "driverClassType": "snowflake",
+          "targetType": "DATASET",
+          "metrics.AUC.validation": 1.0,
+          "metrics.Accuracy.validation": 1.0,
+          "metrics.AUC.holdout": 1.0,
+          "metrics.Accuracy.holdout": 1.0,
+          "metrics.LogLoss.holdout": 1.0,
+          "metrics.LogLoss.validation": 1.0,
+          "rowCount": 2076,
+          "columnCount": 2,
+          "data.numIterations": 2,
+          "missingValuesReport.missingCount": 2,
+          "dataSourceType": "SNOWFLAKE",
+          "datasetSize": 2076,
+          "numberOfBacktests": 1,
+          "dataType": "Classification",
+          "modifiedAt": "2025-01-09T09:18:41.645000Z"
+
+      }
+    result:
+      custom:
+        cds:
+          datarobot:
+            columnCount: 2
+            data:
+              numIterations: 2
+            dataSourceType: "SNOWFLAKE"
+            dataType: "Classification"
+            datasetSize: 2076
+            deploymentId: "6790d255a2d792bfbac63d7e"
+            driverClassType: "snowflake"
+            label: "[Hugging Face] Zero-shot Classifier"
+            metrics:
+              AUC:
+                holdout: 1.0
+                validation: 1.0
+              Accuracy:
+                holdout: 1.0
+                validation: 1.0
+              LogLoss:
+                holdout: 1.0
+                validation: 1.0
+            missingValuesReport:
+              missingCount: 2
+            modelId: "663b733c040038ab1250cdfc"
+            numberOfBacktests: 1
+            rowCount: 2076
+            targetType: "DATASET"
+        metrics:
+          cacheHitRatio: 0.9666666666666667
+          executionTime: 60156.0
+          medianLoad: 0.0
+          numConsumers: 1
+          peakLoad: 13
+          responseTime: 60157.0
+          serverErrorRate: 0.0
+          slowRequests: 24
+          totalPredictions: 2076
+          totalRequests: 30
+          userErrorRate: 0.0
+        modifiedAt: "2025-01-09T09:18:41.645000Z"
+      message: |-
+        {
+          "data" : {
+            "numIterations" : 2
+          },
+          "modelId" : "663b733c040038ab1250cdfc",
+          "modifiedAt" : "2025-01-09T09:18:41.645000Z",
+          "dataType" : "Classification",
+          "targetType" : "DATASET",
+          "label" : "[Hugging Face] Zero-shot Classifier",
+          "columnCount" : 2,
+          "driverClassType" : "snowflake",
+          "deploymentId" : "6790d255a2d792bfbac63d7e",
+          "datasetSize" : 2076,
+          "missingValuesReport" : {
+            "missingCount" : 2
+          },
+          "metrics" : {
+            "peakLoad" : 13,
+            "totalPredictions" : 2076,
+            "responseTime" : 60157.0,
+            "totalRequests" : 30,
+            "numConsumers" : 1,
+            "userErrorRate" : 0.0,
+            "AUC" : {
+              "holdout" : 1.0,
+              "validation" : 1.0
+            },
+            "executionTime" : 60156.0,
+            "medianLoad" : 0.0,
+            "cacheHitRatio" : 0.9666666666666667,
+            "Accuracy" : {
+              "holdout" : 1.0,
+              "validation" : 1.0
+            },
+            "LogLoss" : {
+              "holdout" : 1.0,
+              "validation" : 1.0
+            },
+            "serverErrorRate" : 0.0,
+            "slowRequests" : 24
+          },
+          "rowCount" : 2076,
+          "numberOfBacktests" : 1,
+          "dataSourceType" : "SNOWFLAKE"
+        }
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1736414321645
+  - sample: |-
+      {
+          "blueprintId": "52968f96c7f434d024bebb449c8d81f6",
+          "externalPredictionModel": false,
+          "featurelistId": "677f94709453dc96a81af313",
+          "featurelistName": "Informative Features",
+          "frozenPct": null,
+          "hasCodegen": false,
+          "icons": -1,
+          "id": "677f96df40feb55968334d37",
+          "isAugmented": false,
+          "isBlender": false,
+          "isCustom": false,
+          "isFrozen": true,
+          "isStarred": false,
+          "isTrainedIntoHoldout": true,
+          "isTrainedIntoValidation": false,
+          "isTrainedOnGpu": false,
+          "isTransparent": false,
+          "isUserModel": false,
+          "lifecycle": {
+              "stage": "active",
+              "reason": null
+          },
+          "linkFunction": "identity",
+          "modelCategory": "model",
+          "modelFamily": "GBM",
+          "modelFamilyFullName": "Gradient Boosting Machine",
+          "modelNumber": 33,
+          "modelType": "Light Gradient Boosting on ElasticNet Predictions ",
+          "monotonicDecreasingFeaturelistId": null,
+          "monotonicIncreasingFeaturelistId": null,
+          "parentModelId": "677f94eaaed8cc891d606909",
+          "predictionThreshold": 0.5,
+          "predictionThresholdReadOnly": false,
+          "processes": [
+              "One-Hot Encoding",
+              "Missing Values Imputed",
+              "Standardize",
+              "Ordinal encoding of categorical variables",
+              "Ridge Regressor",
+              "Light Gradient Boosting on ElasticNet Predictions "
+          ],
+          "projectId": "677f9464a34befda92ee4c0e",
+          "samplePct": 100.0,
+          "supportsComposableMl": true,
+          "supportsMonotonicConstraints": false,
+          "trainingDuration": null,
+          "trainingEndDate": null,
+          "trainingRowCount": 7670,
+          "trainingStartDate": null
+      }
+    result:
+      custom:
+        blueprintId: "52968f96c7f434d024bebb449c8d81f6"
+        cds:
+          datarobot:
+            featureListName: "Informative Features"
+            id: "677f96df40feb55968334d37"
+            modelFamilyFullName: "Gradient Boosting Machine"
+            predictionThreshold: 0.5
+            projectId: "677f9464a34befda92ee4c0e"
+            samplePct: 100.0
+            trainingRowCount: 7670
+        externalPredictionModel: false
+        featurelistId: "677f94709453dc96a81af313"
+        hasCodegen: false
+        icons: -1
+        isAugmented: false
+        isBlender: false
+        isCustom: false
+        isFrozen: true
+        isStarred: false
+        isTrainedIntoHoldout: true
+        isTrainedIntoValidation: false
+        isTrainedOnGpu: false
+        isTransparent: false
+        isUserModel: false
+        lifecycle:
+          stage: "active"
+        linkFunction: "identity"
+        modelCategory: "model"
+        modelFamily: "GBM"
+        modelNumber: 33
+        modelType: "Light Gradient Boosting on ElasticNet Predictions "
+        parentModelId: "677f94eaaed8cc891d606909"
+        predictionThresholdReadOnly: false
+        processes:
+         - "One-Hot Encoding"
+         - "Missing Values Imputed"
+         - "Standardize"
+         - "Ordinal encoding of categorical variables"
+         - "Ridge Regressor"
+         - "Light Gradient Boosting on ElasticNet Predictions "
+        supportsComposableMl: true
+        supportsMonotonicConstraints: false
+      message: |-
+        {
+          "samplePct" : 100.0,
+          "featurelistName" : "Informative Features",
+          "modelFamily" : "GBM",
+          "modelFamilyFullName" : "Gradient Boosting Machine",
+          "isTrainedIntoValidation" : false,
+          "hasCodegen" : false,
+          "lifecycle" : {
+            "stage" : "active"
+          },
+          "predictionThreshold" : 0.5,
+          "isTrainedOnGpu" : false,
+          "isBlender" : false,
+          "isTrainedIntoHoldout" : true,
+          "isTransparent" : false,
+          "externalPredictionModel" : false,
+          "id" : "677f96df40feb55968334d37",
+          "isFrozen" : true,
+          "modelCategory" : "model",
+          "isAugmented" : false,
+          "supportsComposableMl" : true,
+          "processes" : [ "One-Hot Encoding", "Missing Values Imputed", "Standardize", "Ordinal encoding of categorical variables", "Ridge Regressor", "Light Gradient Boosting on ElasticNet Predictions " ],
+          "linkFunction" : "identity",
+          "parentModelId" : "677f94eaaed8cc891d606909",
+          "predictionThresholdReadOnly" : false,
+          "isStarred" : false,
+          "featurelistId" : "677f94709453dc96a81af313",
+          "modelType" : "Light Gradient Boosting on ElasticNet Predictions ",
+          "icons" : -1,
+          "blueprintId" : "52968f96c7f434d024bebb449c8d81f6",
+          "supportsMonotonicConstraints" : false,
+          "isUserModel" : false,
+          "isCustom" : false,
+          "trainingRowCount" : 7670,
+          "modelNumber" : 33,
+          "projectId" : "677f9464a34befda92ee4c0e"
+        }
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: |-
+      {
+          "advancedTour": "hospital",
+          "createdBy": "677cc274e1d0c7ab97e502f2",
+          "description": null,
+          "name": "Hospital Readmission_2",
+          "tenantId": "1a624158-2eaa-4e6d-8566-770ca872769d",
+          "updatedAt": "2025-01-07 10:49:27.908000",
+          "updatedBy": "677cc274e1d0c7ab97e502f2",
+          "projectsCount": 0,
+          "datasetsCount": 1,
+          "notebooksCount": 0,
+          "applicationsCount": 0,
+          "playgroundsCount": 0,
+          "vectorDatabasesCount": 0,
+          "recipesCount": 0,
+          "customModelVersionsCount": 0,
+          "registeredModelVersionsCount": 0,
+          "deploymentsCount": 0,
+          "customApplicationsCount": 0,
+          "customJobsCount": 0,
+          "id": "677cc27930f004ea2f5772a6",
+          "modelsCount": 0,
+          "useCaseId": "677cc27930f004ea2f5772a6",
+          "entityId": "677cc27730f004ea2f577280",
+          "entityType": "DATASET",
+          "status": "errored"
+      }
+    service: cds.datarobot.deployments
+    result:
+      custom:
+        advancedTour: "hospital"
+        applicationsCount: 0
+        cds:
+          datarobot:
+            customApplicationsCount: 0
+            customJobsCount: 0
+            customModelVersionsCount: 0
+            entityId: "677cc27730f004ea2f577280"
+            entityType: "DATASET"
+            id: "677cc27930f004ea2f5772a6"
+            name: "Hospital Readmission_2"
+            registeredModelVersionsCount: 0
+            status: "Error"
+            useCaseId: "677cc27930f004ea2f5772a6"
+        createdBy: "677cc274e1d0c7ab97e502f2"
+        datasetsCount: 1
+        deployment_status: "errored"
+        deploymentsCount: 0
+        modelsCount: 0
+        notebooksCount: 0
+        playgroundsCount: 0
+        projectsCount: 0
+        recipesCount: 0
+        tenantId: "1a624158-2eaa-4e6d-8566-770ca872769d"
+        updatedAt: "2025-01-07 10:49:27.908000"
+        updatedBy: "677cc274e1d0c7ab97e502f2"
+        vectorDatabasesCount: 0
+      message: |-
+        {
+          "advancedTour" : "hospital",
+          "customApplicationsCount" : 0,
+          "updatedBy" : "677cc274e1d0c7ab97e502f2",
+          "recipesCount" : 0,
+          "entityType" : "DATASET",
+          "customJobsCount" : 0,
+          "datasetsCount" : 1,
+          "notebooksCount" : 0,
+          "modelsCount" : 0,
+          "customModelVersionsCount" : 0,
+          "entityId" : "677cc27730f004ea2f577280",
+          "applicationsCount" : 0,
+          "playgroundsCount" : 0,
+          "registeredModelVersionsCount" : 0,
+          "vectorDatabasesCount" : 0,
+          "createdBy" : "677cc274e1d0c7ab97e502f2",
+          "deploymentsCount" : 0,
+          "useCaseId" : "677cc27930f004ea2f5772a6",
+          "name" : "Hospital Readmission_2",
+          "tenantId" : "1a624158-2eaa-4e6d-8566-770ca872769d",
+          "id" : "677cc27930f004ea2f5772a6",
+          "projectsCount" : 0,
+          "updatedAt" : "2025-01-07 10:49:27.908000",
+          "status" : "errored"
+        }
+      service: "cds.datarobot.deployments"
+      status: "error"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: |-
+      {
+          "jobSpec": {
+              "batchJobType": "prediction",
+              "chunkSize": "auto",
+              "csvSettings": {
+                  "delimiter": ",",
+                  "quotechar": "\"",
+                  "encoding": "utf-8"
+              },
+              "numConcurrent": 2,
+              "abortOnError": true,
+              "deploymentId": "677ccb57832a24b070b4b2b2",
+              "modelId": "663b733c040038ab1250cdfc",
+              "intakeSettings": {
+                  "type": "dataset",
+                  "datasetId": "677cc27a30f004ea2f5772a9"
+              },
+              "outputSettings": {
+                  "type": "localFile"
+              },
+              "redactedFields": [],
+              "predictionEnvironment": {
+                  "id": "677cca2109b49d1dfd17ba68",
+                  "name": "datadog_predict_1",
+                  "priority": 1
+              },
+              "maxExplanations": 0,
+              "skipDriftTracking": false,
+              "includeProbabilities": true,
+              "includePredictionStatus": false,
+              "predictionWarningEnabled": false,
+              "includeProbabilitiesClasses": [],
+              "disableRowLevelErrorHandling": false,
+              "columnNamesRemapping": null,
+              "passthroughColumnsSet": "all"
+          },
+          "status": "ABORTED",
+          "statusDetails": "[INFO] Job was garbage collected and had its artifacts removed. Output files for local file output are only stored for 48 hours and are no longer available for download. You can re-run the job or use a different output adapter with longer retention at 2025-01-17 14:03:33.186000",
+          "id": "6787b978fa24da4155c77173",
+          "createdBy": {
+              "userId": "677cc274e1d0c7ab97e502f2",
+              "username": "dhruvalgandhi2000@gmail.com",
+              "fullName": "dhruval gandhi"
+          },
+          "percentageCompleted": 20.76,
+          "jobIntakeSize": 1089200,
+          "jobOutputSize": null,
+          "scoredRows": 0,
+          "failedRows": 2076,
+          "skippedRows": 0,
+          "monitoringBatchId": null,
+          "links": {
+              "self": "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/",
+              "download": "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/download/"
+          },
+          "elapsedTimeSec": 833,
+          "intakeDatasetDisplayName": "HOSPITAL_READMISSION_DATA",
+          "source": "ui_make_prediction",
+          "resultsDeleted": true,
+          "queued": true,
+          "previewAvailable": false,
+          "batchPredictionJobDefinition": null
+      }
+    service: cds.datarobot.batchPredictions
+    result:
+      custom:
+        cds:
+          datarobot:
+            failedRows: 2076
+            id: "6787b978fa24da4155c77173"
+            intakeDatasetDisplayName: "HOSPITAL_READMISSION_DATA"
+            jobIntakeSize: 1089200
+            jobSpec:
+              deploymentId: "677ccb57832a24b070b4b2b2"
+              maxExplanations: 0
+              modelId: "663b733c040038ab1250cdfc"
+              numConcurrent: 2
+              outputSettings:
+                type: "localFile"
+              predictionEnvironment:
+                name: "datadog_predict_1"
+            percentageCompleted: 20.76
+            scoredRows: 0
+            skippedRows: 0
+            status: "Error"
+        createdBy:
+          fullName: "dhruval gandhi"
+          userId: "677cc274e1d0c7ab97e502f2"
+          username: "dhruvalgandhi2000@gmail.com"
+        elapsedTimeSec: 833
+        jobSpec:
+          abortOnError: true
+          batchJobType: "prediction"
+          chunkSize: "auto"
+          csvSettings:
+            delimiter: ","
+            encoding: "utf-8"
+            quotechar: "\""
+          disableRowLevelErrorHandling: false
+          includePredictionStatus: false
+          includeProbabilities: true
+          intakeSettings:
+            datasetId: "677cc27a30f004ea2f5772a9"
+            type: "dataset"
+          passthroughColumnsSet: "all"
+          predictionEnvironment:
+            id: "677cca2109b49d1dfd17ba68"
+            priority: 1
+          predictionWarningEnabled: false
+          skipDriftTracking: false
+        links:
+          download: "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/download/"
+          self: "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/"
+        prediction_status: "ABORTED"
+        previewAvailable: false
+        queued: true
+        resultsDeleted: true
+        source: "ui_make_prediction"
+        statusDetails: "[INFO] Job was garbage collected and had its artifacts removed. Output files for local file output are only stored for 48 hours and are no longer available for download. You can re-run the job or use a different output adapter with longer retention at 2025-01-17 14:03:33.186000"
+      message: |-
+        {
+          "queued" : true,
+          "source" : "ui_make_prediction",
+          "jobSpec" : {
+            "abortOnError" : true,
+            "disableRowLevelErrorHandling" : false,
+            "chunkSize" : "auto",
+            "modelId" : "663b733c040038ab1250cdfc",
+            "outputSettings" : {
+              "type" : "localFile"
+            },
+            "maxExplanations" : 0,
+            "numConcurrent" : 2,
+            "includeProbabilities" : true,
+            "predictionWarningEnabled" : false,
+            "intakeSettings" : {
+              "datasetId" : "677cc27a30f004ea2f5772a9",
+              "type" : "dataset"
+            },
+            "passthroughColumnsSet" : "all",
+            "deploymentId" : "677ccb57832a24b070b4b2b2",
+            "includePredictionStatus" : false,
+            "batchJobType" : "prediction",
+            "skipDriftTracking" : false,
+            "csvSettings" : {
+              "quotechar" : "\"",
+              "delimiter" : ",",
+              "encoding" : "utf-8"
+            },
+            "predictionEnvironment" : {
+              "name" : "datadog_predict_1",
+              "id" : "677cca2109b49d1dfd17ba68",
+              "priority" : 1
+            }
+          },
+          "percentageCompleted" : 20.76,
+          "resultsDeleted" : true,
+          "jobIntakeSize" : 1089200,
+          "scoredRows" : 0,
+          "createdBy" : {
+            "fullName" : "dhruval gandhi",
+            "userId" : "677cc274e1d0c7ab97e502f2",
+            "username" : "dhruvalgandhi2000@gmail.com"
+          },
+          "skippedRows" : 0,
+          "elapsedTimeSec" : 833,
+          "statusDetails" : "[INFO] Job was garbage collected and had its artifacts removed. Output files for local file output are only stored for 48 hours and are no longer available for download. You can re-run the job or use a different output adapter with longer retention at 2025-01-17 14:03:33.186000",
+          "failedRows" : 2076,
+          "links" : {
+            "download" : "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/download/",
+            "self" : "https://app.datarobot.com/api/v2/batchPredictions/6787b978fa24da4155c77173/"
+          },
+          "id" : "6787b978fa24da4155c77173",
+          "previewAvailable" : false,
+          "status" : "ABORTED",
+          "intakeDatasetDisplayName" : "HOSPITAL_READMISSION_DATA"
+        }
+      service: "cds.datarobot.batchPredictions"
+      status: "error"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: |-
+      {
+          "id": "azure-openai-gpt-3.5-turbo",
+          "name": "Azure OpenAI GPT-3.5 Turbo",
+          "description": "GPT-3.5 Turbo is the most capable and cost-effective model in the GPT-3.5 family. It has been optimized for chat and works well for traditional completion tasks as well.",
+          "vendor": "Microsoft",
+          "provider": "DataRobot",
+          "creator": "OpenAI",
+          "license": "Proprietary",
+          "supportedLanguages": "Multilingual",
+          "settings": [
+              {
+                  "id": "systemPrompt",
+                  "name": "System prompt",
+                  "description": "System prompt guides the style of the LLM response. It is a \"universal\" prompt, prepended to all individual prompts.",
+                  "type": "string",
+                  "format": "multiline",
+                  "isNullable": true,
+                  "constraints": {
+                      "type": "string",
+                      "minLength": null,
+                      "maxLength": 500000,
+                      "allowedChoices": null
+                  },
+                  "defaultValue": ""
+              },
+              {
+                  "id": "maxCompletionLength",
+                  "name": "Max completion tokens",
+                  "description": "Maximum number of tokens allowed in the completion. The combined count of this value and prompt tokens must be below the model's maximum context size (4096), where prompt token count is comprised of system prompt, user prompt, recent chat history, and vector database citations.",
+                  "type": "integer",
+                  "format": null,
+                  "isNullable": true,
+                  "constraints": {
+                      "type": "integer",
+                      "minValue": 1,
+                      "maxValue": 4096
+                  },
+                  "defaultValue": 1024
+              },
+              {
+                  "id": "temperature",
+                  "name": "Temperature",
+                  "description": "Temperature controls the randomness of model output. Enter a value between 0 and 2, where higher values return more diverse output and lower values return more deterministic results. A value of 0 may return repetitive results.",
+                  "type": "float",
+                  "format": null,
+                  "isNullable": true,
+                  "constraints": {
+                      "type": "float",
+                      "minValue": 0.0,
+                      "maxValue": 2.0
+                  },
+                  "defaultValue": 1.0
+              },
+              {
+                  "id": "topP",
+                  "name": "Token selection probability cutoff (Top P)",
+                  "description": "Top P sets a threshold that controls the selection of words included in the response, based on a cumulative probability cutoff for token selection. For example, 0.2 considers only the top 20% probability mass. Higher numbers return more diverse options for outputs.",
+                  "type": "float",
+                  "format": null,
+                  "isNullable": true,
+                  "constraints": {
+                      "type": "float",
+                      "minValue": 0.0,
+                      "maxValue": 1.0
+                  },
+                  "defaultValue": 1.0
+              }
+          ],
+          "contextSize": 4096,
+          "isMetered": true,
+          "documentationLink": "https://platform.openai.com/docs/models#gpt-3-5-turbo",
+          "retirementDate": null,
+          "suggestedReplacement": null,
+          "supportedCustomModelLLMValidations": null,
+          "isDeprecated": false,
+          "isActive": true
+      }
+    result:
+      custom:
+        cds:
+          datarobot:
+            contextSize: 4096
+            id: "azure-openai-gpt-3.5-turbo"
+            name: "Azure OpenAI GPT-3.5 Turbo"
+            vendor: "Microsoft"
+        creator: "OpenAI"
+        description: "GPT-3.5 Turbo is the most capable and cost-effective model in the GPT-3.5 family. It has been optimized for chat and works well for traditional completion tasks as well."
+        documentationLink: "https://platform.openai.com/docs/models#gpt-3-5-turbo"
+        isActive: true
+        isDeprecated: false
+        isMetered: true
+        license: "Proprietary"
+        provider: "DataRobot"
+        settings:
+         -
+          defaultValue: ""
+          isNullable: true
+          name: "System prompt"
+          format: "multiline"
+          description: "System prompt guides the style of the LLM response. It is a \"universal\" prompt, prepended to all individual prompts."
+          id: "systemPrompt"
+          type: "string"
+          constraints:
+            type: "string"
+            maxLength: 500000
+         -
+          defaultValue: 1024
+          isNullable: true
+          name: "Max completion tokens"
+          description: "Maximum number of tokens allowed in the completion. The combined count of this value and prompt tokens must be below the model's maximum context size (4096), where prompt token count is comprised of system prompt, user prompt, recent chat history, and vector database citations."
+          id: "maxCompletionLength"
+          type: "integer"
+          constraints:
+            minValue: 1
+            maxValue: 4096
+            type: "integer"
+         -
+          defaultValue: 1.0
+          isNullable: true
+          name: "Temperature"
+          description: "Temperature controls the randomness of model output. Enter a value between 0 and 2, where higher values return more diverse output and lower values return more deterministic results. A value of 0 may return repetitive results."
+          id: "temperature"
+          type: "float"
+          constraints:
+            minValue: 0.0
+            maxValue: 2.0
+            type: "float"
+         -
+          defaultValue: 1.0
+          isNullable: true
+          name: "Token selection probability cutoff (Top P)"
+          description: "Top P sets a threshold that controls the selection of words included in the response, based on a cumulative probability cutoff for token selection. For example, 0.2 considers only the top 20% probability mass. Higher numbers return more diverse options for outputs."
+          id: "topP"
+          type: "float"
+          constraints:
+            minValue: 0.0
+            maxValue: 1.0
+            type: "float"
+        supportedLanguages: "Multilingual"
+      message: |-
+        {
+          "settings" : [ {
+            "defaultValue" : "",
+            "isNullable" : true,
+            "name" : "System prompt",
+            "format" : "multiline",
+            "description" : "System prompt guides the style of the LLM response. It is a \"universal\" prompt, prepended to all individual prompts.",
+            "id" : "systemPrompt",
+            "type" : "string",
+            "constraints" : {
+              "type" : "string",
+              "maxLength" : 500000
+            }
+          }, {
+            "defaultValue" : 1024,
+            "isNullable" : true,
+            "name" : "Max completion tokens",
+            "description" : "Maximum number of tokens allowed in the completion. The combined count of this value and prompt tokens must be below the model's maximum context size (4096), where prompt token count is comprised of system prompt, user prompt, recent chat history, and vector database citations.",
+            "id" : "maxCompletionLength",
+            "type" : "integer",
+            "constraints" : {
+              "minValue" : 1,
+              "maxValue" : 4096,
+              "type" : "integer"
+            }
+          }, {
+            "defaultValue" : 1.0,
+            "isNullable" : true,
+            "name" : "Temperature",
+            "description" : "Temperature controls the randomness of model output. Enter a value between 0 and 2, where higher values return more diverse output and lower values return more deterministic results. A value of 0 may return repetitive results.",
+            "id" : "temperature",
+            "type" : "float",
+            "constraints" : {
+              "minValue" : 0.0,
+              "maxValue" : 2.0,
+              "type" : "float"
+            }
+          }, {
+            "defaultValue" : 1.0,
+            "isNullable" : true,
+            "name" : "Token selection probability cutoff (Top P)",
+            "description" : "Top P sets a threshold that controls the selection of words included in the response, based on a cumulative probability cutoff for token selection. For example, 0.2 considers only the top 20% probability mass. Higher numbers return more diverse options for outputs.",
+            "id" : "topP",
+            "type" : "float",
+            "constraints" : {
+              "minValue" : 0.0,
+              "maxValue" : 1.0,
+              "type" : "float"
+            }
+          } ],
+          "creator" : "OpenAI",
+          "isDeprecated" : false,
+          "description" : "GPT-3.5 Turbo is the most capable and cost-effective model in the GPT-3.5 family. It has been optimized for chat and works well for traditional completion tasks as well.",
+          "documentationLink" : "https://platform.openai.com/docs/models#gpt-3-5-turbo",
+          "isActive" : true,
+          "contextSize" : 4096,
+          "license" : "Proprietary",
+          "supportedLanguages" : "Multilingual",
+          "provider" : "DataRobot",
+          "vendor" : "Microsoft",
+          "name" : "Azure OpenAI GPT-3.5 Turbo",
+          "isMetered" : true,
+          "id" : "azure-openai-gpt-3.5-turbo"
+        }
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: |-
+      {
+          "vectorDatabaseId": null,
+          "vectorDatabaseSettings": null,
+          "llmId": "amazon-titan",
+          "llmSettings": {
+              "systemPrompt": "",
+              "maxCompletionLength": 512,
+              "temperature": 0.0,
+              "topP": 1.0
+          },
+          "id": "677f94020c02e6a5a69ebecf",
+          "name": "Playground_2",
+          "description": "",
+          "isSaved": false,
+          "isStarred": false,
+          "promptType": "CHAT_HISTORY_AWARE",
+          "playgroundId": "677f93fe0c02e6a5a69ebec8",
+          "llmName": "Amazon Titan",
+          "creationUserId": "677cc274e1d0c7ab97e502f2",
+          "creationUserName": "dhruval gandhi",
+          "lastUpdateDate": "2025-01-09T09:17:09.485000+00:00",
+          "lastUpdateUserId": "677cc274e1d0c7ab97e502f2",
+          "vectorDatabaseName": null,
+          "vectorDatabaseStatus": null,
+          "vectorDatabaseErrorMessage": null,
+          "vectorDatabaseErrorResolution": null,
+          "customModelLLMValidationStatus": null,
+          "customModelLLMErrorMessage": null,
+          "customModelLLMErrorResolution": null,
+          "vectorDatabaseFamilyId": null,
+          "isActive": true,
+          "isDeprecated": false
+      }
+    result:
+      custom:
+        cds:
+          datarobot:
+            id: "677f94020c02e6a5a69ebecf"
+            name: "Playground_2"
+        creationUserId: "677cc274e1d0c7ab97e502f2"
+        creationUserName: "dhruval gandhi"
+        description: ""
+        isActive: true
+        isDeprecated: false
+        isSaved: false
+        isStarred: false
+        lastUpdateDate: "2025-01-09T09:17:09.485000+00:00"
+        lastUpdateUserId: "677cc274e1d0c7ab97e502f2"
+        llmId: "amazon-titan"
+        llmName: "Amazon Titan"
+        llmSettings:
+          maxCompletionLength: 512
+          systemPrompt: ""
+          temperature: 0.0
+          topP: 1.0
+        playgroundId: "677f93fe0c02e6a5a69ebec8"
+        promptType: "CHAT_HISTORY_AWARE"
+      message: |-
+        {
+          "isDeprecated" : false,
+          "lastUpdateDate" : "2025-01-09T09:17:09.485000+00:00",
+          "lastUpdateUserId" : "677cc274e1d0c7ab97e502f2",
+          "llmSettings" : {
+            "systemPrompt" : "",
+            "temperature" : 0.0,
+            "maxCompletionLength" : 512,
+            "topP" : 1.0
+          },
+          "description" : "",
+          "isStarred" : false,
+          "llmName" : "Amazon Titan",
+          "llmId" : "amazon-titan",
+          "isActive" : true,
+          "promptType" : "CHAT_HISTORY_AWARE",
+          "creationUserName" : "dhruval gandhi",
+          "creationUserId" : "677cc274e1d0c7ab97e502f2",
+          "isSaved" : false,
+          "name" : "Playground_2",
+          "id" : "677f94020c02e6a5a69ebecf",
+          "playgroundId" : "677f93fe0c02e6a5a69ebec8"
+        }
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1736414229485

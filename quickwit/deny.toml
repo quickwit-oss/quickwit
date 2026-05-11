@@ -99,9 +99,9 @@ license-files = [
     { path = "LICENSE", hash = 0xbd0eed23 }
 ]
 
-# PomChi does not have a license, so we arbitrarily declare it as MIT in order to allow it.
+# quickwit-processing uses a proprietary Datadog license; declare as MIT for cargo-deny.
 [[licenses.clarify]]
-name = "pomchi"
+name = "quickwit-processing"
 version = "*"
 expression = "MIT"
 license-files = []

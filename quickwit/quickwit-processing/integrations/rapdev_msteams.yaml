@@ -1,0 +1,22 @@
+id: rapdev_msteams
+metric_id: rapdev-msteams
+backend_only: false
+pipeline:
+  type: pipeline
+  name: MS Teams by RapDev
+  enabled: true
+  filter:
+    query: source:rapdev_msteams
+  processors:
+    - type: pipeline
+      name: MSTeams Pipeline
+      enabled: true
+      filter:
+        query: "service:msteams_segment_data"
+      processors:
+        - type: geo-ip-parser
+          name: GeoIP Parser
+          enabled: true
+          sources:
+            - caller_ip
+          target: caller_geoip

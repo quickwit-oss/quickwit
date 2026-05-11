@@ -1,0 +1,165 @@
+id: metabase
+metric_id: metabase
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Metabase
+  enabled: true
+  filter:
+    query: "source:metabase"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Processing for Activity Events
+      enabled: true
+      filter:
+        query: "service:activity-events"
+      processors:
+        - type: attribute-remapper
+          name: Map `topic` to `evt.name`
+          enabled: true
+          sources:
+            - topic
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+    - type: pipeline
+      name: Processing for View Logs
+      enabled: true
+      filter:
+        query: "service:view-logs"
+      processors:
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+        - type: attribute-remapper
+          name: Map `user_full_name` to `usr.name`
+          enabled: true
+          sources:
+            - user_full_name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_email` to `usr.email`
+          enabled: true
+          sources:
+            - user_email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing for Query Logs
+      enabled: true
+      filter:
+        query: "service:query-logs"
+      processors:
+        - type: date-remapper
+          name: Define `started_at` as the official date of the log
+          enabled: true
+          sources:
+            - started_at
+        - type: attribute-remapper
+          name: Map `user_full_name` to `usr.name`
+          enabled: true
+          sources:
+            - user_full_name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_email` to `usr.email`
+          enabled: true
+          sources:
+            - user_email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_id` to `usr.id`
+      enabled: true
+      sources:
+        - user_id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Processing for Table View Logs
+      enabled: true
+      filter:
+        query: "service:view-logs @entity_type:table"
+      processors:
+        - type: attribute-remapper
+          name: Map `table_name` to `entity_name`
+          enabled: true
+          sources:
+            - table_name
+          sourceType: attribute
+          target: entity_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `table_display_name` to `entity_display_name`
+          enabled: true
+          sources:
+            - table_display_name
+          sourceType: attribute
+          target: entity_display_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `table_description` to `entity_description`
+          enabled: true
+          sources:
+            - table_description
+          sourceType: attribute
+          target: entity_description
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

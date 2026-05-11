@@ -1,0 +1,826 @@
+id: crest_data_systems_prefect
+metric_id: crest-data-systems-prefect
+backend_only: false
+facets:
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Account ID
+    path: cds.prefect.account_id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Auto Scheduled
+    path: cds.prefect.flow_run.auto_scheduled
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Created
+    path: cds.prefect.deployment.created
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Created By ID
+    path: cds.prefect.deployment.created_by_id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Created By Type
+    path: cds.prefect.deployment.created_by_type
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Created By Value
+    path: cds.prefect.deployment.created_by_display_value
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment ID
+    path: cds.prefect.deployment.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Name
+    path: cds.prefect.deployment.name
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Status
+    path: cds.prefect.deployment.status
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Updated
+    path: cds.prefect.deployment.updated
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Updated By ID
+    path: cds.prefect.deployment.updated_by_id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Updated By Type
+    path: cds.prefect.deployment.updated_by_type
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Updated By Value
+    path: cds.prefect.deployment.updated_by_display_value
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Deployment Version
+    path: cds.prefect.deployment.version
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow ID
+    path: cds.prefect.flow.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Name
+    path: cds.prefect.flow.name
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Created
+    path: cds.prefect.flow_run.created
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Created By
+    path: cds.prefect.flow_run.created_by_display_value
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Created By Type
+    path: cds.prefect.flow_run.created_by_type
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run ID
+    path: cds.prefect.flow_run.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Name
+    path: cds.prefect.flow_run.name
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Status
+    path: cds.prefect.flow_run.status
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Status Description
+    path: cds.prefect.flow_run.status_message
+    source: log
+    type: string
+  - description: ''
+    facetType: range
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Total Run Time
+    path: cds.prefect.flow_run.total_run_time
+    source: log
+    type: double
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Flow Run Updated
+    path: cds.prefect.flow_run.updated
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run Created
+    path: cds.prefect.task_run.created
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run ID
+    path: cds.prefect.task_run.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run Name
+    path: cds.prefect.task_run.name
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run Status
+    path: cds.prefect.task_run.status
+    source: log
+    type: string
+  - description: ''
+    facetType: range
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run Total Run Time
+    path: cds.prefect.task_run.total_run_time
+    source: log
+    type: double
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Task Run Updated
+    path: cds.prefect.task_run.updated
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Workspace Event ID
+    path: cds.prefect.workspace_event.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Workspace Event Name
+    path: cds.prefect.workspace_event.event_name
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Workspace Event Occurred
+    path: cds.prefect.workspace_event.occurred
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest Data Systems Prefect
+    name: Workspace ID
+    path: cds.prefect.workspace_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Prefect Pipeline
+  enabled: true
+  filter:
+    query: source:crest_data_systems_prefect
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Prefect Flow Runs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.prefect.flow_runs
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.prefect.flow_run.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.prefect.flow_run.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.prefect.flow_run.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.prefect.flow_run.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `state_type` to `flow_run.status`
+          enabled: true
+          source: state_type
+          target: flow_run.status
+          lookupTable: |-
+            SCHEDULED, notice
+            PAUSED, alert
+            FAILED, error
+            CANCELLED, error
+            CRASHED, critical
+            RUNNING, info
+            COMPLETED, info
+          defaultLookup: info
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `state_type` to `cds.prefect.flow_run.status`
+          enabled: true
+          sources:
+            - state_type
+          sourceType: attribute
+          target: cds.prefect.flow_run.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: status-remapper
+          name: Define `flow_run.status` as the official status of the log
+          enabled: true
+          sources:
+            - flow_run.status
+        - type: attribute-remapper
+          name: Map `flow_id` to `cds.prefect.flow.id`
+          enabled: true
+          sources:
+            - flow_id
+          sourceType: attribute
+          target: cds.prefect.flow.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `flow_name` to `cds.prefect.flow.name`
+          enabled: true
+          sources:
+            - flow_name
+          sourceType: attribute
+          target: cds.prefect.flow.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `deployment_id` to `cds.prefect.deployment.id`
+          enabled: true
+          sources:
+            - deployment_id
+          sourceType: attribute
+          target: cds.prefect.deployment.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `deployment_name` to `cds.prefect.deployment.name`
+          enabled: true
+          sources:
+            - deployment_name
+          sourceType: attribute
+          target: cds.prefect.deployment.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created` to `cds.prefect.flow_run.created`
+          enabled: true
+          sources:
+            - created
+          sourceType: attribute
+          target: cds.prefect.flow_run.created
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated` to `cds.prefect.flow_run.updated`
+          enabled: true
+          sources:
+            - updated
+          sourceType: attribute
+          target: cds.prefect.flow_run.updated
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `total_run_time` to `cds.prefect.flow_run.total_run_time`
+          enabled: true
+          sources:
+            - total_run_time
+          sourceType: attribute
+          target: cds.prefect.flow_run.total_run_time
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `auto_scheduled` to `cds.prefect.flow_run.auto_scheduled`
+          enabled: true
+          sources:
+            - auto_scheduled
+          sourceType: attribute
+          target: cds.prefect.flow_run.auto_scheduled
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created_by.display_value` to 
+            `cds.prefect.flow_run.created_by_display_value`
+          enabled: true
+          sources:
+            - created_by.display_value
+          sourceType: attribute
+          target: cds.prefect.flow_run.created_by_display_value
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created_by.type` to `cds.prefect.flow_run.created_by_type`
+          enabled: true
+          sources:
+            - created_by.type
+          sourceType: attribute
+          target: cds.prefect.flow_run.created_by_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `workpool_id` to `cds.prefect.flow_run.workpool_id`
+          enabled: true
+          sources:
+            - workpool_id
+          sourceType: attribute
+          target: cds.prefect.flow_run.workpool_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `workpool_name` to `cds.prefect.flow_run.workpool_name`
+          enabled: true
+          sources:
+            - workpool_name
+          sourceType: attribute
+          target: cds.prefect.flow_run.workpool_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `state.message` to `cds.prefect.flow_run.status_message`
+          enabled: true
+          sources:
+            - state.message
+          sourceType: attribute
+          target: cds.prefect.flow_run.status_message
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `cds.prefect.flow_run.updated` as the official date of the log
+          enabled: true
+          sources:
+            - cds.prefect.flow_run.updated
+    - type: pipeline
+      name: Prefect Task Runs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.prefect.task_runs
+      processors:
+        - type: attribute-remapper
+          name: Map `name` to `cds.prefect.task_run.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.prefect.task_run.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `cds.prefect.task_run.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.prefect.task_run.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `flow_run_name` to `cds.prefect.flow_run.name`
+          enabled: true
+          sources:
+            - flow_run_name
+          sourceType: attribute
+          target: cds.prefect.flow_run.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `state_type` to `task_run.status`
+          enabled: true
+          source: state_type
+          target: task_run.status
+          lookupTable: |-
+            COMPLETED, info
+            FAILED, error
+            CRASHED, critical
+            SCHEDULED, notice
+            PENDING, alert
+            RUNNING, info
+          defaultLookup: info
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `state_type` to `cds.prefect.task_run.status`
+          enabled: true
+          sources:
+            - state_type
+          sourceType: attribute
+          target: cds.prefect.task_run.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: status-remapper
+          name: Define `task_run.status` as the official status of the log
+          enabled: true
+          sources:
+            - task_run.status
+        - type: attribute-remapper
+          name: Map `created` to `cds.prefect.task_run.created`
+          enabled: true
+          sources:
+            - created
+          sourceType: attribute
+          target: cds.prefect.task_run.created
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated` to `cds.prefect.task_run.updated`
+          enabled: true
+          sources:
+            - updated
+          sourceType: attribute
+          target: cds.prefect.task_run.updated
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `total_run_time` to `cds.prefect.task_run.total_run_time`
+          enabled: true
+          sources:
+            - total_run_time
+          sourceType: attribute
+          target: cds.prefect.task_run.total_run_time
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `state.message` to `cds.prefect.task_run.status_message`
+          enabled: true
+          sources:
+            - state.message
+          sourceType: attribute
+          target: cds.prefect.task_run.status_message
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `cds.prefect.task_run.updated` as the official date of the log
+          enabled: true
+          sources:
+            - cds.prefect.task_run.updated
+    - type: pipeline
+      name: Prefect Deployments Pipeline
+      enabled: true
+      filter:
+        query: service:cds.prefect.deployments
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.prefect.deployment.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.prefect.deployment.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created` to `cds.prefect.deployment.created`
+          enabled: true
+          sources:
+            - created
+          sourceType: attribute
+          target: cds.prefect.deployment.created
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated` to `cds.prefect.deployment.updated`
+          enabled: true
+          sources:
+            - updated
+          sourceType: attribute
+          target: cds.prefect.deployment.updated
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.prefect.deployment.name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.prefect.deployment.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `flow_name` to `cds.prefect.flow.name`
+          enabled: true
+          sources:
+            - flow_name
+          sourceType: attribute
+          target: cds.prefect.flow.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `status` to `deployment.status`
+          enabled: true
+          source: status
+          target: deployment.status
+          lookupTable: |-
+            DISABLED, warning
+            NOT_READY, notice
+            READY, info
+          defaultLookup: info
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `status` to `cds.prefect.deployment.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cds.prefect.deployment.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: status-remapper
+          name: Define `deployment.status` as the official status of the log
+          enabled: true
+          sources:
+            - deployment.status
+        - type: attribute-remapper
+          name: Map `created_by.display_value` to 
+            `cds.prefect.deployment.created_by_display_value`
+          enabled: true
+          sources:
+            - created_by.display_value
+          sourceType: attribute
+          target: cds.prefect.deployment.created_by_display_value
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created_by.id` to `cds.prefect.deployment.created_by_id`
+          enabled: true
+          sources:
+            - created_by.id
+          sourceType: attribute
+          target: cds.prefect.deployment.created_by_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created_by.type` to `cds.prefect.deployment.created_by_type`
+          enabled: true
+          sources:
+            - created_by.type
+          sourceType: attribute
+          target: cds.prefect.deployment.created_by_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated_by.display_value` to 
+            `cds.prefect.deployment.updated_by_display_value`
+          enabled: true
+          sources:
+            - updated_by.display_value
+          sourceType: attribute
+          target: cds.prefect.deployment.updated_by_display_value
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated_by.id` to `cds.prefect.deployment.updated_by_id`
+          enabled: true
+          sources:
+            - updated_by.id
+          sourceType: attribute
+          target: cds.prefect.deployment.updated_by_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `updated_by.type` to `cds.prefect.deployment.updated_by_type`
+          enabled: true
+          sources:
+            - updated_by.type
+          sourceType: attribute
+          target: cds.prefect.deployment.updated_by_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `version` to `cds.prefect.deployment.version`
+          enabled: true
+          sources:
+            - version
+          sourceType: attribute
+          target: cds.prefect.deployment.version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `is_schedule_active` to 
+            `cds.prefect.deployment.is_schedule_active`
+          enabled: true
+          sources:
+            - is_schedule_active
+          sourceType: attribute
+          target: cds.prefect.deployment.is_schedule_active
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `cds.prefect.deployment.updated` as the official date of the log
+          enabled: true
+          sources:
+            - cds.prefect.deployment.updated
+    - type: pipeline
+      name: Prefect Workspace Events Pipeline
+      enabled: true
+      filter:
+        query: service:cds.prefect.workspace_events
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cds.prefect.workspace_event.id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.prefect.workspace_event.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `occurred` to `cds.prefect.workspace_event.occurred`
+          enabled: true
+          sources:
+            - occurred
+          sourceType: attribute
+          target: cds.prefect.workspace_event.occurred
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `account` to `cds.prefect.account_id`
+          enabled: true
+          sources:
+            - account
+          sourceType: attribute
+          target: cds.prefect.account_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `workspace` to `cds.prefect.workspace_id`
+          enabled: true
+          sources:
+            - workspace
+          sourceType: attribute
+          target: cds.prefect.workspace_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `event` to `cds.prefect.workspace_event.event_name`
+          enabled: true
+          sources:
+            - event
+          sourceType: attribute
+          target: cds.prefect.workspace_event.event_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: date-remapper
+          name: Define `cds.prefect.workspace_event.occurred` as the official date of the log
+          enabled: true
+          sources:
+            - cds.prefect.workspace_event.occurred

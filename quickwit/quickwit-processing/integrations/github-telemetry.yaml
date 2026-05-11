@@ -1,0 +1,1262 @@
+id: github-telemetry
+backend_only: false
+installation_sources:
+  - github-telemetry
+  - github.audit.streaming
+facets:
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Github
+    name: Github Workflow ID
+    path: github.workflow.id
+    source: log
+  - groups:
+      - Github
+    name: Github Organization
+    path: github.org
+    source: log
+  - groups:
+      - Event
+    name: Action
+    path: evt.action
+    source: log
+  - groups:
+      - Github
+    name: Github Team
+    path: github.team
+    source: log
+  - groups:
+      - Github
+    name: Github Repository
+    path: github.repository
+    source: log
+  - groups:
+      - Github
+    name: Github Workflow Run ID
+    path: github.workflow.run.id
+    source: log
+  - groups:
+      - Github
+    name: Github Transport Protocol Name
+    path: github.transport_protocol_name
+    source: log
+  - groups:
+      - Github
+    name: Github Name
+    path: github.name
+    source: log
+  - groups:
+      - Github
+    name: Github Visibility
+    path: github.visibility
+    source: tag
+  - groups:
+      - Github
+    name: Github Actor
+    path: github.actor
+    source: log
+  - groups:
+      - Github
+    name: Actor Location Country Code
+    path: actor_location.country_code
+    source: log
+pipeline:
+  type: pipeline
+  name: Github Telemetry
+  enabled: true
+  filter:
+    query: source:(github-telemetry OR github.audit.streaming)
+  processors:
+    - type: attribute-remapper
+      name: Map `event` to `evt.category`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `_document_id` to `github.document.id`
+      enabled: true
+      sources:
+        - _document_id
+      sourceType: attribute
+      target: github.document.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user` to `usr.name`
+      enabled: true
+      sources:
+        - user
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_id` to `usr.id`
+      enabled: true
+      sources:
+        - user_id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `team` to `github.team`
+      enabled: true
+      sources:
+        - team
+      sourceType: attribute
+      target: github.team
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `action` to `evt.action`
+      enabled: true
+      sources:
+        - action
+      sourceType: attribute
+      target: evt.action
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor` to `github.actor`
+      enabled: true
+      sources:
+        - actor
+      sourceType: attribute
+      target: github.actor
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `conclusion` to `evt.outcome`
+      enabled: true
+      sources:
+        - conclusion
+      sourceType: attribute
+      target: evt.outcome
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: message-remapper
+      name: Define `Message` as the official message of the log
+      enabled: true
+      sources:
+        - Message
+    - type: attribute-remapper
+      name: Map `org` to `github.org`
+      enabled: true
+      sources:
+        - org
+      sourceType: attribute
+      target: github.org
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `transport_protocol_name` to `github.transport_protocol_name`
+      enabled: true
+      sources:
+        - transport_protocol_name
+      sourceType: attribute
+      target: github.transport_protocol_name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `repo` to `github.repository`
+      enabled: true
+      sources:
+        - repo
+      sourceType: attribute
+      target: github.repository
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `name` to `github.name`
+      enabled: true
+      sources:
+        - name
+      sourceType: attribute
+      target: github.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `visibility` to `github.visibility`
+      enabled: true
+      sources:
+        - visibility
+      sourceType: attribute
+      target: github.visibility
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `workflow_id` to `github.workflow.id`
+      enabled: true
+      sources:
+        - workflow_id
+      sourceType: attribute
+      target: github.workflow.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `workflow_run_id` to `github.workflow.run.id`
+      enabled: true
+      sources:
+        - workflow_run_id
+      sourceType: attribute
+      target: github.workflow.run.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `user_agent` to `http.useragent`
+      enabled: true
+      sources:
+        - user_agent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: ""
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `actor_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - actor_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    # OCSF transformations
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: attribute-remapper
+          name: Map `actor` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - actor
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_id` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - actor_id
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_session` to `ocsf.actor.session.uid`
+          enabled: true
+          sources:
+            - actor_session
+          sourceType: attribute
+          target: ocsf.actor.session.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `external_identity_nameid` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - external_identity_nameid
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `issuer` to `ocsf.actor.session.issuer`
+          enabled: true
+          sources:
+            - issuer
+          sourceType: attribute
+          target: ocsf.actor.session.issuer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `org` to `ocsf.actor.user.account.name`
+          enabled: true
+          sources:
+            - org
+          sourceType: attribute
+          target: ocsf.actor.user.account.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `org_id` to `ocsf.actor.user.account.uid`
+          enabled: true
+          sources:
+            - org_id
+          sourceType: attribute
+          target: ocsf.actor.user.account.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.metadata.event_code`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.metadata.event_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `_document_id` to `ocsf.metadata.uid`
+          enabled: true
+          sources:
+            - _document_id
+          sourceType: attribute
+          target: ocsf.metadata.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: Github Audit Log
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor
+          enabled: true
+          template: GitHub
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+        - type: attribute-remapper
+          name: Map `@timestamp` to `ocsf.time`
+          enabled: true
+          sources:
+            - "@timestamp"
+          sourceType: attribute
+          target: ocsf.time
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_agent` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - "user_agent"
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `method` to `ocsf.http_request.http_method`
+          enabled: true
+          sources:
+            - "method"
+          sourceType: attribute
+          target: ocsf.http_request.http_method
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `referrer` to `ocsf.http_request.referrer`
+          enabled: true
+          sources:
+            - "referrer"
+          sourceType: attribute
+          target: ocsf.http_request.referrer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `url` to `ocsf.http_request.url.url_string`
+          enabled: true
+          sources:
+            - "url"
+          sourceType: attribute
+          target: ocsf.http_request.url.url_string
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `url_path` to `ocsf.http_request.url.url_path`
+          enabled: true
+          sources:
+            - "url_path"
+          sourceType: attribute
+          target: ocsf.http_request.url.url_path
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `query_string` to `ocsf.http_request.url.query_string`
+          enabled: true
+          sources:
+            - "query_string"
+          sourceType: attribute
+          target: ocsf.http_request.url.query_string
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_ip` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - "actor_ip"
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_location.city` to `ocsf.src_endpoint.location.city`
+          enabled: true
+          sources:
+            - "actor_location.city"
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.city
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_location.country_code` to `ocsf.src_endpoint.location.country`
+          enabled: true
+          sources:
+            - "actor_location.country_code"
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.country
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor_location.postal_code` to `ocsf.src_endpoint.location.postal_code`
+          enabled: true
+          sources:
+            - "actor_location.postal_code"
+          sourceType: attribute
+          target: ocsf.src_endpoint.location.postal_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: GitHub OCSF sub pipeline for class Account Change [3001]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:(business.revoke_external_identity OR business.revoke_sso_session OR org.block_user OR org.invite_member OR org.invite_to_business OR org.unblock_user OR organization_role.assign OR organization_role.create OR organization_role.destroy OR role.create OR role.destroy OR two_factor_authentication.add_factor OR two_factor_authentication.disabled OR two_factor_authentication.enabled OR user.block_user OR user.change_password OR user.create OR user.delete OR user.destroy OR user.reset_password OR user.suspend OR user.unblock_user OR user.unsuspend)"
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(organization_role.create OR role.create OR user.create)"
+              name: "1"
+            - filter:
+                query: "@action:(user.change_password)"
+              name: "3"
+            - filter:
+                query: "@action:(user.reset_password)"
+              name: "4"
+            - filter:
+                query: "@action:(organization_role.destroy OR role.destroy OR user.delete OR user.destroy)"
+              name: "6"
+            - filter:
+                query: "@action:(organization_role.assign)"
+              name: "7"
+            - filter:
+                query: "@action:(two_factor_authentication.add_factor)"
+              name: "10"
+            - filter:
+                query: "@action:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(organization_role.create OR role.create OR user.create)"
+              name: "Create"
+            - filter:
+                query: "@action:(user.change_password)"
+              name: "Password Change"
+            - filter:
+                query: "@action:(user.reset_password)"
+              name: "Password Reset"
+            - filter:
+                query: "@action:(organization_role.destroy OR role.destroy OR user.delete OR user.destroy)"
+              name: "Delete"
+            - filter:
+                query: "@action:(organization_role.assign)"
+              name: "Attach Policy"
+            - filter:
+                query: "@action:(two_factor_authentication.add_factor)"
+              name: "MFA Factor Enable"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3001"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Account Change
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `user` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - "user"
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - "user_id"
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: GitHub OCSF sub pipeline for class Authentication [3002]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:(business.recovery_code_failed OR business.recovery_code_used OR business.sso_response OR org.sso_response OR user.failed_login OR user.login OR user.logout)"
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(business.sso_response OR org.sso_response OR user.login)"
+              name: "1"
+            - filter:
+                query: "@action:(user.logout)"
+              name: "2"
+            - filter:
+                query: "@action:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(business.sso_response OR org.sso_response OR user.login)"
+              name: "Logon"
+            - filter:
+                query: "@action:(user.logout)"
+              name: "Logoff"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3002"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Authentication
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add service name
+          enabled: true
+          template: GitHub
+          target: ocsf.service.name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `user` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - "user"
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - "user_id"
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: GitHub OCSF sub pipeline for class Entity Management [3004]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:(business.advanced_security_policy_update OR business.create OR business.delete OR org.create OR org.delete OR org.rename OR organization_role.update OR role.update) @org:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(business.create OR org.create)"
+              name: "1"
+            - filter:
+                query: "@action:(business.advanced_security_policy_update OR org.rename OR organization_role.update OR role.update)"
+              name: "3"
+            - filter:
+                query: "@action:(business.delete OR org.delete)"
+              name: "4"
+            - filter:
+                query: "@action:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(business.create OR org.create)"
+              name: "Create"
+            - filter:
+                query: "@action:(business.advanced_security_policy_update OR org.rename OR organization_role.update OR role.update)"
+              name: "Update"
+            - filter:
+                query: "@action:(business.delete OR org.delete)"
+              name: "Delete"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3004"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Entity Management
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add OCSF profiles
+          enabled: true
+          template: "[host]"
+          target: ocsf.metadata.profiles
+          replaceMissing: false
+        - type: grok-parser
+          name: Profiles string to array
+          enabled: true
+          source: ocsf.metadata.profiles
+          samples:
+            - "[date,time]"
+          grok:
+            supportRules: ""
+            matchRules: ProfileStrToArray %{data:ocsf.metadata.profiles:array("[]",",")}
+        - type: attribute-remapper
+          name: Map `org` to `ocsf.entity.name`
+          enabled: true
+          sources:
+            - "org"
+          sourceType: attribute
+          target: ocsf.entity.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `org_id` to `ocsf.entity.uid`
+          enabled: true
+          sources:
+            - "org_id"
+          sourceType: attribute
+          target: ocsf.entity.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.entity.uid` to `ocsf.entity.uid`
+          enabled: true
+          sources:
+            - ocsf.entity.uid
+          sourceType: attribute
+          target: ocsf.entity.uid
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: GitHub OCSF sub pipeline for class Group Management [3006]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:(org.add_member OR team.add_member OR org.remove_member OR team.remove_member)"
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(org.add_member OR team.add_member)"
+              name: "3"
+            - filter:
+                query: "@action:(org.remove_member OR team.remove_member)"
+              name: "4"
+            - filter:
+                query: "@action:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(org.add_member OR team.add_member)"
+              name: "Add User"
+            - filter:
+                query: "@action:(org.remove_member OR team.remove_member)"
+              name: "Remove User"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3006"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Group Management
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add OCSF profiles
+          enabled: true
+          template: "[host]"
+          target: ocsf.metadata.profiles
+          replaceMissing: false
+        - type: grok-parser
+          name: Profiles string to array
+          enabled: true
+          source: ocsf.metadata.profiles
+          samples:
+            - "[date,time]"
+          grok:
+            supportRules: ""
+            matchRules: ProfileStrToArray %{data:ocsf.metadata.profiles:array("[]",",")}
+        - type: attribute-remapper
+          name: Map `user` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - "user"
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_id` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - "user_id"
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `team`, `org` to `ocsf.group.name`
+          enabled: true
+          sources:
+            - "team"
+            - "org"
+          sourceType: attribute
+          target: ocsf.group.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: GitHub OCSF sub pipeline for class API Activity [6003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@action:* -@ocsf.category_uid:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(required_status_check.create OR advisory_credit.create OR audit_log_streaming.create OR business.add_organization OR business.add_support_entitlee OR business.clear_members_can_create_repos OR business.create_trial OR business.recovery_codes_generated OR business_secret_scanning_custom_pattern.create OR codespaces.attempted_to_create_from_prebuild OR codespaces.create OR codespaces.policy_group_created OR copilot.cfb_seat_added OR copilot.cfb_seat_assignment_created OR copilot.knowledge_base_created OR custom_property_definition.create OR custom_property_value.create OR enterprise_announcement.create OR enterprise_domain.create OR enterprise_installation.create OR enterprise.runner_group_created OR enterprise.runner_group_runners_added OR environment.create_actions_secret OR environment.create_actions_variable OR external_identity.provision OR hook.create OR integration.create OR integration.manager_added OR integration_installation.create OR integration_installation.repositories_added OR integration_installation_request.create OR ip_allow_list_entry.create OR marketplace_agreement_signature.create OR marketplace_listing.create OR migration.create OR network_configuration.create OR oauth_application.create OR oauth_application.generate_client_secret OR org.add_outside_collaborator OR org.create_actions_secret OR org.create_actions_variable OR org.create_integration_secret OR org.integration_manager_added OR org.recovery_codes_generated OR org.required_workflow_create OR org.runner_group_created OR org.runner_group_runners_added OR org_secret_scanning_custom_pattern.create OR org_secret_scanning_push_protection_bypass_list.add OR organization_default_label.create OR organization_domain.create OR pages_protected_domain.create OR payment_method.create OR personal_access_token.request_created OR prebuild_configuration.create OR project.create OR project_collaborator.add OR project_field.create OR project_view.create OR protected_branch.create OR public_key.create OR pull_request.create OR pull_request.create_review_request OR pull_request_review_comment.create OR repo.add_member OR repo.add_topic OR repo.create OR repo.create_actions_secret OR repo.create_actions_variable OR repo.create_integration_secret OR repo.pages_create OR repository_image.create OR repository_invitation.create OR repository_ruleset.create OR repository_secret_scanning_custom_pattern.create OR repository_secret_scanning_push_protection_bypass_list.add OR repository_vulnerability_alert.create OR secret_scanning_alert.create OR sponsors.sponsor_sponsorship_create OR sponsors.sponsored_developer_create OR sponsors.sponsors_patreon_user_create OR ssh_certificate_authority.create OR user_license.create OR vulnerability_alert_rule.create OR workflows.created_workflow_run OR trusted_device.register OR two_factor_authentication.recovery_codes_regenerated OR user.add_email OR user.create_integration_secret OR user.recreate)"
+              name: "1"
+            - filter:
+                query: "@action:(audit_log_streaming.check OR business.recovery_codes_viewed OR git.fetch OR org.recovery_codes_viewed OR protected_branch.dismiss_stale_reviews OR user.two_factor_recovery_codes_viewed)"
+              name: "2"
+            - filter:
+                query: "@action:(account.plan_change OR advisory_credit.decline OR audit_log_streaming.update OR billing.change_billing_type OR billing.change_email OR business.change_seats_plan_type OR business.code_scanning_autofix_policy_update OR business.members_can_update_protected_branches.clear OR business.rename_slug OR business.set_actions_fork_pr_approvals_policy OR business.set_actions_private_fork_pr_approvals_policy OR business.set_actions_retention_limit OR business.set_default_workflow_permissions OR business.set_fork_pr_workflows_policy OR business.set_workflow_permission_can_approve_pr OR business.update_actions_settings OR business.update_default_repository_permission OR business.update_member_repository_creation_permission OR business.update_member_repository_invitation_permission OR business.update_saml_provider_settings OR business_secret_scanning_custom_pattern.update OR business_secret_scanning_push_protection_custom_message.update OR codespaces.policy_group_updated OR codespaces.trusted_repositories_access_update OR commit_comment.update OR copilot.cfb_enterprise_settings_changed OR copilot.cfb_org_settings_changed OR copilot.cfb_seat_management_changed OR copilot.content_exclusion_changed OR copilot.knowledge_base_updated OR copilot.plan_changed OR custom_property_definition.update OR custom_property_value.update OR dependabot_repository_access.repositories_updated OR discussion_post.update OR discussion_post_reply.update OR enterprise_announcement.update OR enterprise.runner_group_renamed OR enterprise.runner_group_runners_updated OR enterprise.runner_group_updated OR enterprise.runner_group_visiblity_updated OR enterprise.self_hosted_runner_updated OR enterprise_team.rename OR environment.update_actions_secret OR environment.update_actions_variable OR environment.update_protection_rule OR external_group.update_display_name OR external_identity.update OR hook.active_changed OR hook.config_changed OR hook.events_changed OR integration_installation.version_updated OR ip_allow_list_entry.update OR issue_comment.update OR marketplace_listing.change_category OR network_configuration.update OR org.codespaces_access_updated OR org.codespaces_ownership_updated OR org.required_workflow_update OR org.runner_group_renamed OR org.runner_group_runners_updated OR org.runner_group_updated OR org.runner_group_visiblity_updated OR org.secret_scanning_push_protection_custom_message_updated OR org.self_hosted_runner_updated OR org.set_actions_fork_pr_approvals_policy OR org.set_actions_private_fork_pr_approvals_policy OR org.set_actions_retention_limit OR org.set_default_workflow_permissions OR org.set_fork_pr_workflows_policy OR org.set_workflow_permission_can_approve_pr OR org.update_actions_secret OR org.update_actions_settings OR org.update_actions_variable OR org.update_default_repository_permission OR org.update_integration_secret OR org.update_member_repository_creation_permission OR org.update_member_repository_invitation_permission OR org.update_new_repository_default_branch_setting OR org.update_saml_provider_settings OR org.update_terms_of_service OR org_secret_scanning_custom_pattern.update OR organization_default_label.update OR organization_projects_change.clear OR organization_wide_project_base_role.update OR payment_method.update OR prebuild_configuration.update OR profile_picture.update OR project.rename OR project.update_org_permission OR project.update_team_permission OR project.update_user_permission OR project_base_role.update OR project_collaborator.update OR protected_branch.rejected_ref_update OR protected_branch.update_admin_enforced OR protected_branch.update_allow_force_pushes_enforcement_level OR protected_branch.update_ignore_approvals_from_contributors OR protected_branch.update_lock_branch_enforcement_level OR protected_branch.update_merge_queue_enforcement_level OR protected_branch.update_name OR protected_branch.update_require_last_push_approval OR protected_branch.update_signature_requirement_enforcement_level OR public_key.update OR pull_request_review_comment.update OR repo.change_merge_setting OR repo.codeql_updated OR repo.rename OR repo.self_hosted_runner_updated OR repo.set_actions_fork_pr_approvals_policy OR repo.set_actions_private_fork_pr_approvals_policy OR repo.set_actions_retention_limit OR repo.set_default_workflow_permissions OR repo.set_fork_pr_workflows_policy OR repo.set_workflow_permission_can_approve_pr OR repo.update_actions_access_settings OR repo.update_actions_secret OR repo.update_actions_settings OR repo.update_actions_variable OR repo.update_default_branch OR repo.update_integration_secret OR repo.update_member OR repository_advisory.update OR repository_projects_change.clear OR repository_ruleset.update OR repository_secret_scanning_custom_pattern.update OR repository_visibility_change.clear OR sponsors.custom_amount_settings_change OR sponsors.fiscal_host_change OR sponsors.sponsor_sponsorship_preference_change OR sponsors.sponsor_sponsorship_tier_change OR sponsors.sponsored_developer_profile_update OR sponsors.sponsored_developer_tier_description_update OR sponsors.update_tier_repository OR sponsors.update_tier_welcome_message OR staff.set_domain_token_expiration OR team.change_parent_team OR team.change_privacy OR team.rename OR team.update_repository_permission OR team_sync_tenant.update_okta_credentials OR user_license.update OR vulnerability_alert_rule.update OR two_factor_authentication.update_fallback OR user.rename OR user.update_integration_secret)"
+              name: "3"
+            - filter:
+                query: "@action:(actions_cache.delete OR advisory_credit.destroy OR artifact.destroy OR audit_log_streaming.destroy OR business.remove_organization OR business.remove_support_entitlee OR business_secret_scanning_custom_pattern.delete OR checks.delete_logs OR codespaces.destroy OR codespaces.policy_group_deleted OR commit_comment.destroy OR copilot.knowledge_base_deleted OR custom_property_definition.destroy OR custom_property_value.destroy OR discussion_post.destroy OR discussion_post_reply.destroy OR enterprise_announcement.destroy OR enterprise_domain.destroy OR enterprise_installation.destroy OR enterprise.remove_self_hosted_runner OR enterprise.runner_group_removed OR enterprise.runner_group_runner_removed OR environment.delete OR environment.remove_actions_secret OR environment.remove_actions_variable OR environment.remove_protection_rule OR hook.destroy OR integration.destroy OR integration.manager_removed OR integration.remove_client_secret OR integration_installation.destroy OR integration_installation.repositories_removed OR ip_allow_list_entry.destroy OR issue_comment.destroy OR issue.destroy OR issues.deletes_policy_cleared OR members_can_delete_repos.clear OR migration.destroy_file OR network_configuration.delete OR oauth_application.destroy OR oauth_application.remove_client_secret OR org.integration_manager_removed OR org.remove_actions_secret OR org.remove_actions_variable OR org.remove_billing_manager OR org.remove_integration_secret OR org.remove_member OR org.remove_outside_collaborator OR org.remove_self_hosted_runner OR org.required_workflow_delete OR org.runner_group_removed OR org.runner_group_runner_removed OR org_secret_scanning_custom_pattern.delete OR org_secret_scanning_push_protection_bypass_list.remove OR organization_default_label.destroy OR organization_domain.destroy OR packages.package_deleted OR packages.package_version_deleted OR pages_protected_domain.delete OR payment_method.remove OR prebuild_configuration.destroy OR project.delete OR project_collaborator.remove OR project_field.delete OR project_view.delete OR protected_branch.destroy OR public_key.delete OR pull_request_review.delete OR repo.code_scanning_analysis_deleted OR repo.code_scanning_configuration_for_branch_deleted OR repo.destroy OR repo.pages_destroy OR repo.pages_soft_delete OR repo.pages_soft_delete_restore OR repo.remove_actions_secret OR repo.remove_actions_variable OR repo.remove_integration_secret OR repo.remove_member OR repo.remove_self_hosted_runner OR repo.remove_topic OR repository_image.destroy OR repository_ruleset.destroy OR repository_secret_scanning_custom_pattern.delete OR repository_secret_scanning_push_protection_bypass_list.remove OR required_status_check.destroy OR sponsors.sponsors_patreon_user_destroy OR ssh_certificate_authority.destroy OR team.remove_member OR team.remove_repository OR user_license.destroy OR vulnerability_alert_rule.delete OR workflows.delete_workflow_run OR trusted_device.remove OR two_factor_authentication.remove_factor OR user.async_delete OR user.remove_email OR user.remove_integration_secret)"
+              name: "4"
+            - filter:
+                query: "@action:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@action:(required_status_check.create OR advisory_credit.create OR audit_log_streaming.create OR business.add_organization OR business.add_support_entitlee OR business.clear_members_can_create_repos OR business.create_trial OR business.recovery_codes_generated OR business_secret_scanning_custom_pattern.create OR codespaces.attempted_to_create_from_prebuild OR codespaces.create OR codespaces.policy_group_created OR copilot.cfb_seat_added OR copilot.cfb_seat_assignment_created OR copilot.knowledge_base_created OR custom_property_definition.create OR custom_property_value.create OR enterprise_announcement.create OR enterprise_domain.create OR enterprise_installation.create OR enterprise.runner_group_created OR enterprise.runner_group_runners_added OR environment.create_actions_secret OR environment.create_actions_variable OR external_identity.provision OR hook.create OR integration.create OR integration.manager_added OR integration_installation.create OR integration_installation.repositories_added OR integration_installation_request.create OR ip_allow_list_entry.create OR marketplace_agreement_signature.create OR marketplace_listing.create OR migration.create OR network_configuration.create OR oauth_application.create OR oauth_application.generate_client_secret OR org.add_outside_collaborator OR org.create_actions_secret OR org.create_actions_variable OR org.create_integration_secret OR org.integration_manager_added OR org.recovery_codes_generated OR org.required_workflow_create OR org.runner_group_created OR org.runner_group_runners_added OR org_secret_scanning_custom_pattern.create OR org_secret_scanning_push_protection_bypass_list.add OR organization_default_label.create OR organization_domain.create OR pages_protected_domain.create OR payment_method.create OR personal_access_token.request_created OR prebuild_configuration.create OR project.create OR project_collaborator.add OR project_field.create OR project_view.create OR protected_branch.create OR public_key.create OR pull_request.create OR pull_request.create_review_request OR pull_request_review_comment.create OR repo.add_member OR repo.add_topic OR repo.create OR repo.create_actions_secret OR repo.create_actions_variable OR repo.create_integration_secret OR repo.pages_create OR repository_image.create OR repository_invitation.create OR repository_ruleset.create OR repository_secret_scanning_custom_pattern.create OR repository_secret_scanning_push_protection_bypass_list.add OR repository_vulnerability_alert.create OR secret_scanning_alert.create OR sponsors.sponsor_sponsorship_create OR sponsors.sponsored_developer_create OR sponsors.sponsors_patreon_user_create OR ssh_certificate_authority.create OR user_license.create OR vulnerability_alert_rule.create OR workflows.created_workflow_run OR trusted_device.register OR two_factor_authentication.recovery_codes_regenerated OR user.add_email OR user.create_integration_secret OR user.recreate)"
+              name: "Create"
+            - filter:
+                query: "@action:(audit_log_streaming.check OR business.recovery_codes_viewed OR git.fetch OR org.recovery_codes_viewed OR protected_branch.dismiss_stale_reviews OR user.two_factor_recovery_codes_viewed)"
+              name: "Read"
+            - filter:
+                query: "@action:(account.plan_change OR advisory_credit.decline OR audit_log_streaming.update OR billing.change_billing_type OR billing.change_email OR business.change_seats_plan_type OR business.code_scanning_autofix_policy_update OR business.members_can_update_protected_branches.clear OR business.rename_slug OR business.set_actions_fork_pr_approvals_policy OR business.set_actions_private_fork_pr_approvals_policy OR business.set_actions_retention_limit OR business.set_default_workflow_permissions OR business.set_fork_pr_workflows_policy OR business.set_workflow_permission_can_approve_pr OR business.update_actions_settings OR business.update_default_repository_permission OR business.update_member_repository_creation_permission OR business.update_member_repository_invitation_permission OR business.update_saml_provider_settings OR business_secret_scanning_custom_pattern.update OR business_secret_scanning_push_protection_custom_message.update OR codespaces.policy_group_updated OR codespaces.trusted_repositories_access_update OR commit_comment.update OR copilot.cfb_enterprise_settings_changed OR copilot.cfb_org_settings_changed OR copilot.cfb_seat_management_changed OR copilot.content_exclusion_changed OR copilot.knowledge_base_updated OR copilot.plan_changed OR custom_property_definition.update OR custom_property_value.update OR dependabot_repository_access.repositories_updated OR discussion_post.update OR discussion_post_reply.update OR enterprise_announcement.update OR enterprise.runner_group_renamed OR enterprise.runner_group_runners_updated OR enterprise.runner_group_updated OR enterprise.runner_group_visiblity_updated OR enterprise.self_hosted_runner_updated OR enterprise_team.rename OR environment.update_actions_secret OR environment.update_actions_variable OR environment.update_protection_rule OR external_group.update_display_name OR external_identity.update OR hook.active_changed OR hook.config_changed OR hook.events_changed OR integration_installation.version_updated OR ip_allow_list_entry.update OR issue_comment.update OR marketplace_listing.change_category OR network_configuration.update OR org.codespaces_access_updated OR org.codespaces_ownership_updated OR org.required_workflow_update OR org.runner_group_renamed OR org.runner_group_runners_updated OR org.runner_group_updated OR org.runner_group_visiblity_updated OR org.secret_scanning_push_protection_custom_message_updated OR org.self_hosted_runner_updated OR org.set_actions_fork_pr_approvals_policy OR org.set_actions_private_fork_pr_approvals_policy OR org.set_actions_retention_limit OR org.set_default_workflow_permissions OR org.set_fork_pr_workflows_policy OR org.set_workflow_permission_can_approve_pr OR org.update_actions_secret OR org.update_actions_settings OR org.update_actions_variable OR org.update_default_repository_permission OR org.update_integration_secret OR org.update_member_repository_creation_permission OR org.update_member_repository_invitation_permission OR org.update_new_repository_default_branch_setting OR org.update_saml_provider_settings OR org.update_terms_of_service OR org_secret_scanning_custom_pattern.update OR organization_default_label.update OR organization_projects_change.clear OR organization_wide_project_base_role.update OR payment_method.update OR prebuild_configuration.update OR profile_picture.update OR project.rename OR project.update_org_permission OR project.update_team_permission OR project.update_user_permission OR project_base_role.update OR project_collaborator.update OR protected_branch.rejected_ref_update OR protected_branch.update_admin_enforced OR protected_branch.update_allow_force_pushes_enforcement_level OR protected_branch.update_ignore_approvals_from_contributors OR protected_branch.update_lock_branch_enforcement_level OR protected_branch.update_merge_queue_enforcement_level OR protected_branch.update_name OR protected_branch.update_require_last_push_approval OR protected_branch.update_signature_requirement_enforcement_level OR public_key.update OR pull_request_review_comment.update OR repo.change_merge_setting OR repo.codeql_updated OR repo.rename OR repo.self_hosted_runner_updated OR repo.set_actions_fork_pr_approvals_policy OR repo.set_actions_private_fork_pr_approvals_policy OR repo.set_actions_retention_limit OR repo.set_default_workflow_permissions OR repo.set_fork_pr_workflows_policy OR repo.set_workflow_permission_can_approve_pr OR repo.update_actions_access_settings OR repo.update_actions_secret OR repo.update_actions_settings OR repo.update_actions_variable OR repo.update_default_branch OR repo.update_integration_secret OR repo.update_member OR repository_advisory.update OR repository_projects_change.clear OR repository_ruleset.update OR repository_secret_scanning_custom_pattern.update OR repository_visibility_change.clear OR sponsors.custom_amount_settings_change OR sponsors.fiscal_host_change OR sponsors.sponsor_sponsorship_preference_change OR sponsors.sponsor_sponsorship_tier_change OR sponsors.sponsored_developer_profile_update OR sponsors.sponsored_developer_tier_description_update OR sponsors.update_tier_repository OR sponsors.update_tier_welcome_message OR staff.set_domain_token_expiration OR team.change_parent_team OR team.change_privacy OR team.rename OR team.update_repository_permission OR team_sync_tenant.update_okta_credentials OR user_license.update OR vulnerability_alert_rule.update OR two_factor_authentication.update_fallback OR user.rename OR user.update_integration_secret)"
+              name: "Update"
+            - filter:
+                query: "@action:(actions_cache.delete OR advisory_credit.destroy OR artifact.destroy OR audit_log_streaming.destroy OR business.remove_organization OR business.remove_support_entitlee OR business_secret_scanning_custom_pattern.delete OR checks.delete_logs OR codespaces.destroy OR codespaces.policy_group_deleted OR commit_comment.destroy OR copilot.knowledge_base_deleted OR custom_property_definition.destroy OR custom_property_value.destroy OR discussion_post.destroy OR discussion_post_reply.destroy OR enterprise_announcement.destroy OR enterprise_domain.destroy OR enterprise_installation.destroy OR enterprise.remove_self_hosted_runner OR enterprise.runner_group_removed OR enterprise.runner_group_runner_removed OR environment.delete OR environment.remove_actions_secret OR environment.remove_actions_variable OR environment.remove_protection_rule OR hook.destroy OR integration.destroy OR integration.manager_removed OR integration.remove_client_secret OR integration_installation.destroy OR integration_installation.repositories_removed OR ip_allow_list_entry.destroy OR issue_comment.destroy OR issue.destroy OR issues.deletes_policy_cleared OR members_can_delete_repos.clear OR migration.destroy_file OR network_configuration.delete OR oauth_application.destroy OR oauth_application.remove_client_secret OR org.integration_manager_removed OR org.remove_actions_secret OR org.remove_actions_variable OR org.remove_billing_manager OR org.remove_integration_secret OR org.remove_member OR org.remove_outside_collaborator OR org.remove_self_hosted_runner OR org.required_workflow_delete OR org.runner_group_removed OR org.runner_group_runner_removed OR org_secret_scanning_custom_pattern.delete OR org_secret_scanning_push_protection_bypass_list.remove OR organization_default_label.destroy OR organization_domain.destroy OR packages.package_deleted OR packages.package_version_deleted OR pages_protected_domain.delete OR payment_method.remove OR prebuild_configuration.destroy OR project.delete OR project_collaborator.remove OR project_field.delete OR project_view.delete OR protected_branch.destroy OR public_key.delete OR pull_request_review.delete OR repo.code_scanning_analysis_deleted OR repo.code_scanning_configuration_for_branch_deleted OR repo.destroy OR repo.pages_destroy OR repo.pages_soft_delete OR repo.pages_soft_delete_restore OR repo.remove_actions_secret OR repo.remove_actions_variable OR repo.remove_integration_secret OR repo.remove_member OR repo.remove_self_hosted_runner OR repo.remove_topic OR repository_image.destroy OR repository_ruleset.destroy OR repository_secret_scanning_custom_pattern.delete OR repository_secret_scanning_push_protection_bypass_list.remove OR required_status_check.destroy OR sponsors.sponsors_patreon_user_destroy OR ssh_certificate_authority.destroy OR team.remove_member OR team.remove_repository OR user_license.destroy OR vulnerability_alert_rule.delete OR workflows.delete_workflow_run OR trusted_device.remove OR two_factor_authentication.remove_factor OR user.async_delete OR user.remove_email OR user.remove_integration_secret)"
+              name: "Delete"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "6"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Application Activity
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "6003"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: API Activity
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `action` to `ocsf.api.operation`
+          enabled: true
+          sources:
+            - "action"
+          sourceType: attribute
+          target: ocsf.api.operation
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: OCSF post transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: attribute-remapper
+          name: Map `ocsf.actor.session.uid` to `ocsf.actor.session.uid`
+          enabled: true
+          sources:
+            - ocsf.actor.session.uid
+          sourceType: attribute
+          target: ocsf.actor.session.uid
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.actor.user.uid` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - ocsf.actor.user.uid
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.actor.user.account.uid` to `ocsf.actor.user.account.uid`
+          enabled: true
+          sources:
+            - ocsf.actor.user.account.uid
+          sourceType: attribute
+          target: ocsf.actor.user.account.uid
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.user.uid` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - ocsf.user.uid
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          targetFormat: string
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.class_uid` to `ocsf.class_uid`
+          enabled: true
+          sources:
+            - ocsf.class_uid
+          sourceType: attribute
+          target: ocsf.class_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.severity_id` to `ocsf.severity_id`
+          enabled: true
+          sources:
+            - ocsf.severity_id
+          sourceType: attribute
+          target: ocsf.severity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Type ID calculator
+          enabled: true
+          expression: (ocsf.class_uid * 100) + ocsf.activity_id
+          target: ocsf.type_uid_float
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.type_uid_float` to `ocsf.type_uid`
+          enabled: true
+          sources:
+            - ocsf.type_uid_float
+          sourceType: attribute
+          target: ocsf.type_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false

@@ -1,0 +1,46 @@
+id: karpenter
+metric_id: karpenter
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Karpenter
+  enabled: true
+  filter:
+    query: source:karpenter
+  processors:
+    - type: grok-parser
+      name: Parsing Karpenter date to timestamp
+      enabled: true
+      source: time
+      samples:
+        - '2023-11-28T17:42:02.909Z'
+      grok:
+        matchRules: |
+          timestamp_parser %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}
+        supportRules: ''
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `logger` to `logger.name`
+      enabled: true
+      sources:
+        - logger
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

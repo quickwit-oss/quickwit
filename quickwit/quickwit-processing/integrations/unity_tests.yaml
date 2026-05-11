@@ -1,0 +1,215 @@
+id: "unity"
+tests:
+ -
+  sample: |-
+    {
+      "date" : "2024-01-16T21:02:13.118Z",
+      "git_commit" : "0209d81",
+      "version_name" : 1,
+      "service" : "com.UnityTestRunner.UnityTestRunner",
+      "logger" : {
+        "thread_name" : "Thread-5",
+        "name" : "com.UnityTestRunner.UnityTestRunner",
+        "version" : "2.6.0-SNAPSHOT"
+      },
+      "version_code" : 1,
+      "http" : {
+        "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+      },
+      "status" : "info",
+      "network" : {
+        "client" : {
+          "connectivity" : "network_wifi",
+          "ip" : "185.64.148.140"
+        }
+      }
+    }
+  result:
+    custom:
+      date: "2024-01-16T21:02:13.118Z"
+      git_commit: "0209d81"
+      http:
+        useragent: "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        useragent_details:
+          browser:
+            family: "Android"
+            major: "10"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "Android SDK built for x86"
+            model: "Android SDK built for x86"
+          os:
+            family: "Android"
+            major: "10"
+      logger:
+        name: "com.UnityTestRunner.UnityTestRunner"
+        thread_name: "Thread-5"
+        version: "2.6.0-SNAPSHOT"
+      network:
+        client:
+          connectivity: "network_wifi"
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      service: "com.UnityTestRunner.UnityTestRunner"
+      status: "info"
+      version_code: 1
+      version_name: 1
+    message: |-
+      {
+        "date" : "2024-01-16T21:02:13.118Z",
+        "git_commit" : "0209d81",
+        "version_name" : 1,
+        "service" : "com.UnityTestRunner.UnityTestRunner",
+        "logger" : {
+          "thread_name" : "Thread-5",
+          "name" : "com.UnityTestRunner.UnityTestRunner",
+          "version" : "2.6.0-SNAPSHOT"
+        },
+        "version_code" : 1,
+        "http" : {
+          "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        },
+        "status" : "info",
+        "network" : {
+          "client" : {
+            "connectivity" : "network_wifi",
+            "ip" : "185.64.148.140"
+          }
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1705438933118
+ -
+  sample: |-
+    {
+      "date" : "2024-01-16T21:02:13.118Z",
+      "user_action" : {
+        "id" : "9fa32314-99af-11ea-bb37-0242ac130002"
+      },
+      "logger" : {
+        "name" : "com.UnityTestRunner.UnityTestRunner"
+      },
+      "version_code" : 1,
+      "session_id" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+      "application_id" : "ac8218cf-498b-4d33-bd44-151095959547",
+      "network" : {
+        "client" : {
+          "connectivity" : "network_wifi",
+          "ip" : "185.64.148.140"
+        }
+      },
+      "git_commit" : "0209d81",
+      "view" : {
+        "id" : "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+      },
+      "version_name" : 1,
+      "service" : "com.UnityTestRunner.UnityTestRunner",
+      "http" : {
+        "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+      },
+      "status" : "INFO"
+    }
+  result:
+    custom:
+      application_id: "ac8218cf-498b-4d33-bd44-151095959547"
+      date: "2024-01-16T21:02:13.118Z"
+      git_commit: "0209d81"
+      http:
+        useragent: "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        useragent_details:
+          browser:
+            family: "Android"
+            major: "10"
+          device:
+            brand: "Generic_Android"
+            category: "Mobile"
+            family: "Android SDK built for x86"
+            model: "Android SDK built for x86"
+          os:
+            family: "Android"
+            major: "10"
+      logger:
+        name: "com.UnityTestRunner.UnityTestRunner"
+      network:
+        client:
+          connectivity: "network_wifi"
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      service: "com.UnityTestRunner.UnityTestRunner"
+      session_id: "20cdb46b-eb38-48c8-8037-baa19b188f1e"
+      status: "INFO"
+      user_action:
+        id: "9fa32314-99af-11ea-bb37-0242ac130002"
+      version_code: 1
+      version_name: 1
+      view:
+        id: "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+    message: |-
+      {
+        "date" : "2024-01-16T21:02:13.118Z",
+        "user_action" : {
+          "id" : "9fa32314-99af-11ea-bb37-0242ac130002"
+        },
+        "logger" : {
+          "name" : "com.UnityTestRunner.UnityTestRunner"
+        },
+        "version_code" : 1,
+        "session_id" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+        "application_id" : "ac8218cf-498b-4d33-bd44-151095959547",
+        "network" : {
+          "client" : {
+            "connectivity" : "network_wifi",
+            "ip" : "185.64.148.140"
+          }
+        },
+        "git_commit" : "0209d81",
+        "view" : {
+          "id" : "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+        },
+        "version_name" : 1,
+        "service" : "com.UnityTestRunner.UnityTestRunner",
+        "http" : {
+          "useragent" : "Dalvik/2.1.0 (Linux; U; Android 10; Android SDK built for x86 Build/QSR1.191030.002)"
+        },
+        "status" : "INFO"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1705438933118
+

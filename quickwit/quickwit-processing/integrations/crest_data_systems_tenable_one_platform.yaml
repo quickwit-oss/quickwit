@@ -1,0 +1,180 @@
+id: crest_data_systems_tenable_one_platform
+metric_id: crest-data-systems-tenable-one-platform
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Vuln_state
+    path: state
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Synopsis
+    path: synopsis
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Solution
+    path: solution
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Asset ID
+    path: id
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Asset IP (v4)
+    path: ip
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Asset HostName
+    path: asset.hostname
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: IP Address
+    path: ipv4s
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Name
+    path: hostnames
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: VPR Score
+    path: vprScore
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Risk factor
+    path: risk_factor
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Source
+    path: sources.name
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Asset IP Address
+    path: asset.ipv4
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Asset Name
+    path: asset.netbios_name
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Last Seen
+    path: last_seen
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: FQDN
+    path: asset.fqdn
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: DNS Name
+    path: dnsName
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Plugin Type
+    path: plugin_type
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Plugin Name
+    path: plugin_name
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Severity
+    path: tenable_severity
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: IO Plugin ID
+    path: tenable_io_plugin_id
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: IO Vulnerability CVE
+    path: tenable_io_cve
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: Plugin CVE
+    path: plugin.cve
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: SC Asset UUID
+    path: tenable_sc_asset_uuid
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: SC Plugin ID
+    path: tenable_sc_plugin_id
+    source: log
+  - groups:
+      - Crest Data Systems Tenable One Platform
+    name: SC Vulnerability CVE
+    path: tenable_sc_cve
+    source: log
+pipeline:
+  type: pipeline
+  name: Tenable One Platform by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_tenable_one_platform
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `operating_systems` to `http.useragent_details.os.family`
+      enabled: true
+      sources:
+        - operating_systems
+      sourceType: attribute
+      target: http.useragent_details.os.family
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Tenable Severity Category Processor
+      enabled: true
+      categories:
+        - filter:
+            query: "@tenable_severity:(informational OR low)"
+          name: info
+        - filter:
+            query: "@tenable_severity:(medium OR high)"
+          name: warning
+        - filter:
+            query: "@tenable_severity:critical"
+          name: critical
+      target: status
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

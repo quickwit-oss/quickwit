@@ -1,0 +1,38 @@
+id: plaid
+# See app_id in your integration's manifest.json file to learn more:
+# https://docs.datadoghq.com/developers/integrations/check_references/#manifest-file
+metric_id: plaid
+# If for some reason id must be different than app_id, add the app_id in this field instead.
+# If id and app_id already match, this field can be left blank.
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - Plaid
+    name: Log Label
+    path: label
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: plaid_logs
+  enabled: true
+  filter:
+    query: "source:plaid"
+  processors:
+    - type: attribute-remapper
+      name: Map `created` to `timestamp`
+      enabled: true
+      sources:
+        - created
+      sourceType: attribute
+      target: timestamp
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: date-remapper
+      name: "Define `timestamp` as the official date of the log"
+      enabled: true
+      sources:
+        - timestamp

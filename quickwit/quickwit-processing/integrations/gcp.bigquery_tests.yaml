@@ -1,0 +1,423 @@
+id: "gcp.bigquery"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-08T20:50:15.173Z",
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "project",
+          "labels" : {
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest",
+            "projectSelector" : {
+              "projectId" : "test-271317"
+            }
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "resourcemanager.projects.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "GetProjectBillingInfo",
+          "resourceName" : "projects/test-271317",
+          "serviceName" : "cloudbilling.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-08T20:50:14.86239092Z",
+        "insertId" : "-psip0sd2s2o",
+        "timestamp" : "2020-04-08T20:50:14.697Z"
+      },
+      "publish_time" : "2020-04-08T20:50:15.173Z",
+      "messageId" : "1098611339850543",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-08T20:50:14.697Z"
+          }
+        }
+      },
+      "message_id" : "1098611339850543",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-08T20:50:14.697Z"
+      data:
+        insertId: "-psip0sd2s2o"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testmail.com"
+          authorizationInfo:
+           -
+            resource: "projects/test-271317"
+            permission: "resourcemanager.projects.get"
+            granted: true
+          methodName: "GetProjectBillingInfo"
+          request:
+            '@type': "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest"
+            projectSelector:
+              projectId: "test-271317"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          resourceName: "projects/test-271317"
+          serviceName: "cloudbilling.googleapis.com"
+        receiveTimestamp: "2020-04-08T20:50:14.86239092Z"
+        resource:
+          labels:
+            project_id: "test-271317"
+          type: "project"
+        severity: "INFO"
+        timestamp: "2020-04-08T20:50:14.697Z"
+      evt:
+        name: "GetProjectBillingInfo"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      messageId: "1098611339850543"
+      message_id: "1098611339850543"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "getprojectbillinginfo"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest"
+              projectSelector:
+                projectId: "test-271317"
+            uid: "Unknown"
+          service:
+            name: "cloudbilling.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "getprojectbillinginfo"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-psip0sd2s2o"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1586379014697
+        time_dt: "2020-04-08T20:50:14.697Z"
+        type_uid: 600302
+      publishTime: "2020-04-08T20:50:15.173Z"
+      publish_time: "2020-04-08T20:50:15.173Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-08T20:50:15.173Z",
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "project",
+            "labels" : {
+              "project_id" : "test-271317"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest",
+              "projectSelector" : {
+                "projectId" : "test-271317"
+              }
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "test@testmail.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/test-271317",
+              "permission" : "resourcemanager.projects.get",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "GetProjectBillingInfo",
+            "resourceName" : "projects/test-271317",
+            "serviceName" : "cloudbilling.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-08T20:50:14.86239092Z",
+          "insertId" : "-psip0sd2s2o",
+          "timestamp" : "2020-04-08T20:50:14.697Z"
+        },
+        "publish_time" : "2020-04-08T20:50:15.173Z",
+        "messageId" : "1098611339850543",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-08T20:50:14.697Z"
+            }
+          }
+        },
+        "message_id" : "1098611339850543",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "cloudbilling.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586379014697
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "project",
+        "labels" : {
+          "project_id" : "test-271317"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest",
+          "projectSelector" : {
+            "projectId" : "test-271317"
+          }
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "test@testmail.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/test-271317",
+          "permission" : "resourcemanager.projects.get",
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "methodName" : "GetProjectBillingInfo",
+        "resourceName" : "projects/test-271317",
+        "serviceName" : "cloudbilling.googleapis.com"
+      },
+      "receiveTimestamp" : "2020-04-08T20:50:14.86239092Z",
+      "insertId" : "-psip0sd2s2o",
+      "timestamp" : "2020-04-08T20:50:14.697Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "GetProjectBillingInfo"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "-psip0sd2s2o"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "getprojectbillinginfo"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest"
+              projectSelector:
+                projectId: "test-271317"
+            uid: "Unknown"
+          service:
+            name: "cloudbilling.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "getprojectbillinginfo"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-psip0sd2s2o"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1586379014697
+        time_dt: "2020-04-08T20:50:14.697Z"
+        type_uid: 600302
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testmail.com"
+        authorizationInfo:
+         -
+          resource: "projects/test-271317"
+          permission: "resourcemanager.projects.get"
+          granted: true
+        methodName: "GetProjectBillingInfo"
+        request:
+          '@type': "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest"
+          projectSelector:
+            projectId: "test-271317"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        resourceName: "projects/test-271317"
+        serviceName: "cloudbilling.googleapis.com"
+      receiveTimestamp: "2020-04-08T20:50:14.86239092Z"
+      resource:
+        labels:
+          project_id: "test-271317"
+        type: "project"
+      severity: "INFO"
+      timestamp: "2020-04-08T20:50:14.697Z"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "severity" : "INFO",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "project",
+          "labels" : {
+            "project_id" : "test-271317"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.internal.cloudbilling.billingaccount.v1.GetProjectBillingInfoRequest",
+            "projectSelector" : {
+              "projectId" : "test-271317"
+            }
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317",
+            "permission" : "resourcemanager.projects.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "GetProjectBillingInfo",
+          "resourceName" : "projects/test-271317",
+          "serviceName" : "cloudbilling.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-08T20:50:14.86239092Z",
+        "insertId" : "-psip0sd2s2o",
+        "timestamp" : "2020-04-08T20:50:14.697Z"
+      }
+    service: "cloudbilling.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586379014697
+

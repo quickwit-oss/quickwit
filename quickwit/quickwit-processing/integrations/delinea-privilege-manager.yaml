@@ -1,0 +1,416 @@
+id: delinea-privilege-manager
+metric_id: delinea-privilege-manager
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Delinea Privilege Manager
+  enabled: true
+  filter:
+    query: source:delinea-privilege-manager
+  processors:
+    - type: grok-parser
+      name: Parsing Delinea Privilege Manager events
+      enabled: true
+      source: message
+      samples:
+        - CEF:0|Thycotic|Application Control
+          Solution|8|4eb4ec69d7a94797972a41855d3e7799|Application Control Policy
+          Feedback|5|externalId=56 PolicyName=Event Discovery Audit Elevated
+          Privileges Policy (Sample) UserName=demo FileName=cleanmgr.exe
+          FilePath=C:\\Windows\\System32\\cleanmgr.exe
+          EventReceivedByServer=11/18/2024 4:13:50 PM
+          _FileId=0fd0d558-7b6b-5bcb-a8f2-336a95d26762
+          _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo
+        - <5>1 2024-11-20T10:28:08.736000+00:00 demo demo -
+          4eb4ec69d7a94797972a41855d3e7799 - CEF:0|Thycotic|Application Control
+          Solution|8|4eb4ec69d7a94797972a41855d3e7799|Application Control Policy
+          Feedback|5|externalId=191 PolicyName=MAC OS Monitor Policy
+          UserName=root FileName=wall FilePath=/usr/bin/wall
+          EventReceivedByServer=11/20/2024 10:33:37 AM
+          _FileId=d25f2fe0-7f22-5046-a6b1-78c8b5f51cd6
+          _ComputerId=2386a2ac-807a-5682-a261-d0f4e85baa7c ComputerName=demo
+        - <5>1 2024-11-20T10:28:08.736000+00:00 demo 1 demo 1 -
+          4eb4ec69d7a94797972a41855d3e7799 - CEF:0|Thycotic|Application Control
+          Solution|8|4eb4ec69d7a94797972a41855d3e7799|Application Control Policy
+          Feedback|5|externalId=191 PolicyName=MAC OS Monitor Policy
+          UserName=root FileName=wall FilePath=/usr/bin/wall
+          EventReceivedByServer=11/20/2024 10:33:37 AM
+          _FileId=d25f2fe0-7f22-5046-a6b1-78c8b5f51cd6
+          _ComputerId=2386a2ac-807a-5682-a261-d0f4e85baa7c ComputerName=demo 1
+        - CEF:0|Delinea|PrivilegeManager|12.0|ChangeHistory_CreateFromTemplate|ChangeHistory|0|_id=1315
+          CorrelationId=9ec433be-973c-4c9a-bb64-bcd8fe25f597
+          ItemId=f69894d4-0394-4d6e-bffb-f780f2b714ca ItemName=MAC OS Justify
+          Elevate Process Rights Policy
+          UserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 UserName=demo Changes=The
+          item was created from a template,
+      grok:
+        supportRules: >-
+          extract_data_till_pipe_delimiter %{regex("[^|]*")}
+
+
+          extract_syslog_header_with_hostname <%{integer:}>%{integer:syslog.version} %{parse_date_rule:} %{notSpace:syslog.hostname} %{notSpace:syslog.appname} %{notSpace:syslog.process_id:nullIf("-")} %{notSpace:syslog.msgid} - 
+
+
+          extract_syslog_header <%{integer:}>%{integer:} %{parse_date_rule:}%{data:}
+
+
+          parse_date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SZZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+        matchRules: >-
+          parsing_rule_for_change_history_event
+          (%{extract_syslog_header_with_hostname:}|%{extract_syslog_header:})?CEF\:%{integer:}\|%{extract_data_till_pipe_delimiter:device_vendor}\|%{extract_data_till_pipe_delimiter:device_product}\|%{extract_data_till_pipe_delimiter:device_version}\|%{extract_data_till_pipe_delimiter:change_history_type}\|%{regex("(ChangeHistory)"):event_name}\|%{extract_data_till_pipe_delimiter:severity}\|%{data:log_message}
+
+
+          parsing_rule (%{extract_syslog_header_with_hostname:}|%{extract_syslog_header:})?CEF\:%{integer:}\|%{extract_data_till_pipe_delimiter:device_vendor}\|%{extract_data_till_pipe_delimiter:device_product}\|%{extract_data_till_pipe_delimiter:device_version}\|%{extract_data_till_pipe_delimiter:}\|%{extract_data_till_pipe_delimiter:event_name}\|%{extract_data_till_pipe_delimiter:severity}\|%{data:log_message}
+    - type: pipeline
+      name: Processing of application action events
+      enabled: true
+      filter:
+        query: '@event_name:"Application Action Events"'
+      processors:
+        - type: grok-parser
+          name: Parsing of application action events
+          enabled: true
+          source: log_message
+          samples:
+            - externalId=202 PolicyName=New Elevate Process Rights Policy
+              UserName=demo FileName=rundll32.exe
+              FilePath=C:\\Windows\\System32\\rundll32.exe
+              EventReceivedByServer=11/20/2024 10:34:27 AM
+              _FileId=be1b5ec6-b717-54f6-9efa-5a3e6026c0f5
+              _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo
+            - externalId=8453 FileName=shutdown FileHashSha1=No sha1 hash for
+              file id 1498556A-41D8-5F1E-8527-279A97F5E5C0
+              FileHashSha256=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\=
+              FileHash=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\=
+              FileFirstSeenByServer=11/20/2024 1:33:37 AM
+              _FileId=1498556a-41d8-5f1e-8527-279a97f5e5c0
+            - externalId=7141 PolicyName=New Monitor Policy UserName=demo
+              FileName=AGSService.exe FilePath=C:\\Program Files (x86)\\Common
+              Files\\Adobe\\AdobeGCClient\\AGSService.exe
+              EventReceivedByServer=11/26/2024 8:37:42 AM
+              _FileId=d97c84a0-2b33-5612-84d4-8723899eeaf9
+              _ComputerId=9ffc0142-550f-8413-685b-65c1322c0281 ComputerName=demo
+              SecurityRatingSystemName=VirusTotal Rating System Rating=Clean
+            - externalId=8453 FileName=shutdown FileHashSha1=No sha1 hash for
+              file id 1498556A-41D8-5F1E-8527-279A97F5E5C0
+              FileHashSha256=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\=
+              FileHash=nq/AWFwlobG93e+Vw0aM2w6jc0t+fX5r9o30t8+fZfI\=
+              FileFirstSeenByServer=11/20/2024 10:33:37 AM
+              _FileId=1498556a-41d8-5f1e-8527-279a97f5e5c0
+              SecurityRatingSystemName=VirusTotal Rating System Rating=Clean
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: >-
+              parsing_rule_1 %{keyvalue_parsing_rule:}
+              PolicyName=%{data:PolicyName} UserName=%{data:UserName}
+              FileName=%{data:FileName} FilePath=%{data:FilePath}
+              EventReceivedByServer=%{date("M/d/yyyy h:m:s
+              a"):EventReceivedByServer} %{keyvalue_parsing_rule:}
+
+
+              parsing_rule_2 %{keyvalue_parsing_rule:} FileName=%{data:FileName} FileHashSha1=%{data:FileHashSha1} FileHashSha256=%{data:FileHashSha256} FileHash=%{data:FileHash} FileFirstSeenByServer=%{date("M/d/yyyy h:m:s a"):FileFirstSeenByServer}( %{keyvalue_parsing_rule:})?
+    - type: pipeline
+      name: Processing of application justification events
+      enabled: true
+      filter:
+        query: '@event_name:"Application Justification Events"'
+      processors:
+        - type: grok-parser
+          name: Parsing of application justification events
+          enabled: true
+          source: log_message
+          samples:
+            - externalId=188 PolicyName=New Elevate Process Rights Policy
+              UserName=demo UserReason=testing application
+            - externalId=2 PolicyName=New Elevate Process Rights Policy
+              UserName=demo UserReason=for IT Use only  FileName=rundll32.exe
+              FilePath=C:\\Windows\\System32\\rundll32.exe
+              EventReceivedByServer=11/20/2024 10:34:27 AM
+              _FileId=be1b5ec6-b717-54f6-9efa-5a3e6026c0f5
+              _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: parsing_rule_1 %{keyvalue_parsing_rule:}
+              PolicyName=%{data:PolicyName} UserName=%{data:UserName}
+              UserReason=%{data:UserReason}( FileName=%{data:FileName}
+              FilePath=%{data:FilePath} EventReceivedByServer=%{date("M/d/yyyy
+              h:m:s a"):EventReceivedByServer} %{keyvalue_parsing_rule:})?
+    - type: pipeline
+      name: Processing of change history events
+      enabled: true
+      filter:
+        query: '@event_name:"ChangeHistory"'
+      processors:
+        - type: grok-parser
+          name: Parsing of change history events
+          enabled: true
+          source: log_message
+          samples:
+            - _id=1318 CorrelationId=42daa85c-96ef-46e6-a06e-a731d5ab166f
+              ItemId=f69894d4-0394-4d6e-bffb-f780f2b714ca ItemName=MAC OS
+              Justify Elevate Process Rights Policy
+              UserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 UserName=demo
+              Changes="Application targets" was changed from " Wi-Fi Settings
+              for macOS Ventura and Later, /usr/bin/sudo - File Spec Filter, All
+              Application Bundles Filter (MacOS), Any Command - File Spec Filter
+              (macOS), Any Package (macOS), App Store Preference Pane (macOS)"
+              to " Wi-Fi Settings for macOS Ventura and Later, Any Package
+              (macOS), Any Command - File Spec Filter (macOS), Agent Utility -
+              App Bundle Filter, Printers and Scanners Preference Pane
+              (macOS)",  "Send policy feedback" has changed from "False" to
+              "True",
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: parsing_rule_1 %{keyvalue_parsing_rule:} ItemName=%{data:ItemName}
+              UserId=%{data:UserId} UserName=%{data:UserName}
+              Changes=%{data:Changes}
+    - type: pipeline
+      name: Processing of newly discovered file events
+      enabled: true
+      filter:
+        query: '@event_name:"Newly Discovered File Events"'
+      processors:
+        - type: grok-parser
+          name: Parsing of newly discovered file events
+          enabled: true
+          source: log_message
+          samples:
+            - externalId=8449 FileName=New Loaded Resource 11/20/2024 10:09:26
+              AM +00:00 FileHashSha1=No sha1 hash for file id
+              F7071A71-F213-51DF-9E55-47729B8B83D9
+              FileHashSha256=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\=
+              FileHash=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\=
+              FileFirstSeenByServer=11/20/2024 10:09:26 AM
+              _FileId=f7071a71-f213-51df-9e55-47729b8b83d9
+              SecurityRatingSystemName=NO RATING Rating=NO RATING
+            - externalId=8449 FileName=New Loaded Resource 11/20/2024 10:09:26
+              AM +00:00 FileHashSha1=No sha1 hash for file id
+              F7071A71-F213-51DF-9E55-47729B8B83D9
+              FileHashSha256=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\=
+              FileHash=I9xARENk3p6RFXmjAc+RvjF0BFI0cTYB+OhamDr8EQc\=
+              FileFirstSeenByServer=11/20/2024 10:09:26 AM
+              _FileId=f7071a71-f213-51df-9e55-47729b8b83d9
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: parsing_rule_1 %{keyvalue_parsing_rule:} FileName=%{data:FileName}
+              FileHashSha1=%{data:FileHashSha1}
+              FileHashSha256=%{data:FileHashSha256} FileHash=%{data:FileHash}
+              FileFirstSeenByServer=%{date("M/d/yyyy h:m:s
+              a"):FileFirstSeenByServer}( %{keyvalue_parsing_rule:})?
+    - type: pipeline
+      name: Processing of password disclosure events
+      enabled: true
+      filter:
+        query: '@event_name:"Password Disclosure Events"'
+      processors:
+        - type: grok-parser
+          name: Parsing of password disclosure events
+          enabled: true
+          source: log_message
+          samples:
+            - externalId=38 EventOccuredOnServer=11/29/2024 9:54:44 AM
+              _DisclosedByUserId=d931c777-7021-48d6-92aa-e1f9fdb797f0 Requesting
+              User=demo test RemoteIpAddress=10.10.10.10
+              _ManagedUserId=2af347e2-0adc-4d79-8b24-bd557230b8e4
+              ManagedUserName=demo ComputerDomain=No computer domain for user
+              2AF347E2-0ADC-4D79-8B24-BD557230B8E4 ComputerName=No computer name
+              for user 2AF347E2-0ADC-4D79-8B24-BD557230B8E4
+            - externalId=1 EventOccuredOnServer=2/28/2020 10:25:56 PM
+              _DisclosedByUserId=fc580694-32fd-4dc1-ae8b-80eae7553109 Requesting
+              User=No name for disclosed by user id
+              2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB
+              RemoteIpAddress=38.104.237.126
+              _ManagedUserId=2db8d3f9-e11e-4924-a19f-ab4fe5ab34eb
+              ManagedUserName=VirusTotal API Key ComputerDomain=No computer
+              domain for user 2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB
+              ComputerName=No computer name for user
+              2DB8D3F9-E11E-4924-A19F-AB4FE5AB34EB
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: parsing_rule_1 %{keyvalue_parsing_rule:}
+              EventOccuredOnServer=%{date("M/d/yyyy h:m:s
+              a"):EventOccuredOnServer} %{keyvalue_parsing_rule:} Requesting
+              User=%{data:RequestingUser}
+              RemoteIpAddress=%{notSpace:RemoteIpAddress}
+              %{keyvalue_parsing_rule:}
+    - type: pipeline
+      name: Processing of bad rated application action events
+      enabled: true
+      filter:
+        query: '@event_name:"Bad Rated Application Action Events"'
+      processors:
+        - type: grok-parser
+          name: Processing of bad rated application action events
+          enabled: true
+          source: log_message
+          samples:
+            - externalId=12333 PolicyName=Virus Total DD Elevate Process Rights
+              Policy UserName=demo FileName=SimulatorSetup.exe
+              FilePath=C:\\Users\\demo\\AppData\\Local\\Temp\\b6379172-273e-40fb-892b-b67ad56ffc2f_ransim.zip.c2f\\SimulatorSetup.exe
+              EventReceivedByServer=12/2/2024 12:08:04 PM
+              _FileId=06255cc9-0aa7-5056-8825-95fdb4d98a3f
+              _ComputerId=59834d56-1710-88aa-be43-8102432c38ed ComputerName=demo
+              SecurityRatingSystemName=VirusTotal Rating System Rating=Bad
+          grok:
+            supportRules: keyvalue_parsing_rule
+              %{data::keyvalue("=","`~!#$%^&*()+{}\\\\\\[\\]|;'?<>:/\" ")}
+            matchRules: parsing_rule_1 %{keyvalue_parsing_rule:}
+              PolicyName=%{data:PolicyName} UserName=%{data:UserName}
+              FileName=%{data:FileName} FilePath=%{data:FilePath}
+              EventReceivedByServer=%{date("M/d/yyyy h:m:s
+              a"):EventReceivedByServer} %{keyvalue_parsing_rule:}
+    - type: date-remapper
+      name: Define `EventReceivedByServer`, `EventOccuredOnServer`,
+        `FileFirstSeenByServer`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - EventReceivedByServer
+        - EventOccuredOnServer
+        - FileFirstSeenByServer
+        - timestamp
+    - type: category-processor
+      name: "Define `service` from `event_name` attribute"
+      enabled: true
+      categories:
+        - filter:
+            query: source:delinea-privilege-manager @event_name:"Application Action Events"
+          name: application-action-events
+        - filter:
+            query: source:delinea-privilege-manager @event_name:"Bad Rated Application
+              Action Events"
+          name: bad-rated-application-action-events
+        - filter:
+            query: source:delinea-privilege-manager @event_name:"Application Justification
+              Events"
+          name: application-justification-events
+        - filter:
+            query: source:delinea-privilege-manager @event_name:"Newly Discovered File
+              Events"
+          name: newly-discovered-file-events
+        - filter:
+            query: source:delinea-privilege-manager @event_name:"Password Disclosure Events"
+          name: password-disclosure-events
+        - filter:
+            query: source:delinea-privilege-manager @event_name:ChangeHistory
+          name: change-history-events
+      target: service
+    - type: category-processor
+      name: "Define `severity` from `severity` attribute"
+      enabled: true
+      categories:
+        - filter:
+            query: source:delinea-privilege-manager @severity:[4 TO 6]
+          name: warning
+        - filter:
+            query: source:delinea-privilege-manager @severity:[7 TO 8]
+          name: error
+        - filter:
+            query: source:delinea-privilege-manager @severity:[9 TO 10]
+          name: critical
+        - filter:
+            query: source:delinea-privilege-manager @severity:[0 TO 3]
+          name: info
+      target: severity
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: attribute-remapper
+      name: Map `UserName` to `usr.name`
+      enabled: true
+      sources:
+        - UserName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `UserId` to `usr.id`
+      enabled: true
+      sources:
+        - UserId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `RemoteIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - RemoteIpAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Define `network.client.ip` as default geoip attribute for source
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

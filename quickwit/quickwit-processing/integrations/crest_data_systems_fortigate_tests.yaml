@@ -1,0 +1,390 @@
+id: 'crest_data_systems_fortigate'
+tests:
+ -
+  sample: "date=2019-05-10 time=11:37:47 logid='0000000013' type='traffic' subtype='forward' level='notice' vd='vdom1' eventtime=1557513467369913239 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' srcuuid='ae28f494-5735-51e9-f247-d1d2ce663f4b' dstuuid='ae28f494-5735-51e9-f247-d1d2ce663f4b' poluuid='ccb269e0-5735-51e9-a218-a397dd08b7eb' sessionid=105048 proto=6 action='close' policyid=1 policytype='policy' service='HTTP' dstcountry='Canada' srccountry='Reserved' trandisp='snat' transip=10.0.0.1 transport=123 appid=34050 app='HTTP.BROWSER_Firefox' appcat='Web.Client' apprisk='elevated' applist='g-default' duration=116 sentbyte=1188 rcvdbyte=1224 sentpkt=17 rcvdpkt=16 utmaction='allow' countapp=1 osname='Ubuntu' mastersrcmac='a1:b2:c3:00:12:33' srcmac='a1:b2:c3:00:12:33' srcserver=0 utmref=65500-742 devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "close"
+      app: "HTTP.BROWSER_Firefox"
+      appcat: "Web.Client"
+      appid: 34050
+      applist: "g-default"
+      apprisk: "elevated"
+      countapp: 1
+      date: "2019-05-10"
+      devid: "fcvmd123"
+      dstcountry: "Canada"
+      dstintf: "abc123"
+      dstintfrole: "port12345"
+      dstuuid: "ae28f494-5735-51e9-f247-d1d2ce663f4b"
+      duration: 116
+      eventtime: 1557513467369913239
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.traffic"
+      level: "notice"
+      logid: "0000000013"
+      mastersrcmac: "a1:b2:c3:00:12:33"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+        destination:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+      osname: "Ubuntu"
+      policyid: 1
+      policytype: "policy"
+      poluuid: "ccb269e0-5735-51e9-a218-a397dd08b7eb"
+      proto: 6
+      protocol: "tcp"
+      rcvdbyte: 1224
+      rcvdpkt: 16
+      sentbyte: 1188
+      sentpkt: 17
+      sessionid: 105048
+      srccountry: "Reserved"
+      srcintf: "abc123"
+      srcintfrole: "port12345"
+      srcmac: "a1:b2:c3:00:12:33"
+      srcserver: 0
+      srcuuid: "ae28f494-5735-51e9-f247-d1d2ce663f4b"
+      subtype: "forward"
+      time: "11:37:47"
+      traffic_service: "HTTP"
+      trandisp: "snat"
+      transip: "10.0.0.1"
+      transport: 123
+      type: "traffic"
+      utmaction: "allow"
+      utmref: "65500-742"
+      vd: "vdom1"
+    message: "date=2019-05-10 time=11:37:47 logid='0000000013' type='traffic' subtype='forward' level='notice' vd='vdom1' eventtime=1557513467369913239 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' srcuuid='ae28f494-5735-51e9-f247-d1d2ce663f4b' dstuuid='ae28f494-5735-51e9-f247-d1d2ce663f4b' poluuid='ccb269e0-5735-51e9-a218-a397dd08b7eb' sessionid=105048 proto=6 action='close' policyid=1 policytype='policy' service='HTTP' dstcountry='Canada' srccountry='Reserved' trandisp='snat' transip=10.0.0.1 transport=123 appid=34050 app='HTTP.BROWSER_Firefox' appcat='Web.Client' apprisk='elevated' applist='g-default' duration=116 sentbyte=1188 rcvdbyte=1224 sentpkt=17 rcvdpkt=16 utmaction='allow' countapp=1 osname='Ubuntu' mastersrcmac='a1:b2:c3:00:12:33' srcmac='a1:b2:c3:00:12:33' srcserver=0 utmref=65500-742 devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.traffic"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-10 time=11:50:48 logid='0001000014' type='traffic' subtype='local' level='notice' vd='vdom1' eventtime=1557514248379911176 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' sessionid=107478 proto=6 action='server-rst' policyid=0 policytype='local-in-policy' service='HTTPS' dstcountry='Reserved' srccountry='Reserved' trandisp='noop' app='Web Management(HTTPS)' duration=5 sentbyte=1247 rcvdbyte=1719 sentpkt=5 rcvdpkt=6 appcat='unscanned' devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "server-rst"
+      app: "Web Management(HTTPS)"
+      appcat: "unscanned"
+      date: "2019-05-10"
+      devid: "fcvmd123"
+      dstcountry: "Reserved"
+      dstintf: "abc123"
+      dstintfrole: "port12345"
+      duration: 5
+      eventtime: 1557514248379911176
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.traffic"
+      level: "notice"
+      logid: "0001000014"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+        destination:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+      policyid: 0
+      policytype: "local-in-policy"
+      proto: 6
+      protocol: "tcp"
+      rcvdbyte: 1719
+      rcvdpkt: 6
+      sentbyte: 1247
+      sentpkt: 5
+      sessionid: 107478
+      srccountry: "Reserved"
+      srcintf: "abc123"
+      srcintfrole: "port12345"
+      subtype: "local"
+      time: "11:50:48"
+      traffic_service: "HTTPS"
+      trandisp: "noop"
+      type: "traffic"
+      vd: "vdom1"
+    message: "date=2019-05-10 time=11:50:48 logid='0001000014' type='traffic' subtype='local' level='notice' vd='vdom1' eventtime=1557514248379911176 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' sessionid=107478 proto=6 action='server-rst' policyid=0 policytype='local-in-policy' service='HTTPS' dstcountry='Reserved' srccountry='Reserved' trandisp='noop' app='Web Management(HTTPS)' duration=5 sentbyte=1247 rcvdbyte=1719 sentpkt=5 rcvdpkt=6 appcat='unscanned' devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.traffic"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-13 time=11:20:54 logid='0100032001' type='event' subtype='system' level='information' vd='vdom1' eventtime=1557771654587081441 logdesc='Real App on ground' sn='1557771654' user='user123' ui='ssh(10.0.0.1)' method='ssh' srcip=10.0.0.1 dstip=10.0.0.1 action='login' status='success' reason='none' profile='super_admin' msg='Administrator user123 logged in successfully from ssh(10.0.0.1) devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "login"
+      date: "2019-05-13"
+      devid: "fcvmd123"
+      eventtime: 1557771654587081441
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.event"
+      fortigate_status: "success"
+      level: "information"
+      logdesc: "Real App on ground"
+      logid: "0100032001"
+      method: "ssh"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.1"
+        destination:
+          geoip: {}
+          ip: "10.0.0.1"
+      profile: "super_admin"
+      reason: "none"
+      sn: "1557771654"
+      subtype: "system"
+      time: "11:20:54"
+      type: "event"
+      ui: "ssh(10.0.0.1)"
+      usr:
+        name: "user123"
+      vd: "vdom1"
+    message: "date=2019-05-13 time=11:20:54 logid='0100032001' type='event' subtype='system' level='information' vd='vdom1' eventtime=1557771654587081441 logdesc='Real App on ground' sn='1557771654' user='user123' ui='ssh(10.0.0.1)' method='ssh' srcip=10.0.0.1 dstip=10.0.0.1 action='login' status='success' reason='none' profile='super_admin' msg='Administrator user123 logged in successfully from ssh(10.0.0.1) devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.event"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-13 time=15:55:56 logid='0102043008' type='event' subtype='user' level='notice' vd='root' eventtime=1557788156913809277 logdesc='Real App on ground' srcip=10.0.0.1 dstip=10.0.0.1 policyid=1 interface='port10' user='user123' group='local-group1' authproto='TELNET(10.0.0.1)' action='authentication' status='success' reason='N/A' msg='Administrator user123 logged in successfully from ssh(10.0.0.1) devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "authentication"
+      authproto: "TELNET(10.0.0.1)"
+      date: "2019-05-13"
+      devid: "fcvmd123"
+      eventtime: 1557788156913809277
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.event"
+      fortigate_status: "success"
+      group: "local-group1"
+      interface: "port10"
+      level: "notice"
+      logdesc: "Real App on ground"
+      logid: "0102043008"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.1"
+        destination:
+          geoip: {}
+          ip: "10.0.0.1"
+      policyid: 1
+      reason: "N/A"
+      subtype: "user"
+      time: "15:55:56"
+      type: "event"
+      usr:
+        name: "user123"
+      vd: "root"
+    message: "date=2019-05-13 time=15:55:56 logid='0102043008' type='event' subtype='user' level='notice' vd='root' eventtime=1557788156913809277 logdesc='Real App on ground' srcip=10.0.0.1 dstip=10.0.0.1 policyid=1 interface='port10' user='user123' group='local-group1' authproto='TELNET(10.0.0.1)' action='authentication' status='success' reason='N/A' msg='Administrator user123 logged in successfully from ssh(10.0.0.1) devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.event"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-13 time=14:21:42 logid='0101037127' type='event' subtype='vpn' level='notice' vd='root' eventtime=1557782502722231889 logdesc='Real App on ground' msg='Administrator user123 logged in successfully from ssh(10.0.0.1)' action='negotiate' remip=10.0.0.1 locip=10.0.0.1 remport=123 locport=123 outintf='abc123' cookies='12337298372hdjsakdjahsd/2932000000000'' user='N/A' group='N/A' xauthuser='N/A' xauthgroup='N/A' assignip=N/A vpntunnel='test' status='success' init='local' mode='main' dir='outbound' stage=1 role='initiator' result='OK' devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "negotiate"
+      assignip: "N/A"
+      date: "2019-05-13"
+      devid: "fcvmd123"
+      dir: "outbound"
+      eventtime: 1557782502722231889
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.event"
+      fortigate_stage: 1
+      fortigate_status: "success"
+      group: "N/A"
+      init: "local"
+      level: "notice"
+      locip: "10.0.0.1"
+      locport: 123
+      logdesc: "Real App on ground"
+      logid: "0101037127"
+      mode: "main"
+      msg: "Administrator user123 logged in successfully from ssh(10.0.0.1)"
+      outintf: "abc123"
+      remip: "10.0.0.1"
+      remport: 123
+      result: "OK"
+      role: "initiator"
+      subtype: "vpn"
+      time: "14:21:42"
+      type: "event"
+      usr:
+        name: "N/A"
+      vd: "root"
+      vpntunnel: "test"
+      xauthgroup: "N/A"
+      xauthuser: "N/A"
+    message: "date=2019-05-13 time=14:21:42 logid='0101037127' type='event' subtype='vpn' level='notice' vd='root' eventtime=1557782502722231889 logdesc='Real App on ground' msg='Administrator user123 logged in successfully from ssh(10.0.0.1)' action='negotiate' remip=10.0.0.1 locip=10.0.0.1 remport=123 locport=123 outintf='abc123' cookies='12337298372hdjsakdjahsd/2932000000000'' user='N/A' group='N/A' xauthuser='N/A' xauthgroup='N/A' assignip=N/A vpntunnel='test' status='success' init='local' mode='main' dir='outbound' stage=1 role='initiator' result='OK' devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.event"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-13 time=11:30:08 logid='0104043568' type='event' subtype='wireless' level='warning' vd='vdom1' eventtime=1557772208134721423 logdesc='Real App on ground' ssid='fortinet' bssid='a1:b2:c3:00:12:33' aptype=0 rate=130 radioband='802.11n' channel=6 action='fake-ap-on-air' manuf='Fortinet, Inc.' security='WPA2 Personal' encryption='AES' signal=-93 noise=-95 live=353938 age=505 onwire='no' detectionmethod='N/A' stamac='N/A' apscan='N/A' sndetected='N/A' radioiddetected=0 stacount=0 snclosest='FP320C3X17001909' radioidclosest=0 apstatus=0 msg='Administrator user123 logged in successfully from ssh(10.0.0.1)' devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "fake-ap-on-air"
+      age: 505
+      apscan: "N/A"
+      apstatus: 0
+      aptype: 0
+      bssid: "a1:b2:c3:00:12:33"
+      channel: 6
+      date: "2019-05-13"
+      detectionmethod: "N/A"
+      devid: "fcvmd123"
+      encryption: "AES"
+      eventtime: 1557772208134721423
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.event"
+      level: "warning"
+      live: 353938
+      logdesc: "Real App on ground"
+      logid: "0104043568"
+      manuf: "Fortinet, Inc."
+      msg: "Administrator user123 logged in successfully from ssh(10.0.0.1)"
+      noise: -95
+      onwire: "no"
+      radioband: "802.11n"
+      radioidclosest: 0
+      radioiddetected: 0
+      rate: 130
+      security: "WPA2 Personal"
+      signal: -93
+      snclosest: "FP320C3X17001909"
+      sndetected: "N/A"
+      ssid: "fortinet"
+      stacount: 0
+      stamac: "N/A"
+      subtype: "wireless"
+      time: "11:30:08"
+      type: "event"
+      vd: "vdom1"
+    message: "date=2019-05-13 time=11:30:08 logid='0104043568' type='event' subtype='wireless' level='warning' vd='vdom1' eventtime=1557772208134721423 logdesc='Real App on ground' ssid='fortinet' bssid='a1:b2:c3:00:12:33' aptype=0 rate=130 radioband='802.11n' channel=6 action='fake-ap-on-air' manuf='Fortinet, Inc.' security='WPA2 Personal' encryption='AES' signal=-93 noise=-95 live=353938 age=505 onwire='no' detectionmethod='N/A' stamac='N/A' apscan='N/A' sndetected='N/A' radioiddetected=0 stacount=0 snclosest='FP320C3X17001909' radioidclosest=0 apstatus=0 msg='Administrator user123 logged in successfully from ssh(10.0.0.1)' devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.event"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-15 time=17:56:41 logid='0419016384' type='utm' subtype='ips' eventtype='signature' level='alert' vd='root' eventtime=1557968201 severity='critical' srcip=10.0.7.1 srccountry='Reserved' dstip=10.0.7.1 srcintf='abc123' srcintfrole='port12345' dstintf='abc123' dstintfrole='port12345' sessionid=4017 action='dropped' proto=6 service='HTTP' policyid=1 attack='Adobe.Flash.newfunction.Handling.Code.Execution' srcport=123 dstport=123 hostname='abc.xyz.com' url='/ips/sig1.pdf' direction='incoming' attackid=23305 profile='block-critical-ips' ref='http://www.fortinet.com/ids/VID23305' incidentserialno=582633933 msg='Administrator user123 logged in successfully from ssh(10.1)' crscore=50 craction=4096 crlevel='critical' devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "dropped"
+      attack: "Adobe.Flash.newfunction.Handling.Code.Execution"
+      attackid: 23305
+      craction: 4096
+      crlevel: "critical"
+      crscore: 50
+      date: "2019-05-15"
+      devid: "fcvmd123"
+      direction: "incoming"
+      dstintf: "abc123"
+      dstintfrole: "port12345"
+      eventtime: 1557968201
+      eventtype: "signature"
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.utm"
+      fortigate_severity: "critical"
+      incidentserialno: 582633933
+      level: "alert"
+      logid: "0419016384"
+      msg: "Administrator user123 logged in successfully from ssh(10.1)"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.7.1"
+          port: 123
+        destination:
+          geoip: {}
+          ip: "10.0.7.1"
+          port: 123
+      policyid: 1
+      profile: "block-critical-ips"
+      proto: 6
+      protocol: "tcp"
+      ref: "http://www.fortinet.com/ids/VID23305"
+      sessionid: 4017
+      srccountry: "Reserved"
+      srcintf: "abc123"
+      srcintfrole: "port12345"
+      subtype: "ips"
+      syslog:
+        hostname: "abc.xyz.com"
+      time: "17:56:41"
+      type: "utm"
+      url: "/ips/sig1.pdf"
+      utm_service: "HTTP"
+      vd: "root"
+    message: "date=2019-05-15 time=17:56:41 logid='0419016384' type='utm' subtype='ips' eventtype='signature' level='alert' vd='root' eventtime=1557968201 severity='critical' srcip=10.0.7.1 srccountry='Reserved' dstip=10.0.7.1 srcintf='abc123' srcintfrole='port12345' dstintf='abc123' dstintfrole='port12345' sessionid=4017 action='dropped' proto=6 service='HTTP' policyid=1 attack='Adobe.Flash.newfunction.Handling.Code.Execution' srcport=123 dstport=123 hostname='abc.xyz.com' url='/ips/sig1.pdf' direction='incoming' attackid=23305 profile='block-critical-ips' ref='http://www.fortinet.com/ids/VID23305' incidentserialno=582633933 msg='Administrator user123 logged in successfully from ssh(10.1)' crscore=50 craction=4096 crlevel='critical' devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.utm"
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "date=2019-05-13 time=16:29:45 logid='0316013056' type='utm' subtype='webfilter' eventtype='ftgd_blk' level='warning' vd='vdom1' eventtime=1557790184975119738 policyid=1 sessionid=381780 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' proto=6 service='HTTP' hostname='abc.xyz.com' profile='test-webfilter' action='blocked' reqtype='direct' url='/' sentbyte=84 rcvdbyte=0 direction='outgoing' msg='Administrator user123 logged in successfully from ssh(10)' method='domain' cat=26 catdesc='Malicious Websites' crscore=30 craction=4194304 crlevel='high' devname='fgvm1234' devid='fcvmd123'"
+  result:
+    custom:
+      action: "blocked"
+      cat: 26
+      catdesc: "Malicious Websites"
+      craction: 4194304
+      crlevel: "high"
+      crscore: 30
+      date: "2019-05-13"
+      devid: "fcvmd123"
+      direction: "outgoing"
+      dstintf: "abc123"
+      dstintfrole: "port12345"
+      eventtime: 1557790184975119738
+      eventtype: "ftgd_blk"
+      fortigate_devname: "fgvm1234"
+      fortigate_service: "cds.fortigate.utm"
+      level: "warning"
+      logid: "0316013056"
+      method: "domain"
+      msg: "Administrator user123 logged in successfully from ssh(10)"
+      network:
+        client:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+        destination:
+          geoip: {}
+          ip: "10.0.0.1"
+          port: 123
+      policyid: 1
+      profile: "test-webfilter"
+      proto: 6
+      protocol: "tcp"
+      rcvdbyte: 0
+      reqtype: "direct"
+      sentbyte: 84
+      sessionid: 381780
+      srcintf: "abc123"
+      srcintfrole: "port12345"
+      subtype: "webfilter"
+      syslog:
+        hostname: "abc.xyz.com"
+      time: "16:29:45"
+      type: "utm"
+      url: "/"
+      utm_service: "HTTP"
+      vd: "vdom1"
+    message: "date=2019-05-13 time=16:29:45 logid='0316013056' type='utm' subtype='webfilter' eventtype='ftgd_blk' level='warning' vd='vdom1' eventtime=1557790184975119738 policyid=1 sessionid=381780 srcip=10.0.0.1 srcport=123 srcintf='abc123' srcintfrole='port12345' dstip=10.0.0.1 dstport=123 dstintf='abc123' dstintfrole='port12345' proto=6 service='HTTP' hostname='abc.xyz.com' profile='test-webfilter' action='blocked' reqtype='direct' url='/' sentbyte=84 rcvdbyte=0 direction='outgoing' msg='Administrator user123 logged in successfully from ssh(10)' method='domain' cat=26 catdesc='Malicious Websites' crscore=30 craction=4194304 crlevel='high' devname='fgvm1234' devid='fcvmd123'"
+    service: "cds.fortigate.utm"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+

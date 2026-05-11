@@ -1,0 +1,134 @@
+id: contrastsecurity
+metric_id: contrastsecurity
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Event
+    name: Action
+    path: evt.action
+    source: log
+pipeline:
+  type: pipeline
+  name: Contrast Security
+  enabled: true
+  filter:
+    query: source:contrastsecurity
+  processors:
+    - type: grok-parser
+      name: Parsing contrastsecurity logs
+      enabled: true
+      source: message
+      samples:
+        - '[INFO] [talledLocalContainer] 261119 13.03.21,597 {} {} {} INFO (VulnerabilityProcessorQueryService.java:135) [VULNERABILITIES] Saved vulnerability instance property VulnerabilityInstanceProperty(id=19, vulnerabilityInstanceId=0, hash=1805407380, vulnerabilityHash=1805407380, name=/WebGoat/SqlInjection.lesson.lesson, value={"html":"class\u003d"assignment-success"\u003e\u003ci class\u003d"fa fa-2 fa-check hidden" aria-hidden\u003d"true"\u003e\u003c/i\u003e\u003c/div\u003e\n \u003cform class\u003d"attack-form" accept-charset\u003d"UNKNOWN" method\u003d"POST" name\u003d"form" action\u003d"/WebGoat/SqlInjection/attack5a" enctype\u003d"application/json;charset\u003dUTF-8"\u003e\n \u003ctable\u003e\n \u003ctr\u003e\n \u003ctd\u003eAccount Name:\u003c/td\u003e\n ","startIdx":100,"endIdx":257}, type=EVIDENCE)'
+        - 2019-11-11 03:17:58,857 [Contrast Server Activity Updater wire] DEBUG - << "HTTP/1.1 304 Not Modified[\r][\n]"
+        - Dec 16 2019 15:09:49.652-0500 10.10.16.162 CEF:0|Contrast Security|Contrast Agent Java|3.6.10.12442|SECURITY|The parameter userid had a value that successfully exploited sql-injection - '1' OR 1\=1|WARN|pri=sql-injection src=127.0.0.1 spt=8080 request=/WebGoat/SqlInjection/attack5b requestMethod=POST app=WebGoat outcome=EXPLOITED
+      grok:
+        supportRules: |
+        matchRules: |
+          attack_rule (%{date("MMM dd yyyy HH:mm:ss.SSSZ"):timestamp}|%{date("MMM  d yyyy HH:mm:ss.SSSZ"):timestamp}) %{notSpace:network.client.ip} CEF:%{number}\|Contrast Security\|%{data:contrastsecurity.agent}\|%{notSpace:contrastsecurity.agent_version}\|%{word}\|%{data:title}\|%{word:level}\|%{data::keyvalue("=","/")}
+          default_web_access %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp} \[%{data}\] %{word:level} - \<\< "((%{word:http.method} %{notSpace:http.url} )?HTTP\/%{number:http.version} %{number:http.status_code})?%{data::keyvalue(":")}
+          default_format \[%{word:level}\] \[%{notSpace:logger.name}\] %{date("ddMMyy HH.mm.ss,SSS"):timestamp} %{notSpace} %{notSpace} %{notSpace} %{word} \(%{notSpace:filename}:%{number:lineno}\) %{data::keyvalue}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `requestMethod` to `http.method`
+      enabled: true
+      sources:
+        - requestMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `outcome` to `evt.outcome`
+      enabled: true
+      sources:
+        - outcome
+      target: evt.outcome
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `pri` to `evt.action`
+      enabled: true
+      sources:
+        - pri
+      target: evt.action
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `src` to `network.source.ip`
+      enabled: true
+      sources:
+        - src
+      target: network.source.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `spt` to `network.source.port`
+      enabled: true
+      sources:
+        - spt
+      target: network.source.port
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: service-remapper
+      name: Define `app` as the official service of the log
+      enabled: true
+      sources:
+        - app

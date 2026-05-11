@@ -1,0 +1,60 @@
+id: "confluent_platform"
+tests:
+ -
+  sample: "[2020-03-12 09:40:42,403] INFO Starting ZkClient event thread. (org.I0Itec.zkclient.ZkEventThread)"
+  result:
+    custom:
+      logger:
+        name: "org.I0Itec.zkclient.ZkEventThread"
+      status: "INFO"
+      timestamp: 1584006042403
+    message: "Starting ZkClient event thread."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584006042403
+ -
+  sample: "[2020-03-12 09:40:51,497] INFO Server started, listening for requests... (io.confluent.kafka.schemaregistry.rest.SchemaRegistryMain)"
+  result:
+    custom:
+      logger:
+        name: "io.confluent.kafka.schemaregistry.rest.SchemaRegistryMain"
+      status: "INFO"
+      timestamp: 1584006051497
+    message: "Server started, listening for requests..."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584006051497
+ -
+  sample: "[2020-03-23 15:34:09,096] INFO Kafka version: 5.4.1-ce (org.apache.kafka.common.utils.AppInfoParser:117)"
+  result:
+    custom:
+      line: 117
+      logger:
+        name: "org.apache.kafka.common.utils.AppInfoParser"
+      status: "INFO"
+      timestamp: 1584977649096
+    message: "Kafka version: 5.4.1-ce"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584977649096
+ -
+  sample: "[2020-03-12 09:56:49,924] ERROR Unable to resolve address: zookeeper:2181 (org.apache.zookeeper.client.StaticHostProvider)\njava.net.UnknownHostException: zookeeper: Name or service not known\n\tat java.net.Inet4AddressImpl.lookupAllHostAddr(Native Method)\n\tat java.net.InetAddress$2.lookupAllHostAddr(InetAddress.java:929)\n\tat org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1137)\n"
+  result:
+    custom:
+      error:
+        kind: "java.net.UnknownHostException"
+        message: "zookeeper: Name or service not known"
+        stack: "java.net.UnknownHostException: zookeeper: Name or service not known\n\tat java.net.Inet4AddressImpl.lookupAllHostAddr(Native Method)\n\tat java.net.InetAddress$2.lookupAllHostAddr(InetAddress.java:929)\n\tat org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1137)"
+      logger:
+        name: "org.apache.zookeeper.client.StaticHostProvider"
+      status: "ERROR"
+      timestamp: 1584007009924
+    message: "Unable to resolve address: zookeeper:2181"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584007009924
+

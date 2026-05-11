@@ -1,0 +1,2699 @@
+id: trend-micro-vision-one-endpoint-security
+metric_id: trend-micro-vision-one-endpoint-security
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - facetType: range
+    groups:
+      - Trend Micro Vision One Endpoint Security
+    name: File Size
+    path: trend_micro_vision_one_endpoint_security.file_size
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Trend Micro Vision One Endpoint Security
+    name: Priority
+    path: trend_micro_vision_one_endpoint_security.priority
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Trend Micro Vision One Endpoint Security
+    name: Reputation Score
+    path: trend_micro_vision_one_endpoint_security.reputation_score
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Trend Micro Vision One Endpoint Security
+    name: Threat Probability
+    path: trend_micro_vision_one_endpoint_security.threat_probability
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: Trend Micro Vision One Endpoint Security
+  enabled: true
+  filter:
+    query: "source:trend-micro-vision-one-endpoint-security"
+  processors:
+    - type: grok-parser
+      name: Parsing the log of Trend Micro Vision One Endpoint Security
+      enabled: true
+      source: message
+      samples:
+        - '"Jul 01 2024 20:20:20 aaaaaa.manage.trendmicro.com CEF:0|Trend
+          Micro|Apex Central|2019|AV:File
+          quarantined|Eicar_test_file|3|deviceExternalId=1991 rt=Jul 01 2024
+          10:10:10 GMT+00:00 cnt=1 dhost=ASSETTAG-EID
+          TMCMLogDetectedHost=ASSETTAG-EID duser=ASSETTAG-EID\\\\TEST act=File
+          quarantined cn1Label=Pattern cn1=1947100 cn2Label=Second_Action cn2=4
+          cs1Label=VLF_FunctionCode cs1=Real-time Scan cs2Label=Engine
+          cs2=23.620.1013 cs3Label=Product_Version cs3=14.0
+          cs4Label=CLF_ReasonCode cs4=virus log cs5Label=First_Action_Result
+          cs5=Unable to clean file cs6Label=Second_Action_Result cs6=File
+          quarantined cat=1703 dvchost=bbbbbb.manage.trendmicro.com
+          cn3Label=Overall_Risk_Rating cn3=1 fname=eicar_com (88).zip
+          filePath=C:\\\\Users\\\\Test\\\\Downloads\\\\ msg=eicar.com
+          dst=20.20.20.20 TMCMLogDetectedIP=10.10.10.10
+          fileHash=D27265074C9EAC2E2122ED69294DBC4D7CCE9141 deviceFacility=Apex
+          One ApexCentralHost=Standard Endpoint Protection Manager
+          devicePayloadId=101A111A0A0A-AA1A11AA-11A1-AAA1-1A11
+          TMCMdevicePlatform=Windows 11 10.0 (Build 22631) deviceNtDomain=N/A
+          dntdom=Workgroup\\\\ "'
+      grok:
+        supportRules: >-
+          extract_data_till_pipe_delimited %{regex("[^|]*")}
+
+          extract_key_value_pair %{data::keyvalue("=", "\\]\\[{}\"\" :;,/!''\\(\\)*~#&$%^?+\\\\")}
+        matchRules: trend_micro_vision_one_endpoint_security_rule
+          %{extract_data_till_pipe_delimited}\|%{extract_data_till_pipe_delimited}\|%{extract_data_till_pipe_delimited:application_name}\|%{extract_data_till_pipe_delimited:application_version}\|%{extract_data_till_pipe_delimited:event_id}\|%{extract_data_till_pipe_delimited:event_name}\|%{integer:syslog.severity}\|%{extract_key_value_pair}"
+    - type: grok-parser
+      name: Parsing the `rt` attribute to convert it into UNIX timestamp
+      enabled: true
+      source: rt
+      samples:
+        - Jul 01 2024 01:01:01 GMT+00:00
+      grok:
+        supportRules: ""
+        matchRules: convert_to_millisecond %{date("MMM dd yyyy HH:mm:ss zZZ"):rt}
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `rt` as the official date of the log
+      enabled: true
+      sources:
+        - rt
+    - type: attribute-remapper
+      name: Map `act` to `action`
+      enabled: true
+      sources:
+        - act
+      sourceType: attribute
+      target: action
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `fname` to `file_name`
+      enabled: true
+      sources:
+        - fname
+      sourceType: attribute
+      target: file_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request` to `url`
+      enabled: true
+      sources:
+        - request
+      sourceType: attribute
+      target: url
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cnt` to `no_of_detection`
+      enabled: true
+      sources:
+        - cnt
+      sourceType: attribute
+      target: no_of_detection
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `msg` to `subject`
+      enabled: true
+      sources:
+        - msg
+      sourceType: attribute
+      target: subject
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dntdom` to `domain_hierarchy`
+      enabled: true
+      sources:
+        - dntdom
+      sourceType: attribute
+      target: domain_hierarchy
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `fsize` to `trend_micro_vision_one_endpoint_security.file_size`
+      enabled: true
+      sources:
+        - fsize
+      sourceType: attribute
+      target: trend_micro_vision_one_endpoint_security.file_size
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `spt` to `network.client.port`
+      enabled: true
+      sources:
+        - spt
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dpt` to `network.destination.port`
+      enabled: true
+      sources:
+        - dpt
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - name: Lookup for `reason` to `critical_threat_type` field
+      enabled: true
+      source: reason
+      target: critical_threat_type
+      lookupTable: |-
+        A,Known Advanced Persistent Threat (APT)
+        B,Social engineering attack
+        C,Vulnerability attack
+        D,Lateral movement
+        E,Unknown threats
+        F,C&C callback
+        G,Ransomware
+      type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Application Control logs
+      enabled: true
+      filter:
+        query: service:application-control
+      processors:
+        - type: attribute-remapper
+          name: Map `cs1` to `pattern_version`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: pattern_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `shost` to `source_host_name`
+          enabled: true
+          sources:
+            - shost
+          sourceType: attribute
+          target: source_host_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `endpoint_ip`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: endpoint_ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `process_command_line`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: process_command_line
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `rule_name`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: rule_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `policy_name`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: policy_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a3` to `client_ipv6_address`
+          enabled: true
+          sources:
+            - c6a3
+          sourceType: attribute
+          target: client_ipv6_address
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `client_status` field
+          enabled: true
+          source: cn1
+          target: client_status
+          lookupTable: |-
+            1,Rebuilding database
+            2,Online
+            3,Offline
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,Allowed
+            1,Blocked
+            2,Reported as allowed
+            3,Reported as blocked
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Attack Discovery Detection logs
+      enabled: true
+      filter:
+        query: service:attack-discovery-detections
+      processors:
+        - type: attribute-remapper
+          name: Map `cat` to `category`
+          enabled: true
+          sources:
+            - cat
+          sourceType: attribute
+          target: category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `rule`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: rule
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `attack_discovery_object_information_1`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: attack_discovery_object_information_1
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `attack_discovery_object_information_2`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: attack_discovery_object_information_2
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `attack_discovery_object_information_3`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: attack_discovery_object_information_3
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `attack_discovery_object_information_4`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: attack_discovery_object_information_4
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn2` to `pattern_number`
+          enabled: true
+          sources:
+            - cn2
+          sourceType: attribute
+          target: pattern_number
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `risk_level` field
+          enabled: true
+          source: cn1
+          target: risk_level
+          lookupTable: |-
+            0,Unknown
+            100,Low
+            500,Medium
+            1000,High
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Behavior Monitoring logs
+      enabled: true
+      filter:
+        query: service:behavior-monitoring
+      processors:
+        - type: attribute-remapper
+          name: Map `cs2` to `policy_type`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: policy_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `event_type`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: event_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `operation`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: operation
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `risk_level`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: risk_level
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `risk_level` to `risk_level` field
+          enabled: true
+          source: risk_level
+          target: risk_level
+          lookupTable: |-
+            0,Low
+            1,High
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `sproc` to `target_of_event`
+          enabled: true
+          sources:
+            - sproc
+          sourceType: attribute
+          target: target_of_event
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Remap attributes for C&C Callback logs
+      enabled: true
+      filter:
+        query: service:cnc-callback
+      processors:
+        - type: attribute-remapper
+          name: Map `src` to `network.client.ip`
+          enabled: true
+          sources:
+            - src
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst` to `network.destination.ip`
+          enabled: true
+          sources:
+            - dst
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `product_version`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: product_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `domain_name`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: domain_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `policy_name`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: policy_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `callback_url`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: callback_url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a2` to `endpoint_ipv6`
+          enabled: true
+          sources:
+            - c6a2
+          sourceType: attribute
+          target: endpoint_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a3` to `callback_ipv6`
+          enabled: true
+          sources:
+            - c6a3
+          sourceType: attribute
+          target: callback_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `risk_level` field
+          enabled: true
+          source: cn1
+          target: risk_level
+          lookupTable: |-
+            0,Unknown
+            1,Low
+            2,Medium
+            3,High
+          type: lookup-processor
+        - name: Lookup for `cn2` to `cnc_list_source` field
+          enabled: true
+          source: cn2
+          target: cnc_list_source
+          lookupTable: |-
+            0,Global List
+            1,Custom List
+            2,Custom List (User Defined)
+          type: lookup-processor
+        - name: Lookup for `cn3` to `callback_address_format` field
+          enabled: true
+          source: cn3
+          target: callback_address_format
+          lookupTable: |-
+            0,IP
+            1,IP
+            2,HTTP
+            3,SMTP
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,Unknown
+            1,Pass
+            2,Block
+            3,Monitor
+            4,Delete
+            5,Quarantine
+            6,Warn
+            7,Warn and continue
+            8,Override
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Content Violation logs
+      enabled: true
+      filter:
+        query: service:content-violation
+      processors:
+        - type: attribute-remapper
+          name: Map `dvchost` to `source_host_name`
+          enabled: true
+          sources:
+            - dvchost
+          sourceType: attribute
+          target: source_host_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src` to `endpoint_ip`
+          enabled: true
+          sources:
+            - src
+          sourceType: attribute
+          target: endpoint_ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `suser` to `sender`
+          enabled: true
+          sources:
+            - suser
+          sourceType: attribute
+          target: sender
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `duser` to `recipient`
+          enabled: true
+          sources:
+            - duser
+          sourceType: attribute
+          target: recipient
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `shost` to `senders`
+          enabled: true
+          sources:
+            - shost
+          sourceType: attribute
+          target: senders
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dhost` to `recipients`
+          enabled: true
+          sources:
+            - dhost
+          sourceType: attribute
+          target: recipients
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `policy_settings`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: policy_settings
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `product_version`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: product_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `filter_type`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: filter_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `reason_code`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: reason_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `reason_code_source`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: reason_code_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `action` to `filter_action`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: filter_action
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `filter_action` to `filter_action` field
+          enabled: true
+          source: filter_action
+          target: filter_action
+          lookupTable: |-
+            0,Unknown
+            1,N/A
+            2,Clean
+            3,Delete
+            4,Move
+            5,Rename
+            6,Pass/Log
+            7,Strip
+            8,Drop
+            9,Quarantine
+            10,Insert/Replace
+            11,Archive
+            12,Stamp
+            13,Block
+            14,Redirect mail for approval
+            81,Encrypted
+            90,Detect
+            257,Reset
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `cs6` to `action`
+          enabled: true
+          sources:
+            - cs6
+          sourceType: attribute
+          target: action
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `severity_code` field
+          enabled: true
+          source: cn1
+          target: severity_code
+          lookupTable: |-
+            0,Unknown
+            1,Information
+            2,Warning
+            3,Error
+            4,Critical
+          type: lookup-processor
+        - name: Lookup for `cn2` to `filter_action_result` field
+          enabled: true
+          source: cn2
+          target: filter_action_result
+          lookupTable: >-
+            0,Unknown
+
+            1,N/A
+
+            21,File cleaned
+
+            22,File deleted
+
+            23,File quarantined
+
+            24,File renamed
+
+            25,File passed
+
+            26,Unable to clean file. Passed
+
+            27,Unable to clean file. File deleted
+
+            28,Unable to clean file. File renamed
+
+            29,Unable to clean file. File quarantined
+
+            31,Unable to clean file. File deleted
+
+            32,File replaced
+
+            34,File archived
+
+            35,Blocked successfully
+
+            36,Quarantined successfully
+
+            37,Added additional information to email message body successfully
+
+            38,File uploaded
+
+            39,Unable to clean file. File quarantined
+
+            40,Unable to clean file. Passed
+
+            41,Access denied
+
+            42,No action
+
+            43,System rebooted
+
+            44,Spyware/Grayware unsafe to clean
+
+            45,Scan manually stopped successfully
+
+            46,Email message redirected for approval successfully
+
+            81,Encrypted
+
+            121,Unable to clean file
+
+            122,Unable to delete file
+
+            123,Unable to quarantine file
+
+            124,Unable to rename file
+
+            125,Unable to pass file
+
+            126,Unable to clean or pass file
+
+            127,Unable to clean or delete file
+
+            128,Unable to clean or rename file
+
+            129,Unable to clean or quarantine file
+
+            130,Unable to delete attachment
+
+            131,Unable to clean or delete attachment
+
+            132,Unable to replace file content or Attachment name matched a content rule and the name changed
+
+            134,Unable to archive file
+
+            135,Unable to block file
+
+            136,Unable to quarantine file
+
+            137,Unable to add additional information to email message body
+
+            138,Unable to upload file
+
+            139,Unable to clean or quarantine file
+
+            140,Unable to clean or pass file
+
+            141,Unable to deny access
+
+            142,Unable to perform no action
+
+            143,Action required - Restart the endpoint to finish cleaning the security threat
+
+            144,Undefined
+
+            145,Unable to stop scan manually
+
+            146,Unable to redirect mail for approval
+
+            201,Action required - Perform a full system scan
+
+            202,Action required - Use the 'Rescue Disk' tool in the OfficeScan
+
+            203,Action required - Use the 'Rootkit Buster' tool in the OfficeScan ToolBox to remove this threat. If the problem persists then contact Support
+
+            204,Action required - Use the 'Clean Boot' tool in the OfficeScan ToolBox to remove this threat. If the problem persists then contact Support
+          type: lookup-processor
+        - name: Lookup for `filter_type` to `filter_type` field
+          enabled: true
+          source: filter_type
+          target: filter_type
+          lookupTable: |-
+            0,Unknown
+            1,ContentFilter
+            2,AttachmentFilter
+            3,StandardFilter
+            4,SizeFilter
+            5,DisclaimerMgr
+            6,SpamFilter
+            7,OPP
+            8,ImportFilter
+            9,PhishingFilter
+            10,UrlReputationFilter
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,Unknown
+            1,N/A
+            2,Deliver
+            3,Delete
+            4,Quarantine
+            5,Postpone
+            6,Forward
+            7,Replace
+            8,Archive
+            100,Strip
+            101,Pass
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Data Loss Prevention logs
+      enabled: true
+      filter:
+        query: service:data-loss-prevention
+      processors:
+        - type: attribute-remapper
+          name: Map `src` to `network.client.ip`
+          enabled: true
+          sources:
+            - src
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `suser` to `sender`
+          enabled: true
+          sources:
+            - suser
+          sourceType: attribute
+          target: sender
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `duser` to `recipients`
+          enabled: true
+          sources:
+            - duser
+          sourceType: attribute
+          target: recipients
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `policy_guid`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: policy_guid
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `policy_name`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: policy_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `endpoint_host_name`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: endpoint_host_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `incident_source`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: incident_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `rule_name`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: rule_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs6` to `template_name`
+          enabled: true
+          sources:
+            - cs6
+          sourceType: attribute
+          target: template_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `product_type`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: product_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn2` to `action` field
+          enabled: true
+          source: cn2
+          target: action
+          lookupTable: |-
+            -1,Not available
+            0,Blocked
+            1,Deleted
+            2,Delivered
+            3,Logged
+            4,Passed
+            5,Quarantined
+            6,Replaced
+            7,Archived
+            8,Archived (message body only)
+            9,Quarantined (message body only)
+            10,Passed (message body only)
+            11,Encrypted
+            12,Alerted (endpoint)
+            13,Alerted (server)
+            14,Data recorded
+            15,User justified
+            16,Handed off
+            17,Recipient altered
+            18,Blind carbon copied
+            19,Delivery postponed
+            20,Stamped
+            21,Attachment deleted
+            22,Subject tagged
+            23,X-header tagged
+            24,Decrypted
+            25,Re-encrypted
+            26,Tagged (mail)
+            27,Encrypted (user key)
+            28,Encrypted (group key)
+            29,Moved
+            30,Passed (encrypted)
+            31,Passed (user justified)
+            32,Blocked (Endpoint Encryption not installed)
+            33,Blocked (user justified)
+            34,Blocked (Endpoint Encryption logged off)
+            35,Blocked (Endpoint Encryption error)
+            36,web upload
+          type: lookup-processor
+        - name: Lookup for `cn3` to `channel_type` field
+          enabled: true
+          source: cn3
+          target: channel_type
+          lookupTable: |-
+            65535,Not available
+            0,Removable storage
+            1,SMB
+            2,Email
+            3,IM
+            4,FTP
+            5,HTTP
+            6,HTTPS
+            7,PGP
+            8,Data recorders
+            9,Printer
+            10,Clipboard
+            11,Sync
+            12,P2P
+            13,Webmail
+            14,Document management
+            15,Cloud storage
+            121,SMTP email
+            122,Exchange Client Mail
+            123,Lotus Note Email
+            130,Webmail (Yahoo! Mail)
+            131,Webmail (Hotmail)
+            132,Webmail (Gmail)
+            133,Webmail (AOL Mail)
+            140,IM (MSN)
+            141,IM (AIM)
+            142,IM (Yahoo Messenger)
+            143,IM (Skype)
+            191,P2P (BitTorrent)
+            192,P2P (EMule)
+            193,P2P (Winny)
+            194,P2P (HTCSYN)
+            195,P2P (iTunes)
+            196,Cloud storage (DropBox)
+            197,Cloud storage (Box)
+            198,Cloud storage (Google Drive)
+            199,Cloud storage (OneDrive)
+            200,Cloud storage (SugarSync)
+            201,Cloud storage (Hightail)
+            202,IM (QQ)
+            203,Webmail (other)
+            204,Cloud storage (Evernote)
+            211,Document management (SharePoint)
+          type: lookup-processor
+        - name: Lookup for `cfp1` to `forensic_file_can_be_downloaded` field
+          enabled: true
+          source: cfp1
+          target: forensic_file_can_be_downloaded
+          lookupTable: |-
+            0,No
+            1,Yes
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Device Access Control logs
+      enabled: true
+      filter:
+        query: service:device-access-control
+      processors:
+        - type: attribute-remapper
+          name: Map `cs1` to `host_name`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: host_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `product_id`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: product_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `sproc` to `target_process`
+          enabled: true
+          sources:
+            - sproc
+          sourceType: attribute
+          target: target_process
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn2` to `device_type` field
+          enabled: true
+          source: cn2
+          target: device_type
+          lookupTable: |-
+            0,USB storage device
+            1,Non-storage USB
+            2,CD/DVD
+            3,Floppy disks
+            4,Network driver
+          type: lookup-processor
+        - name: Lookup for `cn3` to `permission` field
+          enabled: true
+          source: cn3
+          target: permission
+          lookupTable: |-
+            0,Modify
+            1,Read and execute
+            2,List device content only
+            3,Floppy disks
+            4,Block
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Intrusion Prevention logs
+      enabled: true
+      filter:
+        query: service:intrusion-prevention
+      processors:
+        - type: attribute-remapper
+          name: Map `src` to `network.client.ip`
+          enabled: true
+          sources:
+            - src
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst` to `network.destination.ip`
+          enabled: true
+          sources:
+            - dst
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `reason`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: reason
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `application_name`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: application_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `rule_id`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: rule_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn3` to `trend_micro_vision_one_endpoint_security.priority`
+          enabled: true
+          sources:
+            - cn3
+          sourceType: attribute
+          target: trend_micro_vision_one_endpoint_security.priority
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a2` to `source_ipv6`
+          enabled: true
+          sources:
+            - c6a2
+          sourceType: attribute
+          target: source_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a3` to `destination_ipv6`
+          enabled: true
+          sources:
+            - c6a3
+          sourceType: attribute
+          target: destination_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn2` to `detection_mode` field
+          enabled: true
+          source: cn2
+          target: detection_mode
+          lookupTable: |-
+            0,No
+            1,Yes
+          defaultLookup: No
+          type: lookup-processor
+        - name: Lookup for `cn4` to `risk_level` field
+          enabled: true
+          source: cn4
+          target: risk_level
+          lookupTable: |-
+            1,Low
+            2,Medium
+            3,High
+            4,Critical
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,UNKNOWN
+            3,DELETE
+            6,LOG
+            10,INSERT/REPLACE
+            13,BLOCK
+            257,RESET
+          type: lookup-processor
+        - name: Lookup for `proto` to `proto` field
+          enabled: true
+          source: proto
+          target: proto
+          lookupTable: |-
+            28,ICMP
+            46,ICMPv6
+            10003,TCP
+            10004,UDP
+            10005,IGMP
+            10006,GGP
+            10007,PUP
+            10008,IDP
+            10009,ND
+            10010,RAW
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Network Content Inspection logs
+      enabled: true
+      filter:
+        query: service:network-content-inspection
+      processors:
+        - type: attribute-remapper
+          name: Map `src` to `network.client.ip`
+          enabled: true
+          sources:
+            - src
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst` to `network.destination.ip`
+          enabled: true
+          sources:
+            - dst
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `threat_name`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: threat_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a2` to `local_ipv6`
+          enabled: true
+          sources:
+            - c6a2
+          sourceType: attribute
+          target: local_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a3` to `remote_ipv6`
+          enabled: true
+          sources:
+            - c6a3
+          sourceType: attribute
+          target: remote_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `pattern_type` field
+          enabled: true
+          source: cn1
+          target: pattern_type
+          lookupTable: |-
+            0,Global C&C pattern
+            1,Relevance rules
+            2,User-defined block list
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,Unknown
+            1,Pass
+            2,Block
+            3,Monitor
+            4,Delete
+            5,Quarantine
+            6,Warn
+            7,Warn and continue
+            8,Override
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Predictive Machine Learning logs
+      enabled: true
+      filter:
+        query: service:predictive-machine-learning
+      processors:
+        - type: attribute-remapper
+          name: Map `sproc` to `system_process`
+          enabled: true
+          sources:
+            - sproc
+          sourceType: attribute
+          target: system_process
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `shost` to `infected_endpoint`
+          enabled: true
+          sources:
+            - shost
+          sourceType: attribute
+          target: infected_endpoint
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dvchost` to `product_server`
+          enabled: true
+          sources:
+            - dvchost
+          sourceType: attribute
+          target: product_server
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `app` to `infection_channel`
+          enabled: true
+          sources:
+            - app
+          sourceType: attribute
+          target: infection_channel
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `detection_name`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: detection_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `infection_source`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: infection_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `process_command`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: process_command
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn3` to `trend_micro_vision_one_endpoint_security.threat_probability`
+          enabled: true
+          sources:
+            - cn3
+          sourceType: attribute
+          target: trend_micro_vision_one_endpoint_security.threat_probability
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `threat_type` field
+          enabled: true
+          source: cn1
+          target: threat_type
+          lookupTable: |-
+            35140,Adware
+            35141,Backdoor
+            35142,Browser modifier
+            35143,DDoS
+            35144,Dialer
+            35145,Exploit
+            35146,Hacking tool
+            35147,Joke program
+            35148,PUA
+            35149,Ransomware
+            35150,Rootkit
+            35151,Spyware
+            35152,Trojan
+            35153,Trojan clicker
+            35154,Trojan downloader
+            35155,Trojan dropper
+            35156,Trojan proxy
+            35157,Trojan spyware
+            35158,File infector
+            35159,Worm
+            35160,Boot
+          type: lookup-processor
+        - name: Lookup for `cn2` to `detection_type` field
+          enabled: true
+          source: cn2
+          target: detection_type
+          lookupTable: |-
+            0,File
+            1,Process
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: >-
+            0,Unknown
+
+            1,N/A
+
+            21,File cleaned
+
+            22,File deleted
+
+            23,File quarantined
+
+            24,File renamed
+
+            25,File passed
+
+            26,Unable to clean file. Passed
+
+            27,Unable to clean file. File deleted
+
+            28,Unable to clean file. File renamed
+
+            29,Unable to clean file. File quarantined
+
+            31,Unable to clean file. File deleted
+
+            32,File replaced
+
+            34,File archived
+
+            35,Blocked successfully
+
+            36,Quarantined successfully
+
+            37,Added additional information to email message body successfully
+
+            38,File uploaded
+
+            39,Unable to clean file. File quarantined
+
+            40,Unable to clean file. Passed
+
+            41,Access denied
+
+            42,No action
+
+            43,System rebooted
+
+            44,Spyware/Grayware unsafe to clean
+
+            45,Scan manually stopped successfully
+
+            46,Email message redirected for approval successfully
+
+            81,Encrypted
+
+            121,Unable to clean file
+
+            122,Unable to delete file
+
+            123,Unable to quarantine file
+
+            124,Unable to rename file
+
+            125,Unable to pass file
+
+            126,Unable to clean or pass file
+
+            127,Unable to clean or delete file
+
+            128,Unable to clean or rename file
+
+            129,Unable to clean or quarantine file
+
+            130,Unable to delete attachment
+
+            131,Unable to clean or delete attachment
+
+            132,Unable to replace file content or Attachment name matched a content rule and the name changed
+
+            134,Unable to archive file
+
+            135,Unable to block file
+
+            136,Unable to quarantine file
+
+            137,Unable to add additional information to email message body
+
+            138,Unable to upload file
+
+            139,Unable to clean or quarantine file
+
+            140,Unable to clean or pass file
+
+            141,Unable to deny access
+
+            142,Unable to perform no action
+
+            143,Action required - Restart the endpoint to finish cleaning the security threat
+
+            144,Undefined
+
+            145,Unable to stop scan manually
+
+            146,Unable to redirect mail for approval
+
+            201,Action required - Perform a full system scan
+
+            202,Action required - Use the 'Rescue Disk' tool in the OfficeScan
+
+            203,Action required - Use the 'Rootkit Buster' tool in the OfficeScan ToolBox to remove this threat. If the problem persists then contact Support
+
+            204,Action required - Use the 'Clean Boot' tool in the OfficeScan ToolBox to remove this threat. If the problem persists then contact Support
+          type: lookup-processor
+        - name: Lookup for `infection_channel` to `infection_channel` field
+          enabled: true
+          source: infection_channel
+          target: infection_channel
+          lookupTable: |-
+            0,Unknown
+            1,Local drive
+            2,Network drive
+            3,AutoRun files
+            10,Web
+            11,Email
+            999,Local or network drive
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Spyware/Grayware logs
+      enabled: true
+      filter:
+        query: service:spyware-grayware
+      processors:
+        - type: attribute-remapper
+          name: Map `cs1` to `virus_name`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: virus_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `engine_version`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: engine_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `action`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: action
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs6` to `pattern_version`
+          enabled: true
+          sources:
+            - cs6
+          sourceType: attribute
+          target: pattern_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `pattern_type`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: pattern_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn2` to `scan_type` field
+          enabled: true
+          source: cn2
+          target: scan_type
+          lookupTable: |-
+            0,Unknown
+            1,N/A
+            11,Real-time Scan
+            12,Manual Scan
+            13,Scheduled Scan
+            14,Real-time Mail Scan
+            15,Real-time Database Scan
+            16,Scan Now
+            17,Card Scan
+            18,Damage Cleanup Services
+            19,Storage Scan
+          defaultLookup: info
+          type: lookup-processor
+        - name: Lookup for `cn3` to `security_threat_type` field
+          enabled: true
+          source: cn3
+          target: security_threat_type
+          lookupTable: |-
+            0,Unknown
+            1,Trackware
+            2,Adware
+            3,Cookie
+            4,Dialer
+            5,Security low
+            6,General
+            7,Key logger
+            8,Trojan
+            9,Suspect
+            10,Hijack
+            11,Parasite
+            12,Browser Helper Object (BHO)
+            13,LSP
+            15,URL shortcut
+            16,Peer-to-Peer application
+            17,Worm
+            19,Downloader
+            20,Virus
+            21,Eulaware
+            22,Variant
+            23,Security medium
+            24,Security high
+            25,Vulnerability Assessment
+          defaultLookup: info
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Suspicious File Information logs
+      enabled: true
+      filter:
+        query: service:suspicious-file-information
+      processors:
+        - type: attribute-remapper
+          name: Map `cs2` to `file_type`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: file_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `file_path`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: file_path
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `product_version`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: product_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn2` to `cnc_list_source` field
+          enabled: true
+          source: cn2
+          target: cnc_list_source
+          lookupTable: |-
+            0,Sandbox
+            1,User-defined
+          type: lookup-processor
+        - name: Lookup for `cn3` to `scan_type` field
+          enabled: true
+          source: cn3
+          target: scan_type
+          lookupTable: |-
+            1,Scheduled scan
+            2,Manual scan
+            3,Scan now
+            4,Real-time scan
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            1,Log
+            2,Block
+            3,Quarantine
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Virtual Analyzer Detections logs
+      enabled: true
+      filter:
+        query: service:virtual-analyzer-detections
+      processors:
+        - type: attribute-remapper
+          name: Map `dvchost` to `product_server`
+          enabled: true
+          sources:
+            - dvchost
+          sourceType: attribute
+          target: product_server
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `security_threat_name`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: security_threat_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `security_threat_type`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: security_threat_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `cloud_storage_vendor`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: cloud_storage_vendor
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `risk_level` field
+          enabled: true
+          source: cn1
+          target: risk_level
+          lookupTable: |-
+            0,No Risk
+            1,Low
+            2,Medium
+            3,High
+            9999,Unknown
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Virus/Malware logs
+      enabled: true
+      filter:
+        query: service:virus-malware
+      processors:
+        - type: attribute-remapper
+          name: Map `event_name` to `malware_name`
+          enabled: true
+          sources:
+            - event_name
+          sourceType: attribute
+          target: malware_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dvchost` to `product_server`
+          enabled: true
+          sources:
+            - dvchost
+          sourceType: attribute
+          target: product_server
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `scan_type`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: scan_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `engine_version`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: engine_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs3` to `product_version`
+          enabled: true
+          sources:
+            - cs3
+          sourceType: attribute
+          target: product_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `reason_code`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: reason_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `first_action_result`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: first_action_result
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs6` to `second_action_result`
+          enabled: true
+          sources:
+            - cs6
+          sourceType: attribute
+          target: second_action_result
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn1` to `pattern_version`
+          enabled: true
+          sources:
+            - cn1
+          sourceType: attribute
+          target: pattern_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn3` to `risk_level` field
+          enabled: true
+          source: cn3
+          target: risk_level
+          lookupTable: |-
+            0,Low
+            1,Low
+            2,Medium
+            3,High
+          type: lookup-processor
+        - name: Lookup for `cn2` to `second_action` field
+          enabled: true
+          source: cn2
+          target: second_action
+          lookupTable: |-
+            0,Unknown
+            1,N/A
+            2,Clean
+            3,Delete
+            4,Move
+            5,Rename
+            6,Pass/Log
+            7,Strip
+            8,Drop
+            9,Quarantine
+            10,Insert/Replace
+            11,Archive
+            12,Stamp
+            13,Block
+            14,Redirect mail for approval
+            81,Encrypted
+            90,Detect
+            257,Reset
+          type: lookup-processor
+        - name: Lookup for `scan_type` to `scan_type` field
+          enabled: true
+          source: scan_type
+          target: scan_type
+          lookupTable: |-
+            0,Unknown
+            1,N/A
+            11,Real-time Scan
+            12,Manual Scan
+            13,Scheduled Scan
+            16,Scan Now
+            17,Card Scan
+            18,Damage Cleanup Services
+            19,Storage Scan
+          type: lookup-processor
+    - type: pipeline
+      name: Remap attributes for Web Violation logs
+      enabled: true
+      filter:
+        query: service:web-violation
+      processors:
+        - type: attribute-remapper
+          name: Map `dst` to `network.destination.ip`
+          enabled: true
+          sources:
+            - dst
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cat` to `filter_blocking_type`
+          enabled: true
+          sources:
+            - cat
+          sourceType: attribute
+          target: filter_blocking_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs1` to `policy_name`
+          enabled: true
+          sources:
+            - cs1
+          sourceType: attribute
+          target: policy_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs2` to `blocking_rule`
+          enabled: true
+          sources:
+            - cs2
+          sourceType: attribute
+          target: blocking_rule
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs4` to `reason_code`
+          enabled: true
+          sources:
+            - cs4
+          sourceType: attribute
+          target: reason_code
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cs5` to `reason_code_source`
+          enabled: true
+          sources:
+            - cs5
+          sourceType: attribute
+          target: reason_code_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cn3` to `trend_micro_vision_one_endpoint_security.reputation_score`
+          enabled: true
+          sources:
+            - cn3
+          sourceType: attribute
+          target: trend_micro_vision_one_endpoint_security.reputation_score
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `c6a2` to `client_ipv6`
+          enabled: true
+          sources:
+            - c6a2
+          sourceType: attribute
+          target: client_ipv6
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `cn1` to `severity_code` field
+          enabled: true
+          source: cn1
+          target: severity_code
+          lookupTable: |-
+            0,Unknown
+            1,Information
+            2,Warning
+            3,Error
+            4,Critical
+          type: lookup-processor
+        - name: Lookup for `cn2` to `risk_level` field
+          enabled: true
+          source: cn2
+          target: risk_level
+          lookupTable: |-
+            100,High
+            300,Medium high
+            500,Medium
+            700,Medium low
+            900,Low
+          type: lookup-processor
+        - name: Lookup for `action` to `action` field
+          enabled: true
+          source: action
+          target: action
+          lookupTable: |-
+            0,Unknown
+            1,Pass
+            2,Block
+            3,Monitor
+            4,Delete
+            5,Quarantine
+            6,Warn
+            7,Warn and continue
+            8,Override
+          type: lookup-processor
+        - name: Lookup for `filter_blocking_type` to `filter_blocking_type` field
+          enabled: true
+          source: filter_blocking_type
+          target: filter_blocking_type
+          lookupTable: |-
+            0,Unknown
+            1,File name
+            2,Webmail site
+            3,Web server
+            4,URL pattern
+            5,Java/VB script
+            6,True file type
+            7,User-defined
+            8,Server-defined
+            9,Web policy
+            11,Phishing
+            12,Phishing/Spyware/Grayware
+            13,Phishing/Virus/Malware accomplice
+            14,Phishing/Forged signature
+            15,Phishing/Disease vector
+            16,Phishing/Malicious applet
+            17,Phishing reputation
+            20,IP translation policy
+            21,Java scanning policy
+            22,Malicious mobile code policy
+            31,Pharming
+            32,URL blocking
+            33,URL filtering
+            34,Client IP blocking
+            35,Destination port blocking
+            36,Web reputation
+            41,Unsupported file type
+            42,Exceeds total file count limit
+            43,Exceeds file size limit
+            44,Exceeds decompression layer limit
+            45,Exceeds decompression time frame
+            46,Exceeds compression ratio limit
+            47,Password protected file
+            48,Restricted spyware/grayware type
+            60,String pattern
+            70,HTTP inspection
+            -1,Virus/Malware
+            -2,Spyware/Grayware
+            -3,Network virus
+            -4,IntelliTrap
+            -5,Suspicious virus/malware
+            -6,Suspicious spyware/grayware
+            -7,Fraud
+            -8,Suspicious behavior
+          type: lookup-processor
+    - type: grok-parser
+      name: Convert `senders` field into an array
+      enabled: true
+      source: senders
+      samples:
+        - user1@example.com
+        - user1@example.com;user2@example.com
+      grok:
+        supportRules: ""
+        matchRules: senders_rule %{notSpace:senders:array("", ";")}
+    - type: grok-parser
+      name: Convert `recipients` field into an array
+      enabled: true
+      source: recipients
+      samples:
+        - user1@example.com
+        - user1@example.com;user2@example.com
+      grok:
+        supportRules: ""
+        matchRules: recipients_rule %{notSpace:recipients:array("", ";")}
+    - type: attribute-remapper
+      name: Map `TMCMLogDetectedIP` to `endpoint_ip`
+      enabled: true
+      sources:
+        - TMCMLogDetectedIP
+      sourceType: attribute
+      target: endpoint_ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the destination IP
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `suser` to `client_user_name`
+      enabled: true
+      sources:
+        - suser
+      sourceType: attribute
+      target: client_user_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `duser` to `usr.name`
+      enabled: true
+      sources:
+        - duser
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `smac` to `source_mac`
+      enabled: true
+      sources:
+        - smac
+      sourceType: attribute
+      target: source_mac
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dmac` to `destination_mac`
+      enabled: true
+      sources:
+        - dmac
+      sourceType: attribute
+      target: destination_mac
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `TMCMLogDetectedHost` to `source_host_name`
+      enabled: true
+      sources:
+        - TMCMLogDetectedHost
+      sourceType: attribute
+      target: source_host_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cat` to `log_type`
+      enabled: true
+      sources:
+        - cat
+      sourceType: attribute
+      target: log_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sproc` to `process_name`
+      enabled: true
+      sources:
+        - sproc
+      sourceType: attribute
+      target: process_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `c6a3` to `endpoint_ipv6`
+      enabled: true
+      sources:
+        - c6a3
+      sourceType: attribute
+      target: endpoint_ipv6
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `app` to `protocol`
+      enabled: true
+      sources:
+        - app
+      sourceType: attribute
+      target: protocol
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - name: Lookup for `protocol` to `protocol` field
+      enabled: true
+      source: protocol
+      target: protocol
+      lookupTable: |-
+        0,Unknown
+        1,SMTP
+        2,POP3
+        3,IRC
+        4,DNS Response
+        5,HTTP
+        6,FTP
+        7,TFTP
+        8,SMB
+        9,Windows Live Messenger (MSN)
+        10,AIM
+        11,Yahoo! Messenger
+        12,Gmail
+        13,Yahoo! Mail
+        14,Windows Live Hotmail
+        15,RDP
+        16,DHCP
+        17,Telnet
+        18,LDAP
+        19,File transfer
+        20,SSH
+        21,Dameware
+        22,VNC
+        23,Cisco Telnet
+        24,Kerberos
+        25,DCE RPC
+        26,SQL
+        27,pcAnywhere
+        28,ICMP
+        29,SNMP
+        30,Virus pattern TCP
+        31,Virus pattern UDP
+        32,HTTPS
+        33,SMB2
+        34,MMS
+        35,IMAP4
+        36,RADIUS
+        37,Radmin
+        38,FTP_Response
+        48,RTSP/RTP-UDP
+        49,RTSP/RTP-TCP
+        50,RTSP/RDT-UDP
+        51,RTSP/RDT-TCP
+        52,WMSP
+        53,SHOUTCast
+        54,RTMP
+        68,DNS Request
+        256,BitTorrent
+        257,Kazaa
+        258,Limewire
+        259,Bearshare
+        260,Bluester
+        261,Edonkey emule
+        262,Edonkey2000
+        263,Filezilla
+        264,Guncleus
+        265,Gnutella
+        266,Winny
+        267,Napster
+        268,Morpheus
+        269,Napster
+        270,Shareaza
+        271,WinMX
+        272,Mldonkey
+        273,Direct Connect
+        274,Soulseek
+        275,OpenAP
+        276,Kuro
+        277,Imesh
+        278,Skype
+        279,Google Talk
+        317,Cabos
+        318,Zultrax
+        319,Foxy
+        320,eDonkey
+        321,Ares
+        322,Miranda
+        323,Kceasy
+        324,MoodAmp
+        325,Deepnet Explorer
+        326,FreeWire
+        327,Gimme
+        328,GnucDNA GWebCache
+        329,Jubster
+        330,MyNapster
+        331,Nova GWebCache
+        332,Swapper GWebCache
+        333,Xnap
+        334,Xolox
+        335,Ppstream
+        640,AIM Express
+        641,Chikka SMS Messenger
+        642,eBuddy
+        643,ICQ2Go
+        644,ILoveIM Web Messenger
+        645,IMUnitive
+        646,Mabber
+        647,Meebo
+        648,Yahoo! Web Messenger
+        848,SIP2
+        1024,GPass
+        10001,IP
+        10002,ARP
+        10003,TCP
+        10004,UDP
+        10005,IGMP
+        60,ORACLE
+        44,MySQL
+        520,MSSQL
+        337,Postgres
+        41,ICMPv6
+        10006,GGP
+        10007,PUP
+        10008,IDP
+        10009,ND
+        10010,RAW
+      type: lookup-processor
+    - name: Lookup for `deviceDirection` to `deviceDirection` field
+      enabled: true
+      source: deviceDirection
+      target: deviceDirection
+      lookupTable: |-
+        0,None
+        1,Inbound
+        2,Outbound
+      type: lookup-processor
+    - name: Lookup for `syslog.severity` to `severity` field
+      enabled: true
+      source: syslog.severity
+      target: severity
+      lookupTable: 3,info
+      defaultLookup: info
+      type: lookup-processor
+    - name: Lookup for `risk_level` to `severity` field
+      enabled: true
+      source: risk_level
+      target: severity
+      lookupTable: |-
+        Critical,critical
+        High,error
+        Medium,warning
+        Low,info
+      defaultLookup: info
+      type: lookup-processor
+    - name: Lookup for `severity_code` to `severity` field
+      enabled: true
+      source: severity_code
+      target: severity
+      lookupTable: |-
+        Critical,critical
+        Error,error
+        Warning,warning
+        Information,info
+        Unknown,info
+      defaultLookup: info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: attribute-remapper
+      name: Map `cs1Label` to `attributeLabels.cs1Label`
+      enabled: true
+      sources:
+        - cs1Label
+      sourceType: attribute
+      target: attributeLabels.cs1Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs2Label` to `attributeLabels.cs2Label`
+      enabled: true
+      sources:
+        - cs2Label
+      sourceType: attribute
+      target: attributeLabels.cs2Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs3Label` to `attributeLabels.cs3Label`
+      enabled: true
+      sources:
+        - cs3Label
+      sourceType: attribute
+      target: attributeLabels.cs3Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs4Label` to `attributeLabels.cs4Label`
+      enabled: true
+      sources:
+        - cs4Label
+      sourceType: attribute
+      target: attributeLabels.cs4Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs5Label` to `attributeLabels.cs5Label`
+      enabled: true
+      sources:
+        - cs5Label
+      sourceType: attribute
+      target: attributeLabels.cs5Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs6Label` to `attributeLabels.cs6Label`
+      enabled: true
+      sources:
+        - cs6Label
+      sourceType: attribute
+      target: attributeLabels.cs6Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cn1Label` to `attributeLabels.cn1Label`
+      enabled: true
+      sources:
+        - cn1Label
+      sourceType: attribute
+      target: attributeLabels.cn1Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cn2Label` to `attributeLabels.cn2Label`
+      enabled: true
+      sources:
+        - cn2Label
+      sourceType: attribute
+      target: attributeLabels.cn2Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cn3Label` to `attributeLabels.cn3Label`
+      enabled: true
+      sources:
+        - cn3Label
+      sourceType: attribute
+      target: attributeLabels.cn3Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cn4Label` to `attributeLabels.cn4Label`
+      enabled: true
+      sources:
+        - cn4Label
+      sourceType: attribute
+      target: attributeLabels.cn4Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `c6a1Label` to `attributeLabels.c6a1Label`
+      enabled: true
+      sources:
+        - c6a1Label
+      sourceType: attribute
+      target: attributeLabels.c6a1Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `c6a2Label` to `attributeLabels.c6a2Label`
+      enabled: true
+      sources:
+        - c6a2Label
+      sourceType: attribute
+      target: attributeLabels.c6a2Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `c6a3Label` to `attributeLabels.c6a3Label`
+      enabled: true
+      sources:
+        - c6a3Label
+      sourceType: attribute
+      target: attributeLabels.c6a3Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cfp1Label` to `attributeLabels.cfp1Label`
+      enabled: true
+      sources:
+        - cfp1Label
+      sourceType: attribute
+      target: attributeLabels.cfp1Label
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

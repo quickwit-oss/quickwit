@@ -1,0 +1,82 @@
+id: "riak"
+tests:
+ -
+  sample: "2019-06-24 19:44:16.702 [info] <0.7.0> Application ibrowse started on node 'riak@127.0.0.1'"
+  result:
+    custom:
+      date: 1561405456702
+      level: "info"
+      logger:
+        thread_name: "0.7.0"
+      network:
+        client:
+          ip: "127.0.0.1"
+      usr:
+        name: "riak"
+    message: "2019-06-24 19:44:16.702 [info] <0.7.0> Application ibrowse started on node 'riak@127.0.0.1'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2019-06-24 19:44:16.635 [info] <0.550.0>@riak_core:wait_for_service:483 Wait complete for service riak_kv (9 seconds)"
+  result:
+    custom:
+      date: 1561405456635
+      error:
+        kind: "riak_core:wait_for_service:483"
+      level: "info"
+      logger:
+        thread_name: "0.550.0"
+    message: "2019-06-24 19:44:16.635 [info] <0.550.0>@riak_core:wait_for_service:483 Wait complete for service riak_kv (9 seconds)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2019-06-24 12:34:27.999 [error] gen_server riak_core_capability terminated with reason: no function clause matching orddict:fetch('riak@192.168.2.81', []) line 72"
+  result:
+    custom:
+      date: 1561379667999
+      error:
+        message: "gen_server riak_core_capability terminated with reason: no function clause matching orddict:fetch('riak@192.168.2.81', []) line 72"
+      level: "error"
+    message: "2019-06-24 12:34:27.999 [error] gen_server riak_core_capability terminated with reason: no function clause matching orddict:fetch('riak@192.168.2.81', []) line 72"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    2014-10-17 15:56:38 =ERROR REPORT====
+    Error in process <0.4330.323> on node 'dev1@127.0.0.1' with exit value: ...
+  result:
+    custom:
+      date: 1413561398000
+      error:
+        kind: "ERROR REPORT"
+        message: "Error in process <0.4330.323> on node 'dev1@127.0.0.1' with exit value: ..."
+      level: "error"
+    message: |-
+      2014-10-17 15:56:38 =ERROR REPORT====
+      Error in process <0.4330.323> on node 'dev1@127.0.0.1' with exit value: ...
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2015-06-23 13:53:59.485 [error] <0.1433.0> CRASH REPORT Process <0.1433.0> with 0 neighbours exited ..."
+  result:
+    custom:
+      date: 1435067639485
+      error:
+        kind: "CRASH REPORT"
+      level: "error"
+      logger:
+        thread_name: "0.1433.0"
+    message: "2015-06-23 13:53:59.485 [error] <0.1433.0> CRASH REPORT Process <0.1433.0> with 0 neighbours exited ..."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

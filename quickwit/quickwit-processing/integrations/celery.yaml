@@ -1,0 +1,83 @@
+id: celery
+metric_id: celery
+backend_only: false
+facets:
+  - groups:
+      - Celery
+    name: Task Name
+    path: celery.task_name
+    source: log
+  - groups:
+      - Celery
+    name: Task ID
+    path: celery.task_id
+    source: log
+  - groups:
+      - Celery
+    name: Worker ID
+    path: celery.worker_id
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: celery.duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: second
+  - groups:
+      - Source Code
+    name: Process Name
+    path: logger.process_name
+    source: log
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+
+pipeline:
+  type: pipeline
+  name: Celery
+  enabled: true
+  filter:
+    query: source:celery
+  processors:
+    - type: grok-parser
+      name: Parsing Celery Default formats
+      enabled: true
+      source: message
+      samples:
+        - "[2025-04-23 20:02:25,658: INFO/MainProcess] Task tasks.multiply[c05345e1-cfa5-43cb-9671-30a98115c5db] received"
+        - "[2025-04-23 20:02:25,660: INFO/ForkPoolWorker-4] Task tasks.add[c25d9c94-4ef6-4828-a1a7-37f6f5a328da] succeeded in 0.00030375000278581865s: 9"
+        - "celery@17133dbfe7a6 [2025-04-01 13:33:33.400755] heartbeat: clock=1452, freq=5, local_received=1743514413.4011424, pid=1, sw_ident=py-celery, sw_sys=Linux, sw_ver=5.4.0, utcoffset=0"
+        - "celery@17133dbfe7a6 [2025-10-01 13:33:34.986589] task succeeded: tasks.add(eaae3cff-f198-4fe3-9f69-ad59b0412bed) args=(4, 5) kwargs={} clock=1458, local_received=1743702814.987442, pid=1, result=9, runtime=0.00012291595339775085, utcoffset=0"
+      grok:
+        supportRules: |
+          _date_standard %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _date_worker %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):timestamp}
+          _level %{word:level}
+          _task_name %{word:task_name}
+          _task_id %{notSpace:task_id}
+        matchRules: |
+          celery_heartbeat celery@%{notSpace:worker_id} \[%{_date_worker}\] heartbeat: clock=%{number:clock}, freq=%{number:freq}, local_received=%{number:local_received}, pid=%{number:pid}, sw_ident=%{notSpace:sw_ident}, sw_sys=%{notSpace:sw_sys}, sw_ver=%{data:sw_ver}, utcoffset=%{number:utcoffset}
+          celery_task_status celery@%{notSpace:worker_id} \[%{_date_worker}\] task %{word:task_status}: %{data:task_name}\(%{notSpace:task_id}\) args=%{data:args} kwargs=%{data:kwargs} %{data::keyvalue("=", "", "", " ,")}
+          celery_standard \[%{_date_standard}:\s+%{_level}/%{data}\]\s*%{data:message}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

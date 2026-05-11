@@ -1,0 +1,35 @@
+id: "mapr"
+tests:
+ -
+  sample: |-
+    {
+      "hostname" : "mapr-lab-2-dhk4.c.datadog-integrations-lab.internal",
+      "@timestamp" : "2019-09-13T23:56:30.634Z",
+      "fqdn" : "mapr-lab-2-dhk4",
+      "level" : "INFO",
+      "service" : "mapr-demo",
+      "clusterId" : 7616098736519857000,
+      "tag" : "mfs_maprdb",
+      "thread" : "NIOServerCxn.Factory:0.0.0.0/0.0.0.0:5181:NIOServerCnxn",
+      "message" : "db/partition.cc:7566 Scheduled flush of 5 idle partition(s), poolSz 0 pendingDrainSz 0 waiters 0",
+      "class" : "DB",
+      "event_time" : "2019-09-13T23:56:30.634Z"
+    }
+  result:
+    custom:
+      '@timestamp': "2019-09-13T23:56:30.634Z"
+      clusterId: 7616098736519857000
+      event_time: "2019-09-13T23:56:30.634Z"
+      fluentd_tag: "mfs_maprdb"
+      fqdn: "mapr-lab-2-dhk4"
+      hostname: "mapr-lab-2-dhk4.c.datadog-integrations-lab.internal"
+      level: "INFO"
+      logger:
+        name: "DB"
+        thread_name: "NIOServerCxn.Factory:0.0.0.0/0.0.0.0:5181:NIOServerCnxn"
+      service: "mapr-demo"
+    message: "db/partition.cc:7566 Scheduled flush of 5 idle partition(s), poolSz 0 pendingDrainSz 0 waiters 0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1568418990634
+

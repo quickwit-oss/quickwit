@@ -1,0 +1,55 @@
+id: "arangodb"
+tests:
+ -
+  sample: "2022-04-25T21:58:51Z [476] WARNING [118b0] {memory} maximum number of memory mappings per process is 262144, which seems too low. it is recommended to set it to at least 320000"
+  result:
+    custom:
+      level: "WARNING"
+      log_id: "118b0"
+      process:
+        id: 476
+      timestamp: 1650923931000
+      topic: "memory"
+    message: "maximum number of memory mappings per process is 262144, which seems too low. it is recommended to set it to at least 320000"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1650923931000
+ -
+  sample: "2021-06-08T16:09:31Z [1] INFO [prepare@EngineSelectorFeature.cpp:187] [144fe] using storage engine 'rocksdb'"
+  result:
+    custom:
+      level: "INFO"
+      log_id: "144fe"
+      logger:
+        file_name: "EngineSelectorFeature.cpp"
+        line_number: 187.0
+        method_name: "prepare"
+      process:
+        id: 1
+      timestamp: 1623168571000
+    message: "using storage engine 'rocksdb'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1623168571000
+ -
+  sample: "2021-06-08T16:09:31Z [1] INFO [prepare@AuthenticationFeature.cpp:190] [43396] {authentication} Jwt secret not specified, generating..."
+  result:
+    custom:
+      level: "INFO"
+      log_id: "43396"
+      logger:
+        file_name: "AuthenticationFeature.cpp"
+        line_number: 190.0
+        method_name: "prepare"
+      process:
+        id: 1
+      timestamp: 1623168571000
+      topic: "authentication"
+    message: "Jwt secret not specified, generating..."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1623168571000
+

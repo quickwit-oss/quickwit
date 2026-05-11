@@ -1,0 +1,151 @@
+id: appsync
+metric_id: amazon-appsync
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Latency
+    path: latency
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - facetType: range
+    groups:
+      - AWS Appsync
+    name: Parsing Duration
+    path: validation.duration
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: nanosecond
+  - facetType: range
+    groups:
+      - AWS Appsync
+    name: Validation Duration
+    path: parsing.duration
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: nanosecond
+  - facetType: range
+    groups:
+      - AWS Appsync
+    name: Tokens Consumed
+    path: tokensConsumed
+    source: log
+    type: integer
+  - groups:
+      - AWS Appsync
+    name: Status Code
+    path: statusCode
+    source: log
+  - groups:
+      - AWS Appsync
+    name: Schema Version
+    path: version
+    source: log
+  - groups:
+      - AWS
+    name: Log Group
+    path: aws.awslogs.logGroup
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Appsync
+  enabled: true
+  filter:
+    query: source:appsync
+  processors:
+    - type: grok-parser
+      name: Extract requestId and tokensConsumed
+      enabled: true
+      source: message
+      samples:
+        - '12345678-12b3-432a-1a12-12ae33e111df Tokens Consumed: 3'
+      grok:
+        supportRules: |
+          _requestid %{uuid:requestId}
+        matchRules: |
+          tokens_consumed %{_requestid} Tokens Consumed: %{integer:tokensConsumed}.*
+          request_id_from_normal_logs %{_requestid}\s.*
+    - type: date-remapper
+      name: Define `startTime` as the official date of the log
+      enabled: true
+      sources:
+        - startTime
+    - type: attribute-remapper
+      name: Map attribute `graphQLAPIId` to a tag
+      enabled: true
+      sources:
+        - graphQLAPIId
+      target: graphQLAPIId
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `logType` to `evt.name`
+      enabled: true
+      sources:
+        - logType
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+    - type: attribute-remapper
+      name: Map `statusCode` to `http.status_code`
+      enabled: true
+      sources:
+        - statusCode
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+    - type: category-processor
+      name: Categorize status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: Ok
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: Error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

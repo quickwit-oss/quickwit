@@ -1,0 +1,121 @@
+id: "crest_data_systems_airtable"
+tests:
+ -
+  sample: |-
+    {
+      "actor" : {
+        "type" : "user",
+        "user" : {
+          "name" : "Jane Doe",
+          "id" : "usrL2PNC5o3H4lBEi",
+          "email" : "foo@bar.com"
+        }
+      },
+      "payloadVersion" : "1.0",
+      "modelId" : "appLkNDICXNqxSDhG",
+      "payload" : {
+        "name" : "My newly created base!"
+      },
+      "origin" : {
+        "ipAddress" : "1.2.3.4",
+        "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+        "sessionId" : "sesE3ulSADiRNhqAv"
+      },
+      "context" : {
+        "enterpriseAccountId" : "entUBq2RGdihxl3vU",
+        "actionId" : "actxr1mLqZz1T35FA",
+        "baseId" : "appLkNDICXNqxSDhG",
+        "interfaceId" : "pbdyGA3PsOziEHPDE",
+        "workspaceId" : "wspmhESAta6clCCwF"
+      },
+      "action" : "createBase",
+      "id" : "01FYFFDE39BDDBC0HWK51R6GPF",
+      "modelType" : "base",
+      "timestamp" : "2025-04-28T17:46:56.819Z"
+    }
+  service: "cds.airtable.audit_log_events"
+  result:
+    custom:
+      cds:
+        airtable:
+          event:
+            actor_type: "user"
+            context_actionId: "actxr1mLqZz1T35FA"
+            context_baseId: "appLkNDICXNqxSDhG"
+            context_enterpriseAccountId: "entUBq2RGdihxl3vU"
+            context_interfaceId: "pbdyGA3PsOziEHPDE"
+            context_workspaceId: "wspmhESAta6clCCwF"
+            id: "01FYFFDE39BDDBC0HWK51R6GPF"
+            modelId: "appLkNDICXNqxSDhG"
+            modelType: "base"
+            payloadVersion: "1.0"
+      evt:
+        name: "createBase"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "107"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      network:
+        client:
+          geoip: {}
+          ip: "1.2.3.4"
+      origin:
+        sessionId: "sesE3ulSADiRNhqAv"
+      payload:
+        name: "My newly created base!"
+      timestamp: "2025-04-28T17:46:56.819Z"
+      usr:
+        email: "foo@bar.com"
+        id: "usrL2PNC5o3H4lBEi"
+        name: "Jane Doe"
+    message: |-
+      {
+        "actor" : {
+          "type" : "user",
+          "user" : {
+            "name" : "Jane Doe",
+            "id" : "usrL2PNC5o3H4lBEi",
+            "email" : "foo@bar.com"
+          }
+        },
+        "payloadVersion" : "1.0",
+        "modelId" : "appLkNDICXNqxSDhG",
+        "payload" : {
+          "name" : "My newly created base!"
+        },
+        "origin" : {
+          "ipAddress" : "1.2.3.4",
+          "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+          "sessionId" : "sesE3ulSADiRNhqAv"
+        },
+        "context" : {
+          "enterpriseAccountId" : "entUBq2RGdihxl3vU",
+          "actionId" : "actxr1mLqZz1T35FA",
+          "baseId" : "appLkNDICXNqxSDhG",
+          "interfaceId" : "pbdyGA3PsOziEHPDE",
+          "workspaceId" : "wspmhESAta6clCCwF"
+        },
+        "action" : "createBase",
+        "id" : "01FYFFDE39BDDBC0HWK51R6GPF",
+        "modelType" : "base",
+        "timestamp" : "2025-04-28T17:46:56.819Z"
+      }
+    service: "cds.airtable.audit_log_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745862416819

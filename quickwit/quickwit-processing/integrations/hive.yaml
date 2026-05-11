@@ -1,0 +1,81 @@
+id: hive
+metric_id: hive
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Database
+    name: User
+    path: db.user
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Hive
+  enabled: true
+  filter:
+    query: source:hive
+  processors:
+    - type: grok-parser
+      name: Parsing Hive logs
+      enabled: true
+      source: message
+      samples:
+        - "2019-05-17T10:01:17,153 INFO  [pool-10-thread-2]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root\tip=127.0.0.1\tcmd=source:127.0.0.1 get_all_functions"
+        - '2019-05-17T10:05:19,321 INFO  [pool-10-thread-3]: metastore.HiveMetaStore (HiveMetaStore.java:logInfo(777)) - 2: source:127.0.0.1 get_database: default'
+        - '2019-04-25T13:12:51,755 INFO  [pool-7-thread-9]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root ip=172.27.0.7   cmd=source:172.27.0.7 get_table: db=default tbl=pokes'
+        - '2019-04-25T13:11:03,575 INFO  [main]: service.AbstractService (AbstractService.java:start(104)) - Service:OperationManager is started.'
+        - |-
+          2019-05-21T08:26:33,280 ERROR [f107bf5e-a0af-420a-ba56-462b8c60cabf HiveServer2-Handler-Pool: Thread-101]: ql.Driver (SessionState.java:printError(1126)) - FAILED: SemanticException [Error 10001]: Line 1:14 Table not found 'aze'
+          org.apache.hadoop.hive.ql.parse.SemanticException: Line 1:14 Table not found 'aze'
+            at org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.getMetaData(SemanticAnalyzer.java:2006)
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss,SSS"):date}
+          _thread_name %{data:logger.thread_name}
+          _logger_name %{notSpace:logger.name}
+          _method_name %{notSpace:logger.method_name}
+          _beginning %{_date}\s%{word:level}\s+\[%{_thread_name}\]:\s%{_logger_name}\s\(%{_method_name}\)
+          _user_info ugi=%{notSpace:db.user}\s+ip=%{notSpace:network.client.ip}\s+cmd=
+
+          _hive_command %{_beginning}\s-\s(%{_user_info}|%{notSpace}:\s+)source:%{notSpace:db.command.source}\s+%{word:db.operation}
+        matchRules: |
+          hive_command_simple  %{_hive_command}
+
+          hive_command_detailed_db %{_hive_command}(|\s):\s+%{notSpace:db.name}
+
+          hive_command_detailed_tbl %{_hive_command}(|\s):\s+db=%{notSpace:db.name}\s+(tbl|tbls)=%{notSpace:db.command.table}
+
+          hive_command_default %{_hive_command}(|\s):\s%{data:db.command.description}
+
+          hive_simple %{_beginning}\s-\s%{data:description}((\n|\t)%{data:error.stack})?
+    - type: grok-parser
+      name: Parsing Java Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |-
+          org.apache.hadoop.hive.ql.parse.SemanticException: Line 1:14 Table not found 'aze'
+            at org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.getMetaData(SemanticAnalyzer.java:2006)
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

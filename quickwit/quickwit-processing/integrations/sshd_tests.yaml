@@ -1,0 +1,43 @@
+id: "sshd"
+tests:
+ -
+  sample: "pam_unix(sshd:session): session closed for user marc.szalkiewicz"
+  result:
+    custom:
+      system:
+        action: "session closed"
+        user: "marc.szalkiewicz"
+    message: "pam_unix(sshd:session): session closed for user marc.szalkiewicz"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "Accepted publickey for topdog from 172.22.179.72 port 58599 ssh2: RSA 08:fd:c7:75:ee:fbxxxx:xxxxx"
+  result:
+    custom:
+      network:
+        client:
+          ip: "172.22.179.72"
+          port: "58599"
+      system:
+        action: "Accepted"
+        algorithm: "RSA"
+        key: "08:fd:c7:75:ee:fbxxxx:xxxxx"
+        type: "publickey"
+        user: "topdog"
+    message: "Accepted publickey for topdog from 172.22.179.72 port 58599 ssh2: RSA 08:fd:c7:75:ee:fbxxxx:xxxxx"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "Received disconnect from 172.22.179.72: 11: disconnected by user"
+  result:
+    custom:
+      network:
+        client:
+          ip: "172.22.179.72"
+      system:
+        action: "disconnect"
+        type: "11: disconnected by user"
+    message: "Received disconnect from 172.22.179.72: 11: disconnected by user"
+    tags:
+     - "source:LOGS_SOURCE"
+

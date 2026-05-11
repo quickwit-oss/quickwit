@@ -1,0 +1,107 @@
+id: waf
+metric_id: amazon-waf
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+  - groups:
+      - AWS
+    name: S3 Bucket
+    path: aws.s3.bucket
+    source: log
+    type: string
+  - groups:
+      - WAF
+    name: Source Name
+    path: httpSourceName
+    source: log
+  - groups:
+      - WAF
+    name: Web ACL ID
+    path: webaclId
+    source: log
+  - groups:
+      - WAF
+    name: Source Id
+    path: httpSourceId
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Web Application Firewall
+  enabled: true
+  filter:
+    query: source:waf
+  processors:
+    - type: attribute-remapper
+      name: Map `httpRequest.clientIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - httpRequest.clientIp
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpRequest.uri` to `http.url_details.path`
+      enabled: true
+      sources:
+        - httpRequest.uri
+      target: http.url_details.path
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpRequest.httpMethod` to `http.method`
+      enabled: true
+      sources:
+        - httpRequest.httpMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `httpRequest.requestId` to `http.request_id`
+      enabled: true
+      sources:
+        - httpRequest.requestId
+      target: http.request_id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `action` to `system.action`
+      enabled: true
+      sources:
+        - action
+      target: system.action
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

@@ -1,0 +1,83 @@
+id: "openstack"
+tests:
+ -
+  sample: "192.168.42.11 - - [05/Apr/2019:15:21:40 +0000] \"GET /placement/resource_providers/fe0a06b8-9d03-4bb5-9790-3e142edbd996/allocations HTTP/1.1\" 200 346 \"-\" \"nova-compute keystoneauth1/3.13.1 python-requests/2.21.0 CPython/2.7.12\""
+  result:
+    custom:
+      date_access: 1554477700000
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "OK"
+        status_code: 200
+        url: "/placement/resource_providers/fe0a06b8-9d03-4bb5-9790-3e142edbd996/allocations"
+        url_details:
+          path: "/placement/resource_providers/fe0a06b8-9d03-4bb5-9790-3e142edbd996/allocations"
+        useragent: "nova-compute keystoneauth1/3.13.1 python-requests/2.21.0 CPython/2.7.12"
+        useragent_details:
+          browser:
+            family: "Python Requests"
+            major: "2"
+            minor: "21"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 346
+        client:
+          ip: "192.168.42.11"
+    message: "192.168.42.11 - - [05/Apr/2019:15:21:40 +0000] \"GET /placement/resource_providers/fe0a06b8-9d03-4bb5-9790-3e142edbd996/allocations HTTP/1.1\" 200 346 \"-\" \"nova-compute keystoneauth1/3.13.1 python-requests/2.21.0 CPython/2.7.12\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554477700000
+ -
+  sample: "2020-04-08 14:10:08.946981 AH02454: uwsgi: attempt to connect to Unix domain socket /var/run/uwsgi/nova-api-wsgi.socket (uwsgi-uds-nova-api-wsgi) failed"
+  result:
+    custom:
+      date_access: 1586355008946
+    message: "AH02454: uwsgi: attempt to connect to Unix domain socket /var/run/uwsgi/nova-api-wsgi.socket (uwsgi-uds-nova-api-wsgi) failed"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586355008946
+ -
+  sample: "[Tue Apr 06 06:25:03.726614 2021] [mpm_event:notice] [pid 19269:tid 140081481041792] AH00489: Apache/2.4.18 (Ubuntu) mod_wsgi/4.3.0 Python/2.7.12 configured -- resuming normal operations"
+  result:
+    custom:
+      date_access: 1617690303726
+      level: "notice"
+      module: "mpm_event"
+      pid: 19269.0
+      tid: 1.40081481041792E14
+    message: "AH00489: Apache/2.4.18 (Ubuntu) mod_wsgi/4.3.0 Python/2.7.12 configured -- resuming normal operations"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1617690303726
+ -
+  sample: "2021-04-06 19:36:25.819+0000: 2879: debug : virThreadJobClear:121 : Thread 2879 (virNetServerHandleJob) finished job remoteDispatchConnectBaselineCPU with ret=0"
+  result:
+    custom:
+      date_access: 1617737785819
+      filename: "virThreadJobClear"
+      level: "debug"
+      lineno: 121.0
+      thread_no: 2879.0
+    message: "Thread 2879 (virNetServerHandleJob) finished job remoteDispatchConnectBaselineCPU with ret=0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1617737785819
+ -
+  sample: "2013-02-25 20:26:33 6619 ERROR nova.openstack.common.rpc.common [-] AMQP server on localhost:5672 is unreachable: [Errno 111] ECONNREFUSED. Trying again in 23 seconds."
+  result:
+    custom:
+      date_access: 1361823993000
+      level: "ERROR"
+      module: "nova.openstack.common.rpc.common"
+    message: "AMQP server on localhost:5672 is unreachable: [Errno 111] ECONNREFUSED. Trying again in 23 seconds."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1361823993000
+

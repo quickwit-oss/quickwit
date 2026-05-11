@@ -1,0 +1,31 @@
+id: "exchange-server"
+tests:
+ -
+  sample: "2020-09-14T13:19:20.093Z,,Transport,,*,service started; MaxConcurrentSubmissions=80; MaxConcurrentDeliveries=20; MaxSmtpOutConnections=1000"
+  result:
+    custom:
+      direction: "*"
+      source: "Transport"
+      timestamp: 1600089560093
+    message: "service started; MaxConcurrentSubmissions=80; MaxConcurrentDeliveries=20; MaxSmtpOutConnections=1000"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2020-09-14T13:19:10.813Z,MailboxDeliveryService,S:Stage=StartService"
+  result:
+    custom:
+      source: "MailboxDeliveryService"
+      timestamp: 1600089550813
+    message: "S:Stage=StartService"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2020-09-14T13:19:16.946Z,START,,,,,,,,,Started MsExchangeThrottling service."
+  result:
+    custom:
+      event_id: "START"
+      timestamp: 1600089556946
+    message: "Started MsExchangeThrottling service."
+    tags:
+     - "source:LOGS_SOURCE"
+

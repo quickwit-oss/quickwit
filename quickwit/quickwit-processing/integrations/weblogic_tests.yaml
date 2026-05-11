@@ -1,0 +1,137 @@
+id: "weblogic"
+tests:
+ -
+  sample: "####<Dec 6, 2021, 2:34:15,191 PM EST> <Info> <WebLogicServer> <COMP-C02FF0NQML87> <AdminServer> <main> <<WLS Kernel>> <> <d77d9327-0117-40ce-811c-1bc7653aa16f-0000007e> <1638819255191> <[severity-value: 64] [rid: 0] > <BEA-000238> <Shutdown has completed.>"
+  result:
+    custom:
+      level: "Info"
+      timestamp: 1638819255191
+      weblogic:
+        context_id: "d77d9327-0117-40ce-811c-1bc7653aa16f-0000007e"
+        host: "COMP-C02FF0NQML87"
+        message_id: "BEA-000238"
+        server: "AdminServer"
+        subsystem: "WebLogicServer"
+        thread: "main"
+        user_id: "WLS Kernel"
+    message: "Shutdown has completed."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638819255191
+ -
+  sample: "####<Dec 6, 2021, 2:28:18,282 PM EST> <Warning> <Socket> <COMP-C02FF0NQML87> <AdminServer> <[ACTIVE] ExecuteThread: '14' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <d77d9327-0117-40ce-811c-1bc7653aa16f-00000068> <1638818898282> <[severity-value: 16] [rid: 0] > <BEA-000449> <Closing the socket, as no data read from it on 0:0:0:0:0:0:0:1:63,786 during the configured idle timeout of 5 seconds.>"
+  result:
+    custom:
+      level: "Warning"
+      timestamp: 1638818898282
+      weblogic:
+        context_id: "d77d9327-0117-40ce-811c-1bc7653aa16f-00000068"
+        host: "COMP-C02FF0NQML87"
+        message_id: "BEA-000449"
+        server: "AdminServer"
+        subsystem: "Socket"
+        thread: "[ACTIVE] ExecuteThread: '14' for queue: 'weblogic.kernel.Default (self-tuning)'"
+        user_id: "WLS Kernel"
+    message: "Closing the socket, as no data read from it on 0:0:0:0:0:0:0:1:63,786 during the configured idle timeout of 5 seconds."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638818898282
+ -
+  sample: "####<Dec 6, 2021, 11:59:41,324 PM GMT> <Info> <WorkManager> <ms1> <managed-server1> <Timer-2> <<WLS Kernel>> <> <744f7cf4-d34d-42ce-ac7e-e2c22fb1b508-00000003> <1638835181324> <[severity-value: 64] [rid: 0] > <BEA-002959> <Self-tuning thread pool contains 0 running threads, 2 idle threads, and 13 standby threads>"
+  result:
+    custom:
+      level: "Info"
+      timestamp: 1638835181324
+      weblogic:
+        context_id: "744f7cf4-d34d-42ce-ac7e-e2c22fb1b508-00000003"
+        host: "ms1"
+        message_id: "BEA-002959"
+        server: "managed-server1"
+        subsystem: "WorkManager"
+        thread: "Timer-2"
+        user_id: "WLS Kernel"
+    message: "Self-tuning thread pool contains 0 running threads, 2 idle threads, and 13 standby threads"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638835181324
+ -
+  sample: "####<Dec 6, 2021, 11:33:12,286 PM GMT> <Notice> <Server> <ms2> <managed-server2> <weblogic.socket.ServerListenThread> <<WLS Kernel>> <> <ad4c5318-8fd9-4544-bafd-58df4da6e9fb-00000005> <1638833592286> <[severity-value: 32] [rid: 0:2] > <BEA-002613> <Channel \"Default[1]\" is now listening on 127.0.0.1:8001 for protocols iiop, t3, CLUSTER-BROADCAST, ldap, snmp, http.>"
+  result:
+    custom:
+      level: "Notice"
+      timestamp: 1638833592286
+      weblogic:
+        context_id: "ad4c5318-8fd9-4544-bafd-58df4da6e9fb-00000005"
+        host: "ms2"
+        message_id: "BEA-002613"
+        server: "managed-server2"
+        subsystem: "Server"
+        thread: "weblogic.socket.ServerListenThread"
+        user_id: "WLS Kernel"
+    message: "Channel \"Default[1]\" is now listening on 127.0.0.1:8001 for protocols iiop, t3, CLUSTER-BROADCAST, ldap, snmp, http."
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638833592286
+ -
+  sample: "####<Dec 8, 2021, 3:59:06,613 PM GMT> <Info> <Log Management> <ms1> <> <[STANDBY] ExecuteThread: '2' for queue: 'weblogic.kernel.Default (self-tuning)'> <> <> <> <1638979146613> <[severity-value: 64] > <BEA-170023> <The Server Logging is initialized with Java Logging API implementation.>"
+  result:
+    custom:
+      level: "Info"
+      timestamp: 1638979146613
+      weblogic:
+        host: "ms1"
+        message_id: "BEA-170023"
+        subsystem: "Log Management"
+        thread: "[STANDBY] ExecuteThread: '2' for queue: 'weblogic.kernel.Default (self-tuning)'"
+    message: "The Server Logging is initialized with Java Logging API implementation."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638979146613
+ -
+  sample: "192.168.1.4 - weblogic [06/Dec/2021:15:29:50 -0500] \"POST /medrec/index.xhtml HTTP/1.1\" 200 8976"
+  result:
+    custom:
+      http:
+        auth: "weblogic"
+        method: "POST"
+        status_category: "OK"
+        status_code: 200
+        url: "/medrec/index.xhtml"
+        version: "1.1"
+      network:
+        bytes_written: 8976
+        client:
+          ip: "192.168.1.4"
+      timestamp: 1638822590000
+    message: "192.168.1.4 - weblogic [06/Dec/2021:15:29:50 -0500] \"POST /medrec/index.xhtml HTTP/1.1\" 200 8976"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638822590000
+ -
+  sample: "192.168.1.4 - weblogic [06/Dec/2021:15:28:55 -0500] \"POST /medrec/registerPatient.xhtml HTTP/1.1\" 200 3242"
+  result:
+    custom:
+      http:
+        auth: "weblogic"
+        method: "POST"
+        status_category: "OK"
+        status_code: 200
+        url: "/medrec/registerPatient.xhtml"
+        version: "1.1"
+      network:
+        bytes_written: 3242
+        client:
+          ip: "192.168.1.4"
+      timestamp: 1638822535000
+    message: "192.168.1.4 - weblogic [06/Dec/2021:15:28:55 -0500] \"POST /medrec/registerPatient.xhtml HTTP/1.1\" 200 3242"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1638822535000
+

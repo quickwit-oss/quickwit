@@ -41,7 +41,6 @@ opentelemetry = { workspace = true }
 pem = { workspace = true }
 percent-encoding = { workspace = true }
 pin-project = { workspace = true }
-pomchi = { workspace = true }
 postcard = { workspace = true }
 pprof = { workspace = true, optional = true }
 prometheus = { workspace = true }
@@ -92,6 +91,7 @@ quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-parquet-engine = { workspace = true }
+quickwit-processing = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }

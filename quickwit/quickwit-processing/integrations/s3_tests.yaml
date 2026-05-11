@@ -1,0 +1,230 @@
+id: "s3"
+tests:
+ -
+  sample: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be 3E57427F3EXAMPLE REST.GET.VERSIONING - \"GET /mybucket?versioning HTTP/1.1\" 200 - 113 - 7 - \"-\" \"S3Console/0.4\" -"
+  result:
+    custom:
+      date_access: 1391644838000
+      duration: 7000000.0
+      http:
+        method: "GET"
+        request_id: "3E57427F3EXAMPLE"
+        status_category: "OK"
+        status_code: 200
+        url: "/mybucket?versioning"
+        url_details:
+          path: "/mybucket"
+          queryString:
+            versioning: null
+        useragent: "S3Console/0.4"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 113
+        client:
+          id: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+          ip: "192.0.2.3"
+      s3:
+        bucket: "mybucket"
+        bucket_owner: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+        operation: "REST.GET.VERSIONING"
+    message: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be 3E57427F3EXAMPLE REST.GET.VERSIONING - \"GET /mybucket?versioning HTTP/1.1\" 200 - 113 - 7 - \"-\" \"S3Console/0.4\" -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1391644838000
+ -
+  sample: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be 891CE47D2EXAMPLE REST.GET.LOGGING_STATUS - \"GET /mybucket?logging HTTP/1.1\" 200 - 242 - 11 - \"-\" \"S3Console/0.4\" -"
+  result:
+    custom:
+      date_access: 1391644838000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        request_id: "891CE47D2EXAMPLE"
+        status_category: "OK"
+        status_code: 200
+        url: "/mybucket?logging"
+        url_details:
+          path: "/mybucket"
+          queryString:
+            logging: null
+        useragent: "S3Console/0.4"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 242
+        client:
+          id: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+          ip: "192.0.2.3"
+      s3:
+        bucket: "mybucket"
+        bucket_owner: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+        operation: "REST.GET.LOGGING_STATUS"
+    message: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be 891CE47D2EXAMPLE REST.GET.LOGGING_STATUS - \"GET /mybucket?logging HTTP/1.1\" 200 - 242 - 11 - \"-\" \"S3Console/0.4\" -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1391644838000
+ -
+  sample: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be A1206F460EXAMPLE REST.GET.BUCKETPOLICY - \"GET /mybucket?policy HTTP/1.1\" 404 NoSuchBucketPolicy 297 - 38 - \"-\" \"S3Console/0.4\" -"
+  result:
+    custom:
+      date_access: 1391644838000
+      duration: 3.8E7
+      http:
+        method: "GET"
+        request_id: "A1206F460EXAMPLE"
+        status_category: "warning"
+        status_code: 404
+        url: "/mybucket?policy"
+        url_details:
+          path: "/mybucket"
+          queryString:
+            policy: null
+        useragent: "S3Console/0.4"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 297
+        client:
+          id: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+          ip: "192.0.2.3"
+      s3:
+        bucket: "mybucket"
+        bucket_owner: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+        error_code: "NoSuchBucketPolicy"
+        operation: "REST.GET.BUCKETPOLICY"
+    message: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be mybucket [06/Feb/2014:00:00:38 +0000] 192.0.2.3 79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be A1206F460EXAMPLE REST.GET.BUCKETPOLICY - \"GET /mybucket?policy HTTP/1.1\" 404 NoSuchBucketPolicy 297 - 38 - \"-\" \"S3Console/0.4\" -"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1391644838000
+ -
+  sample: "88222ff30f97fe29ed364e0825ef0a1d9fafcf1a324157542560f5c479ff6def files.creativemarket.com [14/Sep/2018:21:01:17 +0000] - arn:aws:sts::573512957151:assumed-role/s3crr_role_for_files.creativemarket.com_to_files.creativemarket./s3-replication 607AFB8B441AA484 REST.HEAD.OBJECT images/screenshots/products/505/5052/5052871/71-fr.jpg \"HEAD /files.creativemarket.com/images/screenshots/products/505/5052/5052871/71-fr.jpg?versionId=NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA HTTP/1.1\" 200 - - 305144 10 - \"-\" \"-\" NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA"
+  result:
+    custom:
+      date_access: 1536958877000
+      duration: 1.0E7
+      http:
+        method: "HEAD"
+        request_id: "607AFB8B441AA484"
+        request_version_id: "NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA"
+        status_category: "OK"
+        status_code: 200
+        url: "/files.creativemarket.com/images/screenshots/products/505/5052/5052871/71-fr.jpg?versionId=NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA"
+        url_details:
+          path: "/files.creativemarket.com/images/screenshots/products/505/5052/5052871/71-fr.jpg"
+          queryString:
+            versionId: "NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA"
+        useragent: "-"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        client:
+          id: "arn:aws:sts::573512957151:assumed-role/s3crr_role_for_files.creativemarket.com_to_files.creativemarket./s3-replication"
+        object_size: 305144
+      s3:
+        bucket: "files.creativemarket.com"
+        bucket_owner: "88222ff30f97fe29ed364e0825ef0a1d9fafcf1a324157542560f5c479ff6def"
+        operation: "REST.HEAD.OBJECT"
+    message: "88222ff30f97fe29ed364e0825ef0a1d9fafcf1a324157542560f5c479ff6def files.creativemarket.com [14/Sep/2018:21:01:17 +0000] - arn:aws:sts::573512957151:assumed-role/s3crr_role_for_files.creativemarket.com_to_files.creativemarket./s3-replication 607AFB8B441AA484 REST.HEAD.OBJECT images/screenshots/products/505/5052/5052871/71-fr.jpg \"HEAD /files.creativemarket.com/images/screenshots/products/505/5052/5052871/71-fr.jpg?versionId=NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA HTTP/1.1\" 200 - - 305144 10 - \"-\" \"-\" NNwpXlTzv2Il9SQXJGu7DbCA6tY2Q5aA"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1536958877000
+ -
+  sample: "4780d685ee67c1ef2ac9eed3a4529268ee406c990de14e2ec7ff23e1a6e1aa1d aws-logs-172597598159-us-east-1 [08/Mar/2019:14:20:03 +0000] 18.233.66.82 arn:aws:sts::172597598159:assumed-role/serverlessrepo-Datadog-Log-loglambdaddfunctionRole-BMYP47R8CAU2/serverlessrepo-Datadog-Log-For-loglambdaddfunction-BBCALVX1HWMO 2711284D0622E1B9 REST.GET.OBJECT florian-s3/2019-03-08-14-20-02-31E9A0235C773050 \"GET /florian-s3/2019-03-08-14-20-02-31E9A0235C773050 HTTP/1.1\" 403 AccessDenied 243 - 9 - \"-\" \"Boto3/1.7.74 Python/2.7.12 Linux/4.14.94-73.73.amzn1.x86_64 exec-env/AWS_Lambda_python2.7 Botocore/1.10.74\" - AROAJT4PUNXVGI5YBJEFK:serverlessrepo-Datadog-Log-For-loglambdaddfunction-BBCALVX1HWMO ALR1IfKEeVdZhoEItrybFmb+DbVCCQLFAyOIccM2LRFRHYpWXDpGhtOUyfdf+/GrMbfYu5wEsaY= SigV4 ECDHE-RSA-AES128-GCM-SHA256 AuthHeader aws-logs-172597598159-us-east-1.s3.amazonaws.com"
+  result:
+    custom:
+      date_access: 1552054803000
+      duration: 9000000.0
+      http:
+        method: "GET"
+        request_id: "2711284D0622E1B9"
+        status_category: "warning"
+        status_code: 403
+        url: "/florian-s3/2019-03-08-14-20-02-31E9A0235C773050"
+        url_details:
+          path: "/florian-s3/2019-03-08-14-20-02-31E9A0235C773050"
+        useragent: "Boto3/1.7.74 Python/2.7.12 Linux/4.14.94-73.73.amzn1.x86_64 exec-env/AWS_Lambda_python2.7 Botocore/1.10.74"
+        useragent_details:
+          browser:
+            family: "Boto3"
+            major: "1"
+            minor: "7"
+            patch: "74"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Linux"
+            major: "4"
+            minor: "14"
+            patch: "94"
+        version: "1.1"
+      network:
+        bytes_written: 243
+        client:
+          id: "arn:aws:sts::172597598159:assumed-role/serverlessrepo-Datadog-Log-loglambdaddfunctionRole-BMYP47R8CAU2/serverlessrepo-Datadog-Log-For-loglambdaddfunction-BBCALVX1HWMO"
+          ip: "18.233.66.82"
+      s3:
+        bucket: "aws-logs-172597598159-us-east-1"
+        bucket_owner: "4780d685ee67c1ef2ac9eed3a4529268ee406c990de14e2ec7ff23e1a6e1aa1d"
+        error_code: "AccessDenied"
+        operation: "REST.GET.OBJECT"
+    message: "4780d685ee67c1ef2ac9eed3a4529268ee406c990de14e2ec7ff23e1a6e1aa1d aws-logs-172597598159-us-east-1 [08/Mar/2019:14:20:03 +0000] 18.233.66.82 arn:aws:sts::172597598159:assumed-role/serverlessrepo-Datadog-Log-loglambdaddfunctionRole-BMYP47R8CAU2/serverlessrepo-Datadog-Log-For-loglambdaddfunction-BBCALVX1HWMO 2711284D0622E1B9 REST.GET.OBJECT florian-s3/2019-03-08-14-20-02-31E9A0235C773050 \"GET /florian-s3/2019-03-08-14-20-02-31E9A0235C773050 HTTP/1.1\" 403 AccessDenied 243 - 9 - \"-\" \"Boto3/1.7.74 Python/2.7.12 Linux/4.14.94-73.73.amzn1.x86_64 exec-env/AWS_Lambda_python2.7 Botocore/1.10.74\" - AROAJT4PUNXVGI5YBJEFK:serverlessrepo-Datadog-Log-For-loglambdaddfunction-BBCALVX1HWMO ALR1IfKEeVdZhoEItrybFmb+DbVCCQLFAyOIccM2LRFRHYpWXDpGhtOUyfdf+/GrMbfYu5wEsaY= SigV4 ECDHE-RSA-AES128-GCM-SHA256 AuthHeader aws-logs-172597598159-us-east-1.s3.amazonaws.com"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1552054803000
+ -
+  sample: "3085aa7c94ff1357d65af409c6029b2e88e4d78855baf57b1831ff8cab24eae7 indeed-ctr-models [28/Jun/2019:11:20:12 +0000] 198.58.75.9 arn:aws:iam::167709491640:user/s3-sync DF694153CBB94F09 BATCH.DELETE.OBJECT butterfly-webapp/model-indexes/sjjobalert_rotw_combined_0a6f08d/ - 204 - - - - - - - - iFg2Laf3TsU7JTWZI0YObDOtj9bbSmxilldJp03SQFyzBQNaJNIrhP+0Syjvx/DdCqU+t6QsnLg= SigV4 ECDHE-RSA-AES128-SHA AuthHeader indeed-ctr-models.s3.amazonaws.com TLSv1.2"
+  result:
+    custom:
+      date_access: 1561720812000
+      http:
+        request_id: "DF694153CBB94F09"
+      network:
+        client:
+          id: "arn:aws:iam::167709491640:user/s3-sync"
+          ip: "198.58.75.9"
+      s3:
+        bucket: "indeed-ctr-models"
+        bucket_owner: "3085aa7c94ff1357d65af409c6029b2e88e4d78855baf57b1831ff8cab24eae7"
+        operation: "BATCH.DELETE.OBJECT"
+    message: "3085aa7c94ff1357d65af409c6029b2e88e4d78855baf57b1831ff8cab24eae7 indeed-ctr-models [28/Jun/2019:11:20:12 +0000] 198.58.75.9 arn:aws:iam::167709491640:user/s3-sync DF694153CBB94F09 BATCH.DELETE.OBJECT butterfly-webapp/model-indexes/sjjobalert_rotw_combined_0a6f08d/ - 204 - - - - - - - - iFg2Laf3TsU7JTWZI0YObDOtj9bbSmxilldJp03SQFyzBQNaJNIrhP+0Syjvx/DdCqU+t6QsnLg= SigV4 ECDHE-RSA-AES128-SHA AuthHeader indeed-ctr-models.s3.amazonaws.com TLSv1.2"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1561720812000
+

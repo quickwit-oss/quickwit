@@ -1,0 +1,409 @@
+id: "harbor"
+tests:
+ -
+  sample: "Jun  3 19:49:04 172.19.0.1 proxy[1297]: 172.19.0.1 - \"GET /harbor/sign-in?redirect_url=%2Fharbor%2Fprojects HTTP/1.1\" 200 693 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36\" 0.001 0.000 ."
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/harbor/sign-in?redirect_url=%2Fharbor%2Fprojects"
+        url_details:
+          path: "/harbor/sign-in"
+          queryString:
+            redirect_url: "%2Fharbor%2Fprojects"
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "74"
+            minor: "0"
+            patch: "3729"
+            patch_minor: "169"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "5"
+        version: "1.1"
+      network:
+        bytes_written: 693
+        client:
+          ip: "172.19.0.1"
+      severity: "ok"
+      syslog:
+        appname: "proxy"
+        timestamp: 44826544000
+    message: "172.19.0.1 - \"GET /harbor/sign-in?redirect_url=%2Fharbor%2Fprojects HTTP/1.1\" 200 693 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36\" 0.001 0.000 ."
+    service: "proxy"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826544000
+ -
+  sample: "Jun  3 19:49:39 172.19.0.1 proxy[1297]: 172.19.0.1 - \"GET /api/health HTTP/1.1\" 308 172 \"-\" \"insomnia/6.5.3\" 0.000 - ."
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 308
+        url: "/api/health"
+        url_details:
+          path: "/api/health"
+        useragent: "insomnia/6.5.3"
+        useragent_details:
+          browser:
+            family: "insomnia"
+            major: "6"
+            minor: "5"
+            patch: "3"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 172
+        client:
+          ip: "172.19.0.1"
+      severity: "notice"
+      syslog:
+        appname: "proxy"
+        timestamp: 44826579000
+    message: "172.19.0.1 - \"GET /api/health HTTP/1.1\" 308 172 \"-\" \"insomnia/6.5.3\" 0.000 - ."
+    service: "proxy"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826579000
+ -
+  sample: "Jun  4 13:12:09 172.19.0.1 registryctl[1297]: 172.19.0.7 - - [04/Jun/2019:13:12:09 +0000] \"GET /api/health HTTP/1.1\" 200 9"
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/api/health"
+        url_details:
+          path: "/api/health"
+        version: "1.1"
+      network:
+        bytes_written: 9
+        client:
+          ip: "172.19.0.7"
+      severity: "ok"
+      syslog:
+        appname: "registryctl"
+        timestamp: 44889129000
+    message: "172.19.0.7 - - [04/Jun/2019:13:12:09 +0000] \"GET /api/health HTTP/1.1\" 200 9"
+    service: "registryctl"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44889129000
+ -
+  sample: "Jun  4 13:20:17 172.19.0.1 portal[1297]: 172.19.0.7 - - [04/Jun/2019:13:20:16 +0000] \"GET / HTTP/1.1\" 200 693 \"-\" \"Go-http-client/1.1\""
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/"
+        url_details:
+          path: "/"
+        useragent: "Go-http-client/1.1"
+        useragent_details:
+          browser:
+            family: "Go-http-client"
+            major: "1"
+            minor: "1"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 693
+        client:
+          ip: "172.19.0.7"
+      severity: "ok"
+      syslog:
+        appname: "portal"
+        timestamp: 44889617000
+    message: "172.19.0.7 - - [04/Jun/2019:13:20:16 +0000] \"GET / HTTP/1.1\" 200 693 \"-\" \"Go-http-client/1.1\""
+    service: "portal"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44889617000
+ -
+  sample: "10.60.2.10 - - [02/Dec/2021:13:50:26 +0000] \"GET / HTTP/1.1\" 200 532 \"-\" \"Go-http-client/1.1\""
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/"
+        url_details:
+          path: "/"
+        useragent: "Go-http-client/1.1"
+        useragent_details:
+          browser:
+            family: "Go-http-client"
+            major: "1"
+            minor: "1"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 532
+        client:
+          ip: "10.60.2.10"
+      severity: "ok"
+    message: "10.60.2.10 - - [02/Dec/2021:13:50:26 +0000] \"GET / HTTP/1.1\" 200 532 \"-\" \"Go-http-client/1.1\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "Jun  3 19:43:27 172.19.0.1 jobservice[1297]: 2019-06-03T19:43:27Z [INFO] [/common/dao/base.go:84]: Registering database: type-PostgreSQL host-postgresql port-5432 databse-registry sslmode-\"disable\""
+  result:
+    custom:
+      logger:
+        name: "/common/dao/base.go"
+      severity: "INFO"
+      syslog:
+        appname: "jobservice"
+        timestamp: 44826207000
+    message: "2019-06-03T19:43:27Z [INFO] [/common/dao/base.go:84]: Registering database: type-PostgreSQL host-postgresql port-5432 databse-registry sslmode-\"disable\""
+    service: "jobservice"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826207000
+ -
+  sample: "May 24 15:08:41 172.28.0.1 jobservice[1304]: 2019-05-24T15:08:41Z [ERROR] [/common/config/store/driver/rest.go:27]: Failed on load rest config err:Get http://core:8080/api/internal/configurations: dial tcp 172.28.0.7:8080: getsockopt: connection refused, url:http://core:8080/api/internal/configurations"
+  result:
+    custom:
+      logger:
+        name: "/common/config/store/driver/rest.go"
+      severity: "ERROR"
+      syslog:
+        appname: "jobservice"
+        timestamp: 43945721000
+    message: "2019-05-24T15:08:41Z [ERROR] [/common/config/store/driver/rest.go:27]: Failed on load rest config err:Get http://core:8080/api/internal/configurations: dial tcp 172.28.0.7:8080: getsockopt: connection refused, url:http://core:8080/api/internal/configurations"
+    service: "jobservice"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 43945721000
+ -
+  sample: "Jun  4 13:07:21 172.19.0.1 core[1297]: 2019-06-04T13:07:21Z [ERROR] [/replication/adapter/image_registry.go:145]: failed to ping registry https://demo.goharbor.io: http error: code 401, message"
+  result:
+    custom:
+      logger:
+        name: "/replication/adapter/image_registry.go"
+      severity: "ERROR"
+      syslog:
+        appname: "core"
+        timestamp: 44888841000
+    message: "2019-06-04T13:07:21Z [ERROR] [/replication/adapter/image_registry.go:145]: failed to ping registry https://demo.goharbor.io: http error: code 401, message"
+    service: "core"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44888841000
+ -
+  sample: "Jun  4 13:20:57 172.19.0.1 core[1297]: 2019/06/04 13:20:57 #033[1;44m[D] [server.go:2619] |      127.0.0.1|#033[42m 200 #033[0m|     9.9379ms|   match|#033[44m GET     #033[0m /api/ping   r:/api/ping#033[0m"
+  result:
+    custom:
+      duration: 9937900.0
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/api/ping"
+        url_details:
+          path: "/api/ping"
+      logger:
+        name: "server.go"
+      network:
+        client:
+          ip: "127.0.0.1"
+      severity: "ok"
+      syslog:
+        appname: "core"
+        timestamp: 44889657000
+    message: "2019/06/04 13:20:57 #033[1;44m[D] [server.go:2619] |      127.0.0.1|#033[42m 200 #033[0m|     9.9379ms|   match|#033[44m GET     #033[0m /api/ping   r:/api/ping#033[0m"
+    service: "core"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44889657000
+ -
+  sample: "May 24 19:48:20 172.30.0.1 postgresql[1304]: LOG:  stats_timestamp 2019-05-24 19:48:20.586618+00 is later than collector's time 2019-05-24 19:48:20.564753+00 for database 16388"
+  result:
+    custom:
+      severity: "LOG"
+      syslog:
+        appname: "postgresql"
+        timestamp: 43962500000
+    message: "LOG:  stats_timestamp 2019-05-24 19:48:20.586618+00 is later than collector's time 2019-05-24 19:48:20.564753+00 for database 16388"
+    service: "postgresql"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 43962500000
+ -
+  sample: "May 24 19:48:20 172.30.0.1 postgresql[1304]: LOG:  statement: SELECT * FROM playground;"
+  result:
+    custom:
+      db:
+        operation: "SELECT"
+        statement: "SELECT * FROM playground;"
+      severity: "LOG"
+      syslog:
+        appname: "postgresql"
+        timestamp: 43962500000
+    message: "LOG:  statement: SELECT * FROM playground;"
+    service: "postgresql"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 43962500000
+ -
+  sample: "Jun  3 19:43:16 172.19.0.1 redis[1297]: 8:M 03 Jun 19:43:16.664 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128."
+  result:
+    custom:
+      pid: 8
+      redis:
+        severity: "#"
+      role: "M"
+      severity: "warning"
+      syslog:
+        appname: "redis"
+        timestamp: 44826196000
+    message: "8:M 03 Jun 19:43:16.664 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128."
+    service: "redis"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826196000
+ -
+  sample: "Jun  3 19:53:18 172.19.0.1 redis[1297]: 8:M 03 Jun 19:53:18.077 * 10 changes in 300 seconds. Saving..."
+  result:
+    custom:
+      pid: 8
+      redis:
+        severity: "*"
+      role: "M"
+      severity: "notice"
+      syslog:
+        appname: "redis"
+        timestamp: 44826798000
+    message: "8:M 03 Jun 19:53:18.077 * 10 changes in 300 seconds. Saving..."
+    service: "redis"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826798000
+ -
+  sample: "Jun  3 19:49:08 172.19.0.1 chartmuseum[1297]: {\"L\":\"INFO\",\"T\":\"2019-06-03T19:49:08.093Z\",\"M\":\"[47] Request served\",\"path\":\"/admin_private/index.yaml\",\"comment\":\"\",\"latency\":\"38.750171ms\",\"clientIP\":\"172.20.0.3\",\"method\":\"GET\",\"statusCode\":200,\"reqID\":\"9e60fdcc-25a1-49da-9b26-4ca3deee6714\"}"
+  result:
+    custom:
+      duration: 3.8750171E7
+      http:
+        method: "GET"
+        status_code: 200
+        url: "/admin_private/index.yaml"
+        url_details:
+          path: "/admin_private/index.yaml"
+      msg: "{\"L\":\"INFO\",\"T\":\"2019-06-03T19:49:08.093Z\",\"M\":\"[47] Request served\",\"path\":\"/admin_private/index.yaml\",\"comment\":\"\",\"latency\":\"38.750171ms\",\"clientIP\":\"172.20.0.3\",\"method\":\"GET\",\"statusCode\":200,\"reqID\":\"9e60fdcc-25a1-49da-9b26-4ca3deee6714\"}"
+      network:
+        client:
+          ip: "172.20.0.3"
+      properties:
+        L: "INFO"
+        T: "2019-06-03T19:49:08.093Z"
+        comment: ""
+        latency: "38.750171ms"
+        reqID: "9e60fdcc-25a1-49da-9b26-4ca3deee6714"
+      severity: "ok"
+      syslog:
+        appname: "chartmuseum"
+        timestamp: 44826548000
+    message: "[47] Request served"
+    service: "chartmuseum"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44826548000
+ -
+  sample: "May 24 15:16:55 172.30.0.1 chartmuseum[1304]: {\"L\":\"INFO\",\"T\":\"2019-05-24T15:16:55.523Z\",\"M\":\"Starting ChartMuseum\",\"port\":9999}"
+  result:
+    custom:
+      msg: "{\"L\":\"INFO\",\"T\":\"2019-05-24T15:16:55.523Z\",\"M\":\"Starting ChartMuseum\",\"port\":9999}"
+      properties:
+        L: "INFO"
+        T: "2019-05-24T15:16:55.523Z"
+        port: 9999
+      syslog:
+        appname: "chartmuseum"
+        timestamp: 43946215000
+    message: "Starting ChartMuseum"
+    service: "chartmuseum"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 43946215000
+ -
+  sample: "Jun  4 13:26:57 172.19.0.1 registry[1297]: time=\"2019-06-04T13:26:57.2139804Z\" level=warning msg=\"error authorizing context: authorization token required\" go.version=go1.11.8 http.request.host=\"registry:5000\" http.request.id=f87f0124-2631-4518-b0ed-3b741fe2d9e3 http.request.method=GET http.request.referer=\"http://registry:5000/v2\" http.request.remoteaddr=\"172.19.0.7:41842\" http.request.uri=\"/v2/\" http.request.useragent=\"Go-http-client/1.1\""
+  result:
+    custom:
+      http:
+        method: "GET"
+        referer: "http://registry:5000/v2"
+        url: "/v2/"
+        url_details:
+          path: "/v2/"
+        useragent: "Go-http-client/1.1"
+        useragent_details:
+          browser:
+            family: "Go-http-client"
+            major: "1"
+            minor: "1"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      properties:
+        go:
+          version: "go1.11.8"
+        http:
+          request:
+            host: "registry:5000"
+            id: "f87f0124-2631-4518-b0ed-3b741fe2d9e3"
+            remoteaddr: "172.19.0.7:41842"
+        level: "warning"
+        msg: "error authorizing context: authorization token required"
+        time: "2019-06-04T13:26:57.2139804Z"
+      syslog:
+        appname: "registry"
+        timestamp: 44890017000
+    message: "time=\"2019-06-04T13:26:57.2139804Z\" level=warning msg=\"error authorizing context: authorization token required\" go.version=go1.11.8 http.request.host=\"registry:5000\" http.request.id=f87f0124-2631-4518-b0ed-3b741fe2d9e3 http.request.method=GET http.request.referer=\"http://registry:5000/v2\" http.request.remoteaddr=\"172.19.0.7:41842\" http.request.uri=\"/v2/\" http.request.useragent=\"Go-http-client/1.1\""
+    service: "registry"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 44890017000
+

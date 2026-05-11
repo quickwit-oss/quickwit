@@ -1,0 +1,492 @@
+id: crest_data_systems_zoho_crm
+metric_id: crest-data-systems-zoho-crm
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Account_Name
+    path: cds.zoho-crm.account_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Business_Type
+    path: cds.zoho-crm.business_type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Campaign_Source
+    path: cds.zoho-crm.campaign_source
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Campaign_Type
+    path: cds.zoho-crm.campaign_type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Case_Type
+    path: cds.zoho-crm.case_type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Contact_Name
+    path: cds.zoho-crm.contact_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Deal_Name
+    path: cds.zoho-crm.deal_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Handler_Name
+    path: cds.zoho-crm.handler
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Module_Name
+    path: cds.zoho-crm.module_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Owner_Name
+    path: cds.zoho-crm.owner_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Parent_Account
+    path: cds.zoho-crm.parent_account
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Product_Name
+    path: cds.zoho-crm.product_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Related_To
+    path: cds.zoho-crm.related_to
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Reporting_To
+    path: cds.zoho-crm.reporting_to
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Vendor_Name
+    path: cds.zoho-crm.vendor_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: What_ID
+    path: cds.zoho-crm.what_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data zoho crm
+    name: Who_ID
+    path: cds.zoho-crm.who_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Zoho CRM
+  enabled: true
+  filter:
+    query: source:crest_data_systems_zoho_crm
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `Modified_Time` as the official date of the log
+      enabled: true
+      sources:
+        - Modified_Time
+    - type: attribute-remapper
+      name: Map `id` to `cds.zoho-crm.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: cds.zoho-crm.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Created_By.name` to `usr.name`
+      enabled: true
+      sources:
+        - Created_By.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Created_By.email` to `usr.email`
+      enabled: true
+      sources:
+        - Created_By.email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Created_By.id` to `usr.id`
+      enabled: true
+      sources:
+        - Created_By.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Owner.name` to `cds.zoho-crm.owner_name`
+      enabled: true
+      sources:
+        - Owner.name
+      sourceType: attribute
+      target: cds.zoho-crm.owner_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Contact_Name.name` to `cds.zoho-crm.contact_name`
+      enabled: true
+      sources:
+        - Contact_Name.name
+      sourceType: attribute
+      target: cds.zoho-crm.contact_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Account_Name.name` to `cds.zoho-crm.account_name`
+      enabled: true
+      sources:
+        - Account_Name.name
+      sourceType: attribute
+      target: cds.zoho-crm.account_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Product_Name.name` to `cds.zoho-crm.product_name`
+      enabled: true
+      sources:
+        - Product_Name.name
+      sourceType: attribute
+      target: cds.zoho-crm.product_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Vendor_Name.name` to `cds.zoho-crm.vendor_name`
+      enabled: true
+      sources:
+        - Vendor_Name.name
+      sourceType: attribute
+      target: cds.zoho-crm.vendor_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Deal_Name.name` to `cds.zoho-crm.deal_name`
+      enabled: true
+      sources:
+        - Deal_Name.name
+      sourceType: attribute
+      target: cds.zoho-crm.deal_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `$se_module` to `cds.zoho-crm.module_name`
+      enabled: true
+      sources:
+        - $se_module
+      sourceType: attribute
+      target: cds.zoho-crm.module_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Deals
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.deals
+      processors:
+        - type: attribute-remapper
+          name: Map `Campaign_Source.name` to `cds.zoho-crm.campaign_source`
+          enabled: true
+          sources:
+            - Campaign_Source.name
+          sourceType: attribute
+          target: cds.zoho-crm.campaign_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `Type` to `cds.zoho-crm.business_type`
+          enabled: true
+          sources:
+            - Type
+          sourceType: attribute
+          target: cds.zoho-crm.business_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Cases
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.cases
+      processors:
+        - type: attribute-remapper
+          name: Map `Related_To.name` to `cds.zoho-crm.related_to`
+          enabled: true
+          sources:
+            - Related_To.name
+          sourceType: attribute
+          target: cds.zoho-crm.related_to
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `Type` to `cds.zoho-crm.case_type`
+          enabled: true
+          sources:
+            - Type
+          sourceType: attribute
+          target: cds.zoho-crm.case_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Tasks
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.tasks
+      processors:
+        - type: attribute-remapper
+          name: Map `Who_Id.name` to `cds.zoho-crm.who_id`
+          enabled: true
+          sources:
+            - Who_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.who_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `What_Id.name` to `cds.zoho-crm.what_id`
+          enabled: true
+          sources:
+            - What_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.what_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Contacts
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.contacts
+      processors:
+        - type: attribute-remapper
+          name: Map `Reporting_To.name` to `cds.zoho-crm.reporting_to`
+          enabled: true
+          sources:
+            - Reporting_To.name
+          sourceType: attribute
+          target: cds.zoho-crm.reporting_to
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Accounts
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.accounts
+      processors:
+        - type: attribute-remapper
+          name: Map `Parent_Account.name` to `cds.zoho-crm.parent_account`
+          enabled: true
+          sources:
+            - Parent_Account.name
+          sourceType: attribute
+          target: cds.zoho-crm.parent_account
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Meetings
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.meetings
+      processors:
+        - type: attribute-remapper
+          name: Map `Who_Id.name` to `cds.zoho-crm.who_id`
+          enabled: true
+          sources:
+            - Who_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.who_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `What_Id.name` to `cds.zoho-crm.what_id`
+          enabled: true
+          sources:
+            - What_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.what_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Calls
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.calls
+      processors:
+        - type: attribute-remapper
+          name: Map `Who_Id.name` to `cds.zoho-crm.who_id`
+          enabled: true
+          sources:
+            - Who_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.who_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `What_Id.name` to `cds.zoho-crm.what_id`
+          enabled: true
+          sources:
+            - What_Id.name
+          sourceType: attribute
+          target: cds.zoho-crm.what_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Products
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.products
+      processors:
+        - type: attribute-remapper
+          name: Map `Handler.name` to `cds.zoho-crm.handler`
+          enabled: true
+          sources:
+            - Handler.name
+          sourceType: attribute
+          target: cds.zoho-crm.handler
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Invoices
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.invoices
+      processors:
+        - type: attribute-remapper
+          name: Map `Deal_Name__s.name` to `cds.zoho-crm.deal_name`
+          enabled: true
+          sources:
+            - Deal_Name__s.name
+          sourceType: attribute
+          target: cds.zoho-crm.deal_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Zoho CRM Campaigns
+      enabled: true
+      filter:
+        query: service:cds.zoho.crm.campaigns
+      processors:
+        - type: attribute-remapper
+          name: Map `Type` to `cds.zoho-crm.campaign_type`
+          enabled: true
+          sources:
+            - Type
+          sourceType: attribute
+          target: cds.zoho-crm.campaign_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

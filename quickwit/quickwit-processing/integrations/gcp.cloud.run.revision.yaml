@@ -1,0 +1,288 @@
+id: gcp.cloud.run.revision
+metric_id: google-cloud-run
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google Cloud Run
+  enabled: true
+  filter:
+    query: source:gcp.cloud.run.revision
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: service-remapper
+      name: Define `data.resource.labels.service_name` as the official service of the log
+      enabled: true
+      sources:
+        - data.resource.labels.service_name
+    - type: message-remapper
+      name: Define `data.textPayload`, `textPayload` as the official message of the log
+      enabled: true
+      sources:
+        - data.textPayload
+        - textPayload
+
+    - type: grok-parser
+      name: Parsing Message
+      enabled: true
+      source: message
+      samples:
+        - 169.254.8.129 - - [08/May/2019 18:07:08] "GET /121323/321321?a=123 HTTP/1.1" 404 -
+      grok:
+        supportRules: |
+        matchRules: |
+          parse_message %{ip} %{notSpace} %{notSpace} %{notSpace} %{notSpace} "%{notSpace:http.method} %{notSpace:http.url} %{notSpace:http.protocol}" %{notSpace:http.status_code}.*
+          #It is unclear the meaning of the IP here: it is not the source or the destination IP.
+
+    - type: attribute-remapper
+      name: Map `data.httpRequest.remoteIp`, `httpRequest.remoteIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.httpRequest.remoteIp
+        - httpRequest.remoteIp
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.serverIp`, `httpRequest.serverIp` to `network.destination.ip`
+      enabled: true
+      sources:
+        - data.httpRequest.serverIp
+        - httpRequest.serverIp
+      target: network.destination.ip
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.responseSize`, `httpRequest.responseSize` to `network.bytes_written`
+      enabled: true
+      sources:
+        - data.httpRequest.responseSize
+        - httpRequest.responseSize
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.requestSize`, `httpRequest.requestSize` to `network.bytes_read`
+      enabled: true
+      sources:
+        - data.httpRequest.requestSize
+        - httpRequest.requestSize
+      target: network.bytes_read
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.requestMethod`, `httpRequest.requestMethod` to `http.method`
+      enabled: true
+      sources:
+        - data.httpRequest.requestMethod
+        - httpRequest.requestMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - data.httpRequest.requestUrl
+        - httpRequest.requestUrl
+        - http.url
+      target: http.url_details
+
+    - type: attribute-remapper
+      name: Map `data.httpRequest.requestUrl`, `httpRequest.requestUrl` to `http.url`
+      enabled: true
+      sources:
+        - data.httpRequest.requestUrl
+        - httpRequest.requestUrl
+      target: http.url
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.status`, `httpRequest.status` to `http.status_code`
+      enabled: true
+      sources:
+        - data.httpRequest.status
+        - httpRequest.status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.userAgent`, `httpRequest.userAgent` to `http.userAgent`
+      enabled: true
+      sources:
+        - data.httpRequest.userAgent
+        - httpRequest.userAgent
+      target: http.userAgent
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.protocol`, `httpRequest.protocol` to `http.protocol`
+      enabled: true
+      sources:
+        - data.httpRequest.protocol
+        - httpRequest.protocol
+      target: http.protocol
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.httpRequest.latency`, `httpRequest.latency` to `http.latency`
+      enabled: true
+      sources:
+        - data.httpRequest.latency
+        - httpRequest.latency
+      target: http.latency
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing Http latency
+      enabled: true
+      source: http.latency
+      grok:
+        supportRules: |
+        matchRules: |
+          duration %{notSpace:duration:scale(1000000000)}s
+      samples:
+        - 0.005915284s
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.userAgent
+      target: http.useragent_details
+      encoded: false
+
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+
+    - type: status-remapper
+      name: Define `http.status_category`, `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - data.severity
+        - severity

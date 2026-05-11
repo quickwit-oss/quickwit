@@ -1,0 +1,36 @@
+id: aerospike
+metric_id: aerospike
+backend_only: false
+pipeline:
+  type: pipeline
+  name: Aerospike
+  enabled: true
+  filter:
+    query: source:aerospike
+  processors:
+    - type: grok-parser
+      name: Parsing Aerospike logs
+      enabled: true
+      source: message
+      samples:
+        - 'Nov 16 2020 15:30:49 GMT: INFO (drv_ssd): (drv_ssd.c:1835) {test} /opt/aerospike/data/test.dat: used-bytes 0 free-wblocks 4088 write-q 0 write (0,0.0) defrag-q 0 defrag-read (0,0.0) defrag-write (0,0.0)'
+        - 'Nov 16 2020 13:39:09 GMT: INFO (drv_ssd): (drv_ssd.c:1036) /opt/aerospike/data/test.dat init wblocks: pristine-id 8 pristine 4088 free-q 0, defrag-q 0'
+        - 'Nov 16 2020 13:39:11 GMT: INFO (exchange): (exchange.c:2671) exchange-compatibility-id: self 7 cluster-min 0 -> 7 cluster-max 0 -> 7'
+      grok:
+        matchRules: aerospike %{date("MMM d yyyy HH:mm:ss z"):timestamp}:\s+%{word:status}\s+\(%{word:logger.context}\):\s+\(%{notSpace:logger.name}:%{number:logger.line_number}\)\s+%{data:message}
+        supportRules: ''
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

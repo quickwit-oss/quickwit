@@ -1,0 +1,37 @@
+id: cluster-autoscaler
+backend_only: true # cluster-autoscaler integration is similar to the generic glog integration. It's not really linked to any integration outside of logs-backend.
+facets:
+pipeline:
+  type: pipeline
+  name: Kubernetes Cluster Autoscaler
+  enabled: true
+  filter:
+    query: source:cluster-autoscaler
+  processors:
+    - type: grok-parser
+      name: Parsing Cluster Autoscaler logs
+      enabled: true
+      source: message
+      samples:
+        - I0402 08:06:51.571361       1 static_autoscaler.go:366] Calculating unneeded nodes
+        - I0402 08:06:51.571361       1 scale_down.go:414] Node ip-10-61-112-221.eu-west-2.compute.internal is not suitable for removal - utilization too big (0.908163)
+        - E0402 08:06:51.571361       1 utils.go:60] pod.Status.StartTime is nil for pod friz-ws-8929cabd74a-stfz4. Should not reach here.
+      grok:
+        supportRules: |
+        matchRules: |
+          cluster_scheduler %{regex("\\w"):level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp}\s+%{number:logger.thread_id} %{notSpace:logger.name}:%{number:lineno}\] %{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

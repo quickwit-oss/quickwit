@@ -1,0 +1,111 @@
+id: "appsync"
+tests:
+ -
+  sample: "4993612b-24b3-42d8-8a02-311e834d02fd Tokens Consumed: 3"
+  result:
+    custom:
+      requestId: "4993612b-24b3-42d8-8a02-311e834d02fd"
+      tokensConsumed: 3
+    message: "4993612b-24b3-42d8-8a02-311e834d02fd Tokens Consumed: 3"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "4993612b-24b3-42d8-8a02-311e834d02fd Begin Request"
+  result:
+    custom:
+      requestId: "4993612b-24b3-42d8-8a02-311e834d02fd"
+    message: "4993612b-24b3-42d8-8a02-311e834d02fd Begin Request"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "logType" : "RequestSummary",
+      "requestId" : "4993612b-24b3-42d8-8a02-311e834d02fd",
+      "latency" : 1280549000,
+      "graphQLAPIId" : "nvap2mna7bcihgy5wnsylpnqau",
+      "statusCode" : 200
+    }
+  result:
+    custom:
+      evt:
+        name: "RequestSummary"
+      graphQLAPIId: "nvap2mna7bcihgy5wnsylpnqau"
+      http:
+        status_category: "Ok"
+        status_code: 200
+      latency: 1280549000
+      requestId: "4993612b-24b3-42d8-8a02-311e834d02fd"
+    message: |-
+      {
+        "logType" : "RequestSummary",
+        "requestId" : "4993612b-24b3-42d8-8a02-311e834d02fd",
+        "latency" : 1280549000,
+        "graphQLAPIId" : "nvap2mna7bcihgy5wnsylpnqau",
+        "statusCode" : 200
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "graphqlapiid:nvap2mna7bcihgy5wnsylpnqau"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "duration" : 1225814391,
+      "logType" : "ExecutionSummary",
+      "requestId" : "4993612b-24b3-42d8-8a02-311e834d02fd",
+      "startTime" : "2022-05-08T22:59:20.823301Z",
+      "endTime" : "2022-05-08T22:59:22.049114Z",
+      "parsing" : {
+        "duration" : 69712,
+        "startOffset" : 81393
+      },
+      "version" : 1,
+      "validation" : {
+        "duration" : 139410,
+        "startOffset" : 224837
+      },
+      "graphQLAPIId" : "nvap2mna7bcihgy5wnsylpnqau"
+    }
+  result:
+    custom:
+      duration: 1225814391
+      endTime: "2022-05-08T22:59:22.049114Z"
+      evt:
+        name: "ExecutionSummary"
+      graphQLAPIId: "nvap2mna7bcihgy5wnsylpnqau"
+      parsing:
+        duration: 69712
+        startOffset: 81393
+      requestId: "4993612b-24b3-42d8-8a02-311e834d02fd"
+      startTime: "2022-05-08T22:59:20.823301Z"
+      validation:
+        duration: 139410
+        startOffset: 224837
+      version: 1
+    message: |-
+      {
+        "duration" : 1225814391,
+        "logType" : "ExecutionSummary",
+        "requestId" : "4993612b-24b3-42d8-8a02-311e834d02fd",
+        "startTime" : "2022-05-08T22:59:20.823301Z",
+        "endTime" : "2022-05-08T22:59:22.049114Z",
+        "parsing" : {
+          "duration" : 69712,
+          "startOffset" : 81393
+        },
+        "version" : 1,
+        "validation" : {
+          "duration" : 139410,
+          "startOffset" : 224837
+        },
+        "graphQLAPIId" : "nvap2mna7bcihgy5wnsylpnqau"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+     - "graphqlapiid:nvap2mna7bcihgy5wnsylpnqau"
+    timestamp: 1652050760823
+

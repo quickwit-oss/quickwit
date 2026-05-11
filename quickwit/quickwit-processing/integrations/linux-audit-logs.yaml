@@ -1,0 +1,406 @@
+id: linux-audit-logs
+metric_id: linux-audit-logs
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - description: ''
+    facetType: list
+    groups:
+      - Linux Audit Logs
+    name: Config
+    path: linux_audit_logs.bool
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Linux Audit Logs
+  enabled: true
+  filter:
+    query: source:linux-audit-logs
+  processors:
+    - type: grok-parser
+      name: Parsing Linux Audit Logs
+      enabled: true
+      source: message
+      samples:
+        - "type=USER_MAC_CONFIG_CHANGE msg=audit(1736329118.112:6532):
+          pid=381980 uid=0 auid=0 ses=138
+          subj=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+          msg='resrc=port op=add lport=3307 proto=6
+          tcontext=system_u:object_r:mysqld_port_t:s0 comm=\"semanage\"
+          exe=\"/usr/libexec/platform-python3.6\" hostname=? addr=? terminal=?
+          res=success'UID=\"root\" AUID=\"root\""
+        - 'type=USER_MAC_CONFIG_CHANGE msg=audit(1736329118.112:6532):
+          bool=virt_use_nfs val=1 old_val=0 auid=1000 res=1AUID="serviceuser"'
+        - "type=USER_CHAUTHTOK msg=audit(1740980379.836:5762): pid=12243 uid=0
+          auid=1001 ses=535 subj=unconfined msg='op=changing uid id=1005
+          exe=\"/usr/sbin/usermod\" hostname=ub24-50-5-60 addr=? terminal=pts/3
+          res=success'UID=\"root\" AUID=\"serviceuser\" ID=\"unknown(1005)\""
+        - 'type=AVC msg=audit(1740636680.316:24484): apparmor="ALLOWED"
+          operation="signal" class="signal" profile="/usr/sbin/nginx" pid=87437
+          comm="start-stop-daem" requested_mask="receive" denied_mask="receive"
+          signal=exists peer="unconfined"'
+        - "type=AVC msg=audit(1740736244.131:855): apparmor=\"DENIED\"
+          operation=\"open\" class=\"file\" profile=\"/root/sample2.sh\"
+          name=\"/etc/group\" pid=2895 comm=\"ls\" requested_mask=\"r\"
+          denied_mask=\"r\" fsuid=0 ouid=0\x1dFSUID=\"a\" OUID=\"root\""
+      grok:
+        supportRules: >-
+          log_prefix
+          type=%{notSpace:type}%{_space}msg=audit\(%{number:timestamp}\:%{integer:event_id}\)
+
+          unicode_char %{regex("[\\p{C}]")}
+
+          _space \s*
+        matchRules: >-
+          rule
+          %{log_prefix}%{_space}:%{_space}%{data:pre_msg_kv}%{_space}msg=%{singleQuotedString:msg_raw}(%{unicode_char})?%{data:post_msg_kv}
+
+          rule_without_msg %{log_prefix}%{_space}:%{_space}%{data:pre_msg_kv}%{unicode_char}%{data:post_msg_kv}
+
+          rule_without_msg_and_unicode_char %{log_prefix}%{_space}:%{_space}%{data:post_msg_kv}
+    - type: grok-parser
+      name: Parsing `pre_msg_kv` attribute
+      enabled: true
+      source: pre_msg_kv
+      samples:
+        - pid=381980 uid=0 auid=0 ses=138
+          subj=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+        - pid=12243 uid=0 auid=1001 ses=535 subj=unconfined
+        - apparmor="ALLOWED"
+      grok:
+        supportRules: ""
+        matchRules: parse_pre_msg_kv_rule %{data::keyvalue("=",":?/\"|*<>,")}
+    - type: grok-parser
+      name: Parsing `msg_raw` attribute
+      enabled: true
+      source: msg_raw
+      samples:
+        - "'resrc=port op=add lport=3307 proto=6
+          tcontext=system_u:object_r:mysqld_port_t:s0 comm=\"semanage\"
+          exe=\"/usr/libexec/platform-python3.6\" hostname=? addr=? terminal=?
+          res=success'"
+        - "'op=adding group acct=\"demo\" exe=\"/usr/sbin/useradd\"
+          hostname=ub10-10-10-10 addr=? terminal=pts/3 res=success'"
+      grok:
+        supportRules: ""
+        matchRules: parse_msg_raw_rule '%{data:msg:keyvalue("=",":?/\"|*<>, ")}'
+    - type: grok-parser
+      name: Parsing `post_msg_kv` attribute
+      enabled: true
+      source: post_msg_kv
+      samples:
+        - bool=virt_use_nfs val=1 old_val=0 auid=1000 res=1AUID="serviceuser"
+        - AUID="serviceuser"
+        - apparmor="DENIED" operation="capable" class="cap" profile="rsyslogd"
+          pid=838 comm="rsyslogd" capability=12  capname="net_admin"
+      grok:
+        supportRules: >-
+          extract_kv_pair %{data::keyvalue("=",":?/\"|*<>,")}
+
+          extract_UID_or_OUID_or_FSUID_or_SAUID_SUID (UID="%{regex("[^\"]*"):UID}"|OUID="%{regex("[^\"]*"):OUID}"|FSUID="%{regex("[^\"]*"):FSUID}"|SAUID="%{regex("[^\"]*"):SAUID}"|SUID="%{regex("[^\"]*"):SUID}")
+
+          extract_AUID AUID="%{regex("[^\"]*"):AUID}"
+
+          _space \s*
+        matchRules: >-
+          parse_post_msg_kv_rule
+          %{extract_kv_pair}%{_space}(%{extract_AUID}%{_space}|%{extract_UID_or_OUID_or_FSUID_or_SAUID_SUID
+          }%{_space})+
+
+          parse_post_msg_kv_without_id_fields_rule %{extract_kv_pair}
+    - type: pipeline
+      name: Parsing User Selinux Err logs
+      enabled: true
+      filter:
+        query: "@type:USER_SELINUX_ERR"
+      processors:
+        - type: grok-parser
+          name: Parsing User Selinux Err logs
+          enabled: true
+          source: msg_raw
+          samples:
+            - "'Regex version mismatch, expected: 10.37 2021-05-26 actual: 10.40
+              2022-04-14  exe=\"/usr/lib/systemd/systemd\" sauid=0 hostname=?
+              addr=? terminal=?'\x1d"
+          grok:
+            supportRules: _space \s*
+            matchRules: user_selinux_err_rule
+              '%{data:error}%{_space}exe="%{regex("[^\"]+"):exe}"
+              %{data:msg:keyvalue("=",":?/\"|*<>,")}'
+    - type: pipeline
+      name: Parsing User Role Change logs
+      enabled: true
+      filter:
+        query: "@type:USER_ROLE_CHANGE"
+      processors:
+        - type: grok-parser
+          name: Parsing User Role Change logs
+          enabled: true
+          source: msg_raw
+          samples:
+            - "'pam:
+              default-context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c\
+              1023
+              selected-context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.\
+              c1023 exe=\"/usr/sbin/sshd\" hostname=172.20.4.65 addr=172.20.4.65
+              terminal=ssh res=success'"
+          grok:
+            supportRules: _space \s*
+            matchRules: user_role_change_rule
+              '(%{regex("[^:]*"):})?:%{_space}%{data:msg:keyvalue("=",":?/\"|*<>,")}'
+    - type: pipeline
+      name: Parsing AVC logs
+      enabled: true
+      filter:
+        query: "@type:AVC"
+      processors:
+        - type: grok-parser
+          name: Parsing AVC logs
+          enabled: true
+          source: post_msg_kv
+          samples:
+            - 'avc:  denied  { getattr } for  pid=16660 comm="groupadd" name="/"
+              dev="proc" ino=1
+              scontext=unconfined_u:unconfined_r:groupadd_t:s0-s0:c0.c1023
+              tcontext=system_u:object_r:proc_t:s0 tclass=filesystem
+              permissive=0'
+            - apparmor="DENIED" operation="capable" class="cap"
+              profile="rsyslogd" pid=838 comm="rsyslogd"
+              capability=12  capname="net_admin"
+          grok:
+            supportRules: _space \s*
+            matchRules: avc_rule
+              (avc:%{_space}%{notSpace:outcome:uppercase}%{_space}\{%{_space}%{notSpace:operation}%{_space}\}
+              for )?%{data::keyvalue("=",":?/\"|*<>,")}
+        - type: attribute-remapper
+          name: Map `apparmor` to `outcome`
+          enabled: true
+          sources:
+            - apparmor
+          sourceType: attribute
+          target: outcome
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `error` to `linux_audit_logs.error`
+          enabled: true
+          sources:
+            - error
+          sourceType: attribute
+          target: linux_audit_logs.error
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: grok-parser
+      name: Convert `msg.grantors` attribute to array
+      enabled: true
+      source: msg.grantors
+      samples:
+        - pam_localuser,pam_unix
+      grok:
+        supportRules: ""
+        matchRules: grantors_rule %{notSpace:msg.grantors:array("",",")}
+    - type: grok-parser
+      name: Convert `msg.op` attribute to array
+      enabled: true
+      source: msg.op
+      samples:
+        - seuser-role,range
+      grok:
+        supportRules: ""
+        matchRules: grantors_rule %{data:msg.op:array("",",")}
+    - type: arithmetic-processor
+      name: Convert `timestamp` epoch to milliseconds epoch
+      enabled: true
+      expression: timestamp*1000
+      target: timestamp
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `msg.addr` to `network.client.ip`
+      enabled: true
+      sources:
+        - msg.addr
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Map `AUID` when `UID` is not present
+      enabled: true
+      filter:
+        query: "@AUID:* -@UID:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `AUID` to `usr.name`
+          enabled: true
+          sources:
+            - AUID
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `UID`, `OUID` to `usr.name`
+      enabled: true
+      sources:
+        - UID
+        - OUID
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Map `auid` when `uid` is not present
+      enabled: true
+      filter:
+        query: "@auid:* -@uid:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `auid` to `usr.id`
+          enabled: true
+          sources:
+            - auid
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `uid`, `ouid` to `usr.id`
+      enabled: true
+      sources:
+        - uid
+        - ouid
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: pipeline
+      name: Parsing Mac Config Change Logs
+      enabled: true
+      filter:
+        query: "@type:MAC_CONFIG_CHANGE"
+      processors:
+        - type: attribute-remapper
+          name: Map `bool` to `linux_audit_logs.bool`
+          enabled: true
+          sources:
+            - bool
+          sourceType: attribute
+          target: linux_audit_logs.bool
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: string-builder-processor
+      name: Reset `pre_msg_kv` attribute
+      enabled: true
+      template: "%{resolve_to_empty_string}"
+      target: pre_msg_kv
+      replaceMissing: true
+    - type: string-builder-processor
+      name: Reset `msg_raw` attribute
+      enabled: true
+      template: "%{resolve_to_empty_string}"
+      target: msg_raw
+      replaceMissing: true
+    - type: string-builder-processor
+      name: Reset `post_msg_kv` attribute
+      enabled: true
+      template: "%{resolve_to_empty_string}"
+      target: post_msg_kv
+      replaceMissing: true
+    - name: Lookup on `res` to `msg.res` Field
+      enabled: true
+      source: res
+      target: msg.res
+      lookupTable: |-
+        0,failed
+        1,success
+        failed,failed
+        success,success
+      type: lookup-processor
+    - type: geo-ip-parser
+      name: Extract geolocation information
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - name: Lookup on `msg.res` to `status`
+      enabled: true
+      source: msg.res
+      target: status
+      lookupTable: |-
+        success,ok
+        failed,error
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status

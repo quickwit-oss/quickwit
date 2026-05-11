@@ -1,0 +1,33 @@
+id: ignite
+metric_id: ignite
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Ignite
+  enabled: true
+  filter:
+    query: source:ignite
+  processors:
+    - type: grok-parser
+      name: Parsing Apache Ignite logs
+      enabled: true
+      source: message
+      samples:
+        - '[2020-04-03 07:01:55,248][INFO ][exchange-worker-#43][FileWriteAheadLogManager] Started write-ahead log manager [mode=LOG_ONLY]'
+        - "[2020-04-03 07:08:33,674][INFO ][db-checkpoint-thread-#50][GridCacheDatabaseSharedManager] Skipping checkpoint (no pages were modified) [checkpointLockWait=0ms, checkpointLockHoldTime=11ms, reason='caches stop']"
+      grok:
+        supportRules: |
+          _date_rule %{date("yyyy-MM-dd HH:mm:ss,SSS"):date}
+        matchRules: |
+          rule_default \[%{_date_rule}\]\[%{notSpace:level}\s*\]\[%{notSpace:logger.thread_name}-#%{integer:logger.thread_id}\]\[%{notSpace:logger.name}\] .*

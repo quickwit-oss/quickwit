@@ -1,0 +1,132 @@
+id: "ambari"
+tests:
+ -
+  sample: "2019-05-25 19:11:43,731  INFO [MessageBroker-2] WebSocketMessageBrokerStats:113 - WebSocketSession[1 current WS(0)-HttpStream(1)-HttpPoll(0), 1010 total, 931 closed abnormally (931 connect failure, 0 send limit, 0 transport error)], stompSubProtocol[processed CONNECT(17)-CONNECTED(17)-DISCONNECT(0)], stompBrokerRelay[null], inboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 33627], outboundChannelpool size = 0, active threads = 0, queued tasks = 0, completed tasks = 11157], sockJsScheduler[pool size = 4, active threads = 1, queued tasks = 2, completed tasks = 1061738]"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "WebSocketMessageBrokerStats:113"
+        thread_name: "MessageBroker-2"
+      timestamp: 1558811503731
+    message: "2019-05-25 19:11:43,731  INFO [MessageBroker-2] WebSocketMessageBrokerStats:113 - WebSocketSession[1 current WS(0)-HttpStream(1)-HttpPoll(0), 1010 total, 931 closed abnormally (931 connect failure, 0 send limit, 0 transport error)], stompSubProtocol[processed CONNECT(17)-CONNECTED(17)-DISCONNECT(0)], stompBrokerRelay[null], inboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 33627], outboundChannelpool size = 0, active threads = 0, queued tasks = 0, completed tasks = 11157], sockJsScheduler[pool size = 4, active threads = 1, queued tasks = 2, completed tasks = 1061738]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558811503731
+ -
+  sample: "2019-05-25 19:11:36,660  INFO [ambari-client-thread-17177] AmbariAuthenticationEventHandlerImpl:136 - Failed to authenticate cloudbreak: The user does not exist in the Ambari database"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "AmbariAuthenticationEventHandlerImpl:136"
+        thread_name: "ambari-client-thread-17177"
+      timestamp: 1558811496660
+    message: "2019-05-25 19:11:36,660  INFO [ambari-client-thread-17177] AmbariAuthenticationEventHandlerImpl:136 - Failed to authenticate cloudbreak: The user does not exist in the Ambari database"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558811496660
+ -
+  sample: "2019-04-22 15:35:00,799 [OK] [HARD] [SMARTSENSE] [smartsense_long_running_bundle] (SmartSense Long Running Bundle) All bundles are on track."
+  result:
+    custom:
+      ambari:
+        service: "smartsense"
+      component: "smartsense_long_running_bundle"
+      level: "OK"
+      timestamp: 1555947300799
+    message: "2019-04-22 15:35:00,799 [OK] [HARD] [SMARTSENSE] [smartsense_long_running_bundle] (SmartSense Long Running Bundle) All bundles are on track."
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1555947300799
+ -
+  sample: "2019-05-25T13:13:16.540Z, User(admin), RemoteIp(127.0.0.1), Operation(User login), Roles(Ambari: Ambari Administrator), Status(Success)"
+  result:
+    custom:
+      network:
+        client:
+          ip: "127.0.0.1"
+      roles: "Ambari: Ambari Administrator"
+      status: "Success"
+      system:
+        operation: "User login"
+      timestamp: 1558789996540
+      usr:
+        name: "admin"
+    message: "2019-05-25T13:13:16.540Z, User(admin), RemoteIp(127.0.0.1), Operation(User login), Roles(Ambari: Ambari Administrator), Status(Success)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558789996540
+ -
+  sample: "2019-05-25T13:13:16.567Z, User(null), RemoteIp(127.0.0.1), Operation(User login), Roles(), Status(Failed), Reason(Authentication required), Consecutive failures(UNKNOWN USER)"
+  result:
+    custom:
+      error:
+        consecutive_failures: "UNKNOWN USER"
+        message: "Authentication required"
+      network:
+        client:
+          ip: "127.0.0.1"
+      status: "Failed"
+      system:
+        operation: "User login"
+      timestamp: 1558789996567
+      usr:
+        name: "null"
+    message: "2019-05-25T13:13:16.567Z, User(null), RemoteIp(127.0.0.1), Operation(User login), Roles(), Status(Failed), Reason(Authentication required), Consecutive failures(UNKNOWN USER)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558789996567
+ -
+  sample: "2019-04-22 15:04:46,163  INFO - (configchange)    type: 'hbase-atlas-application-properties', tag: '3fb67ec0-0988-4746-a4b1-db5b9608fe05', version: '1'"
+  result:
+    custom:
+      level: "INFO"
+      tag: "3fb67ec0-0988-4746-a4b1-db5b9608fe05"
+      timestamp: 1555945486163
+      type: "hbase-atlas-application-properties"
+      version: "1"
+    message: "2019-04-22 15:04:46,163  INFO - (configchange)    type: 'hbase-atlas-application-properties', tag: '3fb67ec0-0988-4746-a4b1-db5b9608fe05', version: '1'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1555945486163
+ -
+  sample: "2019-04-22 15:04:46,163  INFO - (configchange)    Config type 'hbase-atlas-application-properties' was modified with the following keys, added: [atlas.hook.hbase.keepAliveTime, atlas.hook.hbase.maxThreads, atlas.hook.hbase.minThreads, atlas.hook.hbase.queueSize, atlas.hook.hbase.numRetries, atlas.hook.hbase.synchronous], deleted: [], changed: []'"
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1555945486163
+    message: "2019-04-22 15:04:46,163  INFO - (configchange)    Config type 'hbase-atlas-application-properties' was modified with the following keys, added: [atlas.hook.hbase.keepAliveTime, atlas.hook.hbase.maxThreads, atlas.hook.hbase.minThreads, atlas.hook.hbase.queueSize, atlas.hook.hbase.numRetries, atlas.hook.hbase.synchronous], deleted: [], changed: []'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1555945486163
+ -
+  sample: "2019-04-22 12:04:07,066  INFO - ***************************** Check database started *****************************"
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1555934647066
+    message: "2019-04-22 12:04:07,066  INFO - ***************************** Check database started *****************************"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1555934647066
+ -
+  sample: "INFO 2019-04-22 12:03:49,422 ambari_server_main.py:277 - Ambari server properties config:"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "ambari_server_main.py:277"
+      timestamp: 1555934629422
+    message: "INFO 2019-04-22 12:03:49,422 ambari_server_main.py:277 - Ambari server properties config:"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1555934629422
+

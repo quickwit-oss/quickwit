@@ -1,0 +1,165 @@
+id: "akamai.datastream"
+tests:
+ -
+  sample: |-
+    {
+      "rspContentLen" : "375847",
+      "referer" : "-",
+      "reqPort" : "80",
+      "country" : "FR",
+      "reqMethod" : "GET",
+      "city" : "PARIS",
+      "reqTimeSec" : "1645568187.280",
+      "tlsOverheadTimeMSec" : "-",
+      "errorCode" : "-",
+      "range" : "-",
+      "accLang" : "-",
+      "UA" : "Datadog/Synthetics",
+      "hostname" : "",
+      "objSize" : "375847",
+      "transferTimeMSec" : "8",
+      "rspContentType" : "application/pdf",
+      "dnsLookupTimeMSec" : "-",
+      "overheadBytes" : "^",
+      "totalBytes" : "405330",
+      "state" : "Ile-de-France",
+      "reqEndTimeMSec" : "2",
+      "reqHost" : "ds2-sqa-sanity-venkat-1.akamaized.net",
+      "reqPath" : "Tiger.pdf",
+      "cliIP" : "15.188.240.172",
+      "cookie" : "-",
+      "turnAroundTimeMSec" : "1",
+      "tlsVersion" : "-",
+      "cacheStatus" : "1",
+      "cp" : "1059344",
+      "ewExecutionInfo" : "-",
+      "version" : "4",
+      "customField" : "15.188.240.172%7eERR_SYNC_DNS_OFF",
+      "reqId" : "2898b6",
+      "maxAgeSec" : "86400",
+      "ewUsageInfo" : "-",
+      "service" : "akamai",
+      "bytes" : "376255",
+      "proto" : "HTTP/1.1",
+      "uncompressedSize" : "375847",
+      "xForwardedFor" : "-",
+      "statusCode" : "200",
+      "queryStr" : "-"
+    }
+  result:
+    custom:
+      accLang: "-"
+      akamai:
+        datastream:
+          reqPort: 80
+          statusCode: 200
+      bytes: "376255"
+      cacheStatus: "1"
+      cookie: "-"
+      cp: "1059344"
+      customField: "15.188.240.172%7eERR_SYNC_DNS_OFF"
+      dnsLookupTimeMSec: "-"
+      duration: 1.1E7
+      errorCode: "-"
+      ewExecutionInfo: "-"
+      ewUsageInfo: "-"
+      hostname: ""
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "2898b6"
+        status_code: 200
+        url_details:
+          host: "ds2-sqa-sanity-venkat-1.akamaized.net"
+          path: "Tiger.pdf"
+          port: 80
+          queryString: "-"
+        useragent: "Datadog/Synthetics"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      maxAgeSec: "86400"
+      network:
+        bytes_written: 405330
+        client:
+          geoip:
+            city:
+              name: "PARIS"
+            country:
+              iso_code: "FR"
+            subdivision:
+              name: "Ile-de-France"
+          ip: "15.188.240.172"
+        destination:
+          port: 80
+      objSizeBytes: 375847
+      overheadBytes: "^"
+      proto: "HTTP/1.1"
+      range: "-"
+      reqEndTimeMSec: "2"
+      reqTimeMillis: 1.64556818728E12
+      reqTimeSec: "1645568187.280"
+      rspContentLen: "375847"
+      rspContentType: "application/pdf"
+      service: "akamai"
+      tlsOverheadTimeMSec: "-"
+      tlsVersion: "-"
+      transferTimeMSec: "8"
+      turnAroundTimeMSec: "1"
+      uncompressedSize: "375847"
+      version: "4"
+      xForwardedFor: "-"
+    message: |-
+      {
+        "rspContentLen" : "375847",
+        "referer" : "-",
+        "reqPort" : "80",
+        "country" : "FR",
+        "reqMethod" : "GET",
+        "city" : "PARIS",
+        "reqTimeSec" : "1645568187.280",
+        "tlsOverheadTimeMSec" : "-",
+        "errorCode" : "-",
+        "range" : "-",
+        "accLang" : "-",
+        "UA" : "Datadog/Synthetics",
+        "hostname" : "",
+        "objSize" : "375847",
+        "transferTimeMSec" : "8",
+        "rspContentType" : "application/pdf",
+        "dnsLookupTimeMSec" : "-",
+        "overheadBytes" : "^",
+        "totalBytes" : "405330",
+        "state" : "Ile-de-France",
+        "reqEndTimeMSec" : "2",
+        "reqHost" : "ds2-sqa-sanity-venkat-1.akamaized.net",
+        "reqPath" : "Tiger.pdf",
+        "cliIP" : "15.188.240.172",
+        "cookie" : "-",
+        "turnAroundTimeMSec" : "1",
+        "tlsVersion" : "-",
+        "cacheStatus" : "1",
+        "cp" : "1059344",
+        "ewExecutionInfo" : "-",
+        "version" : "4",
+        "customField" : "15.188.240.172%7eERR_SYNC_DNS_OFF",
+        "reqId" : "2898b6",
+        "maxAgeSec" : "86400",
+        "ewUsageInfo" : "-",
+        "service" : "akamai",
+        "bytes" : "376255",
+        "proto" : "HTTP/1.1",
+        "uncompressedSize" : "375847",
+        "xForwardedFor" : "-",
+        "statusCode" : "200",
+        "queryStr" : "-"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1645568187280
+

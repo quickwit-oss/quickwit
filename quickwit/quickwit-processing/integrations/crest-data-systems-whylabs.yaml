@@ -1,0 +1,390 @@
+id: "crest-data-systems-whylabs"
+metric_id: "crest-data-systems-whylabs"
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Batch Frequency
+    path: batch.batch_str
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Organization ID
+    path: cds.whylabs.organization_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Resource Category
+    path: cds.whylabs.model_category
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Resource ID
+    path: cds.whylabs.resource_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Resource Name
+    path: cds.whylabs.resource_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems whylabs
+    name: Resource Type
+    path: cds.whylabs.model_type
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: WhyLabs
+  enabled: true
+  filter:
+    query: source:crest-data-systems-whylabs
+  processors:
+    - type: pipeline
+      name: Models
+      enabled: true
+      filter:
+        query: service:cds.whylabs.models
+      processors:
+        - type: attribute-remapper
+          name: Map `orgId` to `cds.whylabs.organization_id`
+          enabled: true
+          sources:
+            - orgId
+          sourceType: attribute
+          target: cds.whylabs.organization_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `cds.whylabs.resource_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cds.whylabs.resource_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `modelCategory` to `cds.whylabs.model_category`
+          enabled: true
+          sources:
+            - modelCategory
+          sourceType: attribute
+          target: cds.whylabs.model_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `name` to `cds.whylabs.resource_name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cds.whylabs.resource_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `modelType` to `cds.whylabs.model_type`
+          enabled: true
+          sources:
+            - modelType
+          sourceType: attribute
+          target: cds.whylabs.model_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parsing `timePeriod` to `batch`
+          enabled: true
+          source: timePeriod
+          samples:
+            - P1D
+            - P3Y6M4DT12H30M5S
+          grok:
+            supportRules: ""
+            matchRules: rule
+              P(%{integer:batch.y}Y)?(%{integer:batch.m}M)?(%{integer:batch.w}W)?(%{integer:batch.d}D)?(T)?(%{integer:batch.t}T)?(%{integer:batch.h}H)?(%{integer:batch.min}M)?(%{integer:batch.s}S)?.*
+        - type: category-processor
+          name: Category for `batch.y` to `batch.y_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.y:*"
+              name: years
+          target: batch.y_str
+        - type: category-processor
+          name: Category for `batch.m` to `batch.m_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.m:*"
+              name: months
+          target: batch.m_str
+        - type: category-processor
+          name: Category for `batch.w` to `batch.w_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.w:*"
+              name: weeks
+          target: batch.w_str
+        - type: category-processor
+          name: Category for `batch.d` to `batch.d_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.d:*"
+              name: days
+          target: batch.d_str
+        - type: category-processor
+          name: Category for `batch.h` to `batch.h_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.h:*"
+              name: hours
+          target: batch.h_str
+        - type: category-processor
+          name: Category for `batch.min` to `batch.min_str`
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.min:*"
+              name: minutes
+          target: batch.min_str
+        - type: category-processor
+          name: " Category for `batch.s` to `batch.s_str`"
+          enabled: true
+          categories:
+            - filter:
+                query: "@batch.s:*"
+              name: seconds
+          target: batch.s_str
+        - type: string-builder-processor
+          name: Define `batch.[y,m,w,d]` equal to `batch.date_str`
+          enabled: true
+          template: "%{batch.y} %{batch.y_str} %{batch.m} %{batch.m_str} %{batch.w}
+            %{batch.w_str} %{batch.d} %{batch.d_str}"
+          target: batch.date_str
+          replaceMissing: true
+        - type: string-builder-processor
+          name: Define `batch.[h,min,s]` equal to `batch.time_str`
+          enabled: true
+          template: " %{batch.h} %{batch.h_str} %{batch.min} %{batch.min_str} %{batch.s}
+            %{batch.s_str}"
+          target: batch.time_str
+          replaceMissing: true
+        - type: string-builder-processor
+          name: Define `batch.date_str` and `batch.time_str` equal to `batch.batch_str`
+          enabled: true
+          template: " %{batch.date_str}  %{batch.time_str}"
+          target: batch.batch_str
+          replaceMissing: true
+    - type: pipeline
+      name: Entity Schema
+      enabled: true
+      filter:
+        query: service:cds.whylabs.entity_schema
+      processors:
+        - type: attribute-remapper
+          name: Map `organization_id` to `cds.whylabs.organization_id`
+          enabled: true
+          sources:
+            - organization_id
+          sourceType: attribute
+          target: cds.whylabs.organization_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource_id` to `cds.whylabs.resource_id`
+          enabled: true
+          sources:
+            - resource_id
+          sourceType: attribute
+          target: cds.whylabs.resource_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_category` to `cds.whylabs.model_category`
+          enabled: true
+          sources:
+            - model_category
+          sourceType: attribute
+          target: cds.whylabs.model_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource_name` to `cds.whylabs.resource_name`
+          enabled: true
+          sources:
+            - resource_name
+          sourceType: attribute
+          target: cds.whylabs.resource_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_type` to `cds.whylabs.model_type`
+          enabled: true
+          sources:
+            - model_type
+          sourceType: attribute
+          target: cds.whylabs.model_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Segments
+      enabled: true
+      filter:
+        query: service:cds.whylabs.segments
+      processors:
+        - type: attribute-remapper
+          name: Map `organization_id` to `cds.whylabs.organization_id`
+          enabled: true
+          sources:
+            - organization_id
+          sourceType: attribute
+          target: cds.whylabs.organization_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource_id` to `cds.whylabs.resource_id`
+          enabled: true
+          sources:
+            - resource_id
+          sourceType: attribute
+          target: cds.whylabs.resource_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_category` to `cds.whylabs.model_category`
+          enabled: true
+          sources:
+            - model_category
+          sourceType: attribute
+          target: cds.whylabs.model_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource_name` to `cds.whylabs.resource_name`
+          enabled: true
+          sources:
+            - resource_name
+          sourceType: attribute
+          target: cds.whylabs.resource_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_type` to `cds.whylabs.model_type`
+          enabled: true
+          sources:
+            - model_type
+          sourceType: attribute
+          target: cds.whylabs.model_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Anomalies Feed
+      enabled: true
+      filter:
+        query: service:cds.whylabs.anomalies_feed
+      processors:
+        - type: attribute-remapper
+          name: Map `orgId` to `cds.whylabs.organization_id`
+          enabled: true
+          sources:
+            - orgId
+          sourceType: attribute
+          target: cds.whylabs.organization_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `datasetId` to `cds.whylabs.resource_id`
+          enabled: true
+          sources:
+            - datasetId
+          sourceType: attribute
+          target: cds.whylabs.resource_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_category` to `cds.whylabs.model_category`
+          enabled: true
+          sources:
+            - model_category
+          sourceType: attribute
+          target: cds.whylabs.model_category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource_name` to `cds.whylabs.resource_name`
+          enabled: true
+          sources:
+            - resource_name
+          sourceType: attribute
+          target: cds.whylabs.resource_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `model_type` to `cds.whylabs.model_type`
+          enabled: true
+          sources:
+            - model_type
+          sourceType: attribute
+          target: cds.whylabs.model_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `datasetTimestamp` to `timestamp`
+          enabled: true
+          sources:
+            - datasetTimestamp
+          sourceType: attribute
+          target: timestamp
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: service-remapper
+      name: "Define `service` as the official service of the log"
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

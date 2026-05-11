@@ -1,0 +1,141 @@
+id: presto
+metric_id: presto
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Presto
+  enabled: true
+  filter:
+    query: source:presto
+  processors:
+    - type: grok-parser
+      name: Parsing Presto logs
+      enabled: true
+      source: message
+      samples:
+        - "2019-02-22T16:11:37.427Z\tINFO\tquery-execution-13\tio.prestosql.event.QueryMonitor\tTIMELINE: Query 20190222_161137_00007_2ymbc :: Transaction:[4fb1c673-faed-4d0c-8ce3-0ade85cc5a46] :: elapsed 448ms :: planning 58ms :: scheduling 53ms :: running 246ms :: finishing 91ms :: begin 2019-02-22T16:11:36.895Z :: end 2019-02-22T16:11:37.343Z"
+        - "2019-02-14T11:55:34.581-08:00\t127.0.0.1\tGET\t/v1/service/collector/general\tnull\t303d05b6-54f6-4361-8120-7dca2853ee31\t200\t0\t40\t29309c9523ef646d7822c196c36a7b1f3000000021e\tHTTP/1.1\t0\t0\t0\tnull"
+        - "2019-02-22T15:58:14.849Z\tINFO\tmain\tio.prestosql.security.AccessControlManager\t-- Loaded system access control allow-all --"
+      grok:
+        supportRules: |
+          _date_rule (%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSZ"):date})
+
+        matchRules: |
+          query_rule %{_date_rule}\s%{word:level}\s%{notSpace:logger.name}\s%{notSpace:logger.thread_name}\sTIMELINE: %{notSpace}\s+%{notSpace:presto.query.id}\s+::\s+Transaction:\[%{notSpace:http.request_id}\] :: elapsed %{number:duration:scale(1000000)}ms :: planning %{number:presto.query.planning_time:scale(1000000)}ms :: scheduling %{number:presto.query.scheduling_time:scale(1000000)}ms :: running %{number:presto.query.running_time:scale(1000000)}ms :: finishing %{number:presto.query.finishing_time:scale(1000000)}ms.*
+
+          http_rule %{_date_rule}\s+%{ipOrHost:network.client.ip}\s+%{word:http.method}\s+%{notSpace:http.url}\s+%{notSpace:http.ident}\s+%{notSpace:http.useragent}\s%{number:http.status_code}\s+%{number:network.bytes_written}\s+%{number:network.bytes_read}\s+%{number:duration:scale(1000000)}\s+%{notSpace:http.request_id}.*
+
+          generic_rule %{_date_rule}\s%{notSpace:level}\s%{notSpace:logger.thread_name}\s%{notSpace:logger.name}.*
+
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

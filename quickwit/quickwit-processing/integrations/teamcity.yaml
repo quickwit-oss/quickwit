@@ -1,0 +1,47 @@
+id: teamcity
+metric_id: teamcity
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Teamcity
+  enabled: true
+  filter:
+    query: source:teamcity
+  processors:
+    - type: grok-parser
+      name: Parsing Teamcity logs
+      enabled: true
+      source: message
+      samples:
+        - '[2020-09-10 21:21:37,331]   INFO -   jetbrains.buildServer.SERVER - Initializing DiskUsage cache'
+        - '[2020-09-10 21:21:37,486]   INFO -  jetbrains.buildServer.STARTUP - Current stage: System is ready'
+        - '[2020-09-10 21:41:37,939]   WARN -     jetbrains.buildServer.AUTH - HTTP login failed with message: "Guest user login is disabled"'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _level %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _message %{regex("[\\S\\s]*"):message}
+        matchRules: |
+          teamcity \[%{_date}\] +%{_level} +- +%{_logger_name} +- +%{_message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

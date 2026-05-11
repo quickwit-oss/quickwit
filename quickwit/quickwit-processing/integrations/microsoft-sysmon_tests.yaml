@@ -1,0 +1,214 @@
+id: microsoft-sysmon
+tests:
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "User" : "NT AUTHORITY\\NETWORK SERVICE",
+            "Image" : "C:\\Windows\\System32\\svchost.exe",
+            "SourceHostname" : "-",
+            "SourcePort" : "5353",
+            "DestinationPort" : "5353",
+            "DestinationHostname" : "-",
+            "ProcessGuid" : "{ac9e6aaa-ab97-67d2-1a00-000000001500}",
+            "DestinationPortName" : "-",
+            "SourcePortName" : "-",
+            "UtcTime" : "2025-03-18 11:53:54.968",
+            "DestinationIp" : "fe80:0:0:0:1958:16a1:813f:bbe8",
+            "Initiated" : "false",
+            "SourceIp" : "ff02:0:0:0:0:0:0:fb",
+            "SourceIsIpv6" : "true",
+            "DestinationIsIpv6" : "true",
+            "ProcessId" : "1400",
+            "Protocol" : "udp",
+            "RuleName" : "technique_id=T1571,technique_name=Non-Standard Port"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "3",
+          "Keywords" : "0x8000000000000000",
+          "Channel" : "Microsoft-Windows-Sysmon/Operational",
+          "Opcode" : "Info",
+          "Security" : {
+            "UserID" : "S-1-5-18"
+          },
+          "Provider" : {
+            "Guid" : "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}",
+            "Name" : "Microsoft-Windows-Sysmon"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2025-03-18T11:53:57.0797708Z"
+          },
+          "EventRecordID" : "126015",
+          "Execution" : {
+            "ThreadID" : "4860",
+            "ProcessID" : "3340"
+          },
+          "Version" : "5",
+          "Computer" : "zero-test.zeroad.local",
+          "EventID" : "3",
+          "Level" : "4"
+        }
+      },
+      "message" : "Network connection detected:\r\nRuleName: technique_id=T1571,technique_name=Non-Standard Port\r\nUtcTime: 2025-03-18 11:53:54.968\r\nProcessGuid: {ac9e6aaa-ab97-67d2-1a00-000000001500}\r\nProcessId: 1400\r\nImage: C:\\Windows\\System32\\svchost.exe\r\nUser: NT AUTHORITY\\NETWORK SERVICE\r\nProtocol: udp\r\nInitiated: false\r\nSourceIsIpv6: true\r\nSourceIp: ff02:0:0:0:0:0:0:fb\r\nSourceHostname: -\r\nSourcePort: 5353\r\nSourcePortName: -\r\nDestinationIsIpv6: true\r\nDestinationIp: fe80:0:0:0:1958:16a1:813f:bbe8\r\nDestinationHostname: -\r\nDestinationPort: 5353\r\nDestinationPortName: -"
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            DestinationHostname: "-"
+            DestinationIsIpv6: "true"
+            DestinationPortName: "-"
+            Image: "C:\\Windows\\System32\\svchost.exe"
+            Initiated: "false"
+            ProcessGuid: "{ac9e6aaa-ab97-67d2-1a00-000000001500}"
+            ProcessId: "1400"
+            Protocol: "udp"
+            RuleName: "technique_id=T1571,technique_name=Non-Standard Port"
+            SourceHostname: "-"
+            SourceIsIpv6: "true"
+            SourcePortName: "-"
+            UtcTime: "2025-03-18 11:53:54.968"
+        System:
+          Channel: "Microsoft-Windows-Sysmon/Operational"
+          Computer: "zero-test.zeroad.local"
+          Correlation: ""
+          EventRecordID: "126015"
+          Execution:
+            ProcessID: "3340"
+            ThreadID: "4860"
+          Keywords: "0x8000000000000000"
+          Level: "4"
+          Opcode: "Info"
+          Provider:
+            Guid: "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}"
+            Name: "Microsoft-Windows-Sysmon"
+          Security:
+            UserID: "S-1-5-18"
+          Task: "3"
+          TimeCreated:
+            SystemTime: "2025-03-18T11:53:57.0797708Z"
+          Version: "5"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      evt:
+        id: "3"
+      level: "Information"
+      network:
+        client:
+          geoip: {}
+          ip: "ff02:0:0:0:0:0:0:fb"
+          port: "5353"
+        destination:
+          geoip: {}
+          ip: "fe80:0:0:0:1958:16a1:813f:bbe8"
+          port: "5353"
+      title: "Network connection detected"
+      usr:
+        name: "NT AUTHORITY\\NETWORK SERVICE"
+    message: "Network connection detected:\r\nRuleName: technique_id=T1571,technique_name=Non-Standard Port\r\nUtcTime: 2025-03-18 11:53:54.968\r\nProcessGuid: {ac9e6aaa-ab97-67d2-1a00-000000001500}\r\nProcessId: 1400\r\nImage: C:\\Windows\\System32\\svchost.exe\r\nUser: NT AUTHORITY\\NETWORK SERVICE\r\nProtocol: udp\r\nInitiated: false\r\nSourceIsIpv6: true\r\nSourceIp: ff02:0:0:0:0:0:0:fb\r\nSourceHostname: -\r\nSourcePort: 5353\r\nSourcePortName: -\r\nDestinationIsIpv6: true\r\nDestinationIp: fe80:0:0:0:1958:16a1:813f:bbe8\r\nDestinationHostname: -\r\nDestinationPort: 5353\r\nDestinationPortName: -"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1742298837079
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "User" : "ZEROAD\\ddagentuser",
+            "ProcessId" : "6556",
+            "Image" : "C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe",
+            "QueryStatus" : "0",
+            "ProcessGuid" : "{ac9e6aaa-ac1b-67d2-d100-000000001500}",
+            "QueryResults" : "type: 5 alb-logs-http-agent-shard0-1513124509.us-east-1.elb.amazonaws.com;2600:1f18:24e6:b901:bc25:8af3:b8c5:379f;2600:1f18:24e6:b900:6c95:a871:b291:a0c2;2600:1f18:24e6:b900:5514:23e8:c81c:ac65;2600:1f18:24e6:b900:954f:416b:a2f9:3e09;2600:1f18:24e6:b902:2717:60a2:f762:a702;2600:1f18:24e6:b902:8791:4c2d:6b6c:aabb;2600:1f18:24e6:b900:4e3a:a924:af85:cda6;2600:1f18:24e6:b901:b3c6:a361:fb6d:7502;::ffff:3.233.144.0;::ffff:3.233.144.52;::ffff:3.233.144.38;::ffff:3.233.144.98;::ffff:3.233.144.113;::ffff:3.233.144.39;::ffff:3.233.144.51;::ffff:3.233.144.97;",
+            "RuleName" : "-",
+            "QueryName" : "agent-http-intake.logs.datadoghq.com",
+            "UtcTime" : "2025-03-18 11:54:05.278"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "22",
+          "Keywords" : "0x8000000000000000",
+          "Channel" : "Microsoft-Windows-Sysmon/Operational",
+          "Opcode" : "Info",
+          "Security" : {
+            "UserID" : "S-1-5-18"
+          },
+          "Provider" : {
+            "Guid" : "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}",
+            "Name" : "Microsoft-Windows-Sysmon"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2025-03-18T11:54:07.3147754Z"
+          },
+          "EventRecordID" : "126021",
+          "Execution" : {
+            "ThreadID" : "4876",
+            "ProcessID" : "3340"
+          },
+          "Version" : "5",
+          "Computer" : "zero-test.zeroad.local",
+          "EventID" : "22",
+          "Level" : "4"
+        }
+      },
+      "message" : "Dns query:\r\nRuleName: -\r\nUtcTime: 2025-03-18 11:54:05.278\r\nProcessGuid: {ac9e6aaa-ac1b-67d2-d100-000000001500}\r\nProcessId: 6556\r\nQueryName: agent-http-intake.logs.datadoghq.com\r\nQueryStatus: 0\r\nQueryResults: type: 5 alb-logs-http-agent-shard0-1513124509.us-east-1.elb.amazonaws.com;2600:1f18:24e6:b901:bc25:8af3:b8c5:379f;2600:1f18:24e6:b900:6c95:a871:b291:a0c2;2600:1f18:24e6:b900:5514:23e8:c81c:ac65;2600:1f18:24e6:b900:954f:416b:a2f9:3e09;2600:1f18:24e6:b902:2717:60a2:f762:a702;2600:1f18:24e6:b902:8791:4c2d:6b6c:aabb;2600:1f18:24e6:b900:4e3a:a924:af85:cda6;2600:1f18:24e6:b901:b3c6:a361:fb6d:7502;::ffff:3.233.144.0;::ffff:3.233.144.52;::ffff:3.233.144.38;::ffff:3.233.144.98;::ffff:3.233.144.113;::ffff:3.233.144.39;::ffff:3.233.144.51;::ffff:3.233.144.97;\r\nImage: C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe\r\nUser: ZEROAD\\ddagentuser"
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            Image: "C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe"
+            ProcessGuid: "{ac9e6aaa-ac1b-67d2-d100-000000001500}"
+            ProcessId: "6556"
+            QueryStatus: "0"
+            RuleName: "-"
+            UtcTime: "2025-03-18 11:54:05.278"
+        System:
+          Channel: "Microsoft-Windows-Sysmon/Operational"
+          Computer: "zero-test.zeroad.local"
+          Correlation: ""
+          EventRecordID: "126021"
+          Execution:
+            ProcessID: "3340"
+            ThreadID: "4876"
+          Keywords: "0x8000000000000000"
+          Level: "4"
+          Opcode: "Info"
+          Provider:
+            Guid: "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}"
+            Name: "Microsoft-Windows-Sysmon"
+          Security:
+            UserID: "S-1-5-18"
+          Task: "22"
+          TimeCreated:
+            SystemTime: "2025-03-18T11:54:07.3147754Z"
+          Version: "5"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      dns:
+        answer:
+          name: "type: 5 alb-logs-http-agent-shard0-1513124509.us-east-1.elb.amazonaws.com;2600:1f18:24e6:b901:bc25:8af3:b8c5:379f;2600:1f18:24e6:b900:6c95:a871:b291:a0c2;2600:1f18:24e6:b900:5514:23e8:c81c:ac65;2600:1f18:24e6:b900:954f:416b:a2f9:3e09;2600:1f18:24e6:b902:2717:60a2:f762:a702;2600:1f18:24e6:b902:8791:4c2d:6b6c:aabb;2600:1f18:24e6:b900:4e3a:a924:af85:cda6;2600:1f18:24e6:b901:b3c6:a361:fb6d:7502;::ffff:3.233.144.0;::ffff:3.233.144.52;::ffff:3.233.144.38;::ffff:3.233.144.98;::ffff:3.233.144.113;::ffff:3.233.144.39;::ffff:3.233.144.51;::ffff:3.233.144.97;"
+        question:
+          name: "agent-http-intake.logs.datadoghq.com"
+      evt:
+        id: "22"
+      level: "Information"
+      title: "Dns query executed"
+      usr:
+        name: "ZEROAD\\ddagentuser"
+    message: "Dns query:\r\nRuleName: -\r\nUtcTime: 2025-03-18 11:54:05.278\r\nProcessGuid: {ac9e6aaa-ac1b-67d2-d100-000000001500}\r\nProcessId: 6556\r\nQueryName: agent-http-intake.logs.datadoghq.com\r\nQueryStatus: 0\r\nQueryResults: type: 5 alb-logs-http-agent-shard0-1513124509.us-east-1.elb.amazonaws.com;2600:1f18:24e6:b901:bc25:8af3:b8c5:379f;2600:1f18:24e6:b900:6c95:a871:b291:a0c2;2600:1f18:24e6:b900:5514:23e8:c81c:ac65;2600:1f18:24e6:b900:954f:416b:a2f9:3e09;2600:1f18:24e6:b902:2717:60a2:f762:a702;2600:1f18:24e6:b902:8791:4c2d:6b6c:aabb;2600:1f18:24e6:b900:4e3a:a924:af85:cda6;2600:1f18:24e6:b901:b3c6:a361:fb6d:7502;::ffff:3.233.144.0;::ffff:3.233.144.52;::ffff:3.233.144.38;::ffff:3.233.144.98;::ffff:3.233.144.113;::ffff:3.233.144.39;::ffff:3.233.144.51;::ffff:3.233.144.97;\r\nImage: C:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe\r\nUser: ZEROAD\\ddagentuser"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1742298847314

@@ -1,0 +1,42 @@
+id: "teamcity"
+tests:
+ -
+  sample: "[2020-09-10 21:21:37,331]   INFO -   jetbrains.buildServer.SERVER - Initializing DiskUsage cache"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "jetbrains.buildServer.SERVER"
+      timestamp: 1599772897331
+    message: "Initializing DiskUsage cache"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599772897331
+ -
+  sample: "[2020-09-10 21:21:37,486]   INFO -  jetbrains.buildServer.STARTUP - Current stage: System is ready"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "jetbrains.buildServer.STARTUP"
+      timestamp: 1599772897486
+    message: "Current stage: System is ready"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599772897486
+ -
+  sample: "[2020-09-10 21:41:37,939]   WARN -     jetbrains.buildServer.AUTH - HTTP login failed with message: \"Guest user login is disabled\""
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        name: "jetbrains.buildServer.AUTH"
+      timestamp: 1599774097939
+    message: "HTTP login failed with message: \"Guest user login is disabled\""
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599774097939
+

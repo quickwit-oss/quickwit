@@ -1,6 +1,6 @@
 # Routing edge cases: strategy 2 fallback (no "message" field → MessageValue::Obj),
 # strategy 1 with known fields inside the message object, alternate field names
-# from pomchi create_preprocessing_pipeline(), and nested message chains.
+# from quickwit-processing create_preprocessing_pipeline(), and nested message chains.
 
 # Clear all indexes
 method: PUT

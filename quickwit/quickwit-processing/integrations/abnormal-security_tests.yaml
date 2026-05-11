@@ -1,0 +1,239 @@
+id: "abnormal-security"
+tests:
+  - sample: |-
+      {
+        "threatId" : "8a1c51f7-f2f9-7d2f-b711-c79a4bf63afa",
+        "attackedParty" : "Employee (Other)",
+        "returnPath" : "bk-bounces@krebsonsecurity.com",
+        "subject" : "[Krebs on Security] New 0-Day Attacks Linked to China's 'Volt Typhoon'",
+        "isRead" : false,
+        "replyToEmails" : [ "bk@krebsonsecurity.com" ],
+        "summaryInsights" : [ "Unusual Sender", "Suspicious Financial Request", "Bitcoin Topics" ],
+        "internetMessageId" : "<mailman.16.1724768803.1135.bk@krebsonsecurity.com>",
+        "urls" : [ "https://krebsonsecurity.com/2024/08/new-0-day-attacks-linked-to-chinas-volt-typhoon/", "https://krebsonsecurity.com/wiz/", "https://krebsonsecurity.com/", "https://krebsonsecurity.com/subscribe/" ],
+        "usr" : {
+          "name" : "krebsonsecurity mailing list",
+          "email" : "bk@krebsonsecurity.com"
+        },
+        "attackVector" : "Text",
+        "autoRemediated" : true,
+        "fromName" : "krebsonsecurity mailing list",
+        "fromAddress" : "bk@krebsonsecurity.com",
+        "remediationStatus" : "Auto-Remediated",
+        "recipientAddress" : "user@vikingconsolidated.com",
+        "senderDomain" : "krebsonsecurity.com",
+        "attackStrategy" : "Unknown Sender",
+        "evt" : {
+          "name" : "Spam",
+          "outcome" : "Auto-Remediated"
+        },
+        "remediationTimestamp" : "2024-08-27T14:29:16.539908Z",
+        "toAddresses" : [ "bk@krebsonsecurity.com" ],
+        "abxMessageId" : -8990237476872098000,
+        "impersonatedParty" : "None / Others",
+        "attackType" : "Spam",
+        "receivedTime" : "2024-08-27T14:28:44Z",
+        "postRemediated" : false,
+        "sentTime" : "2024-08-27T14:26:42Z",
+        "attachmentCount" : 0,
+        "abxPortalUrl" : "https://portal.abnormalsecurity.com/home/threat-center/remediation-history/-8990237476872097405",
+        "urlCount" : 4
+      }
+    service: "abnormal-security-threats"
+    result:
+      custom:
+        abxMessageId: -8990237476872098000
+        abxPortalUrl: "https://portal.abnormalsecurity.com/home/threat-center/remediation-history/-8990237476872097405"
+        attachmentCount: 0
+        attackStrategy: "Unknown Sender"
+        attackType: "Spam"
+        attackVector: "Text"
+        attackedParty: "Employee (Other)"
+        autoRemediated: true
+        evt:
+          name: "Spam"
+          outcome: "Auto-Remediated"
+        fromAddress: "bk@krebsonsecurity.com"
+        fromName: "krebsonsecurity mailing list"
+        impersonatedParty: "None / Others"
+        internetMessageId: "<mailman.16.1724768803.1135.bk@krebsonsecurity.com>"
+        isRead: false
+        postRemediated: false
+        receivedTime: "2024-08-27T14:28:44Z"
+        recipientAddress: "user@vikingconsolidated.com"
+        remediationStatus: "Auto-Remediated"
+        remediationTimestamp: "2024-08-27T14:29:16.539908Z"
+        replyToEmails:
+          - "bk@krebsonsecurity.com"
+        returnPath: "bk-bounces@krebsonsecurity.com"
+        senderDomain: "krebsonsecurity.com"
+        sentTime: "2024-08-27T14:26:42Z"
+        subject: "[Krebs on Security] New 0-Day Attacks Linked to China's 'Volt Typhoon'"
+        summaryInsights:
+          - "Unusual Sender"
+          - "Suspicious Financial Request"
+          - "Bitcoin Topics"
+        threatId: "8a1c51f7-f2f9-7d2f-b711-c79a4bf63afa"
+        toAddresses:
+          - "bk@krebsonsecurity.com"
+        urlCount: 4
+        urls:
+          - "https://krebsonsecurity.com/2024/08/new-0-day-attacks-linked-to-chinas-volt-typhoon/"
+          - "https://krebsonsecurity.com/wiz/"
+          - "https://krebsonsecurity.com/"
+          - "https://krebsonsecurity.com/subscribe/"
+        usr:
+          email: "bk@krebsonsecurity.com"
+          name: "krebsonsecurity mailing list"
+      message: |-
+        {
+          "threatId" : "8a1c51f7-f2f9-7d2f-b711-c79a4bf63afa",
+          "attackedParty" : "Employee (Other)",
+          "returnPath" : "bk-bounces@krebsonsecurity.com",
+          "subject" : "[Krebs on Security] New 0-Day Attacks Linked to China's 'Volt Typhoon'",
+          "isRead" : false,
+          "replyToEmails" : [ "bk@krebsonsecurity.com" ],
+          "summaryInsights" : [ "Unusual Sender", "Suspicious Financial Request", "Bitcoin Topics" ],
+          "internetMessageId" : "<mailman.16.1724768803.1135.bk@krebsonsecurity.com>",
+          "urls" : [ "https://krebsonsecurity.com/2024/08/new-0-day-attacks-linked-to-chinas-volt-typhoon/", "https://krebsonsecurity.com/wiz/", "https://krebsonsecurity.com/", "https://krebsonsecurity.com/subscribe/" ],
+          "usr" : {
+            "name" : "krebsonsecurity mailing list",
+            "email" : "bk@krebsonsecurity.com"
+          },
+          "attackVector" : "Text",
+          "autoRemediated" : true,
+          "fromName" : "krebsonsecurity mailing list",
+          "fromAddress" : "bk@krebsonsecurity.com",
+          "remediationStatus" : "Auto-Remediated",
+          "recipientAddress" : "user@vikingconsolidated.com",
+          "senderDomain" : "krebsonsecurity.com",
+          "attackStrategy" : "Unknown Sender",
+          "evt" : {
+            "name" : "Spam",
+            "outcome" : "Auto-Remediated"
+          },
+          "remediationTimestamp" : "2024-08-27T14:29:16.539908Z",
+          "toAddresses" : [ "bk@krebsonsecurity.com" ],
+          "abxMessageId" : -8990237476872098000,
+          "impersonatedParty" : "None / Others",
+          "attackType" : "Spam",
+          "receivedTime" : "2024-08-27T14:28:44Z",
+          "postRemediated" : false,
+          "sentTime" : "2024-08-27T14:26:42Z",
+          "attachmentCount" : 0,
+          "abxPortalUrl" : "https://portal.abnormalsecurity.com/home/threat-center/remediation-history/-8990237476872097405",
+          "urlCount" : 4
+        }
+      service: "abnormal-security-threats"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1724768924000
+  - sample: |-
+      {
+        "sourceIp" : "73.248.173.214",
+        "tenantName" : "",
+        "action" : "search_messages",
+        "actionDetails" : {
+          "requestUrl" : "/v1.0/search_v2/",
+          "providedReason" : "null"
+        },
+        "category" : "search-and-respond-notifications",
+        "user" : {
+          "email" : "salesengineer@vikingconsolidated.com"
+        },
+        "status" : "SUCCESS",
+        "timestamp" : "2024-10-02 13:14:36.901000+00:00"
+      }
+    service: "abnormal-security-audit-logs"
+    result:
+      custom:
+        action: "search_messages"
+        actionDetails:
+          providedReason: "null"
+          requestUrl: "/v1.0/search_v2/"
+        category: "search-and-respond-notifications"
+        evt:
+          name: "search_messages"
+          outcome: "SUCCESS"
+        network:
+          client:
+            geoip: {}
+        sourceIp: "73.248.173.214"
+        status: "SUCCESS"
+        tenantName: ""
+        timestamp: "2024-10-02 13:14:36.901000+00:00"
+        user:
+          email: "salesengineer@vikingconsolidated.com"
+        usr:
+          email: "salesengineer@vikingconsolidated.com"
+      message: |-
+        {
+          "sourceIp" : "73.248.173.214",
+          "tenantName" : "",
+          "action" : "search_messages",
+          "actionDetails" : {
+            "requestUrl" : "/v1.0/search_v2/",
+            "providedReason" : "null"
+          },
+          "category" : "search-and-respond-notifications",
+          "user" : {
+            "email" : "salesengineer@vikingconsolidated.com"
+          },
+          "status" : "SUCCESS",
+          "timestamp" : "2024-10-02 13:14:36.901000+00:00"
+        }
+      service: "abnormal-security-audit-logs"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: |-
+      {
+      "severity" : "Account Compromised",
+      "firstObserved" : "2023-04-21T15:52:26Z",
+      "affectedEmployee" : "User@vikingconsolidated.com",
+      "case_status" : "Action Required",
+      "caseId" : 2514212,
+      "confidence" : "HIGH",
+      "threatIds" : [ "9ecbf647-8e6d-50a3-1e51-2424105f151a", "81f6dcda-8772-0fb8-a8c0-b3658e0d1f79" ],
+      "customerVisibleTime" : "2023-04-21T16:33:45Z",
+      "analysis" : "Signin Event",
+      "severity_level" : "HIGH",
+      "remediation_status" : "Remediated"
+      }
+    service: "abnormal-security-cases"
+    result:
+      custom:
+        affectedEmployee: "User@vikingconsolidated.com"
+        analysis: "Signin Event"
+        caseId: 2514212
+        case_status: "Action Required"
+        confidence: "HIGH"
+        customerVisibleTime: "2023-04-21T16:33:45Z"
+        evt:
+          name: "Signin Event"
+          outcome: "Action Required"
+        firstObserved: "2023-04-21T15:52:26Z"
+        remediation_status: "Remediated"
+        severity: "Account Compromised"
+        severity_level: "HIGH"
+        threatIds:
+          - "9ecbf647-8e6d-50a3-1e51-2424105f151a"
+          - "81f6dcda-8772-0fb8-a8c0-b3658e0d1f79"
+      message: |-
+        {
+          "severity" : "Account Compromised",
+          "firstObserved" : "2023-04-21T15:52:26Z",
+          "affectedEmployee" : "User@vikingconsolidated.com",
+          "case_status" : "Action Required",
+          "caseId" : 2514212,
+          "confidence" : "HIGH",
+          "threatIds" : [ "9ecbf647-8e6d-50a3-1e51-2424105f151a", "81f6dcda-8772-0fb8-a8c0-b3658e0d1f79" ],
+          "customerVisibleTime" : "2023-04-21T16:33:45Z",
+          "analysis" : "Signin Event",
+          "severity_level" : "HIGH",
+          "remediation_status" : "Remediated"
+        }
+      service: "abnormal-security-cases"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1682094825000

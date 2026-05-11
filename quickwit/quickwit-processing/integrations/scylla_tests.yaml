@@ -1,0 +1,49 @@
+id: "scylla"
+tests:
+ -
+  sample: "INFO  2020-02-19 18:43:13,083 [shard 1] stream_session - [Stream #aeeb6fb0-5347-11ea-bb85-000000000001] Start sending ks=system_traces, cf=node_slow_log, estimated_partitions=0, with new rpc streaming"
+  result:
+    custom:
+      db:
+        date: 1582137793083
+        operation: "stream_session"
+        severity: "INFO"
+      scylla:
+        shard: 1
+        stream: "#aeeb6fb0-5347-11ea-bb85-000000000001"
+    message: "Start sending ks=system_traces, cf=node_slow_log, estimated_partitions=0, with new rpc streaming"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1582137793083
+ -
+  sample: "INFO  2020-02-19 18:41:19,700 [shard 2] compaction - Compacting [/var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-42-big-Data.db:level=0, /var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-38-big-Data.db:level=0, ]"
+  result:
+    custom:
+      db:
+        date: 1582137679700
+        operation: "compaction"
+        severity: "INFO"
+      scylla:
+        shard: 2
+    message: "Compacting [/var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-42-big-Data.db:level=0, /var/lib/scylla/data/system_schema/keyspaces-abac5682dea631c5b535b3d6cffd0fb6/mc-38-big-Data.db:level=0, ]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1582137679700
+ -
+  sample: "WARN  2020-02-19 18:41:03,855 [shard 0] init - Using default cluster name is not recommended. Using a unique cluster name will reduce the chance of adding nodes to the wrong cluster by mistake"
+  result:
+    custom:
+      db:
+        date: 1582137663855
+        operation: "init"
+        severity: "WARN"
+      scylla:
+        shard: 0
+    message: "Using default cluster name is not recommended. Using a unique cluster name will reduce the chance of adding nodes to the wrong cluster by mistake"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1582137663855
+

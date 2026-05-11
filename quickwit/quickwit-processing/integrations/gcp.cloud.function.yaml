@@ -1,0 +1,758 @@
+id: gcp.cloud.function
+metric_id: google-cloud-functions
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Functions
+    name: Function Name
+    path: function.name
+    source: log
+  - groups:
+      - Functions
+    name: Function Status
+    path: function.status
+    source: log
+  - groups:
+      - GCP
+    name: GCP Event Name
+    path: iamPermission.request
+    source: log
+  - groups:
+      - GCP
+    name: Role Binding
+    path: policy.rolebinding
+    source: log
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+  - groups:
+      - GCP
+    name: Service Account
+    path: serviceAccount.email
+    source: log
+pipeline:
+  type: pipeline
+  name: Google Cloud Function
+  enabled: true
+  filter:
+    query: source:gcp.cloud.function
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: service-remapper
+      name: Define `data.resource.labels.function_name`, `resource.labels.function_name` as the official service of the log
+      enabled: true
+      sources:
+        - data.resource.labels.function_name
+        - resource.labels.function_name
+    - type: attribute-remapper
+      name: Map `data.resource.labels.function_name`, `resource.labels.function_name` to `function.name`
+      enabled: true
+      sources:
+        - data.resource.labels.function_name
+        - resource.labels.function_name
+      target: function.name
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.authenticationInfo.principalEmail`, `protoPayload.authenticationInfo.principalEmail` to `usr.email`
+      enabled: true
+      sources:
+        - data.protoPayload.authenticationInfo.principalEmail
+        - protoPayload.authenticationInfo.principalEmail
+      target: usr.email
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.authenticationInfo.principalEmail`, `protoPayload.authenticationInfo.principalEmail` to `usr.id`
+      enabled: true
+      sources:
+        - data.protoPayload.authenticationInfo.principalEmail
+        - protoPayload.authenticationInfo.principalEmail
+      target: usr.id
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.methodName`, `protoPayload.methodName` to `evt.name`
+      enabled: true
+      sources:
+        - data.protoPayload.methodName
+        - protoPayload.methodName
+      target: evt.name
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.status.message` to `evt.outcome`
+      enabled: true
+      sources:
+        - data.protoPayload.status.message
+      target: evt.outcome
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.request.function.serviceAccountEmail`, `protoPayload.request.function.serviceAccountEmail` to `serviceAccount.email`
+      enabled: true
+      sources:
+        - data.protoPayload.request.function.serviceAccountEmail
+        - protoPayload.request.function.serviceAccountEmail
+      target: serviceAccount.email
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.request.policy.bindings.role`, `protoPayload.request.policy.bindings.role` to `policy.rolebinding`
+      enabled: true
+      sources:
+        - data.protoPayload.request.policy.bindings.role
+        - protoPayload.request.policy.bindings.role
+      target: policy.rolebinding
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.authorizationInfo.permission` to `iamPermission.request`
+      enabled: true
+      sources:
+        - data.protoPayload.authorizationInfo.permission
+      target: iamPermission.request
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: message-remapper
+      name: Define `data.textPayload`, `textPayload` as the official message of the log
+      enabled: true
+      sources:
+        - data.textPayload
+        - textPayload
+
+    - type: grok-parser
+      name: Parsing Cloud Function messages
+      enabled: true
+      source: message
+      samples:
+        - "Function execution took 3 ms, finished with status code: 304"
+        - "Function execution took 60002 ms, finished with status: 'crash'"
+      grok:
+        supportRules: |
+        matchRules: |
+          cloud_function_message Function execution took %{number:duration:scale(1000000)} ms, finished with status code: %{number:function.status}
+
+          cloud_function_timeout Function execution took %{number:duration:scale(1000000)} ms, finished with status: '%{word:function.status}'
+          #This status is not http status code, it is the state of the function towards the end thus mapped into function object
+
+    - type: category-processor
+      name: Categorise function status
+      enabled: true
+      categories:
+        - filter:
+            query: "@function.status:(timeout OR error OR crash OR out_of_memory)"
+          name: ERROR
+        - filter:
+            query: "@function.status:304"
+          name: OK
+      target: function.status_category
+
+    - type: status-remapper
+      name: Define `function.status_category`, `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - function.status_category
+        - data.severity
+        - severity
+
+    - type: string-builder-processor
+      name: Build resource.id attribute
+      enabled: true
+      template: projects/%{data.resource.labels.project_id}/locations/%{data.resource.labels.region}/functions/%{data.resource.labels.function_name}
+      target: resource.id
+      replaceMissing: false
+
+    - type: string-builder-processor
+      name: Build resource.id attribute
+      enabled: true
+      template: projects/%{resource.labels.project_id}/locations/%{resource.labels.region}/functions/%{resource.labels.function_name}
+      target: resource.id
+      replaceMissing: false
+    #OCSF transformations
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: '(@protoPayload.@type:"type.googleapis.com/google.cloud.audit.AuditLog" OR @data.protoPayload.@type:"type.googleapis.com/google.cloud.audit.AuditLog")'
+      processors:
+        - type: attribute-remapper
+          name: Map `data.insertId`, `insertId` to `ocsf.metadata.uid`
+          enabled: true
+          sources:
+            - data.insertId
+            - insertId
+          sourceType: attribute
+          target: ocsf.metadata.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.protoPayload.methodName`, `protoPayload.methodName` to `ocsf.metadata.event_code`
+          enabled: true
+          sources:
+            - data.protoPayload.methodName
+            - protoPayload.methodName
+          sourceType: attribute
+          target: ocsf.metadata.event_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: ocsf.metadata.event_code lowercase
+          enabled: true
+          source: ocsf.metadata.event_code
+          samples:
+            - "google.iam.admin.v1.DeleteRole"
+          grok:
+            supportRules: ""
+            matchRules: lower_method_name %{data:ocsf.metadata.event_code:lowercase}
+        - type: attribute-remapper
+          name: Map `data.logName`, `logName` to `ocsf.metadata.log_name`
+          enabled: true
+          sources:
+            - data.logName
+            - logName
+          sourceType: attribute
+          target: ocsf.metadata.log_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: "Google Cloud Audit logs"
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor
+          enabled: true
+          template: "Google Cloud"
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add OCSF profiles
+          enabled: true
+          template: "[cloud,datetime]"
+          target: ocsf.metadata.profiles
+          replaceMissing: false
+        - type: grok-parser
+          name: Profiles string to array
+          enabled: true
+          source: ocsf.metadata.profiles
+          samples:
+            - "[date,time]"
+          grok:
+            supportRules: ""
+            matchRules: ProfileStrToArray %{data:ocsf.metadata.profiles:array("[]",",")}
+        - type: attribute-remapper
+          name: Map `data.protoPayload.authenticationInfo.principalEmail`, `protoPayload.authenticationInfo.principalEmail` to `ocsf.actor.user.email_addr`
+          enabled: true
+          sources:
+            - data.protoPayload.authenticationInfo.principalEmail
+            - protoPayload.authenticationInfo.principalEmail
+          sourceType: attribute
+          target: ocsf.actor.user.email_addr
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.protoPayload.authenticationInfo.principalEmail`, `protoPayload.authenticationInfo.principalEmail` to `ocsf.actor.user.type`
+          enabled: true
+          sources:
+            - data.protoPayload.authenticationInfo.principalEmail
+            - protoPayload.authenticationInfo.principalEmail
+          sourceType: attribute
+          target: ocsf.actor.user.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Extract username from email address
+          enabled: true
+          source: ocsf.actor.user.email_addr
+          samples:
+            - "test_user124@company.com"
+          grok:
+            supportRules: ""
+            matchRules: extract_username_from_email %{regex("[^@]*"):ocsf.actor.user.name}@%{regex("[^@]*")}
+        - type: attribute-remapper
+          name: Map `resource.labels.project_id`, `data.resource.labels.project_id` to `ocsf.actor.user.account.uid`
+          enabled: true
+          sources:
+            - resource.labels.project_id
+            - data.resource.labels.project_id
+          sourceType: attribute
+          target: ocsf.actor.user.account.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: Actor type id
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.actor.user.email_addr:(*system\\:* OR *serviceAccount\\:* OR *gserviceaccount.com*)"
+              name: "3"
+            - filter:
+                query: "@ocsf.actor.user.email_addr:(*user\\:* OR *@*)"
+              name: "1"
+            - filter:
+                query: "@ocsf.actor.user.email_addr:*"
+              name: "99"
+          target: ocsf.actor.user.type_id
+        - type: category-processor
+          name: Actor type
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.actor.user.email_addr:(*system\\:* OR *serviceAccount\\:* OR *gserviceaccount.com*)"
+              name: "System"
+            - filter:
+                query: "@ocsf.actor.user.email_addr:(*user\\:* OR *@*)"
+              name: "User"
+          target: ocsf.actor.user.type
+        - type: attribute-remapper
+          name: Map `ocsf.actor.user.type_id` to `ocsf.actor.user.type_id`
+          enabled: true
+          sources:
+            - ocsf.actor.user.type_id
+          sourceType: attribute
+          target: ocsf.actor.user.type_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.metadata.event_code` to `ocsf.api.operation`
+          enabled: true
+          sources:
+            - ocsf.metadata.event_code
+          sourceType: attribute
+          target: ocsf.api.operation
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.protoPayload.serviceName`, `protoPayload.serviceName` to `ocsf.api.service.name`
+          enabled: true
+          sources:
+            - data.protoPayload.serviceName
+            - protoPayload.serviceName
+          sourceType: attribute
+          target: ocsf.api.service.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.protoPayload.request`, `protoPayload.request` to `ocsf.api.request.data`
+          enabled: true
+          sources:
+            - data.protoPayload.request
+            - protoPayload.request
+          sourceType: attribute
+          target: ocsf.api.request.data
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add `ocsf.api.request.uid`
+          enabled: true
+          template: "Unknown"
+          target: ocsf.api.request.uid
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `data.protoPayload.response`, `protoPayload.response` to `ocsf.api.response.data`
+          enabled: true
+          sources:
+            - data.protoPayload.response
+            - protoPayload.response
+          sourceType: attribute
+          target: ocsf.api.response.data
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add `ocsf.cloud.provider`
+          enabled: true
+          template: "Google Cloud"
+          target: ocsf.cloud.provider
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `data.resource.labels.location`, `resource.labels.location` to `ocsf.cloud.region`
+          enabled: true
+          sources:
+            - data.resource.labels.location
+            - resource.labels.location
+          sourceType: attribute
+          target: ocsf.cloud.region
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `resource.labels.project_id`, `data.resource.labels.project_id` to `ocsf.cloud.account.uid`
+          enabled: true
+          sources:
+            - resource.labels.project_id
+            - data.resource.labels.project_id
+          sourceType: attribute
+          target: ocsf.cloud.account.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.protoPayload.requestMetadata.callerSuppliedUserAgent`, `protoPayload.requestMetadata.callerSuppliedUserAgent` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - data.protoPayload.requestMetadata.callerSuppliedUserAgent
+            - protoPayload.requestMetadata.callerSuppliedUserAgent
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.severity`, `severity` to `ocsf.severity`
+          enabled: true
+          sources:
+            - data.severity
+            - severity
+          sourceType: attribute
+          target: ocsf.severity
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: Severity Id
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.severity:(INFO)"
+              name: "1"
+            - filter:
+                query: "@ocsf.severity:(CRITICAL)"
+              name: "5"
+            - filter:
+                query: "@ocsf.severity:*"
+              name: "99"
+          target: ocsf.severity_id
+        - type: category-processor
+          name: Severity
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.severity:(INFO)"
+              name: "Informational"
+            - filter:
+                query: "@ocsf.severity:(CRITICAL)"
+              name: "Critical"
+          target: ocsf.severity
+        - type: attribute-remapper
+          name: Map `data.protoPayload.requestMetadata.callerIp`, `protoPayload.requestMetadata.callerIp` to `ocsf.src_endpoint.ip`
+          enabled: true
+          sources:
+            - data.protoPayload.requestMetadata.callerIp
+            - protoPayload.requestMetadata.callerIp
+          sourceType: attribute
+          target: ocsf.src_endpoint.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.timestamp`, `timestamp` to `ocsf.time_dt`
+          enabled: true
+          sources:
+            - data.timestamp
+            - timestamp
+          sourceType: attribute
+          target: ocsf.time_dt
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parsing event time
+          enabled: true
+          source: ocsf.time_dt
+          samples:
+            - "2025-04-08T07:07:41.673158Z"
+            - "2025-04-08T07:14:34.055492286Z"
+          grok:
+            supportRules: ""
+            matchRules: |-
+              nine %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'"):ocsf.time}
+              eight %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSS'Z'"):ocsf.time}
+              seven %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSS'Z'"):ocsf.time}
+              six %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"):ocsf.time}
+              five %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSS'Z'"):ocsf.time}
+              four %{date("yyyy-MM-dd'T'HH:mm:ss.SSSS'Z'"):ocsf.time}
+              three %{date("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"):ocsf.time}
+              two %{date("yyyy-MM-dd'T'HH:mm:ss.SS'Z'"):ocsf.time}
+              one %{date("yyyy-MM-dd'T'HH:mm:ss.S'Z'"):ocsf.time}
+              zero %{date("yyyy-MM-dd'T'HH:mm:ss'Z'"):ocsf.time}
+        - type: attribute-remapper
+          name: Map `data.protoPayload.status.message`, `protoPayload.status.message` to `ocsf.message`
+          enabled: true
+          sources:
+            - data.protoPayload.status.message
+            - protoPayload.status.message
+          sourceType: attribute
+          target: ocsf.message
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: Status Id
+          enabled: true
+          categories:
+            - filter:
+                query: "-(@data.protoPayload.status.code:* OR @protoPayload.status.code:*)"
+              name: "1"
+            - filter:
+                query: "(@data.protoPayload.status.code:* OR @protoPayload.status.code:*)"
+              name: "2"
+          target: ocsf.status_id
+        - type: category-processor
+          name: Status
+          enabled: true
+          categories:
+            - filter:
+                query: "-(@data.protoPayload.status.code:* OR @protoPayload.status.code:*)"
+              name: "Success"
+            - filter:
+                query: "(@data.protoPayload.status.code:* OR @protoPayload.status.code:*)"
+              name: "Failure"
+          target: ocsf.status
+    - type: pipeline
+      name: Google Cloud Audit Logs OCSF sub pipeline for class API Activity [6003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@ocsf.metadata.event_code:* -@ocsf.category_uid:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `ocsf.metadata.event_code` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - ocsf.metadata.event_code
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.metadata.event_code:*unknown*"
+              name: "0"
+            - filter:
+                query: "@ocsf.metadata.event_code:(*create* OR *generate*)"
+              name: "1"
+            - filter:
+                query: "@ocsf.metadata.event_code:(*read* OR *get* OR *list*)"
+              name: "2"
+            - filter:
+                query: "@ocsf.metadata.event_code:(*update* OR *patch* OR *attach* OR *detach* OR *enable* OR *disable* OR *remove* OR *insert* OR *add* OR *set*)"
+              name: "3"
+            - filter:
+                query: "@ocsf.metadata.event_code:*delete*"
+              name: "4"
+            - filter:
+                query: "@ocsf.metadata.event_code:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@ocsf.activity_id:0"
+              name: "Unknown"
+            - filter:
+                query: "@ocsf.activity_id:1"
+              name: "Create"
+            - filter:
+                query: "@ocsf.activity_id:2"
+              name: "Read"
+            - filter:
+                query: "@ocsf.activity_id:3"
+              name: "Update"
+            - filter:
+                query: "@ocsf.activity_id:4"
+              name: "Delete"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "6"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Application Activity
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "6003"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: API Activity
+          target: ocsf.class_name
+          replaceMissing: false
+    - type: pipeline
+      name: OCSF post transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: '(@protoPayload.@type:"type.googleapis.com/google.cloud.audit.AuditLog" OR @data.protoPayload.@type:"type.googleapis.com/google.cloud.audit.AuditLog")'
+      processors:
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.class_uid` to `ocsf.class_uid`
+          enabled: true
+          sources:
+            - ocsf.class_uid
+          sourceType: attribute
+          target: ocsf.class_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.severity_id` to `ocsf.severity_id`
+          enabled: true
+          sources:
+            - ocsf.severity_id
+          sourceType: attribute
+          target: ocsf.severity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Type ID calculator
+          enabled: true
+          expression: (ocsf.class_uid * 100) + ocsf.activity_id
+          target: ocsf.type_uid_float
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.type_uid_float` to `ocsf.type_uid`
+          enabled: true
+          sources:
+            - ocsf.type_uid_float
+          sourceType: attribute
+          target: ocsf.type_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false

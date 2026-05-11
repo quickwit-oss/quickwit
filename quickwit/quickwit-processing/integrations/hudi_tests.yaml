@@ -1,0 +1,42 @@
+id: "hudi"
+tests:
+ -
+  sample: "2021-09-21 20:50:46,169 INFO  org.apache.hudi.timeline.service.TimelineService              - Starting Timeline server on port :41517"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.hudi.timeline.service.TimelineService"
+      timestamp: 1632257446169
+    message: "Starting Timeline server on port :41517"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1632257446169
+ -
+  sample: "2021-09-10 17:21:14,101 ERROR HoodieDeltaStreamer - Got error running delta sync once. Shutting down"
+  result:
+    custom:
+      level: "ERROR"
+      logger:
+        name: "HoodieDeltaStreamer"
+      timestamp: 1631294474101
+    message: "Got error running delta sync once. Shutting down"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1631294474101
+ -
+  sample: "2021-09-21 20:50:45,546 INFO  org.apache.hudi.common.table.HoodieTableConfig                - Loading table properties from file:/tmp/hudi_table/.hoodie/hoodie.properties"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.hudi.common.table.HoodieTableConfig"
+      timestamp: 1632257445546
+    message: "Loading table properties from file:/tmp/hudi_table/.hoodie/hoodie.properties"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1632257445546
+

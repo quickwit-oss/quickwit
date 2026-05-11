@@ -1,0 +1,143 @@
+id: "uwsgi"
+tests:
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 404 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+  result:
+    custom:
+      date_access: 1483719397000
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_category: "warning"
+        status_code: 404
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 404 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+  result:
+    custom:
+      date_access: 1483719397000
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_category: "OK"
+        status_code: 200
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+ -
+  sample: "[pid: 596|app: 0|req: 24/72] 222.127.73.32 () {50 vars in 1043 bytes} [Wed Jan 14 11:44:29 2015] POST /countries/ => generated 2 bytes in 149 msecs (HTTP/1.1 200) 3 headers in 112 bytes (1 switches on core 0)"
+  result:
+    custom:
+      app: 0.0
+      async_switches: 1.0
+      cgi_vars: 50.0
+      core: "0"
+      date_access: 1421235869000
+      duration: 1.49E8
+      http:
+        headers: 3.0
+        method: "POST"
+        status_category: "OK"
+        status_code: 200
+        url: "/countries/"
+        url_details:
+          path: "/countries/"
+        version: "1.1"
+      network:
+        body_size: 2.0
+        bytes_written: 1043
+        client:
+          ip: "222.127.73.32"
+        header_size: 112
+      pid: 596.0
+      request_number: "24/72"
+    message: "[pid: 596|app: 0|req: 24/72] 222.127.73.32 () {50 vars in 1043 bytes} [Wed Jan 14 11:44:29 2015] POST /countries/ => generated 2 bytes in 149 msecs (HTTP/1.1 200) 3 headers in 112 bytes (1 switches on core 0)"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1421235869000
+ -
+  sample: "[pid: 29191|app: 0|req: 454460/1817476] 0.0.0.0 () {40 vars in 576 bytes} [Wed Feb  6 01:07:34 2019] GET / => generated 123 bytes in 1 msecs (HTTP/1.1 200) 3 headers in 155 bytes (1 switches on core 8)"
+  result:
+    custom:
+      app: 0.0
+      async_switches: 1.0
+      cgi_vars: 40.0
+      core: "8"
+      date_access: 1549415254000
+      duration: 1000000.0
+      http:
+        headers: 3.0
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/"
+        url_details:
+          path: "/"
+        version: "1.1"
+      network:
+        body_size: 123.0
+        bytes_written: 576
+        client:
+          ip: "0.0.0.0"
+        header_size: 155
+      pid: 29191.0
+      request_number: "454460/1817476"
+    message: "[pid: 29191|app: 0|req: 454460/1817476] 0.0.0.0 () {40 vars in 576 bytes} [Wed Feb  6 01:07:34 2019] GET / => generated 123 bytes in 1 msecs (HTTP/1.1 200) 3 headers in 155 bytes (1 switches on core 8)"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1549415254000
+

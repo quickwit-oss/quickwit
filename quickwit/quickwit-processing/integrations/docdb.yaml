@@ -1,0 +1,115 @@
+id: docdb
+metric_id: amazon-documentdb
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - AWS
+    name: Event Name
+    path: eventName
+    source: log
+  - groups:
+      - AWS
+    name: Log Group
+    path: aws.awslogs.logGroup
+    source: log
+  - groups:
+      - DocumentDB
+    name: DocDB User
+    path: param.user
+    source: log
+  - groups:
+      - DocumentDB
+    name: DocDB Index
+    path: param.indexName
+    source: log
+  - groups:
+      - DocumentDB
+    name: DocDB Mechanism
+    path: param.mechanism
+    source: log
+  - groups:
+      - DocumentDB
+    name: DocDB Namespace
+    path: param.ns
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Document DB
+  enabled: true
+  filter:
+    query: source:docdb
+  processors:
+    - type: grok-parser
+      name: Parsing remote_ip
+      enabled: true
+      source: remote_ip
+      grok:
+        supportRules: |
+        matchRules: |
+          ip_parsing %{ipOrHost:network.client.ip}:%{number:network.client.port}
+      samples:
+        - 172.31.16.68:54888
+    - type: grok-parser
+      name: Parsing client
+      enabled: true
+      source: client
+      grok:
+        supportRules: |
+        matchRules: |
+          client_ip_parsing %{ipOrHost:network.client.ip}:%{number:network.client.port}
+      samples:
+        - 172.31.11.161:46218
+    - type: attribute-remapper
+      name: Map `atype` to `eventName`
+      enabled: true
+      sources:
+        - atype
+      target: eventName
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `ns` to `param.ns`
+      enabled: true
+      sources:
+        - ns
+      target: param.ns
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Define logs as error if they have an error message
+      enabled: true
+      categories:
+        - filter:
+            query: '@param.error:>0'
+          name: Error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: arithmetic-processor
+      name: Scale millis to nanoseconds
+      enabled: true
+      expression: millis * 1000000
+      target: duration
+      replaceMissing: false

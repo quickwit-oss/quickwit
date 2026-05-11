@@ -1,0 +1,291 @@
+id: intercom
+metric_id: intercom
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Intercom
+  enabled: true
+  filter:
+    query: "source:intercom"
+  processors:
+    - name: Lookup for `data.item.type` to `service`
+      enabled: true
+      source: data.item.type
+      target: service
+      lookupTable: |-
+        admin_activity_log_event, activity
+        event, data_event
+        conversation, conversation
+        content_stat.news_item, news_item
+        ticket, ticket
+        ticket_ticket_part, ticket
+      type: lookup-processor
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: "Conversation"
+      enabled: true
+      filter:
+        query: "service:conversation"
+      processors:
+        - type: arithmetic-processor
+          name: Convert `data.item.updated_at` from second to millisecond EPOCH UNIX
+            format and map to `updated_at_ms`
+          enabled: true
+          expression: data.item.updated_at*1000
+          target: updated_at_ms
+          replaceMissing: false
+        - type: date-remapper
+          name: Define `updated_at_ms` as the official date of the log
+          enabled: true
+          sources:
+            - updated_at_ms
+        - type: attribute-remapper
+          name: Map `data.item.source.author.id` to `usr.id`
+          enabled: true
+          sources:
+            - data.item.source.author.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.source.author.email` to `usr.email`
+          enabled: true
+          sources:
+            - data.item.source.author.email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.source.author.name` to `usr.name`
+          enabled: true
+          sources:
+            - data.item.source.author.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.custom_attributes.Copilot used` to
+            `data.item.custom_attributes.copilot_used`
+          enabled: true
+          sources:
+            - data.item.custom_attributes.Copilot used
+          sourceType: attribute
+          target: data.item.custom_attributes.copilot_used
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: News Item
+      enabled: true
+      filter:
+        query: "service:news_item"
+      processors:
+        - type: date-remapper
+          name: Define `data.item.contact.updated_at` as the official date of the log
+          enabled: true
+          sources:
+            - data.item.contact.updated_at
+        - type: attribute-remapper
+          name: Map `data.item.contact.id` to `usr.id`
+          enabled: true
+          sources:
+            - data.item.contact.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Data Event
+      enabled: true
+      filter:
+        query: "service:data_event"
+      processors:
+        - type: arithmetic-processor
+          name: Convert `data.item.created_at` from second to millisecond EPOCH UNIX
+            format and map to `created_at_ms`
+          enabled: true
+          expression: data.item.created_at*1000
+          target: created_at_ms
+          replaceMissing: false
+        - type: date-remapper
+          name: Define `created_at_ms` as the official date of the log
+          enabled: true
+          sources:
+            - created_at_ms
+        - type: attribute-remapper
+          name: Map `data.item.intercom_user_id` to `usr.id`
+          enabled: true
+          sources:
+            - data.item.intercom_user_id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.email` to `usr.email`
+          enabled: true
+          sources:
+            - data.item.email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Activity
+      enabled: true
+      filter:
+        query: "service:activity"
+      processors:
+        - type: arithmetic-processor
+          name: Convert `data.item.created_at` from second to millisecond EPOCH UNIX
+            format and map to `created_at_ms`
+          enabled: true
+          expression: data.item.created_at*1000
+          target: created_at_ms
+          replaceMissing: false
+        - type: date-remapper
+          name: Define `created_at_ms` as the official date of the log
+          enabled: true
+          sources:
+            - created_at_ms
+        - type: attribute-remapper
+          name: Map `data.item.performed_by.id` to `usr.id`
+          enabled: true
+          sources:
+            - data.item.performed_by.id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.performed_by.email` to `usr.email`
+          enabled: true
+          sources:
+            - data.item.performed_by.email
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.item.performed_by.ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - data.item.performed_by.ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIP Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Ticket
+      enabled: true
+      filter:
+        query: "service:ticket"
+      processors:
+        - type: arithmetic-processor
+          name: Convert `data.item.ticket.updated_at` from second to millisecond EPOCH
+            UNIX format and map to `updated_at_ms`
+          enabled: true
+          expression: data.item.ticket.updated_at*1000
+          target: updated_at_ms
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Convert `data.item.updated_at` from second to millisecond EPOCH UNIX
+            format and map to `updated_at_ms`
+          enabled: true
+          expression: data.item.updated_at*1000
+          target: updated_at_ms
+          replaceMissing: false
+        - type: date-remapper
+          name: Define `updated_at_ms` as the official date of the log
+          enabled: true
+          sources:
+            - updated_at_ms
+        - type: attribute-remapper
+          name: Map `data.item.admin_assignee_id` to `usr.id`
+          enabled: true
+          sources:
+            - data.item.admin_assignee_id
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false

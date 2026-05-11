@@ -1,0 +1,102 @@
+id: securityhub
+metric_id: amazon-security-hub
+backend_only: false
+facets:
+  - groups:
+      - AWS Security Hub
+    name: Compliance Status
+    path: detail.finding.Compliance.Status
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Compliance Related Requirements
+    path: detail.finding.Compliance.RelatedRequirements
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Severity Score
+    path: detail.finding.FindingProviderFields.Severity.Normalized
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Control ID
+    path: detail.finding.ProductFields.ControlId
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Resource ARN
+    path: resourceARN
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Record State
+    path: detail.finding.RecordState
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Security Group ID
+    path: detail.finding.resources.AwsEc2SecurityGroup.Details.AwsEc2SecurityGroup.GroupId
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Workflow Status
+    path: detail.finding.Workflow.Status
+    source: log
+  - groups:
+      - AWS Security Hub
+    name: Workflow State
+    path: detail.finding.Workflow.State
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Security Hub
+  enabled: true
+  filter:
+    query: source:securityhub
+  processors:
+    - type: date-remapper
+      name: Define `detail.finding.CreatedAt` as the official date of the log
+      enabled: true
+      overrideOnConflict: true
+      sources:
+        - detail.finding.CreatedAt
+    - type: message-remapper
+      name: Define `detail.finding.ProductFields.aws/securityhub/annotation` as the official message of the log
+      enabled: true
+      sources:
+        - detail.finding.ProductFields.aws/securityhub/annotation
+    - type: status-remapper
+      name: Define `detail.finding.FindingProviderFields.Severity.Label` as the official status of the log
+      enabled: true
+      sources:
+        - detail.finding.FindingProviderFields.Severity.Label
+    - type: attribute-remapper
+      name: Map attribute `detail.finding.AwsAccountId` to tag `aws_account`
+      enabled: true
+      sources:
+        - detail.finding.AwsAccountId
+      target: aws_account
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `detail.finding.Title` to `title`
+      enabled: true
+      sources:
+        - detail.finding.Title
+      target: title
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `detail.finding.ProductFields.Resources:0/Id` to `resourceARN`
+      enabled: true
+      sources:
+        - detail.finding.ProductFields.Resources:0/Id
+      target: resourceARN
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

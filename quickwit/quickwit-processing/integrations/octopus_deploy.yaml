@@ -1,0 +1,51 @@
+id: octopus_deploy
+metric_id: octopus-deploy
+backend_only: false
+facets: []
+pipeline:
+  type: pipeline
+  name: "Octopus Deploy"
+  enabled: true
+  filter:
+    query: source:octopus_deploy
+  processors:
+    - type: grok-parser
+      name: Octopus Parser
+      enabled: true
+      source: message
+      samples:
+        - >
+          2024-08-23 18:47:15.8732      7      1  INFO  Octopus.Server version
+          2024.2.9409 (2024.2.9409) instance OctopusServer
+        - 2024-08-23 18:47:24.0518      7      1  INFO Defaulting server node
+          name to '"08c3dfcac5a3"'.
+        - >
+          2025-01-29 21:32:16.7923      1     75  INFO  "HTTP" "GET" to
+          "localhost:8080""/api/octopusservernodes/ping" "completed" with 200 in
+          00:00:00.0224869 (22ms) by "<anonymous>"
+        - >
+          2025-01-28 19:34:47.9679      1    111 ERROR  Executing task "Check
+          target health for Default Machine Policy" "abandoned" after 290ms.
+        - >
+          2025-01-27 21:00:40.7777      1    101  WARN  Ignoring incompatible
+          step package "kustomize 1.0.12": "kustomize step package is
+          deprecated"
+      grok:
+        supportRules: ""
+        matchRules: octopus_default %{date("yyyy-MM-DD
+          HH:mm:ss.SSSS"):timestamp}\s+%{number:tid}\s+%{number:pid}\s+%{word:level}\s+%{data:message}
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

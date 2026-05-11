@@ -1,0 +1,98 @@
+id: "transitgateway"
+tests:
+ -
+  sample: "6 TransitGateway 601427279990 tgw-004f004c35544e4bb tgw-attach-04fd0b1f746624ca9 601427279990 601427279990 vpc-0a43eeec01705c3bb vpc-08254c48dd910e268 subnet-071d59121d65ba614 subnet-080fcc1cf7ce9117b eni-09d43c8e26c74c6ed eni-065bdf3463532c3d0 use1-az1 use1-az2 tgw-attach-0bc5327361aef1ca2 10.1.0.50 10.2.0.50 3307 0 1 84 504 1657303745 1657303797 OK IPv4 0 0 0 0 0 us-east-1 ingress - -"
+  result:
+    custom:
+      flow_log:
+        resource_type: "TransitGateway"
+        status: "OK"
+        version: 6
+      network:
+        bytes_written: 504
+        client:
+          account_id: "601427279990"
+          availability_zone: "use1-az1"
+          eni: "eni-09d43c8e26c74c6ed"
+          ip: "10.1.0.50"
+          port: "3307"
+          subnet: "subnet-071d59121d65ba614"
+          vpc: "vpc-0a43eeec01705c3bb"
+        destination:
+          account_id: "601427279990"
+          availability_zone: "use1-az2"
+          eni: "eni-065bdf3463532c3d0"
+          ip: "10.2.0.50"
+          port: "0"
+          subnet: "subnet-080fcc1cf7ce9117b"
+          vpc: "vpc-08254c48dd910e268"
+        direction: "ingress"
+        interval:
+          end: "1657303797"
+          start: "1657303745"
+        packets: "84"
+        packets_lost:
+          black_hole: "0"
+          mtu_exceeded: "0"
+          no_route: "0"
+          ttl_expired: "0"
+        protocol_number: "1"
+        protocol_type: "IPv4"
+        tcp_flags: "0"
+      transit_gateway:
+        account_id: "601427279990"
+        attachment: "tgw-attach-04fd0b1f746624ca9"
+        id: "tgw-004f004c35544e4bb"
+        pair-attachment: "tgw-attach-0bc5327361aef1ca2"
+        region: "us-east-1"
+    message: "6 TransitGateway 601427279990 tgw-004f004c35544e4bb tgw-attach-04fd0b1f746624ca9 601427279990 601427279990 vpc-0a43eeec01705c3bb vpc-08254c48dd910e268 subnet-071d59121d65ba614 subnet-080fcc1cf7ce9117b eni-09d43c8e26c74c6ed eni-065bdf3463532c3d0 use1-az1 use1-az2 tgw-attach-0bc5327361aef1ca2 10.1.0.50 10.2.0.50 3307 0 1 84 504 1657303745 1657303797 OK IPv4 0 0 0 0 0 us-east-1 ingress - -"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "6 TransitGateway 211420764068 tgw-077eb6aaa1334e79f tgw-attach-075fa68611d669fe9 385454800399 765269915481 vpc-02cba32f40d684d6e vpc-08daeaff0dfa94ecb subnet-0fd7328e406396a0a subnet-0dda963a85ddbda50 eni-0b71ec7fc61645b03 eni-03e7223cac1060277 euw2-az1 euw2-az1 tgw-attach-00259508776b93f82 10.200.126.68 10.222.136.67 52096 443 6 8 1170 1664435399 1664435399 OK IPv4 0 0 0 0 - eu-west-2 egress - -"
+  result:
+    custom:
+      flow_log:
+        resource_type: "TransitGateway"
+        status: "OK"
+        version: 6
+      network:
+        bytes_written: 1170
+        client:
+          account_id: "385454800399"
+          availability_zone: "euw2-az1"
+          eni: "eni-0b71ec7fc61645b03"
+          ip: "10.200.126.68"
+          port: "52096"
+          subnet: "subnet-0fd7328e406396a0a"
+          vpc: "vpc-02cba32f40d684d6e"
+        destination:
+          account_id: "765269915481"
+          availability_zone: "euw2-az1"
+          eni: "eni-03e7223cac1060277"
+          ip: "10.222.136.67"
+          port: "443"
+          subnet: "subnet-0dda963a85ddbda50"
+          vpc: "vpc-08daeaff0dfa94ecb"
+        direction: "egress"
+        interval:
+          end: "1664435399"
+          start: "1664435399"
+        packets: "8"
+        packets_lost:
+          black_hole: "0"
+          mtu_exceeded: "0"
+          no_route: "0"
+          ttl_expired: "0"
+        protocol_number: "6"
+        protocol_type: "IPv4"
+      transit_gateway:
+        account_id: "211420764068"
+        attachment: "tgw-attach-075fa68611d669fe9"
+        id: "tgw-077eb6aaa1334e79f"
+        pair-attachment: "tgw-attach-00259508776b93f82"
+        region: "eu-west-2"
+    message: "6 TransitGateway 211420764068 tgw-077eb6aaa1334e79f tgw-attach-075fa68611d669fe9 385454800399 765269915481 vpc-02cba32f40d684d6e vpc-08daeaff0dfa94ecb subnet-0fd7328e406396a0a subnet-0dda963a85ddbda50 eni-0b71ec7fc61645b03 eni-03e7223cac1060277 euw2-az1 euw2-az1 tgw-attach-00259508776b93f82 10.200.126.68 10.222.136.67 52096 443 6 8 1170 1664435399 1664435399 OK IPv4 0 0 0 0 - eu-west-2 egress - -"
+    tags:
+      - "source:LOGS_SOURCE"
+

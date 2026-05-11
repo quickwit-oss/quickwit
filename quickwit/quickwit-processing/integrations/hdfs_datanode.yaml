@@ -1,0 +1,45 @@
+id: hdfs_datanode
+metric_id: hdfs-datanode
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: HDFS Datanode
+  enabled: true
+  filter:
+    query: source:hdfs_datanode
+  processors:
+    - type: grok-parser
+      name: Parsing HDFS Datanode logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _date1 %{date("yyyy-MM-dd HH:mm:ss,SSS"):syslog.timestamp}
+          _date2 %{date("yy/MM/dd HH:mm:ss"):syslog.timestamp}
+          _line_number \(%{notSpace:logger.file_name}:%{notSpace:logger.method_name}\(%{number:logger.line_number}\)\) -
+        matchRules: |
+          common (%{_date1}|%{_date2})\s+%{notSpace:syslog.severity}\s+%{notSpace:logger.name}( %{_line_number}|:) %{data:message}
+      samples:
+        - '2019-09-19 10:18:07,662 INFO org.apache.hadoop.hdfs.server.datanode.DataNode: Receiving BP-1946191569-10.128.0.4-1537814388792:blk_1087201176_13460388 src: /10.128.0.3:34532 dest: /10.128.0.2:9866'
+        - '19/09/24 19:20:46 INFO datanode.VolumeScanner: VolumeScanner(/hadoop/dfs/data, DS-46fe29ef-76c4-4f98-abe2-fceb5e407426): no suitable block pools found to scan.  Waiting 1814399728 ms.'
+    - type: date-remapper
+      name: Define `syslog.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - syslog.timestamp
+    - type: status-remapper
+      name: Define `syslog.severity` as the official status of the log
+      enabled: true
+      sources:
+        - syslog.severity
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

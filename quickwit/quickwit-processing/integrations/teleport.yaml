@@ -1,0 +1,191 @@
+id: teleport
+metric_id: teleport
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - description: Teleport cluster name
+    facetType: list
+    groups:
+      - Teleport
+    name: Cluster Name
+    path: teleport.cluster_name
+    source: log
+    type: string
+  - description: Teleport Component (Proxy, Auth, SSH, ...)
+    facetType: list
+    groups:
+      - Teleport
+    name: Component
+    path: teleport.component
+    source: log
+    type: string
+  - description: Teleport Event Numeric ID
+    facetType: list
+    groups:
+      - Teleport
+    name: Event Numeric ID (ei)
+    path: teleport.eid
+    source: log
+    type: integer
+  - description: Teleport Event Type
+    facetType: list
+    groups:
+      - Teleport
+    name: Event Type
+    path: teleport.event_type
+    source: log
+    type: string
+  - description: Teleport Event Unique ID
+    facetType: list
+    groups:
+      - Teleport
+    name: Event Unique ID (uid)
+    path: teleport.uid
+    source: log
+    type: string
+  - description: Name of the MFA device as specified by the user
+    facetType: list
+    groups:
+      - Teleport
+    name: MFA Device Name
+    path: teleport.mfa_device_name
+    source: log
+    type: string
+  - description: Type of the MFA Device
+    facetType: list
+    groups:
+      - Teleport
+    name: MFA Device Type
+    path: teleport.mfa_device_type
+    source: log
+    type: string
+  - description: UUID of the MFA Device
+    facetType: list
+    groups:
+      - Teleport
+    name: MFA Device UUID
+    path: teleport.mfa_device_uuid
+    source: log
+    type: string
+  - description: Teleport User Name
+    facetType: list
+    groups:
+      - Teleport
+    name: User
+    path: teleport.user
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Teleport
+  enabled: true
+  filter:
+    query: source:teleport
+  processors:
+    - type: grok-parser
+      name: Parsing Teleport Logs
+      enabled: true
+      source: message
+      samples:
+        - 2024-06-24T15:36:48Z INFO [AUDIT]     user.login
+          addr.remote:90.118.178.162:19954 cluster_name:teleport-plint
+          code:T1000W ei:0 error:[invalid username, password or second factor]
+          event:user.login method:local success:false
+          time:2024-06-24T15:36:48.688Z uid:f9ec53d9-0263-43a3-a5e6-fc41351e63bb
+          user:teleport-admin user_agent:Mozilla/5.0 (Macintosh; Intel Mac OS X
+          10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0
+          Safari/537.36 events/emitter.go:288
+        - 2024-05-28T14:21:52Z INFO [AUDIT]     session.start
+          addr.local:172.29.245.165:443 addr.remote:90.118.178.162:41482
+          cluster_name:teleport-plint code:T2000I ei:0 event:session.start
+          initial_command:[] login:ec2-user namespace:default
+          private_key_policy:none proto:ssh server_addr:[::]:3022
+          server_hostname:ip-172-29-245-165-ec2-internal
+          server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node
+          sid:3cce2999-5e30-4415-b9b6-a92dadc3725b size:80:25
+          time:2024-05-28T14:21:52.888Z uid:84f7fc1b-575a-4357-aedb-932508acbf23
+          user:teleport-admin user_kind:1 events/emitter.go:288
+        - >
+          2024-05-28T14:21:56Z INFO [AUDIT]     session.leave
+          cluster_name:teleport-plint code:T2003I ei:20 event:session.leave
+          login:ec2-user namespace:default private_key_policy:none
+          server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal
+          server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1
+          sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:21:56.593Z
+          uid:4d0f781f-f99e-4363-a953-231978b03bbd user:teleport-admin
+          user_kind:1 events/emitter.go:288
+        - >
+          2024-05-28T14:22:01Z INFO [AUDIT]     session.end
+          addr.remote:90.118.178.162:41482 cluster_name:teleport-plint
+          code:T2004I ei:21 enhanced_recording:false event:session.end
+          interactive:true login:ec2-user namespace:default
+          participants:[teleport-admin] private_key_policy:none proto:ssh
+          server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal
+          server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node
+          session_start:2024-05-28T14:21:52.874611176Z
+          session_stop:2024-05-28T14:22:01.60145508Z
+          sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:22:01.603Z
+          uid:6346cbd5-fcf7-4619-90d9-114b392edfb5 user:teleport-admin
+          user_kind:1 events/emitter.go:288
+        - >
+          2024-05-28T14:21:56Z INFO [AUDIT]     session.data
+          addr.local:172.29.245.165:443 addr.remote:90.118.178.162:41482
+          cluster_name:teleport-plint code:T2006I ei:2.147483646e+09
+          event:session.data login:ec2-user namespace:default
+          private_key_policy:none rx:5797
+          server_hostname:ip-172-29-245-165-ec2-internal
+          server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1
+          sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:21:56.605Z
+          tx:6264 uid:bc0b2d60-81e4-4a8f-a502-75c5e0978649 user:teleport-admin
+          user_kind:1 events/emitter.go:288
+      grok:
+        supportRules: >-
+          _log_prefix %{date("yyyy-MM-dd'T'HH:mm:ssZZ"):date}\s+%{word:log.level}\s+(\[%{notSpace:teleport.component}\])?\s+%{notSpace}
+
+          _log_common_attr %{_log_prefix}\s+(addr.local:%{ipOrHost:network.client.ip}:%{port:network.client.port}\s+)?(addr.remote:%{ipOrHost:network.destination.ip}:%{port:network.destination.port}\s+)?+cluster_name:%{notSpace:teleport.cluster_name}\s+code:%{notSpace:teleport.code}\s+ei:%{notSpace:teleport.eid}
+        matchRules: >-
+          parse_audit_user_login %{_log_common_attr}\s+event:%{notSpace:teleport.event_type}\s+method:%{notSpace:teleport.method}\s+mfa_device_name:%{notSpace:teleport.mfa_device_name}\s+mfa_device_type:%{notSpace:teleport.mfa_device_type}\s+mfa_device_uuid:%{notSpace:teleport.mfa_device_uuid}\s+required_private_key_policy:%{notSpace:teleport.required_private_key_policy}\s+success:%{notSpace:teleport.success}\s+time:%{notSpace:teleport.time}\s+uid:%{notSpace:teleport.uid}\s+user:%{notSpace:teleport.user}\s+user_agent:%{regex("[a-zA-Z/0-9. (;_),]+"):http.useragent}\s%{notSpace}
+
+          parse_audit_session_start %{_log_common_attr}\s+event:%{notSpace:teleport.event_type}\s+initial_command:%{notSpace:teleport.initial_command}\s+login:%{notSpace:teleport.login}\s+namespace:%{notSpace:teleport.namespace}\s+private_key_policy:%{notSpace:teleport.private_key_policy}\s+proto:%{notSpace:teleport.proto}\s+server_addr:%{notSpace:teleport.server_addr}\s+server_hostname:%{notSpace:network.host.name}\s+server_id:%{notSpace:teleport.server_id}\s+session_recording:%{notSpace:teleport.session_recording}\s+sid:%{notSpace:teleport.sid}\s+size:%{notSpace:teleport.size}\s+time:%{notSpace:teleport.time}\s+uid:%{notSpace:teleport.uid}\s+user:%{notSpace:teleport.user}\s+user_kind:%{notSpace:teleport.user_kind}\s+%{regex("[^:]*"):log.file}:%{number:log.line_number}.*
+
+          parse_audit_session_leave %{_log_common_attr}\s+event:%{notSpace:teleport.event_type}\s+login:%{notSpace:teleport.login}\s+namespace:%{notSpace:teleport.namespace}\s+private_key_policy:%{notSpace:teleport.private_key_policy}\s+server_addr:%{notSpace:teleport.server_addr}\s+%{data::keyvalue(":","a-zA-Z-_.<>")}\s+%{regex("[^:]*"):log.file}:%{number:log.line_number}.*
+
+          parse_audot_session_end %{_log_common_attr}\s+enhanced_recording:%{notSpace:teleport.enhanced_recording}\s+event:%{notSpace:teleport.event_type}\s+interactive:%{notSpace:teleport.interactive}\s+login:%{notSpace:teleport.login}\s+namespace:%{notSpace:teleport.namespace}\s+participants:%{notSpace:teleport.participants}\s+private_key_policy:%{notSpace:teleport.private_key_policy}\s+proto:%{notSpace:teleport.proto}\s+server_addr:%{notSpace:teleport.server_addr}\s+server_hostname:%{notSpace:network.host.name}\s+server_id:%{notSpace:teleport.server_id}\s+session_recording:%{notSpace:teleport.session_recording}\s+session_start:%{notSpace:teleport.session_start}\s+session_stop:%{notSpace:teleport.session_stop}\s+sid:%{notSpace:teleport.sid}\s+time:%{notSpace:teleport.time}\s+uid:%{notSpace:teleport.uid}\s+user:%{notSpace:teleport.user}\s+user_kind:%{notSpace:teleport.user_kind}\s+%{regex("[^:]*"):log.file}:%{number:log.line_number}.*
+
+          parse_audit_session_data %{_log_common_attr}\s+event:%{notSpace:teleport.event_type}\s+login:%{notSpace:teleport.login}\s+namespace:%{notSpace:teleport.namespace}\s+private_key_policy:%{notSpace:teleport.private_key_policy}\s+rx:%{notSpace:teleport.bytes_read}\s+server_hostname:%{notSpace:network.host.name}\s+server_id:%{notSpace:teleport.server_id}\s+sid:%{notSpace:teleport.sid}\s+time:%{notSpace:teleport.time}\s+tx:%{notSpace:network.bytes_written}\s+uid:%{notSpace:teleport.uid}\s+user:%{notSpace:teleport.user}\s+user_kind:%{notSpace:teleport.user_kind}\s+%{regex("[^:]*"):log.file}:%{number:log.line_number}.*
+
+          parse_user_login %{_log_common_attr}\s+error:%{regex("[\\[]*.*\\]"):teleport.event_error}\s+event:%{notSpace:teleport.event_type}\s+method:%{notSpace:teleport.method}\s+success:%{notSpace:teleport.success}\s+time:%{notSpace:teleport.time}\s+uid:%{notSpace:teleport.uid}\s+user:%{notSpace:teleport.user}\s+user_agent:%{regex("[a-zA-Z/0-9. (;_),]+"):http.useragent}\s%{notSpace}
+
+          parse_common_prefix %{_log_prefix}.*
+    - type: user-agent-parser
+      name: ""
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: status-remapper
+      name: Define `log.level` as the official status of the log
+      enabled: true
+      sources:
+        - log.level
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

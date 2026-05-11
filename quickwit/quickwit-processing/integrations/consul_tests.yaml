@@ -1,0 +1,56 @@
+id: "consul"
+tests:
+ -
+  sample: "==> WARNING: It is highly recommended to set GOMAXPROCS higher than 1"
+  result:
+    custom:
+      level: "WARNING"
+      message: " It is highly recommended to set GOMAXPROCS higher than 1"
+    message: "==> WARNING: It is highly recommended to set GOMAXPROCS higher than 1"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "\t2015/11/24 11:41:05 [INFO] serf: EventMemberJoin: 10.0.255.5 10.0.255.5"
+  result:
+    custom:
+      app: "serf"
+      event: "EventMemberJoin"
+      level: "INFO"
+      message: " 10.0.255.5 10.0.255.5"
+      timestamp: 1448365265000
+    message: "\t2015/11/24 11:41:05 [INFO] serf: EventMemberJoin: 10.0.255.5 10.0.255.5"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1448365265000
+ -
+  sample: "Mar 23 14:39:46 precise64 consul-template[23544]: (runner) creating Watcher"
+  result:
+    custom:
+      app: "consul-template"
+      hostname: "precise64"
+      logger:
+        thread:
+          id: 23544
+      message: "(runner) creating Watcher"
+      timestamp: 38587186000
+    message: "Mar 23 14:39:46 precise64 consul-template[23544]: (runner) creating Watcher"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 38587186000
+ -
+  sample: "2018-10-19T19:04:16.180Z [TRACE] pkcs11: key successfully found"
+  result:
+    custom:
+      app: "pkcs11"
+      level: "TRACE"
+      message: " key successfully found"
+      timestamp: 1539975856180
+    message: "2018-10-19T19:04:16.180Z [TRACE] pkcs11: key successfully found"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1539975856180
+

@@ -1,0 +1,74 @@
+id: confluent_platform
+metric_id: confluent-platform
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Confluent Platform
+  enabled: true
+  filter:
+    query: source:confluent_platform
+  processors:
+    - type: grok-parser
+      name: Parsing Confluent Platform logs
+      enabled: true
+      source: message
+      samples:
+        - '[2020-03-12 09:40:42,403] INFO Starting ZkClient event thread. (org.I0Itec.zkclient.ZkEventThread)'
+        - "[2020-03-12 09:41:26,691] WARN The configuration 'log4j.loggers' was supplied but isn't a known config. (org.apache.kafka.clients.admin.AdminClientConfig)"
+        - '[2020-03-23 15:34:09,096] INFO Kafka version: 5.4.1-ce (org.apache.kafka.common.utils.AppInfoParser:117)'
+        - "[2020-03-12 09:41:22,357] INFO Added aliases 'LongConverter' and 'Long' to plugin 'org.apache.kafka.connect.converters.LongConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader)"
+        - |
+          [2020-03-12 09:56:49,924] ERROR Unable to resolve address: zookeeper:2181 (org.apache.zookeeper.client.StaticHostProvider)
+          java.net.UnknownHostException: zookeeper: Name or service not known
+          	at java.net.Inet4AddressImpl.lookupAllHostAddr(Native Method)
+          	at java.net.InetAddress$2.lookupAllHostAddr(InetAddress.java:929)
+          	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1137)
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:status}
+          _logger_name %{regex("([^: ]+)"):logger.name}
+          _line %{integer:line}
+        matchRules: |
+          confluent_default \[%{_date}\]\s+%{_status}\s+%{data:msg}\s+\(%{_logger_name}(:%{_line})?\)((\n|\t)%{data:error.stack})?
+
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          java.net.UnknownHostException: zookeeper: Name or service not known
+          	at java.net.Inet4AddressImpl.lookupAllHostAddr(Native Method)
+          	at java.net.InetAddress$2.lookupAllHostAddr(InetAddress.java:929)
+          	at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1137)
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

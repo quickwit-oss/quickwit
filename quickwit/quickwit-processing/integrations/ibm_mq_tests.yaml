@@ -1,0 +1,78 @@
+id: "ibm_mq"
+tests:
+ -
+  sample: |-
+    11/05/18 19:21:00 - Process(26971.1) User(root) Program(setmqinst) Host(ip-172-31-40-45) Installation(Installation1) VRMF(9.0.0.0) AMQ6287: IBM MQ V9.0.0.0 (p900-L160520.DE).
+    EXPLANATION: IBM MQ system information: Host Info         :- Linux 4.15.0-1021-aws (MQ Linux (x86-64 platform) 64-bit) Installation      :- /opt/mqm (Installation1) Version           :- 9.0.0.0 (p900-L160520.DE) ACTION: None. -------------------------------------------------------------------------------
+  result:
+    custom:
+      error:
+        message: "IBM MQ system information: Host Info         :- Linux 4.15.0-1021-aws (MQ Linux (x86-64 platform) 64-bit) Installation      :- /opt/mqm (Installation1) Version           :- 9.0.0.0 (p900-L160520.DE)"
+      level: "Error"
+      process: 26971.1
+      system:
+        action: "None."
+        app: "setmqinst"
+        host: "ip-172-31-40-45"
+        installation: "Installation1"
+        user: "root"
+      timestamp: 1541445660000
+      vrmf: "9.0.0.0"
+    message: |-
+      11/05/18 19:21:00 - Process(26971.1) User(root) Program(setmqinst) Host(ip-172-31-40-45) Installation(Installation1) VRMF(9.0.0.0) AMQ6287: IBM MQ V9.0.0.0 (p900-L160520.DE).
+      EXPLANATION: IBM MQ system information: Host Info         :- Linux 4.15.0-1021-aws (MQ Linux (x86-64 platform) 64-bit) Installation      :- /opt/mqm (Installation1) Version           :- 9.0.0.0 (p900-L160520.DE) ACTION: None. -------------------------------------------------------------------------------
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1541445660000
+ -
+  sample: |-
+    11/05/18 19:21:00 - Process(26971.1) User(root) Program(setmqinst) Host(ip-172-31-40-45) Installation(Installation1) VRMF(9.0.0.0) 'Installation1' (/opt/mqm) set as the primary installation.
+    EXPLANATION: All tasks required to set installation 'Installation1' as the primary installation have been completed. If the installation was not already set as the primary installation then the installation configuration has also been updated to identify installation 'Installation1' as the primary installation. ACTION: None. -------------------------------------------------------------------------------
+  result:
+    custom:
+      error:
+        message: "All tasks required to set installation 'Installation1' as the primary installation have been completed. If the installation was not already set as the primary installation then the installation configuration has also been updated to identify installation 'Installation1' as the primary installation."
+      level: "Error"
+      process: 26971.1
+      system:
+        action: "None."
+        app: "setmqinst"
+        host: "ip-172-31-40-45"
+        installation: "Installation1"
+        user: "root"
+      timestamp: 1541445660000
+      vrmf: "9.0.0.0"
+    message: |-
+      11/05/18 19:21:00 - Process(26971.1) User(root) Program(setmqinst) Host(ip-172-31-40-45) Installation(Installation1) VRMF(9.0.0.0) 'Installation1' (/opt/mqm) set as the primary installation.
+      EXPLANATION: All tasks required to set installation 'Installation1' as the primary installation have been completed. If the installation was not already set as the primary installation then the installation configuration has also been updated to identify installation 'Installation1' as the primary installation. ACTION: None. -------------------------------------------------------------------------------
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1541445660000
+ -
+  sample: |-
+    17/11/2004  10:32:29 - Process(2132.1) User(USER_1) Program(runmqchi.exe) Host(HOST_1) Installation(Installation1) VRMF(7.1.0.0) QMgr (A.B.C) AMQ9542: Queue manager is ending.
+    EXPLANATION: The program will end because the queue manager is quiescing. ACTION: None. ----- amqrimna.c : 931 -------------------------------------------------------
+  result:
+    custom:
+      error:
+        message: "The program will end because the queue manager is quiescing."
+      level: "Error"
+      process: 2132.1
+      system:
+        action: "None."
+        app: "runmqchi.exe"
+        host: "HOST_1"
+        installation: "Installation1"
+        user: "USER_1"
+      timestamp: 1100687549000
+      vrmf: "7.1.0.0"
+    message: |-
+      17/11/2004  10:32:29 - Process(2132.1) User(USER_1) Program(runmqchi.exe) Host(HOST_1) Installation(Installation1) VRMF(7.1.0.0) QMgr (A.B.C) AMQ9542: Queue manager is ending.
+      EXPLANATION: The program will end because the queue manager is quiescing. ACTION: None. ----- amqrimna.c : 931 -------------------------------------------------------
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1100687549000
+

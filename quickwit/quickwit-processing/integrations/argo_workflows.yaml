@@ -1,0 +1,39 @@
+id: argo_workflows
+metric_id: argo-workflows
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: 'Argo Workflows'
+  enabled: true
+  filter:
+    query: source:argo_workflows
+  processors:
+    - type: grok-parser
+      name: Parse timestamp, level, logger, and message.
+      enabled: true
+      source: message
+      samples:
+        - 'time="2024-03-05T15:28:44.902Z" level=info msg="Configuration:\nartifactRepository:\n  s3:\n    accessKeySecret:\n      key: accesskey\n      name: my-minio-cred\n    bucket: my-bucket\n    endpoint: minio:9000\n    insecure: true\n    secretKeySecret:\n      key: secretkey\n      name: my-minio-cred\ncolumns:\n- key: workflows.argoproj.io/completed\n  name: Workflow Completed\n  type: label\nexecutor:\n  name: ""\n  resources:\n    requests:\n      cpu: 10m\n      memory: 64Mi\nimages:\n  docker/whalesay:v3.5.4:\n    cmd:\n    - cowsay\ninitialDelay: 0s\nlinks:\n- name: Workflow Link\n  scope: workflow\n  url: http://logging-facility?namespace=${metadata.namespace}&workflowName=${metadata.name}&startedAt=${status.startedAt}&finishedAt=${status.finishedAt}\n- name: Pod Link\n  scope: pod\n  url: http://logging-facility?namespace=${metadata.namespace}&podName=${metadata.name}&startedAt=${status.startedAt}&finishedAt=${status.finishedAt}\n- name: Pod Logs Link\n  scope: pod-logs\n  url: http://logging-facility?namespace=${metadata.namespace}&podName=${metadata.name}&startedAt=${status.startedAt}&finishedAt=${status.finishedAt}\n- name: Event Source Logs Link\n  scope: event-source-logs\n  url: http://logging-facility?namespace=${metadata.namespace}&podName=${metadata.name}&startedAt=${status.startedAt}&finishedAt=${status.finishedAt}\n- name: Sensor Logs Link\n  scope: sensor-logs\n  url: http://logging-facility?namespace=${metadata.namespace}&podName=${metadata.name}&startedAt=${status.startedAt}&finishedAt=${status.finishedAt}\n- name: Completed Workflows\n  scope: workflow-list\n  url: http://workflows?label=workflows.argoproj.io/completed=true\nmetricsConfig:\n  enabled: true\n  path: /metrics\n  port: 9090\nnamespaceParallelism: 10\nnodeEvents: {}\npodSpecLogStrategy: {}\nretentionPolicy:\n  completed: 10\n  errored: 3\n  failed: 3\nsso:\n  clientId:\n    key: ""\n  clientSecret:\n    key: ""\n  issuer: ""\n  redirectUrl: ""\n  sessionExpiry: 0s\ntelemetryConfig: {}\n"'
+        - 'time="2024-03-05T15:28:44.902Z" level=info msg="Persistence configuration disabled"'
+        - 'I0305 15:28:44.902685       1 leaderelection.go:248] attempting to acquire leader lease argo/workflow-controller...'
+      grok:
+        matchRules: |
+          argo_common time="%{date("yyyy-MM-dd'T'HH:mm:ss.SSS"):timestamp}Z" level=%{word:level} msg="%{data:message}"
+          k8s %{regex("\\w"):level}\d+ %{date("HH:mm:ss.SSSSSS"):timestamp} \s+%{number:logger.thread_id} %{regex("[^\\:]+"):logger.name}:%{integer:logger.lineno}] %{data:message}
+        supportRules: ""
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

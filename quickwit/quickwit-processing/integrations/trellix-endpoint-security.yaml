@@ -1,0 +1,335 @@
+id: trellix-endpoint-security
+metric_id: trellix-endpoint-security
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Trellix Endpoint Security (ENS)
+  enabled: true
+  filter:
+    query: source:trellix-endpoint-security
+  processors:
+    - type: category-processor
+      name: Module name category processor
+      enabled: true
+      categories:
+        - filter:
+            query: "@attributes.threateventid:[1102 TO 1104] OR
+              @attributes.threateventid:[1300 TO 1328] OR
+              @attributes.threateventid:[1400 TO 1431] OR
+              @attributes.threateventid:[18051 TO 18060] OR
+              @attributes.threateventid:[34852 TO 34855] OR
+              @attributes.threateventid:[34920 TO 34926] OR
+              @attributes.threateventid:[34935 TO 34938] OR
+              @attributes.threateventid:(1024 OR 1025 OR 1027 OR 1037 OR 1051 OR
+              1059 OR 1064 OR 1065 OR 1087 OR 1088 OR 1091 OR 1092 OR 1095 OR
+              1096 OR 1106 OR 1202 OR 1203 OR 1278 OR 1280 OR 1282 OR 1284 OR
+              1290 OR 1292 OR 34900 OR 34910 OR 34928)"
+          name: threat-prevention
+        - filter:
+            query: "@attributes.threateventid:[1118 TO 1121] OR
+              @attributes.threateventid:(34857 OR 34865)"
+          name: common
+        - filter:
+            query: "@attributes.threateventid:[35000 TO 35003] OR
+              @attributes.threateventid:[35009 TO 35011]"
+          name: firewall
+        - filter:
+            query: "@attributes.threateventid:[35100 TO 35107] OR
+              @attributes.threateventid:[35111 TO 35114] OR
+              @attributes.threateventid:[37275 TO 37280] OR
+              @attributes.threateventid:(35116 OR 35117)"
+          name: adaptive-threat-protection
+        - filter:
+            query: "@attributes.threateventid:(18600 OR 18601)"
+          name: web-protection
+      target: modulename
+    - type: service-remapper
+      name: Define `modulename` as the official service of the log
+      enabled: true
+      sources:
+        - modulename
+    - type: date-remapper
+      name: Define `attributes.detectedutc` as the official date of the log
+      enabled: true
+      sources:
+        - attributes.detectedutc
+    - type: category-processor
+      name: Threat name category processor
+      enabled: true
+      categories:
+        - filter:
+            query: '@attributes.threatname:" "'
+          name: N/A
+      target: attributes.threatname
+    - name: Lookup for `attributes.threattype`
+      enabled: true
+      source: attributes.threattype
+      target: attributes.threattype
+      lookupTable: |-
+        IDS_THREAT_TYPE_VALUE_AP,Access Protection
+        IDS_THREAT_TYPE_VALUE_DACAP,Dynamic Application Containment
+        IDS_THREAT_TYPE_VALUE_BOP,Exploit Prevention
+        IDS_FW_THREAT_TYPE_INTRUSION,Intrusion detected
+        IDS_THREAT_TYPE_DLD,Malicious file download
+        IDS_THREAT_TYPE_URL,Malicious URL
+        IDS_THREAT_TYPE_VALUE_NIPS,Network Intrusion Prevention System
+        IDS_ALERT_DET_TYP_NOT,Not specified
+        IDS_THREAT_TYPE_VALUE_SP,Self Protection
+        IDS_ALERT_DET_TYP_STE,Stealth
+        IDS_FW_THREAT_TYPE_TRAFFIC,Traffic allowed
+        IDS_FW_THREAT_TYPE_DETECTION,Traffic detected
+      type: lookup-processor
+    - type: category-processor
+      name: Threat type category processor
+      enabled: true
+      categories:
+        - filter:
+            query: '@attributes.threattype:" "'
+          name: N/A
+      target: attributes.threattype
+    - name: Lookup for `attributes.threatactiontaken`
+      enabled: true
+      source: attributes.threatactiontaken
+      target: attributes.threatactiontaken
+      lookupTable: >-
+        jticlient.allowed,Adaptive Threat Protection Allowed
+
+        jticlient.blocked,Adaptive Threat Protection Blocked
+
+        jticlient.repaired,Adaptive Threat Protection Cleaned
+
+        jticlient.contain,Adaptive Threat Protection Contained
+
+        jticlient.uncontain,Adaptive Threat Protection Released From Containment
+
+        jticlient.would.allowed,Adaptive Threat Protection Would Allow
+
+        jticlient.would.blocked,Adaptive Threat Protection Would Block
+
+        jticlient.would.repaired,Adaptive Threat Protection Would Clean
+
+        jticlient.would.contain,Adaptive Threat Protection Would Contain
+
+        jticlient.would.uncontain,Adaptive Threat Protection Would Release From Containment
+
+        IDS_ACTION_ADDED_REQ,Added requester
+
+        IDS_THREAT_ACTION_ALLOW,Allow
+
+        IDS_ALERT_ACT_TAK_ALLOW,Allow access
+
+        IDS_ALERT_ACT_TAK_BLO,Block
+
+        blocked,Blocked
+
+        IDS_ALERT_ACT_TAK_CLE,Clean
+
+        cleaned,Cleaned
+
+        IDS_ACTION_CONTAINED,Contained
+
+        IDS_ALERT_ACT_TAK_CONT,Continue scanning
+
+        IDS_ALERT_ACT_TAK_DEL,Delete
+
+        IDS_ALERT_ACT_TAK_WBD,Delete pending
+
+        IDS_ALERT_ACT_TAK_DEN,Deny access
+
+        execute.deny,Execute denied
+
+        IDS_ALERT_ACT_TAK_MOV,Move
+
+        moved,Moved
+
+        None,None
+
+        none,None
+
+        IDS_THREAT_ACTN_OBSRVD,Observed
+
+        IDS_ALERT_ACT_TAK_PRO,Prompt user
+
+        read.denied,Read denied
+
+        IDS_ACTION_UNCONTAINED,Released from containment
+
+        removed,Removed
+
+        IDS_ACTION_REM_REQ,Removed requester
+
+        IDS_THREAT_ACTION_WARN,Warned
+
+        IDS_ACTION_WOULD_BLOCK,Would block
+
+        IDS_ACTION_WOULD_CLEAN,Would clean
+
+        IDS_ACTION_WOULD_DELETE,Would delete
+
+        execute.woulddeny,Would deny executing
+
+        write.denied,Write denied
+      type: lookup-processor
+    - name: Lookup for `attributes.threatcategory`
+      enabled: true
+      source: attributes.threatcategory
+      target: attributes.threatcategory
+      lookupTable: |-
+        av,Malware
+        av.detect,Malware detected
+        av.detect.heuristics,Malware detected using heuristics
+        av.promptTimeout,Prompt - Timed Out
+        av.promptUnavailable,Prompt - Unavailable
+        av.promptUser,Prompt - User Response
+        av.reputation,Reputation
+        behavior.credtheft,Credential theft mitigated
+        fw,Firewall
+        fw.app.hook,Firewall application hook
+        fw.detect,Firewall detected
+        fw.intrusion,Intrusion detected
+        hip,Host intrusion
+        hip.app,Application monitoring
+        hip.app.block,Application block
+        hip.behavior.detect,Suspicious behavior detected
+        hip.bo,Host intrusion buffer overflow
+        hip.file,'File' class or access
+        hip.network.detect,Malicious site navigation
+        hip.process,'Process' class or access
+        hip.registry,'Registry' class or access
+        mail,Email
+        mail.filter,Email filtered
+        mail.phish,Email phishing detected
+        mail.spam,Email spam
+        mvedr.update.update,Update
+        nip,Network intrusion
+        nip.detect,Network intrusion detected
+        ops,Operational
+        ops.clilock,Client interface lockout
+        ops.fw.detect,Traffic detected
+        ops.fw.timedgroup,Timed groups
+        ops.fw.traffic,Traffic allowed
+        ops.informational.event,Informational event
+        ops.install,Install
+        ops.quar.restore,Quarantined item restored
+        ops.scan,Scan
+        ops.scan.cancel,Scan canceled
+        ops.scan.end,Scan ended
+        ops.scan.error,Scan failed
+        ops.scan.start,Scan started
+        ops.service,Service
+        ops.service.cancel,Service canceled
+        ops.service.end,Service ended
+        ops.service.error,Service failed
+        ops.service.start,Service started
+        ops.task,Task
+        ops.task.cancel,Task canceled
+        ops.task.deferred,Task deferred
+        ops.task.end,Task ended
+        ops.task.error,Task failed
+        ops.task.start,Task started
+        ops.uninstall,Uninstall
+        ops.update,Update
+        ops.update.cancel,Update canceled
+        ops.update.end,Update ended
+        ops.update.error,Update failed
+        ops.update.start,Update started
+        policy,Policy
+        policy.quarantine,Policy quarantine
+        tiem.AccessProtection.info,Access Protection
+        wp.detect.download,Malicious file download
+        wp.detect.url,Malicious site navigation
+      type: lookup-processor
+    - name: Lookup for
+        `attributes.extendedattributes.EPExtendedEvent.AttackVectorType`
+      enabled: true
+      source: attributes.extendedattributes.EPExtendedEvent.AttackVectorType
+      target: attributes.extendedattributes.EPExtendedEvent.AttackVectorType
+      lookupTable: |-
+        0,None
+        1,Web
+        2,External Device
+        3,Network
+        4,Local System
+        5,File Share
+      type: lookup-processor
+    - type: attribute-remapper
+      name: Map `attributes.sourceipv4` to `network.client.ip`
+      enabled: true
+      sources:
+        - attributes.sourceipv4
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `attributes.targetipv4` to `network.destination.ip`
+      enabled: true
+      sources:
+        - attributes.targetipv4
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `attributes.targetport` to `network.destination.port`
+      enabled: true
+      sources:
+        - attributes.targetport
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `attributes.sourceusername` to `usr.name`
+      enabled: true
+      sources:
+        - attributes.sourceusername
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - name: Lookup on `attributes.threatseverity` to `severity`
+      enabled: true
+      source: attributes.threatseverity
+      target: severity
+      lookupTable: |-
+        0,Emergency
+        1,Alert
+        2,Critical
+        3,Warning
+        4,Warning
+        5,Notice
+        6,Info
+        7,Debug
+      defaultLookup: Info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity

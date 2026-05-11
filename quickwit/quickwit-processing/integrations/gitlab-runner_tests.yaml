@@ -1,0 +1,72 @@
+id: "gitlab-runner"
+tests:
+ -
+  sample: "Aug 19 09:11:49 vagrant gitlab-runner[5219]: Running in system-mode."
+  result:
+    custom:
+      date: 19905109000
+      syslog:
+        appname: "gitlab-runner"
+        hostname: "vagrant"
+    message: "Running in system-mode."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 19905109000
+ -
+  sample: "Aug 19 09:14:31 vagrant gitlab-runner[5219]: {\"StopSignal\":15,\"builds\":0,\"level\":\"warning\",\"msg\":\"Starting forceful shutdown\",\"time\":\"2020-08-19T09:14:31Z\"}"
+  result:
+    custom:
+      date: 19905271000
+      properties:
+        StopSignal: 15
+        builds: 0
+        level: "warning"
+        msg: "Starting forceful shutdown"
+        time: "2020-08-19T09:14:31Z"
+      syslog:
+        appname: "gitlab-runner"
+        hostname: "vagrant"
+    message: "{\"StopSignal\":15,\"builds\":0,\"level\":\"warning\",\"msg\":\"Starting forceful shutdown\",\"time\":\"2020-08-19T09:14:31Z\"}"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 19905271000
+ -
+  sample: "Job succeeded                  \e[0;m  duration\e[0;m=24.383583446s job\e[0;m=2154106 project\e[0;m=141 runner\e[0;m=cxxE2HUr"
+  result:
+    custom:
+      job:
+        duration: 24.383583446
+        id: 2154106
+        outcome: "succeeded"
+        runner: "cxxE2HUr"
+      project:
+        id: 141
+    message: "Job succeeded                  \e[0;m  duration\e[0;m=24.383583446s job\e[0;m=2154106 project\e[0;m=141 runner\e[0;m=cxxE2HUr"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "Checking for jobs... received                     \e[0;m  job\e[0;m=2154106 repo_url\e[0;m=https://this-is-an-url/repo.git runner\e[0;m=cxxE2HUr"
+  result:
+    custom:
+      job:
+        id: 2154106
+        outcome: "received"
+        runner: "cxxE2HUr"
+      url: "https://this-is-an-url/repo.git"
+    message: "Checking for jobs... received                     \e[0;m  job\e[0;m=2154106 repo_url\e[0;m=https://this-is-an-url/repo.git runner\e[0;m=cxxE2HUr"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "ERROR: Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
+  result:
+    custom:
+      level: "ERROR"
+      message: "Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
+    message: "ERROR: Failed to load config Near line 3 (last key parsed 'log_format'): expected value but found 'json' instead  builds=0"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

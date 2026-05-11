@@ -1,0 +1,67 @@
+id: "vercel"
+tests:
+ -
+  sample: |-
+    {
+      "proxy" : {
+        "referer" : "https://verceltb.vercel.app/",
+        "path" : "/api/date",
+        "scheme" : "https",
+        "method" : "GET",
+        "clientIp" : "64.145.79.247",
+        "host" : "verceltb.vercel.app",
+        "userAgent" : [ "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36" ],
+        "region" : "iad1",
+        "timestamp" : 1629819797810,
+        "statusCode" : 200
+      },
+      "deploymentId" : "dpl_A1Hx5vjZxt2sWtMFQwbmr9xEBAD8",
+      "host" : "verceltb-9hrosuv8e-zaphodBeeblebrox-dd.vercel.app",
+      "id" : "AQAAAXt41IE0oGI-bAAAAABBWHQ0MU5nckFBQTBpd2dER0dtRDN3QUE",
+      "source" : "lambda",
+      "message" : "START RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b Version: $LATEST END RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b REPORT RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b Duration: 0.58 ms Billed Duration: 1 ms Memory Size: 1024 MB Max Memory Used: 31 MB",
+      "projectId" : "prj_WTsCRsCir3qyRE9iijJyTc7PqywW",
+      "timestamp" : "2021-08-24T15:43:17.812Z",
+      "tags" : [ "source:vercel" ]
+    }
+  result:
+    custom:
+      deploymentId: "dpl_A1Hx5vjZxt2sWtMFQwbmr9xEBAD8"
+      http:
+        status_category: "OK"
+      id: "AQAAAXt41IE0oGI-bAAAAABBWHQ0MU5nckFBQTBpd2dER0dtRDN3QUE"
+      lambda:
+        billed_duration: 1.0
+        duration: 580000.0
+        execution: 1024.0
+        max_memory_used: 31.0
+        memorysize: 1024.0
+        request_id: "85ea8a46-d63e-4fe3-ad03-ade7c16cd36b"
+      network:
+        client:
+          geoip: {}
+      projectId: "prj_WTsCRsCir3qyRE9iijJyTc7PqywW"
+      proxy:
+        clientIp: "64.145.79.247"
+        host: "verceltb.vercel.app"
+        method: "GET"
+        path: "/api/date"
+        referer: "https://verceltb.vercel.app/"
+        region: "iad1"
+        scheme: "https"
+        statusCode: 200
+        timestamp: 1629819797810
+        userAgent:
+         - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36"
+      source: "lambda"
+      tags:
+       - "source:vercel"
+      timestamp: "2021-08-24T15:43:17.812Z"
+      url_host: "verceltb-9hrosuv8e-zaphodBeeblebrox-dd.vercel.app"
+    message: "START RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b Version: $LATEST END RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b REPORT RequestId: 85ea8a46-d63e-4fe3-ad03-ade7c16cd36b Duration: 0.58 ms Billed Duration: 1 ms Memory Size: 1024 MB Max Memory Used: 31 MB"
+    service: "verceltb.vercel.app"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1629819797810
+

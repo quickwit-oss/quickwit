@@ -1,0 +1,29 @@
+id: "gearman"
+tests:
+ -
+  sample: "   INFO 2020-09-17 08:42:47.694222 [  main ] Initializing Gear on port 4730 with SSL: false"
+  result:
+    custom:
+      date: 1600332167694
+      level: "INFO"
+      thread:
+        name: "main"
+    message: "Initializing Gear on port 4730 with SSL: false"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600332167694
+ -
+  sample: "   ERROR 2020-09-17 09:37:50.000000 [  main ] Timeout occurred when calling bind() for 0.0.0.0:4730 -> libgearman-server/gearmand.cc:688"
+  result:
+    custom:
+      date: 1600335470000
+      level: "ERROR"
+      thread:
+        name: "main"
+    message: "Timeout occurred when calling bind() for 0.0.0.0:4730 -> libgearman-server/gearmand.cc:688"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600335470000
+

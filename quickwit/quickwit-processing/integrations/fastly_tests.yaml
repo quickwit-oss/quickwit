@@ -1,0 +1,281 @@
+id: "fastly"
+tests:
+ -
+  sample: |-
+    {
+      "date" : "2019-09-09T15:59:32GMT",
+      "is_h2" : true,
+      "socket_tcpi_delta_retrans" : 0,
+      "tls_client_tlsexts_sha" : "+ykYgVMJQYBM/TEumTThHrVLKWE=",
+      "request_x_att_device_id" : "",
+      "response_tsv" : "",
+      "socket_tcpi_rtt" : 3014,
+      "host" : "",
+      "request_accept_language" : "en-US,en;q=0.9",
+      "socket_tcpi_rcv_mss" : 536,
+      "tls_client_protocol" : "TLSv1.2",
+      "tls_client_servername" : "p.datadoghq.eu",
+      "request_forwarded" : "",
+      "request_connection" : "",
+      "tls_client_cipher" : "ECDHE-RSA-AES128-GCM-SHA256",
+      "socket_cwnd" : 72,
+      "socket_tcpi_rcv_space" : 29198,
+      "origin_host" : "p.datadoghq.eu",
+      "http" : {
+        "request_x_forwarded_for" : "185.64.148.0",
+        "referer" : "https://p.datadoghq.eu/sb/186a2f046-d82976713ccdc4b46d02de538e592a38?tv_mode=true",
+        "protocol" : "HTTP/1.1",
+        "status_code" : 200,
+        "method" : "GET",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36",
+        "request_time_ms" : 198,
+        "url" : "/screen/shared_batch_update/186a2f046-d82976713ccdc4b46d02de538e592a38?tpl_var_Cluster=cluster%3Aeu-production"
+      },
+      "socket_tcpi_rcv_rtt" : 170398176,
+      "socket_tcpi_last_data_sent" : 0,
+      "request_accept_charset" : "",
+      "h2_stream_id" : "321",
+      "response_last_modified" : "",
+      "time_start" : "2019-09-09T15:59:32GMT",
+      "is_tls" : true,
+      "socket_tcpi_snd_mss" : 1440,
+      "is_ipv6" : false,
+      "socket_tcpi_total_retrans" : 14,
+      "request_via" : "",
+      "response_age" : "58",
+      "network" : {
+        "bytes_written" : 89403,
+        "geoip" : {
+          "geo_region" : "AB",
+          "geo_continent_code" : "EU",
+          "geo_country_code" : "SE",
+          "geo_city" : "stockholm"
+        },
+        "destination" : {
+          "ip" : "151.101.86.49"
+        },
+        "client" : {
+          "number" : "8473",
+          "ip" : "185.64.148.0",
+          "name" : "bahnhof internet ab",
+          "connection_speed" : "broadband"
+        },
+        "bytes_read" : 0
+      },
+      "request_accept_content" : "application/json, text/javascript, */*; q=0.01",
+      "content_type" : "application/json",
+      "request_cache_control" : "",
+      "request_x_requested_with" : "XMLHttpRequest",
+      "time_end" : "2019-09-09T15:59:32GMT",
+      "socket_ploss" : 0,
+      "tls_client_cipher_sha" : "6T0DLAYR7m4S8eIXybmVHTF6MqQ=",
+      "req_header_size" : 630,
+      "socket_tcpi_rttvar" : 3472,
+      "is_cacheable" : true,
+      "request_accept_encoding" : "gzip",
+      "request_dnt" : "",
+      "is_h2_push" : false,
+      "response_cache_control" : "max-age=60",
+      "socket_nexthop" : "172.22.32.1",
+      "service" : "5MwUBaHwiTChrf7dLMdVia",
+      "server_datacenter" : "BMA",
+      "resp_header_size" : 505,
+      "response_expires" : ""
+    }
+  result:
+    custom:
+      content_type: "application/json"
+      date: "2019-09-09T15:59:32GMT"
+      duration: 198000.0
+      h2_stream_id: "321"
+      host: ""
+      http:
+        method: "GET"
+        protocol: "HTTP/1.1"
+        referer: "https://p.datadoghq.eu/sb/186a2f046-d82976713ccdc4b46d02de538e592a38?tv_mode=true"
+        request_time_ms: 198
+        request_x_forwarded_for: "185.64.148.0"
+        status_category: "OK"
+        status_code: 200
+        url: "/screen/shared_batch_update/186a2f046-d82976713ccdc4b46d02de538e592a38?tpl_var_Cluster=cluster%3Aeu-production"
+        url_details:
+          path: "/screen/shared_batch_update/186a2f046-d82976713ccdc4b46d02de538e592a38"
+          queryString:
+            tpl_var_Cluster: "cluster%3Aeu-production"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "63"
+            minor: "0"
+            patch: "3239"
+            patch_minor: "132"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      is_cacheable: true
+      is_h2: true
+      is_h2_push: false
+      is_ipv6: false
+      is_tls: true
+      network:
+        bytes_read: 0
+        bytes_written: 89403
+        client:
+          connection_speed: "broadband"
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          name: "bahnhof internet ab"
+          number: "8473"
+        destination:
+          ip: "151.101.86.49"
+        geoip:
+          geo_city: "stockholm"
+          geo_continent_code: "EU"
+          geo_country_code: "SE"
+          geo_region: "AB"
+      origin_host: "p.datadoghq.eu"
+      req_header_size: 630
+      request_accept_charset: ""
+      request_accept_content: "application/json, text/javascript, */*; q=0.01"
+      request_accept_encoding: "gzip"
+      request_accept_language: "en-US,en;q=0.9"
+      request_cache_control: ""
+      request_connection: ""
+      request_dnt: ""
+      request_forwarded: ""
+      request_via: ""
+      request_x_att_device_id: ""
+      request_x_requested_with: "XMLHttpRequest"
+      resp_header_size: 505
+      response_age: "58"
+      response_cache_control: "max-age=60"
+      response_expires: ""
+      response_last_modified: ""
+      response_tsv: ""
+      server_datacenter: "BMA"
+      service: "5MwUBaHwiTChrf7dLMdVia"
+      socket_cwnd: 72
+      socket_nexthop: "172.22.32.1"
+      socket_ploss: 0
+      socket_tcpi_delta_retrans: 0
+      socket_tcpi_last_data_sent: 0
+      socket_tcpi_rcv_mss: 536
+      socket_tcpi_rcv_rtt: 170398176
+      socket_tcpi_rcv_space: 29198
+      socket_tcpi_rtt: 3014
+      socket_tcpi_rttvar: 3472
+      socket_tcpi_snd_mss: 1440
+      socket_tcpi_total_retrans: 14
+      time_end: "2019-09-09T15:59:32GMT"
+      time_start: "2019-09-09T15:59:32GMT"
+      tls_client_cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+      tls_client_cipher_sha: "6T0DLAYR7m4S8eIXybmVHTF6MqQ="
+      tls_client_protocol: "TLSv1.2"
+      tls_client_servername: "p.datadoghq.eu"
+      tls_client_tlsexts_sha: "+ykYgVMJQYBM/TEumTThHrVLKWE="
+    message: |-
+      {
+        "date" : "2019-09-09T15:59:32GMT",
+        "is_h2" : true,
+        "socket_tcpi_delta_retrans" : 0,
+        "tls_client_tlsexts_sha" : "+ykYgVMJQYBM/TEumTThHrVLKWE=",
+        "request_x_att_device_id" : "",
+        "response_tsv" : "",
+        "socket_tcpi_rtt" : 3014,
+        "host" : "",
+        "request_accept_language" : "en-US,en;q=0.9",
+        "socket_tcpi_rcv_mss" : 536,
+        "tls_client_protocol" : "TLSv1.2",
+        "tls_client_servername" : "p.datadoghq.eu",
+        "request_forwarded" : "",
+        "request_connection" : "",
+        "tls_client_cipher" : "ECDHE-RSA-AES128-GCM-SHA256",
+        "socket_cwnd" : 72,
+        "socket_tcpi_rcv_space" : 29198,
+        "origin_host" : "p.datadoghq.eu",
+        "http" : {
+          "request_x_forwarded_for" : "185.64.148.0",
+          "referer" : "https://p.datadoghq.eu/sb/186a2f046-d82976713ccdc4b46d02de538e592a38?tv_mode=true",
+          "protocol" : "HTTP/1.1",
+          "status_code" : 200,
+          "method" : "GET",
+          "useragent" : "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36",
+          "request_time_ms" : 198,
+          "url" : "/screen/shared_batch_update/186a2f046-d82976713ccdc4b46d02de538e592a38?tpl_var_Cluster=cluster%3Aeu-production"
+        },
+        "socket_tcpi_rcv_rtt" : 170398176,
+        "socket_tcpi_last_data_sent" : 0,
+        "request_accept_charset" : "",
+        "h2_stream_id" : "321",
+        "response_last_modified" : "",
+        "time_start" : "2019-09-09T15:59:32GMT",
+        "is_tls" : true,
+        "socket_tcpi_snd_mss" : 1440,
+        "is_ipv6" : false,
+        "socket_tcpi_total_retrans" : 14,
+        "request_via" : "",
+        "response_age" : "58",
+        "network" : {
+          "bytes_written" : 89403,
+          "geoip" : {
+            "geo_region" : "AB",
+            "geo_continent_code" : "EU",
+            "geo_country_code" : "SE",
+            "geo_city" : "stockholm"
+          },
+          "destination" : {
+            "ip" : "151.101.86.49"
+          },
+          "client" : {
+            "number" : "8473",
+            "ip" : "185.64.148.0",
+            "name" : "bahnhof internet ab",
+            "connection_speed" : "broadband"
+          },
+          "bytes_read" : 0
+        },
+        "request_accept_content" : "application/json, text/javascript, */*; q=0.01",
+        "content_type" : "application/json",
+        "request_cache_control" : "",
+        "request_x_requested_with" : "XMLHttpRequest",
+        "time_end" : "2019-09-09T15:59:32GMT",
+        "socket_ploss" : 0,
+        "tls_client_cipher_sha" : "6T0DLAYR7m4S8eIXybmVHTF6MqQ=",
+        "req_header_size" : 630,
+        "socket_tcpi_rttvar" : 3472,
+        "is_cacheable" : true,
+        "request_accept_encoding" : "gzip",
+        "request_dnt" : "",
+        "is_h2_push" : false,
+        "response_cache_control" : "max-age=60",
+        "socket_nexthop" : "172.22.32.1",
+        "service" : "5MwUBaHwiTChrf7dLMdVia",
+        "server_datacenter" : "BMA",
+        "resp_header_size" : 505,
+        "response_expires" : ""
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

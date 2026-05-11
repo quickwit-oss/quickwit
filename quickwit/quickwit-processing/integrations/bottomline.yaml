@@ -1,0 +1,163 @@
+id: bottomline
+metric_id: bottomline-recordandreplay
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline User Action
+    path: bottomline.mainframe.activity.@usr.action
+    source: log
+  - groups:
+      - bottomline
+    name: User Duration
+    path: bottomline.mainframe.activity.usr.duration
+    source: log
+  - groups:
+      - bottomline
+    name: Resource Code
+    path: bottomline.mainframe.activity.resource.code
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Account ID
+    path: bottomline.mainframe.activity.account.id
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Customer ID
+    path: bottomline.mainframe.activity.customer.id
+    source: log
+  - groups:
+      - bottomline
+    name: Session Id
+    path: bottomline.mainframe.activity.session.id
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Money Reference
+    path: bottomline.mainframe.activity.money.reference
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Money Transaction Type
+    path: bottomline.mainframe.activity.money.transaction_type
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Resource Duration
+    path: bottomline.mainframe.activity.resource.duration
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Resource Name
+    path: bottomline.mainframe.activity.resource.name
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Activity Type
+    path: bottomline.mainframe.activity.type
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Money Amount
+    path: bottomline.mainframe.activity.money.amount
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Session Type
+    path: bottomline.mainframe.activity.session.type
+    source: log
+  - groups:
+      - bottomline
+    name: Bottomline Session Source
+    path: bottomline.mainframe.activity.session.source
+    source: log
+pipeline:
+  type: pipeline
+  name: Bottomline Record and Replay Integration Pipeline
+  enabled: true
+  filter:
+    query: source:bottomline
+  processors:
+    - type: message-remapper
+      name: Define `bottomline.mainframe.activity.message` as the official message of the log
+      enabled: true
+      sources:
+        - bottomline.mainframe.activity.message
+    - type: date-remapper
+      name: Define `bottomline.mainframe.activity.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - bottomline.mainframe.activity.timestamp
+    - type: attribute-remapper
+      name: Map `bottomline.mainframe.activity.network.client.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - bottomline.mainframe.activity.network.client.ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `bottomline.mainframe.activity.network.destination.ip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - bottomline.mainframe.activity.network.destination.ip
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Client GeoIP Processor
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing

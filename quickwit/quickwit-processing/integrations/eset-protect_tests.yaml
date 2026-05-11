@@ -1,0 +1,506 @@
+id: eset-protect
+tests:
+  - sample: |-
+      {
+          "severity": "Information",
+          "occured": "13-May-2025 09:51:12",
+          "source_uuid": "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "target": "Administrator",
+          "result": "Success",
+          "hostname": "win-eset",
+          "event_type": "Audit_Event",
+          "ipv4": "10.10.10.10",
+          "domain": "Native user",
+          "action": "Login attempt",
+          "detail": "Authenticating native user 'administrator'.",
+          "user": ""
+        }
+    result:
+      custom:
+        action: "Login attempt"
+        detail: "Authenticating native user 'administrator'."
+        domain: "Native user"
+        event_type: "Audit_Event"
+        hostname: "win-eset"
+        ipv4: "10.10.10.10"
+        occured: 1747129872000
+        result: "Success"
+        severity: "Information"
+        source_uuid: "3144d5db-1bb7-4b4b-9393-b1eb601ec052"
+        status: "info"
+        user: ""
+        usr:
+          name: "Administrator"
+      message: |-
+        {
+          "severity" : "Information",
+          "result" : "Success",
+          "hostname" : "win-eset",
+          "event_type" : "Audit_Event",
+          "ipv4" : "10.10.10.10",
+          "occured" : "13-May-2025 09:51:12",
+          "domain" : "Native user",
+          "action" : "Login attempt",
+          "source_uuid" : "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "detail" : "Authenticating native user 'administrator'.",
+          "user" : "",
+          "target" : "Administrator"
+        }
+      service: "Audit_Event"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1747129872000
+  - sample: |-
+      {
+          "severity": "Information",
+          "occured": "08-May-2025 11:30:20",
+          "source_uuid": "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "target": "488b9f4c-b100-4cc8-88d0-5a291da69b72",
+          "result": "Success",
+          "hostname": "win-eset",
+          "event_type": "Audit_Event",
+          "ipv4": "10.10.10.10",
+          "domain": "License",
+          "action": "Deactivate",
+          "detail": "Deactivating all active units for license '3BB-VD8-EKH' on computer 'desktop-20gupv6'.",
+          "user": "Administrator"
+        }
+    result:
+      custom:
+        action: "Deactivate"
+        computer_name: "desktop-20gupv6"
+        detail: "Deactivating all active units for license '3BB-VD8-EKH' on computer 'desktop-20gupv6'."
+        domain: "License"
+        event_type: "Audit_Event"
+        hostname: "win-eset"
+        ipv4: "10.10.10.10"
+        license_name: "3BB-VD8-EKH"
+        occured: 1746703820000
+        result: "Success"
+        severity: "Information"
+        source_uuid: "3144d5db-1bb7-4b4b-9393-b1eb601ec052"
+        status: "info"
+        target: "488b9f4c-b100-4cc8-88d0-5a291da69b72"
+        usr:
+          name: "Administrator"
+      message: |-
+        {
+          "severity" : "Information",
+          "result" : "Success",
+          "hostname" : "win-eset",
+          "event_type" : "Audit_Event",
+          "ipv4" : "10.10.10.10",
+          "occured" : "08-May-2025 11:30:20",
+          "domain" : "License",
+          "action" : "Deactivate",
+          "source_uuid" : "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "detail" : "Deactivating all active units for license '3BB-VD8-EKH' on computer 'desktop-20gupv6'.",
+          "user" : "Administrator",
+          "target" : "488b9f4c-b100-4cc8-88d0-5a291da69b72"
+        }
+      service: "Audit_Event"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1746703820000
+  - sample: |-
+      {
+          "severity": "Information",
+          "occured": "29-Apr-2025 09:14:13",
+          "source_uuid": "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "target": "24a76737-26e1-497d-beeb-e5d54668ac36",
+          "result": "Success",
+          "hostname": "win-eset",
+          "event_type": "Audit_Event",
+          "ipv4": "10.10.10.10",
+          "domain": "User group",
+          "action": "Delete",
+          "detail": "Removing user group 'Test G2' in group 'All groups\\Test G11'.",
+          "user": "Administrator"
+        }
+    result:
+      custom:
+        action: "Delete"
+        detail: "Removing user group 'Test G2' in group 'All groups\\Test G11'."
+        domain: "User group"
+        event_type: "Audit_Event"
+        hostname: "win-eset"
+        ipv4: "10.10.10.10"
+        object_name: "Test G2"
+        occured: 1745918053000
+        result: "Success"
+        severity: "Information"
+        source_uuid: "3144d5db-1bb7-4b4b-9393-b1eb601ec052"
+        status: "info"
+        target: "24a76737-26e1-497d-beeb-e5d54668ac36"
+        usr:
+          name: "Administrator"
+      message: |-
+        {
+          "severity" : "Information",
+          "result" : "Success",
+          "hostname" : "win-eset",
+          "event_type" : "Audit_Event",
+          "ipv4" : "10.10.10.10",
+          "occured" : "29-Apr-2025 09:14:13",
+          "domain" : "User group",
+          "action" : "Delete",
+          "source_uuid" : "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "detail" : "Removing user group 'Test G2' in group 'All groups\\Test G11'.",
+          "user" : "Administrator",
+          "target" : "24a76737-26e1-497d-beeb-e5d54668ac36"
+        }
+      service: "Audit_Event"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1745918053000
+  - sample: |-
+      {
+          "severity": "Information",
+          "occured": "07-May-2025 07:40:59",
+          "source_uuid": "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "target": "Datadog",
+          "result": "Success",
+          "hostname": "win-eset",
+          "event_type": "Audit_Event",
+          "ipv4": "10.10.10.10",
+          "domain": "Native user",
+          "action": "Create",
+          "detail": "Creating native user 'Datadog'.",
+          "user": "Administrator"
+        }
+    result:
+      custom:
+        action: "Create"
+        detail: "Creating native user 'Datadog'."
+        domain: "Native user"
+        event_type: "Audit_Event"
+        hostname: "win-eset"
+        ipv4: "10.10.10.10"
+        object_name: "Datadog"
+        occured: 1746603659000
+        result: "Success"
+        severity: "Information"
+        source_uuid: "3144d5db-1bb7-4b4b-9393-b1eb601ec052"
+        status: "info"
+        target: "Datadog"
+        usr:
+          name: "Administrator"
+      message: |-
+        {
+          "severity" : "Information",
+          "result" : "Success",
+          "hostname" : "win-eset",
+          "event_type" : "Audit_Event",
+          "ipv4" : "10.10.10.10",
+          "occured" : "07-May-2025 07:40:59",
+          "domain" : "Native user",
+          "action" : "Create",
+          "source_uuid" : "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "detail" : "Creating native user 'Datadog'.",
+          "user" : "Administrator",
+          "target" : "Datadog"
+        }
+      service: "Audit_Event"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1746603659000
+  - sample: |-
+      {
+          "severity": "Warning",
+          "target_address": "10.10.10.10",
+          "group_name": "All/Lost & found",
+          "inbound": true,
+          "occured": "13-May-2025 11:58:27",
+          "aggregate_count": 6,
+          "group_desription": "Lost & found static group",
+          "source_uuid": "a0e906b8-4214-41ab-8d41-4c52dc4ade8f",
+          "hostname": "win-eset",
+          "protocol": "ARP",
+          "event_type": "FirewallAggregated_Event",
+          "target_address_type": "IPv4",
+          "threat_name": "ARP/CachePoisoningAttack",
+          "ipv4": "10.10.10.10",
+          "source_address_type": "IPv4",
+          "source_address": "10.10.10.10",
+          "handled": true,
+          "os_name": "Microsoft Windows Server 2022 Standard Evaluation",
+          "action": "Blocked",
+          "event": "ARP Cache Poisoning attack"
+        }
+    result:
+      custom:
+        action: "Blocked"
+        aggregate_count: 6
+        event_type: "FirewallAggregated_Event"
+        evt:
+          name: "ARP Cache Poisoning attack"
+        group_desription: "Lost & found static group"
+        group_name: "All/Lost & found"
+        handled: true
+        hostname: "win-eset"
+        inbound: true
+        ipv4: "10.10.10.10"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        occured: 1747137507000
+        os:
+          name: "Microsoft Windows Server 2022 Standard Evaluation"
+        protocol: "ARP"
+        severity: "Warning"
+        source_address_type: "IPv4"
+        source_uuid: "a0e906b8-4214-41ab-8d41-4c52dc4ade8f"
+        status: "warning"
+        target_address_type: "IPv4"
+        threat_name: "ARP/CachePoisoningAttack"
+      message: |-
+        {
+          "severity" : "Warning",
+          "target_address" : "10.10.10.10",
+          "group_name" : "All/Lost & found",
+          "inbound" : true,
+          "occured" : "13-May-2025 11:58:27",
+          "aggregate_count" : 6,
+          "group_desription" : "Lost & found static group",
+          "source_uuid" : "a0e906b8-4214-41ab-8d41-4c52dc4ade8f",
+          "hostname" : "win-eset",
+          "protocol" : "ARP",
+          "event_type" : "FirewallAggregated_Event",
+          "target_address_type" : "IPv4",
+          "threat_name" : "ARP/CachePoisoningAttack",
+          "ipv4" : "10.10.10.10",
+          "source_address_type" : "IPv4",
+          "source_address" : "10.10.10.10",
+          "handled" : true,
+          "os_name" : "Microsoft Windows Server 2022 Standard Evaluation",
+          "action" : "Blocked",
+          "event" : "ARP Cache Poisoning attack"
+        }
+      service: "FirewallAggregated_Event"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1747137507000
+  - sample: |-
+      {
+          "severity": "Warning",
+          "target_address": "10.10.10.10",
+          "group_name": "All/Companies/Test/Test New Static Group",
+          "occured": "12-May-2025 06:18:57",
+          "processname": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+          "group_desription": "Test New Static Group",
+          "action_taken": "Blocked URL",
+          "source_uuid": "f1641561-3aa1-46bd-8292-e490c90badca",
+          "rule_id": "Blocked by Anti-Phishing blacklist",
+          "scanner_id": "HTTP filter",
+          "hostname": "assettag-eid",
+          "event_type": "FilteredWebsites_Event",
+          "target_address_type": "IPv4",
+          "ipv4": "10.10.10.10",
+          "handled": true,
+          "object_uri": "https://www.atc-secure.com",
+          "os_name": "Microsoft Windows 11 Pro",
+          "event": "An attempt to connect to URL",
+          "hash": "F3B15DBF7DABB37266B13CB67EC36EA819EBD0AD",
+          "username": "CLW-933-WIN\\Test"
+        }
+    result:
+      custom:
+        action_taken: "Blocked URL"
+        event_type: "FilteredWebsites_Event"
+        evt:
+          name: "An attempt to connect to URL"
+        group_desription: "Test New Static Group"
+        group_name: "All/Companies/Test/Test New Static Group"
+        handled: true
+        hash: "F3B15DBF7DABB37266B13CB67EC36EA819EBD0AD"
+        hostname: "assettag-eid"
+        ipv4: "10.10.10.10"
+        network:
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        object_uri: "https://www.atc-secure.com"
+        occured: 1747030737000
+        os:
+          name: "Microsoft Windows 11 Pro"
+        processname: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        rule_id: "Blocked by Anti-Phishing blacklist"
+        scanner_id: "HTTP filter"
+        severity: "Warning"
+        source_uuid: "f1641561-3aa1-46bd-8292-e490c90badca"
+        status: "warning"
+        target_address_type: "IPv4"
+        usr:
+          name: "CLW-933-WIN\\Test"
+      message: |-
+        {
+          "severity" : "Warning",
+          "target_address" : "10.10.10.10",
+          "group_name" : "All/Companies/Test/Test New Static Group",
+          "occured" : "12-May-2025 06:18:57",
+          "processname" : "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+          "group_desription" : "Test New Static Group",
+          "action_taken" : "Blocked URL",
+          "source_uuid" : "f1641561-3aa1-46bd-8292-e490c90badca",
+          "rule_id" : "Blocked by Anti-Phishing blacklist",
+          "scanner_id" : "HTTP filter",
+          "hostname" : "assettag-eid",
+          "event_type" : "FilteredWebsites_Event",
+          "target_address_type" : "IPv4",
+          "ipv4" : "10.10.10.10",
+          "handled" : true,
+          "object_uri" : "https://www.atc-secure.com",
+          "os_name" : "Microsoft Windows 11 Pro",
+          "event" : "An attempt to connect to URL",
+          "hash" : "F3B15DBF7DABB37266B13CB67EC36EA819EBD0AD",
+          "username" : "CLW-933-WIN\\Test"
+        }
+      service: "FilteredWebsites_Event"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1747030737000
+  - sample: |-
+      {
+          "firstseen": "23-Dec-2023 22:19:54",
+          "scanner_id": "Real-time file system protection",
+          "hostname": "assettag-eid",
+          "event_type": "Threat_Event",
+          "ipv4": "10.10.10.10",
+          "threat_handled": false,
+          "need_restart": false,
+          "threat_type": "Potentially unsafe application",
+          "severity": "Critical",
+          "circumstances": "Event occurred during an attempt to access the file.",
+          "group_name": "All/Companies/Test/Test New Static Group",
+          "object_type": "File",
+          "occured": "12-May-2025 07:26:20",
+          "processname": "C:\\Windows\\System32\\SearchProtocolHost.exe",
+          "group_desription": "Test New Static Group",
+          "action_taken": "Retained",
+          "source_uuid": "f1641561-3aa1-46bd-8292-e490c90badca",
+          "threat_name": "MSIL/BadJoke.Agent.AP",
+          "object_uri": "file:///C:/Users/Test/Downloads/The-MALWARE-Repo-master/The-MALWARE-Repo-master/Joke/YouAreAnIdiot/EXEVersion/YouAreAnIdiot.exe",
+          "os_name": "Microsoft Windows 11 Pro",
+          "scan_id": "virlog.dat",
+          "engine_version": "31164 (20250508)",
+          "hash": "E7DCD6C23C72209EE5AA0890372DE1CE52045815",
+          "username": "NT AUTHORITY\\SYSTEM"
+        }
+    result:
+      custom:
+        action_taken: "Retained"
+        circumstances: "Event occurred during an attempt to access the file."
+        engine_version: "31164 (20250508)"
+        event_type: "Threat_Event"
+        firstseen: "23-Dec-2023 22:19:54"
+        group_desription: "Test New Static Group"
+        group_name: "All/Companies/Test/Test New Static Group"
+        hash: "E7DCD6C23C72209EE5AA0890372DE1CE52045815"
+        hostname: "assettag-eid"
+        ipv4: "10.10.10.10"
+        need_restart: false
+        object_type: "File"
+        object_uri: "file:///C:/Users/Test/Downloads/The-MALWARE-Repo-master/The-MALWARE-Repo-master/Joke/YouAreAnIdiot/EXEVersion/YouAreAnIdiot.exe"
+        occured: 1747034780000
+        os:
+          name: "Microsoft Windows 11 Pro"
+        processname: "C:\\Windows\\System32\\SearchProtocolHost.exe"
+        scan_id: "virlog.dat"
+        scanner_id: "Real-time file system protection"
+        severity: "Critical"
+        source_uuid: "f1641561-3aa1-46bd-8292-e490c90badca"
+        status: "critical"
+        threat_handled: false
+        threat_name: "MSIL/BadJoke.Agent.AP"
+        threat_type: "Potentially unsafe application"
+        usr:
+          name: "NT AUTHORITY\\SYSTEM"
+      message: |-
+        {
+          "severity" : "Critical",
+          "circumstances" : "Event occurred during an attempt to access the file.",
+          "group_name" : "All/Companies/Test/Test New Static Group",
+          "object_type" : "File",
+          "occured" : "12-May-2025 07:26:20",
+          "processname" : "C:\\Windows\\System32\\SearchProtocolHost.exe",
+          "group_desription" : "Test New Static Group",
+          "action_taken" : "Retained",
+          "source_uuid" : "f1641561-3aa1-46bd-8292-e490c90badca",
+          "firstseen" : "23-Dec-2023 22:19:54",
+          "scanner_id" : "Real-time file system protection",
+          "hostname" : "assettag-eid",
+          "event_type" : "Threat_Event",
+          "threat_name" : "MSIL/BadJoke.Agent.AP",
+          "ipv4" : "10.10.10.10",
+          "threat_handled" : false,
+          "object_uri" : "file:///C:/Users/Test/Downloads/The-MALWARE-Repo-master/The-MALWARE-Repo-master/Joke/YouAreAnIdiot/EXEVersion/YouAreAnIdiot.exe",
+          "need_restart" : false,
+          "threat_type" : "Potentially unsafe application",
+          "os_name" : "Microsoft Windows 11 Pro",
+          "scan_id" : "virlog.dat",
+          "engine_version" : "31164 (20250508)",
+          "hash" : "E7DCD6C23C72209EE5AA0890372DE1CE52045815",
+          "username" : "NT AUTHORITY\\SYSTEM"
+        }
+      service: "Threat_Event"
+      status: "critical"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1747034780000
+  - sample: |-
+      {
+        "severity": "Error",
+        "result": "Access denied",
+        "hostname": "win-eset",
+        "event_type": "Audit_Event",
+        "ipv4": "10.10.10.10",
+        "occured": "21-May-2025 12:19:42",
+        "domain": "Native user",
+        "action": "Login attempt",
+        "source_uuid": "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+        "detail": "Authenticating native user 'test-user'.",
+        "user": ""
+      }
+    result:
+      custom:
+        action: "Login attempt"
+        detail: "Authenticating native user 'test-user'."
+        domain: "Native user"
+        event_type: "Audit_Event"
+        hostname: "win-eset"
+        ipv4: "10.10.10.10"
+        occured: 1747829982000
+        result: "Access denied"
+        severity: "Error"
+        source_uuid: "3144d5db-1bb7-4b4b-9393-b1eb601ec052"
+        status: "error"
+        user: ""
+      message: |-
+        {
+          "severity" : "Error",
+          "result" : "Access denied",
+          "hostname" : "win-eset",
+          "event_type" : "Audit_Event",
+          "ipv4" : "10.10.10.10",
+          "occured" : "21-May-2025 12:19:42",
+          "domain" : "Native user",
+          "action" : "Login attempt",
+          "source_uuid" : "3144d5db-1bb7-4b4b-9393-b1eb601ec052",
+          "detail" : "Authenticating native user 'test-user'.",
+          "user" : ""
+        }
+      service: "Audit_Event"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1747829982000

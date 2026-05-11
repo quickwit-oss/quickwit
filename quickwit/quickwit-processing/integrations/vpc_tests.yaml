@@ -1,0 +1,53 @@
+id: "vpc"
+tests:
+ -
+  sample: "2 123456789010 eni-abc123de 172.31.16.139 172.31.16.21 20641 22 6 20 4249 1418530010 1418530070 ACCEPT OK"
+  result:
+    custom:
+      aws:
+        account_id: "123456789010"
+      level: "OK"
+      network:
+        bytes_written: 4249
+        client:
+          ip: "172.31.16.139"
+          port: 20641
+        destination:
+          ip: "172.31.16.21"
+          port: 22
+        interface: "eni-abc123de"
+        packet: 20
+        protocol: "6"
+      vpc:
+        action: "ACCEPT"
+        interval:
+          end: 1418530070
+          start: 1418530010
+        status: "OK"
+        version: 2
+    message: "2 123456789010 eni-abc123de 172.31.16.139 172.31.16.21 20641 22 6 20 4249 1418530010 1418530070 ACCEPT OK"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "account:123456789010"
+ -
+  sample: "2 123456789010 eni-1a2b3c4d - - - - - - - 1431280876 1431280934 - NODATA"
+  result:
+    custom:
+      aws:
+        account_id: "123456789010"
+      level: "INFO"
+      network:
+        interface: "eni-1a2b3c4d"
+      vpc:
+        interval:
+          end: 1431280934
+          start: 1431280876
+        status: "NODATA"
+        version: 2
+    message: "2 123456789010 eni-1a2b3c4d - - - - - - - 1431280876 1431280934 - NODATA"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "account:123456789010"
+

@@ -1,0 +1,42 @@
+id: kube_scheduler
+metric_id: kube-scheduler
+backend_only: false
+installation_sources:
+  - kube_scheduler
+  - kube-scheduler
+facets:
+pipeline:
+  type: pipeline
+  name: Kube Scheduler (glog)
+  enabled: true
+  filter:
+    query: source:(kube_scheduler OR kube-scheduler)
+  processors:
+    - type: grok-parser
+      name: Parsing Kube Scheduler logs
+      enabled: true
+      source: message
+      samples:
+        - W0424 11:47:41.605188       1 authorization.go:47] Authorization is disabled
+        - I0424 11:47:41.605254       1 deprecated_insecure_serving.go:49] Serving healthz insecurely on 127.0.0.1:10251
+        - 'E0424 11:47:46.923664       1 reflector.go:134] k8s.io/client-go/informers/factory.go:132: Failed to list *v1.PersistentVolumeClaim: persistentvolumeclaims is forbidden: User "system:kube-scheduler" cannot list resource "persistentvolumeclaims" in API group "" at the cluster scope'
+      grok:
+        supportRules: |
+        matchRules: |
+          kube_scheduler %{regex("\\w"):level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp}\s+%{number:logger.thread_id} %{notSpace:logger.name}:%{number:lineno}\] %{data:msg}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

@@ -1,0 +1,107 @@
+id: kyototycoon
+metric_id: kyoto-tycoon
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: KyotoTycoon
+  enabled: true
+  filter:
+    query: source:kyototycoon
+  processors:
+    - type: grok-parser
+      name: Parsing default formats
+      enabled: true
+      source: message
+      samples:
+        - '2020-10-16T11:38:48.063390Z: [SYSTEM]: ================ [START]: pid=1'
+        - '2020-10-16T11:38:48.066234Z: [SYSTEM]: server socket opened: expr=:1978 timeout=30.0'
+        - '2020-10-16T11:38:56.803553Z: [INFO]: (172.23.0.1:57458): GET /rpc/report HTTP/1.1: 200'
+        - '2020-10-16T11:45:15.115938Z: [INFO]: (172.23.0.1:57666): GET /not-found HTTP/1.1: 404'
+        - '2020-10-16T11:38:47.141737Z: [SYSTEM]: server stopped'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):timestamp}
+          _level %{word:level}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _method %{word:http.method}
+          _url %{notSpace:http.url}
+          _version %{word}\/%{regex("\\d+\\.\\d+"):http.version}
+          _status_code %{integer:http.status_code}
+        matchRules: |
+          web_access %{_timestamp}: \[%{_level}\]: \(%{_client_ip}:%{_client_port}\): %{_method} %{_url} %{_version}: %{_status_code}
+          default %{_timestamp}: \[%{_level}\]: %{data:msg}
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

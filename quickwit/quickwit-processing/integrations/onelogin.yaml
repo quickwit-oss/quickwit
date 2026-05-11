@@ -1,0 +1,353 @@
+id: onelogin
+metric_id: onelogin
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - OneLogin
+    name: Account ID
+    path: account_id
+    source: log
+    type: string
+  - groups:
+      - User
+    name: Actor User ID
+    path: actor_user_id
+    source: log
+    type: string
+  - groups:
+      - User
+    name: Actor User Name
+    path: actor_user_name
+    source: log
+    type: string
+  - groups:
+      - OneLogin
+    name: Client ID
+    path: client_id
+    source: log
+    type: string
+  - groups:
+      - Event
+    name: Event ID
+    path: evt.id
+    source: log
+    type: string
+  - groups:
+      - Event
+    name: Event Type Name
+    path: event_type.name
+    source: log
+    type: string
+  - groups:
+      - OneLogin
+    name: Group ID
+    path: group_id
+    source: log
+    type: integer
+  - groups:
+      - OneLogin
+    name: Policy ID
+    path: policy_id
+    source: log
+    type: string
+  - groups:
+      - OneLogin
+    name: Policy Name
+    path: policy_name
+    source: log
+    type: string
+  - groups:
+      - OneLogin
+    name: Resource Type ID
+    path: resource_type_id
+    source: log
+    type: integer
+  - groups:
+      - OneLogin
+    name: Role ID
+    path: role_id
+    source: log
+    type: integer
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - OneLogin
+    name: Notes
+    path: notes
+    source: log
+  - groups:
+      - OneLogin
+    name: Correlation ID
+    path: correlation_id
+    source: log
+pipeline:
+  type: pipeline
+  name: Onelogin
+  enabled: true
+  filter:
+    query: source:onelogin
+  processors:
+    - type: attribute-remapper
+      name: Map `actor_user_id` to `actor_user_id`
+      enabled: true
+      sources:
+        - actor_user_id
+      target: actor_user_id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user_id` to `usr.id`
+      enabled: true
+      sources:
+        - user_id
+      target: usr.id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `actor_user_id` to `usr.id`
+      enabled: true
+      sources:
+        - actor_user_id
+      target: usr.id
+      targetFormat: string
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user_name` to `usr.name`
+      enabled: true
+      sources:
+        - user_name
+      target: usr.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `created_at` as the official date of the log
+      enabled: true
+      sources:
+        - created_at
+    - type: attribute-remapper
+      name: Map `ipaddr` to `network.client.ip`
+      enabled: true
+      sources:
+        - ipaddr
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: attribute-remapper
+      name: Map `event_type_id` to `evt.id`
+      enabled: true
+      sources:
+        - event_type_id
+      target: evt.id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: lookup-processor
+      name: Map evt.id to evt.description
+      enabled: true
+      source: evt.id
+      target: evt.description
+      lookupTable: "1,App %app% added to role %role%\n2,App %app% removed from role %role%\n3,%actor_user% assumed %user%\n4,Assigned %role% to user %user%\n5,%user% logged into onelogin\n6,%user% failed authentication\n7,%user% logged out of onelogin\n8,%user% logged into %app%\n9,%user% failed to log into %app%\n10,%user% requested new password\n11,%actor_user% changed password for %user%\n12,%actor_user% unlocked %user%\n13,%user% was created by %actor_user%\n14,%user% updated by %actor_user%\n15,%user% deactivated by %actor_user%\n16,%user% was activated by %actor_user%\n17,%user% was deleted by %actor_user%\n18,Password request approved from %user%\n19,%user% locked\n20,User limit reached\n21,%user% suspended by %actor_user%\n22,%otp_device% registered for %user%\n23,Bulk operation triggered\n24,%otp_device% deregistered for %user%\n25,%custom_message%\n26,%custom_message%\n27,Downloaded browser cert\n28,%custom_message%\n29,%user% logged out of %app%\n30,%actor_user% updated credit card\n31,Credit card update failed\n32,%user% reactivated\n33,%user% imported from %directory%\n34,%user% requested access to %app%\n35,User locked out of app\n36,User lost otp device\n37,User join request\n38,%app% has reached user limit\n39,Connector broken\n40,%otp_device% unlocked for %user%\n41,%directory% started\n42,%directory% stopped\n43,%directory% reloaded configuration\n44,Notification from %directory%\n45,%directory% caught an exception\n46,%directory% failed over\n47,%directory% caught an exception\n48,%user% was imported\n49,%user% could not be updated\n50,%user% rejected\n51,%user% provisioned in %app%\n52,%user% updated in %app%\n53,%user% suspended in %app%\n54,%user% reactivated in %app%\n55,%user% deleted in %app%\n56,%custom_message%\n57,Rabbit down\n58,Rabbit restarted\n59,%custom_message%\n60,%custom_message%\n61,%user% could not be suspended in %app%\n62,%user% could not be reactivated in %app%\n63,%user% could not be deleted in %app%\n64,%user% could not be provisioned in %app%\n65,%user% could not be updated in %app%\n66,No users to import\n67,Failed to import user from directory\n68,%user% authenticated by %radius_config%\n69,%user% rejected by %radius_config%\n70,%account% granted permission to %privilege_name%\n71,%account% revoked permission to %privilege_name%\n72,%user% granted permission to %privilege_name%\n73,%user% permission to %privilege_name% revoked\n74,%user% has added %trusted_idp% to trusted idps\n75,%user% has removed %trusted_idp% from trusted idps\n76,%user% has modified the trusted idp %trusted_idp%\n77,%nameid% failed to login to %app% via idp %trusted_idp%.\n78,%nameid% was successfully proxied to %app% via idp %trusted_idp%.\n79,%user% failed to provision in %directory%\n80,%user% provisioned in %directory%\n81,%user% updated by %directory%\n82,%user% suspended in %directory%\n83,%user% reactivated in %directory%\n84,%user% deleted in %directory%\n85,Could not authenticate to %app%\n86,%custom_message%\n87,%actor_user% viewed secure note: %note_id%\n88,%actor_user% edited secure note: %note_id%\n89,%actor_user% deleted secure note: %note_id%\n90,%user% is not authorized to access app %app%\n91,User could not be determined by %radius_config%\n92,Nt hash requested for %user%\n95,External groups import from %directory% started\n96,External groups import from %directory% finished\n100,Self registration request for %user%\n101,Self registration approved for %user%\n102,Self registration denied for %user%\n103,Self registration request unverified\n104,Self registration request verified\n105,Sms failure\n106,%actor_user% failed to change password for %user%\n110,%actor_user% updated user login information\n111,%actor_user% attempted to update login information\n112,%user% has changed the default trusted idp to %trusted_idp%\n113,Import from %directory% started\n114,Import from %directory% finished\n115,%user% invited by %actor_user%\n116,%user% could not be created\n117,Directory sync %directory_sync_run_id%\n118,Saml assertion warning for %actor_user% %note%\n119,%user% has removed %trusted_idp%\
+        \ as default trusted idp\n120,%actor_user% unlocked %user% in %directory%\n121,Scriptlet error: %nameid%\n122,%user% authenticated via api\n123,%user% failed authentication via api\n124,%custom_message%\n125,%custom_message%\n126,One of %directory%'s connectors was enabled\n127,One of %directory%'s connectors was disabled\n128,%user-synch active directory connector not responding\n129,%user% failed authentication with vldap %notes%\n130,%user% successfully authenticated with vldap\n131,Export from %directory% started\n132,Export from %directory% finished\n133,Failed to provision user to directory\n134,Refresh schema action failed\n135,%certificate_name% is about to expire\n136,Directory attributes import from %directory% started\n137,%user% granted access to %app%\n138,%user% denied access to %app%\n139,Directory attributes import from %directory% finished\n140,%user% signed in into onelogin via social network: %notes%\n141,%user% authentication policy does not allow sign-in via social network: %notes%\n145,Smart password updated for %user%\n146,Smart password could not be updated for %user%\n147,%user% added to %role% role\n148,%user% removed from %role% role\n149,%user% automatically added to %role% role\n150,%user% automatically removed from %role% role\n151,%user% granted permission to manage %role% role\n152,%user% permission to manage %role% role revoked\n153,%user% successfully authenticated with vldap (onelogin desktop mac) %notes%\n154,%user% failed authentication with vldap (onelogin desktop mac) %notes%\n155,Directory attributes import failed for %directory%\n156,%user% created policy %policy%\n157,%user% updated policy %policy%\n158,%user% deleted policy %policy%\n159,%user% created proxy agent %proxy_agent%\n160,%user% deleted proxy agent %proxy_agent%\n161,%user% created radius configuration %radius_config%\n162,%user% updated radius configuration %radius_config%\n163,%user% deleted radius configuration %radius_config%\n164,%user% enabled vpn\n165,%user% updated vpn settings\n166,%user% disabled vpn\n167,%user% enabled embedding\n168,%user% updated embedding settings\n169,%user% disabled embedding\n170,%user% created authentication factor %authentication_factor%\n171,%user% updated authentication factor %authentication_factor%\n172,%user% deleted authentication factor %authentication_factor%\n173,%user% updated security questions\n174,%user% updated desktop sso settings\n175,%user% enabled desktop sso\n176,%user% disabled desktop sso\n177,%user% created %certificate_name% certificate\n178,%user% deleted %certificate_name% certificate\n179,%user% created %api_credential_name% api credential\n180,%user% deleted %api_credential_name% api credential\n181,%user% enabled %api_credential_name% api credential\n182,%user% disabled %api_credential_name% api credential\n183,%user% enabled virtual ldap\n184,%user% disabled virtual ldap\n185,%user% updated virtual ldap settings\n186,%user% enabled branding\n187,%user% disabled branding\n188,%user% updated branding\n189,%actor_user% added %mapping_name% mapping\n190,%actor_user% deleted %mapping_name% mapping\n191,%actor_user% disabled %mapping_name% mapping\n192,%actor_user% enabled %mapping_name% mapping\n193,%actor_user% updated %mapping_name% mapping\n194,%actor_user% added %user_field_name% custom user field\n195,%actor_user% deleted %user_field_name% custom user fields\n196,%user% updated company info\n197,%user% updated account settings\n198,%user% added directory %directory%\n199,%user% deleted directory %directory%\n200,%user% added connector instance to directory %directory%\n201,%user% deleted connector instance from directory %directory%\n202,%actor_user% reapplied mappings for %user%\n203,%actor_user% created self registration\n204,%actor_user% updated self registration\n205,%actor_user% deleted self registration\n206,%actor_user% manually added %user% to %app%\n207,%actor_user% manually removed %user% from %app%\n208,%actor_user% retried provisioning\n209,Directory field(s) is not unique\n210,Ldap directory %directory% caught an exception\n211,Admin %actor_user%\
+        \ changed password for %user%\n212,%custom_message%\n213,%actor_user% uploaded profile picture for %user%\n214,%actor_user% removed profile picture for %user%\n215,Admin %actor_user% changed account settings for %object%\n216,%custom_message%\n217,%custom_message%\n218,%actor_user% failed to reapply mappings for %user%\n219,%custom_message%\n220,Admin %actor_user% created payment record for %object%\n221,Admin %actor_user% updated payment record for %object%\n222,Admin %actor_user% deleted payment record for %object%\n223,User unlicensed\n224,%actor_user% added license to %user%\n225,%actor_user% removed license from %user%\n226,User unlicensed automatically\n227,%actor_user% failed to license %user%\n228,%actor_user% bulk licensed users\n229,%custom_message%\n230,%custom_message%\n231,%custom_message%\n232,%user% agreed to terms and conditions\n233,%user% did not agree to terms and conditions\n234,%actor_user% enabled terms and conditions for %policy%\n235,%actor_user% updated terms and conditions for %policy%\n236,%actor_user% disabled terms and conditions for %policy%\n237,%custom_message%\n238,%actor_user% redirected to an external site for password reset\n239,%custom_message%\n240,%actor_user% revealed password to %app% for %user%\n241,%actor_user% failed to import csv\n242,%custom_message%\n243,%custom_message%\n244,Report %report_name% was generated in background\n245,Report %report_name% failed generation in background\n246,Report %report_name% terminated during generation in background\n247,Failed to reapply mappings for %user%\n248,Successfully reapplied mappings for %user%\n249,Bulk operation %custom_message% failed for user %user%\n250,%custom_message%\n251,Provisioning app throttled\n252,Failed to remove %user% from %app% app\n253,Failed to reapply entitlement mappings for %user% in %app% app\n254,Reapplied entitlement mappings for %user% in %app% app\n255,%actor_user% manually updated %user% login for %app%\n291,%user% was created by tidp %trusted_idp%\n300,%directory% started\n301,Notification from %directory%\n303,%directory% reloaded configuration\n304,%directory% stopped\n305,%directory% failed over\n306,%actor_user% tried to manually add %user% to %app%. %custom_message\n307,Active directory connector provisioning error\n330,%user% disassociated from %directory%\n331,%user% associated to %directory%\n332,%directory% external id was updated for %user%\n333,%directory% external id was deleted for %user%\n334,%user% not updated in %app%\n400,Api - bad request using %client_name%\n401,Api - unauthorized using %client_name%\n402,A mapping was skipped for %user%; %notes%\n410,%actor_user% created broadcaster %custom_message%\n411,%actor_user% updated broadcaster %custom_message%\n412,%actor_user% deleted broadcaster %custom_message%\n501,Api - page of results returned on %resource% using %client_name%\n502,Api - one record returned on %resource% using %client_name%\n503,Api - get resource / attributes on %resource% using %client_name%\n510,Api - password updated for %user% using %client_name%\n511,Api - password updated for %user% using %client_name%\n512,Api - custom attributes set for %user% using %client_name%\n513,Api - roles added to %user% using %client_name%\n514,Api - roles removed for %user% using %client_name%\n515,Api - authorization token called using %client_name%\n516,Api - %user% logged out using %client_name%\n517,Api - password not updated for %user% using %client_name%\n518,Api - password not updated for %user% using %client_name%\n519,Api - failed to set custom attribute\n520,Api - roles not added to %user% using %client_name%\n521,Api - roles not removed for %user% using %client_name%\n522,Api - authorization token call failed using %client_name%\n523,Api - %user% failed to log out using %client_name%\n524,Api - %user% not deleted using %client_name%\n525,Api - invite link not obtained using %client_name%\n526,Api - %user% not locked using %client_name%\n527,Api - verify factor failed using %client_name%\n528,Api - verify factor called using %client_name%\n529,Api - %user% updated using\
+        \ %client_name%\n530,Api - %user% deleted using %client_name%\n531,Api - %user% locked using %client_name%\n532,Api - %user% not updated using %client_name%\n533,Api - user created using %client_name%\n534,Api - user not created using %client_name%\n535,Api - invite link using %client_name%\n536,Api - get otps for %user% using %client_name%\n537,Api - confirm otp for %user% using %client_name% succeeded\n538,Api - confirm otp for %user% using %client_name% failed\n539,Api - trigger factor for %user% using %client_name% succeeded\n540,Api - otp created for %user% using %client_name%\n541,%user% updated directory %directory%\n542,Ous were updated for %directory%\n545,Api - invite link not sent using %client_name%\n546,Api - invite link sent using %client_name%\n550,%user% was force logged out\n551,%user% suspended by %actor_user% via api\n552,%user% reactivated via api\n553,%user% locked via api\n554,%actor_user% unlocked %user% via api\n555,%actor% from %assuming_account% assumed %user% from %account_name%\n600,%app% was added by %user%\n601,%app% was updated by %user%\n602,%app% was removed by %user%\n700,Connector %object% was created by %user%\n701,Connector %object% could not be created\n702,Connector %object% %custom_message% was updated by %user%\n703,Connector %object% could not be updated\n704,Connector %object% %custom_message% was deleted by %user%\n705,Connector %object% could not be deleted\n706,%custom_message%\n800,Parameter %object% was created by %user%\n801,Parameter %object% could not be created\n802,Parameter %object% was updated by %user%\n803,Parameter %object% could not be updated\n804,Parameter %object% was deleted by %user%\n805,Parameter %object% could not be deleted\n900,%user% successfully logged in on a trusted device\n901,%user% failed to log in on a trusted device\n902,%user% deleted device for onelogin desktop\n903,%user% unbind user from device for onelogin desktop\n904,%user% successfully logged in via onelogin desktop\n905,%user% failed to login via onelogin desktop\n906,%user% failed to authenticate via onelogin desktop\n907,User has been provisioned to directory successfully\n911,%actor_user% revoked user certificate\n912,%actor_user% revoked device certificate\n931,%user% enabled adaptive login for account\n932,%user% disabled adaptive login for account\n950,%user% denied auth via otp push request\n1001,%user% challenged for otp\n1002,%user% failed otp challenge\n1010,%user% reauthenticated into %app%\n1100,%actor_user% generated temporary otp token for %user%\n1101,%actor_user% revoked temporary otp token for %user%\n1200,User is not authorized to perform action on app\n1201,User is not authorized to perform action on user\n1244,%custom_message%\n1245,%custom_message%\n1300,App %app% was created via api\n1301,App %app% failed to create via api\n1302,App %app% was updated via api\n1303,App %app% failed to update via api\n1304,App %app% was destroyed via api\n1305,App %app% failed to destroy via api\n1400,User verified otp device\n1401,Api - authorization app creation failed\n1402,Api - authorization app updated\n1403,Api - authorization app update failed\n1404,Api - authorization app destroyed\n1405,Api - authorization app destroy failed\n1406,Api - authorization scope created\n1407,Api - authorization scope creation failed\n1408,Api - authorization scope updated\n1409,Api - authorization scope update failed\n1410,Api - authorization scope destroyed\n1411,Api - authorization scope destroy failed\n1412,Api - authorization claim created\n1413,Api - authorization claim failed\n1414,Api - authorization claim updated\n1415,Api - authorization claim update failed\n1416,Api - authorization claim destroyed\n1417,Api - authorization claim destroy failed\n1418,Api - authorization client created\n1419,Api - authorization client creation failed\n1420,Api - authorization client updated\n1421,Api - authorization client update failed\n1422,Api - authorization client destroyed\n1423,Api - authorization client destroy failed\n1424,Api - authorization app created\n1500,Sandbox %sandbox% sync initiated\
+        \ by %user%\n1501,Failed to sync sandbox %sandbox% by %user%\n1502,Sync sandbox %sandbox% by %user% completed\n1503,Sandbox %sandbox% deleted by %user%\n1504,Failed to delete sandbox %sandbox% by %user%\n1505,Sandbox %sandbox% created by %user%\n1506,Failed to create sandbox %sandbox% by %user%\n1507,Sandbox %sandbox% updated by %user%\n1508,Failed to update sandbox %sandbox% by %user%\n1509,Sandbox %sandbox% deleted using %api_credential_name%\n1510,Failed to delete sandbox %sandbox% using %api_credential_name%\n1511,Sandbox %sandbox% created using %api_credential_name%\n1512,Failed to create sandbox %sandbox% using %api_credential_name%\n1513,Sandbox %sandbox% updated using %api_credential_name%\n1514,Failed to update sandbox %sandbox% using %api_credential_name%\n1600,User deleted security factor\n1601,User renamed security factor\n1602,Profile devices update default\n1603,User changed default portal/profile language\n1604,User changed phone number\n1605,User changed portal default tab through profile\n1606,User updated profile photo\n1607,User changed new login detection setting\n1608,Profile change password\n1609,Profile settings update show tabs\n1700,%user% created radius attribute in %radius_config%\n1701,%user% updated radius attribute in %radius_config%\n1702,%user% deleted radius attribute in %radius_config%\n1801,Role %role% created\n1802,Role %role% deleted\n1900,%custom_message%\n1901,%custom_message%\n1902,%custom_message%\n1903,%custom_message%\n1904,%custom_message%\n1905,%custom_message%\n2000,Smart hooks retrieved\n2001,Sending email with custom smtp settings failed\n2002,Smtp configuration updated\n2003,Smart hook created\n2004,Smart hook creation failed\n2005,Smart hook fetched\n2006,Smart hook logs retrieved\n2007,Smart hook updated\n2008,Smart hook update failed\n2009,Smart hook deleted\n2010,Smart hook deletion failed\n2011,Smart hook environment variables retrieved\n2012,Smart hook environment variable created\n2013,Smart hook environment variable creation failed\n2014,Smart hook environment variable retrieved\n2015,Smart hook environment variable updated\n2016,Smart hook environment variable update failed\n2017,Smart hook environment variable deleted\n2018,Smart hook environment variable deletion failed\n2100,Api - privilege %privilege_name% was created using %api_credential_name%\n2101,%actor_user% created privilege %privilege_name%\n2102,Api - privilege %privilege_name% was updated using %api_credential_name%\n2103,%actor_user% updated privilege %privilege_name%\n2104,Api - privilege %privilege_name% was deleted using %api_credential_name%\n2105,%actor_user% deleted privilege %privilege_name%\n2106,Api - privilege %privilege_name% was assigned to user %user% using %api_credential_name%\n2107,User %actor_user% assigned the privilege %privilege_name% to user %user%\n2108,Api - privilege %privilege_name% removed from user %user% using %api_credential_name%\n2109,User %actor_user% removed the privilege %privilege_name% from user %user%\n2110,Api - privilege %privilege_name% assigned to role %role% using %api_credential_name%\n2111,User %actor_user% assigned the privilege %privilege_name% to role %role%\n2112,Api - privilege %privilege_name% removed from role %role% using %api_credential_name%\n2113,User %actor_user% removed the privilege %privilege_name% from role %role%\n2114,User %actor_user% is not authorized to perform %privilege_action%%on_role%\n2201,Report %report_name% created by %actor_user%\n2202,Report %report_name% updated by %actor_user%\n2203,Report %report_name% cloned by %actor_user%\n2204,Report %report_name% destroyed by %actor_user%\n3000,Oidc general fail\n3001,Oidc implicit flow for %app% success\n3002,Oidc implicit flow for %app% failed\n3003,Oidc get code for %app% success\n3004,Oidc get code for %app% failed\n3005,Oidc authorization code for %app% success\n3006,Oidc authorization code for %app% failed\n3007,Oidc client credentials for %app% success\n3008,Oidc client credentials for %app% failed\n3009,Oidc password for %app% success\n3010,Oidc password for %app% failed\n\
+        3011,Oidc refresh token for %app% success\n3012,Oidc refresh token for %app% failed\n3013,Oidc validate token for %app% success\n3014,Oidc validate token for %app% failed\n3015,Oidc revoke token for %app% success\n3016,Oidc revoke token for %app% failed\n3017,Oidc user info for %app% success\n3018,Oidc user info for %app% failed\n3019,%object% - notification was sent to %user%\n3020,%actor_user% created %group% group\n3021,%actor_user% updated %group% group\n3022,%actor_user% destroyed %group% group\n3023,%actor_user% created secure note: %note_id%\n3024,User %actor_user% is not authorized to perform %privilege_action% on %group%\n3025,User %actor_user% is not authorized to perform %privilege_action% on %policy%\n3026,User unset default factor\n9000,%actor_user% enabled %task_name%\n9001,%actor_user% disabled %task_name%\n9002,User initiated workflow\n9003,%task_name% for %user% was completed by %actor_user%\n9004,%actor_user% marked %task_name% complete for %user%\n9005,%actor_user% marked %task_name% complete for %user%\n9006,%task_name% for %user% was marked incomplete by %actor_user%\n9007,%user% enabled onboarding\n9008,%user% disabled onboarding\n9009,%user% enabled offboarding\n9010,%user% disabled offboarding\n9011,%actor_user% initiated offboarding for %user%\n9012,%actor_user% initiated onboarding for %user%\n9013,%task_name% for %user% was completed by %actor_user%\n9014,Api - app rules list for %app% success\n9015,Api - app rules list for %app% failed\n9016,Api - app rules create for %app% success\n9017,Api - app rules create for %app% failed\n9018,Api - app rules update for %app% success\n9019,Api - app rules update for %app% failed\n9020,Api - app rules get for %app% success\n9021,Api - app rules get for %app% failed\n9022,Api - app rules dryrun for %app% success\n9023,Api - app rules dryrun for %app% failed\n9024,Api - app rules delete for %app% success\n9025,Api - app rules delete for %app% failed\n9026,Api - app rules sort for %app% success\n9027,Api - app rules sort for %app% failed\n9028,Api - app rules apply for %app% success\n9029,Api - app rules apply for %app% failed\n9030,Api - app rules refresh entitlements for %app% success\n9031,Api - app rules refresh entitlements for %app% failed\n9032,Api - app rules list conditions for %app% success\n9033,Api - app rules list conditions for %app% failed\n9034,Api - app rules list condition operators for %app% success\n9035,Api - app rules list condition operators for %app% failed\n9036,Api - app rules list actions for %app% success\n9037,Api - app rules list actions for %app% failed\n9038,Api - app rules list action values for %app% success\n9039,Api - app rules list action values for %app% failed\n9040,%user% granted permission to manage %role% role failed\n9041,%user% permission to manage %role% role revoked failed\n9042,App %app% added to role %role% failed\n9043,App %app% removed from role %role% failed\n9044,%user% added to %role% role failed\n9045,%user% removed from %role% role failed\n9046,Role %role% created failed\n9047,Role %role% deleted failed\n9048,Api - roles list for %role% success\n9049,Api - roles list for %role% failed\n9050,Api - roles get for %role% success\n9051,Api - roles get for %role% failed\n9052,Api - roles update for %role% success\n9053,Api - roles update for %role% failed\n9054,Api - roles list apps for %role% success\n9055,Api - roles list apps for %role% failed\n9056,Api - roles list users for %role% success\n9057,Api - roles list users for %role% failed\n9058,Api - roles list administrators for %role% success\n9059,Api - roles list administrators for %role% failed"
+      defaultLookup: type_unknown
+    - type: lookup-processor
+      name: Map evt.id to evt.name
+      enabled: true
+      source: evt.id
+      target: evt.name
+      lookupTable: "1,APP_ADDED_TO_ROLE\n2,APP_REMOVED_FROM_ROLE\n3,USER_ASSUMED_USER\n4,USER_ASSIGNED_ROLE\n5,USER_LOGGED_INTO_ONELOGIN\n6,USER_FAILED_ONELOGIN_LOGIN\n7,USER_LOGGED_OUT_OF_ONELOGIN\n8,USER_LOGGED_INTO_APP\n9,USER_FAILED_APP_LOGIN\n10,USER_REQUESTED_NEW_PASSWORD\n11,USER_CHANGED_PASSWORD\n12,UNLOCKED_USER\n13,CREATED_USER\n14,UPDATED_USER\n15,DEACTIVATED_USER\n16,ACTIVATED_USER\n17,DELETED_USER\n18,ADMIN_APPROVED_PASSWORD_REQUEST\n19,USER_LOCKED\n20,REACHED_USERS_LIMIT\n21,SUSPENDED_USER\n22,USER_ADDED_OTP_DEVICE\n23,USER_BULK_OPERATION\n24,USER_REMOVED_OTP_DEVICE\n25,PROVISIONING_EXCEPTION\n26,PROVISIONING_EVENT\n27,USER_DOWNLOADED_CERT\n28,USER_RECENTLY_REMOVED\n29,USER_LOGGED_OUT_OF_APP\n30,UPDATED_PAYMENT_INFO\n31,FAILED_UPDATE_PAYMENT_INFO\n32,REACTIVATED_USER\n33,USERS_IMPORTED_FROM_DIRECTORY\n34,USER_REQUESTED_APP\n35,USER_LOCKED_OUT_OF_APP\n36,USER_LOST_OTP_DEVICE\n37,USER_JOIN_REQUEST\n38,APP_REACHED_USER_LIMIT\n39,CONNECTOR_BROKEN\n40,USER_UNLOCKED_OTP_DEVICE\n41,AD_CONNECTOR_STARTED\n42,AD_CONNECTOR_STOPPED\n43,AD_CONNECTOR_CONFIG_RELOAD\n44,AD_CONNECTOR_NOTIFICATION\n45,AD_CONNECTOR_EXCEPTION_OLD\n46,AD_CONNECTOR_FAIL_OVER\n47,AD_CONNECTOR_EXCEPTION\n48,IMPORTED_USER\n49,UPDATE_USER_FAILED\n50,REJECTED_USER\n51,USER_CREATED_IN_APP\n52,USER_UPDATED_IN_APP\n53,USER_SUSPENDED_IN_APP\n54,USER_REACTIVATED_IN_APP\n55,USER_DELETED_IN_APP\n56,UNMATCHED_USERS\n57,RABBIT_DOWN\n58,RABBIT_RESTARTED\n59,USER_LINKED_IN_APP\n60,PROVISIONING_DEPROVISIONING_MODE_DO_NOTHING_WARNING\n61,USER_FAILED_SUSPENDING_IN_APP\n62,USER_FAILED_REACTIVATING_IN_APP\n63,USER_FAILED_DELETING_IN_APP\n64,USER_FAILED_CREATING_IN_APP\n65,USER_FAILED_UPDATING_IN_APP\n66,NO_USERS_TO_IMPORT_FROM_DIRECTORY\n67,DIRECTORY_IMPORT_EXCEPTION\n68,USER_AUTHENTICATED_BY_RADIUS\n69,USER_REJECTED_BY_RADIUS\n70,PRIVILEGE_GRANTED_TO_ACCOUNT\n71,PRIVILEGE_REVOKED_FROM_ACCOUNT\n72,PRIVILEGE_GRANTED_TO_USER\n73,PRIVILEGE_REVOKED_FROM_USER\n74,TRUSTED_IDP_ADDED\n75,TRUSTED_IDP_REMOVED\n76,TRUSTED_IDP_MODIFIED\n77,USER_FAILED_PROXY_LOGIN\n78,USER_SUCCEEDED_PROXY_LOGIN\n79,AD_CONNECTOR_PROVISIONING_ERROR\n80,USER_CREATED_IN_DIRECTORY\n81,USER_UPDATED_IN_DIRECTORY\n82,USER_SUSPENDED_IN_DIRECTORY\n83,USER_REACTIVATED_IN_DIRECTORY\n84,USER_DELETED_IN_DIRECTORY\n85,APP_COULD_NOT_AUTHENTICATE\n86,USER_FAILED_REMOTE_AUTHENTICATION\n87,USER_VIEWED_NOTE\n88,USER_EDITED_NOTE\n89,USER_DELETED_NOTE\n90,USER_UNAUTHORIZED_APP_ACCESS\n91,USER_UNDETERMINED_BY_RADIUS\n92,USER_NTHASH_REQUESTED_BY_RADIUS\n95,DIRECTORY_GROUPS_WRITE_BACK_IMPORT_STARTED\n96,DIRECTORY_GROUPS_WRITE_BACK_IMPORT_FINISHED\n100,SELF_REGISTRATION_REQUEST\n101,SELF_REGISTRATION_APPROVED\n102,SELF_REGISTRATION_DENIED\n103,SELF_REGISTRATION_REQUEST_UNVERIFIED\n104,SELF_REGISTRATION_REQUEST_VERIFIED\n105,SMS_FAILURE\n106,USER_CHANGE_PASSWORD_FAILED\n110,APP_LOGINS_UPDATED\n111,APP_LOGINS_UPDATE_FAILED\n112,TRUSTED_IDP_MADE_DEFAULT\n113,DIRECTORY_IMPORT_STARTED\n114,DIRECTORY_IMPORT_FINISHED\n115,USER_INVITED\n116,CREATE_USER_FAILED\n117,DIRECTORY_SYNC_RUN_ID\n118,SAML_ACS_FAILED\n119,TRUSTED_IDP_REMOVED_AS_DEFAULT\n120,UNLOCKED_USER_IN_DIRECTORY\n121,SCRIPTLET_ERROR\n122,USER_AUTHENTICATED_BY_API\n123,USER_REJECTED_BY_API\n124,ENTITLEMENTS_CACHE_ACTION\n125,ENTITLEMENT_ACTION\n126,DIRECTORY_CONNECTOR_ENABLED\n127,DIRECTORY_CONNECTOR_DISABLED\n128,NO_ACTIVE_ACTIVE_DIRECTORY_CONNECTORS\n129,VLDAP_BIND_FAILURE\n130,VLDAP_BIND_SUCCESS\n131,DIRECTORY_EXPORT_STARTED\n132,DIRECTORY_EXPORT_FINISHED\n133,DIRECTORY_EXPORT_EXCEPTION\n134,DIRECTORY_REFRESH_SCHEMA_EXCEPTION\n135,CERTIFICATE_EXPIRES\n136,DIRECTORY_FIELDS_IMPORT_STARTED\n137,USER_APP_REQUEST_APPROVED\n138,USER_APP_REQUEST_DENIED\n139,DIRECTORY_FIELDS_IMPORT_FINISHED\n140,SOCIAL_SIGN_IN\n141,SOCIAL_SIGN_IN_FAILURE\n145,USER_SMART_PASSWORD_UPDATED\n146,USER_SMART_PASSWORD_UPDATE_FAILED\n147,USER_MANUALLY_ADDED_TO_ROLE\n148,USER_MANUALLY_REMOVED_FROM_ROLE\n149,USER_AUTO_ADDED_TO_ROLE\n150,USER_AUTO_REMOVED_FROM_ROLE\n151,USER_ROLE_MANAGEMENT_GRANTED\n152,USER_ROLE_MANAGEMENT_REVOKED\n153,MAC_LOGIN_SUCCESS\n154,MAC_LOGIN_FAILURE\n155,DIRECTORY_FIELDS_IMPORT_EXCEPTION\n\
+        156,POLICY_CREATED\n157,POLICY_UPDATED\n158,POLICY_DELETED\n159,PROXY_AGENT_CREATED\n160,PROXY_AGENT_DELETED\n161,RADIUS_CONFIG_CREATED\n162,RADIUS_CONFIG_UPDATED\n163,RADIUS_CONFIG_DELETED\n164,VPN_ENABLED\n165,VPN_SETTINGS_UPDATED\n166,VPN_DISABLED\n167,EMBEDDING_ENABLED\n168,EMBEDDING_SETTINGS_UPDATED\n169,EMBEDDING_DISABLED\n170,AUTHENTICATION_FACTOR_CREATED\n171,AUTHENTICATION_FACTOR_UPDATED\n172,AUTHENTICATION_FACTOR_DELETED\n173,SECURITY_QUESTIONS_UPDATED\n174,DESKTOP_SSO_SETTINGS_UPDATED\n175,DESKTOP_SSO_ENABLED\n176,DESKTOP_SSO_DISABLED\n177,CERTIFICATE_CREATED\n178,CERTIFICATE_DELETED\n179,API_CREDENTIAL_CREATED\n180,API_CREDENTIAL_DELETED\n181,API_CREDENTIAL_ENABLED\n182,API_CREDENTIAL_DISABLED\n183,VLDAP_ENABLED\n184,VLDAP_DISABLED\n185,VLDAP_SETTINGS_UPDATED\n186,BRANDING_ENABLED\n187,BRANDING_DISABLED\n188,BRANDING_UPDATED\n189,MAPPING_ADDED\n190,MAPPING_DELETED\n191,MAPPING_DISABLED\n192,MAPPING_ENABLED\n193,MAPPING_UPDATED\n194,USER_FIELD_ADDED\n195,USER_FIELD_DELETED\n196,COMPANY_INFO_UPDATED\n197,ACCOUNT_SETTINGS_UPDATED\n198,DIRECTORY_CREATED\n199,DIRECTORY_DESTROYED\n200,DIRECTORY_CONNECTOR_INSTANCE_ADDED\n201,DIRECTORY_CONNECTOR_INSTANCE_DELETED\n202,REAPPLIED_MAPPINGS\n203,SELF_REGISTRATION_PROFILE_CREATED\n204,SELF_REGISTRATION_PROFILE_UPDATED\n205,SELF_REGISTRATION_PROFILE_DESTROYED\n206,MANUALLY_ADDED_LOGIN\n207,MANUALLY_REMOVED_LOGIN\n208,RETRIED_PROVISIONING\n209,DIRECTORY_USER_IMPORT_WARNING\n210,LDAP_CONNECTOR_EXCEPTION\n211,ADMIN_CHANGED_USER_PASSWORD\n212,DIRECTORY_LOCKED\n213,PROFILE_PICTURE_UPLOADED\n214,PROFILE_PICTURE_DELETED\n215,ADMIN_CHANGED_ACCOUNT_SETTINGS\n216,JOB_IN_QUEUE\n217,DIRECTORY_IMPORT_LIMIT_REACHED\n218,REAPPLIED_MAPPINGS_FAILED\n219,WORKDAY_REAL_TIME_NOTIFICATION\n220,ADMIN_CREATED_PAYMENT_RECORD\n221,ADMIN_UPDATED_PAYMENT_RECORD\n222,ADMIN_DELETED_PAYMENT_RECORD\n223,USER_UNLICENSED\n224,USER_LICENSED_MANUALLY\n225,USER_UNLICENSED_MANUALLY\n226,USER_UNLICENSED_AUTOMATICALLY\n227,USER_LICENSE_FAILED\n228,USERS_LICENSED_BULK\n229,ACCOUNT_NEAR_LIMIT\n230,ACCOUNT_IN_LIMIT\n231,USERS_IN_UNLICENSED_STATE\n232,USER_AGREED_TERMS\n233,USER_DENIED_TERMS\n234,ADMIN_ENABLED_TERMS\n235,ADMIN_UPDATED_TERMS\n236,ADMIN_DISABLED_TERMS\n237,DELETE_USER_FAILED\n238,USER_REDIRECTED_FOR_PASSWORD_CHANGE\n239,IMPORT_USER_FAILED\n240,USER_REVEALED_PASSWORD\n241,CSV_IMPORT_FAILED\n242,JOB_START_FAILED\n243,JOB_TERMINATED\n244,REPORT_GENERATED\n245,REPORT_GENERATION_FAILED\n246,REPORT_GENERATION_TERMINATED\n247,USER_MAPPINGS_FAILED\n248,USER_MAPPINGS_SUCCEEDED\n249,USER_BULK_OPERATION_FAILED\n250,PROVISIONING_APP_CONFIG_ERROR\n251,PROVISIONING_APP_THROTTLED\n252,USER_REMOVELOGINS_FAILED\n253,ENTITLEMENT_MAPPINGS_FAILED\n254,ENTITLEMENT_MAPPINGS_REAPPLIED\n255,MANUALLY_UPDATED_LOGIN\n291,USER_CREATED_BY_TIDP\n300,LDAP_CONNECTOR_STARTED\n301,LDAP_CONNECTOR_NOTIFICATION\n303,LDAP_CONNECTOR_CONFIG_RELOAD\n304,LDAP_CONNECTOR_STOPPED\n305,LDAP_CONNECTOR_FAIL_OVER\n306,MANUALLY_ADDED_LOGIN_FAILURE\n307,LDAP_CONNECTOR_PROVISIONING_ERROR\n330,USER_DISASSOCIATED_FROM_DIRECTORY\n331,USER_ASSOCIATED_TO_DIRECTORY\n332,USER_DIRECTORY_EXTERNAL_ID_UPDATED\n333,USER_DIRECTORY_EXTERNAL_ID_DELETED\n334,USER_NOT_UPDATED_IN_APP\n400,API_BAD_REQUEST\n401,API_UNAUTHORIZED\n402,MAPPING_SKIPPED\n410,BROADCASTER_CREATED\n411,BROADCASTER_UPDATED\n412,BROADCASTER_DELETED\n501,API_INDEX_ACTION\n502,API_SHOW_ACTION\n503,API_RES_ACTION\n510,API_SET_PWD_SALT\n511,API_SET_PWD_CLEAR_TEXT\n512,API_SET_CUSTOM_ATTRS\n513,API_ADD_ROLES\n514,API_REMOVE_ROLES\n515,API_AUTH_ISSUE_TOKEN\n516,API_LOGOUT\n517,API_SET_PWD_SALT_FAILED\n518,API_SET_PWD_CLEAR_TEXT_FAILED\n519,API_SET_CUSTOM_ATTRS_FAILED\n520,API_ADD_ROLES_FAILED\n521,API_REMOVE_ROLES_FAILED\n522,API_AUTH_ISSUE_TOKEN_FAILED\n523,API_LOGOUT_FAILED\n524,API_DESTROY_USER_FAILED\n525,API_GET_INVITE_LINK_FAILED\n526,API_LOCK_USER_FAILED\n527,API_VERIFY_FACTOR_FAILED\n528,API_VERIFY_FACTOR\n529,API_UPDATE_USER\n530,API_DESTROY_USER\n531,API_LOCK_USER\n532,API_UPDATE_USER_FAILED\n533,API_CREATE_USER\n534,API_CREATE_USER_FAILED\n535,API_GET_INVITE_LINK\n536,API_USER_OTPS_RETRIEVED\n\
+        537,API_CONFIRM_FACTOR\n538,API_CONFIRM_FACTOR_FAILED\n539,API_TRIGGER_FACTOR\n540,API_ADDED_OTP_DEVICE\n541,DIRECTORY_UPDATED\n542,DIRECTORY_OUS_CHANGED\n545,API_SEND_INVITE_LINK_FAILED\n546,API_SEND_INVITE_LINK\n550,FORCE_LOGOUT_USER\n551,SUSPENDED_USER_VIA_API\n552,REACTIVATED_USER_VIA_API\n553,USER_LOCKED_VIA_API\n554,UNLOCKED_USER_VIA_API\n555,EXTERNAL_ASSUME_USER\n600,APP_CREATED_BY_USER\n601,APP_UPDATED_BY_USER\n602,APP_DELETED_BY_USER\n700,CONNECTOR_CREATED\n701,CONNECTOR_CREATE_FAILED\n702,CONNECTOR_UPDATED\n703,CONNECTOR_UPDATE_FAILED\n704,CONNECTOR_DELETED\n705,CONNECTOR_DELETE_FAILED\n706,CONNECTOR_STATS_UPDATE\n800,PARAMETER_CREATED\n801,PARAMETER_CREATE_FAILED\n802,PARAMETER_UPDATED\n803,PARAMETER_UPDATE_FAILED\n804,PARAMETER_DELETED\n805,PARAMETER_DELETE_FAILED\n900,ONELOGIN_DESKTOP_MAC_LOGIN_SUCCESS\n901,ONELOGIN_DESKTOP_MAC_LOGIN_FAILURE\n902,ONELOGIN_DESKTOP_DEVICE_DELETED\n903,ONELOGIN_DESKTOP_DEVICE_UNBIND\n904,ONELOGIN_DESKTOP_LOGIN_SUCCESS\n905,ONELOGIN_DESKTOP_LOGIN_FAILURE\n906,ONELOGIN_DESKTOP_USER_FAILED_ONELOGIN_LOGIN\n907,DIRECTORY_EXPORT_SUCCESS\n911,ONELOGIN_DESKTOP_REVOKE_CERT_FOR_USER\n912,ONELOGIN_DESKTOP_REVOKE_CERT_FOR_DEVICE\n931,ADAPTIVE_LOGIN_ENABLED\n932,ADAPTIVE_LOGIN_DISABLED\n950,OL_OTP_PUSH_REJECT\n1001,USER_LOGIN_CHALLENGE\n1002,USER_LOGIN_CHALLENGE_FAILED\n1010,USER_REAUTH_SUCCESS\n1100,TEMP_OTP_TOKEN_GENERATED\n1101,TEMP_OTP_TOKEN_REVOKED\n1200,DELEGATED_APP_PRIVILEGE_DENIED\n1201,DELEGATED_USER_PRIVILEGE_DENIED\n1244,USER_ADDED_PHONE_NUMBER\n1245,USER_UPDATED_PHONE_NUMBER\n1300,API_APP_CREATED\n1301,API_APP_CREATE_FAILED\n1302,API_APP_UPDATED\n1303,API_APP_UPDATE_FAILED\n1304,API_APP_DESTROYED\n1305,API_APP_DESTROY_FAILED\n1400,USER_VERIFIED_OTP_DEVICE\n1401,API_AUTH_APP_CREATE_FAILED\n1402,API_AUTH_APP_UPDATED\n1403,API_AUTH_APP_UPDATE_FAILED\n1404,API_AUTH_APP_DESTROYED\n1405,API_AUTH_APP_DESTROY_FAILED\n1406,API_AUTH_SCOPE_CREATED\n1407,API_AUTH_SCOPE_CREATE_FAILED\n1408,API_AUTH_SCOPE_UPDATED\n1409,API_AUTH_SCOPE_UPDATE_FAILED\n1410,API_AUTH_SCOPE_DESTROYED\n1411,API_AUTH_SCOPE_DESTROY_FAILED\n1412,API_AUTH_CLAIM_CREATED\n1413,API_AUTH_CLAIM_CREATE_FAILED\n1414,API_AUTH_CLAIM_UPDATED\n1415,API_AUTH_CLAIM_UPDATE_FAILED\n1416,API_AUTH_CLAIM_DESTROYED\n1417,API_AUTH_CLAIM_DESTROY_FAILED\n1418,API_AUTH_CLIENT_CREATED\n1419,API_AUTH_CLIENT_CREATE_FAILED\n1420,API_AUTH_CLIENT_UPDATED\n1421,API_AUTH_CLIENT_UPDATE_FAILED\n1422,API_AUTH_CLIENT_DESTROYED\n1423,API_AUTH_CLIENT_DESTROY_FAILED\n1424,API_AUTH_APP_CREATED\n1500,SANDBOX_SYNC_STARTED\n1501,SANDBOX_SYNC_FAILED\n1502,SANDBOX_SYNCED\n1503,SANDBOX_DELETED\n1504,SANDBOX_DELETE_FAILED\n1505,SANDBOX_CREATED\n1506,SANDBOX_CREATION_FAILED\n1507,SANDBOX_UPDATED\n1508,SANDBOX_UPDATE_FAILED\n1509,SANDBOX_DELETED_BY_API\n1510,SANDBOX_DELETE_FAILED_BY_API\n1511,SANDBOX_CREATED_BY_API\n1512,SANDBOX_CREATION_FAILED_BY_API\n1513,SANDBOX_UPDATED_BY_API\n1514,SANDBOX_UPDATE_FAILED_BY_API\n1600,PROFILE_DEVICES_DELETE_DEVICE\n1601,PROFILE_DEVICES_RENAME_DEVICE\n1602,PROFILE_DEVICES_UPDATE_DEFAULT\n1603,PROFILE_SETTINGS_UPDATE_LOCALE\n1604,PROFILE_SETTINGS_UPDATE_PHONE\n1605,PROFILE_SETTINGS_UPDATE_DEFAULT_TAB\n1606,PROFILE_SETTINGS_UPDATE_PROFILE_PHOTO\n1607,PROFILE_SETTINGS_UPDATE_APP_AUTO_DETECT\n1608,PROFILE_CHANGE_PASSWORD\n1609,PROFILE_SETTINGS_UPDATE_SHOW_TABS\n1700,RADIUS_ATTRIBUTE_CREATED\n1701,RADIUS_ATTRIBUTE_UPDATED\n1702,RADIUS_ATTRIBUTE_DELETED\n1801,ROLE_CREATED\n1802,ROLE_DELETED\n1900,API_BRAND_CREATED\n1901,API_BRAND_CREATE_FAILED\n1902,API_BRAND_UPDATED\n1903,API_BRAND_UPDATE_FAILED\n1904,API_BRAND_DESTROYED\n1905,API_BRAND_DESTROY_FAILED\n2000,HOOKS_LIST_FUNCTION\n2001,CUSTOM_SMTP_ERROR\n2002,SMTP_SETTINGS_UPDATED\n2003,HOOKS_CREATE_FUNCTION\n2004,HOOKS_CREATE_FUNCTION_FAILED\n2005,HOOKS_GET_FUNCTION\n2006,HOOKS_GET_FUNCTION_LOGS\n2007,HOOKS_UPDATE_FUNCTION\n2008,HOOKS_UPDATE_FUNCTION_FAILED\n2009,HOOKS_DELETE_FUNCTION\n2010,HOOKS_DELETE_FUNCTION_FAILED\n2011,HOOKS_LIST_ENVVAR\n2012,HOOKS_CREATE_ENVVAR\n2013,HOOKS_CREATE_ENVVAR_FAILED\n2014,HOOKS_GET_ENVVAR\n2015,HOOKS_UPDATE_ENVVAR\n2016,HOOKS_UPDATE_ENVVAR_FAILED\n\
+        2017,HOOKS_DELETE_ENVVAR\n2018,HOOKS_DELETE_ENVVAR_FAILED\n2100,DELEGATED_PRIVILEGE_CREATED_VIA_API\n2101,DELEGATED_PRIVILEGE_CREATED_BY_USER\n2102,DELEGATED_PRIVILEGE_UPDATED_VIA_API\n2103,DELEGATED_PRIVILEGE_UPDATED_BY_USER\n2104,DELEGATED_PRIVILEGE_DELETED_VIA_API\n2105,DELEGATED_PRIVILEGE_DELETED_BY_USER\n2106,DELEGATED_PRIVILEGE_ASSIGNED_TO_USER_VIA_API\n2107,DELEGATED_PRIVILEGE_ASSIGNED_TO_USER_BY_USER\n2108,DELEGATED_PRIVILEGE_REMOVED_FROM_USER_VIA_API\n2109,DELEGATED_PRIVILEGE_REMOVED_FROM_USER_BY_USER\n2110,DELEGATED_PRIVILEGE_ASSIGNED_TO_ROLE_VIA_API\n2111,DELEGATED_PRIVILEGE_ASSIGNED_TO_ROLE_BY_USER\n2112,DELEGATED_PRIVILEGE_REMOVED_FROM_ROLE_VIA_API\n2113,DELEGATED_PRIVILEGE_REMOVED_FROM_ROLE_BY_USER\n2114,DELEGATED_ROLE_PRIVILEGE_DENIED\n2201,REPORT_CREATED_BY_USER\n2202,REPORT_UPDATED_BY_USER\n2203,REPORT_CLONED_BY_USER\n2204,REPORT_DESTROYED_BY_USER\n3000,OIDC_GENERAL_FAIL\n3001,OIDC_IMPLICIT_FLOW_SUCCESS\n3002,OIDC_IMPLICIT_FLOW_FAILED\n3003,OIDC_GET_CODE_SUCCESS\n3004,OIDC_GET_CODE_FAILED\n3005,OIDC_AUTHORIZATION_CODE_SUCCESS\n3006,OIDC_AUTHORIZATION_CODE_FAILED\n3007,OIDC_CLIENT_CREDENTIALS_SUCCESS\n3008,OIDC_CLIENT_CREDENTIALS_FAILED\n3009,OIDC_PASSWORD_SUCCESS\n3010,OIDC_PASSWORD_FAILED\n3011,OIDC_REFRESH_TOKEN_SUCCESS\n3012,OIDC_REFRESH_TOKEN_FAILED\n3013,OIDC_VALIDATE_TOKEN_SUCCESS\n3014,OIDC_VALIDATE_TOKEN_FAILED\n3015,OIDC_REVOKE_TOKEN_SUCCESS\n3016,OIDC_REVOKE_TOKEN_FAILED\n3017,OIDC_USER_INFO_SUCCESS\n3018,OIDC_USER_INFO_FAILED\n3019,NOTIFICATION_WAS_SENT\n3020,GROUP_CREATED\n3021,GROUP_UPDATED\n3022,GROUP_DESTROYED\n3023,USER_CREATED_NOTE\n3024,DELEGATED_GROUP_PRIVILEGE_DENIED\n3025,DELEGATED_POLICY_PRIVILEGE_DENIED\n3026,PROFILE_DEVICES_UNSET_DEFAULT\n9000,USER_ENABLED_WORKFLOW\n9001,USER_DISABLED_WORKFLOW\n9002,USER_INITIATED_WORKFLOW\n9003,USER_COMPLETED_TASK\n9004,USER_MARKED_TASK_COMPLETE\n9005,USER_MARKED_WORKFLOW_COMPLETE\n9006,USER_MARKED_TASK_INCOMPLETE\n9007,USER_ENABLED_ONBOARDING\n9008,USER_DISABLED_ONBOARDING\n9009,USER_ENABLED_OFFBOARDING\n9010,USER_DISABLED_OFFBOARDING\n9011,USER_INITIATED_OFFBOARDING\n9012,USER_INITIATED_ONBOARDING\n9013,USER_COMPLETED_WORKFLOW\n9014,APP_RULES_LIST_SUCCESS\n9015,APP_RULES_LIST_FAILED\n9016,APP_RULES_CREATE_SUCCESS\n9017,APP_RULES_CREATE_FAILED\n9018,APP_RULES_UPDATE_SUCCESS\n9019,APP_RULES_UPDATE_FAILED\n9020,APP_RULES_GET_SUCCESS\n9021,APP_RULES_GET_FAILED\n9022,APP_RULES_DRYRUN_SUCCESS\n9023,APP_RULES_DRYRUN_FAILED\n9024,APP_RULES_DELETE_SUCCESS\n9025,APP_RULES_DELETE_FAILED\n9026,APP_RULES_SORT_SUCCESS\n9027,APP_RULES_SORT_FAILED\n9028,APP_RULES_APPLY_SUCCESS\n9029,APP_RULES_APPLY_FAILED\n9030,APP_RULES_REFRESH_ENTITLEMENTS_SUCCESS\n9031,APP_RULES_REFRESH_ENTITLEMENTS_FAILED\n9032,APP_RULES_LIST_CONDITIONS_SUCCESS\n9033,APP_RULES_LIST_CONDITIONS_FAILED\n9034,APP_RULES_LIST_CONDITION_OPERATORS_SUCCESS\n9035,APP_RULES_LIST_CONDITION_OPERATORS_FAILED\n9036,APP_RULES_LIST_ACTIONS_SUCCESS\n9037,APP_RULES_LIST_ACTIONS_FAILED\n9038,APP_RULES_LIST_ACTION_VALUES_SUCCESS\n9039,APP_RULES_LIST_ACTION_VALUES_FAILED\n9040,USER_ROLE_MANAGEMENT_GRANTED_FAILED\n9041,USER_ROLE_MANAGEMENT_REVOKED_FAILED\n9042,APP_ADDED_TO_ROLE_FAILED\n9043,APP_REMOVED_FROM_ROLE_FAILED\n9044,USER_MANUALLY_ADDED_TO_ROLE_FAILED\n9045,USER_MANUALLY_REMOVED_FROM_ROLE_FAILED\n9046,ROLE_CREATE_FAILED\n9047,ROLE_DELETE_FAILED\n9048,ROLE_LIST_SUCCESS\n9049,ROLE_LIST_FAILED\n9050,ROLE_GET_SUCCESS\n9051,ROLE_GET_FAILED\n9052,ROLE_UPDATE_SUCCESS\n9053,ROLE_UPDATE_FAILED\n9054,ROLE_LIST_APPS_SUCCESS\n9055,ROLE_LIST_APPS_FAILED\n9056,ROLE_LIST_USERS_SUCCESS\n9057,ROLE_LIST_USERS_FAILED\n9058,ROLE_LIST_ADMINISTRATORS_SUCCESS\n9059,ROLE_LIST_ADMINISTRATORS_FAILED"
+      defaultLookup: name_unknown
+    - type: attribute-remapper
+      name: Map `event_type` to `evt`
+      enabled: true
+      sources:
+        - event_type
+      target: evt
+      targetFormat: auto
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorize evt.id as evt.category:authentication
+      enabled: true
+      categories:
+        - filter:
+            query: '@evt.id:(5 OR 8 OR 900 OR 904 OR 140 OR 6 OR 9)'
+          name: authentication
+      target: evt.category
+    - type: category-processor
+      name: Categorize evt.id in evt.outcome
+      enabled: true
+      categories:
+        - filter:
+            query: '@evt.id:(6 OR 9)'
+          name: failure
+        - filter:
+            query: '@evt.id:(5 OR 8 OR 140 OR 900 OR 904)'
+          name: success
+      target: evt.outcome
+    - type: attribute-remapper
+      name: Map `user_agent` to `http.useragent`
+      enabled: true
+      sources:
+        - user_agent
+      target: http.useragent
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `account_id` to `account_id`
+      enabled: true
+      sources:
+        - account_id
+      target: account_id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `evt.id` to `evt.id`
+      enabled: true
+      sources:
+        - evt.id
+      target: evt.id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `policy_id` to `policy_id`
+      enabled: true
+      sources:
+        - policy_id
+      target: policy_id
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `role_id` to `role_id`
+      enabled: true
+      sources:
+        - role_id
+      target: role_id
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resource_type_id` to `resource_type_id`
+      enabled: true
+      sources:
+        - resource_type_id
+      target: resource_type_id
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Grok Parser
+      enabled: true
+      source: notes
+      grok:
+        supportRules: ''
+        matchRules: |-
+          correlation_id_rule .*Correlation_id: %{uuid:correlation_id}
+      samples:
+        - |
+          Authentication method: Login App.
+          Transitions: password -> password
+          Correlation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f

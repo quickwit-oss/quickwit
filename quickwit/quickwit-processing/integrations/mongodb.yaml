@@ -1,0 +1,165 @@
+id: mongodb
+metric_id: mongodb
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Mongo
+    name: '[Mongo] collection'
+    path: mongo.collection
+    source: log
+  - groups:
+      - Mongo
+    name: '[Mongo] PlanSummary Type'
+    path: mongo.planSummary.type
+    source: log
+  - groups:
+      - Mongo
+    name: '[Mongo] Query Type'
+    path: mongo.query.type
+    source: log
+  - groups:
+      - Mongo
+    name: '[Mongo] Context'
+    path: mongo.context
+    source: log
+pipeline:
+  type: pipeline
+  name: Mongodb
+  enabled: true
+  filter:
+    query: source:mongodb
+  processors:
+    - type: grok-parser
+      name: Parsing mongo 2.x logs
+      enabled: true
+      source: message
+      samples:
+        - "2016-11-29T16:19:27.663+0000 [conn118457] command logs.$cmd command: findAndModify { findandmodify: \"alert_events\", query: { date: new Date(1480430820000), scope: \"prod_102\", alertId: ObjectId('5624ca7de8e3f50a009a1a3f'), type: \"open\", breached: \"/cart/select-payment-method.html\" }, sort: { _id: 1 }, new: 1, remove: 0, upsert: 1, update: { $set: { date: new Date(1480430820000), scope: \"prod_102\", alertId: ObjectId('5624ca7de8e3f50a009a1a3f'), type: \"open\", breached: \"/cart/select-payment-method.html\", value: 5, computeDate: new Date(1480436348272) } } } keyUpdates:0 numYields:0 locks(micros) w:245033 reslen:340 245ms"
+        - '2016-11-29T17:40:08.483+0000 [conn118453] getmore logs.alert_definitions query: { disabled: { $ne: true } } cursorid:142485335018 ntoreturn:0 keyUpdates:0 numYields:5 locks(micros) r:1316 nreturned:592 reslen:380736 104ms'
+        - '2016-11-29T16:53:37.450+0000 [conn90663] update logs.sessions query: { _id: "gfv-_TToH5XHYgvmk22MeBv55HRO3ydg" } update: { _id: "gfv-_TToH5XHYgvmk22MeBv55HRO3ydg", session: { cookie: { originalMaxAge: 604799947, expires: new Date(1481043217144), secure: false, httpOnly: true, domain: null, path: "/" }, url: "/videdressing", user_id: "55e5182bb00a7f9c158c9ffe", views: 12, lastAccess: 1480334473734.0 }, expires: new Date(1481043217144) } nMatched:1 nModified:1 keyUpdates:1 numYields:0 locks(micros) w:161 252ms'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):db.date}
+          _context \[%{notSpace:mongo.context}\]
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _connection_id \#%{integer:mongo.connectionId}
+          _operation %{notSpace:mongo.operation}
+          _namespace %{notSpace:mongo.namespace}
+          _database %{regex("[^/\\\\.\\s\"$]+"):db.instance}
+          _collection %{notSpace:mongo.collection}
+          _query_type %{data:mongo.query.type}
+          _counters %{data:mongo.counters:keyvalue(":")}
+          _duration %{integer:duration:scale(1000000)}
+          _raw_query %{regex("\\{.*\\}"):db.statement}
+          _raw_update %{regex("\\{.*\\}"):mongo.update.raw}
+          _plan_summary %{notSpace:mongo.planSummary.type}( %{regex("\\{.*\\}"):mongo.planSummary.params})?
+        matchRules: |
+          mongo.accepted_connections %{_timestamp} %{_context} connection accepted from %{_client_ip}:%{_client_port} %{_connection_id} .*
+
+          mongo.end_connections %{_timestamp} %{_context} end connection %{_client_ip}:%{_client_port} .*
+
+          mongo.query %{_timestamp} %{_context} %{regex("query"):db.operation} %{_database}\.%{_collection} (query: %{_raw_query})? (planSummary: %{_plan_summary})? %{_counters} %{_duration}ms
+
+          mongo.update %{_timestamp} %{_context} %{regex("update"):db.operation} %{_database}\.%{_collection} query: %{_raw_query} update: %{_raw_update} %{_counters} %{_duration}ms
+
+          mongo.insert %{_timestamp} %{_context} %{regex("insert"):db.operation} %{_database}\.%{_collection} %{_counters} %{_duration}ms
+
+          mongo.remove %{_timestamp} %{_context} %{regex("remove"):db.operation} %{_database}\.%{_collection} query: %{_raw_query} %{_counters} %{_duration}ms
+
+          mongo.getmore %{_timestamp} %{_context} %{regex("getmore"):db.operation} %{_database}\.%{_collection} query: %{_raw_query} %{_counters} %{_duration}ms
+
+          mongo.command %{_timestamp} %{_context} %{regex("command"):db.operation} %{_database}\.\$cmd command: %{_query_type} %{_raw_query} %{_counters} %{_duration}ms
+
+    - type: grok-parser
+      name: Parsing Mongo 3.x and 4.x logs
+      enabled: true
+      source: message
+      samples:
+        - '2017-07-24T14:14:42.965+0000 I COMMAND [conn646272] command logs.$cmd command: update { update: "usage_timeseries", ordered: true, updates: 3 } numYields:0 reslen:119 locks:{ Global: { acquireCount: { r: 6, w: 6 } }, Database: { acquireCount: { w: 6 } }, Collection: { acquireCount: { w: 3 } }, Metadata: { acquireCount: { w: 3 } }, oplog: { acquireCount: { w: 3 } } } protocol:op_query 0ms'
+        - '2017-07-24T14:13:40.319+0000 D QUERY [conn814671] Collection local.system.namespaces does not exist. Using EOF plan: query: { name: "local.oplog.rs" } sort: {} projection: {} limit: 1'
+        - '2017-07-24T13:44:27.016+0000 I NETWORK [thread1] connection accepted from 172.32.197.139:50460 #813540 (43 connections now open)'
+        - '2019-05-12T14:44:33.584+0000 I COMMAND  [conn5093490] command admin.$cmd command: isMaster { ismaster: 1, $db: "admin" } numYields:0 reslen:1059 locks:{} protocol:op_query 117ms'
+        - '2019-05-13T12:03:01.487+0000 I COMMAND  [conn808463] command logs.mycoll appName: "MongoDB Shell" command: aggregate { aggregate: "mycoll", pipeline: [ { $match: { timestamp: { $gte: 1557662400000, $lt: 1557748800000 } } }, { $group: { _id: { type: "$type", timestamp: "$timestamp" }, events_count: { $sum: "$events_count" }, type: { $first: "$type" } } } ], cursor: {}, $readPreference: { mode: "secondaryPreferred" }, $db: "logs" } planSummary: IXSCAN { timestamp: 1 } cursorid:7375279878905417346 keysExamined:123934 docsExamined:123934 numYields:975 nreturned:101 reslen:10652 locks:{ Global: { acquireCount: { r: 1970 } }, Database: { acquireCount: { r: 985 } }, Collection: { acquireCount: { r: 985 } } } protocol:op_query 969ms'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):db.date}
+          _severity %{?>notSpace:db.severity}
+          _context \[%{notSpace:mongo.context}\]
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _connection_id \#%{integer:mongo.connectionId}
+          _operation %{notSpace:mongo.operation}
+          _namespace %{notSpace:mongo.namespace}
+          _database %{regex("[^/\\\\.\\s\"$]+"):db.instance}
+          _collection %{notSpace:mongo.collection}
+          _query_type %{data:mongo.query.type}
+          _counters %{data:mongo.counters:keyvalue(":")}
+          _duration %{integer:duration:scale(1000000)}
+          _raw_query %{regex("\\{.*\\}"):db.statement}
+          _raw_update %{regex("\\{.*\\}"):mongo.update.raw}
+          _raw_query_in_db %{regex("\\{.*db: \\S+ \\}"):db.statement}
+          _plan_summary %{notSpace:mongo.planSummary.type}( %{regex("\\{.*?\\}"):mongo.planSummary.params})?
+          _app_name %{regex("[\\w\\s-_.]*"):mongo.appName}
+        matchRules: |
+          mongo.accepted_connections %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} connection accepted from %{_client_ip}:%{_client_port} .*
+
+          mongo.end_connections %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} end connection %{_client_ip}:%{_client_port} .*
+
+          mongo.query %{_timestamp} %{_severity}\s+%{regex("QUERY"):db.operation}\s+%{_context} %{data} query: %{_raw_query} %{_counters}
+
+          mongo.update %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} %{regex("update"):db.operation} %{_database}\.%{_collection} query: %{_raw_query} planSummary: %{_plan_summary} update: %{_raw_update} keysExamined:%{number} %{_counters} %{_duration}ms
+
+          mongo.command.with_plan %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} %{word:db.operation} %{_database}(\.)?(\$cmd|%{_collection})? command: %{_query_type} %{_raw_query} planSummary: %{_plan_summary} %{_counters} %{_duration}ms
+
+          mongo.command.in_db %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} %{word:db.operation} %{_database}(\.)?(\$cmd|%{_collection})? command: %{_query_type} %{_raw_query_in_db} %{_counters} %{_duration}ms
+
+          mongo.command %{_timestamp} %{_severity}\s+%{notSpace}\s+%{_context} %{word:db.operation} %{_database}(\.)?(\$cmd|%{_collection})?( appName: "%{_app_name}")? command: %{_query_type} %{_raw_query} %{_counters} %{_duration}ms
+
+          rule_default %{_timestamp}\s*(%{_severity}\s+%{word:db.operation})?\s*%{_context}\s*%{data}
+
+          #Extra samples:
+          #2019-05-09T13:18:48.741+0000 I COMMAND  [conn26] command db.collection command: find { find: "collection", filter: { scope: "1" }, sort: { discoveryHour: -1 }, limit: 1, singleBatch: true, $readPreference: { mode: "secondaryPreferred" }, $db: "logs" } planSummary: IXSCAN { scope: 1, discoveryHour: 1 } keysExamined:1 docsExamined:1 cursorExhausted:1 numYields:1 nreturned:1 reslen:188 locks:{ Global: { acquireCount: { r: 4 } }, Database: { acquireCount: { r: 2 } }, Collection: { acquireCount: { r: 2 } } } protocol:op_query 284ms
+
+    - type: date-remapper
+      name: Define `db.date`, `t.$date` as the official date of the log
+      enabled: true
+      sources:
+        - db.date
+        - t.$date
+    - type: status-remapper
+      name: Define `db.severity`, `s` as the official status of the log
+      enabled: true
+      sources:
+        - db.severity
+        - s
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

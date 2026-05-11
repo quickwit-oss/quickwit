@@ -1,0 +1,92 @@
+id: "ngrok"
+tests:
+ -
+  sample: |-
+    {
+      "account_id" : "ac_2OtNvAlhso10Gx6s7eupzX3F98q",
+      "event_id" : "ev_25X3yFS6TDkig1KDJWIc4nnJO0c",
+      "event_type" : "http_request_complete.v0",
+      "event_timestamp" : "2022-02-23T23:44:16Z",
+      "object" : {
+        "conn" : {
+          "server_name" : "ngrok-docs-example.ngrok.io",
+          "client_ip" : "2601:0:8200:9e:4cd7:0:c97f:7823",
+          "server_port" : "443"
+        },
+        "http" : {
+          "request" : {
+            "method" : "GET",
+            "version" : "HTTP/2.0",
+            "url" : {
+              "path" : "/docs/events"
+            }
+          },
+          "response" : {
+            "first_byte_ts" : "2022-02-23T23:44:16.732791273Z",
+            "status_code" : 200,
+            "last_byte_ts" : "2022-02-23T23:44:16.737257209Z",
+            "body_length" : 13079
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      account_id: "ac_2OtNvAlhso10Gx6s7eupzX3F98q"
+      event_id: "ev_25X3yFS6TDkig1KDJWIc4nnJO0c"
+      event_timestamp: "2022-02-23T23:44:16Z"
+      evt:
+        name: "http_request_complete.v0"
+      http:
+        method: "GET"
+        status_code: 200
+        url_details:
+          path: "/docs/events"
+        version: "HTTP/2.0"
+      network:
+        client:
+          geoip: {}
+          ip: "2601:0:8200:9e:4cd7:0:c97f:7823"
+        destination:
+          port: "443"
+      object:
+        conn:
+          server_name: "ngrok-docs-example.ngrok.io"
+        http:
+          response:
+            body_length: 13079
+            first_byte_ts: "2022-02-23T23:44:16.732791273Z"
+            last_byte_ts: "2022-02-23T23:44:16.737257209Z"
+    message: |-
+      {
+        "account_id" : "ac_2OtNvAlhso10Gx6s7eupzX3F98q",
+        "event_id" : "ev_25X3yFS6TDkig1KDJWIc4nnJO0c",
+        "event_type" : "http_request_complete.v0",
+        "event_timestamp" : "2022-02-23T23:44:16Z",
+        "object" : {
+          "conn" : {
+            "server_name" : "ngrok-docs-example.ngrok.io",
+            "client_ip" : "2601:0:8200:9e:4cd7:0:c97f:7823",
+            "server_port" : "443"
+          },
+          "http" : {
+            "request" : {
+              "method" : "GET",
+              "version" : "HTTP/2.0",
+              "url" : {
+                "path" : "/docs/events"
+              }
+            },
+            "response" : {
+              "first_byte_ts" : "2022-02-23T23:44:16.732791273Z",
+              "status_code" : 200,
+              "last_byte_ts" : "2022-02-23T23:44:16.737257209Z",
+              "body_length" : 13079
+            }
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1645659856000
+

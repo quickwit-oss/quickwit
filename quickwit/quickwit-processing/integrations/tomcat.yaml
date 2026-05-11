@@ -1,0 +1,278 @@
+id: tomcat
+metric_id: tomcat
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Garbage Collector
+    name: GC Action
+    path: gc.action
+    source: log
+  - groups:
+      - Garbage Collector
+    name: GC Phase
+    path: gc.phase
+    source: log
+  - facetType: range
+    groups:
+      - Garbage Collector
+    name: Memory Freed
+    path: gc.memory_freed
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: mebibyte
+pipeline:
+  type: pipeline
+  name: Tomcat
+  enabled: true
+  filter:
+    query: source:tomcat
+  processors:
+    - type: grok-parser
+      name: Parsing Tomcat logs
+      enabled: true
+      source: message
+      samples:
+        - 2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application.
+        - 2021-01-29 13:42:58,152 [Workflow Event Thread 1] ERROR MyApp - Starting Workflow
+        - 28-Nov-2018 20:51:29.344 INFO [main] org.apache.catalina.startup.Catalina.start Server startup in 1335 ms
+        - 2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application.
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _date_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _date_new_ms %{date("dd-MMM-yyyy HH:mm:ss.SSS"):timestamp}
+          _duration %{integer:duration}
+          _thread_name %{regex("[^\\]]*"):logger.thread_name}
+          _status %{word:status}
+          _logger_name %{notSpace:logger.name}
+          _context %{notSpace:logger.context}
+          _line %{integer:line}
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):timestamp}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+        matchRules: |
+          Tomcat_default (%{_date_ms}|%{_duration})\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- %{data:msg}((\n|\t)%{data:error.stack})?
+
+          Tomcat_default_2 %{_date_new_ms}\s+%{_status}\s+\[%{_thread_name}\]\s+%{_logger_name} %{data:msg}((\n|\t)%{data:error.stack})?
+
+          Tomcat_recommended %{_date} %{_status}\s+%{_logger_name}:%{_line}\s+- %{data:msg}((\n|\t)%{data:error.stack})?
+
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+
+          access.combined %{access.common} "%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?.*
+
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+
+      samples:
+        - |
+          java.lang.NullPointerException: this is my error message
+           at org.apache.struts2.MyClass.checkCacheEntryyy(MyClass.java: 22)
+    - type: grok-parser
+      name: Parsing Tomcat GC logs
+      enabled: true
+      source: message
+      samples:
+        - '2019-03-20T14:36:30.111+0000: 41.098: [GC concurrent-mark-end, 0.0272767 secs]'
+        - '2019-03-20T14:36:30.111+0000: 41.071: [GC concurrent-mark-start]'
+        - '2019-03-20T14:36:30.111+0000: 41.099: [Finalize Marking, 0.0011661 secs]'
+      grok:
+        supportRules: |
+          _gc_event_phase_duration %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[GC\s%{notSpace:gc.action}(\s%{regex("([^,]*)"):gc.phase},)?(\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          _parallel \[Parallel\sTime:\s%{number:parallel_time}\sms,\sGC\sWorkers:\s%{number:gc_worker.count}]
+
+          _gc_worker_start \[GC\sWorker\sStart\s\(ms\):\sMin:\s%{number:gc_worker.start.min},\sAvg:\s%{number:gc_worker.start.avg},\sMax:\s%{number:gc_worker.start.max},\sDiff:\s%{number:gc_worker.start.diff}]
+
+          _ext_root_scanning \[Ext\sRoot\sScanning\s\(ms\):\sMin:\s%{number:exit_root_scanning.min},\sAvg:\s%{number:exit_root_scanning.avg},\sMax:\s%{number:exit_root_scanning.max},\sDiff:\s%{number:exit_root_scanning.diff},\sSum:\s%{number:exit_root_scanning.sum}]
+
+          _update_rs \[Update\sRS\s\(ms\):\sMin:\s%{number:update_rs.min},\sAvg:\s%{number:update_rs.avg},\sMax:\s%{number:update_rs.max},\sDiff:\s%{number:update_rs.diff},\sSum:\s%{number:update_rs.sum}]
+
+          _gcc_event %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}:%{notSpace}\s\[%{regex("([^\\]]*)"):event.type}]
+
+          _processed_buffer \[Processed\sBuffers:\sMin:\s%{number:processed_buffer.min},\sAvg:\s%{number:processed_buffer.avg},\sMax:\s%{number:processed_buffer.max},\sDiff:\s%{number:processed_buffer.diff},\sSum:\s%{number:processed_buffer.sum}]
+
+          _scan_rs \[Scan\sRS\s\(ms\):\sMin:\s%{number:scan_rs.min},\sAvg:\s%{number:scan_rs.avg},\sMax:\s%{number:scan_rs.max},\sDiff:\s%{number:scan_rs.diff},\sSum:\s%{number:scan_rs.sum}]
+
+          _code_root_scan \[Code\sRoot\sScanning\s\(ms\):\sMin:\s%{number:code_root.scan.min},\sAvg:\s%{number:code_root.scan.avg},\sMax:\s%{number:code_root.scan.max},\sDiff:\s%{number:code_root.scan.diff},\sSum:\s%{number:code_root.scan.sum}]
+
+          _object_copy \[Object\sCopy\s\(ms\):\sMin:\s%{number:object_copy.min},\sAvg:\s%{number:object_copy.avg},\sMax:\s%{number:object_copy.max},\sDiff:\s%{number:object_copy.diff},\sSum:\s%{number:object_copy.sum}]
+
+          _termination \[Termination\s\(ms\):\sMin:\s%{number:termination.min},\sAvg:\s%{number:termination.avg},\sMax:\s%{number:termination.max},\sDiff:\s%{number:termination.diff},\sSum:\s%{number:termination.sum}]
+
+          _termination_attempts \[Termination\sAttempts:\sMin:\s%{number:termination.attempts.min},\sAvg:\s%{number:termination.attempts.avg},\sMax:\s%{number:termination.attempts.max},\sDiff:\s%{number:termination.attempts.diff},\sSum:\s%{number:termination.attempts.sum}]
+
+          _gc_worker_other \[GC\sWorker\sOther\s\(ms\):\sMin:\s%{number:gc_worker.other.min},\sAvg:\s%{number:gc_worker.other.avg},\sMax:\s%{number:gc_worker.other.max},\sDiff:\s%{number:gc_worker.other.diff},\sSum:\s%{number:gc_worker.other.sum}]
+
+          _gc_worker_total \[GC\sWorker\sTotal\s\(ms\):\sMin:\s%{number:gc_worker.total.min},\sAvg:\s%{number:gc_worker.total.avg},\sMax:\s%{number:gc_worker.total.max},\sDiff:\s%{number:gc_worker.total.diff},\sSum:\s%{number:gc_worker.total.sum}]
+
+          _gc_worker_end \[GC\sWorker\sEnd\s\(ms\):\sMin:\s%{number:gc_worker.end.min},\sAvg:\s%{number:gc_worker.end.avg},\sMax:\s%{number:gc_worker.end.max},\sDiff:\s%{number:gc_worker.end.diff}]
+
+          _code_root_fixup \[Code\sRoot\sFixup:\s%{number:code_root.fixup}\sms]
+
+          _code_root_purge \[Code\sRoot\sPurge:\s%{number:code_root.purge}\sms]
+
+          _clear_ct \[Clear\sCT:\s%{number:clear_ct}\sms]
+
+          _other \[Other:\s%{number:other}\sms]
+
+          _choose_cset \[Choose\sCSet:\s%{number:choose_cset}\sms]
+
+          _ref_proc \[Ref\sProc:\s%{number:ref.proc}\sms]
+
+          _ref_enq \[Ref\sEnq:\s%{number:ref.enq}\sms]
+
+          _redirty_cards \[Redirty\sCards:\s%{number:redirty_cards}\sms]
+
+          _humongous_register \[Humongous\sRegister:\s%{number:humongous_register}\sms]
+
+          _humongous_reclaim \[Humongous\sReclaim:\s%{number:humongous_reclaim}\sms]
+
+          _free \[Free\sCSet:\s%{number:free}\sms]
+
+          _memory_usage \[Eden: (%{number:eden.memory_before}M|%{number:eden.memory_before:scale(1000)}G)\((%{number:eden.memory_allocated_before}M|%{number:eden.memory_allocated_before:scale(1000)}G)\)->%{number:eden.memory_after}B\((%{number:eden.memory_allocated_after}M|%{number:eden.memory_allocated_after:scale(1000)}G)\)\sSurvivors:\s%{number:survivor.memory_before}M->%{number:survivor.memory_after}M\sHeap:\s(%{number:heap.memory_before}M|%{number:heap.memory_before:scale(1000)}G)\((%{number:heap.memory_allocated_before}M|%{number:heap.memory_allocated_before:scale(1000)}G)\)->%{number:heap.memory_after}M\((%{number:heap.memory_allocated_after}M|%{number:heap.memory_allocated_after:scale(1000)}G)\)]
+
+          _times \[Times:\suser=%{number:times.user}\ssys=%{number:times.system},\sreal=%{number:times.real}\ssecs]
+
+        matchRules: |
+          Tomcat_gc_event %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[GC\s%{notSpace:gc.action}(\s%{regex("([^,]*)"):gc.phase},)?(\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          Tomcat_non_gc_event %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}: %{notSpace}\s\[%{regex("([^,]*)"):gc.action}(,\s%{number:duration:scale(1000000000)}\ssecs)?]
+
+          Tomcat_longform %{_gc_event_phase_duration}(\r|\n|\s)*%{_parallel}(\r|\n|\s)*%{_gc_worker_start}(\r|\n|\s)*%{_ext_root_scanning}(\r|\n|\s)*%{_update_rs}(\r|\n|\s)*%{_processed_buffer}(\r|\n|\s)*%{_scan_rs}(\r|\n|\s)*%{_code_root_scan}(\r|\n|\s)*%{_object_copy}(\r|\n|\s)*%{_termination}(\r|\n|\s)*%{_termination_attempts}(\r|\n|\s)*%{_gc_worker_other}(\r|\n|\s)*%{_gc_worker_total}(\r|\n|\s)*%{_gc_worker_end}(\r|\n|\s)*%{_code_root_fixup}(\r|\n|\s)*%{_code_root_purge}(\r|\n|\s)*%{_clear_ct}(\r|\n|\s)*%{_other}(\r|\n|\s)*%{_choose_cset}(\r|\n|\s)*%{_ref_proc}(\r|\n|\s)*%{_ref_enq}(\r|\n|\s)*%{_redirty_cards}(\r|\n|\s)*%{_humongous_register}(\r|\n|\s)*%{_humongous_reclaim}(\r|\n|\s)*%{_free}(\r|\n|\s)*%{_memory_usage}(\r|\n|\s)*%{_times}
+
+          #Log samples:
+          #Timestamp,action, duration
+          #Timestamp,action
+          #Timestamp,no GC action, duration
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `status` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - status
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+
+    - type: arithmetic-processor
+      name: Calculate GC memory freed
+      enabled: true
+      expression: (heap.memory_before - heap.memory_after)
+      target: gc.memory_freed
+      replaceMissing: false

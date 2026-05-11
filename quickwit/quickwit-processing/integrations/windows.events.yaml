@@ -1,0 +1,225 @@
+id: windows.events
+metric_id: event-viewer
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Windows
+    name: Computer Name
+    path: Event.System.Computer
+    source: log
+  - groups:
+      - Windows
+    name: Image Path
+    path: Event.EventData.Data.ImagePath
+    source: log
+  - groups:
+      - Windows
+    name: Logon Type
+    path: Event.EventData.Data.LogonType
+    source: log
+  - groups:
+      - Windows
+    name: Process Name
+    path: Event.EventData.Data.ProcessName
+    source: log
+  - groups:
+      - Windows
+    name: Service Name
+    path: Event.EventData.Data.ServiceName
+    source: log
+  - groups:
+      - Windows
+    name: Workstation Name
+    path: Event.EventData.Data.WorkstationName
+    source: log
+  - groups:
+      - Windows
+    name: Target User Name
+    path: Event.EventData.Data.TargetUserName
+    source: log
+  - groups:
+      - Windows
+    name: Subject User Name
+    path: Event.EventData.Data.SubjectUserName
+    source: log
+  - groups:
+      - Windows
+    name: Service Filename
+    path: Event.EventData.Data.ServiceFileName
+    source: log
+  - groups:
+      - Event
+    name: Event ID
+    path: evt.id
+    source: log
+    type: string
+  - groups:
+      - Windows
+    name: Windows Task Name
+    path: Event.EventData.Data.TaskName
+    source: log
+  - groups:
+      - Windows
+    name: Setting Value
+    path: Event.EventData.Data.SettingValue
+    source: log
+  - groups:
+      - Windows
+    name: Caller Process Name
+    path: Event.EventData.Data.CallerProcessName
+    source: log
+  - groups:
+      - Windows
+    name: Subject Logon ID
+    path: Event.EventData.Data.SubjectLogonId
+    source: log
+  - groups:
+      - Windows
+    name: Logon Process Name
+    path: Event.EventData.Data.LogonProcessName
+    source: log
+  - groups:
+      - Windows
+    name: Target Logon ID
+    path: Event.EventData.Data.TargetLogonId
+    source: log
+  - groups:
+      - Windows
+    name: Event SubStatus
+    path: Event.EventData.Data.SubStatus
+    source: log
+pipeline:
+  type: pipeline
+  name: Windows Events
+  enabled: true
+  filter:
+    query: source:windows.events
+  processors:
+    - type: date-remapper
+      name: Define `Event.System.TimeCreated.SystemTime` as the official date of the log
+      enabled: true
+      sources:
+        - Event.System.TimeCreated.SystemTime
+    - type: attribute-remapper
+      name: Map `Event.System.EventID` to `evt.id`
+      enabled: true
+      sources:
+        - Event.System.EventID
+      target: evt.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+      targetFormat: string
+    - type: attribute-remapper
+      name: Map `Event.EventData.Data.IpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - Event.EventData.Data.IpAddress
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: geo-ip-parser
+      name: ''
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: attribute-remapper
+      name: Map `Event.EventData.Data.ProcessName`, `Event.EventData.Data.CallerProcessName` to `process.executable.path`
+      enabled: true
+      sources:
+        - Event.EventData.Data.ProcessName
+        - Event.EventData.Data.CallerProcessName
+      target: process.executable.path
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `Event.EventData.Data.SubjectLogonId` to `usr.session.id`
+      enabled: true
+      sources:
+        - Event.EventData.Data.SubjectLogonId
+      target: usr.session.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `Event.EventData.Data.SubjectUserName` to `usr.id`
+      enabled: true
+      sources:
+        - Event.EventData.Data.SubjectUserName
+      target: usr.id
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: lookup-processor
+      name: Map Event.EventData.Data.LogonType to Event.EventData.Data.LogonDescription
+      enabled: true
+      source: Event.EventData.Data.LogonType
+      target: Event.EventData.Data.LogonDescription
+      lookupTable: "2, Interactive (logon at keyboard and screen of system)\n3, Network \n4, Batch\n5, Service\n8, NetworkCleartext\n9, NewCredentials\n10, RemoteInteractive (RDP)"
+      defaultLookup:
+    - type: lookup-processor
+      name: Map evt.id to title
+      enabled: true
+      source: evt.id
+      target: title
+      lookupTable: "1100,The event logging service has shut down\n1101,Audit events have been dropped by the transport.\n1102,The audit log was cleared\n1104,The security Log is now full\n1105,Event log automatic backup\n1108,The event logging service encountered an error\n4608,Windows is starting up\n4609,Windows is shutting down\n4610,An authentication package has been loaded by the Local Security Authority\n4611,A trusted logon process has been registered with the Local Security Authority\n4612,Internal resources allocated for the queuing of audit messages have been exhausted leading to the loss of some audits.\n4614,A notification package has been loaded by the Security Account Manager.\n4615,Invalid use of LPC port\n4616,The system time was changed.\n4618,A monitored security event pattern has occurred\n4621,Administrator recovered system from CrashOnAuditFail\n4622,A security package has been loaded by the Local Security Authority.\n4624,An account was successfully logged on\n4625,An account failed to log on\n4626,User/Device claims information\n4627,Group membership information.\n4634,An account was logged off\n4646,IKE DoS-prevention mode started\n4647,User initiated logoff\n4648,A logon was attempted using explicit credentials\n4649,A replay attack was detected\n4650,An IPsec Main Mode security association was established\n4651,An IPsec Main Mode security association was established\n4652,An IPsec Main Mode negotiation failed\n4653,An IPsec Main Mode negotiation failed\n4654,An IPsec Quick Mode negotiation failed\n4655,An IPsec Main Mode security association ended\n4656,A handle to an object was requested\n4657,A registry value was modified\n4658,The handle to an object was closed\n4659,A handle to an object was requested with intent to delete\n4660,An object was deleted\n4661,A handle to an object was requested\n4662,An operation was performed on an object\n4663,An attempt was made to access an object\n4664,An attempt was made to create a hard link\n4665,An attempt was made to create an application client context.\n4666,An application attempted an operation\n4667,An application client context was deleted\n4668,An application was initialized\n4670,Permissions on an object were changed\n4671,An application attempted to access a blocked ordinal through the TBS\n4672,Special privileges assigned to new logon\n4673,A privileged service was called\n4674,An operation was attempted on a privileged object\n4675,SIDs were filtered\n4688,A new process has been created\n4689,A process has exited\n4690,An attempt was made to duplicate a handle to an object\n4691,Indirect access to an object was requested\n4692,Backup of data protection master key was attempted\n4693,Recovery of data protection master key was attempted\n4694,Protection of auditable protected data was attempted\n4695,Unprotection of auditable protected data was attempted\n4696,A primary token was assigned to process\n4697,A service was installed in the system\n4698,A scheduled task was created\n4699,A scheduled task was deleted\n4700,A scheduled task was enabled\n4701,A scheduled task was disabled\n4702,A scheduled task was updated\n4703,A token right was adjusted\n4704,A user right was assigned\n4705,A user right was removed\n4706,A new trust was created to a domain\n4707,A trust to a domain was removed\n4709,IPsec Services was started\n4710,IPsec Services was disabled\n4711,PAStore Engine (1%)\n4712,IPsec Services encountered a potentially serious failure\n4713,Kerberos policy was changed\n4714,Encrypted data recovery policy was changed\n4715,The audit policy (SACL) on an object was changed\n4716,Trusted domain information was modified\n4717,System security access was granted to an account\n4718,System security access was removed from an account\n4719,System audit policy was changed\n4720,A user account was created\n4722,A user account was enabled\n4723,An attempt was made to change an accounts password\n4724,An attempt was made to reset an accounts password\n4725,A user account was disabled\n4726,A user account was deleted\n4727,A security-enabled global group\
+        \ was created\n4728,A member was added to a security-enabled global group\n4729,A member was removed from a security-enabled global group\n4730,A security-enabled global group was deleted\n4731,A security-enabled local group was created\n4732,A member was added to a security-enabled local group\n4733,A member was removed from a security-enabled local group\n4734,A security-enabled local group was deleted\n4735,A security-enabled local group was changed\n4737,A security-enabled global group was changed\n4738,A user account was changed\n4739,Domain Policy was changed\n4740,A user account was locked out\n4741,A computer account was created\n4742,A computer account was changed\n4743,A computer account was deleted\n4744,A security-disabled local group was created\n4745,A security-disabled local group was changed\n4746,A member was added to a security-disabled local group\n4747,A member was removed from a security-disabled local group\n4748,A security-disabled local group was deleted\n4749,A security-disabled global group was created\n4750,A security-disabled global group was changed\n4751,A member was added to a security-disabled global group\n4752,A member was removed from a security-disabled global group\n4753,A security-disabled global group was deleted\n4754,A security-enabled universal group was created\n4755,A security-enabled universal group was changed\n4756,A member was added to a security-enabled universal group\n4757,A member was removed from a security-enabled universal group\n4758,A security-enabled universal group was deleted\n4759,A security-disabled universal group was created\n4760,A security-disabled universal group was changed\n4761,A member was added to a security-disabled universal group\n4762,A member was removed from a security-disabled universal group\n4763,A security-disabled universal group was deleted\n4764,A groups type was changed\n4765,SID History was added to an account\n4766,An attempt to add SID History to an account failed\n4767,A user account was unlocked\n4768,A Kerberos authentication ticket (TGT) was requested\n4769,A Kerberos service ticket was requested\n4770,A Kerberos service ticket was renewed\n4771,Kerberos pre-authentication failed\n4772,A Kerberos authentication ticket request failed\n4773,A Kerberos service ticket request failed\n4774,An account was mapped for logon\n4775,An account could not be mapped for logon\n4776,The domain controller attempted to validate the credentials for an account\n4777,The domain controller failed to validate the credentials for an account\n4778,A session was reconnected to a Window Station\n4779,A session was disconnected from a Window Station\n4780,The ACL was set on accounts which are members of administrators groups\n4781,The name of an account was changed\n4782,The password hash an account was accessed\n4783,A basic application group was created\n4784,A basic application group was changed\n4785,A member was added to a basic application group\n4786,A member was removed from a basic application group\n4787,A non-member was added to a basic application group\n4788,A non-member was removed from a basic application group..\n4789,A basic application group was deleted\n4790,An LDAP query group was created\n4791,A basic application group was changed\n4792,An LDAP query group was deleted\n4793,The Password Policy Checking API was called\n4794,An attempt was made to set the Directory Services Restore Mode administrator password\n4797,An attempt was made to query the existence of a blank password for an account\n4798,A users local group membership was enumerated.\n4799,A security-enabled local group membership was enumerated\n4800,The workstation was locked\n4801,The workstation was unlocked\n4802,The screen saver was invoked\n4803,The screen saver was dismissed\n4816,RPC detected an integrity violation while decrypting an incoming message\n4817,Auditing settings on object were changed.\n4818,Proposed Central Access Policy does not grant the same access permissions as the current Central Access Policy\n4819,Central Access Policies on the machine have\
+        \ been changed\n4820,A Kerberos Ticket-granting-ticket (TGT) was denied because the device does not meet the access control restrictions\n4821,A Kerberos service ticket was denied because the user device or both does not meet the access control restrictions\n4822,NTLM authentication failed because the account was a member of the Protected User group\n4823,NTLM authentication failed because access control restrictions are required\n4824,Kerberos preauthentication by using DES or RC4 failed because the account was a member of the Protected User group\n4825,A user was denied the access to Remote Desktop. By default users are allowed to connect only if they are members of the Remote Desktop Users group or Administrators group\n4826,Boot Configuration Data loaded\n4830,SID History was removed from an account\n4864,A namespace collision was detected\n4865,A trusted forest information entry was added\n4866,A trusted forest information entry was removed\n4867,A trusted forest information entry was modified\n4868,The certificate manager denied a pending certificate request\n4869,Certificate Services received a resubmitted certificate request\n4870,Certificate Services revoked a certificate\n4871,Certificate Services received a request to publish the certificate revocation list (CRL)\n4872,Certificate Services published the certificate revocation list (CRL)\n4873,A certificate request extension changed\n4874,One or more certificate request attributes changed.\n4875,Certificate Services received a request to shut down\n4876,Certificate Services backup started\n4877,Certificate Services backup completed\n4878,Certificate Services restore started\n4879,Certificate Services restore completed\n4880,Certificate Services started\n4881,Certificate Services stopped\n4882,The security permissions for Certificate Services changed\n4883,Certificate Services retrieved an archived key\n4884,Certificate Services imported a certificate into its database\n4885,The audit filter for Certificate Services changed\n4886,Certificate Services received a certificate request\n4887,Certificate Services approved a certificate request and issued a certificate\n4888,Certificate Services denied a certificate request\n4889,Certificate Services set the status of a certificate request to pending\n4890,The certificate manager settings for Certificate Services changed.\n4891,A configuration entry changed in Certificate Services\n4892,A property of Certificate Services changed\n4893,Certificate Services archived a key\n4894,Certificate Services imported and archived a key\n4895,Certificate Services published the CA certificate to Active Directory Domain Services\n4896,One or more rows have been deleted from the certificate database\n4897,Role separation enabled\n4898,Certificate Services loaded a template\n4899,A Certificate Services template was updated\n4900,Certificate Services template security was updated\n4902,The Per-user audit policy table was created\n4904,An attempt was made to register a security event source\n4905,An attempt was made to unregister a security event source\n4906,The CrashOnAuditFail value has changed\n4907,Auditing settings on object were changed\n4908,Special Groups Logon table modified\n4909,The local policy settings for the TBS were changed\n4910,The group policy settings for the TBS were changed\n4911,Resource attributes of the object were changed\n4912,Per User Audit Policy was changed\n4913,Central Access Policy on the object was changed\n4928,An Active Directory replica source naming context was established\n4929,An Active Directory replica source naming context was removed\n4930,An Active Directory replica source naming context was modified\n4931,An Active Directory replica destination naming context was modified\n4932,Synchronization of a replica of an Active Directory naming context has begun\n4933,Synchronization of a replica of an Active Directory naming context has ended\n4934,Attributes of an Active Directory object were replicated\n4935,Replication failure begins\n4936,Replication failure ends\n4937,A lingering object was\
+        \ removed from a replica\n4944,The following policy was active when the Windows Firewall started\n4945,A rule was listed when the Windows Firewall started\n4946,A change has been made to Windows Firewall exception list. A rule was added\n4947,A change has been made to Windows Firewall exception list. A rule was modified\n4948,A change has been made to Windows Firewall exception list. A rule was deleted\n4949,Windows Firewall settings were restored to the default values\n4950,A Windows Firewall setting has changed\n4951,A rule has been ignored because its major version number was not recognized by Windows Firewall\n4952,Parts of a rule have been ignored because its minor version number was not recognized by Windows Firewall\n4953,A rule has been ignored by Windows Firewall because it could not parse the rule\n4954,Windows Firewall Group Policy settings has changed. The new settings have been applied\n4956,Windows Firewall has changed the active profile\n4957,Windows Firewall did not apply the following rule\n4958,Windows Firewall did not apply the following rule because the rule referred to items not configured on this computer\n4960,IPsec dropped an inbound packet that failed an integrity check\n4961,IPsec dropped an inbound packet that failed a replay check\n4962,IPsec dropped an inbound packet that failed a replay check\n4963,IPsec dropped an inbound clear text packet that should have been secured\n4964,Special groups have been assigned to a new logon\n4965,IPsec received a packet from a remote computer with an incorrect Security Parameter Index (SPI).\n4976,During Main Mode negotiation IPsec received an invalid negotiation packet.\n4977,During Quick Mode negotiation IPsec received an invalid negotiation packet.\n4978,During Extended Mode negotiation IPsec received an invalid negotiation packet.\n4979,IPsec Main Mode and Extended Mode security associations were established.\n4980,IPsec Main Mode and Extended Mode security associations were established\n4981,IPsec Main Mode and Extended Mode security associations were established\n4982,IPsec Main Mode and Extended Mode security associations were established\n4983,An IPsec Extended Mode negotiation failed\n4984,An IPsec Extended Mode negotiation failed\n4985,The state of a transaction has changed\n5024,The Windows Firewall Service has started successfully\n5025,The Windows Firewall Service has been stopped\n5027,The Windows Firewall Service was unable to retrieve the security policy from the local storage\n5028,The Windows Firewall Service was unable to parse the new security policy.\n5029,The Windows Firewall Service failed to initialize the driver\n5030,The Windows Firewall Service failed to start\n5031,The Windows Firewall Service blocked an application from accepting incoming connections on the network.\n5032,Windows Firewall was unable to notify the user that it blocked an application from accepting incoming connections on the network\n5033,The Windows Firewall Driver has started successfully\n5034,The Windows Firewall Driver has been stopped\n5035,The Windows Firewall Driver failed to start\n5037,The Windows Firewall Driver detected critical runtime error. Terminating\n5038,Code integrity determined that the image hash of a file is not valid\n5039,A registry key was virtualized.\n5040,A change has been made to IPsec settings. An Authentication Set was added.\n5041,A change has been made to IPsec settings. An Authentication Set was modified\n5042,A change has been made to IPsec settings. An Authentication Set was deleted\n5043,A change has been made to IPsec settings. A Connection Security Rule was added\n5044,A change has been made to IPsec settings. A Connection Security Rule was modified\n5045,A change has been made to IPsec settings. A Connection Security Rule was deleted\n5046,A change has been made to IPsec settings. A Crypto Set was added\n5047,A change has been made to IPsec settings. A Crypto Set was modified\n5048,A change has been made to IPsec settings. A Crypto Set was deleted\n5049,An IPsec Security Association was deleted\n5050,An attempt to programmatically\
+        \ disable the Windows Firewall using a call to INetFwProfile.FirewallEnabled(FALSE\n5051,A file was virtualized\n5056,A cryptographic self test was performed\n5057,A cryptographic primitive operation failed\n5058,Key file operation\n5059,Key migration operation\n5060,Verification operation failed\n5061,Cryptographic operation\n5062,A kernel-mode cryptographic self test was performed\n5063,A cryptographic provider operation was attempted\n5064,A cryptographic context operation was attempted\n5065,A cryptographic context modification was attempted\n5066,A cryptographic function operation was attempted\n5067,A cryptographic function modification was attempted\n5068,A cryptographic function provider operation was attempted\n5069,A cryptographic function property operation was attempted\n5070,A cryptographic function property operation was attempted\n5071,Key access denied by Microsoft key distribution service\n5120,OCSP Responder Service Started\n5121,OCSP Responder Service Stopped\n5122,A Configuration entry changed in the OCSP Responder Service\n5123,A configuration entry changed in the OCSP Responder Service\n5124,A security setting was updated on OCSP Responder Service\n5125,A request was submitted to OCSP Responder Service\n5126,Signing Certificate was automatically updated by the OCSP Responder Service\n5127,The OCSP Revocation Provider successfully updated the revocation information\n5136,A directory service object was modified\n5137,A directory service object was created\n5138,A directory service object was undeleted\n5139,A directory service object was moved\n5140,A network share object was accessed\n5141,A directory service object was deleted\n5142,A network share object was added.\n5143,A network share object was modified\n5144,A network share object was deleted.\n5145,A network share object was checked to see whether client can be granted desired access\n5146,The Windows Filtering Platform has blocked a packet\n5147,A more restrictive Windows Filtering Platform filter has blocked a packet\n5148,The Windows Filtering Platform has detected a DoS attack and entered a defensive mode; packets associated with this attack will be discarded.\n5149,The DoS attack has subsided and normal processing is being resumed.\n5150,The Windows Filtering Platform has blocked a packet.\n5151,A more restrictive Windows Filtering Platform filter has blocked a packet.\n5152,The Windows Filtering Platform blocked a packet\n5153,A more restrictive Windows Filtering Platform filter has blocked a packet\n5154,The Windows Filtering Platform has permitted an application or service to listen on a port for incoming connections\n5155,The Windows Filtering Platform has blocked an application or service from listening on a port for incoming connections\n5156,The Windows Filtering Platform has allowed a connection\n5157,The Windows Filtering Platform has blocked a connection\n5158,The Windows Filtering Platform has permitted a bind to a local port\n5159,The Windows Filtering Platform has blocked a bind to a local port\n5168,Spn check for SMB/SMB2 fails.\n5169,A directory service object was modified\n5170,A directory service object was modified during a background cleanup task\n5376,Credential Manager credentials were backed up\n5377,Credential Manager credentials were restored from a backup\n5378,The requested credentials delegation was disallowed by policy\n5379,Credential Manager credentials were read\n5380,Vault Find Credential\n5381,Vault credentials were read\n5382,Vault credentials were read\n5440,The following callout was present when the Windows Filtering Platform Base Filtering Engine started\n5441,The following filter was present when the Windows Filtering Platform Base Filtering Engine started\n5442,The following provider was present when the Windows Filtering Platform Base Filtering Engine started\n5443,The following provider context was present when the Windows Filtering Platform Base Filtering Engine started\n5444,The following sub-layer was present when the Windows Filtering Platform Base Filtering Engine started\n5446,A Windows\
+        \ Filtering Platform callout has been changed\n5447,A Windows Filtering Platform filter has been changed\n5448,A Windows Filtering Platform provider has been changed\n5449,A Windows Filtering Platform provider context has been changed\n5450,A Windows Filtering Platform sub-layer has been changed\n5451,An IPsec Quick Mode security association was established\n5452,An IPsec Quick Mode security association ended\n5453,An IPsec negotiation with a remote computer failed because the IKE and AuthIP IPsec Keying Modules (IKEEXT) service is not started\n5456,PAStore Engine applied Active Directory storage IPsec policy on the computer\n5457,PAStore Engine failed to apply Active Directory storage IPsec policy on the computer\n5458,PAStore Engine applied locally cached copy of Active Directory storage IPsec policy on the computer\n5459,PAStore Engine failed to apply locally cached copy of Active Directory storage IPsec policy on the computer\n5460,PAStore Engine applied local registry storage IPsec policy on the computer\n5461,PAStore Engine failed to apply local registry storage IPsec policy on the computer\n5462,PAStore Engine failed to apply some rules of the active IPsec policy on the computer\n5463,PAStore Engine polled for changes to the active IPsec policy and detected no changes\n5464,PAStore Engine polled for changes to the active IPsec policy detected changes and applied them to IPsec Services\n5465,PAStore Engine received a control for forced reloading of IPsec policy and processed the control successfully\n5466,PAStore Engine polled for changes to the Active Directory IPsec policy determined that Active Directory cannot be reached and will use the cached copy of the Active Directory IPsec policy instead\n5467,PAStore Engine polled for changes to the Active Directory IPsec policy determined that Active Directory can be reached and found no changes to the policy\n5468,PAStore Engine polled for changes to the Active Directory IPsec policy determined that Active Directory can be reached found changes to the policy and applied those changes\n5471,PAStore Engine loaded local storage IPsec policy on the computer\n5472,PAStore Engine failed to load local storage IPsec policy on the computer\n5473,PAStore Engine loaded directory storage IPsec policy on the computer\n5474,PAStore Engine failed to load directory storage IPsec policy on the computer\n5477,PAStore Engine failed to add quick mode filter\n5478,IPsec Services has started successfully\n5479,IPsec Services has been shut down successfully\n5480,IPsec Services failed to get the complete list of network interfaces on the computer\n5483,IPsec Services failed to initialize RPC server. IPsec Services could not be started\n5484,IPsec Services has experienced a critical failure and has been shut down\n5485,IPsec Services failed to process some IPsec filters on a plug-and-play event for network interfaces\n5632,A request was made to authenticate to a wireless network\n5633,A request was made to authenticate to a wired network\n5712,A Remote Procedure Call (RPC) was attempted\n5888,An object in the COM+ Catalog was modified\n5889,An object was deleted from the COM+ Catalog\n5890,An object was added to the COM+ Catalog\n6144,Security policy in the group policy objects has been applied successfully\n6145,One or more errors occured while processing security policy in the group policy objects\n6272,Network Policy Server granted access to a user\n6273,Network Policy Server denied access to a user\n6274,Network Policy Server discarded the request for a user\n6275,Network Policy Server discarded the accounting request for a user\n6276,Network Policy Server quarantined a user\n6277,Network Policy Server granted access to a user but put it on probation because the host did not meet the defined health policy\n6278,Network Policy Server granted full access to a user because the host met the defined health policy\n6279,Network Policy Server locked the user account due to repeated failed authentication attempts\n6280,Network Policy Server unlocked the user account\n6281,Code Integrity determined\
+        \ that the page hashes of an image file are not valid...\n6400,BranchCache Received an incorrectly formatted response while discovering availability of content.\n6401,BranchCache Received invalid data from a peer. Data discarded.\n6402,BranchCache The message to the hosted cache offering it data is incorrectly formatted.\n6403,BranchCache The hosted cache sent an incorrectly formatted response to the clients message to offer it data.\n6404,BranchCache Hosted cache could not be authenticated using the provisioned SSL certificate.\n6405,BranchCache %2 instance(s) of event id %1 occurred.\n6406,%1 registered to Windows Firewall to control filtering for the following\n6407,%1\n6408,Registered product %1 failed and Windows Firewall is now controlling the filtering for %2.\n6409,BranchCache A service connection point object could not be parsed\n6410,Code integrity determined that a file does not meet the security requirements to load into a process. This could be due to the use of shared sections or other issues\n6416,A new external device was recognized by the system.\n6417,The FIPS mode crypto selftests succeeded\n6418,The FIPS mode crypto selftests failed\n6419,A request was made to disable a device\n6420,A device was disabled\n6421,A request was made to enable a device\n6422,A device was enabled\n6423,The installation of this device is forbidden by system policy\n6424,The installation of this device was allowed after having previously been forbidden by policy\n8191,Highest System-Defined Audit Message Value"
+      defaultLookup:

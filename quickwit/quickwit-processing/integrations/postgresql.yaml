@@ -1,0 +1,123 @@
+id: postgresql
+metric_id: postgres
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Database
+    name: User
+    path: db.user
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Database
+    name: Session ID
+    path: postgres.session_id
+    source: log
+pipeline:
+  type: pipeline
+  name: Postgresql
+  enabled: true
+  filter:
+    query: source:postgresql
+  processors:
+    - type: grok-parser
+      name: Parsing Postgresql logs
+      enabled: true
+      source: message
+      samples:
+        - '2017-11-07 17:30:39 UTC LOG:  incomplete startup packet'
+        - '2017-11-07 17:37:22 UTC FATAL:  role "myrole" does not exist'
+        - '2017-11-08 18:11:35.727 UTC [5237] postgres psql postgres [local] 5a0348cd.1475 LOG:  statement: SELECT * FROM playground;'
+        - '2019-12-10 18:27:45.389 UTC [114] datadog_test datadog-agent datadog 172.28.0.1 5defc7c5.72 LOG:  duration: 0.140 ms  statement: select checkpoints_timed, checkpoints_req, buffers_checkpoint, buffers_clean, maxwritten_clean, buffers_backend, buffers_alloc, buffers_backend_fsync, checkpoint_write_time, checkpoint_sync_time FROM pg_stat_bgwriter'
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd HH:mm:ss z"):db.date}
+          _timestamp_ms %{date("yyyy-MM-dd HH:mm:ss.SSS z"):db.date}
+          _database %{notSpace:db.instance}
+          _raw_query %{data:db.statement}
+          _duration %{numberExt:duration}
+          _severity %{?>notSpace:db.severity}
+          _user %{notSpace:db.user}
+          _client_ip %{notSpace:network.client.ip}
+          _proc_id %{notSpace:postgres.proc_id}
+          _session_id %{notSpace:postgres.session_id}
+          _app %{notSpace:postgres.appname}
+          _prefix %{_timestamp_ms} \[%{_proc_id}\] %{_database} %{_app} %{_user} %{_client_ip} %{_session_id}
+        matchRules: |
+          #Check documentation for the setup of the suggested format
+          suggested_format_with_duration %{_prefix} %{_severity}:\s+duration:\s+%{_duration}\s+ms\s+(%{regex("statement:")}\s+%{_raw_query}|%{data:msg})
+
+          suggested_format %{_prefix} %{_severity}:\s+(%{regex("statement:")}\s+%{_raw_query}|%{data:msg})
+
+          default_format (%{_timestamp}|%{_timestamp_ms} \[%{_proc_id}])\s+%{_severity}:\s+(%{regex("statement:")}\s+%{_raw_query}|%{data:msg})
+
+          #Sample
+          #2017-11-07 17:30:39 UTC LOG:  incomplete startup packet
+          #2017-11-07 17:37:22 UTC FATAL:  role "myrole" does not exist
+
+          #Sample suggested format
+          #2017-11-08 18:11:35.727 UTC [5237] postgres psql postgres [local] 5a0348cd.1475 LOG:  statement: SELECT * FROM playground;
+
+          #Sample suggested format with duration included
+          #2019-12-10 18:27:45.389 UTC [114] datadog_test datadog-agent datadog 172.28.0.1 5defc7c5.72 LOG:  duration: 0.140 ms  statement: select checkpoints_timed, checkpoints_req, buffers_checkpoint, buffers_clean, maxwritten_clean, buffers_backend, buffers_alloc, buffers_backend_fsync, checkpoint_write_time, checkpoint_sync_time FROM pg_stat_bgwriter
+    - type: grok-parser
+      name: Extract db.operation from statement
+      enabled: true
+      source: db.statement
+      grok:
+        supportRules: |
+        matchRules: |
+          extract_operation %{word:db.operation} .*
+      samples:
+        - SELECT * FROM playground;
+        - select checkpoints_timed, checkpoints_req, buffers_checkpoint, buffers_clean, maxwritten_clean, buffers_backend, buffers_alloc, buffers_backend_fsync, checkpoint_write_time, checkpoint_sync_time FROM pg_stat_bgwriter
+    - type: date-remapper
+      name: Define `db.date` as the official date of the log
+      enabled: true
+      sources:
+        - db.date
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: status-remapper
+      name: Define `db.severity` as the official status of the log
+      enabled: true
+      sources:
+        - db.severity
+    - type: attribute-remapper
+      name: Map attribute `db.instance` to tag `db`
+      enabled: true
+      sources:
+        - db.instance
+      target: db
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: arithmetic-processor
+      name: Convert duration from ms to ns
+      enabled: true
+      expression: duration * 1000000
+      target: duration
+      replaceMissing: false

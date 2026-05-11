@@ -1,0 +1,56 @@
+id: strimzi
+metric_id: strimzi
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Strimzi
+  enabled: true
+  filter:
+    query: source:strimzi
+  processors:
+    - type: grok-parser
+      name: Parsing Strimzi logs
+      enabled: true
+      source: message
+      samples:
+        - '2023-09-21T08:25:27.244309295Z stdout F 2023-09-21 08:25:27 INFO  AbstractOperator:510 - Reconciliation #55(timer) Kafka(kafka/my-cluster): reconciled'
+        - 2023-04-27 09:46:39 INFO  Main:79 - ClusterOperator 0.34.0 is starting
+        - '2023-09-26 18:38:08,49502 WARN  [vertx-blocked-thread-checker] BlockedThreadChecker: - Thread Thread[blocking-startup-ops-0,5,main] has been blocked for 323364 ms, time limit is 60000 ms'
+        - 2023-04-27 09:47:41,48424 INFO  [main] Main:38 - TopicOperator 0.34.0 is starting
+        - 2023-09-26 18:38:26,499 INFO Committing global session 0x1001486b1980009 (org.apache.zookeeper.server.quorum.LeaderSessionTracker) [CommitProcessor:1]
+      grok:
+        matchRules: |
+          strimzi_raw_log %{_date} %{_stream_type} %{_entry_type} %{strimzi_k8s}
+          strimzi_raw_log2 %{_date_2}\s+%{_level}\s+%{_msg}\s+\[%{_logger_name}:%{_line}\]
+          strimzi_raw_log3 %{_date_2}\s+%{_level}\s+%{_msg}\s+\[%{_logger_name}\]
+          strimzi_raw_log4 %{_date_3}\s+%{_level}\s+\[%{word}\]\s+%{_logger_name}:%{_line} - %{_msg}
+          strimzi_raw_log5 %{_date_3}\s+%{_level}\s+\[%{_logger_name}\]\s+%{_msg}
+          strimzi_k8s %{_date_k8s}\s+%{_level}\s+%{_logger_name}:%{_line} - %{_msg}
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSZ")}
+          _date_2 %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _date_3 %{date("yyyy-MM-dd HH:mm:ss,SSSSS"):timestamp}
+          _date_k8s %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _level %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _line %{integer:logger.line}
+          _msg %{data:msg}
+          _logger %{notSpace:logger.name}:%{number:logger.lineno}
+          _stream_type %{word:stream_type}
+          _entry_type %{word:entry_type}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

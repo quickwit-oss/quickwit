@@ -1,0 +1,486 @@
+id: "gcp.gce.instance"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2019-04-08T12:54:59.397Z",
+      "data" : {
+        "logName" : "projects/datadog-sandbox/logs/kubelet",
+        "resource" : {
+          "type" : "gce_instance",
+          "labels" : {
+            "instance_id" : 4819643737185498828,
+            "project_id" : "datadog-sandbox",
+            "zone" : "us-central1-a"
+          }
+        },
+        "jsonPayload" : {
+          "_PID" : 1198,
+          "_SYSTEMD_INVOCATION_ID" : "0b2b954b1a6d48dcb7896de1812c1033",
+          "_CAP_EFFECTIVE" : "3fffffffff",
+          "PRIORITY" : 6,
+          "_SYSTEMD_CGROUP" : "/system.slice/kubelet.service",
+          "_GID" : 0,
+          "_MACHINE_ID" : "9c6228fdb932cd8a2b30720e067087f0",
+          "_COMM" : "kubelet",
+          "MESSAGE" : "I0408 12:58:38.131789    1193 cloud_request_manager.go:89] Requesting node addresses from cloud provider for node gke - mors - cluster -default -pool- 6632 a345 - 7 h6d ",
+          "_BOOT_ID" : "d75804ace4994674b9380811ad3e2ddb",
+          "_SYSTEMD_UNIT" : "kubelet.service",
+          "_TRANSPORT" : "stdout",
+          "_CMDLINE" : "/home/kubernetes/bin/kubelet --v=2 --cloud-provider=gce --experimental-mounter-path=/home/kubernetes/containerized_mounter/mounter --experimental-check-node-capabilities-before-mount=true --cert-dir=/var/lib/kubelet/pki/ --cni-bin-dir=/home/kubernetes/bin --cgroup-root=/ --cluster-dns=10.55.240.10 --cluster-domain=cluster.local --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --kubeconfig=/var/lib/kubelet/kubeconfig --enable-debugging-handlers=true --anonymous-auth=false --authorization-mode=Webhook --client-ca-file=/etc/srv/kubernetes/pki/ca-certificates.crt --eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5% --max-pods=110 --network-plugin=kubenet --node-labels=beta.kubernetes.io/fluentd-ds-ready=true,cloud.google.com/gke-nodepool=default-pool,cloud.google.com/gke-os-distribution=cos --volume-plugin-dir=/home/kubernetes/flexvolume --feature-gates=ExperimentalCriticalPodAnnotation=true --kube-reserved=cpu=60m,memory=960Mi,ephemeral-storage=41Gi --bootstrap-kubeconfig=/var/lib/kubelet/bootstrap-kubeconfig",
+          "SYSLOG_IDENTIFIER" : "kubelet",
+          "_SYSTEMD_SLICE" : "system.slice",
+          "SYSLOG_FACILITY" : 3,
+          "_UID" : 0,
+          "_HOSTNAME" : "gke-sunnyk-cluster-default-pool-38f264c9-5p51",
+          "_EXE" : "/home/kubernetes/bin/kubelet"
+        },
+        "protoPayload" : {
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "methodName" : "event name",
+          "status" : {
+            "code" : 42
+          }
+        },
+        "receiveTimestamp" : "2019-04-08T12:54:58.877001782Z",
+        "insertId" : "pjh6log203qxzs",
+        "labels" : {
+          "compute" : {
+            "googleapis" : {
+              "com/resource_name" : "fluentd-gcp-v3.1.0-wlwlt"
+            }
+          }
+        },
+        "timestamp" : "2019-04-08T12:54:53Z"
+      },
+      "publish_time" : "2019-04-08T12:54:59.397Z",
+      "messageId" : 499977227448238,
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T12:54:53Z"
+          }
+        }
+      },
+      "message_id" : 499977227448238,
+      "subscription" : "projects/datadog-sandbox/subscriptions/export-datadog-logs"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T12:54:53Z"
+      data:
+        insertId: "pjh6log203qxzs"
+        jsonPayload:
+          PRIORITY: 6
+          SYSLOG_FACILITY: 3
+          SYSLOG_IDENTIFIER: "kubelet"
+          _BOOT_ID: "d75804ace4994674b9380811ad3e2ddb"
+          _CAP_EFFECTIVE: "3fffffffff"
+          _CMDLINE: "/home/kubernetes/bin/kubelet --v=2 --cloud-provider=gce --experimental-mounter-path=/home/kubernetes/containerized_mounter/mounter --experimental-check-node-capabilities-before-mount=true --cert-dir=/var/lib/kubelet/pki/ --cni-bin-dir=/home/kubernetes/bin --cgroup-root=/ --cluster-dns=10.55.240.10 --cluster-domain=cluster.local --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --kubeconfig=/var/lib/kubelet/kubeconfig --enable-debugging-handlers=true --anonymous-auth=false --authorization-mode=Webhook --client-ca-file=/etc/srv/kubernetes/pki/ca-certificates.crt --eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5% --max-pods=110 --network-plugin=kubenet --node-labels=beta.kubernetes.io/fluentd-ds-ready=true,cloud.google.com/gke-nodepool=default-pool,cloud.google.com/gke-os-distribution=cos --volume-plugin-dir=/home/kubernetes/flexvolume --feature-gates=ExperimentalCriticalPodAnnotation=true --kube-reserved=cpu=60m,memory=960Mi,ephemeral-storage=41Gi --bootstrap-kubeconfig=/var/lib/kubelet/bootstrap-kubeconfig"
+          _COMM: "kubelet"
+          _EXE: "/home/kubernetes/bin/kubelet"
+          _GID: 0
+          _HOSTNAME: "gke-sunnyk-cluster-default-pool-38f264c9-5p51"
+          _MACHINE_ID: "9c6228fdb932cd8a2b30720e067087f0"
+          _PID: 1198
+          _SYSTEMD_CGROUP: "/system.slice/kubelet.service"
+          _SYSTEMD_INVOCATION_ID: "0b2b954b1a6d48dcb7896de1812c1033"
+          _SYSTEMD_SLICE: "system.slice"
+          _SYSTEMD_UNIT: "kubelet.service"
+          _TRANSPORT: "stdout"
+          _UID: 0
+        labels:
+          compute:
+            googleapis:
+              com/resource_name: "fluentd-gcp-v3.1.0-wlwlt"
+        logName: "projects/datadog-sandbox/logs/kubelet"
+        protoPayload:
+          authenticationInfo:
+            principalEmail: "test@testmail.com"
+          methodName: "event name"
+          status:
+            code: 42
+        receiveTimestamp: "2019-04-08T12:54:58.877001782Z"
+        resource:
+          labels:
+            instance_id: 4819643737185498828
+            project_id: "datadog-sandbox"
+            zone: "us-central1-a"
+          type: "gce_instance"
+        timestamp: "2019-04-08T12:54:53Z"
+      evt:
+        name: "event name"
+        status_code: "42"
+      messageId: 499977227448238
+      message_id: 499977227448238
+      publishTime: "2019-04-08T12:54:59.397Z"
+      publish_time: "2019-04-08T12:54:59.397Z"
+      subscription: "projects/datadog-sandbox/subscriptions/export-datadog-logs"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: "I0408 12:58:38.131789    1193 cloud_request_manager.go:89] Requesting node addresses from cloud provider for node gke - mors - cluster -default -pool- 6632 a345 - 7 h6d "
+    service: "kubelet.service"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554728093000
+ -
+  sample: |-
+    {
+      "publishTime" : "2022-12-12T14:49:39.756Z",
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "gce_instance",
+          "labels" : {
+            "instance_id" : "",
+            "project_id" : "datadog-sandbox",
+            "zone" : "us-west4-a"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2022-12-12T14:49:38.034392Z"
+            },
+            "callerSuppliedUserAgent" : "google-api-go-client/0.5,gzip(gfe)",
+            "callerIp" : "34.196.147.207"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/compute.instances.list"
+          },
+          "authenticationInfo" : {
+            "principalSubject" : "serviceAccount:service-11111111111@dsanbox.iam.gserviceaccount.com",
+            "principalEmail" : "service-11111111111@dsanbox.iam.gserviceaccount.com"
+          },
+          "authorizationInfo" : [ {
+            "permission" : "compute.instances.list",
+            "resourceAttributes" : {
+              "service" : "resourcemanager",
+              "name" : "projects/datadog-sandbox",
+              "type" : "resourcemanager.projects"
+            },
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "v1.compute.instances.list",
+          "resourceName" : "projects/datadog-sandbox/zones/us-west4-a/instances",
+          "resourceLocation" : {
+            "currentLocations" : [ "us-west4-a" ]
+          },
+          "serviceName" : "compute.googleapis.com"
+        },
+        "receiveTimestamp" : "2022-12-12T14:49:38.710816245Z",
+        "insertId" : "rrfinpe3v764",
+        "timestamp" : "2022-12-12T14:49:37.996336Z"
+      },
+      "publish_time" : "2022-12-12T14:49:39.756Z",
+      "messageId" : "6429890221130843",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2022-12-12T14:49:37.996336Z"
+          }
+        }
+      },
+      "message_id" : "6429890221130843",
+      "subscription" : "projects/datadog-sandbox/subscriptions/datadog-sandbox-datadog-subscription"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2022-12-12T14:49:37.996336Z"
+      data:
+        insertId: "rrfinpe3v764"
+        logName: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "service-11111111111@dsanbox.iam.gserviceaccount.com"
+            principalSubject: "serviceAccount:service-11111111111@dsanbox.iam.gserviceaccount.com"
+          authorizationInfo:
+           -
+            permission: "compute.instances.list"
+            resourceAttributes:
+              service: "resourcemanager"
+              name: "projects/datadog-sandbox"
+              type: "resourcemanager.projects"
+            granted: true
+          methodName: "v1.compute.instances.list"
+          request:
+            '@type': "type.googleapis.com/compute.instances.list"
+          requestMetadata:
+            callerIp: "34.196.147.207"
+            callerSuppliedUserAgent: "google-api-go-client/0.5,gzip(gfe)"
+            requestAttributes:
+              time: "2022-12-12T14:49:38.034392Z"
+          resourceLocation:
+            currentLocations:
+             - "us-west4-a"
+          resourceName: "projects/datadog-sandbox/zones/us-west4-a/instances"
+          serviceName: "compute.googleapis.com"
+        receiveTimestamp: "2022-12-12T14:49:38.710816245Z"
+        resource:
+          labels:
+            instance_id: ""
+            project_id: "datadog-sandbox"
+            zone: "us-west4-a"
+          type: "gce_instance"
+        severity: "INFO"
+        timestamp: "2022-12-12T14:49:37.996336Z"
+      evt:
+        name: "v1.compute.instances.list"
+      http:
+        useragent: "google-api-go-client/0.5,gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      messageId: "6429890221130843"
+      message_id: "6429890221130843"
+      network:
+        client:
+          geoip: {}
+          ip: "34.196.147.207"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "datadog-sandbox"
+            email_addr: "service-11111111111@dsanbox.iam.gserviceaccount.com"
+            name: "service-11111111111"
+            type: "System"
+            type_id: 3
+        api:
+          operation: "v1.compute.instances.list"
+          request:
+            data:
+              '@type': "type.googleapis.com/compute.instances.list"
+            uid: "Unknown"
+          service:
+            name: "compute.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "datadog-sandbox"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "google-api-go-client/0.5,gzip(gfe)"
+        metadata:
+          event_code: "v1.compute.instances.list"
+          log_name: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "rrfinpe3v764"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "34.196.147.207"
+        status: "Success"
+        status_id: 1
+        time: 1670856577996
+        time_dt: "2022-12-12T14:49:37.996336Z"
+        type_uid: 600302
+      publishTime: "2022-12-12T14:49:39.756Z"
+      publish_time: "2022-12-12T14:49:39.756Z"
+      subscription: "projects/datadog-sandbox/subscriptions/datadog-sandbox-datadog-subscription"
+      usr:
+        email: "service-11111111111@dsanbox.iam.gserviceaccount.com"
+        id: "service-11111111111@dsanbox.iam.gserviceaccount.com"
+    message: |-
+      {
+        "publishTime" : "2022-12-12T14:49:39.756Z",
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "gce_instance",
+            "labels" : {
+              "instance_id" : "",
+              "project_id" : "datadog-sandbox",
+              "zone" : "us-west4-a"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2022-12-12T14:49:38.034392Z"
+              },
+              "callerSuppliedUserAgent" : "google-api-go-client/0.5,gzip(gfe)",
+              "callerIp" : "34.196.147.207"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/compute.instances.list"
+            },
+            "authenticationInfo" : {
+              "principalSubject" : "serviceAccount:service-11111111111@dsanbox.iam.gserviceaccount.com",
+              "principalEmail" : "service-11111111111@dsanbox.iam.gserviceaccount.com"
+            },
+            "authorizationInfo" : [ {
+              "permission" : "compute.instances.list",
+              "resourceAttributes" : {
+                "service" : "resourcemanager",
+                "name" : "projects/datadog-sandbox",
+                "type" : "resourcemanager.projects"
+              },
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "v1.compute.instances.list",
+            "resourceName" : "projects/datadog-sandbox/zones/us-west4-a/instances",
+            "resourceLocation" : {
+              "currentLocations" : [ "us-west4-a" ]
+            },
+            "serviceName" : "compute.googleapis.com"
+          },
+          "receiveTimestamp" : "2022-12-12T14:49:38.710816245Z",
+          "insertId" : "rrfinpe3v764",
+          "timestamp" : "2022-12-12T14:49:37.996336Z"
+        },
+        "publish_time" : "2022-12-12T14:49:39.756Z",
+        "messageId" : "6429890221130843",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2022-12-12T14:49:37.996336Z"
+            }
+          }
+        },
+        "message_id" : "6429890221130843",
+        "subscription" : "projects/datadog-sandbox/subscriptions/datadog-sandbox-datadog-subscription"
+      }
+    service: "compute.googleapis.com"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1670856577996
+ -
+  sample: |-
+    {
+      "logName" : "projects/datadog-sandbox/logs/kubelet",
+      "resource" : {
+        "type" : "gce_instance",
+        "labels" : {
+          "instance_id" : 4819643737185498828,
+          "project_id" : "datadog-sandbox",
+          "zone" : "us-central1-a"
+        }
+      },
+      "jsonPayload" : {
+        "_PID" : 1198,
+        "_SYSTEMD_INVOCATION_ID" : "0b2b954b1a6d48dcb7896de1812c1033",
+        "_CAP_EFFECTIVE" : "3fffffffff",
+        "PRIORITY" : 6,
+        "_SYSTEMD_CGROUP" : "/system.slice/kubelet.service",
+        "_GID" : 0,
+        "_MACHINE_ID" : "9c6228fdb932cd8a2b30720e067087f0",
+        "_COMM" : "kubelet",
+        "MESSAGE" : "I0408 12:58:38.131789    1193 cloud_request_manager.go:89] Requesting node addresses from cloud provider for node gke - mors - cluster -default -pool- 6632 a345 - 7 h6d ",
+        "_BOOT_ID" : "d75804ace4994674b9380811ad3e2ddb",
+        "_SYSTEMD_UNIT" : "kubelet.service",
+        "_TRANSPORT" : "stdout",
+        "_CMDLINE" : "/home/kubernetes/bin/kubelet --v=2 --cloud-provider=gce --experimental-mounter-path=/home/kubernetes/containerized_mounter/mounter --experimental-check-node-capabilities-before-mount=true --cert-dir=/var/lib/kubelet/pki/ --cni-bin-dir=/home/kubernetes/bin --cgroup-root=/ --cluster-dns=10.55.240.10 --cluster-domain=cluster.local --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --kubeconfig=/var/lib/kubelet/kubeconfig --enable-debugging-handlers=true --anonymous-auth=false --authorization-mode=Webhook --client-ca-file=/etc/srv/kubernetes/pki/ca-certificates.crt --eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5% --max-pods=110 --network-plugin=kubenet --node-labels=beta.kubernetes.io/fluentd-ds-ready=true,cloud.google.com/gke-nodepool=default-pool,cloud.google.com/gke-os-distribution=cos --volume-plugin-dir=/home/kubernetes/flexvolume --feature-gates=ExperimentalCriticalPodAnnotation=true --kube-reserved=cpu=60m,memory=960Mi,ephemeral-storage=41Gi --bootstrap-kubeconfig=/var/lib/kubelet/bootstrap-kubeconfig",
+        "SYSLOG_IDENTIFIER" : "kubelet",
+        "_SYSTEMD_SLICE" : "system.slice",
+        "SYSLOG_FACILITY" : 3,
+        "_UID" : 0,
+        "_HOSTNAME" : "gke-sunnyk-cluster-default-pool-38f264c9-5p51",
+        "_EXE" : "/home/kubernetes/bin/kubelet"
+      },
+      "protoPayload" : {
+        "authenticationInfo" : {
+          "principalEmail" : "test@testmail.com"
+        },
+        "methodName" : "event name",
+        "status" : {
+          "code" : 42
+        }
+      },
+      "receiveTimestamp" : "2019-04-08T12:54:58.877001782Z",
+      "insertId" : "pjh6log203qxzs",
+      "labels" : {
+        "compute" : {
+          "googleapis" : {
+            "com/resource_name" : "fluentd-gcp-v3.1.0-wlwlt"
+          }
+        }
+      },
+      "timestamp" : "2019-04-08T12:54:53Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "event name"
+        status_code: "42"
+      insertId: "pjh6log203qxzs"
+      jsonPayload:
+        PRIORITY: 6
+        SYSLOG_FACILITY: 3
+        SYSLOG_IDENTIFIER: "kubelet"
+        _BOOT_ID: "d75804ace4994674b9380811ad3e2ddb"
+        _CAP_EFFECTIVE: "3fffffffff"
+        _CMDLINE: "/home/kubernetes/bin/kubelet --v=2 --cloud-provider=gce --experimental-mounter-path=/home/kubernetes/containerized_mounter/mounter --experimental-check-node-capabilities-before-mount=true --cert-dir=/var/lib/kubelet/pki/ --cni-bin-dir=/home/kubernetes/bin --cgroup-root=/ --cluster-dns=10.55.240.10 --cluster-domain=cluster.local --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --kubeconfig=/var/lib/kubelet/kubeconfig --enable-debugging-handlers=true --anonymous-auth=false --authorization-mode=Webhook --client-ca-file=/etc/srv/kubernetes/pki/ca-certificates.crt --eviction-hard=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5% --max-pods=110 --network-plugin=kubenet --node-labels=beta.kubernetes.io/fluentd-ds-ready=true,cloud.google.com/gke-nodepool=default-pool,cloud.google.com/gke-os-distribution=cos --volume-plugin-dir=/home/kubernetes/flexvolume --feature-gates=ExperimentalCriticalPodAnnotation=true --kube-reserved=cpu=60m,memory=960Mi,ephemeral-storage=41Gi --bootstrap-kubeconfig=/var/lib/kubelet/bootstrap-kubeconfig"
+        _COMM: "kubelet"
+        _EXE: "/home/kubernetes/bin/kubelet"
+        _GID: 0
+        _HOSTNAME: "gke-sunnyk-cluster-default-pool-38f264c9-5p51"
+        _MACHINE_ID: "9c6228fdb932cd8a2b30720e067087f0"
+        _PID: 1198
+        _SYSTEMD_CGROUP: "/system.slice/kubelet.service"
+        _SYSTEMD_INVOCATION_ID: "0b2b954b1a6d48dcb7896de1812c1033"
+        _SYSTEMD_SLICE: "system.slice"
+        _SYSTEMD_UNIT: "kubelet.service"
+        _TRANSPORT: "stdout"
+        _UID: 0
+      labels:
+        compute:
+          googleapis:
+            com/resource_name: "fluentd-gcp-v3.1.0-wlwlt"
+      logName: "projects/datadog-sandbox/logs/kubelet"
+      protoPayload:
+        authenticationInfo:
+          principalEmail: "test@testmail.com"
+        methodName: "event name"
+        status:
+          code: 42
+      receiveTimestamp: "2019-04-08T12:54:58.877001782Z"
+      resource:
+        labels:
+          instance_id: 4819643737185498828
+          project_id: "datadog-sandbox"
+          zone: "us-central1-a"
+        type: "gce_instance"
+      timestamp: "2019-04-08T12:54:53Z"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: "I0408 12:58:38.131789    1193 cloud_request_manager.go:89] Requesting node addresses from cloud provider for node gke - mors - cluster -default -pool- 6632 a345 - 7 h6d "
+    service: "kubelet.service"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554728093000
+

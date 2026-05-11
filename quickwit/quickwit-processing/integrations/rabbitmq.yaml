@@ -1,0 +1,45 @@
+id: rabbitmq
+metric_id: rabbitmq
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: RabbitMQ
+  enabled: true
+  filter:
+    query: source:rabbitmq
+  processors:
+    - type: grok-parser
+      name: Parsing rabbitmq Default formats
+      enabled: true
+      source: message
+      samples:
+        - =INFO REPORT==== 8-Mar-2018::14:09:27 === closing AMQP connection <0.22578.1180> (62.210.247.209:43887 -> 62.210.129.60:5672
+        - 2018-11-22 10:44:33.654 [info] <0.620.0> accepting AMQP connection <0.620.0> (127.0.0.1:52771 -> 127.0.0.1:5672)
+        - 2022-04-18 22:52:43.608049+00:00 [warn] <0.130.0> cluster_formation.randomized_startup_delay_range.min and cluster_formation.randomized_startup_delay_range.max are deprecated
+      grok:
+        supportRules: |
+          _date_d %{date("d-MMM-yyyy::HH:mm:ss"):timestamp}
+          _date_dd %{date("dd-MMM-yyyy::HH:mm:ss"):timestamp}
+          _date_latest %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _date_latest_timezone %{date("yyyy-MM-dd HH:mm:ss.SSSSSSZZ"):timestamp}
+          _status %{word:status}
+        matchRules: |
+          rabbit_default =%{_status} REPORT(====)? (%{_date_d}|%{_date_dd}) =(==)?\s*%{data:message}
+          rabbit_latest (%{_date_latest}|%{_date_latest_timezone})\s\[%{_status}\]\s*%{data:message}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

@@ -1,0 +1,436 @@
+id: "nginx-ingress-controller"
+tests:
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.17.0.1 - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "2017/09/26 14:36:50 [error] 8409#8409: *317058 \"/usr/share/nginx/html/sql/sql-admin/index.html\" is not found (2: No such file or directory), client: 217.92.148.44, server: localhost, request: \"HEAD http://174.138.82.103:80/sql/sql-admin/ HTTP/1.1\", host: \"174.138.82.103\""
+  result:
+    custom:
+      date_access: 1506436610000
+      error:
+        message: "8409#8409: *317058 \"/usr/share/nginx/html/sql/sql-admin/index.html\" is not found (2: No such file or directory)"
+      host: "174.138.82.103"
+      http:
+        method: "HEAD"
+        url: "http://174.138.82.103:80/sql/sql-admin/"
+        url_details:
+          host: "174.138.82.103"
+          path: "/sql/sql-admin/"
+          port: 80
+          scheme: "http"
+        version: "1.1"
+      level: "error"
+      network:
+        client:
+          ip: "217.92.148.44"
+      request: "HEAD http://174.138.82.103:80/sql/sql-admin/ HTTP/1.1"
+      server: "localhost"
+    message: "2017/09/26 14:36:50 [error] 8409#8409: *317058 \"/usr/share/nginx/html/sql/sql-admin/index.html\" is not found (2: No such file or directory), client: 217.92.148.44, server: localhost, request: \"HEAD http://174.138.82.103:80/sql/sql-admin/ HTTP/1.1\", host: \"174.138.82.103\""
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1506436610000
+ -
+  sample: "2017/09/26 14:36:50 [info] 14#14: *285 client 172.17.0.27 closed keepalive connection"
+  result:
+    custom:
+      date_access: 1506436610000
+      error:
+        message: "14#14: *285 client 172.17.0.27 closed keepalive connection"
+      level: "info"
+    message: "2017/09/26 14:36:50 [info] 14#14: *285 client 172.17.0.27 closed keepalive connection"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1506436610000
+ -
+  sample: "I1221 13:00:58.488494       7 controller.go:202] Initial sync, sleeping for 1 second."
+  result:
+    custom:
+      date_access: 30632458488
+      level: "I"
+      lineno: 202.0
+      logger:
+        name: "controller.go"
+    message: "I1221 13:00:58.488494       7 controller.go:202] Initial sync, sleeping for 1 second."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 30632458488
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80 298, 0 0.012, - 200, - abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80 298, 0 0.012, - 200, - abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80 298, 0 0.012, 0.013 200, - abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80 298, 0 0.012, 0.013 200, - abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80, 100.110.0.3:80 298, -, - 0.012, -, - 200, -, - abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] 172.17.0.1:9000, 100.110.0.3:80, 100.110.0.3:80 298, -, - 0.012, -, - 200, -, - abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] [alt-proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1544207493000
+      duration: 1.1E7
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "OK"
+        status_code: 200
+        upstream_duration: 0.012
+        upstream_status_code: 200.0
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_read: 298.0
+        bytes_written: 261
+        client:
+          ip: "172.17.0.1"
+        destination:
+          ip: "172.17.0.1"
+          port: 9000.0
+        request_size: 1904.0
+      proxy:
+        alternate_name: "alt-proxyname-8080"
+        name: "proxyname-8080"
+    message: "172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 261 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 1904 0.011 [proxyname-8080] [alt-proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544207493000
+ -
+  sample: "172.16.99.64 - - [19/Mar/2020:16:02:20 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 503 605 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 4033 0.000 [proxyname-8080] [] - - - - abcdefg12345abcdef"
+  result:
+    custom:
+      date_access: 1584633740000
+      duration: 0.0
+      http:
+        method: "GET"
+        referer: "-"
+        request_id: "abcdefg12345abcdef"
+        status_category: "error"
+        status_code: 503
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "31"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "XP"
+        version: "1.1"
+      network:
+        bytes_written: 605
+        client:
+          ip: "172.16.99.64"
+        request_size: 4033.0
+      proxy:
+        name: "proxyname-8080"
+    message: "172.16.99.64 - - [19/Mar/2020:16:02:20 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 503 605 \"-\" \"Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0\" 4033 0.000 [proxyname-8080] [] - - - - abcdefg12345abcdef"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584633740000
+

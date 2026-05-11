@@ -1,0 +1,274 @@
+id: "ruby"
+tests:
+ -
+  sample: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- Main: Some error."
+  result:
+    custom:
+      date: 920428464895
+      error:
+        message: "Some error."
+      level: "INFO"
+      logger:
+        name: "Main"
+        thread_id: "19074"
+    message: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- Main: Some error."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 920428464895
+ -
+  sample: "method=GET path=/jobs/833552.json format=json controller=jobs action=show status=200 duration=58.33 view=40.43 db=15.26"
+  result:
+    custom:
+      action: "show"
+      controller: "jobs"
+      db: 15.26
+      duration: 5.833E7
+      format: "json"
+      http:
+        method: "GET"
+        status_code: 200
+        url_details:
+          path: "/jobs/833552.json"
+      view: 40.43
+    message: "method=GET path=/jobs/833552.json format=json controller=jobs action=show status=200 duration=58.33 view=40.43 db=15.26"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Completed 200 OK in 41ms (Views: 0.2ms | ActiveRecord: 6.2ms)"
+  result:
+    custom:
+      active_directory:
+        process_status: "Completed"
+      activerecord: 6.2
+      date: 920428464895
+      duration: 4.1E7
+      http:
+        status_code: 200
+      level: "INFO"
+      logger:
+        thread_id: "19074"
+      views: 0.2
+    message: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Completed 200 OK in 41ms (Views: 0.2ms | ActiveRecord: 6.2ms)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 920428464895
+ -
+  sample: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Started GET \"/api/v1/example/query\" for 123.123.123.123 at 1999-03-03 02:34:24+0000"
+  result:
+    custom:
+      active_directory:
+        process_status: "Started"
+      date: 920428464895
+      http:
+        method: "GET"
+        url_details:
+          path: "/api/v1/example/query"
+      level: "INFO"
+      logger:
+        thread_id: "19074"
+      network:
+        client:
+          ip: "123.123.123.123"
+    message: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Started GET \"/api/v1/example/query\" for 123.123.123.123 at 1999-03-03 02:34:24+0000"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 920428464895
+ -
+  sample: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Processing by MyCheck::CheckController#index as JSON"
+  result:
+    custom:
+      active_directory:
+        process_status: "Processing"
+      date: 920428464895
+      level: "INFO"
+      logger:
+        thread_id: "19074"
+      processor: "MyCheck::CheckController#index"
+    message: "I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Processing by MyCheck::CheckController#index as JSON"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 920428464895
+ -
+  sample: "I, [2018-06-27T08:01:52.991728 #1]  INFO -- : Received: {\"action\":\"cancel\",\"order\":{\"id\":1234567,\"timestamp\":153012312}}"
+  result:
+    custom:
+      action: "cancel"
+      date: 1530086512991
+      level: "INFO"
+      logger:
+        thread_id: "1"
+      order:
+        id: 1234567
+        timestamp: 153012312
+    message: "I, [2018-06-27T08:01:52.991728 #1]  INFO -- : Received: {\"action\":\"cancel\",\"order\":{\"id\":1234567,\"timestamp\":153012312}}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1530086512991
+ -
+  sample: "[2019-01-16 15:38:45 +0000][my_app][WARN][dd.trace_id=7396234561907730428 dd.span_id=1152346429682372911] This is a test message!"
+  result:
+    custom:
+      application: "my_app"
+      date: 1547653125000
+      dd:
+        span_id: "1152346429682372911"
+      level: "WARN"
+    message: "[2019-01-16 15:38:45 +0000][my_app][WARN][dd.trace_id=7396234561907730428 dd.span_id=1152346429682372911] This is a test message!"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1547653125000
+    trace_id: "7396234561907730428"
+ -
+  sample: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Started GET \"/db\" for 172.22.0.1 at 2019-01-16 18:04:47 +0000"
+  result:
+    custom:
+      active_directory:
+        process_status: "Started"
+      dd:
+        span_id: "5986620922286636160"
+      http:
+        method: "GET"
+        url_details:
+          path: "/db"
+      network:
+        client:
+          ip: "172.22.0.1"
+    message: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Started GET \"/db\" for 172.22.0.1 at 2019-01-16 18:04:47 +0000"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "1321281354128614668"
+ -
+  sample: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Processing by DatabaseController#index as */*"
+  result:
+    custom:
+      active_directory:
+        process_status: "Processing"
+      dd:
+        span_id: "5986620922286636160"
+      processor: "DatabaseController#index"
+    message: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Processing by DatabaseController#index as */*"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "1321281354128614668"
+ -
+  sample: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Completed 200 OK in 9ms (Views: 6.3ms | ActiveRecord: 1.0ms)"
+  result:
+    custom:
+      active_directory:
+        process_status: "Completed"
+      activerecord: 1.0
+      dd:
+        span_id: "5986620922286636160"
+      duration: 9000000.0
+      http:
+        status_code: 200
+      views: 6.3
+    message: "[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Completed 200 OK in 9ms (Views: 6.3ms | ActiveRecord: 1.0ms)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "1321281354128614668"
+ -
+  sample: "I, [2019-09-24T17:24:34.414676 #1]  INFO -- : [dd.trace_id=1748205551911478249 dd.span_id=387648978129867948] Started GET \"/notes/1\" for 192.168.80.1 at 2019-09-24 17:24:34 +0000"
+  result:
+    custom:
+      active_directory:
+        process_status: "Started"
+      date: 1569345874414
+      dd:
+        span_id: "387648978129867948"
+      http:
+        method: "GET"
+        url_details:
+          path: "/notes/1"
+      level: "INFO"
+      logger:
+        thread_id: "1"
+      network:
+        client:
+          ip: "192.168.80.1"
+    message: "I, [2019-09-24T17:24:34.414676 #1]  INFO -- : [dd.trace_id=1748205551911478249 dd.span_id=387648978129867948] Started GET \"/notes/1\" for 192.168.80.1 at 2019-09-24 17:24:34 +0000"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1569345874414
+    trace_id: "1748205551911478249"
+ -
+  sample: "I, [2019-09-24T17:24:34.414676 #1]  INFO -- : [dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1748205551911478249 dd.span_id=387648978129867948] Started GET \"/notes/1\" for 192.168.80.1 at 2019-09-24 17:24:34 +0000"
+  result:
+    custom:
+      active_directory:
+        process_status: "Started"
+      date: 1569345874414
+      dd:
+        service: "sample-app"
+        span_id: "387648978129867948"
+      http:
+        method: "GET"
+        url_details:
+          path: "/notes/1"
+      level: "INFO"
+      logger:
+        thread_id: "1"
+      network:
+        client:
+          ip: "192.168.80.1"
+    message: "I, [2019-09-24T17:24:34.414676 #1]  INFO -- : [dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1748205551911478249 dd.span_id=387648978129867948] Started GET \"/notes/1\" for 192.168.80.1 at 2019-09-24 17:24:34 +0000"
+    service: "sample-app"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:dev-env"
+     - "version:1.2.3-beta"
+    timestamp: 1569345874414
+    trace_id: "1748205551911478249"
+ -
+  sample: "[dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Completed 200 OK in 9ms (Views: 6.3ms | ActiveRecord: 1.0ms)"
+  result:
+    custom:
+      active_directory:
+        process_status: "Completed"
+      activerecord: 1.0
+      dd:
+        service: "sample-app"
+        span_id: "5986620922286636160"
+      duration: 9000000.0
+      http:
+        status_code: 200
+      views: 6.3
+    message: "[dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Completed 200 OK in 9ms (Views: 6.3ms | ActiveRecord: 1.0ms)"
+    service: "sample-app"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:dev-env"
+     - "version:1.2.3-beta"
+    timestamp: 1
+    trace_id: "1321281354128614668"
+ -
+  sample: "[dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Processing by DatabaseController#index as */*"
+  result:
+    custom:
+      active_directory:
+        process_status: "Processing"
+      dd:
+        service: "sample-app"
+        span_id: "5986620922286636160"
+      processor: "DatabaseController#index"
+    message: "[dd.env=dev-env dd.service=sample-app dd.version=1.2.3-beta dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Processing by DatabaseController#index as */*"
+    service: "sample-app"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:dev-env"
+     - "version:1.2.3-beta"
+    timestamp: 1
+    trace_id: "1321281354128614668"
+

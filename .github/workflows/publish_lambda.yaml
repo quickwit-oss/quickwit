@@ -43,12 +43,6 @@ jobs:
           EOF
 
       - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
-        id: octo-sts-pomchi
-        with:
-          scope: DataDog/PomChi
-          policy: access
-
-      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
         id: octo-sts-event-percolation
         with:
           scope: DataDog/event-percolation
@@ -56,13 +50,9 @@ jobs:
 
       - name: Configure git rewrite (STS tokens)
         env:
-          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
           EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
         run: |
-          echo "::add-mask::${POMCHI_TOKEN}"
           echo "::add-mask::${EP_TOKEN}"
-          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
-          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
           git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
           git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
 

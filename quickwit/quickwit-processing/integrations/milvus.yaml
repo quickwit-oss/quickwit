@@ -1,0 +1,53 @@
+id: milvus
+metric_id: milvus
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: Milvus
+  enabled: true
+  filter:
+    query: source:milvus
+  processors:
+    - type: grok-parser
+      name: Grok Parser
+      enabled: true
+      source: message
+      samples:
+        - '[2024/11/27 14:07:51.849 +00:00] [INFO] [datacoord/handler.go:341]
+          ["channel seek position set from channel checkpoint meta"]
+          [channel=by-dev-rootcoord-dml_2_453764875273209568v0]
+          [posTs=454221223538458625] [posTime=2024/11/27 14:07:39.421 +00:00]'
+        - '[2024/11/27 14:07:01.849 +00:00] [INFO] [datacoord/services.go:833]
+          ["datacoord append channelInfo in GetRecoveryInfo"]
+          [traceID=ed216b196edf0589f281c4ad800f6565]
+          [collectionID=453764875273209568] [partitionIDs="[]"]
+          [channel=by-dev-rootcoord-dml_2_453764875273209568v0] ["# of unflushed
+          segments"=0] ["# of flushed segments"=1] ["# of dropped segments"=0]
+          ["# of indexed segments"=0] ["# of l0 segments"=0]'
+        - '[2024/11/27 14:06:51.852 +00:00] [INFO] [datacoord/services.go:818]
+          ["get recovery info request received"]
+          [traceID=54cda8d3229d00982db785351a12ea7a]
+          [collectionID=453764875273212700] [partitionIDs="[]"]'
+        - '[2024/11/18 15:15:45.120 +00:00] [INFO] [roles/roles.go:282] [setupPrometheusHTTPServer]'
+      grok:
+        supportRules: message_rule
+          \["?%{regex("[^]^\"]+"):message.body}"?](\s+%{data:message.details:array("[]","] [")})?
+        matchRules: |
+          rule1 \[%{date("yyyy/MM/dd HH:mm:ss.SSS ZZ"):date}]\s+\[%{word:level}\]\s+\[%{word:component}/%{regex("[^:]+"):file}:%{integer:lineno}\]\s+%{message_rule}
+          rule2 %{regex("[IWE]"):level}%{date("yyyyMMdd HH:mm:ss.SSSSSS"):date}\s+%{integer:pid}\s+%{regex("[^:]+"):file}:%{integer:lineno}]\s+%{data:message.details:array("[]","][")}\s+%{data:message.body}
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message.body` as the official message of the log
+      enabled: true
+      sources:
+        - message.body
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

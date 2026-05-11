@@ -1,0 +1,1078 @@
+id: crest-data-systems-commvault
+tests:
+ -
+  sample: |-
+    {
+      "sizeOfApplication" : 0,
+      "vsaParentJobID" : 0,
+      "commcellId" : 2,
+      "backupSetName" : "defaultBackupSet",
+      "opType" : 4,
+      "totalFailedFolders" : 0,
+      "distributedAppsClusterType" : 12001,
+      "totalFailedFiles" : 0,
+      "destinationDisplayClient" : {
+        "clientId" : 0
+      },
+      "alertColorLevel" : 0,
+      "plan" : {
+        "planName" : "alpha-metallic-azuread-eastus2",
+        "planId" : 5924
+      },
+      "jobAttributes" : 288230376151711740,
+      "jobAttributesEx" : 8796093022208,
+      "isVisible" : true,
+      "localizedStatus" : "Failed",
+      "isAged" : true,
+      "totalNumOfFiles" : 0,
+      "jobId" : 11003441,
+      "sizeOfMediaOnDisk" : 0,
+      "currentPhase" : 0,
+      "dataSource" : {
+        "dataSourceId" : 0
+      },
+      "status" : "Failed",
+      "percentSavings" : 0,
+      "localizedOperationName" : "Backup",
+      "estMediaSize" : 0,
+      "lastUpdateTime" : 1713920682,
+      "statusColor" : "black",
+      "pendingReason" : "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup",
+      "errorType" : 0,
+      "backupLevel" : 1,
+      "jobElapsedTime" : 51,
+      "jobStartTime" : 1713908143,
+      "subclient" : {
+        "commCellName" : "M2",
+        "subclientId" : 39060,
+        "instanceId" : 6594,
+        "clientId" : 22534,
+        "clientName" : "Alpha_AIPClient",
+        "instanceName" : "defaultInstanceName",
+        "appName" : "Azure AD",
+        "workloadId" : 12001,
+        "backupsetName" : "defaultBackupSet",
+        "backupsetId" : 33746,
+        "applicationId" : 139,
+        "subclientName" : "default"
+      },
+      "currentPhaseName" : "",
+      "company" : {
+        "companyId" : 7469,
+        "companyName" : "Alpha"
+      },
+      "isPreemptable" : 0,
+      "jobType" : "Backup",
+      "backupLevelName" : "Full",
+      "attemptStartTime" : 0,
+      "pendingReasonErrorCode" : "28:501",
+      "appTypeName" : "Azure AD",
+      "storagePolicy" : {
+        "storagePolicyName" : "",
+        "storagePolicyId" : 0
+      },
+      "percentComplete" : 100,
+      "destinationClient" : {
+        "clientId" : 22534,
+        "clientName" : "Alpha_AIPClient",
+        "displayName" : "Alpha_AIPClient"
+      },
+      "userName" : {
+        "userName" : "master",
+        "userId" : 3
+      },
+      "averageThroughput" : 0,
+      "localizedBackupLevelName" : "Full",
+      "clientGroups" : [ {
+        "_type_" : 28,
+        "clientGroupId" : 3911,
+        "clientGroupName" : "Customer-Servers"
+      }, {
+        "_type_" : 28,
+        "clientGroupId" : 4022,
+        "clientGroupName" : "CV-SLA - Managed SLA"
+      }, {
+        "_type_" : 28,
+        "clientGroupId" : 5722,
+        "clientGroupName" : "Alpha"
+      } ],
+      "currentThroughput" : 0,
+      "subclientName" : "default",
+      "destClientName" : "Alpha_AIPClient",
+      "jobEndTime" : 1713920682
+    }
+  service: "cds.commvault.jobs"
+  result:
+    custom:
+      alertColorLevel: 0
+      appTypeName: "Azure AD"
+      attemptStartTime: 0
+      averageThroughput: 0
+      backupLevel: 1
+      backupLevelName: "Full"
+      backupSetName: "defaultBackupSet"
+      clientGroups:
+       -
+        _type_: 28
+        clientGroupId: 3911
+        clientGroupName: "Customer-Servers"
+       -
+        _type_: 28
+        clientGroupId: 4022
+        clientGroupName: "CV-SLA - Managed SLA"
+       -
+        _type_: 28
+        clientGroupId: 5722
+        clientGroupName: "Alpha"
+      commcellId: 2
+      company:
+        companyId: 7469
+        companyName: "Alpha"
+      currentPhase: 0
+      currentPhaseName: ""
+      currentThroughput: 0
+      dataSource:
+        dataSourceId: 0
+      destClientName: "Alpha_AIPClient"
+      destinationClient:
+        clientId: 22534
+        clientName: "Alpha_AIPClient"
+        displayName: "Alpha_AIPClient"
+      destinationDisplayClient:
+        clientId: 0
+      distributedAppsClusterType: 12001
+      errorType: 0
+      estMediaSize: 0
+      isAged: true
+      isPreemptable: 0
+      isVisible: true
+      jobAttributes: 288230376151711740
+      jobAttributesEx: 8796093022208
+      jobElapsedTime: 51
+      jobEndTime: 1713920682
+      jobId: 11003441
+      jobStartTime: 1713908143
+      jobType: "Backup"
+      job_expired_status: "expired"
+      lastUpdateTime: 1.713920682E12
+      localizedBackupLevelName: "Full"
+      localizedOperationName: "Backup"
+      localizedStatus: "Failed"
+      opType: 4
+      pendingReason: "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup"
+      pendingReasonErrorCode: "28:501"
+      percentComplete: 100
+      percentSavings: 0
+      plan:
+        planId: 5924
+        planName: "alpha-metallic-azuread-eastus2"
+      sizeOfApplication: 0
+      sizeOfMediaOnDisk: 0
+      status: "Failed"
+      statusColor: "black"
+      storagePolicy:
+        storagePolicyId: 0
+        storagePolicyName: ""
+      subclient:
+        appName: "Azure AD"
+        applicationId: 139
+        backupsetId: 33746
+        backupsetName: "defaultBackupSet"
+        clientId: 22534
+        clientName: "Alpha_AIPClient"
+        commCellName: "M2"
+        instanceId: 6594
+        instanceName: "defaultInstanceName"
+        subclientId: 39060
+        subclientName: "default"
+        workloadId: 12001
+      subclientName: "default"
+      totalFailedFiles: 0
+      totalFailedFolders: 0
+      totalNumOfFiles: 0
+      userName:
+        userId: 3
+        userName: "master"
+      vsaParentJobID: 0
+    message: |-
+      {
+        "sizeOfApplication" : 0,
+        "vsaParentJobID" : 0,
+        "commcellId" : 2,
+        "backupSetName" : "defaultBackupSet",
+        "opType" : 4,
+        "totalFailedFolders" : 0,
+        "distributedAppsClusterType" : 12001,
+        "totalFailedFiles" : 0,
+        "destinationDisplayClient" : {
+          "clientId" : 0
+        },
+        "alertColorLevel" : 0,
+        "plan" : {
+          "planName" : "alpha-metallic-azuread-eastus2",
+          "planId" : 5924
+        },
+        "jobAttributes" : 288230376151711740,
+        "jobAttributesEx" : 8796093022208,
+        "isVisible" : true,
+        "localizedStatus" : "Failed",
+        "isAged" : true,
+        "totalNumOfFiles" : 0,
+        "jobId" : 11003441,
+        "sizeOfMediaOnDisk" : 0,
+        "currentPhase" : 0,
+        "dataSource" : {
+          "dataSourceId" : 0
+        },
+        "status" : "Failed",
+        "percentSavings" : 0,
+        "localizedOperationName" : "Backup",
+        "estMediaSize" : 0,
+        "lastUpdateTime" : 1713920682,
+        "statusColor" : "black",
+        "pendingReason" : "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup",
+        "errorType" : 0,
+        "backupLevel" : 1,
+        "jobElapsedTime" : 51,
+        "jobStartTime" : 1713908143,
+        "subclient" : {
+          "commCellName" : "M2",
+          "subclientId" : 39060,
+          "instanceId" : 6594,
+          "clientId" : 22534,
+          "clientName" : "Alpha_AIPClient",
+          "instanceName" : "defaultInstanceName",
+          "appName" : "Azure AD",
+          "workloadId" : 12001,
+          "backupsetName" : "defaultBackupSet",
+          "backupsetId" : 33746,
+          "applicationId" : 139,
+          "subclientName" : "default"
+        },
+        "currentPhaseName" : "",
+        "company" : {
+          "companyId" : 7469,
+          "companyName" : "Alpha"
+        },
+        "isPreemptable" : 0,
+        "jobType" : "Backup",
+        "backupLevelName" : "Full",
+        "attemptStartTime" : 0,
+        "pendingReasonErrorCode" : "28:501",
+        "appTypeName" : "Azure AD",
+        "storagePolicy" : {
+          "storagePolicyName" : "",
+          "storagePolicyId" : 0
+        },
+        "percentComplete" : 100,
+        "destinationClient" : {
+          "clientId" : 22534,
+          "clientName" : "Alpha_AIPClient",
+          "displayName" : "Alpha_AIPClient"
+        },
+        "userName" : {
+          "userName" : "master",
+          "userId" : 3
+        },
+        "averageThroughput" : 0,
+        "localizedBackupLevelName" : "Full",
+        "clientGroups" : [ {
+          "_type_" : 28,
+          "clientGroupId" : 3911,
+          "clientGroupName" : "Customer-Servers"
+        }, {
+          "_type_" : 28,
+          "clientGroupId" : 4022,
+          "clientGroupName" : "CV-SLA - Managed SLA"
+        }, {
+          "_type_" : 28,
+          "clientGroupId" : 5722,
+          "clientGroupName" : "Alpha"
+        } ],
+        "currentThroughput" : 0,
+        "subclientName" : "default",
+        "destClientName" : "Alpha_AIPClient",
+        "jobEndTime" : 1713920682
+      }
+    service: "cds.commvault.jobs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713920682000
+ -
+  sample: |-
+    {
+      "sizeOfApplication" : 0,
+      "vsaParentJobID" : 0,
+      "commcellId" : 2,
+      "backupSetName" : "defaultBackupSet",
+      "opType" : 4,
+      "totalFailedFolders" : 0,
+      "distributedAppsClusterType" : 12001,
+      "totalFailedFiles" : 0,
+      "destinationDisplayClient" : {
+        "clientId" : 0
+      },
+      "alertColorLevel" : 0,
+      "plan" : {
+        "planName" : "alpha-metallic-azuread-eastus2",
+        "planId" : 5924
+      },
+      "jobAttributes" : 288230376151711740,
+      "jobAttributesEx" : 8796093022208,
+      "isVisible" : true,
+      "localizedStatus" : "Failed",
+      "isAged" : false,
+      "totalNumOfFiles" : 0,
+      "jobId" : 11003619,
+      "sizeOfMediaOnDisk" : 0,
+      "currentPhase" : 0,
+      "dataSource" : {
+        "dataSourceId" : 0
+      },
+      "status" : "Failed",
+      "percentSavings" : 0,
+      "localizedOperationName" : "Backup",
+      "estMediaSize" : 0,
+      "lastUpdateTime" : 1713921154,
+      "statusColor" : "black",
+      "pendingReason" : "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup",
+      "errorType" : 0,
+      "backupLevel" : 1,
+      "jobElapsedTime" : 47,
+      "jobStartTime" : 1713908698,
+      "subclient" : {
+        "commCellName" : "M2",
+        "subclientId" : 39061,
+        "instanceId" : 6595,
+        "clientId" : 22535,
+        "clientName" : "Alpha_AIPClient_Alpha",
+        "instanceName" : "defaultInstanceName",
+        "appName" : "Azure AD",
+        "workloadId" : 12001,
+        "backupsetName" : "defaultBackupSet",
+        "backupsetId" : 33747,
+        "applicationId" : 139,
+        "subclientName" : "default"
+      },
+      "currentPhaseName" : "",
+      "company" : {
+        "companyId" : 7469,
+        "companyName" : "Alpha"
+      },
+      "isPreemptable" : 0,
+      "jobType" : "Backup",
+      "backupLevelName" : "Full",
+      "attemptStartTime" : 0,
+      "pendingReasonErrorCode" : "28:501",
+      "appTypeName" : "Azure AD",
+      "storagePolicy" : {
+        "storagePolicyName" : "",
+        "storagePolicyId" : 0
+      },
+      "percentComplete" : 100,
+      "destinationClient" : {
+        "clientId" : 22535,
+        "clientName" : "Alpha_AIPClient_Alpha",
+        "displayName" : "Alpha_AIPClient"
+      },
+      "userName" : {
+        "userName" : "master",
+        "userId" : 3
+      },
+      "averageThroughput" : 0,
+      "localizedBackupLevelName" : "Full",
+      "clientGroups" : [ {
+        "_type_" : 28,
+        "clientGroupId" : 3911,
+        "clientGroupName" : "Customer-Servers"
+      }, {
+        "_type_" : 28,
+        "clientGroupId" : 4022,
+        "clientGroupName" : "CV-SLA - Managed SLA"
+      }, {
+        "_type_" : 28,
+        "clientGroupId" : 5722,
+        "clientGroupName" : "Alpha"
+      } ],
+      "currentThroughput" : 0,
+      "subclientName" : "default",
+      "destClientName" : "Alpha_AIPClient_Alpha",
+      "jobEndTime" : 1713921154
+    }
+  service: "cds.commvault.jobs"
+  result:
+    custom:
+      alertColorLevel: 0
+      appTypeName: "Azure AD"
+      attemptStartTime: 0
+      averageThroughput: 0
+      backupLevel: 1
+      backupLevelName: "Full"
+      backupSetName: "defaultBackupSet"
+      clientGroups:
+       -
+        _type_: 28
+        clientGroupId: 3911
+        clientGroupName: "Customer-Servers"
+       -
+        _type_: 28
+        clientGroupId: 4022
+        clientGroupName: "CV-SLA - Managed SLA"
+       -
+        _type_: 28
+        clientGroupId: 5722
+        clientGroupName: "Alpha"
+      commcellId: 2
+      company:
+        companyId: 7469
+        companyName: "Alpha"
+      currentPhase: 0
+      currentPhaseName: ""
+      currentThroughput: 0
+      dataSource:
+        dataSourceId: 0
+      destClientName: "Alpha_AIPClient_Alpha"
+      destinationClient:
+        clientId: 22535
+        clientName: "Alpha_AIPClient_Alpha"
+        displayName: "Alpha_AIPClient"
+      destinationDisplayClient:
+        clientId: 0
+      distributedAppsClusterType: 12001
+      errorType: 0
+      estMediaSize: 0
+      isAged: false
+      isPreemptable: 0
+      isVisible: true
+      jobAttributes: 288230376151711740
+      jobAttributesEx: 8796093022208
+      jobElapsedTime: 47
+      jobEndTime: 1713921154
+      jobId: 11003619
+      jobStartTime: 1713908698
+      jobType: "Backup"
+      job_expired_status: "not expired"
+      lastUpdateTime: 1.713921154E12
+      localizedBackupLevelName: "Full"
+      localizedOperationName: "Backup"
+      localizedStatus: "Failed"
+      opType: 4
+      pendingReason: "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup"
+      pendingReasonErrorCode: "28:501"
+      percentComplete: 100
+      percentSavings: 0
+      plan:
+        planId: 5924
+        planName: "alpha-metallic-azuread-eastus2"
+      sizeOfApplication: 0
+      sizeOfMediaOnDisk: 0
+      status: "Failed"
+      statusColor: "black"
+      storagePolicy:
+        storagePolicyId: 0
+        storagePolicyName: ""
+      subclient:
+        appName: "Azure AD"
+        applicationId: 139
+        backupsetId: 33747
+        backupsetName: "defaultBackupSet"
+        clientId: 22535
+        clientName: "Alpha_AIPClient_Alpha"
+        commCellName: "M2"
+        instanceId: 6595
+        instanceName: "defaultInstanceName"
+        subclientId: 39061
+        subclientName: "default"
+        workloadId: 12001
+      subclientName: "default"
+      totalFailedFiles: 0
+      totalFailedFolders: 0
+      totalNumOfFiles: 0
+      userName:
+        userId: 3
+        userName: "master"
+      vsaParentJobID: 0
+    message: |-
+      {
+        "sizeOfApplication" : 0,
+        "vsaParentJobID" : 0,
+        "commcellId" : 2,
+        "backupSetName" : "defaultBackupSet",
+        "opType" : 4,
+        "totalFailedFolders" : 0,
+        "distributedAppsClusterType" : 12001,
+        "totalFailedFiles" : 0,
+        "destinationDisplayClient" : {
+          "clientId" : 0
+        },
+        "alertColorLevel" : 0,
+        "plan" : {
+          "planName" : "alpha-metallic-azuread-eastus2",
+          "planId" : 5924
+        },
+        "jobAttributes" : 288230376151711740,
+        "jobAttributesEx" : 8796093022208,
+        "isVisible" : true,
+        "localizedStatus" : "Failed",
+        "isAged" : false,
+        "totalNumOfFiles" : 0,
+        "jobId" : 11003619,
+        "sizeOfMediaOnDisk" : 0,
+        "currentPhase" : 0,
+        "dataSource" : {
+          "dataSourceId" : 0
+        },
+        "status" : "Failed",
+        "percentSavings" : 0,
+        "localizedOperationName" : "Backup",
+        "estMediaSize" : 0,
+        "lastUpdateTime" : 1713921154,
+        "statusColor" : "black",
+        "pendingReason" : "Unable to Sign in to Azure Active Directory. Please check if the connection setting (including App registration and secret) are configured correctly from the Configuration tab.<br>Source: hux040002ue2v, Process: cvaadbackup",
+        "errorType" : 0,
+        "backupLevel" : 1,
+        "jobElapsedTime" : 47,
+        "jobStartTime" : 1713908698,
+        "subclient" : {
+          "commCellName" : "M2",
+          "subclientId" : 39061,
+          "instanceId" : 6595,
+          "clientId" : 22535,
+          "clientName" : "Alpha_AIPClient_Alpha",
+          "instanceName" : "defaultInstanceName",
+          "appName" : "Azure AD",
+          "workloadId" : 12001,
+          "backupsetName" : "defaultBackupSet",
+          "backupsetId" : 33747,
+          "applicationId" : 139,
+          "subclientName" : "default"
+        },
+        "currentPhaseName" : "",
+        "company" : {
+          "companyId" : 7469,
+          "companyName" : "Alpha"
+        },
+        "isPreemptable" : 0,
+        "jobType" : "Backup",
+        "backupLevelName" : "Full",
+        "attemptStartTime" : 0,
+        "pendingReasonErrorCode" : "28:501",
+        "appTypeName" : "Azure AD",
+        "storagePolicy" : {
+          "storagePolicyName" : "",
+          "storagePolicyId" : 0
+        },
+        "percentComplete" : 100,
+        "destinationClient" : {
+          "clientId" : 22535,
+          "clientName" : "Alpha_AIPClient_Alpha",
+          "displayName" : "Alpha_AIPClient"
+        },
+        "userName" : {
+          "userName" : "master",
+          "userId" : 3
+        },
+        "averageThroughput" : 0,
+        "localizedBackupLevelName" : "Full",
+        "clientGroups" : [ {
+          "_type_" : 28,
+          "clientGroupId" : 3911,
+          "clientGroupName" : "Customer-Servers"
+        }, {
+          "_type_" : 28,
+          "clientGroupId" : 4022,
+          "clientGroupName" : "CV-SLA - Managed SLA"
+        }, {
+          "_type_" : 28,
+          "clientGroupId" : 5722,
+          "clientGroupName" : "Alpha"
+        } ],
+        "currentThroughput" : 0,
+        "subclientName" : "default",
+        "destClientName" : "Alpha_AIPClient_Alpha",
+        "jobEndTime" : 1713921154
+      }
+    service: "cds.commvault.jobs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713921154000
+ -
+  sample: |-
+    {
+      "severity" : 9,
+      "eventCode" : "117440724",
+      "acknowledge" : 0,
+      "eventCodeString" : "7:212",
+      "subsystem" : "cvd",
+      "description" : "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168_2]. Please alert your administrator.",
+      "clientEntity" : {
+        "clientId" : 22362,
+        "clientName" : "win2k16-1-168_2",
+        "displayName" : "win2k16-1-168_2"
+      },
+      "id" : 190878184,
+      "timeSource" : 1714485544,
+      "type" : 0
+    }
+  service: "cds.commvault.commcell_events"
+  result:
+    custom:
+      acknowledge: 0
+      clientEntity:
+        clientId: 22362
+        clientName: "win2k16-1-168_2"
+        displayName: "win2k16-1-168_2"
+      description: "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168_2]. Please alert your administrator."
+      eventCode: "117440724"
+      eventCodeString: "7:212"
+      id: 190878184
+      severity: 9
+      severity_level: "critical"
+      status: "critical"
+      subsystem: "cvd"
+      timeSource: 1.714485544E12
+      type: 0
+    message: |-
+      {
+        "severity" : 9,
+        "eventCode" : "117440724",
+        "acknowledge" : 0,
+        "eventCodeString" : "7:212",
+        "subsystem" : "cvd",
+        "description" : "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168_2]. Please alert your administrator.",
+        "clientEntity" : {
+          "clientId" : 22362,
+          "clientName" : "win2k16-1-168_2",
+          "displayName" : "win2k16-1-168_2"
+        },
+        "id" : 190878184,
+        "timeSource" : 1714485544,
+        "type" : 0
+      }
+    service: "cds.commvault.commcell_events"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1714485544000
+ -
+  sample: |-
+    {
+      "severity" : 6,
+      "eventCode" : "117440724",
+      "acknowledge" : 0,
+      "eventCodeString" : "7:212",
+      "subsystem" : "cvd",
+      "description" : "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168]. Please alert your administrator.",
+      "clientEntity" : {
+        "clientId" : 22354,
+        "clientName" : "win2k16-1-168",
+        "displayName" : "win2k16-1-168"
+      },
+      "id" : 190763878,
+      "timeSource" : 1713878684,
+      "type" : 0
+    }
+  service: "cds.commvault.commcell_events"
+  result:
+    custom:
+      acknowledge: 0
+      clientEntity:
+        clientId: 22354
+        clientName: "win2k16-1-168"
+        displayName: "win2k16-1-168"
+      description: "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168]. Please alert your administrator."
+      eventCode: "117440724"
+      eventCodeString: "7:212"
+      id: 190763878
+      severity: 6
+      severity_level: "major"
+      status: "warning"
+      subsystem: "cvd"
+      timeSource: 1.713878684E12
+      type: 0
+    message: |-
+      {
+        "severity" : 6,
+        "eventCode" : "117440724",
+        "acknowledge" : 0,
+        "eventCodeString" : "7:212",
+        "subsystem" : "cvd",
+        "description" : "An irregularity in the amount of file activity was detected on the machine [win2k16-1-168]. Please alert your administrator.",
+        "clientEntity" : {
+          "clientId" : 22354,
+          "clientName" : "win2k16-1-168",
+          "displayName" : "win2k16-1-168"
+        },
+        "id" : 190763878,
+        "timeSource" : 1713878684,
+        "type" : 0
+      }
+    service: "cds.commvault.commcell_events"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713878684000
+ -
+  sample: |-
+    {
+      "securityAssociations" : {
+        "associations" : [ {
+          "company" : {
+            "providerId" : 7469,
+            "providerDomainName" : "Alpha"
+          },
+          "userOrGroup" : [ {
+            "_type_" : 62,
+            "externalGroupName" : "Tenant Admin",
+            "providerId" : 7469,
+            "groupId" : 14549,
+            "providerDomainName" : "Alpha"
+          } ],
+          "properties" : {
+            "role" : {
+              "_type_" : 120,
+              "roleId" : 18,
+              "roleName" : "Alert Owner",
+              "flags" : {
+                "disabled" : false
+              }
+            },
+            "isCreatorAssociation" : true
+          }
+        } ],
+        "tagWithCompany" : {
+          "providerId" : 7469,
+          "providerDomainName" : "Alpha"
+        }
+      },
+      "alertSeverity" : 0,
+      "criteria" : [ {
+        "criteriaParams" : [ {
+          "unit" : 2,
+          "type" : 1,
+          "value" : 10,
+          "paramIndex" : 0
+        } ],
+        "reportId" : 0,
+        "criteriaId" : 3,
+        "esclationLevel" : 1,
+        "persistTimeSeconds" : 0,
+        "reportingOptions" : 0,
+        "selCriteriaId" : 0,
+        "criteriaSeverity" : 0,
+        "alertId" : 0,
+        "delayTimeSeconds" : 0,
+        "value" : "Job Failed",
+        "taskId" : 0
+      } ],
+      "associationList" : [ {
+        "_type_" : 28,
+        "clientGroupId" : 5722,
+        "clientGroupName" : "Alpha"
+      } ],
+      "eventCriteriaXML" : "",
+      "locale" : {
+        "localeName" : "English",
+        "localeID" : 0
+      },
+      "enabled" : true,
+      "queryId" : 0,
+      "escalationSeverity" : 0,
+      "senderDisplayName" : "",
+      "subscriptionBased" : false,
+      "alert" : {
+        "creator" : {
+          "name" : "",
+          "id" : 0
+        },
+        "alertType" : {
+          "name" : "Data Protection",
+          "id" : 3
+        },
+        "notifType" : 1,
+        "GUID" : "E87041FF-2B9B-4264-BD9F-3E3C5CA122E0",
+        "description" : "",
+        "escNotifType" : 0,
+        "organizationId" : 0,
+        "alert" : {
+          "name" : "Backup job failed",
+          "id" : 19372
+        },
+        "organization" : {
+          "companyId" : 7469,
+          "companyName" : "Alpha"
+        },
+        "createdTime" : 0,
+        "origCCId" : 2,
+        "status" : 0,
+        "alertCategory" : {
+          "name" : "Job Management",
+          "id" : 1
+        }
+      },
+      "userGroupList" : [ {
+        "id2" : 1,
+        "id1" : 14549,
+        "name" : "Alpha\\Tenant Admin"
+      } ],
+      "criteriasSelected" : [ 3 ],
+      "queryHasDynamicRecipients" : false,
+      "senderEmailId" : "",
+      "checkForEventParams" : 0,
+      "customQueryDetailsXml" : "",
+      "webhookId" : 0,
+      "reportingParams" : {
+        "persistTimeSeconds" : 0,
+        "reportingOptions" : 0,
+        "delayTimeSeconds" : 0
+      },
+      "alertTokenRuleGroupXml" : "",
+      "regularNotifications" : [ 1 ],
+      "queryReturnsHTMLFormattedOutput" : false,
+      "minJobCountForJobAnomaly" : 0,
+      "sendIndividualNotificationForVM" : false,
+      "recipient" : "",
+      "periodicNotificationInterval" : 0,
+      "sendIndividualNotification" : false
+    }
+  service: "cds.commvault.alerts"
+  result:
+    custom:
+      alert:
+        GUID: "E87041FF-2B9B-4264-BD9F-3E3C5CA122E0"
+        alert:
+          id: 19372
+          name: "Backup job failed"
+        alertCategory:
+          id: 1
+          name: "Job Management"
+        alertType:
+          id: 3
+          name: "Data Protection"
+        createdTime: 0
+        creator:
+          id: 0
+          name: ""
+        description: ""
+        escNotifType: 0
+        notifType: 1
+        organization:
+          companyId: 7469
+          companyName: "Alpha"
+        organizationId: 0
+        origCCId: 2
+        status: 0
+      alertCategory: "Job Management"
+      alertEscNotifType: "no escalation"
+      alertNotifType: "email"
+      alertSeverity: 0
+      alertTokenRuleGroupXml: ""
+      alertType: "Data Protection"
+      associationList:
+       -
+        _type_: 28
+        clientGroupId: 5722
+        clientGroupName: "Alpha"
+      checkForEventParams: 0
+      criteria:
+       -
+        criteriaParams:
+         -
+          unit: 2
+          type: 1
+          value: 10
+          paramIndex: 0
+        reportId: 0
+        criteriaId: 3
+        esclationLevel: 1
+        persistTimeSeconds: 0
+        reportingOptions: 0
+        selCriteriaId: 0
+        criteriaSeverity: 0
+        alertId: 0
+        delayTimeSeconds: 0
+        value: "Job Failed"
+        taskId: 0
+      criteriasSelected:
+       - 3
+      customQueryDetailsXml: ""
+      enabled: true
+      escalationSeverity: 0
+      eventCriteriaXML: ""
+      locale:
+        localeID: 0
+        localeName: "English"
+      minJobCountForJobAnomaly: 0
+      periodicNotificationInterval: 0
+      queryHasDynamicRecipients: false
+      queryId: 0
+      queryReturnsHTMLFormattedOutput: false
+      recipient: ""
+      regularNotifications:
+       - 1
+      reportingParams:
+        delayTimeSeconds: 0
+        persistTimeSeconds: 0
+        reportingOptions: 0
+      securityAssociations:
+        associations:
+         -
+          company:
+            providerId: 7469
+            providerDomainName: "Alpha"
+          userOrGroup:
+           -
+            _type_: 62
+            externalGroupName: "Tenant Admin"
+            providerId: 7469
+            groupId: 14549
+            providerDomainName: "Alpha"
+          properties:
+            role:
+              _type_: 120
+              roleId: 18
+              roleName: "Alert Owner"
+              flags:
+                disabled: false
+            isCreatorAssociation: true
+        tagWithCompany:
+          providerDomainName: "Alpha"
+          providerId: 7469
+      sendIndividualNotification: false
+      sendIndividualNotificationForVM: false
+      senderDisplayName: ""
+      senderEmailId: ""
+      severity: "Auto Pick"
+      subscriptionBased: false
+      userGroupList:
+       -
+        id2: 1
+        id1: 14549
+        name: "Alpha\\Tenant Admin"
+      webhookId: 0
+    message: |-
+      {
+        "securityAssociations" : {
+          "associations" : [ {
+            "company" : {
+              "providerId" : 7469,
+              "providerDomainName" : "Alpha"
+            },
+            "userOrGroup" : [ {
+              "_type_" : 62,
+              "externalGroupName" : "Tenant Admin",
+              "providerId" : 7469,
+              "groupId" : 14549,
+              "providerDomainName" : "Alpha"
+            } ],
+            "properties" : {
+              "role" : {
+                "_type_" : 120,
+                "roleId" : 18,
+                "roleName" : "Alert Owner",
+                "flags" : {
+                  "disabled" : false
+                }
+              },
+              "isCreatorAssociation" : true
+            }
+          } ],
+          "tagWithCompany" : {
+            "providerId" : 7469,
+            "providerDomainName" : "Alpha"
+          }
+        },
+        "alertSeverity" : 0,
+        "criteria" : [ {
+          "criteriaParams" : [ {
+            "unit" : 2,
+            "type" : 1,
+            "value" : 10,
+            "paramIndex" : 0
+          } ],
+          "reportId" : 0,
+          "criteriaId" : 3,
+          "esclationLevel" : 1,
+          "persistTimeSeconds" : 0,
+          "reportingOptions" : 0,
+          "selCriteriaId" : 0,
+          "criteriaSeverity" : 0,
+          "alertId" : 0,
+          "delayTimeSeconds" : 0,
+          "value" : "Job Failed",
+          "taskId" : 0
+        } ],
+        "associationList" : [ {
+          "_type_" : 28,
+          "clientGroupId" : 5722,
+          "clientGroupName" : "Alpha"
+        } ],
+        "eventCriteriaXML" : "",
+        "locale" : {
+          "localeName" : "English",
+          "localeID" : 0
+        },
+        "enabled" : true,
+        "queryId" : 0,
+        "escalationSeverity" : 0,
+        "senderDisplayName" : "",
+        "subscriptionBased" : false,
+        "alert" : {
+          "creator" : {
+            "name" : "",
+            "id" : 0
+          },
+          "alertType" : {
+            "name" : "Data Protection",
+            "id" : 3
+          },
+          "notifType" : 1,
+          "GUID" : "E87041FF-2B9B-4264-BD9F-3E3C5CA122E0",
+          "description" : "",
+          "escNotifType" : 0,
+          "organizationId" : 0,
+          "alert" : {
+            "name" : "Backup job failed",
+            "id" : 19372
+          },
+          "organization" : {
+            "companyId" : 7469,
+            "companyName" : "Alpha"
+          },
+          "createdTime" : 0,
+          "origCCId" : 2,
+          "status" : 0,
+          "alertCategory" : {
+            "name" : "Job Management",
+            "id" : 1
+          }
+        },
+        "userGroupList" : [ {
+          "id2" : 1,
+          "id1" : 14549,
+          "name" : "Alpha\\Tenant Admin"
+        } ],
+        "criteriasSelected" : [ 3 ],
+        "queryHasDynamicRecipients" : false,
+        "senderEmailId" : "",
+        "checkForEventParams" : 0,
+        "customQueryDetailsXml" : "",
+        "webhookId" : 0,
+        "reportingParams" : {
+          "persistTimeSeconds" : 0,
+          "reportingOptions" : 0,
+          "delayTimeSeconds" : 0
+        },
+        "alertTokenRuleGroupXml" : "",
+        "regularNotifications" : [ 1 ],
+        "queryReturnsHTMLFormattedOutput" : false,
+        "minJobCountForJobAnomaly" : 0,
+        "sendIndividualNotificationForVM" : false,
+        "recipient" : "",
+        "periodicNotificationInterval" : 0,
+        "sendIndividualNotification" : false
+      }
+    service: "cds.commvault.alerts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

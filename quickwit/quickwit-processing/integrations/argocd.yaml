@@ -1,0 +1,64 @@
+id: argocd
+metric_id: argocd
+backend_only: false
+facets:
+  - groups:
+      - GRPC
+    name: GRPC Service
+    path: grpc.service
+    source: log
+  - groups:
+      - GRPC
+    name: GRPC Method
+    path: grpc.method
+    source: log
+  - groups:
+      - GRPC
+    name: GRPC Code
+    path: grpc.code
+    source: log
+pipeline:
+  type: pipeline
+  name: Argo CD
+  enabled: true
+  filter:
+    query: source:argocd
+  processors:
+    - type: grok-parser
+      name: Parsing Argo CD logs
+      enabled: true
+      source: message
+      samples:
+        - time="2022-12-16T19:15:50Z" level=info msg="finished unary call with code OK" grpc.code=OK grpc.method=Check grpc.service=grpc.health.v1.Health grpc.start_time="2022-12-16T19:14:50Z" grpc.time_ms=0.03 span.kind=server system=grpc
+        - time="2022-12-16T22:27:42Z" level=info msg="Alloc=10469 TotalAlloc=9306163 Sys=29009 NumGC=4180 Goroutines=18"
+        - 'redis: 2022/12/10 21:54:44 pubsub.go:159: redis: discarding bad PubSub connection: write tcp 10.20.1.6:38344->10.12.46.46:6379: write: broken pipe'
+        - 'Trace[79767753]: ---"Objects listed" error:Get "https://10.12.32.1:443/apis/argoproj.io/v1alpha1/namespaces/default/applications?resourceVersion=26616507": dial tcp 10.12.32.1:443: i/o timeout 30001ms (01:19:41.462)'
+        - 'E1219 01:18:53.299220       1 reflector.go:138] pkg/mod/k8s.io/client-go@v0.24.2/tools/cache/reflector.go:167: Failed to watch *v1.ConfigMap: failed to list *v1.ConfigMap: Get "https://10.12.32.1:443/api/v1/namespaces/default/configmaps?labelSelector=app.kubernetes.io%2Fpart-of%3Dargocd&resourceVersion=26616193": dial tcp 10.12.32.1:443: i/o timeout'
+      grok:
+        matchRules: |
+          kubernetes_general %{regex("\\w"):level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp}\s+%{number:logger.thread_id} %{_logger}\] %{_msg}
+          redis redis\: %{date("yyyy/MM/dd HH:mm:ss"):timestamp}\s+%{_logger}\:\s+%{_msg}
+          tracing_log Trace\[%{word:argocd_trace_id}\W+%{regex("([a-zA-Z ]+)"):action}\W+%{_level}:%{_msg}
+          argocd_stats time="%{_date}" level=%{_level} msg="%{_stats}"
+          argocd_common time="%{_date}" level=%{_level} %{regex("(?<msg>.*)")::keyvalue}
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _msg %{data:msg}
+          _level %{word:level}
+          _stats %{regex("(?<msg>.*)")::keyvalue("=","\",:\\[=\\]")}
+          _logger %{notSpace:logger.name}:%{number:logger.lineno}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

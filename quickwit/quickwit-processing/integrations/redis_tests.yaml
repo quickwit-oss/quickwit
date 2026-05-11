@@ -1,0 +1,67 @@
+id: "redis"
+tests:
+ -
+  sample: "12115:M 08 Jan 17:45:41.572 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128."
+  result:
+    custom:
+      date: 32204741572
+      message: "WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128."
+      pid: 12115
+      redis:
+        severity: "warning"
+      role: "M"
+      severity: "#"
+    message: "12115:M 08 Jan 17:45:41.572 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 32204741572
+ -
+  sample: "12115:M 08 Jan 17:45:41.572 # Server started, Redis version 3.0.6"
+  result:
+    custom:
+      date: 32204741572
+      message: "Server started, Redis version 3.0.6"
+      pid: 12115
+      redis:
+        severity: "warning"
+      role: "M"
+      severity: "#"
+    message: "12115:M 08 Jan 17:45:41.572 # Server started, Redis version 3.0.6"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 32204741572
+ -
+  sample: "3575:M 16 Apr 15:37:05.124 - DB 0: 1 keys (0 volatile) in 4 slots HT."
+  result:
+    custom:
+      date: 40664225124
+      message: "DB 0: 1 keys (0 volatile) in 4 slots HT."
+      pid: 3575
+      redis:
+        severity: "verbose"
+      role: "M"
+      severity: "-"
+    message: "3575:M 16 Apr 15:37:05.124 - DB 0: 1 keys (0 volatile) in 4 slots HT."
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 40664225124
+ -
+  sample: "1:M 14 May 2019 19:11:40.164 * Background saving terminated with success"
+  result:
+    custom:
+      date: 1557861100164
+      message: "Background saving terminated with success"
+      pid: 1
+      redis:
+        severity: "notice"
+      role: "M"
+      severity: "*"
+    message: "1:M 14 May 2019 19:11:40.164 * Background saving terminated with success"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1557861100164
+

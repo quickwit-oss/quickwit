@@ -1,0 +1,129 @@
+id: cisco-secure-firewall
+tests:
+  -
+    sample: "<190>2024-01-17T09:07:34Z: %FTD-2-109011: Authen Session Start: user testuser1, sid 23"
+    result:
+      custom:
+        message_id: "109011"
+        severity: 2
+        syslog:
+          severity: "Critical"
+        timestamp: 1705482454000
+      message: "Authen Session Start: user testuser1, sid 23"
+      status: "critical"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1705482454000
+  -
+    sample: "2024-01-04T05:49:44Z   %FTD-1-430001: DeviceUUID: fbf9ef28-9b2a-51ur-495e-e9384ce3a258, InstanceID: 1, FirstPacketSecond: 2024-01-04T05:49:44Z, ConnectionID: 39298, SrcIP: 185.64.148.0, DstIP: 185.64.148.0, SrcPort: 53, DstPort: 61550, Protocol: udp, IngressInterface: WAN, EgressInterface: LAN, IngressZone: WAN, EgressZone: LAN, Priority: 2, GID: 1, SID: 254, Revision: 17, Message: PROTOCOL-DNS SPOOF query response with TTL of 1 min. and no authority, Classification: Potentially Bad Traffic, Client: DNS, ApplicationProtocol: DNS, IntrusionPolicy: ABC-IPS, ACPolicy: default, AccessControlRuleName: New-rule, NAPPolicy: Balanced Security and Connectivity, InlineResult: Dropped, IngressVRF: Global, EgressVRF: Global"
+    result:
+      custom:
+        ACPolicy: "default"
+        AccessControlRuleName: "New-rule"
+        ApplicationProtocol: "DNS"
+        Classification: "Potentially Bad Traffic"
+        Client: "DNS"
+        ConnectionID: 39298
+        DeviceUUID: "fbf9ef28-9b2a-51ur-495e-e9384ce3a258"
+        EgressInterface: "LAN"
+        EgressVRF: "Global"
+        EgressZone: "LAN"
+        FirstPacketSecond: "2024-01-04T05:49:44Z"
+        GID: 1
+        IngressInterface: "WAN"
+        IngressVRF: "Global"
+        IngressZone: "WAN"
+        InlineResult: "Dropped"
+        InstanceID: 1
+        IntrusionPolicy: "ABC-IPS"
+        Message: "PROTOCOL-DNS SPOOF query response with TTL of 1 min. and no authority"
+        NAPPolicy: "Balanced Security and Connectivity"
+        Priority: 2
+        Protocol: "udp"
+        Revision: 17
+        SID: 254
+        message_id: "430001"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.0"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.0"
+            port: 53
+          destination:
+            ip: "185.64.148.0"
+            port: 61550
+        security_event_name: "Intrusion Event"
+        severity: 1
+        syslog:
+          severity: "Alert"
+        timestamp: 1704347384000
+      message: "DeviceUUID: fbf9ef28-9b2a-51ur-495e-e9384ce3a258, InstanceID: 1, FirstPacketSecond: 2024-01-04T05:49:44Z, ConnectionID: 39298, SrcIP: 185.64.148.0, DstIP: 185.64.148.0, SrcPort: 53, DstPort: 61550, Protocol: udp, IngressInterface: WAN, EgressInterface: LAN, IngressZone: WAN, EgressZone: LAN, Priority: 2, GID: 1, SID: 254, Revision: 17, Message: PROTOCOL-DNS SPOOF query response with TTL of 1 min. and no authority, Classification: Potentially Bad Traffic, Client: DNS, ApplicationProtocol: DNS, IntrusionPolicy: ABC-IPS, ACPolicy: default, AccessControlRuleName: New-rule, NAPPolicy: Balanced Security and Connectivity, InlineResult: Dropped, IngressVRF: Global, EgressVRF: Global"
+      status: "alert"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1704347384000
+  -
+    sample: "<190>2024-01-17T09:07:34Z: %FTD-3-212001: Unable to open SNMP channel (UDP port 3224 ) on interface 89 , error code = -1"
+    result:
+      custom:
+        error_code_212001: -1
+        error_message: "Secure Firewall Threat Defense device cannot open the SNMP transport for the interface"
+        interface_number: "89"
+        message_id: "212001"
+        port: 3224
+        severity: 3
+        syslog:
+          severity: "Error"
+        timestamp: 1705482454000
+      message: "Unable to open SNMP channel (UDP port 3224 ) on interface 89 , error code = -1"
+      status: "error"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1705482454000
+  -
+    sample: "<190>2024-01-17T09:07:34Z: %FTD-1-103001: (Primary) No response from other firewall (reason code = 1)."
+    result:
+      custom:
+        code: 1
+        message_id: "103001"
+        reason_code: "The local unit is not receiving the hello packet on the failover LAN interface when LAN failover occurs and declares that the peer is down."
+        severity: 1
+        syslog:
+          severity: "Alert"
+        timestamp: 1705482454000
+        unit: "Primary"
+      message: "(Primary) No response from other firewall (reason code = 1)."
+      status: "alert"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1705482454000
+  -
+    sample: "<190>2024-01-17T09:07:34Z: %FTD-1-735002 IPMI: Cooling Fan KS-Y84-AH1-J1 : Failure Detected"
+    result:
+      custom:
+        message_id: "735002"
+        resource: "KS-Y84-AH1-J1 "
+        severity: 1
+        syslog:
+          severity: "Alert"
+        timestamp: 1705482454000
+      message: "IPMI: Cooling Fan KS-Y84-AH1-J1 : Failure Detected"
+      status: "alert"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1705482454000

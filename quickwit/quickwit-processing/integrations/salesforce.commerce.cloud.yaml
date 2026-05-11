@@ -1,0 +1,122 @@
+id: salesforce.commerce.cloud
+metric_id: salesforce-commerce-cloud
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Log Stream Type
+    path: log_stream.type
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Custom Log Stream Prefix
+    path: log_stream.file_prefix
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Log Stream App Server
+    path: log_stream.appserver
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Domain
+    path: domain
+    source: tag
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Site
+    path: activity.site
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Activity Name
+    path: activity.name
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Activity Type
+    path: activity.type
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Session ID
+    path: activity.session_id
+    source: log
+  - groups:
+      - Salesforce Commerce Cloud
+    name: Job Name
+    path: job.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Salesforce Commerce Cloud
+  enabled: true
+  filter:
+    query: source:salesforce.commerce.cloud
+  processors:
+    - type: attribute-remapper
+      name: Map tag `log_stream_name` to an attribute
+      enabled: true
+      sourceType: tag
+      sources:
+        - log_stream_name
+      targetType: attribute
+      target: log_stream_name
+      preserveSource: true
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Parse the log stream name
+      enabled: true
+      source: log_stream_name
+      grok:
+        supportRules: |
+          _appserver %{notSpace:log_stream.appserver}-%{number:log_stream.appserver_index}-appserver
+        matchRules: |
+          api_deprecation_parser %{regex("api-deprecation"):log_stream.type}-%{_appserver}
+          custom_parser %{regex("custom|service"):log_stream.type}-%{data:log_stream.file_prefix}-%{_appserver}
+          default_parser %{word:log_stream.type}-%{_appserver}
+      samples:
+        - jobs-blade1-2.mon.demandware.net-0-appserver
+        - ustom-myservice-blade1-2.mon.demandware.net-0-appserver
+    - type: grok-parser
+      name: Parse the message
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _timestamp \[%{date("yyyy-MM-dd HH:mm:ss.SSS zzz"):timestamp}\]
+          _status %{regex("ERROR|WARN|INFO|DEBUG|error|warn|info|debug"):status}
+        matchRules: |
+          pipeline_with_brackets_parser %{_timestamp} %{_status} %{word:thread.name}\|%{number:thread.id}\|%{data:activity.site}\|%{data:activity.name}\|%{data:activity.type}\|%{data:activity.session_id} %{notSpace:logger.name} \[%{data:category_extra}\] %{data:message}
+          pipeline_parser %{_timestamp} %{_status} %{word:thread.name}\|%{number:thread.id}\|%{data:activity.site}\|%{data:activity.name}\|%{data:activity.type}\|%{data:activity.session_id} %{notSpace:logger.name} %{data:message}
+          standard_parser %{_timestamp} %{_status} %{data:thread.path} %{notSpace:logger.name} \[%{data:category_extra}\] %{data:message}
+          only_status_parser %{_timestamp} %{_status} %{data:message}
+          job_parser %{_timestamp} Job \[%{data:job.name}\] - %{data:message}
+          non_standard_parser %{_timestamp} %{data:message}
+      samples:
+        - '[2022-02-08 18:37:13.242 GMT] Job [sfcc-exchange-central-config-values] - Execution of job finished with status [OK]. ThreadID: SystemJobThread|1015341564|sfcc-exchange-central-config-values[131]'
+        - '[2022-02-08 19:35:03.532 GMT] WARN SystemJobThread|267347399|sfcc-index-order-change-log-events|SearchSvcProcessIndexChangeLog com.demandware.component.search3.index.delta.impl.IndexChangeLogMgrImpl Sites-Site JOB 0565d82115 b5c8235e9feacf715638324437 2968883126197219328 - Unable to process ORDER index change log as change log is not enabled'
+        - '[2021-10-21 19:12:09.612 GMT] ERROR PipelineCallServlet|879132348|Sites-US-Site|Cart-cartAddedConfirmationModal|PipelineCall|OAXjdnABEN org.apache.jsp.isml2jsp.cartridges.app_005fua_005fcore.default_.checkout.cart.cartAddedConfirmationModal_002d1_002ddc7ffc4b664ffb24d6fe32673e15b32e8051a628_jsp Sites-US-Site STOREFRONT OAXjdnABEN MoaiQ3Cl-mEBAAB_-0-00 5639891495883625472 - Error in template script.'
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      preserveSource: false
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      preserveSource: false
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      preserveSource: false
+      sources:
+        - message

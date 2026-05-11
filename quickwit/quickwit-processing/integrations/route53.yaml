@@ -1,0 +1,201 @@
+id: route53
+metric_id: amazon-route-53
+backend_only: false
+facets:
+  - groups:
+      - DNS
+    name: Response Code
+    path: dns.flags.rcode
+    source: log
+  - groups:
+      - DNS
+    name: Question Class
+    path: dns.question.class
+    source: log
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Type
+    path: dns.question.type
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - AWS
+    name: Instance ID
+    path: instance-id
+    source: tag
+  - groups:
+      - AWS
+    name: Region
+    path: region
+    source: tag
+  - groups:
+      - AWS
+    name: VPC
+    path: vpc
+    source: tag
+  - groups:
+      - Web Access
+    name: Network Transport
+    path: network.transport
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Route53
+  enabled: true
+  filter:
+    query: source:route53
+  processors:
+    - type: grok-parser
+      name: Parsing Route53 logs
+      enabled: true
+      source: message
+      samples:
+        - 1.0 2020-09-23T20:08:17Z Z2A7P6TSJ60RMN cf-dd.com SOA NOERROR UDP ORD52-C1 143.215.172.73 -
+        - 1.0 2017-12-13T08:16:03.983Z Z123412341234 example.com ANY NOERROR UDP FRA6 2001:db8::1234 2001:db8:abcd::/48
+      grok:
+        matchRules: |
+          publicdnslogsversion1_0 1.0 %{notSpace:query_timestamp} %{notSpace:hosted_zone_id} %{notSpace:dns.question.name} %{notSpace:dns.question.type} %{notSpace:dns.flags.rcode} %{notSpace:dns.transport} %{notSpace:route53_edge_location} %{ip:resolver_ip} %{notSpace:network.client.subnet}.*
+        supportRules: ''
+    - type: date-remapper
+      name: Define `query_timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - query_timestamp
+    - type: attribute-remapper
+      name: Map attribute `region` to a tag
+      enabled: true
+      sources:
+        - region
+      target: region
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `srcids.instance` to tag `instance-id`
+      enabled: true
+      sources:
+        - srcids.instance
+      target: instance-id
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `srcaddr` to `network.client.ip`
+      enabled: true
+      sources:
+        - srcaddr
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `srcport` to `network.client.port`
+      enabled: true
+      sources:
+        - srcport
+      target: network.client.port
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `transport` to `dns.transport`
+      enabled: true
+      sources:
+        - transport
+      target: dns.transport
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `query_name` to `dns.question.name`
+      enabled: true
+      sources:
+        - query_name
+      target: dns.question.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `query_type` to `dns.question.type`
+      enabled: true
+      sources:
+        - query_type
+      target: dns.question.type
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `query_class` to `dns.question.class`
+      enabled: true
+      sources:
+        - query_class
+      target: dns.question.class
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `rcode` to `dns.flags.rcode`
+      enabled: true
+      sources:
+        - rcode
+      target: dns.flags.rcode
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: lookup-processor
+      name: Map dns.question.type to dns.question.type_description
+      enabled: true
+      source: dns.question.type
+      target: dns.question.type_description
+      lookupTable: "A,Address record\nAAAA,IPv6 address record\nCAA,Certification Authority Authorization\nCNAME,Canonical name record\nMX,Mail exchange record\nNAPTR,Naming Authority Pointer\nNS,Name server record\nPTR,PTR Resource Record\nSOA,Start of authority record\nSPF,Sender Policy Framework\nSRV,Service locator\nTXT,Text record"
+      defaultLookup: unknown
+    - type: attribute-remapper
+      name: Map attribute `vpc_id` to tag `vpc`
+      enabled: true
+      sources:
+        - vpc_id
+      target: vpc
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `account_id` to tag `aws_account`
+      enabled: true
+      sources:
+        - account_id
+      target: aws_account
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: string-builder-processor
+      name: Defining title as %{dns.question.type_description} lookup for %{dns.question.name} from %{network.client.ip}
+      enabled: true
+      template: '%{dns.question.type_description} lookup for %{dns.question.name} from %{network.client.ip}'
+      target: title
+      replaceMissing: false
+

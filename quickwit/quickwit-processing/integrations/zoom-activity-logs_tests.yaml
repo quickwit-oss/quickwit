@@ -1,0 +1,75 @@
+id: "zoom-activity-logs"
+tests:
+ -
+  sample: |-
+    {
+      "client_type" : "browser",
+      "ip_address" : "185.64.148.140",
+      "time" : "2023-10-18T13:47:24Z",
+      "type" : "Sign in",
+      "version" : "5.15.12.22445",
+      "email" : "test@test.com"
+    }
+  result:
+    custom:
+      client_type: "browser"
+      evt:
+        name: "Sign in"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.140"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.140"
+      time: "2023-10-18T13:47:24Z"
+      usr:
+        email: "test@test.com"
+      version: "5.15.12.22445"
+    message: |-
+      {
+        "client_type" : "browser",
+        "ip_address" : "185.64.148.140",
+        "time" : "2023-10-18T13:47:24Z",
+        "type" : "Sign in",
+        "version" : "5.15.12.22445",
+        "email" : "test@test.com"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1697636844000
+ -
+  sample: |-
+    {
+      "operation_detail" : "test event",
+      "action" : "test",
+      "category_type" : "Account",
+      "time" : "2023-10-18T13:47:24Z",
+      "operator" : "test@test.com"
+    }
+  result:
+    custom:
+      evt:
+        category: "Account"
+        name: "test"
+      time: "2023-10-18T13:47:24Z"
+      usr:
+        email: "test@test.com"
+    message: "test event"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1697636844000
+

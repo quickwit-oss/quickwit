@@ -1,0 +1,137 @@
+id: activemq
+metric_id: activemq
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: ActiveMQ
+  enabled: true
+  filter:
+    query: source:activemq
+  processors:
+    - type: grok-parser
+      name: Parsing ActiveMQ logs
+      enabled: true
+      source: message
+      samples:
+        - 2010-12-22 12:12:17,802 | INFO  | admin requested /admin/sendMessage.action [JMSTimeToLive='' JMSXGroupSeq='' AMQ_SCHEDULED_DELAY='' JMSType='' JMSMessageCountHeader='JMSXMessageCounter' JMSXGroupID='' JMSReplyTo='' JMSDestination='test' AMQ_SCHEDULED_PERIOD='' JMSText='Enter some text here for the message body...' JMSDestinationType='queue' AMQ_SCHEDULED_CRON='' JMSCorrelationID='' AMQ_SCHEDULED_REPEAT='' JMSMessageCount='1' secret='a0e1df62-14d6-4425-82a2-17aa01a16e7d' JMSPriority='' ] from 127.0.0.1 | qtp12205619-37
+        - INFO  | admin requested /admin/createDestination.action [JMSDestinationType='[queue]' JMSDestination='[Test]' secret='[f35bb77b-6676-45a3-aa54-b012d519b85c]' ] from  172.17.0.1 at 29-05-2019 18:32:32,545 | qtp1059524106-40
+        - '2021-02-09 16:01:22,540 INFO  [org.apache.activemq.artemis.core.server] AMQ221057: Global Max Size is being adjusted to 1/2 of the JVM max size (-Xmx). being defined as 1,073,741,824'
+        - 2021-02-09 16:01:23,075 DEBUG [org.apache.activemq.artemis.core.server.impl.QueueImpl] QueueImpl[name=DLQ, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=fbab3b4b-6a46-11eb-9136-a483e7ce9d75], temp=false]@3bb9efbc doing deliver. messageReferences=0
+        - '2021-02-09 16:50:25,658 [AUDIT](Thread-1 (ActiveMQ-server-org.apache.activemq.artemis.core.server.impl.ActiveMQServerImpl$6@5911e990)) AMQ601500: User guest(guest)@127.0.0.1:57260 is sending a message CoreMessage[messageID=0,durable=true,userID=d11fa6a1-6b20-11eb-9424-00056b0176f3,priority=4, timestamp=Tue Feb 09 16:50:25 EST 2021,expiration=0, durable=true, address=exampleQueue,size=276,properties=TypedProperties[__AMQ_CID=cfeea14a-6b20-11eb-9424-00056b0176f3,_AMQ_ROUTING_TYPE=1]]@2011215847, with Context: RoutingContextImpl(Address=exampleQueue, routingType=ANYCAST, PreviousAddress=exampleQueue previousRoute:ANYCAST, reusable=true, version=-2147483640)'
+      grok:
+        supportRules: |
+          _date_new %{date("dd-MM-yyyy HH:mm:ss,SSS"):date}
+          _date_old %{date("yyyy-MM-dd HH:mm:ss,SSS"):date}
+          _level %{word:level}
+          _type %{word:type}
+          _thread_name %{notSpace:logger.thread_name}
+          _logger_name %{notSpace:logger.name}
+          _thread_logger (\(%{_thread_name}\s+\(%{_logger_name}\)\)|\(%{_thread_name}\)|\(%{data:logger.name}\))
+          _message_id %{regex("AMQ\\d{6}"):logger.message_id}
+          _username %{notSpace:system.user}
+          _action_type %{notSpace:system.action}
+          _action_url %{notSpace:system.action_url}
+          _action_params %{data:system.properties:keyvalue}
+          _action_from %{ip:network.client.ip}
+          _action_port %{port:network.client.port:integer}
+          _context_params %{data:system.properties.context:keyvalue}
+          _message_address %{data:system.properties.message.address}
+          _message_params %{data:system.properties.message:keyvalue}
+        matchRules: |
+          activemq %{_date_old}\s+\|\s+%{_level}\s+\|\s+%{data:msg}\s+\| %{_logger_name}\s+\|\s+%{_thread_name}
+          artemis %{_date_old}\s+%{_level}\s+\[%{_logger_name}\]\s+(%{_message_id}: )?%{data:msg}
+          artemis_audit_general %{_date_old}\s+\[%{_type}\]%{_thread_logger}\s+%{_message_id}\: %{data:msg}
+          audit_requested_new %{_level}\s+\|\s+%{_username} requested %{_action_url} \[%{_action_params}\] from\s+%{_action_from} at %{_date_new}\s+\|\s+.*
+          audit_requested_old %{_date_old}\s+\|\s+%{_level}\s+\|\s+%{_username} requested %{_action_url} \[%{_action_params}\] from\s+%{_action_from}\s+\|\s+.*
+          audit_called_old %{_date_old}\s+\|\s+%{_level}\s+\|\s+%{_username} called %{notSpace:system.action}\[%{data:system.properties}\]\s+\|.*-%{_action_from}
+          audit_catch_all_new %{_level}\s+\|\s+%{_username}.*from\s+%{_action_from} at %{_date_new}.*
+          audit_catch_all_old %{_date_old}\s+\|\s+%{_level}\s+\|\s+%{_username}.*-%{_action_from}
+    - type: grok-parser
+      name: Parse username and location
+      enabled: true
+      source: msg
+      samples:
+        - User guest(guest)@127.0.0.1:57260 is consuming a message from exampleQueue
+        - 'User anonymous@unknown is getting messages killed on target resource: QueueImpl[name=ExpiryQueue, postOffice=PostOfficeImpl [server=ActiveMQServerImpl::serverUUID=0e3b3d2e-7080-11eb-a8c9-acde48001122], temp=false]@7f1c0769 []'
+      grok:
+        supportRules: |
+          _username %{notSpace:system.user}
+          _action_from %{ip:network.client.ip}
+          _action_port %{port:network.client.port:integer}
+
+        matchRules: |
+          audit_username User %{_username}@(%{_action_from}:%{_action_port}|%{word:network.client.ip}) %{data}
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: url-parser
+      name: Extract url details
+      enabled: true
+      sources:
+        - system.action_url
+      target: http.url_details
+    - type: attribute-remapper
+      name: Map `system.action_url` to `system.action`
+      enabled: true
+      sources:
+        - system.action_url
+      target: system.action
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: lookup-processor
+      name: Remap audit logs to INFO
+      enabled: true
+      source: custom.type
+      target: level
+      lookupTable: "AUDIT,INFO\n"
+      default_lookup: INFO
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

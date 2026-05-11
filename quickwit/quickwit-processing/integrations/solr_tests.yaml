@@ -1,0 +1,82 @@
+id: "solr"
+tests:
+ -
+  sample: "2020-07-13 20:09:11.293 INFO  (searcherExecutor-10-thread-1-processing-x:gettingstarted) [   x:gettingstarted] o.a.s.c.SolrCore [gettingstarted] Registered new searcher Searcher@3436eb2f[gettingstarted] main{ExitableDirectoryReader(UninvertingDirectoryReader())}"
+  result:
+    custom:
+      collection:
+        x: "gettingstarted"
+      level: "INFO"
+      logger:
+        name: "o.a.s.c.SolrCore"
+        thread_name: "searcherExecutor-10-thread-1-processing-x:gettingstarted"
+      timestamp: 1594670951293
+    message: "[gettingstarted] Registered new searcher Searcher@3436eb2f[gettingstarted] main{ExitableDirectoryReader(UninvertingDirectoryReader())}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594670951293
+ -
+  sample: "2020-07-13 20:09:06.603 INFO  (main) [   ] o.e.j.s.Server Started @4938ms"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "o.e.j.s.Server"
+        thread_name: "main"
+      timestamp: 1594670946603
+    message: "Started @4938ms"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594670946603
+ -
+  sample: "2020-07-13 20:09:06.550 INFO  (coreLoadExecutor-9-thread-1) [   x:gettingstarted] o.a.s.c.SolrConfig Using Lucene MatchVersion: 8.5.0"
+  result:
+    custom:
+      collection:
+        x: "gettingstarted"
+      level: "INFO"
+      logger:
+        name: "o.a.s.c.SolrConfig"
+        thread_name: "coreLoadExecutor-9-thread-1"
+      timestamp: 1594670946550
+    message: "Using Lucene MatchVersion: 8.5.0"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594670946550
+ -
+  sample: "2020-07-13 20:09:05.559 WARN  (main) [   ] o.e.j.u.s.S.config Trusting all certificates configured for Client@73844119[provider=null,keyStore=null,trustStore=null]"
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        name: "o.e.j.u.s.S.config"
+        thread_name: "main"
+      timestamp: 1594670945559
+    message: "Trusting all certificates configured for Client@73844119[provider=null,keyStore=null,trustStore=null]"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594670945559
+ -
+  sample: "2020-07-15 15:22:50.019 INFO  (qtp2036775591-23) [c:gettingstarted3 s:shard1 r:core_node2 x:gettingstarted3_shard1_replica_n1] o.a.s.c.S.Request [gettingstarted3_shard1_replica_n1]  webapp=/solr path=/replication params={wt=json&command=details&_=1594826546034} status=0 QTime=1"
+  result:
+    custom:
+      collection:
+        c: "gettingstarted3"
+        r: "core_node2"
+        s: "shard1"
+        x: "gettingstarted3_shard1_replica_n1"
+      level: "INFO"
+      logger:
+        name: "o.a.s.c.S.Request"
+        thread_name: "qtp2036775591-23"
+      timestamp: 1594826570019
+    message: "[gettingstarted3_shard1_replica_n1]  webapp=/solr path=/replication params={wt=json&command=details&_=1594826546034} status=0 QTime=1"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594826570019
+

@@ -1,0 +1,180 @@
+id: crest-data-systems-commvault
+metric_id: crest-data-systems-commvault
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: Commvault by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-commvault"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: arithmetic-processor
+      name: Convert `lastUpdateTime` to milliseconds
+      enabled: true
+      expression: lastUpdateTime * 1000
+      target: lastUpdateTime
+      replaceMissing: false
+    - type: arithmetic-processor
+      name: Convert `timeSource` to milliseconds
+      enabled: true
+      expression: timeSource * 1000
+      target: timeSource
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `lastUpdateTime`, `timeSource` as the official date of the log
+      enabled: true
+      sources:
+        - lastUpdateTime
+        - timeSource
+    - name: Lookup for `isAged` to `job_expired_status`
+      enabled: true
+      source: isAged
+      target: job_expired_status
+      lookupTable: |-
+        false,not expired
+        true,expired
+      type: lookup-processor
+    - type: pipeline
+      name: Commcell Events
+      enabled: true
+      filter:
+        query: "service:cds.commvault.commcell_events"
+      processors:
+        - name: Lookup for `severity` to `severity_level`
+          enabled: true
+          source: severity
+          target: severity_level
+          lookupTable: |-
+            0,information
+            3,minor
+            6,major
+            9,critical
+          type: lookup-processor
+        - name: Lookup for `severity_level` to `status`
+          enabled: true
+          source: severity_level
+          target: status
+          lookupTable: |-
+            Information, info
+            major, warning
+            minor, warning
+            critical, critical
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: pipeline
+      name: Alert Details
+      enabled: true
+      filter:
+        query: "service:cds.commvault.alerts"
+      processors:
+        - name: Lookup for `alertSeverity` to `severity`
+          enabled: true
+          source: alertSeverity
+          target: severity
+          lookupTable: |-
+            0,Auto Pick
+            1,Critical
+            2,Warning
+            3,Information
+          type: lookup-processor
+        - name: Lookup for `alert.alertType.id` to `alertType`
+          enabled: true
+          source: alert.alertType.id
+          target: alertType
+          lookupTable: |-
+            1,Data Aging
+            2,Auxiliary Copy
+            3,Data Protection
+            4,Data Recovery
+            5,Disaster Recovery Backup
+            6,Data Verification
+            7,Media Inventory
+            8,scheduled export
+            9,Media Erase
+            10,Client
+            11,agents
+            13,MediaAgents
+            14,Schedules
+            15,Storage Policy
+            16,Library
+            17,Library Management
+            18,VaultTracker
+            19,Download Software
+            20,Install Updates
+            21,Device Status
+            22,Erase Data
+            23,application exchange
+            24,Updates Available for Download
+            25,File Replication
+            26,Upgrades and Service Packs
+            27,Data Classification
+            28,Continuous Data Replication
+            29,offline content indexing
+            30,SharePoint
+            52,Report
+            53,Information Management
+            54,Media Refreshing
+            55,DeDup DB Reconstruction
+            57,Log Monitoring
+            58,Event Viewer Events
+            59,Client Group
+            60,License
+            61,Backup Copy Workflow
+            62,log monitoring for Windows events
+            63,Workflow
+            64,Virtualize Me
+            65,custom queries
+          type: lookup-processor
+        - name: Lookup for `alert.alertCategory.id` to `alertCategory`
+          enabled: true
+          source: alert.alertCategory.id
+          target: alertCategory
+          lookupTable: |-
+            1,Job Management
+            2,Configuration
+            3,Media Management
+            5,Software Updates
+            8,Operation
+            9,Others
+          type: lookup-processor
+        - name: Lookup for `alert.escNotifType` to `alertEscNotifType`
+          enabled: true
+          source: alert.escNotifType
+          target: alertEscNotifType
+          lookupTable: >-
+            0,no escalation
+
+            8,escalation
+
+            10,escalation and repeating the notification
+
+            12,escalation and notification when the condition clears
+
+            14,escalation and repeating the notification and notification when the condition clears
+          type: lookup-processor
+        - name: Lookup for `alert.notifType` to `alertNotifType`
+          enabled: true
+          source: alert.notifType
+          target: alertNotifType
+          lookupTable: |-
+            1,email
+            4,SNMP
+            8,event viewer
+            512,save to disk
+            1024,RSS feeds
+            8192,console alerts
+            32768,SCOM
+            65536,workflow
+            131072,content indexing
+            2097152,webhooks
+          type: lookup-processor

@@ -1,0 +1,97 @@
+id: "azure.recoveryservices"
+tests:
+ -
+  sample: |-
+    {
+      "evt" : {
+        "name" : "Microsoft.RecoveryServices/values/backupFabrics/protectionContainers/protectedItems/backup/action",
+        "category" : "Administration",
+        "outcome" : "Succeeded"
+      },
+      "resourceId" : "/SUBSCRIPTIONS/A4F42A47-2B5B-4A4C-B6CF-F00D6C189365/RESOURCEGROUPS/TESTRG/PROVIDERS/MICROSOFT.RECOVERYSERVICES/VAULTS/VAULT428",
+      "Claims" : "{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}",
+      "level" : "Informational",
+      "Result Description" : "Backup Succeeded",
+      "EventName" : "AzureBackupActivityLog",
+      "Authorization" : "null",
+      "operationVersion" : "null",
+      "identity" : "{\"claims\":{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}}",
+      "service" : "azure",
+      "EventId" : 197,
+      "eventName" : "Backup",
+      "operationId" : "6caea86d-3f4c-4c5f-b2ba-b53e502adb84",
+      "correlationId" : "1054d95a-7364-420e-a016-aceb8a4bb7dc",
+      "location" : "centralus",
+      "time" : "2021-07-19T16:53:55.5361483Z",
+      "DeploymentUnit" : "cus-pod01-manag1-az01-testr",
+      "durationMs" : 0,
+      "properties" : {
+        "Job Id" : "aa52fedc-8783-41a4-b285-39dd2f41cd2d",
+        "Start Time" : "2021-07-19 16:32:41Z",
+        "Entity Name" : "test-6"
+      }
+    }
+  result:
+    custom:
+      Authorization: "null"
+      Claims: "{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}"
+      DeploymentUnit: "cus-pod01-manag1-az01-testr"
+      EventId: 197
+      EventName: "AzureBackupActivityLog"
+      Result Description: "Backup Succeeded"
+      correlationId: "1054d95a-7364-420e-a016-aceb8a4bb7dc"
+      duration: 0.0
+      durationMs: 0
+      entity_name: "test-6"
+      eventName: "Backup"
+      evt:
+        category: "Administration"
+        name: "Microsoft.RecoveryServices/values/backupFabrics/protectionContainers/protectedItems/backup/action"
+        outcome: "Succeeded"
+      identity: "{\"claims\":{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}}"
+      level: "Informational"
+      location: "centralus"
+      operationId: "6caea86d-3f4c-4c5f-b2ba-b53e502adb84"
+      operationVersion: "null"
+      properties:
+        Job Id: "aa52fedc-8783-41a4-b285-39dd2f41cd2d"
+        Start Time: "2021-07-19 16:32:41Z"
+      resourceId: "/SUBSCRIPTIONS/A4F42A47-2B5B-4A4C-B6CF-F00D6C189365/RESOURCEGROUPS/TESTRG/PROVIDERS/MICROSOFT.RECOVERYSERVICES/VAULTS/VAULT428"
+      resource_name: "vault428"
+      service: "azure"
+      time: "2021-07-19T16:53:55.5361483Z"
+    message: |-
+      {
+        "evt" : {
+          "name" : "Microsoft.RecoveryServices/values/backupFabrics/protectionContainers/protectedItems/backup/action",
+          "category" : "Administration",
+          "outcome" : "Succeeded"
+        },
+        "resourceId" : "/SUBSCRIPTIONS/A4F42A47-2B5B-4A4C-B6CF-F00D6C189365/RESOURCEGROUPS/TESTRG/PROVIDERS/MICROSOFT.RECOVERYSERVICES/VAULTS/VAULT428",
+        "Claims" : "{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}",
+        "level" : "Informational",
+        "Result Description" : "Backup Succeeded",
+        "EventName" : "AzureBackupActivityLog",
+        "Authorization" : "null",
+        "operationVersion" : "null",
+        "identity" : "{\"claims\":{\"http://schemas.xmlsoap.org/ws/2005/05/identityclaims/emailaddress\":\"Microsoft.RecoveryServices\"}}",
+        "service" : "azure",
+        "EventId" : 197,
+        "eventName" : "Backup",
+        "operationId" : "6caea86d-3f4c-4c5f-b2ba-b53e502adb84",
+        "correlationId" : "1054d95a-7364-420e-a016-aceb8a4bb7dc",
+        "location" : "centralus",
+        "time" : "2021-07-19T16:53:55.5361483Z",
+        "DeploymentUnit" : "cus-pod01-manag1-az01-testr",
+        "durationMs" : 0,
+        "properties" : {
+          "Job Id" : "aa52fedc-8783-41a4-b285-39dd2f41cd2d",
+          "Start Time" : "2021-07-19 16:32:41Z",
+          "Entity Name" : "test-6"
+        }
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1626713635536
+

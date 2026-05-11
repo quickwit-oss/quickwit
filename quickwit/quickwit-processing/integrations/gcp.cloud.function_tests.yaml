@@ -1,0 +1,354 @@
+id: "gcp.cloud.function"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "DEBUG",
+        "trace" : "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4",
+        "logName" : "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions",
+        "resource" : {
+          "type" : "cloud_function",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "function_name" : "csv_to_sql",
+            "region" : "us-central1"
+          }
+        },
+        "textPayload" : "Function execution took 2459 ms, finished with status code: 304",
+        "receiveTimestamp" : "2019-04-30T23:31:30.616983724Z",
+        "insertId" : "000000-028a99ab-61e9-44a5-8314-2947086ca06b",
+        "timestamp" : "2019-04-30T23:31:24.427145665Z",
+        "labels" : {
+          "execution_id" : "o9qq12gwdw6b"
+        }
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "000000-028a99ab-61e9-44a5-8314-2947086ca06b"
+        labels:
+          execution_id: "o9qq12gwdw6b"
+        logName: "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions"
+        receiveTimestamp: "2019-04-30T23:31:30.616983724Z"
+        resource:
+          labels:
+            function_name: "csv_to_sql"
+            project_id: "datadog-sandbox"
+            region: "us-central1"
+          type: "cloud_function"
+        severity: "DEBUG"
+        timestamp: "2019-04-30T23:31:24.427145665Z"
+        trace: "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4"
+      duration: 2.459E9
+      function:
+        name: "csv_to_sql"
+        status: 304.0
+        status_category: "OK"
+      resource:
+        id: "projects/datadog-sandbox/locations/us-central1/functions/csv_to_sql"
+    message: "Function execution took 2459 ms, finished with status code: 304"
+    service: "csv_to_sql"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556667084427
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "DEBUG",
+        "trace" : "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4",
+        "logName" : "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions",
+        "resource" : {
+          "type" : "cloud_function",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "function_name" : "csv_to_sql",
+            "region" : "us-central1"
+          }
+        },
+        "textPayload" : "Function execution took 2459 ms, finished with status: 'crash'",
+        "receiveTimestamp" : "2019-04-30T23:31:30.616983724Z",
+        "insertId" : "000000-028a99ab-61e9-44a5-8314-2947086ca06b",
+        "timestamp" : "2019-04-30T23:31:24.427145665Z",
+        "labels" : {
+          "execution_id" : "o9qq12gwdw6b"
+        }
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "000000-028a99ab-61e9-44a5-8314-2947086ca06b"
+        labels:
+          execution_id: "o9qq12gwdw6b"
+        logName: "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions"
+        receiveTimestamp: "2019-04-30T23:31:30.616983724Z"
+        resource:
+          labels:
+            function_name: "csv_to_sql"
+            project_id: "datadog-sandbox"
+            region: "us-central1"
+          type: "cloud_function"
+        severity: "DEBUG"
+        timestamp: "2019-04-30T23:31:24.427145665Z"
+        trace: "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4"
+      duration: 2.459E9
+      function:
+        name: "csv_to_sql"
+        status: "crash"
+        status_category: "ERROR"
+      resource:
+        id: "projects/datadog-sandbox/locations/us-central1/functions/csv_to_sql"
+    message: "Function execution took 2459 ms, finished with status: 'crash'"
+    service: "csv_to_sql"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556667084427
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "INFO",
+        "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "cloud_function",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "function_name" : "uhkummhh",
+            "region" : "us-central1"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2022-06-27T09:07:34.851021Z"
+            },
+            "callerSuppliedUserAgent" : "google-cloud-sdk gcloud/304.0.0 command/gcloud.functions.deploy invocation-id/af2e662b1e2f40bfad020df7b6ad35d2 environment/None environment-version/None interactive/False from-script/True python/3.8.5 term/xterm (Linux 5.10.104-linuxkit),gzip(gfe),gzip(gfe)",
+            "callerIp" : "35.146.114.1"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.longrunning.GetOperationRequest",
+            "name" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "dayspring.johnson@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz",
+            "permission" : "cloudfunctions.operations.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "google.longrunning.Operations.GetOperation",
+          "resourceName" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz",
+          "serviceName" : "cloudfunctions.googleapis.com",
+          "resourceLocation" : {
+            "currentLocations" : [ "us-central1" ]
+          }
+        },
+        "receiveTimestamp" : "2022-06-27T09:07:35.434775995Z",
+        "insertId" : "1l5s8kje1b776",
+        "timestamp" : "2022-06-247T09:07:34.815999Z"
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "1l5s8kje1b776"
+        logName: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "dayspring.johnson@datadoghq.com"
+          authorizationInfo:
+           -
+            resource: "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+            permission: "cloudfunctions.operations.get"
+            granted: true
+          methodName: "google.longrunning.Operations.GetOperation"
+          request:
+            '@type': "type.googleapis.com/google.longrunning.GetOperationRequest"
+            name: "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+          requestMetadata:
+            callerIp: "35.146.114.1"
+            callerSuppliedUserAgent: "google-cloud-sdk gcloud/304.0.0 command/gcloud.functions.deploy invocation-id/af2e662b1e2f40bfad020df7b6ad35d2 environment/None environment-version/None interactive/False from-script/True python/3.8.5 term/xterm (Linux 5.10.104-linuxkit),gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2022-06-27T09:07:34.851021Z"
+          resourceLocation:
+            currentLocations:
+             - "us-central1"
+          resourceName: "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+          serviceName: "cloudfunctions.googleapis.com"
+        receiveTimestamp: "2022-06-27T09:07:35.434775995Z"
+        resource:
+          labels:
+            function_name: "uhkummhh"
+            project_id: "datadog-sandbox"
+            region: "us-central1"
+          type: "cloud_function"
+        severity: "INFO"
+        timestamp: "2022-06-247T09:07:34.815999Z"
+      evt:
+        name: "google.longrunning.Operations.GetOperation"
+      function:
+        name: "uhkummhh"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "datadog-sandbox"
+            email_addr: "dayspring.johnson@datadoghq.com"
+            name: "dayspring.johnson"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.longrunning.operations.getoperation"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.longrunning.GetOperationRequest"
+              name: "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+            uid: "Unknown"
+          service:
+            name: "cloudfunctions.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "datadog-sandbox"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "google-cloud-sdk gcloud/304.0.0 command/gcloud.functions.deploy invocation-id/af2e662b1e2f40bfad020df7b6ad35d2 environment/None environment-version/None interactive/False from-script/True python/3.8.5 term/xterm (Linux 5.10.104-linuxkit),gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.longrunning.operations.getoperation"
+          log_name: "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1l5s8kje1b776"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "35.146.114.1"
+        status: "Success"
+        status_id: 1
+        time_dt: "2022-06-247T09:07:34.815999Z"
+        type_uid: 600302
+      resource:
+        id: "projects/datadog-sandbox/locations/us-central1/functions/uhkummhh"
+      usr:
+        email: "dayspring.johnson@datadoghq.com"
+        id: "dayspring.johnson@datadoghq.com"
+    message: |-
+      {
+        "data" : {
+          "severity" : "INFO",
+          "logName" : "projects/datadog-sandbox/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "cloud_function",
+            "labels" : {
+              "project_id" : "datadog-sandbox",
+              "function_name" : "uhkummhh",
+              "region" : "us-central1"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2022-06-27T09:07:34.851021Z"
+              },
+              "callerSuppliedUserAgent" : "google-cloud-sdk gcloud/304.0.0 command/gcloud.functions.deploy invocation-id/af2e662b1e2f40bfad020df7b6ad35d2 environment/None environment-version/None interactive/False from-script/True python/3.8.5 term/xterm (Linux 5.10.104-linuxkit),gzip(gfe),gzip(gfe)",
+              "callerIp" : "35.146.114.1"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/google.longrunning.GetOperationRequest",
+              "name" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "dayspring.johnson@datadoghq.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz",
+              "permission" : "cloudfunctions.operations.get",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "google.longrunning.Operations.GetOperation",
+            "resourceName" : "operations/ZGF0YWRvZy1zYW5kYm94L3VzLWNlbnRyYWwxL3Voa3VtbWhoL0lmMERNdWVYd0lz",
+            "serviceName" : "cloudfunctions.googleapis.com",
+            "resourceLocation" : {
+              "currentLocations" : [ "us-central1" ]
+            }
+          },
+          "receiveTimestamp" : "2022-06-27T09:07:35.434775995Z",
+          "insertId" : "1l5s8kje1b776",
+          "timestamp" : "2022-06-247T09:07:34.815999Z"
+        }
+      }
+    service: "uhkummhh"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "severity" : "DEBUG",
+      "trace" : "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4",
+      "logName" : "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions",
+      "resource" : {
+        "type" : "cloud_function",
+        "labels" : {
+          "project_id" : "datadog-sandbox",
+          "function_name" : "csv_to_sql",
+          "region" : "us-central1"
+        }
+      },
+      "textPayload" : "Function execution took 2459 ms, finished with status code: 304",
+      "receiveTimestamp" : "2019-04-30T23:31:30.616983724Z",
+      "insertId" : "000000-028a99ab-61e9-44a5-8314-2947086ca06b",
+      "timestamp" : "2019-04-30T23:31:24.427145665Z",
+      "labels" : {
+        "execution_id" : "o9qq12gwdw6b"
+      }
+    }
+  result:
+    custom:
+      duration: 2.459E9
+      function:
+        name: "csv_to_sql"
+        status: 304.0
+        status_category: "OK"
+      insertId: "000000-028a99ab-61e9-44a5-8314-2947086ca06b"
+      labels:
+        execution_id: "o9qq12gwdw6b"
+      logName: "projects/datadog-sandbox/logs/cloudfunctions.googleapis.com%2Fcloud-functions"
+      receiveTimestamp: "2019-04-30T23:31:30.616983724Z"
+      resource:
+        id: "projects/datadog-sandbox/locations/us-central1/functions/csv_to_sql"
+        labels:
+          function_name: "csv_to_sql"
+          project_id: "datadog-sandbox"
+          region: "us-central1"
+        type: "cloud_function"
+      severity: "DEBUG"
+      timestamp: "2019-04-30T23:31:24.427145665Z"
+      trace: "projects/datadog-sandbox/traces/5f552bcdd3774fd2ac0b0b80f13e04e4"
+    message: "Function execution took 2459 ms, finished with status code: 304"
+    service: "csv_to_sql"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556667084427
+

@@ -1,0 +1,1143 @@
+id: checkpoint-harmony-email-and-collaboration
+tests:
+ -
+  sample: |-
+    {
+      "event" : {
+        "security_event" : {
+          "entity_payload" : {
+            "severity" : 3,
+            "policy_rule_id" : 7,
+            "latest_change_time" : 1.7433989056972516E9,
+            "confidence_level" : 5,
+            "remediation_actor" : "microsoft",
+            "current_state" : "remediated",
+            "description" : "Microsoft has detected #{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"ms_defender_scan\", \"label\": \"phishing\"} in an email from #{\"entity_id\": \"ext:dummy@alerting-services.com\", \"entity_type\": \"office365_emails_user\", \"disable_link\": true, \"label\": \"dummy@alerting-services.com\"} - '#{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"office365_emails_email\", \"label\": \"Verify your recent Dummy Login.\"}' (#{\"entity_id\": \"dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user@example-one.com\"}'s mailbox)",
+            "description_text" : "Microsoft has detected phishing in an email from dummy@alerting-services.com - 'Verify your recent Dummy Login.' (test.user@example-one.com's mailbox)",
+            "aggregation_id" : "dummy_1a2b3c4d5e6f7g8h9i0j",
+            "event_metadata" : {
+              "sender_address" : "dummy@alerting-services.com"
+            },
+            "multi" : false,
+            "event_trigger" : {
+              "id" : 7,
+              "type" : "Policy"
+            },
+            "description_short" : "Microsoft has detected #{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"ms_defender_scan\", \"label\": \"phishing\"} in '#{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"office365_emails_email\", \"label\": \"Verify your recent Dummy Login.\"}'(#{\"entity_id\": \"dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user@example-one.com\"})",
+            "confidence_indicator" : "malicious",
+            "saas" : "office365_emails",
+            "matched_security_tool" : "ms_defender_scan",
+            "cp_log_uuid" : "dummy_a94f3b72e56d1c8a7e09",
+            "category" : "phishing",
+            "description_tooltips" : [ "hphish", "Dummy Support", "test.user@example-one.com", "HostedContentFilterPolicy", "Quarantine", "High Confidence Phishing", "0", "dummy@alerting-services.com", "Verify your recent Dummy Login.", "Test User", "9", "Member", "2025-03-31T05:13:40" ],
+            "metadata_json" : {
+              "impersonation_description" : "Other"
+            }
+          },
+          "saas_info" : {
+            "entity_type" : "office365_emails_email",
+            "account_id" : [ "dummy_4d6a7f5e8c3b2a9d1e0f" ],
+            "saas_actor_payload" : {
+              "is_deleted" : false,
+              "full_name" : "Test User",
+              "entity_type" : "office365_emails_user",
+              "is_external" : false,
+              "entity_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+              "key" : "Test User",
+              "email" : "test.user@example-one.com"
+            },
+            "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+          },
+          "security_event_action" : [ {
+            "actor" : "microsoft",
+            "create_time" : "2025-03-31T05:28:25.673591Z",
+            "action_type" : "quarantine_email",
+            "sec_event_id" : "dummy_f1e2d3c4b5a69788a0b9"
+          } ],
+          "entity_info" : {
+            "entity_type" : "security_event",
+            "customer_farm" : "mt-prod-cp-us-2",
+            "entity_expiration" : 1759814904,
+            "entity_sub_type" : "phishing",
+            "customer_oem" : "checkpoint",
+            "customer_region" : "us-east-1",
+            "entity_created" : "2025-03-31T05:28:24.323007+00:00",
+            "customer_cluster" : [ "24" ],
+            "locale" : "en-us",
+            "entity_reporter" : "emails-5478961-24",
+            "entity_id" : "dummy_f1e2d3c4b5a69788a0b9",
+            "customer_domain" : "datadog"
+          },
+          "time" : "2025-03-31T05:28:26.530183Z",
+          "_id" : "dummy_3e7a9b2c4d5f6e1a8b0d.73"
+        },
+        "entity" : {
+          "entity_payload" : {
+            "is_internal" : false,
+            "is_body_changed" : false,
+            "from_email" : "dummy@alerting-services.com",
+            "subject" : "Verify your recent Dummy Login.",
+            "saas_spam_verdict" : "9",
+            "source" : "mta",
+            "sent_datetime" : "2025-03-31T05:13:14Z",
+            "mode" : "monitor",
+            "ms_quarantine_status" : "quarantined",
+            "email_links_domains" : [ "e0a6d2-dummy.alerting-services.com" ],
+            "is_restored" : false,
+            "is_quarantine_user_notification" : false,
+            "quarantine_actor" : "Microsoft",
+            "dmarc_result" : "permerror",
+            "spf_result" : "fail",
+            "recipients_hash" : "dummy_d8a9f6e3c7b2a4d5e1f0",
+            "is_quarantined" : true,
+            "orig_recipient" : "test.user@example-one.com",
+            "is_restore_declined" : false,
+            "to_user" : [ {
+              "is_deleted" : false,
+              "full_name" : "Test User",
+              "entity_type" : "office365_emails_user",
+              "is_external" : false,
+              "entity_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+              "key" : "Test User",
+              "email" : "test.user@example-one.com"
+            } ],
+            "has_encrypted_attachments" : false,
+            "network_message_id" : "dummy_5e3a7c9d2b4f6a1e8f0d",
+            "is_incoming" : true,
+            "workflow" : "av,admin",
+            "is_subject_changed" : false,
+            "ms_quarantine_verdict_type" : "high_conf_phish",
+            "is_attachment_restored" : false,
+            "is_quarantine_notification" : false,
+            "matched_workflows" : [ {
+              "update_time" : "2025-03-31T05:28:24.908880",
+              "av" : {
+                "alerts" : [ {
+                  "id" : "send_email_to_recipient"
+                }, {
+                  "id" : "alert_admin_on_blacklisted_item"
+                }, {
+                  "id" : "alert_user_on_blacklisted_item"
+                } ],
+                "policy_mode" : "alert",
+                "workflow_id" : "ms_restore_policy",
+                "workflow_label" : "Microsoft Restore Policy",
+                "policy_id" : 34,
+                "engine" : "emails-5478961-14",
+                "policy_update_time" : "2025-03-24T10:44:20.216607",
+                "action_id" : "admin",
+                "action_label" : "Can request a restore (admin needs to approve)"
+              }
+            } ],
+            "aggregation_id" : "dummy_a7b5c3d9e2f4a6e1f0d8",
+            "size" : 20509,
+            "recipients" : [ "test.user@example-one.com" ],
+            "email_split" : "original",
+            "body_content_type" : "HTML",
+            "is_restore_requested" : false,
+            "from_domain" : "alerting-services.com",
+            "is_outgoing" : false,
+            "is_links_replaced" : false,
+            "is_sent_from_internal" : false,
+            "from_id" : "ext:dummy@alerting-services.com",
+            "dkim_result" : "none",
+            "is_inline_handled" : false,
+            "from_name" : "Dummy Support",
+            "is_wd_rescan" : false,
+            "sender_client_ip" : "0.0.0.0",
+            "is_deleted" : true,
+            "is_in_s3_quarantine" : true,
+            "insert_time_sqs" : "2025-03-31T05:23:18.275000Z",
+            "recipients_user" : [ {
+              "is_deleted" : false,
+              "full_name" : "Test User",
+              "entity_type" : "office365_emails_user",
+              "is_external" : false,
+              "entity_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+              "key" : "Test User",
+              "email" : "test.user@example-one.com"
+            } ],
+            "is_attachment_changed" : false,
+            "sender_server_ip" : "10.10.10.10",
+            "quarantine_uuid" : "dummy_9e2a4c7b5d3f6a1e8f0d",
+            "has_internal_recipient" : true,
+            "is_splittable" : false,
+            "internet_message_id" : "<ABCD.1234@dummy.com>",
+            "quarantine_time" : "2025-03-31T05:28:25.255290Z",
+            "to" : [ "test.user@example-one.com" ],
+            "is_spam_header_added" : false,
+            "attachment_count" : 0,
+            "email_links" : [ "https://e0a6d2-Dummy.alerting-services.com/&p=3" ]
+          },
+          "saas_info" : {
+            "saas_actor_id" : "test.user@example-one.com",
+            "saas_entity_created" : "2025-03-31T05:13:40Z",
+            "saas_id" : "office365_emails",
+            "saas_entity_type" : "email",
+            "saas_actor_type" : "office365_emails_user",
+            "saas_actor_payload" : {
+              "is_deleted" : false,
+              "full_name" : "Test User",
+              "entity_type" : "office365_emails_user",
+              "is_external" : false,
+              "entity_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+              "key" : "Test User",
+              "email" : "test.user@example-one.com"
+            }
+          },
+          "entity_info" : {
+            "entity_updated" : "2025-03-31T05:28:18.788734Z",
+            "entity_type" : "office365_emails_email",
+            "customer_farm" : "mt-prod-cp-us-2",
+            "entity_expiration" : 1759037298,
+            "customer_oem" : "Check Point",
+            "customer_region" : "us-east-1",
+            "entity_created" : "2025-03-31T05:28:18.816237Z",
+            "customer_cluster" : "24",
+            "locale" : "en-us",
+            "entity_reporter" : "emails-5478961-14",
+            "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7",
+            "customer_domain" : "datadog"
+          },
+          "entity_security_result" : {
+            "ms_defender" : [ {
+              "security_result_entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7",
+              "score" : 0,
+              "status_description" : "",
+              "entity_type" : "office365_emails_email",
+              "status_code" : "0",
+              "sec_type" : "ms_defender",
+              "payload" : {
+                "bcl" : "0",
+                "policy_action" : "quarantine",
+                "detection_reason" : "HostedContentFilterPolicy",
+                "scl" : "9",
+                "policy_applied" : "hphish"
+              },
+              "verdict" : "hphsh",
+              "security_result_entity_type" : "ms_defender_scan",
+              "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            } ],
+            "shadow_it" : [ {
+              "security_result_entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7",
+              "score" : 0,
+              "status_description" : "Clean",
+              "entity_type" : "office365_emails_email",
+              "status_code" : "clean",
+              "sec_type" : "shadow_it",
+              "payload" : {
+                "subject" : "Verify your recent Dummy Login.",
+                "domain" : "",
+                "from" : "dummy@alerting-services.com"
+              },
+              "verdict" : "clean",
+              "security_result_entity_type" : "shadow_it_emails_scan",
+              "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            } ],
+            "combined_verdict" : {
+              "ms_defender" : "hphsh",
+              "shadow_it" : "approved",
+              "clicktime_protection" : "links_replaced",
+              "ap" : "phishing"
+            },
+            "clicktime_protection" : [ {
+              "security_result_entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7",
+              "score" : 0,
+              "entity_type" : "office365_emails_email",
+              "status_code" : "0",
+              "sec_type" : "clicktime_protection",
+              "verdict" : "links_replaced",
+              "security_result_entity_type" : "clicktime_protection_scan",
+              "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            } ],
+            "findings_summary" : [ {
+              "sectool_name" : "avanan_ap_scan",
+              "sectool_type" : "ap",
+              "verdict" : "phishing"
+            }, {
+              "sectool_name" : "ms_defender_scan",
+              "sectool_type" : "ms_defender",
+              "verdict" : "hphsh"
+            } ],
+            "is_clean" : false,
+            "ap" : [ {
+              "security_result_entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7",
+              "score" : 7786.434293,
+              "entity_type" : "office365_emails_email",
+              "status_code" : "0",
+              "sec_type" : "ap",
+              "payload" : {
+                "reasons_by_category" : {
+                  "Machine Learning summary" : [ {
+                    "short_text" : "Phishing confidence level - Highest",
+                    "full_text" : "Phishing confidence level - Highest"
+                  } ],
+                  "Links" : [ {
+                    "short_text" : "Suspicious-looking link",
+                    "full_text" : "Some of the links in the email has suspicious format - often used by Phishing emails"
+                  } ],
+                  "Sender Reputation" : [ {
+                    "short_text" : "Your users didn't communicate with the sender",
+                    "full_text" : "The people in your org didn't communicate with the sender"
+                  } ],
+                  "Attack Analysis" : [ {
+                    "short_text" : "Email analysis indicates a possible Credentials Harvesting attack",
+                    "full_text" : "Email analysis indicates a possible Credentials Harvesting attack",
+                    "name_text" : "Credentials Harvesting"
+                  } ],
+                  "Email Headers" : [ {
+                    "short_text" : "DMARC check fails",
+                    "full_text" : "The email's header suggest that DMARC signature is missing/invalid"
+                  } ]
+                },
+                "reasons" : [ "Phishing confidence level - Highest" ],
+                "probability_level" : "5",
+                "reasons_by_category_list" : [ "Sender Reputation" ]
+              },
+              "verdict" : "phishing",
+              "security_result_entity_type" : "avanan_ap_scan",
+              "entity_id" : "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            } ]
+          },
+          "time" : "2025-03-31T05:28:29.827096Z"
+        }
+      }
+    }
+  result:
+    custom:
+      confidence_level: "High"
+      event:
+        entity:
+          entity_info:
+            customer_cluster: "24"
+            customer_domain: "datadog"
+            customer_farm: "mt-prod-cp-us-2"
+            customer_oem: "Check Point"
+            customer_region: "us-east-1"
+            entity_created: "2025-03-31T05:28:18.816237Z"
+            entity_expiration: 1759037298
+            entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            entity_reporter: "emails-5478961-14"
+            entity_type: "office365_emails_email"
+            entity_updated: "2025-03-31T05:28:18.788734Z"
+            locale: "en-us"
+          entity_payload:
+            aggregation_id: "dummy_a7b5c3d9e2f4a6e1f0d8"
+            attachment_count: 0
+            body_content_type: "HTML"
+            dkim_result: "none"
+            dmarc_result: "permerror"
+            email_links:
+             - "https://e0a6d2-Dummy.alerting-services.com/&p=3"
+            email_links_domains:
+             - "e0a6d2-dummy.alerting-services.com"
+            email_split: "original"
+            from_domain: "alerting-services.com"
+            from_email: "dummy@alerting-services.com"
+            from_id: "ext:dummy@alerting-services.com"
+            from_name: "Dummy Support"
+            has_encrypted_attachments: false
+            has_internal_recipient: true
+            insert_time_sqs: "2025-03-31T05:23:18.275000Z"
+            internet_message_id: "<ABCD.1234@dummy.com>"
+            is_attachment_changed: false
+            is_attachment_restored: false
+            is_body_changed: false
+            is_deleted: true
+            is_in_s3_quarantine: true
+            is_incoming: true
+            is_inline_handled: false
+            is_internal: false
+            is_links_replaced: false
+            is_outgoing: false
+            is_quarantine_notification: false
+            is_quarantine_user_notification: false
+            is_quarantined: true
+            is_restore_declined: false
+            is_restore_requested: false
+            is_restored: false
+            is_sent_from_internal: false
+            is_spam_header_added: false
+            is_splittable: false
+            is_subject_changed: false
+            is_wd_rescan: false
+            matched_workflows:
+             -
+              update_time: "2025-03-31T05:28:24.908880"
+              av:
+                alerts:
+                 -
+                  id: "send_email_to_recipient"
+                 -
+                  id: "alert_admin_on_blacklisted_item"
+                 -
+                  id: "alert_user_on_blacklisted_item"
+                policy_mode: "alert"
+                workflow_id: "ms_restore_policy"
+                workflow_label: "Microsoft Restore Policy"
+                policy_id: 34
+                engine: "emails-5478961-14"
+                policy_update_time: "2025-03-24T10:44:20.216607"
+                action_id: "admin"
+                action_label: "Can request a restore (admin needs to approve)"
+            mode: "monitor"
+            ms_quarantine_status: "quarantined"
+            ms_quarantine_verdict_type: "high_conf_phish"
+            network_message_id: "dummy_5e3a7c9d2b4f6a1e8f0d"
+            orig_recipient: "test.user@example-one.com"
+            quarantine_actor: "Microsoft"
+            quarantine_time: "2025-03-31T05:28:25.255290Z"
+            quarantine_uuid: "dummy_9e2a4c7b5d3f6a1e8f0d"
+            recipients:
+             - "test.user@example-one.com"
+            recipients_hash: "dummy_d8a9f6e3c7b2a4d5e1f0"
+            recipients_user:
+             -
+              is_deleted: false
+              full_name: "Test User"
+              entity_type: "office365_emails_user"
+              is_external: false
+              entity_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+              key: "Test User"
+              email: "test.user@example-one.com"
+            saas_spam_verdict: "9"
+            sender_server_ip: "10.10.10.10"
+            sent_datetime: "2025-03-31T05:13:14Z"
+            size: 20509
+            source: "mta"
+            spf_result: "fail"
+            subject: "Verify your recent Dummy Login."
+            to:
+             - "test.user@example-one.com"
+            to_user:
+             -
+              is_deleted: false
+              full_name: "Test User"
+              entity_type: "office365_emails_user"
+              is_external: false
+              entity_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+              key: "Test User"
+              email: "test.user@example-one.com"
+            workflow: "av,admin"
+          entity_security_result:
+            ap:
+             -
+              security_result_entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+              score: 7786.434293
+              entity_type: "office365_emails_email"
+              status_code: "0"
+              sec_type: "ap"
+              payload:
+                reasons_by_category:
+                  Machine Learning summary:
+                   -
+                    short_text: "Phishing confidence level - Highest"
+                    full_text: "Phishing confidence level - Highest"
+                  Links:
+                   -
+                    short_text: "Suspicious-looking link"
+                    full_text: "Some of the links in the email has suspicious format - often used by Phishing emails"
+                  Sender Reputation:
+                   -
+                    short_text: "Your users didn't communicate with the sender"
+                    full_text: "The people in your org didn't communicate with the sender"
+                  Attack Analysis:
+                   -
+                    short_text: "Email analysis indicates a possible Credentials Harvesting attack"
+                    full_text: "Email analysis indicates a possible Credentials Harvesting attack"
+                    name_text: "Credentials Harvesting"
+                  Email Headers:
+                   -
+                    short_text: "DMARC check fails"
+                    full_text: "The email's header suggest that DMARC signature is missing/invalid"
+                reasons:
+                 - "Phishing confidence level - Highest"
+                probability_level: "5"
+                reasons_by_category_list:
+                 - "Sender Reputation"
+              verdict: "phishing"
+              security_result_entity_type: "avanan_ap_scan"
+              entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            clicktime_protection:
+             -
+              security_result_entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+              score: 0
+              entity_type: "office365_emails_email"
+              status_code: "0"
+              sec_type: "clicktime_protection"
+              verdict: "links_replaced"
+              security_result_entity_type: "clicktime_protection_scan"
+              entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            combined_verdict:
+              ap: "phishing"
+              clicktime_protection: "links_replaced"
+              ms_defender: "hphsh"
+              shadow_it: "approved"
+            findings_summary:
+             -
+              sectool_name: "avanan_ap_scan"
+              sectool_type: "ap"
+              verdict: "phishing"
+             -
+              sectool_name: "ms_defender_scan"
+              sectool_type: "ms_defender"
+              verdict: "hphsh"
+            is_clean: false
+            ms_defender:
+             -
+              security_result_entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+              score: 0
+              status_description: ""
+              entity_type: "office365_emails_email"
+              status_code: "0"
+              sec_type: "ms_defender"
+              payload:
+                bcl: "0"
+                policy_action: "quarantine"
+                detection_reason: "HostedContentFilterPolicy"
+                scl: "9"
+                policy_applied: "hphish"
+              verdict: "hphsh"
+              security_result_entity_type: "ms_defender_scan"
+              entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            shadow_it:
+             -
+              security_result_entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+              score: 0
+              status_description: "Clean"
+              entity_type: "office365_emails_email"
+              status_code: "clean"
+              sec_type: "shadow_it"
+              payload:
+                subject: "Verify your recent Dummy Login."
+                domain: ""
+                from: "dummy@alerting-services.com"
+              verdict: "clean"
+              security_result_entity_type: "shadow_it_emails_scan"
+              entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+          saas_info:
+            saas_actor_id: "test.user@example-one.com"
+            saas_actor_payload:
+              email: "test.user@example-one.com"
+              entity_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+              entity_type: "office365_emails_user"
+              full_name: "Test User"
+              is_deleted: false
+              is_external: false
+              key: "Test User"
+            saas_actor_type: "office365_emails_user"
+            saas_entity_created: "2025-03-31T05:13:40Z"
+            saas_entity_type: "email"
+            saas_id: "office365_emails"
+          time: "2025-03-31T05:28:29.827096Z"
+        security_event:
+          _id: "dummy_3e7a9b2c4d5f6e1a8b0d.73"
+          entity_info:
+            customer_cluster:
+             - "24"
+            customer_domain: "datadog"
+            customer_farm: "mt-prod-cp-us-2"
+            customer_oem: "checkpoint"
+            customer_region: "us-east-1"
+            entity_created: "2025-03-31T05:28:24.323007+00:00"
+            entity_expiration: 1759814904
+            entity_id: "dummy_f1e2d3c4b5a69788a0b9"
+            entity_reporter: "emails-5478961-24"
+            entity_sub_type: "phishing"
+            entity_type: "security_event"
+            locale: "en-us"
+          entity_payload:
+            aggregation_id: "dummy_1a2b3c4d5e6f7g8h9i0j"
+            category: "phishing"
+            confidence_indicator: "malicious"
+            confidence_level: 5
+            cp_log_uuid: "dummy_a94f3b72e56d1c8a7e09"
+            current_state: "remediated"
+            description: "Microsoft has detected #{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"ms_defender_scan\", \"label\": \"phishing\"} in an email from #{\"entity_id\": \"ext:dummy@alerting-services.com\", \"entity_type\": \"office365_emails_user\", \"disable_link\": true, \"label\": \"dummy@alerting-services.com\"} - '#{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"office365_emails_email\", \"label\": \"Verify your recent Dummy Login.\"}' (#{\"entity_id\": \"dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user@example-one.com\"}'s mailbox)"
+            description_short: "Microsoft has detected #{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"ms_defender_scan\", \"label\": \"phishing\"} in '#{\"entity_id\": \"dummy_9b72d5e431fa86c2e5b04719ac38f0d7\", \"entity_type\": \"office365_emails_email\", \"label\": \"Verify your recent Dummy Login.\"}'(#{\"entity_id\": \"dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user@example-one.com\"})"
+            description_tooltips:
+             - "hphish"
+             - "Dummy Support"
+             - "test.user@example-one.com"
+             - "HostedContentFilterPolicy"
+             - "Quarantine"
+             - "High Confidence Phishing"
+             - "0"
+             - "dummy@alerting-services.com"
+             - "Verify your recent Dummy Login."
+             - "Test User"
+             - "9"
+             - "Member"
+             - "2025-03-31T05:13:40"
+            event_metadata:
+              sender_address: "dummy@alerting-services.com"
+            event_trigger:
+              id: 7
+              type: "Policy"
+            latest_change_time: 1.7433989056972516E9
+            matched_security_tool: "ms_defender_scan"
+            metadata_json:
+              impersonation_description: "Other"
+            multi: false
+            policy_rule_id: 7
+            remediation_actor: "microsoft"
+            saas: "office365_emails"
+            severity: 3
+          saas_info:
+            account_id:
+             - "dummy_4d6a7f5e8c3b2a9d1e0f"
+            entity_id: "dummy_9b72d5e431fa86c2e5b04719ac38f0d7"
+            entity_type: "office365_emails_email"
+            saas_actor_payload:
+              email: "test.user@example-one.com"
+              entity_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+              entity_type: "office365_emails_user"
+              full_name: "Test User"
+              is_deleted: false
+              is_external: false
+              key: "Test User"
+          security_event_action:
+           -
+            actor: "microsoft"
+            create_time: "2025-03-31T05:28:25.673591Z"
+            action_type: "quarantine_email"
+            sec_event_id: "dummy_f1e2d3c4b5a69788a0b9"
+          time: "2025-03-31T05:28:26.530183Z"
+      matched_security_tool_name: "Microsoft 365 Defender"
+      network:
+        client:
+          geoip: {}
+          ip: "0.0.0.0"
+      saas_name: "Office 365 Mail"
+      service: "office365_emails"
+      severity: "Medium"
+      status: "warning"
+    message: "Microsoft has detected phishing in an email from dummy@alerting-services.com - 'Verify your recent Dummy Login.' (test.user@example-one.com's mailbox)"
+    service: "office365_emails"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1743398904323
+ -
+  sample: |-
+    {
+      "event" : {
+        "security_event" : {
+          "entity_payload" : {
+            "severity" : 1,
+            "policy_rule_id" : 0,
+            "confidence_level" : 5,
+            "current_state" : "new",
+            "description" : "#{\"entity_id\": \"dummy_6a3c9e2b5d7f4a1e8f0d\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user-1@example-two.com\"} performed geo-suspicious events: #{\"entity_id\": \"dummy_4b9c2e7a5d3f6a1e8f0d\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.20.10.20) and after 14 minutes #{\"entity_id\": \"dummy_e3a7c9d5b2f4a6e1f0d8\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.10.10.20)",
+            "description_text" : "test.user-1@example-two.com performed geo-suspicious events: logged in from India (10.20.10.20) and after 14 minutes logged in from India (10.10.10.20)",
+            "aggregation_id" : "dummy_2e7a9c5b3d4f6a1e8f0d",
+            "event_metadata" : {
+              "metadata_json" : {
+                "columns" : [ {
+                  "data" : " ",
+                  "id" : "anomaly-comment",
+                  "label" : "Comment (optional)",
+                  "type" : "text"
+                } ],
+                "anomaly_type" : "superman_anomaly",
+                "title" : "Create allow-list for 'geo suspicious events' anomaly"
+              }
+            },
+            "event_trigger" : {
+              "id" : 0,
+              "type" : "Policy"
+            },
+            "description_short" : "#{\"entity_id\": \"dummy_6a3c9e2b5d7f4a1e8f0d\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user-1@example-two.com\"} performed geo-suspicious events: #{\"entity_id\": \"dummy_4b9c2e7a5d3f6a1e8f0d\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.20.10.20) and after 14 minutes #{\"entity_id\": \"dummy_e3a7c9d5b2f4a6e1f0d8\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.10.10.20)",
+            "confidence_indicator" : "detected",
+            "saas" : "office365_emails",
+            "matched_security_tool" : "anomaly",
+            "cp_log_uuid" : "dummy_f9d2a4c7b5e3a6e1f0d8",
+            "category" : "anomaly",
+            "description_tooltips" : [ "Member", "IT Administrator ", "Test User 2", "IT" ],
+            "metadata_json" : {
+              "impersonation_description" : "Other"
+            }
+          },
+          "saas_info" : {
+            "entity_type" : "office365_mgmnt_event",
+            "account_id" : [ "dummy_6a3c9e2b5d7f4a1e8f0d" ],
+            "saas_creation_time" : "2025-03-31T06:48:03.140267Z",
+            "entity_id" : "dummy_e3a7c9d5b2f4a6e1f0d8"
+          },
+          "entity_info" : {
+            "entity_type" : "security_event",
+            "customer_farm" : "mt-prod-cp-us-2",
+            "entity_expiration" : 1759819683,
+            "entity_sub_type" : "anomaly",
+            "customer_oem" : "checkpoint",
+            "customer_region" : "us-east-1",
+            "entity_created" : "2025-03-31T06:44:21+00:00",
+            "customer_cluster" : [ "24" ],
+            "locale" : "en-us",
+            "entity_reporter" : "anomaly",
+            "entity_id" : "dummy_2e7a9c5b3d4f6a1e8f0d",
+            "customer_domain" : "datadog"
+          },
+          "time" : "2025-03-31T06:48:04.256000Z",
+          "_id" : "dummy_5c7a9e2b4d3f6a1e8f0d.83"
+        }
+      }
+    }
+  result:
+    custom:
+      confidence_level: "High"
+      event:
+        security_event:
+          _id: "dummy_5c7a9e2b4d3f6a1e8f0d.83"
+          entity_info:
+            customer_cluster:
+             - "24"
+            customer_domain: "datadog"
+            customer_farm: "mt-prod-cp-us-2"
+            customer_oem: "checkpoint"
+            customer_region: "us-east-1"
+            entity_created: "2025-03-31T06:44:21+00:00"
+            entity_expiration: 1759819683
+            entity_id: "dummy_2e7a9c5b3d4f6a1e8f0d"
+            entity_reporter: "anomaly"
+            entity_sub_type: "anomaly"
+            entity_type: "security_event"
+            locale: "en-us"
+          entity_payload:
+            aggregation_id: "dummy_2e7a9c5b3d4f6a1e8f0d"
+            category: "anomaly"
+            confidence_indicator: "detected"
+            confidence_level: 5
+            cp_log_uuid: "dummy_f9d2a4c7b5e3a6e1f0d8"
+            current_state: "new"
+            description: "#{\"entity_id\": \"dummy_6a3c9e2b5d7f4a1e8f0d\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user-1@example-two.com\"} performed geo-suspicious events: #{\"entity_id\": \"dummy_4b9c2e7a5d3f6a1e8f0d\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.20.10.20) and after 14 minutes #{\"entity_id\": \"dummy_e3a7c9d5b2f4a6e1f0d8\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.10.10.20)"
+            description_short: "#{\"entity_id\": \"dummy_6a3c9e2b5d7f4a1e8f0d\", \"entity_type\": \"office365_emails_user\", \"label\": \"test.user-1@example-two.com\"} performed geo-suspicious events: #{\"entity_id\": \"dummy_4b9c2e7a5d3f6a1e8f0d\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.20.10.20) and after 14 minutes #{\"entity_id\": \"dummy_e3a7c9d5b2f4a6e1f0d8\", \"entity_type\": \"office365_mgmnt_event\", \"label\": \"logged in\"} from India (10.10.10.20)"
+            description_tooltips:
+             - "Member"
+             - "IT Administrator "
+             - "Test User 2"
+             - "IT"
+            event_metadata:
+              metadata_json:
+                anomaly_type: "superman_anomaly"
+                columns:
+                 -
+                  data: " "
+                  id: "anomaly-comment"
+                  label: "Comment (optional)"
+                  type: "text"
+                title: "Create allow-list for 'geo suspicious events' anomaly"
+            event_trigger:
+              id: 0
+              type: "Policy"
+            matched_security_tool: "anomaly"
+            metadata_json:
+              impersonation_description: "Other"
+            policy_rule_id: 0
+            saas: "office365_emails"
+            severity: 1
+          saas_info:
+            account_id:
+             - "dummy_6a3c9e2b5d7f4a1e8f0d"
+            entity_id: "dummy_e3a7c9d5b2f4a6e1f0d8"
+            entity_type: "office365_mgmnt_event"
+            saas_creation_time: "2025-03-31T06:48:03.140267Z"
+          time: "2025-03-31T06:48:04.256000Z"
+      saas_name: "Office 365 Mail"
+      service: "office365_emails"
+      severity: "Very Low"
+      status: "info"
+      usr:
+        email: "test.user-1@example-two.com"
+    message: "test.user-1@example-two.com performed geo-suspicious events: logged in from India (10.20.10.20) and after 14 minutes logged in from India (10.10.10.20)"
+    service: "office365_emails"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1743403461000
+ -
+  sample: |-
+    {
+      "event" : {
+        "security_event" : {
+          "entity_payload" : {
+            "severity" : 3,
+            "policy_rule_id" : 54,
+            "confidence_level" : 5,
+            "current_state" : "new",
+            "description" : "#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"SmartDLP\"} has detected #{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"PII, PCI\"} leak in '#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"ms_teams_file\", \"label\": \"Card_dump_details_2025_test_file_2.csv\"}' (Created by #{\"entity_id\": \"mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"ms_teams_user\", \"label\": \"Test User\"})",
+            "description_text" : "SmartDLP has detected PII, PCI leak in 'Card_dump_details_2025_test_file_2.csv' (Created by Test User)",
+            "event_metadata" : {
+              "dlp_detections" : [ "Credit card number" ]
+            },
+            "multi" : false,
+            "event_trigger" : {
+              "id" : 54,
+              "type" : "Policy"
+            },
+            "description_short" : "#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"SmartDLP\"} has detected a leak in '#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"ms_teams_file\", \"label\": \"Card_dump_details_2025_test_file_2.csv\"}' (#{\"entity_id\": \"mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"ms_teams_user\", \"label\": \"Test User\"})",
+            "confidence_indicator" : "detected",
+            "saas" : "ms_teams",
+            "matched_security_tool" : "avanan_dlp",
+            "cp_log_uuid" : "dummy_1a9c5b7d3e4f6a2e8f0d",
+            "category" : "dlp",
+            "description_tooltips" : [ "Detected", "Card_dump_details_2025_test_file_2.csv", "Test User" ],
+            "metadata_json" : {
+              "impersonation_description" : "Other"
+            }
+          },
+          "saas_info" : {
+            "entity_type" : "ms_teams_file",
+            "account_id" : [ "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f" ],
+            "saas_actor_payload" : {
+              "is_internal" : true,
+              "full_name" : "Test User",
+              "entity_type" : "ms_teams_user",
+              "is_external" : false,
+              "entity_id" : "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f",
+              "key" : "Test User",
+              "email" : "test.user@example-one.com"
+            },
+            "entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d"
+          },
+          "security_event_action" : [ {
+            "actor" : "checkpoint",
+            "create_time" : "2025-03-25T10:57:44.042198Z",
+            "action_type" : "send_email_to_owner_im_files_dlp",
+            "sec_event_id" : "dummy_4d9a2c7b5e3f6a1e8f0d",
+            "error" : ""
+          }, {
+            "actor" : "checkpoint",
+            "create_time" : "2025-03-25T10:57:45.697666Z",
+            "action_type" : "send_email_to_admin_im_files_dlp",
+            "sec_event_id" : "dummy_4d9a2c7b5e3f6a1e8f0d",
+            "error" : ""
+          } ],
+          "entity_info" : {
+            "entity_type" : "security_event",
+            "customer_farm" : "mt-prod-cp-us-2",
+            "entity_expiration" : 1759316262,
+            "entity_sub_type" : "dlp",
+            "customer_oem" : "checkpoint",
+            "customer_region" : "us-east-1",
+            "entity_created" : "2025-03-25T10:57:42.130473+05:30",
+            "customer_cluster" : [ "24" ],
+            "locale" : "en-us",
+            "entity_reporter" : "external-saas-4427110",
+            "entity_id" : "dummy_4d9a2c7b5e3f6a1e8f0d",
+            "customer_domain" : "datadog"
+          },
+          "time" : "2025-03-25T10:57:45.782800Z",
+          "_id" : "dummy_f6a3c9b2d5e7a4e1f0d8.45"
+        },
+        "entity" : {
+          "entity_payload" : {
+            "chat_members" : [ {
+              "farm_customer" : "mt-prod-cp-us-2:datadog",
+              "is_internal" : true,
+              "is_deleted" : false,
+              "create_time" : "2025-03-25 10:45:36",
+              "is_external" : false,
+              "entity_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+              "display_name" : "Test User",
+              "email" : "test.user@example-one.com"
+            }, {
+              "farm_customer" : "mt-prod-cp-us-2:datadog",
+              "is_internal" : false,
+              "is_deleted" : false,
+              "create_time" : "2025-03-25 10:45:36",
+              "is_external" : false,
+              "entity_id" : "dummy_8f1e3a7c9b5d2a4e6f0d",
+              "display_name" : "Test user 2",
+              "email" : "test.user-2@example-two.com"
+            } ],
+            "conversation_name" : "Chat (Test User, Test user 2)",
+            "item_id" : "dummy_2a7c9b5e3d4f6a1e8f0d",
+            "file_name" : "Card_dump_details_2025_test_file_2.csv",
+            "modify_time" : "2025-03-25T10:45:59",
+            "is_external" : false,
+            "actor_email" : "test.user@example-one.com",
+            "from_chat" : true,
+            "team_name" : "",
+            "reply_to_id" : "",
+            "chat_id" : "19:dummy_8f1e3a7c9b5d2a4e6f0d_dummy_4d6a7f5e8c3b2a9d1e0f@unq.gbl.spaces",
+            "conversation_type" : "chat",
+            "is_deleted" : false,
+            "size" : 4663,
+            "file_hash" : "dummy_5b3e7a9c2d4f6a1e8f0d",
+            "is_restored" : false,
+            "mime_type" : "text/csv",
+            "user_id" : "dummy_4d6a7f5e8c3b2a9d1e0f",
+            "conversation_id" : "19:dummy_8f1e3a7c9b5d2a4e6f0d_dummy_4d6a7f5e8c3b2a9d1e0f@unq.gbl.spaces",
+            "is_tombstoned" : false,
+            "download_url" : "https://test-my.sharepoint.com/personal/Card_dump_details_2025_test_file_2.csv",
+            "direction" : "internal"
+          },
+          "saas_info" : {
+            "saas_actor_id" : "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f",
+            "saas_entity_created" : "2025-03-25T10:45:59",
+            "saas_id" : "ms_teams",
+            "saas_entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d",
+            "saas_entity_type" : "ms_teams_file",
+            "saas_actor_type" : "ms_teams_user",
+            "saas_actor_payload" : {
+              "is_deleted" : false,
+              "is_external" : false,
+              "display_name" : "Test User",
+              "email" : "test.user@example-one.com"
+            }
+          },
+          "entity_info" : {
+            "entity_type" : "ms_teams_file",
+            "customer_farm" : "mt-prod-cp-us-2",
+            "entity_expiration" : 1744195560,
+            "customer_oem" : "avanan",
+            "customer_region" : "us-east-1",
+            "entity_created" : "2025-03-25T10:46:00",
+            "customer_cluster" : "",
+            "locale" : "en-us",
+            "entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d",
+            "customer_domain" : "datadog"
+          },
+          "time" : "2025-03-25T10:57:42.813159Z",
+          "entity_security_result" : {
+            "av" : [ {
+              "security_result_entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d",
+              "score" : 0,
+              "status_description" : "The request has been fully answered",
+              "entity_type" : "ms_teams_file",
+              "status_code" : "1001",
+              "sec_type" : "av",
+              "verdict" : "clean",
+              "security_result_entity_type" : "checkpoint2",
+              "entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d"
+            } ],
+            "combined_verdict" : {
+              "av" : "clean",
+              "dlp" : "leak"
+            },
+            "dlp" : [ {
+              "security_result_entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d",
+              "score" : 0,
+              "status_description" : "DLP rule match: PII, PCI",
+              "entity_type" : "ms_teams_file",
+              "status_code" : "0",
+              "sec_type" : "dlp",
+              "payload" : {
+                "matches_dlp_rules" : [ "PII", "PCI" ],
+                "found_text" : [ "****************116" ],
+                "scan_details" : [ "Credit card number (very_likely): ****************116" ],
+                "hit_count" : 58
+              },
+              "verdict" : "leak",
+              "security_result_entity_type" : "avanan_dlp",
+              "entity_id" : "dummy_7f3e2a9b5d4c6a1e8f0d"
+            } ],
+            "findings_summary" : [ {
+              "sectool_name" : "avanan_dlp",
+              "sectool_type" : "dlp",
+              "verdict" : "leak"
+            } ],
+            "is_clean" : false,
+            "combined_dlp_hit_count" : 58
+          },
+          "_id" : "dummy_9c2d5a7b3e4f6a1e8f0d.42"
+        }
+      }
+    }
+  result:
+    custom:
+      confidence_level: "High"
+      download_url_details:
+        host: "test-my.sharepoint.com"
+        path: "/personal/Card_dump_details_2025_test_file_2.csv"
+        scheme: "https"
+      event:
+        entity:
+          _id: "dummy_9c2d5a7b3e4f6a1e8f0d.42"
+          entity_info:
+            customer_cluster: ""
+            customer_domain: "datadog"
+            customer_farm: "mt-prod-cp-us-2"
+            customer_oem: "avanan"
+            customer_region: "us-east-1"
+            entity_created: "2025-03-25T10:46:00"
+            entity_expiration: 1744195560
+            entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+            entity_type: "ms_teams_file"
+            locale: "en-us"
+          entity_payload:
+            actor_email: "test.user@example-one.com"
+            chat_id: "19:dummy_8f1e3a7c9b5d2a4e6f0d_dummy_4d6a7f5e8c3b2a9d1e0f@unq.gbl.spaces"
+            chat_members:
+             -
+              farm_customer: "mt-prod-cp-us-2:datadog"
+              is_internal: true
+              is_deleted: false
+              create_time: "2025-03-25 10:45:36"
+              is_external: false
+              entity_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+              display_name: "Test User"
+              email: "test.user@example-one.com"
+             -
+              farm_customer: "mt-prod-cp-us-2:datadog"
+              is_internal: false
+              is_deleted: false
+              create_time: "2025-03-25 10:45:36"
+              is_external: false
+              entity_id: "dummy_8f1e3a7c9b5d2a4e6f0d"
+              display_name: "Test user 2"
+              email: "test.user-2@example-two.com"
+            conversation_id: "19:dummy_8f1e3a7c9b5d2a4e6f0d_dummy_4d6a7f5e8c3b2a9d1e0f@unq.gbl.spaces"
+            conversation_name: "Chat (Test User, Test user 2)"
+            conversation_type: "chat"
+            direction: "internal"
+            download_url: "https://test-my.sharepoint.com/personal/Card_dump_details_2025_test_file_2.csv"
+            file_hash: "dummy_5b3e7a9c2d4f6a1e8f0d"
+            file_name: "Card_dump_details_2025_test_file_2.csv"
+            from_chat: true
+            is_deleted: false
+            is_external: false
+            is_restored: false
+            is_tombstoned: false
+            item_id: "dummy_2a7c9b5e3d4f6a1e8f0d"
+            mime_type: "text/csv"
+            modify_time: "2025-03-25T10:45:59"
+            reply_to_id: ""
+            size: 4663
+            team_name: ""
+            user_id: "dummy_4d6a7f5e8c3b2a9d1e0f"
+          entity_security_result:
+            av:
+             -
+              security_result_entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+              score: 0
+              status_description: "The request has been fully answered"
+              entity_type: "ms_teams_file"
+              status_code: "1001"
+              sec_type: "av"
+              verdict: "clean"
+              security_result_entity_type: "checkpoint2"
+              entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+            combined_dlp_hit_count: 58
+            combined_verdict:
+              av: "clean"
+              dlp: "leak"
+            dlp:
+             -
+              security_result_entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+              score: 0
+              status_description: "DLP rule match: PII, PCI"
+              entity_type: "ms_teams_file"
+              status_code: "0"
+              sec_type: "dlp"
+              payload:
+                matches_dlp_rules:
+                 - "PII"
+                 - "PCI"
+                found_text:
+                 - "****************116"
+                scan_details:
+                 - "Credit card number (very_likely): ****************116"
+                hit_count: 58
+              verdict: "leak"
+              security_result_entity_type: "avanan_dlp"
+              entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+            findings_summary:
+             -
+              sectool_name: "avanan_dlp"
+              sectool_type: "dlp"
+              verdict: "leak"
+            is_clean: false
+          saas_info:
+            saas_actor_id: "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f"
+            saas_actor_payload:
+              display_name: "Test User"
+              email: "test.user@example-one.com"
+              is_deleted: false
+              is_external: false
+            saas_actor_type: "ms_teams_user"
+            saas_entity_created: "2025-03-25T10:45:59"
+            saas_entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+            saas_entity_type: "ms_teams_file"
+            saas_id: "ms_teams"
+          time: "2025-03-25T10:57:42.813159Z"
+        security_event:
+          _id: "dummy_f6a3c9b2d5e7a4e1f0d8.45"
+          entity_info:
+            customer_cluster:
+             - "24"
+            customer_domain: "datadog"
+            customer_farm: "mt-prod-cp-us-2"
+            customer_oem: "checkpoint"
+            customer_region: "us-east-1"
+            entity_created: "2025-03-25T10:57:42.130473+05:30"
+            entity_expiration: 1759316262
+            entity_id: "dummy_4d9a2c7b5e3f6a1e8f0d"
+            entity_reporter: "external-saas-4427110"
+            entity_sub_type: "dlp"
+            entity_type: "security_event"
+            locale: "en-us"
+          entity_payload:
+            category: "dlp"
+            confidence_indicator: "detected"
+            confidence_level: 5
+            cp_log_uuid: "dummy_1a9c5b7d3e4f6a2e8f0d"
+            current_state: "new"
+            description: "#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"SmartDLP\"} has detected #{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"PII, PCI\"} leak in '#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"ms_teams_file\", \"label\": \"Card_dump_details_2025_test_file_2.csv\"}' (Created by #{\"entity_id\": \"mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"ms_teams_user\", \"label\": \"Test User\"})"
+            description_short: "#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"avanan_dlp\", \"disable_link\": true, \"label\": \"SmartDLP\"} has detected a leak in '#{\"entity_id\": \"dummy_7f3e2a9b5d4c6a1e8f0d\", \"entity_type\": \"ms_teams_file\", \"label\": \"Card_dump_details_2025_test_file_2.csv\"}' (#{\"entity_id\": \"mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f\", \"entity_type\": \"ms_teams_user\", \"label\": \"Test User\"})"
+            description_tooltips:
+             - "Detected"
+             - "Card_dump_details_2025_test_file_2.csv"
+             - "Test User"
+            event_metadata:
+              dlp_detections:
+               - "Credit card number"
+            event_trigger:
+              id: 54
+              type: "Policy"
+            matched_security_tool: "avanan_dlp"
+            metadata_json:
+              impersonation_description: "Other"
+            multi: false
+            policy_rule_id: 54
+            saas: "ms_teams"
+            severity: 3
+          saas_info:
+            account_id:
+             - "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f"
+            entity_id: "dummy_7f3e2a9b5d4c6a1e8f0d"
+            entity_type: "ms_teams_file"
+            saas_actor_payload:
+              email: "test.user@example-one.com"
+              entity_id: "mt-prod-cp-us-2:datadog:dummy_4d6a7f5e8c3b2a9d1e0f"
+              entity_type: "ms_teams_user"
+              full_name: "Test User"
+              is_external: false
+              is_internal: true
+              key: "Test User"
+          security_event_action:
+           -
+            actor: "checkpoint"
+            create_time: "2025-03-25T10:57:44.042198Z"
+            action_type: "send_email_to_owner_im_files_dlp"
+            sec_event_id: "dummy_4d9a2c7b5e3f6a1e8f0d"
+            error: ""
+           -
+            actor: "checkpoint"
+            create_time: "2025-03-25T10:57:45.697666Z"
+            action_type: "send_email_to_admin_im_files_dlp"
+            sec_event_id: "dummy_4d9a2c7b5e3f6a1e8f0d"
+            error: ""
+          time: "2025-03-25T10:57:45.782800Z"
+      matched_security_tool_name: "SmartDLP"
+      saas_name: "Microsoft Teams"
+      service: "ms_teams"
+      severity: "Medium"
+      status: "warning"
+    message: "SmartDLP has detected PII, PCI leak in 'Card_dump_details_2025_test_file_2.csv' (Created by Test User)"
+    service: "ms_teams"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1742880462130

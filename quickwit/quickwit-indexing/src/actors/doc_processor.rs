@@ -22,7 +22,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use fnv::FnvHashMap;
 use metrics::Counter;
-use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
+use quickwit_processing::{
+    DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
+};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;

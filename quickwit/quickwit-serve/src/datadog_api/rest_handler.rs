@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use pomchi::{DatadogLogMsg, MessageValue};
+use quickwit_processing::{DatadogLogMsg, MessageValue};
 use quickwit_common::dd_metrics::DD_INGEST_METRICS;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_config::INGEST_V2_SOURCE_ID;

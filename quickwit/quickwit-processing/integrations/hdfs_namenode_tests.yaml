@@ -1,0 +1,48 @@
+id: "hdfs_namenode"
+tests:
+ -
+  sample: "2019-09-20 14:22:32,116 INFO org.apache.hadoop.hdfs.StateChange: BLOCK* allocate blk_1087224332_13483544, replicas=10.128.0.2:9866, 10.128.0.3:9866 for /tmp/hdfs_test_file.txt._COPYING_"
+  result:
+    custom:
+      logger:
+        name: "org.apache.hadoop.hdfs.StateChange"
+      syslog:
+        severity: "INFO"
+        timestamp: 1568989352116
+    message: "BLOCK* allocate blk_1087224332_13483544, replicas=10.128.0.2:9866, 10.128.0.3:9866 for /tmp/hdfs_test_file.txt._COPYING_"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1568989352116
+ -
+  sample: "19/09/24 19:20:45 INFO hdfs.StateChange: STATE* Replication Queue initialization scan for invalid, over- and under-replicated blocks completed in 46 msec"
+  result:
+    custom:
+      logger:
+        name: "hdfs.StateChange"
+      syslog:
+        severity: "INFO"
+        timestamp: 1569352845000
+    message: "STATE* Replication Queue initialization scan for invalid, over- and under-replicated blocks completed in 46 msec"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1569352845000
+ -
+  sample: "2019-11-06 09:50:49,211 WARN  datanode.DataNode (BlockReceiver.java:flushOrSync(419)) - Slow flushOrSync took 318ms (threshold=300ms), isSync:true, flushTotalNanos=9857ns, volume=/grid/16/hadoop/hdfs/data"
+  result:
+    custom:
+      logger:
+        file_name: "BlockReceiver.java"
+        line_number: 419.0
+        method_name: "flushOrSync"
+        name: "datanode.DataNode"
+      syslog:
+        severity: "WARN"
+        timestamp: 1573033849211
+    message: "Slow flushOrSync took 318ms (threshold=300ms), isSync:true, flushTotalNanos=9857ns, volume=/grid/16/hadoop/hdfs/data"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573033849211
+

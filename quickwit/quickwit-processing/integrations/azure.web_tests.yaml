@@ -1,0 +1,67 @@
+id: "azure.web"
+tests:
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "34.224.243.198",
+      "resourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/westeuropetest/providers/Microsoft.Web/sites/DDATWIN2019",
+      "level" : "Warning",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "operationName" : "MICROSOFT.WEB/SITES/EXTENSIONS/WRITE",
+      "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+      "time" : "2020-04-07T12:01:17.8810661Z",
+      "category" : "Administrative",
+      "resultType" : "Success",
+      "durationMs" : 123,
+      "resultSignature" : "Succeeded."
+    }
+  result:
+    custom:
+      correlationId: "aea8188d-9be4-48c7-9e8f-3bf10a545ff3"
+      duration: 1.23E8
+      durationMs: 123
+      evt:
+        category: "Administrative"
+        name: "MICROSOFT.WEB/SITES/EXTENSIONS/WRITE"
+        outcome: "Success"
+      level: "Warning"
+      network:
+        client:
+          ip: "34.224.243.198"
+      resourceId: "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/westeuropetest/providers/Microsoft.Web/sites/DDATWIN2019"
+      resource_name: "ddatwin2019"
+      resultSignature: "Succeeded."
+      time: "2020-04-07T12:01:17.8810661Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: |-
+      {
+        "callerIpAddress" : "34.224.243.198",
+        "resourceId" : "/SUBSCRIPTIONS/8c56d827-5f07-45ce-8f2b-6c5001db5c6f/resourceGroups/westeuropetest/providers/Microsoft.Web/sites/DDATWIN2019",
+        "level" : "Warning",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "MICROSOFT.WEB/SITES/EXTENSIONS/WRITE",
+        "correlationId" : "aea8188d-9be4-48c7-9e8f-3bf10a545ff3",
+        "time" : "2020-04-07T12:01:17.8810661Z",
+        "category" : "Administrative",
+        "resultType" : "Success",
+        "durationMs" : 123,
+        "resultSignature" : "Succeeded."
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586260877881
+

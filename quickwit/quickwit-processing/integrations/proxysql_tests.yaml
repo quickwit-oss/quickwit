@@ -1,0 +1,214 @@
+id: "proxysql"
+tests:
+ -
+  sample: "2020-04-06 08:59:07 MySQL_Monitor.cpp:960:monitor_read_only_thread(): [ERROR] Timeout on read_only check for db:3306 after 2ms. Unable to create a connection. If the server is overload, increase mysql-monitor_connect_timeout. Error: timeout on creating new connection: Can't connect to MySQL server on 'db' (115)."
+  result:
+    custom:
+      date: 1586163547000
+      level: "ERROR"
+      logger:
+        line_number: 960.0
+        method_name: "monitor_read_only_thread"
+        name: "MySQL_Monitor.cpp"
+    message: "Timeout on read_only check for db:3306 after 2ms. Unable to create a connection. If the server is overload, increase mysql-monitor_connect_timeout. Error: timeout on creating new connection: Can't connect to MySQL server on 'db' (115)."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586163547000
+ -
+  sample: "2020-04-06 08:59:08 [INFO] New mysql_aws_aurora_hostgroups table"
+  result:
+    custom:
+      date: 1586163548000
+      level: "INFO"
+    message: "New mysql_aws_aurora_hostgroups table"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586163548000
+ -
+  sample: "Standard MySQL Authentication rev. 0.2.0902 -- MySQL_Authentication.cpp -- Tue Oct 15 17:03:55 2019"
+  result:
+    custom:
+      date: 1571159035000
+      logger:
+        name: "MySQL_Authentication.cpp"
+      proxysql_service: "Standard MySQL Authentication"
+      revision: "0.2.0902"
+    message: "Standard MySQL Authentication rev. 0.2.0902 -- MySQL_Authentication.cpp -- Tue Oct 15 17:03:55 2019"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571159035000
+ -
+  sample: |-
+    {
+      "schemaname" : "test",
+      "thread_id" : 2,
+      "client_addr" : "127.0.0.1:39954",
+      "proxy_addr" : "0.0.0.0:6033",
+      "time" : "2019-05-20 18:48:47.631",
+      "event" : "Admin_Connect_ERR",
+      "ssl" : false,
+      "timestamp" : 1558342127631,
+      "username" : "admin"
+    }
+  result:
+    custom:
+      client_addr: "127.0.0.1:39954"
+      db:
+        instance: "test"
+        user: "admin"
+      event: "Admin_Connect_ERR"
+      logger:
+        thread_id: 2
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 39954.0
+        proxysql:
+          ip: "0.0.0.0"
+          port: 6033.0
+      proxy_addr: "0.0.0.0:6033"
+      ssl: false
+      time: "2019-05-20 18:48:47.631"
+      timestamp: 1558342127631
+    message: |-
+      {
+        "schemaname" : "test",
+        "thread_id" : 2,
+        "client_addr" : "127.0.0.1:39954",
+        "proxy_addr" : "0.0.0.0:6033",
+        "time" : "2019-05-20 18:48:47.631",
+        "event" : "Admin_Connect_ERR",
+        "ssl" : false,
+        "timestamp" : 1558342127631,
+        "username" : "admin"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558342127631
+ -
+  sample: |-
+    {
+      "creation_time" : "2019-05-20 18:48:47.631",
+      "duration" : "125.02ms",
+      "schemaname" : "test",
+      "thread_id" : 2,
+      "extra_info" : "MySQL_Thread.cpp:2652:~MySQL_Thread()",
+      "client_addr" : "127.0.0.1:39954",
+      "time" : "2019-05-20 18:48:47.631",
+      "event" : "Admin_Close",
+      "ssl" : false,
+      "timestamp" : 1558342127631,
+      "username" : "admin"
+    }
+  result:
+    custom:
+      client_addr: "127.0.0.1:39954"
+      creation_time: "2019-05-20 18:48:47.631"
+      db:
+        instance: "test"
+        user: "admin"
+      duration: 1.2502E8
+      event: "Admin_Close"
+      extra_info: "MySQL_Thread.cpp:2652:~MySQL_Thread()"
+      logger:
+        line_number: 2652.0
+        method_name: "~MySQL_Thread()"
+        name: "MySQL_Thread.cpp"
+        thread_id: 2
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 39954.0
+      ssl: false
+      time: "2019-05-20 18:48:47.631"
+      timestamp: 1558342127631
+    message: |-
+      {
+        "creation_time" : "2019-05-20 18:48:47.631",
+        "duration" : "125.02ms",
+        "schemaname" : "test",
+        "thread_id" : 2,
+        "extra_info" : "MySQL_Thread.cpp:2652:~MySQL_Thread()",
+        "client_addr" : "127.0.0.1:39954",
+        "time" : "2019-05-20 18:48:47.631",
+        "event" : "Admin_Close",
+        "ssl" : false,
+        "timestamp" : 1558342127631,
+        "username" : "admin"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558342127631
+ -
+  sample: |-
+    {
+      "hostgroup_id" : 0,
+      "server" : "127.0.0.1:3306",
+      "schemaname" : "test",
+      "query" : "SELECT id,id2 FROM test1 WHERE id < ?",
+      "duration_us" : 366,
+      "endtime" : "2019-07-14 18:06:03.285029",
+      "starttime" : "2019-07-14 18:06:03.284663",
+      "rows_affected" : 0,
+      "rows_sent" : 0,
+      "thread_id" : 3,
+      "endtime_timestamp_us" : 1563091563285029,
+      "digest" : "0x98A2503010E9E4C8",
+      "client" : "127.0.0.1:39958",
+      "starttime_timestamp_us" : 1563091563284663,
+      "event" : "COM_STMT_PREPARE",
+      "username" : "sbtest"
+    }
+  result:
+    custom:
+      client: "127.0.0.1:39958"
+      db:
+        instance: "test"
+        rows_affected: 0
+        rows_sent: 0
+        statement: "SELECT id,id2 FROM test1 WHERE id < ?"
+        user: "sbtest"
+      digest: "0x98A2503010E9E4C8"
+      duration: 366000.0
+      duration_us: 366
+      endtime: "2019-07-14 18:06:03.285029"
+      endtime_timestamp_us: 1563091563285029
+      event: "COM_STMT_PREPARE"
+      hostgroup_id: 0
+      logger:
+        thread_id: 3
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 39958.0
+        proxysql:
+          ip: "127.0.0.1"
+          port: 3306.0
+      server: "127.0.0.1:3306"
+      starttime: "2019-07-14 18:06:03.284663"
+      starttime_timestamp_us: 1563091563284663
+    message: |-
+      {
+        "hostgroup_id" : 0,
+        "server" : "127.0.0.1:3306",
+        "schemaname" : "test",
+        "query" : "SELECT id,id2 FROM test1 WHERE id < ?",
+        "duration_us" : 366,
+        "endtime" : "2019-07-14 18:06:03.285029",
+        "starttime" : "2019-07-14 18:06:03.284663",
+        "rows_affected" : 0,
+        "rows_sent" : 0,
+        "thread_id" : 3,
+        "endtime_timestamp_us" : 1563091563285029,
+        "digest" : "0x98A2503010E9E4C8",
+        "client" : "127.0.0.1:39958",
+        "starttime_timestamp_us" : 1563091563284663,
+        "event" : "COM_STMT_PREPARE",
+        "username" : "sbtest"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563091563285029
+

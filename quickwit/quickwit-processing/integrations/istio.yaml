@@ -1,0 +1,129 @@
+id: istio
+metric_id: istio
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Istio
+    name: Istio Source
+    path: istio.source
+    source: log
+  - groups:
+      - Istio
+    name: Istio destination
+    path: istio.destination
+    source: log
+pipeline:
+  type: pipeline
+  name: Istio
+  enabled: true
+  filter:
+    query: source:istio
+  processors:
+    - type: attribute-remapper
+      name: Map `responseCode` to `http.status_code`
+      enabled: true
+      sources:
+        - responseCode
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `responseSize` to `network.bytes_written`
+      enabled: true
+      sources:
+        - responseSize
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user` to `usr.name`
+      enabled: true
+      sources:
+        - user
+      target: usr.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `source` to `istio.source`
+      enabled: true
+      sources:
+        - source
+      target: istio.source
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `destination` to `istio.destination`
+      enabled: true
+      sources:
+        - destination
+      target: istio.destination
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing latency
+      enabled: true
+      source: latency
+      grok:
+        supportRules: |
+        matchRules: |
+          latency_parsing (%{number:duration:scale(1000000)}ms|%{number:duration:scale(1000000000)}s)
+      samples:
+        - 13.601485ms
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level

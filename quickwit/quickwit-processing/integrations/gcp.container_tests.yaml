@@ -1,0 +1,140 @@
+id: "gcp.container"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "ERROR",
+        "logName" : "projects/datadog-sandbox/logs/k8s-bigip-ctlr",
+        "resource" : {
+          "type" : "container",
+          "labels" : {
+            "cluster_name" : "sean-test-2",
+            "instance_id" : "418215776847617262",
+            "container_name" : "k8s-bigip-ctlr",
+            "namespace_id" : "kube-system",
+            "zone" : "us-central1-a",
+            "project_id" : "datadog-sandbox",
+            "pod_id" : "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+          }
+        },
+        "textPayload" : "github.com/F5Networks/k8s-bigip-ctlr/pkg/appmanager/appManager.go:662: Failed to list *v1.Endpoints: endpoints is forbidden: User \"system:serviceaccount:kube-system:bigip-ctlr\" cannot list endpoints at the cluster scope",
+        "receiveTimestamp" : "2019-06-19T15:59:03.712729908Z",
+        "insertId" : "zileohg1jxu8z0",
+        "timestamp" : "2019-06-19T15:58:59.652594Z",
+        "labels" : {
+          "compute" : {
+            "googleapis" : {
+              "com/resource_name" : "fluentd-gcp-v3.2.0-ztdbq"
+            }
+          },
+          "container" : {
+            "googleapis" : {
+              "com/stream" : "stderr",
+              "com/namespace_name" : "kube-system",
+              "com/pod_name" : "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+            }
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "zileohg1jxu8z0"
+        labels:
+          compute:
+            googleapis:
+              com/resource_name: "fluentd-gcp-v3.2.0-ztdbq"
+          container:
+            googleapis:
+              com/namespace_name: "kube-system"
+              com/pod_name: "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+              com/stream: "stderr"
+        logName: "projects/datadog-sandbox/logs/k8s-bigip-ctlr"
+        receiveTimestamp: "2019-06-19T15:59:03.712729908Z"
+        resource:
+          labels:
+            cluster_name: "sean-test-2"
+            container_name: "k8s-bigip-ctlr"
+            instance_id: "418215776847617262"
+            namespace_id: "kube-system"
+            pod_id: "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+            project_id: "datadog-sandbox"
+            zone: "us-central1-a"
+          type: "container"
+        severity: "ERROR"
+        timestamp: "2019-06-19T15:58:59.652594Z"
+    message: "github.com/F5Networks/k8s-bigip-ctlr/pkg/appmanager/appManager.go:662: Failed to list *v1.Endpoints: endpoints is forbidden: User \"system:serviceaccount:kube-system:bigip-ctlr\" cannot list endpoints at the cluster scope"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560959939652
+ -
+  sample: |-
+    {
+      "severity" : "ERROR",
+      "logName" : "projects/datadog-sandbox/logs/k8s-bigip-ctlr",
+      "resource" : {
+        "type" : "container",
+        "labels" : {
+          "cluster_name" : "sean-test-2",
+          "instance_id" : "418215776847617262",
+          "container_name" : "k8s-bigip-ctlr",
+          "namespace_id" : "kube-system",
+          "zone" : "us-central1-a",
+          "project_id" : "datadog-sandbox",
+          "pod_id" : "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+        }
+      },
+      "textPayload" : "github.com/F5Networks/k8s-bigip-ctlr/pkg/appmanager/appManager.go:662: Failed to list *v1.Endpoints: endpoints is forbidden: User \"system:serviceaccount:kube-system:bigip-ctlr\" cannot list endpoints at the cluster scope",
+      "receiveTimestamp" : "2019-06-19T15:59:03.712729908Z",
+      "insertId" : "zileohg1jxu8z0",
+      "timestamp" : "2019-06-19T15:58:59.652594Z",
+      "labels" : {
+        "compute" : {
+          "googleapis" : {
+            "com/resource_name" : "fluentd-gcp-v3.2.0-ztdbq"
+          }
+        },
+        "container" : {
+          "googleapis" : {
+            "com/stream" : "stderr",
+            "com/namespace_name" : "kube-system",
+            "com/pod_name" : "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      insertId: "zileohg1jxu8z0"
+      labels:
+        compute:
+          googleapis:
+            com/resource_name: "fluentd-gcp-v3.2.0-ztdbq"
+        container:
+          googleapis:
+            com/namespace_name: "kube-system"
+            com/pod_name: "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+            com/stream: "stderr"
+      logName: "projects/datadog-sandbox/logs/k8s-bigip-ctlr"
+      receiveTimestamp: "2019-06-19T15:59:03.712729908Z"
+      resource:
+        labels:
+          cluster_name: "sean-test-2"
+          container_name: "k8s-bigip-ctlr"
+          instance_id: "418215776847617262"
+          namespace_id: "kube-system"
+          pod_id: "k8s-bigip-ctlr-deployment-6dfd8cb97d-wp2kq"
+          project_id: "datadog-sandbox"
+          zone: "us-central1-a"
+        type: "container"
+      severity: "ERROR"
+      timestamp: "2019-06-19T15:58:59.652594Z"
+    message: "github.com/F5Networks/k8s-bigip-ctlr/pkg/appmanager/appManager.go:662: Failed to list *v1.Endpoints: endpoints is forbidden: User \"system:serviceaccount:kube-system:bigip-ctlr\" cannot list endpoints at the cluster scope"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1560959939652
+

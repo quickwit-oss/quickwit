@@ -1,0 +1,77 @@
+id: "kyverno"
+tests:
+ -
+  sample: "2024-07-17T21:49:24Z\tERROR\twebhook-controller\twebhook/controller.go:269\tfailed to get lease\t{\"error\": \"lease.coordination.k8s.io \\\"kyverno-health\\\" not found\"}"
+  result:
+    custom:
+      caller: "webhook/controller.go:269"
+      error:
+        message: "lease.coordination.k8s.io \"kyverno-health\" not found"
+      level: "ERROR"
+      logger:
+        name: "webhook-controller"
+      timestamp: 1721252964000
+    message: "failed to get lease"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721252964000
+ -
+  sample: "2024-07-17T21:49:24Z\tINFO\twebhook-controller.worker\tcontroller/run.go:71\tstarting worker\t{\"id\": 1}"
+  result:
+    custom:
+      caller: "controller/run.go:71"
+      id: 1
+      level: "INFO"
+      logger:
+        name: "webhook-controller.worker"
+      timestamp: 1721252964000
+    message: "starting worker"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721252964000
+ -
+  sample: "2024-07-17T21:49:24Z\tINFO\tklog\tcache/reflector.go:351\tCaches populated for *v1.Lease from k8s.io/client-go@v0.29.2/tools/cache/reflector.go:229"
+  result:
+    custom:
+      caller: "cache/reflector.go:351"
+      level: "INFO"
+      logger:
+        name: "klog"
+      timestamp: 1721252964000
+    message: "Caches populated for *v1.Lease from k8s.io/client-go@v0.29.2/tools/cache/reflector.go:229"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721252964000
+ -
+  sample: "2024-07-17T21:49:24Z\tINFO\tttl-controller-manager\tcontroller/run.go:58\tstarting ...\t{\"gvr\": \"admissionregistration.k8s.io/v1, Resource=validatingwebhookconfigurations\"}"
+  result:
+    custom:
+      caller: "controller/run.go:58"
+      gvr: "admissionregistration.k8s.io/v1, Resource=validatingwebhookconfigurations"
+      level: "INFO"
+      logger:
+        name: "ttl-controller-manager"
+      timestamp: 1721252964000
+    message: "starting ..."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721252964000
+ -
+  sample: "2024-07-17T21:49:24Z\tINFO\tsetup.flag\tinternal/flag.go:260\t\t{\"webhookTimeout\": \"10\"}"
+  result:
+    custom:
+      caller: "internal/flag.go:260"
+      level: "INFO"
+      logger:
+        name: "setup.flag"
+      timestamp: 1721252964000
+      webhookTimeout: "10"
+    message: "2024-07-17T21:49:24Z\tINFO\tsetup.flag\tinternal/flag.go:260\t\t{\"webhookTimeout\": \"10\"}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721252964000

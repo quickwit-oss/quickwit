@@ -1,0 +1,31 @@
+id: fly_io
+metric_id: fly-io
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: Fly.io
+  enabled: true
+  filter:
+    query: "source:fly_io"
+  processors:
+    - type: attribute-remapper
+      name: Map attribute `env` to a tag
+      enabled: true
+      sources:
+        - env
+      sourceType: attribute
+      target: env
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `fly.app.name` as the official service of the log
+      enabled: true
+      sources:
+        - fly.app.name
+    - type: status-remapper
+      name: Define `log.level` as the official status of the log
+      enabled: true
+      sources:
+        - log.level

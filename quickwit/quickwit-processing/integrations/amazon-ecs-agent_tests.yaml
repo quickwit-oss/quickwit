@@ -1,0 +1,104 @@
+id: "amazon-ecs-agent"
+tests:
+ -
+  sample: "2019-08-01T15:45:13Z [INFO] Managed task [arn:aws:ecs:us-east-1:123456789012:task/12345c0c-123b-1234-bea2-fc1123d1234a]: waiting for event for task"
+  result:
+    custom:
+      lambda:
+        arn: "arn:aws:ecs:us-east-1:123456789012:task/12345c0c-123b-1234-bea2-fc1123d1234a"
+      level: "INFO"
+      task-type: "Managed task"
+      timestamp: 1564674313000
+    message: "waiting for event for task"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564674313000
+ -
+  sample: "2019-08-01T15:28:07Z [INFO] Managed task [arn:aws:ecs:us-east-1:123456789012:task/test-dev-test-ecs-general/123456e12a2c1234bf311e12a1d123a1]: got resource [cgroup] event: [CREATED]"
+  result:
+    custom:
+      lambda:
+        arn: "arn:aws:ecs:us-east-1:123456789012:task/test-dev-test-ecs-general/123456e12a2c1234bf311e12a1d123a1"
+      level: "INFO"
+      task-type: "Managed task"
+      timestamp: 1564673287000
+    message: "got resource [cgroup] event: [CREATED]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564673287000
+ -
+  sample: "2019-08-01T15:18:23Z 200 123.11.0.1:12345 \"/v2/credentials\" \"Java/1.8.0_111\" arn:aws:ecs:eu-west-1:123456789012:task/12f3b123-d12e-4c12-9ed0-a89daaf12345 GetCredentials 2 test-dev-test-ecs-general arn:aws:ecs:eu-west-1:123456789012:container-instance/test-dev-test-ecs-general/2bcef0cd123456a234f7cffb234bb234"
+  result:
+    custom:
+      http:
+        status_category: "OK"
+        status_code: 200
+        url_details:
+          path: "/v2/credentials"
+        useragent: "Java/1.8.0_111"
+      lambda:
+        arn: "arn:aws:ecs:eu-west-1:123456789012:task/12f3b123-d12e-4c12-9ed0-a89daaf12345"
+      network:
+        client:
+          ip: "123.11.0.1"
+          port: 12345.0
+      timestamp: 1564672703000
+    message: "GetCredentials 2 test-dev-test-ecs-general arn:aws:ecs:eu-west-1:123456789012:container-instance/test-dev-test-ecs-general/2bcef0cd123456a234f7cffb234bb234"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564672703000
+ -
+  sample: "2019-08-01T14:59:17Z [INFO] Managed task [arn:aws:ecs:us-east-1:123456789012:task/123ea123-1234-4c4e-a123-8cf4daw4d6sa]: task not steady state or terminal; progressing it"
+  result:
+    custom:
+      lambda:
+        arn: "arn:aws:ecs:us-east-1:123456789012:task/123ea123-1234-4c4e-a123-8cf4daw4d6sa"
+      level: "INFO"
+      task-type: "Managed task"
+      timestamp: 1564671557000
+    message: "task not steady state or terminal; progressing it"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564671557000
+ -
+  sample: "2019-08-01T14:47:05Z [INFO] Saving state! module=“statemanager\""
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1564670825000
+    message: "Saving state! module=“statemanager\""
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564670825000
+ -
+  sample: "2019-08-01T14:54:04Z [INFO] Managed task [arn:aws:ecs:us-west-2:123456789012:task/test-dev-test-ecs-general/c23f3b3f9be12345a123f8a8bf0e1234]: no longer waiting"
+  result:
+    custom:
+      lambda:
+        arn: "arn:aws:ecs:us-west-2:123456789012:task/test-dev-test-ecs-general/c23f3b3f9be12345a123f8a8bf0e1234"
+      level: "INFO"
+      task-type: "Managed task"
+      timestamp: 1564671244000
+    message: "no longer waiting"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1564671244000
+ -
+  sample: "level=info time=2019-12-12T23:43:29Z msg=\"Loading configuration\" module=agent.go"
+  result:
+    custom:
+      level: "info"
+      module: "agent.go"
+      time: 1576194209000
+    message: "Loading configuration"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576194209000
+

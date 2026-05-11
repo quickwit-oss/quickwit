@@ -1,0 +1,245 @@
+id: "docdb"
+tests:
+ -
+  sample: |-
+    {
+      "remote_ip" : "172.31.16.68:54888",
+      "param" : {
+        "ns" : "daniel_db.awesomecollection"
+      },
+      "atype" : "dropCollection",
+      "user" : "eclairtest123",
+      "timestamp" : "1552325089915"
+    }
+  result:
+    custom:
+      eventName: "dropCollection"
+      network:
+        client:
+          ip: "172.31.16.68"
+          port: 54888.0
+      param:
+        ns: "daniel_db.awesomecollection"
+      remote_ip: "172.31.16.68:54888"
+      timestamp: "1552325089915"
+      user: "eclairtest123"
+    message: |-
+      {
+        "remote_ip" : "172.31.16.68:54888",
+        "param" : {
+          "ns" : "daniel_db.awesomecollection"
+        },
+        "atype" : "dropCollection",
+        "user" : "eclairtest123",
+        "timestamp" : "1552325089915"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "remote_ip" : "172.31.16.68:54888",
+      "param" : {
+        "success" : true,
+        "error" : 0,
+        "mechanism" : "SCRAM-SHA-1",
+        "message" : "",
+        "user" : "eclairtest123"
+      },
+      "atype" : "dropCollection",
+      "user" : "eclairtest123",
+      "timestamp" : "1552325089915"
+    }
+  result:
+    custom:
+      eventName: "dropCollection"
+      network:
+        client:
+          ip: "172.31.16.68"
+          port: 54888.0
+      param:
+        error: 0
+        mechanism: "SCRAM-SHA-1"
+        message: ""
+        success: true
+        user: "eclairtest123"
+      remote_ip: "172.31.16.68:54888"
+      timestamp: "1552325089915"
+      user: "eclairtest123"
+    message: |-
+      {
+        "remote_ip" : "172.31.16.68:54888",
+        "param" : {
+          "success" : true,
+          "error" : 0,
+          "mechanism" : "SCRAM-SHA-1",
+          "message" : "",
+          "user" : "eclairtest123"
+        },
+        "atype" : "dropCollection",
+        "user" : "eclairtest123",
+        "timestamp" : "1552325089915"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "remote_ip" : "172.31.16.68:54888",
+      "param" : {
+        "success" : false,
+        "error" : 2,
+        "mechanism" : "SCRAM-SHA-1",
+        "message" : "",
+        "user" : "eclairtest123"
+      },
+      "atype" : "dropCollection",
+      "user" : "eclairtest123",
+      "timestamp" : "1552325089915"
+    }
+  result:
+    custom:
+      eventName: "dropCollection"
+      level: "Error"
+      network:
+        client:
+          ip: "172.31.16.68"
+          port: 54888.0
+      param:
+        error: 2
+        mechanism: "SCRAM-SHA-1"
+        message: ""
+        success: false
+        user: "eclairtest123"
+      remote_ip: "172.31.16.68:54888"
+      timestamp: "1552325089915"
+      user: "eclairtest123"
+    message: |-
+      {
+        "remote_ip" : "172.31.16.68:54888",
+        "param" : {
+          "success" : false,
+          "error" : 2,
+          "mechanism" : "SCRAM-SHA-1",
+          "message" : "",
+          "user" : "eclairtest123"
+        },
+        "atype" : "dropCollection",
+        "user" : "eclairtest123",
+        "timestamp" : "1552325089915"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "op" : "query",
+      "ns" : "test.inventory",
+      "planSummary" : "COLLSCAN",
+      "appName" : "MongoDB Shell",
+      "nreturned" : 0,
+      "responseLength" : 0,
+      "command" : {
+        "filter" : {
+          "tags" : 1
+        },
+        "lsid" : {
+          "id" : {
+            "$binary" : "INc1zRgiQ+ChyovMynz8PA==",
+            "$type" : "4"
+          }
+        },
+        "$db" : "test",
+        "find" : "inventory"
+      },
+      "protocol" : "op_query",
+      "service" : "docdb",
+      "execStats" : {
+        "stage" : "COLLSCAN",
+        "executionTimeMillisEstimate" : "103.806",
+        "nReturned" : "0"
+      },
+      "client" : "172.31.11.161:46218",
+      "id" : "35011019203010289815805681457568555244317760207224700928",
+      "cursorExhausted" : true,
+      "millis" : 104,
+      "user" : "clairemaster",
+      "timestamp" : "1569948398196",
+      "ts" : "1569948398196"
+    }
+  result:
+    custom:
+      appName: "MongoDB Shell"
+      client: "172.31.11.161:46218"
+      command:
+        $db: "test"
+        filter:
+          tags: 1
+        find: "inventory"
+        lsid:
+          id:
+            $binary: "INc1zRgiQ+ChyovMynz8PA=="
+            $type: "4"
+      cursorExhausted: true
+      duration: 1.04E8
+      execStats:
+        executionTimeMillisEstimate: "103.806"
+        nReturned: "0"
+        stage: "COLLSCAN"
+      id: "35011019203010289815805681457568555244317760207224700928"
+      millis: 104
+      network:
+        client:
+          ip: "172.31.11.161"
+          port: 46218.0
+      nreturned: 0
+      op: "query"
+      param:
+        ns: "test.inventory"
+      planSummary: "COLLSCAN"
+      protocol: "op_query"
+      responseLength: 0
+      service: "docdb"
+      timestamp: "1569948398196"
+      ts: "1569948398196"
+      user: "clairemaster"
+    message: |-
+      {
+        "op" : "query",
+        "ns" : "test.inventory",
+        "planSummary" : "COLLSCAN",
+        "appName" : "MongoDB Shell",
+        "nreturned" : 0,
+        "responseLength" : 0,
+        "command" : {
+          "filter" : {
+            "tags" : 1
+          },
+          "lsid" : {
+            "id" : {
+              "$binary" : "INc1zRgiQ+ChyovMynz8PA==",
+              "$type" : "4"
+            }
+          },
+          "$db" : "test",
+          "find" : "inventory"
+        },
+        "protocol" : "op_query",
+        "service" : "docdb",
+        "execStats" : {
+          "stage" : "COLLSCAN",
+          "executionTimeMillisEstimate" : "103.806",
+          "nReturned" : "0"
+        },
+        "client" : "172.31.11.161:46218",
+        "id" : "35011019203010289815805681457568555244317760207224700928",
+        "cursorExhausted" : true,
+        "millis" : 104,
+        "user" : "clairemaster",
+        "timestamp" : "1569948398196",
+        "ts" : "1569948398196"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

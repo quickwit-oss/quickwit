@@ -1,0 +1,112 @@
+id: "route53"
+tests:
+ -
+  sample: "1.0 2017-12-13T08:16:03.983Z Z123412341234 example.com ANY NOERROR UDP FRA6 2001:db8::1234 2001:db8:abcd::/48"
+  result:
+    custom:
+      dns:
+        flags:
+          rcode: "NOERROR"
+        question:
+          name: "example.com"
+          type: "ANY"
+          type_description: "unknown"
+        transport: "UDP"
+      hosted_zone_id: "Z123412341234"
+      network:
+        client:
+          subnet: "2001:db8:abcd::/48"
+      query_timestamp: "2017-12-13T08:16:03.983Z"
+      resolver_ip: "2001:db8::1234"
+      route53_edge_location: "FRA6"
+    message: "1.0 2017-12-13T08:16:03.983Z Z123412341234 example.com ANY NOERROR UDP FRA6 2001:db8::1234 2001:db8:abcd::/48"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1513152963983
+ -
+  sample: |-
+    {
+      "srcaddr" : "10.0.3.90",
+      "vpc_id" : "vpc-01cbe8787fad2b60b",
+      "srcids" : {
+        "instance" : "i-0b0dd401e9dec100e"
+      },
+      "answers" : [ {
+        "Type" : "A",
+        "Class" : "IN",
+        "Rdata" : "52.46.143.61"
+      } ],
+      "rcode" : "NOERROR",
+      "query_type" : "A",
+      "transport" : "UDP",
+      "version" : "1.000000",
+      "account_id" : "601427279990",
+      "query_name" : "logs.us-east-1.amazonaws.com.",
+      "service" : "route53",
+      "query_timestamp" : "2020-09-21T23:50:10Z",
+      "srcport" : "41178",
+      "id" : "35697521146290813135962779622646825606343273273227083776",
+      "region" : "us-east-1",
+      "query_class" : "IN",
+      "timestamp" : 1600732210000
+    }
+  result:
+    custom:
+      answers:
+       -
+        Type: "A"
+        Class: "IN"
+        Rdata: "52.46.143.61"
+      dns:
+        flags:
+          rcode: "NOERROR"
+        question:
+          class: "IN"
+          name: "logs.us-east-1.amazonaws.com."
+          type: "A"
+          type_description: "Address record"
+        transport: "UDP"
+      id: "35697521146290813135962779622646825606343273273227083776"
+      network:
+        client:
+          ip: "10.0.3.90"
+          port: "41178"
+      query_timestamp: "2020-09-21T23:50:10Z"
+      service: "route53"
+      timestamp: 1600732210000
+      title: "Address record lookup for logs.us-east-1.amazonaws.com. from 10.0.3.90"
+      version: "1.000000"
+    message: |-
+      {
+        "srcaddr" : "10.0.3.90",
+        "vpc_id" : "vpc-01cbe8787fad2b60b",
+        "srcids" : {
+          "instance" : "i-0b0dd401e9dec100e"
+        },
+        "answers" : [ {
+          "Type" : "A",
+          "Class" : "IN",
+          "Rdata" : "52.46.143.61"
+        } ],
+        "rcode" : "NOERROR",
+        "query_type" : "A",
+        "transport" : "UDP",
+        "version" : "1.000000",
+        "account_id" : "601427279990",
+        "query_name" : "logs.us-east-1.amazonaws.com.",
+        "service" : "route53",
+        "query_timestamp" : "2020-09-21T23:50:10Z",
+        "srcport" : "41178",
+        "id" : "35697521146290813135962779622646825606343273273227083776",
+        "region" : "us-east-1",
+        "query_class" : "IN",
+        "timestamp" : 1600732210000
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+     - "region:us-east-1"
+     - "instance-id:i-0b0dd401e9dec100e"
+     - "vpc:vpc-01cbe8787fad2b60b"
+     - "aws_account:601427279990"
+    timestamp: 1600732210000
+

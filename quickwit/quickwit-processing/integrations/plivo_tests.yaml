@@ -1,0 +1,431 @@
+id: plivo
+tests:
+  - sample: >-
+      {
+        "log_preference" : "true",
+        "message_state" : "delivered",
+        "total_rate" : "0.08000",
+        "replaced_sender" : "18763009800",
+        "message_direction" : "outbound",
+        "units" : 1,
+        "requester_ip" : "100.100.200.00",
+        "mcc" : "404",
+        "destination_network" : "Test Network",
+        "message_sent_time" : "2024-09-18 11:16:39.845581+05:30",
+        "message_time" : "2024-09-18 11:16:39.845581+05:30",
+        "carrier_fees_rate" : "0.00000",
+        "from_number" : "18763009800",
+        "conversation_id" : "",
+        "to_number" : "910000000000",
+        "error_message" : "",
+        "dlt_template_category" : "",
+        "dlt_template_id" : "",
+        "mnc" : "005",
+        "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/e8fccb36-6051-4c12-8ff5-493309woxt2d4/",
+        "message_type" : "sms",
+        "message_uuid" : "e8fccb36-6051-4c12-8ff5-493309woxt2d4",
+        "is_domestic" : false,
+        "conversation_expiration_timestamp" : "",
+        "total_amount" : "0.08000",
+        "destination_country_iso2" : "IN",
+        "carrier_fees" : "0.00000",
+        "error_code" : "000",
+        "dlt_entity_id" : "",
+        "message_updated_time" : "2024-09-18 11:16:42.500341+05:30",
+        "conversation_origin" : ""
+      }
+    service: "messages"
+    result:
+      custom:
+        carrier_fees_rate: "0.00000"
+        conversation_expiration_timestamp: ""
+        conversation_origin: ""
+        destination_network: "Test Network"
+        dlt_entity_id: ""
+        dlt_template_category: ""
+        dlt_template_id: ""
+        from_number: "18763009800"
+        geo:
+          country_iso_code: "IN"
+        is_domestic: false
+        log_preference: "true"
+        mcc: "404"
+        message_direction: "outbound"
+        message_sent_time: "2024-09-18 11:16:39.845581+05:30"
+        message_state: "delivered"
+        message_time: "2024-09-18 11:16:39.845581+05:30"
+        message_type: "sms"
+        message_updated_time: "2024-09-18 11:16:42.500341+05:30"
+        mnc: "005"
+        network:
+          client:
+            geoip:
+              invalidAddress: "100.100.200.00"
+            ip: "100.100.200.00"
+        plivo:
+          carrier_fees: "0.00000"
+          error:
+            message: ""
+            type: "000"
+          messaging:
+            conversation_id: ""
+            message_id: "e8fccb36-6051-4c12-8ff5-493309woxt2d4"
+          total_amount: "0.08000"
+        replaced_sender: "18763009800"
+        resource_uri: "/v1/Account/MOWTXTOIZONQSONGQONS/Message/e8fccb36-6051-4c12-8ff5-493309woxt2d4/"
+        status: "info"
+        timestamp: 1726638399845
+        to_number: "910000000000"
+        total_rate: "0.08000"
+        units: 1
+      message: |-
+        {
+          "log_preference" : "true",
+          "message_state" : "delivered",
+          "total_rate" : "0.08000",
+          "replaced_sender" : "18763009800",
+          "message_direction" : "outbound",
+          "units" : 1,
+          "requester_ip" : "100.100.200.00",
+          "mcc" : "404",
+          "destination_network" : "Test Network",
+          "message_sent_time" : "2024-09-18 11:16:39.845581+05:30",
+          "message_time" : "2024-09-18 11:16:39.845581+05:30",
+          "carrier_fees_rate" : "0.00000",
+          "from_number" : "18763009800",
+          "conversation_id" : "",
+          "to_number" : "910000000000",
+          "error_message" : "",
+          "dlt_template_category" : "",
+          "dlt_template_id" : "",
+          "mnc" : "005",
+          "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/e8fccb36-6051-4c12-8ff5-493309woxt2d4/",
+          "message_type" : "sms",
+          "message_uuid" : "e8fccb36-6051-4c12-8ff5-493309woxt2d4",
+          "is_domestic" : false,
+          "conversation_expiration_timestamp" : "",
+          "total_amount" : "0.08000",
+          "destination_country_iso2" : "IN",
+          "carrier_fees" : "0.00000",
+          "error_code" : "000",
+          "dlt_entity_id" : "",
+          "message_updated_time" : "2024-09-18 11:16:42.500341+05:30",
+          "conversation_origin" : ""
+        }
+      service: "messages"
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726638399845
+  - sample: >-
+      {
+        "log_preference" : "true",
+        "message_state" : "sent",
+        "total_rate" : "0.02700",
+        "replaced_sender" : "18763009800",
+        "message_direction" : "outbound",
+        "units" : 1,
+        "requester_ip" : "100.100.00.200",
+        "mcc" : "312",
+        "destination_network" : "Test Network",
+        "message_sent_time" : "2024-09-16 23:39:37+05:30",
+        "message_time" : "2024-09-16 23:38:37+05:30",
+        "carrier_fees_rate" : "0.01000",
+        "from_number" : "18763009800",
+        "conversation_id" : "",
+        "to_number" : "910000000000",
+        "error_message" : "",
+        "dlt_template_category" : "",
+        "dlt_template_id" : "",
+        "mnc" : "650",
+        "tendlc_registration_status" : "not_applicable",
+        "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/13d7cef0-5521-479e-b2fe-22dd93341708/",
+        "message_type" : "mms",
+        "message_uuid" : "13d7cef0-5521-479e-b2fe-22dd93341708",
+        "conversation_expiration_timestamp" : "",
+        "total_amount" : "0.02800",
+        "destination_country_iso2" : "US",
+        "carrier_fees" : "0.01000",
+        "dlt_entity_id" : "",
+        "message_updated_time" : "",
+        "conversation_origin" : ""
+      }
+    service: "messages"
+    result:
+      custom:
+        carrier_fees_rate: "0.01000"
+        conversation_expiration_timestamp: ""
+        conversation_origin: ""
+        destination_network: "Test Network"
+        dlt_entity_id: ""
+        dlt_template_category: ""
+        dlt_template_id: ""
+        from_number: "18763009800"
+        geo:
+          country_iso_code: "US"
+        log_preference: "true"
+        mcc: "312"
+        message_direction: "outbound"
+        message_sent_time: "2024-09-16 23:39:37+05:30"
+        message_state: "sent"
+        message_time: "2024-09-16 23:38:37+05:30"
+        message_type: "mms"
+        message_updated_time: ""
+        mnc: "650"
+        network:
+          client:
+            geoip:
+              invalidAddress: "100.100.00.200"
+            ip: "100.100.00.200"
+        plivo:
+          carrier_fees: "0.01000"
+          error:
+            message: ""
+          messaging:
+            conversation_id: ""
+            message_id: "13d7cef0-5521-479e-b2fe-22dd93341708"
+          total_amount: "0.02800"
+        replaced_sender: "18763009800"
+        resource_uri: "/v1/Account/MOWTXTOIZONQSONGQONS/Message/13d7cef0-5521-479e-b2fe-22dd93341708/"
+        status: "info"
+        tendlc_registration_status: "not_applicable"
+        to_number: "910000000000"
+        total_rate: "0.02700"
+        units: 1
+      message: |-
+        {
+          "log_preference" : "true",
+          "message_state" : "sent",
+          "total_rate" : "0.02700",
+          "replaced_sender" : "18763009800",
+          "message_direction" : "outbound",
+          "units" : 1,
+          "requester_ip" : "100.100.00.200",
+          "mcc" : "312",
+          "destination_network" : "Test Network",
+          "message_sent_time" : "2024-09-16 23:39:37+05:30",
+          "message_time" : "2024-09-16 23:38:37+05:30",
+          "carrier_fees_rate" : "0.01000",
+          "from_number" : "18763009800",
+          "conversation_id" : "",
+          "to_number" : "910000000000",
+          "error_message" : "",
+          "dlt_template_category" : "",
+          "dlt_template_id" : "",
+          "mnc" : "650",
+          "tendlc_registration_status" : "not_applicable",
+          "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/13d7cef0-5521-479e-b2fe-22dd93341708/",
+          "message_type" : "mms",
+          "message_uuid" : "13d7cef0-5521-479e-b2fe-22dd93341708",
+          "conversation_expiration_timestamp" : "",
+          "total_amount" : "0.02800",
+          "destination_country_iso2" : "US",
+          "carrier_fees" : "0.01000",
+          "dlt_entity_id" : "",
+          "message_updated_time" : "",
+          "conversation_origin" : ""
+        }
+      service: "messages"
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1
+  - sample: >-
+      {
+        "log_preference" : "true",
+        "message_state" : "received",
+        "total_rate" : "00.00000",
+        "replaced_sender" : "18763009800",
+        "message_direction" : "inbound",
+        "units" : 1,
+        "requester_ip" : "",
+        "mcc" : "404",
+        "destination_network" : "",
+        "message_sent_time" : "",
+        "message_time" : "2024-09-18 20:53:51.648519+05:30",
+        "carrier_fees_rate" : "",
+        "from_number" : "18763009800",
+        "conversation_id" : "db344585-2890-38g8-rmu5-cc5f03187127",
+        "to_number" : "910000000000",
+        "error_message" : "",
+        "dlt_template_category" : "",
+        "dlt_template_id" : "",
+        "mnc" : "098",
+        "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/db344858-6436-45b9-9f42-cc5f03fa2do2/",
+        "message_type" : "whatsapp",
+        "message_uuid" : "db344858-6436-45b9-9f42-cc5f03fa2do2",
+        "conversation_expiration_timestamp" : "2024-09-19 20:53:51.648519+05:30",
+        "total_amount" : "00.00000",
+        "destination_country_iso2" : "IN",
+        "carrier_fees" : "0.00000",
+        "error_code" : "000",
+        "dlt_entity_id" : "",
+        "message_updated_time" : "",
+        "conversation_origin" : "utility"
+      }
+    service: "messages"
+    result:
+      custom:
+        carrier_fees_rate: ""
+        conversation_expiration_timestamp: "2024-09-19 20:53:51.648519+05:30"
+        conversation_origin: "utility"
+        destination_network: ""
+        dlt_entity_id: ""
+        dlt_template_category: ""
+        dlt_template_id: ""
+        from_number: "18763009800"
+        geo:
+          country_iso_code: "IN"
+        log_preference: "true"
+        mcc: "404"
+        message_direction: "inbound"
+        message_sent_time: ""
+        message_state: "received"
+        message_time: "2024-09-18 20:53:51.648519+05:30"
+        message_type: "whatsapp"
+        message_updated_time: ""
+        mnc: "098"
+        network:
+          client:
+            ip: ""
+        plivo:
+          carrier_fees: "0.00000"
+          total_amount: "00.00000"
+          error:
+            message: ""
+            type: "000"
+          messaging:
+            conversation_id: "db344585-2890-38g8-rmu5-cc5f03187127"
+            message_id: "db344858-6436-45b9-9f42-cc5f03fa2do2"
+        replaced_sender: "18763009800"
+        resource_uri: "/v1/Account/MOWTXTOIZONQSONGQONS/Message/db344858-6436-45b9-9f42-cc5f03fa2do2/"
+        status: "info"
+        timestamp: 1726673031648
+        to_number: "910000000000"
+        total_rate: "00.00000"
+        units: 1
+      message: |-
+        {
+          "log_preference" : "true",
+          "message_state" : "received",
+          "total_rate" : "00.00000",
+          "replaced_sender" : "18763009800",
+          "message_direction" : "inbound",
+          "units" : 1,
+          "requester_ip" : "",
+          "mcc" : "404",
+          "destination_network" : "",
+          "message_sent_time" : "",
+          "message_time" : "2024-09-18 20:53:51.648519+05:30",
+          "carrier_fees_rate" : "",
+          "from_number" : "18763009800",
+          "conversation_id" : "db344585-2890-38g8-rmu5-cc5f03187127",
+          "to_number" : "910000000000",
+          "error_message" : "",
+          "dlt_template_category" : "",
+          "dlt_template_id" : "",
+          "mnc" : "098",
+          "resource_uri" : "/v1/Account/MOWTXTOIZONQSONGQONS/Message/db344858-6436-45b9-9f42-cc5f03fa2do2/",
+          "message_type" : "whatsapp",
+          "message_uuid" : "db344858-6436-45b9-9f42-cc5f03fa2do2",
+          "conversation_expiration_timestamp" : "2024-09-19 20:53:51.648519+05:30",
+          "total_amount" : "00.00000",
+          "destination_country_iso2" : "IN",
+          "carrier_fees" : "0.00000",
+          "error_code" : "000",
+          "dlt_entity_id" : "",
+          "message_updated_time" : "",
+          "conversation_origin" : "utility"
+        }
+      service: "messages"
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1726673031648
+  - sample: >-
+      {
+        "answer_time": "2024-10-12 21:57:47+05:30",
+        "api_id": "52cd2e1d-2bfd-11ec-a7bd-0242ac110005",
+        "bill_duration": 1,
+        "billed_duration": 1,
+        "call_direction": "outbound",
+        "call_duration": 1,
+        "call_state": "ANSWER",
+        "call_uuid": "5607532d-5037-4066-befc-a8b40218dd4f",
+        "conference_uuid": null,
+        "end_time": "2024-10-14 15:25:47+05:30",
+        "from_number": "+12025551111",
+        "hangup_cause_code": 8011,
+        "hangup_cause_name": "Invalid Answer XML",
+        "hangup_source": "Error",
+        "initiation_time": "2024-10-12 21:57:40+05:30",
+        "parent_call_uuid": null,
+        "resource_uri": "/v1/Account/MA2025RK4E639VJFZAGV/Call/5607532d-5037-4066-befc-a8b40218dd4f/",
+        "stir_verification": "Not Applicable",
+        "to_number": "sip:sam9461399937766203278@phone.plivo.com",
+        "total_amount": "0.01667",
+        "total_rate": "1.00000",
+        "Stir_attestation": "A",
+        "voice_network_group": "",
+        "source_ip": "92.168.0.1"
+      }
+    service: "voice"
+    result:
+      custom:
+        Stir_attestation: "A"
+        answer_time: "2024-10-12 21:57:47+05:30"
+        api_id: "52cd2e1d-2bfd-11ec-a7bd-0242ac110005"
+        bill_duration: 1
+        call_direction: "outbound"
+        call_state: "ANSWER"
+        call_uuid: "5607532d-5037-4066-befc-a8b40218dd4f"
+        end_time: "2024-10-14 15:25:47+05:30"
+        from_number: "+12025551111"
+        hangup_source: "Error"
+        initiation_time: "2024-10-12 21:57:40+05:30"
+        network:
+          client:
+            geoip: {}
+            ip: "92.168.0.1"
+        plivo:
+          billed_duration: 1
+          call_duration: 1
+          error:
+            message: "Invalid Answer XML"
+            type: 8011
+          total_amount: "0.01667"
+        resource_uri: "/v1/Account/MA2025RK4E639VJFZAGV/Call/5607532d-5037-4066-befc-a8b40218dd4f/"
+        stir_verification: "Not Applicable"
+        timestamp: 1728899747000
+        to_number: "sip:sam9461399937766203278@phone.plivo.com"
+        total_rate: "1.00000"
+        voice_network_group: ""
+      message: |-
+        {
+          "answer_time" : "2024-10-12 21:57:47+05:30",
+          "to_number" : "sip:sam9461399937766203278@phone.plivo.com",
+          "api_id" : "52cd2e1d-2bfd-11ec-a7bd-0242ac110005",
+          "hangup_cause_code" : 8011,
+          "hangup_cause_name" : "Invalid Answer XML",
+          "call_direction" : "outbound",
+          "resource_uri" : "/v1/Account/MA2025RK4E639VJFZAGV/Call/5607532d-5037-4066-befc-a8b40218dd4f/",
+          "end_time" : "2024-10-14 15:25:47+05:30",
+          "total_rate" : "1.00000",
+          "bill_duration" : 1,
+          "call_state" : "ANSWER",
+          "hangup_source" : "Error",
+          "billed_duration" : 1,
+          "call_duration" : 1,
+          "voice_network_group" : "",
+          "source_ip" : "92.168.0.1",
+          "initiation_time" : "2024-10-12 21:57:40+05:30",
+          "Stir_attestation" : "A",
+          "total_amount" : "0.01667",
+          "from_number" : "+12025551111",
+          "call_uuid" : "5607532d-5037-4066-befc-a8b40218dd4f",
+          "stir_verification" : "Not Applicable"
+        }
+      service: "voice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1728899747000

@@ -1,0 +1,306 @@
+id: crest_data_systems_pfsense
+metric_id: crest-data-systems-pfsense
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: dhcp_message
+    path: dhcp_message
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: leased_ip
+    path: leased_ip
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: openvpn_user
+    path: openvpn_user
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: source_port
+    path: source_port
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: pfsense_host
+    path: pfsense_host
+    source: tag
+  - groups:
+      - Crest Data Systems Pfsense
+    name: real_interface
+    path: real_interface
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: protocol_name
+    path: protocol_name
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: device_mac
+    path: device_mac
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: openvpn_connection_action
+    path: openvpn_connection_action
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: device_interface
+    path: device_interface
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: openvpn_server
+    path: openvpn_server
+    source: log
+  - groups:
+      - PAN Firewall
+    name: Device Name
+    path: device_name
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: openvpn_user_address
+    path: openvpn_user_address
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: source_ip
+    path: source_ip
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: destination_location_details.country.iso_code
+    path: destination_location_details.country.iso_code
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: openvpn_auth_action
+    path: openvpn_auth_action
+    source: log
+  - groups:
+      - Crest Data Systems Pfsense
+    name: ip_version
+    path: ip_version
+    source: log
+pipeline:
+  type: pipeline
+  name: pfSense by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_pfsense
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Firewall
+      enabled: true
+      filter:
+        query: service:cds.pfsense.filterlog
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for pfsense Firewall(Filter) logs
+          enabled: true
+          source: message
+          samples:
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 66,,,1000005813,lo0,match,pass,in,6,0x00,0x491b0,64,UDP,17,20,::1,::1,60680,123,20
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,carp,60,172.20.240.104,10.50.3.146,text hello my,2,2,2,2,2
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 80,,,100000101,em1,match,pass,in,4,0x0,,64,26704,0,DF,6,tcp,60,10.50.3.170,10.50.3.146,43864,8000,0,S,1953531981,,64240,,mss;sackOK;TS;nop;wscale
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 4,,,1000000103,em1,match,block,in,4,0x0,,127,7215,0,none,1,icmp,60,172.20.240.104,10.50.3.146,request,1,3034540
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa filterlog 30514 - - 6,,,1000000105,em0,match,block,in,6,0x00,0x00000,1,Options,0,36,::,ff02::1,HBH,RTALERT,0x0000,PADN,
+          grok:
+            supportRules: "_prefix (%{notSpace:} )?%{date(\"yyyy-MM-d'T'HH:mm:ss.SSSSSSZZ\"):timestamp} %{notSpace:syslog.hostname} %{regex(\"filterlog\"):sourcetype} %{integer:process_id} - - %{integer:rule_number},(%{integer:sub_rule_number})?,(%{regex(\"[^,]*\"):anchor})?,%{integer:tracker},%{word:real_interface},%{word:reason},%{word:action},%{word:direction}\n_ipData %{integer:packet_length},%{ip:source_ip},%{ip:destination_ip}\n_udpData %{port:source_port},%{port:destination_port},%{integer:data_length}\n_tcpData %{integer:source_port},%{integer:destination_port},%{integer:data_length},%{word:tcp_flags},(%{integer:sequence})?,(%{integer:ack})?,%{integer:tcp_window},%{regex(\"[^,]*\"):urgs},%{regex(\"[^,]*\"):tcp_options}\n_ipv6Data %{regex(\"6\"):ip_version},%{word:class},%{word:flow_label},%{integer:hope_limit}\n_ipv4Data %{regex(\"4\"):ip_version},(%{notSpace:toc})?,(%{notSpace:ecn})?,%{integer:ttl},%{integer:id},%{integer:offset},(%{notSpace:flags})?"
+            matchRules: "ipv6UDP %{_prefix},%{_ipv6Data},%{regex(\"UDP\"):protocol_name},%{integer:protocol_id},%{_ipData},%{_udpData}\nipv4UDP %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"udp\"):protocol_name:uppercase},%{_ipData},%{_udpData}\nipv4TCP %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"tcp\"):protocol_name:uppercase},%{_ipData},%{_tcpData}\nipv6TCP %{_prefix},%{_ipv6Data},%{regex(\"TCP\"):protocol_name},%{integer:protocol_id},%{_ipData},%{_tcpData}\nipv4IcmpRequest %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"icmp\"):protocol_name:uppercase},%{_ipData},%{regex(\"request\"):icmp_code},%{integer:echo_id},%{integer:echo_sequence}\nipv4IcmpUnreachport %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"icmp\"):protocol_name:uppercase},%{_ipData},%{regex(\"unreachport\"):icmp_code},%{ip:icmp_destination_ip},%{integer:unreachable_protocol_id},%{integer:unreachable_port_data}\nipv4IcmpUnreach %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"icmp\"):protocol_name:uppercase},%{_ipData},%{regex(\"redirect|unreach|timexceed\"):icmp_code},%{data:icmp_description}\nipv4Carp %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"carp\"):protocol_name:uppercase},%{_ipData},%{regex(\"[^,]*\"):carp_type},%{integer:carp_ttl},%{integer:vhid},%{integer:version},%{integer:advbase},%{integer:advskew}\nipv4Igmp %{_prefix},%{_ipv4Data},%{integer:protocol_id},%{regex(\"igmp\"):protocol_name:uppercase},%{_ipData},datalength=%{integer:data_length}\nipv6Hbh %{_prefix},%{_ipv6Data},Options,%{integer:},%{integer:},%{ip:source_ip},%{ip:destination_ip},%{word:extension_header},.*"
+    - type: pipeline
+      name: NGINX
+      enabled: true
+      filter:
+        query: service:cds.pfsense.nginx
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for pfsense NGINX logs
+          enabled: true
+          source: message
+          samples:
+            - <174>1 2023-02-20T08:57:20.000000+00:00 pfSense.home.arpa nginx - - - 172.20.15.78 - - [20/Feb/2023:08:57:20 +0000] "POST /status_ipsec.php HTTP/1.1" 200 144 "http://10.50.3.146/status_ipsec.php" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+          grok:
+            supportRules: "_prefix (%{notSpace:} )?%{date(\"yyyy-MM-d'T'HH:mm:ss.SSSSSSZZ\"):timestamp} %{notSpace:syslog.hostname} %{regex(\"nginx\"):sourcetype} %{data:} - -\n_auth %{notSpace:http.auth:nullIf(\"-\")}\n_bytes_written %{integer:network.bytes_written}\n_client_ip %{ipOrHost:network.client.ip}\n_version HTTP\\/%{regex(\"\\\\d+\\\\.\\\\d+\"):http.version}\n_url %{notSpace:http.url}\n_ident %{notSpace:http.ident:nullIf(\"-\")}\n_user_agent %{regex(\"[^\\\\\\\"]*\"):http.useragent}\n_referer %{notSpace:http.referer}\n_status_code %{integer:http.status_code}\n_method %{word:http.method}\n_date_access %{date(\"dd/MMM/yyyy:HH:mm:ss Z\"):date_access}\n_x_forwarded_for %{regex(\"[^\\\\\\\"]*\"):http._x_forwarded_for:nullIf(\"-\")}"
+            matchRules: "nginx %{_prefix} %{_client_ip} %{_ident} %{_auth} \\[%{_date_access}\\] \"(?>%{_method} |)%{_url}(?> %{_version}|)\" %{_status_code} (?>%{_bytes_written}|-) (%{number:duration:scale(1000000000)} )?\"%{_referer}\" \"%{_user_agent}\"( \"%{_x_forwarded_for}\")?.*\n\n"
+        - type: geo-ip-parser
+          name: Get Geo Location Details for Client
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: DHCP
+      enabled: true
+      filter:
+        query: service:cds.pfsense.dhcp
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for pfsense DHCP logs
+          enabled: true
+          source: message
+          samples:
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDISCOVER from 00:00:00:00:00:00 (test) via te1
+            - '<30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPDECLINE of 10.0.0.1 from 00:00:00:00:00:00 via te3: not found'
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPOFFER on 10.0.0.1 to 00:00:00:00:00:00 (test-test) via te1
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa dhcpd 33152 - - DHCPREQUEST for 10.0.0.1 from 00:00:00:00:00:00 (test) via te1
+            - <134>1 2023-04-12T12:31:50.894183+00:00 pfSense.home.arpa dhcpd 30514 - - DHCPACK on 10.50.15.250 to 00:50:56:81:b6:7a (AD) via em1
+          grok:
+            supportRules: dhcpd_base (%{notSpace:} )?%{date("yyyy-MM-d'T'HH:mm:ss.SSSSSSZZ"):timestamp} %{notSpace:syslog.hostname} %{regex("dhcp"):sourcetype}d %{integer:process_id} - - %{regex("DHCP[A-Z]*"):dhcp_message}
+            matchRules: "discover %{dhcpd_base} from %{notSpace:device_mac} (\\(%{notSpace:device_name}\\) )?via %{notSpace:device_interface}\noffer_ack_nak %{dhcpd_base} on %{ip:leased_ip} to %{notSpace:device_mac} (\\(%{notSpace:device_name}\\) )?via %{notSpace:device_interface}\nrequest %{dhcpd_base} for %{ip:leased_ip} (\\(%{notSpace:}\\) )?from %{notSpace:device_mac} (\\(%{notSpace:device_name}\\) )?via %{notSpace:device_interface}(:.*)?\ndecline %{dhcpd_base} of %{ip:leased_ip} from %{notSpace:device_mac} (\\(%{notSpace:device_name}\\) )?via %{notSpace:device_interface}(:.*)?\nrelease %{dhcpd_base} of %{ip:leased_ip} from %{notSpace:device_mac} (\\(%{notSpace:device_name}\\) )?via %{notSpace:device_interface}(.*)?\ninform %{dhcpd_base} .*"
+    - type: pipeline
+      name: OpenVPN
+      enabled: true
+      filter:
+        query: service:cds.pfsense.openvpn
+      processors:
+        - type: grok-parser
+          name: Parsing attributes for pfsense OpenVPN logs
+          enabled: true
+          source: message
+          samples:
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - disconnected
+            - <30>1 2023-02-20T11:46:30.496841+00:00 pfSense.home.arpa openvpn 33152 - - openvpn server 'ovpns1' user 'pfsense' address '172.20.240.114' - connected
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa openvpn 30514 - - user 'pfsense' authenticated
+            - <134>1 2023-03-23T06:31:50.894183+00:00 pfSense.home.arpa openvpn 30514 - - user 'pfsense' could not authenticated.
+            - <13>1 2024-10-11T11:12:09.600110+00:00 pfSense.testenv openvpn 53508 - - openvpn server 'ovpns2' user cert CN 'test-pfsense' address '55.122.21.32:40945' - connected
+          grok:
+            supportRules: openvpn_base (%{notSpace:} )?%{date("yyyy-MM-d'T'HH:mm:ss.SSSSSSZZ"):timestamp} %{notSpace:syslog.hostname} %{regex("openvpn"):sourcetype} %{integer:process_id} - -
+            matchRules: "authentication %{openvpn_base} user '%{notSpace:openvpn_user}' %{regex(\"[^.]*\"):openvpn_auth_action}(\\.)?\n\nconnection %{openvpn_base} openvpn server '%{notSpace:openvpn_server}' user %{regex(\".*\")}'%{notSpace:openvpn_user}' address '%{ip:openvpn_user_address}(:%{integer:openvpn_user_address_port})?' - %{notSpace:openvpn_connection_action}"
+    - type: pipeline
+      name: Other Logs
+      enabled: true
+      filter:
+        query: service:cds.pfsense.other
+      processors:
+        - type: grok-parser
+          name: Parsing Timestamp for pfsense logs
+          enabled: true
+          source: message
+          samples:
+            - <32>1 2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa openvpn 89475 - - 10.0.0.1:1234 Connection reset, restarting [0]
+            - '2023-03-23T09:54:10.807547+00:00 pfSense.home.arpa php-fpm 89475 - - Local User Database: Successfully edited user pfsense'
+          grok:
+            supportRules: ''
+            matchRules: timestampparser (%{notSpace:} )?%{date("yyyy-MM-d'T'HH:mm:ss.SSSSSSZZ"):timestamp} .*
+    - type: geo-ip-parser
+      name: Get Geo Location Details for Source
+      enabled: true
+      sources:
+        - source_ip
+      target: source_location_details
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Get Geo Location Details for Destination
+      enabled: true
+      sources:
+        - destination_ip
+      target: destination_location_details
+      ip_processing_behavior: do-nothing
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `destination_ip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - destination_ip
+      target: network.destination.ip
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `destination_port` to `network.destination.port`
+      enabled: true
+      sources:
+        - destination_port
+      target: network.destination.port
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

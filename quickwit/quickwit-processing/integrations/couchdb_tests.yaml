@@ -1,0 +1,54 @@
+id: "couchdb"
+tests:
+ -
+  sample: "[Wed, 29 Aug 2018 11:53:11 GMT] [info] [<0.404.0>] 127.0.0.1 - - DELETE /new_database/random_task?rev=2-4cc3dfb6e76befd665faf124b36b7f1c 200"
+  result:
+    custom:
+      date_access: 1535543591000
+      http:
+        method: "DELETE"
+        status_code: 200.0
+        url: "/new_database/random_task?rev=2-4cc3dfb6e76befd665faf124b36b7f1c"
+        url_details:
+          path: "/new_database/random_task"
+          queryString:
+            rev: "2-4cc3dfb6e76befd665faf124b36b7f1c"
+      level: "info"
+      network:
+        client:
+          ip: "127.0.0.1"
+    message: "[Wed, 29 Aug 2018 11:53:11 GMT] [info] [<0.404.0>] 127.0.0.1 - - DELETE /new_database/random_task?rev=2-4cc3dfb6e76befd665faf124b36b7f1c 200"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535543591000
+ -
+  sample: "2015-12-18 14:44:52.722 [info] Undefined <0.7.0> Application runtime_tools started on node 'node3@127.0.0.1'"
+  result:
+    custom:
+      date_access: 1450449892722
+      level: "info"
+    message: "2015-12-18 14:44:52.722 [info] Undefined <0.7.0> Application runtime_tools started on node 'node3@127.0.0.1'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1450449892722
+ -
+  sample: "[error] 2018-08-29T00:00:14.470000Z couchdb@10.24.7.110 <0.8925.6176> -------- CRASH REPORT Process  (<0.8925.6176>) with 0 neighbors exited with reason: {normal,{gen_server,call,[<0.16537.6180>,close,infinity]}} at gen_server:terminate/7(line:826) <= proc_lib:init_p_do_apply/3(line:240); initial_call: {couch_index_compactor,init,['Argument__1']}, ancestors: [<0.19789.6149>,<0.6121.6149>], messages: [], links: [], dictionary: [], trap_exit: true, status: running, heap_size: 376, stack_size: 27, reductions: 1888'"
+  result:
+    custom:
+      date_access: 1535500814470
+      db:
+        user: "couchdb"
+      error:
+        stack: "Process  (<0.8925.6176>) with 0 neighbors exited with reason: {normal,{gen_server,call,[<0.16537.6180>,close,infinity]}} at gen_server:terminate/7(line:826) <= proc_lib:init_p_do_apply/3(line:240); initial_call: {couch_index_compactor,init,['Argument__1']}, ancestors: [<0.19789.6149>,<0.6121.6149>], messages: [], links: [], dictionary: [], trap_exit: true, status: running, heap_size: 376, stack_size: 27, reductions: 1888'"
+      level: "error"
+      network:
+        client:
+          ip: "10.24.7.110"
+    message: "[error] 2018-08-29T00:00:14.470000Z couchdb@10.24.7.110 <0.8925.6176> -------- CRASH REPORT Process  (<0.8925.6176>) with 0 neighbors exited with reason: {normal,{gen_server,call,[<0.16537.6180>,close,infinity]}} at gen_server:terminate/7(line:826) <= proc_lib:init_p_do_apply/3(line:240); initial_call: {couch_index_compactor,init,['Argument__1']}, ancestors: [<0.19789.6149>,<0.6121.6149>], messages: [], links: [], dictionary: [], trap_exit: true, status: running, heap_size: 376, stack_size: 27, reductions: 1888'"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535500814470
+

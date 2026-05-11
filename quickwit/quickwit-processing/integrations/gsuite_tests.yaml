@@ -1,0 +1,252 @@
+id: "gsuite"
+tests:
+ -
+  sample: |-
+    {
+      "actor" : {
+        "profileId" : "106108156350293996252",
+        "email" : "adrien.bocquet@datadog.ninja"
+      },
+      "kind" : "admin#reports#activity",
+      "service" : "gsuite",
+      "ipAddress" : "34.192.254.186",
+      "etag" : "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/auNwFZxhb19Nlg7ipYHdDFr4l7g\"",
+      "id" : {
+        "uniqueQualifier" : "7644015387213698717",
+        "customerId" : "C01ohksgy",
+        "time" : "2019-11-12T09:49:45.723Z",
+        "applicationName" : "token"
+      },
+      "event" : {
+        "name" : "activity",
+        "type" : "auth",
+        "parameters" : {
+          "app_name" : "Datadog",
+          "method_name" : "reports.activities.list",
+          "api_name" : "admin",
+          "num_response_bytes" : "129",
+          "client_type" : "WEB",
+          "product_bucket" : "GSUITE_ADMIN",
+          "client_id" : "215555297852-4ge54il8md6rh7icv4f64qun6vvk1brg.apps.googleusercontent.com"
+        }
+      }
+    }
+  result:
+    custom:
+      etag: "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/auNwFZxhb19Nlg7ipYHdDFr4l7g\""
+      event:
+        parameters:
+          api_name: "admin"
+          app_name: "Datadog"
+          client_id: "215555297852-4ge54il8md6rh7icv4f64qun6vvk1brg.apps.googleusercontent.com"
+          client_type: "WEB"
+          method_name: "reports.activities.list"
+          num_response_bytes: "129"
+          product_bucket: "GSUITE_ADMIN"
+      evt:
+        category: "auth"
+        name: "activity"
+      id:
+        applicationName: "token"
+        customerId: "C01ohksgy"
+        time: "2019-11-12T09:49:45.723Z"
+        uniqueQualifier: "7644015387213698717"
+      kind: "admin#reports#activity"
+      network:
+        client:
+          geoip: {}
+          ip: "34.192.254.186"
+      service: "gsuite"
+      title: "Actor \"adrien.bocquet@datadog.ninja\" performed \"activity\" event"
+      usr:
+        email: "adrien.bocquet@datadog.ninja"
+        id: "106108156350293996252"
+    message: |-
+      {
+        "actor" : {
+          "profileId" : "106108156350293996252",
+          "email" : "adrien.bocquet@datadog.ninja"
+        },
+        "kind" : "admin#reports#activity",
+        "service" : "gsuite",
+        "ipAddress" : "34.192.254.186",
+        "etag" : "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/auNwFZxhb19Nlg7ipYHdDFr4l7g\"",
+        "id" : {
+          "uniqueQualifier" : "7644015387213698717",
+          "customerId" : "C01ohksgy",
+          "time" : "2019-11-12T09:49:45.723Z",
+          "applicationName" : "token"
+        },
+        "event" : {
+          "name" : "activity",
+          "type" : "auth",
+          "parameters" : {
+            "app_name" : "Datadog",
+            "method_name" : "reports.activities.list",
+            "api_name" : "admin",
+            "num_response_bytes" : "129",
+            "client_type" : "WEB",
+            "product_bucket" : "GSUITE_ADMIN",
+            "client_id" : "215555297852-4ge54il8md6rh7icv4f64qun6vvk1brg.apps.googleusercontent.com"
+          }
+        }
+      }
+    service: "token"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573552185723
+ -
+  sample: |-
+    {
+      "actor" : {
+        "profileId" : "111025766828459370212",
+        "email" : "dom@datadog.ninja"
+      },
+      "kind" : "admin#reports#activity",
+      "service" : "gsuite",
+      "ipAddress" : "38.122.226.210",
+      "etag" : "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/RUAU04QkDRISLCSTVL3EVdSdWfk\"",
+      "id" : {
+        "uniqueQualifier" : "958256150461",
+        "customerId" : "C01ohksgy",
+        "time" : "2019-11-12T20:30:12.660Z",
+        "applicationName" : "login"
+      },
+      "event" : {
+        "name" : "login_success",
+        "type" : "login",
+        "parameters" : {
+          "is_suspicious" : false,
+          "login_challenge_method" : [ "password" ],
+          "login_type" : "google_password"
+        }
+      }
+    }
+  result:
+    custom:
+      etag: "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/RUAU04QkDRISLCSTVL3EVdSdWfk\""
+      event:
+        parameters:
+          is_suspicious: false
+          login_challenge_method:
+           - "password"
+          login_type: "google_password"
+      evt:
+        category: "login"
+        name: "login_success"
+      id:
+        applicationName: "login"
+        customerId: "C01ohksgy"
+        time: "2019-11-12T20:30:12.660Z"
+        uniqueQualifier: "958256150461"
+      kind: "admin#reports#activity"
+      network:
+        client:
+          geoip: {}
+          ip: "38.122.226.210"
+      service: "gsuite"
+      title: "Actor \"dom@datadog.ninja\" performed \"login_success\" event"
+      usr:
+        email: "dom@datadog.ninja"
+        id: "111025766828459370212"
+    message: |-
+      {
+        "actor" : {
+          "profileId" : "111025766828459370212",
+          "email" : "dom@datadog.ninja"
+        },
+        "kind" : "admin#reports#activity",
+        "service" : "gsuite",
+        "ipAddress" : "38.122.226.210",
+        "etag" : "\"R-y6Xh7vAxkAIl4S8_cfLeIZddE/RUAU04QkDRISLCSTVL3EVdSdWfk\"",
+        "id" : {
+          "uniqueQualifier" : "958256150461",
+          "customerId" : "C01ohksgy",
+          "time" : "2019-11-12T20:30:12.660Z",
+          "applicationName" : "login"
+        },
+        "event" : {
+          "name" : "login_success",
+          "type" : "login",
+          "parameters" : {
+            "is_suspicious" : false,
+            "login_challenge_method" : [ "password" ],
+            "login_type" : "google_password"
+          }
+        }
+      }
+    service: "login"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573590612660
+ -
+  sample: |-
+    {
+      "actor" : {
+        "callerType" : "KEY",
+        "key" : "Google"
+      },
+      "kind" : "admin#reports#activity",
+      "service" : "gsuite",
+      "etag" : "\"Ap9BCC4uRt3h_SrDO0G_EX9zYVZwuEfjT_jX812ihkE/73-ZLtHGcU6Mc8c52M1xEv6w65w\"",
+      "id" : {
+        "uniqueQualifier" : "-654845274267739620",
+        "customerId" : "C03x5gy88",
+        "time" : "2022-06-24T11:59:45.636Z",
+        "applicationName" : "login"
+      },
+      "event" : {
+        "name" : "account_disabled_spamming",
+        "type" : "account_warning",
+        "parameters" : {
+          "affected_email_address" : "xxx.xxx@xxxx.com"
+        }
+      }
+    }
+  result:
+    custom:
+      actor:
+        callerType: "KEY"
+        key: "Google"
+      etag: "\"Ap9BCC4uRt3h_SrDO0G_EX9zYVZwuEfjT_jX812ihkE/73-ZLtHGcU6Mc8c52M1xEv6w65w\""
+      evt:
+        category: "account_warning"
+        name: "account_disabled_spamming"
+      id:
+        applicationName: "login"
+        customerId: "C03x5gy88"
+        time: "2022-06-24T11:59:45.636Z"
+        uniqueQualifier: "-654845274267739620"
+      kind: "admin#reports#activity"
+      service: "gsuite"
+      title: "Actor \"xxx.xxx@xxxx.com\" performed \"account_disabled_spamming\" event"
+      usr:
+        email: "xxx.xxx@xxxx.com"
+    message: |-
+      {
+        "actor" : {
+          "callerType" : "KEY",
+          "key" : "Google"
+        },
+        "kind" : "admin#reports#activity",
+        "service" : "gsuite",
+        "etag" : "\"Ap9BCC4uRt3h_SrDO0G_EX9zYVZwuEfjT_jX812ihkE/73-ZLtHGcU6Mc8c52M1xEv6w65w\"",
+        "id" : {
+          "uniqueQualifier" : "-654845274267739620",
+          "customerId" : "C03x5gy88",
+          "time" : "2022-06-24T11:59:45.636Z",
+          "applicationName" : "login"
+        },
+        "event" : {
+          "name" : "account_disabled_spamming",
+          "type" : "account_warning",
+          "parameters" : {
+            "affected_email_address" : "xxx.xxx@xxxx.com"
+          }
+        }
+      }
+    service: "login"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1656071985636
+

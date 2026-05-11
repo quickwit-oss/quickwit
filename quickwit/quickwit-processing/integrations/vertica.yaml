@@ -1,0 +1,58 @@
+id: vertica
+metric_id: vertica
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Component Name
+    path: application.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Vertica
+  enabled: true
+  filter:
+    query: source:vertica
+  processors:
+    - type: grok-parser
+      name: Parsing Vertica logs
+      enabled: true
+      source: message
+      samples:
+        - 2019-05-29 02:07:16.002 Spread Service InOrder Queue:7fe51e7fc700 [Init] <INFO> Startup [Waiting for Cluster Invite] Ready to be invited
+        - '2019-05-29 02:07:36.000 MetadataPoolMonitor:7fe51cff9700 <LOG> @v_datadog_node0001: 00000/7794: Updated metadata pool:  Memory(KB): 39665'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _process %{regex("[^:]+"):application.id}:%{notSpace}
+          _source_cluster \[%{word:logger.name}\]
+          _source_node @%{regex("[^:]+"):logger.name}:
+          _level <%{word:level}>
+        matchRules: |
+          vertica_cluster %{_date} %{_process} %{_source_cluster} %{_level}.*
+
+          vertica_node %{_date} %{_process} %{_level} %{_source_node}.*
+
+    - type: category-processor
+      name: Set the severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@level:"LOG"'
+          name: notice
+      target: level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

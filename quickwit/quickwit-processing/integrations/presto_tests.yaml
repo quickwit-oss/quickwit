@@ -1,0 +1,109 @@
+id: "presto"
+tests:
+ -
+  sample: "2019-02-22T16:11:37.427Z\tINFO\tquery-execution-13\tio.prestosql.event.QueryMonitor\tTIMELINE: Query 20190222_161137_00007_2ymbc :: Transaction:[4fb1c673-faed-4d0c-8ce3-0ade85cc5a46] :: elapsed 448ms :: planning 58ms :: scheduling 53ms :: running 246ms :: finishing 91ms :: begin 2019-02-22T16:11:36.895Z :: end 2019-02-22T16:11:37.343Z"
+  result:
+    custom:
+      date: 1550851897427
+      duration: 4.48E8
+      http:
+        request_id: "4fb1c673-faed-4d0c-8ce3-0ade85cc5a46"
+      level: "INFO"
+      logger:
+        name: "query-execution-13"
+        thread_name: "io.prestosql.event.QueryMonitor"
+      presto:
+        query:
+          finishing_time: 9.1E7
+          id: "20190222_161137_00007_2ymbc"
+          planning_time: 5.8E7
+          running_time: 2.46E8
+          scheduling_time: 5.3E7
+    message: "2019-02-22T16:11:37.427Z\tINFO\tquery-execution-13\tio.prestosql.event.QueryMonitor\tTIMELINE: Query 20190222_161137_00007_2ymbc :: Transaction:[4fb1c673-faed-4d0c-8ce3-0ade85cc5a46] :: elapsed 448ms :: planning 58ms :: scheduling 53ms :: running 246ms :: finishing 91ms :: begin 2019-02-22T16:11:36.895Z :: end 2019-02-22T16:11:37.343Z"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1550851897427
+ -
+  sample: "2019-02-14T11:55:33.551-08:00\t127.0.0.1\tPUT\t/v1/announcement/303d05b6-54f6-4361-8120-7dca2853ee31\tnull\t303d05b6-54f6-4361-8120-7dca2853ee31\t202\t980\t0\t2\t9309c9523ef646d7822c196c36a7b1f3000000021c\tHTTP/1.1\t0\t0\t-1\tnull"
+  result:
+    custom:
+      date: 1550174133551
+      duration: 2000000.0
+      http:
+        ident: "null"
+        method: "PUT"
+        request_id: "9309c9523ef646d7822c196c36a7b1f3000000021c"
+        status_category: "OK"
+        status_code: 202.0
+        url: "/v1/announcement/303d05b6-54f6-4361-8120-7dca2853ee31"
+        url_details:
+          path: "/v1/announcement/303d05b6-54f6-4361-8120-7dca2853ee31"
+        useragent: "303d05b6-54f6-4361-8120-7dca2853ee31"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 0.0
+        bytes_written: 980.0
+        client:
+          ip: "127.0.0.1"
+    message: "2019-02-14T11:55:33.551-08:00\t127.0.0.1\tPUT\t/v1/announcement/303d05b6-54f6-4361-8120-7dca2853ee31\tnull\t303d05b6-54f6-4361-8120-7dca2853ee31\t202\t980\t0\t2\t9309c9523ef646d7822c196c36a7b1f3000000021c\tHTTP/1.1\t0\t0\t-1\tnull"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1550174133551
+ -
+  sample: "2019-02-22T11:17:04.774-08:00\t127.0.0.1\tGET\t/v1/service/presto/general\tnull\t303d05b6-54f6-4361-8120-7dca2853ee31\t200\t0\t40\t390\t80a8b225a6b24b76aeaff2567fe90f300000000002\tHTTP/1.1\t0\t0\t0\tnull"
+  result:
+    custom:
+      date: 1550863024774
+      duration: 3.9E8
+      http:
+        ident: "null"
+        method: "GET"
+        request_id: "80a8b225a6b24b76aeaff2567fe90f300000000002"
+        status_category: "OK"
+        status_code: 200.0
+        url: "/v1/service/presto/general"
+        url_details:
+          path: "/v1/service/presto/general"
+        useragent: "303d05b6-54f6-4361-8120-7dca2853ee31"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 40.0
+        bytes_written: 0.0
+        client:
+          ip: "127.0.0.1"
+    message: "2019-02-22T11:17:04.774-08:00\t127.0.0.1\tGET\t/v1/service/presto/general\tnull\t303d05b6-54f6-4361-8120-7dca2853ee31\t200\t0\t40\t390\t80a8b225a6b24b76aeaff2567fe90f300000000002\tHTTP/1.1\t0\t0\t0\tnull"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1550863024774
+ -
+  sample: "2019-03-04T23:18:32.879Z\tINFO\tmain\tBootstrap\tcompiler.expression-cache-size                                        10000                                                                      10000"
+  result:
+    custom:
+      date: 1551741512879
+      level: "INFO"
+      logger:
+        name: "Bootstrap"
+        thread_name: "main"
+    message: "2019-03-04T23:18:32.879Z\tINFO\tmain\tBootstrap\tcompiler.expression-cache-size                                        10000                                                                      10000"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1551741512879
+

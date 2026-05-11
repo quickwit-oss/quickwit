@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use pomchi::{DatadogLogMsg, MessageValue};
+use quickwit_processing::{DatadogLogMsg, MessageValue};
 
 /// Returns a closure that extracts custom field values from a DatadogLogMsg using a path.
 ///
@@ -50,7 +50,8 @@ pub fn custom_field_accessor<'a>(
 /// - Known fields: `service`, `host`/`hostname`, `source`/`ddsource`, `status`
 /// - Custom tags in `ddtags` as `key:value` pairs (e.g., `"env:prod"` matches key `"env"`)
 /// - Attributes found in a somehow structured object that looks like something that is going to be
-///   tag after pre-processing (pomchi `create_preprocessing_pipeline` in `processed_log.rs`).
+///   tag after pre-processing (quickwit-processing `create_preprocessing_pipeline` in
+///   `processed_log.rs`).
 ///
 /// The last case is a best effort. I don't think it captures the most relevant use case of the
 /// preprocessing, which might be a structure containing a nested stringified structure. We might
@@ -110,7 +111,7 @@ pub fn tag_accessor<'a>(msg: &'a DatadogLogMsg) -> impl Fn(&str) -> Option<&'a s
 
 /// Walks `"message"` → `"message"` object chains inside a `MessageValue::Obj`,
 /// applying `f` at each level until it returns `Some`. Mirrors the flattening
-/// done by pomchi's `flatten_nested_message_object`.
+/// done by quickwit-processing's `flatten_nested_message_object`.
 ///
 /// For example, given `{"message": {"message": {"host": "my-host"}}}`, the closure
 /// `f` is called first with `{"message": {"host": "my-host"}}`, then with

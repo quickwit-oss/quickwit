@@ -1,0 +1,432 @@
+id: "gigamon"
+tests:
+ -
+  sample: |-
+    {
+      "ssl_common_name" : "10.203.41.158",
+      "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+      "src_packets" : "13",
+      "seq_num" : "18045114",
+      "dst_ip" : "10.203.41.158",
+      "device_inbound_interface" : "0",
+      "src_ip" : "10.203.41.4",
+      "ssl_validity_not_after" : "2029-05-2613:01:03",
+      "intf_name" : "0",
+      "protocol" : "6",
+      "ip_version" : "4",
+      "vendor" : "Gigamon",
+      "src_bytes" : "2728",
+      "id" : "3844000378249019393",
+      "app_id" : "4962",
+      "dst_bytes" : "5045",
+      "src_mac" : "00:0c:29:3d:5c:e6",
+      "sys_up_time_first" : "36697",
+      "ssl_cipher_suite_id" : "49200",
+      "end_reason" : "3",
+      "ssl_validity_not_before" : "2024-05-26 13:01:03",
+      "end_time" : "2024:08:29 10:49:40.735",
+      "version" : "6.6.00",
+      "dst_mac" : "ec:2a:72:22:8a:fa",
+      "ssl_issuer" : "CA",
+      "ddsource" : "gigamon",
+      "src_port" : "55861",
+      "start_time" : "2024:08:29 10:49:40.710",
+      "app_name" : "Unknown ssl",
+      "egress_intf_id" : "0",
+      "dst_port" : "9080",
+      "dst_packets" : "11",
+      "sys_up_time_last" : "36722",
+      "ts" : "Thu Aug 29 10:49:40 2024"
+    }
+  result:
+    custom:
+      ddsource: "gigamon"
+      device_inbound_interface: "0"
+      dst_bytes: "5045"
+      egress_intf_id: "0"
+      end_reason: "3"
+      end_time: "2024:08:29 10:49:40.735"
+      generator: "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9"
+      gigamon:
+        app_id: "4962"
+        app_name: "Unknown ssl"
+        dst_mac: "ec:2a:72:22:8a:fa"
+        dst_packets: "11"
+        ip_version: "4"
+        src_mac: "00:0c:29:3d:5c:e6"
+        src_packets: "13"
+        ssl_cipher_suite_id: "49200"
+        ssl_common_name: "10.203.41.158"
+        ssl_issuer: "CA"
+        ssl_validity_not_after: "2029-05-2613:01:03"
+        ssl_validity_not_before: "2024-05-26 13:01:03"
+      id: "3844000378249019393"
+      intf_name: "0"
+      network:
+        client:
+          ip: "10.203.41.4"
+          port: "55861"
+        destination:
+          ip: "10.203.41.158"
+          port: "9080"
+      protocol: "6"
+      seq_num: "18045114"
+      src_bytes: "2728"
+      start_time: "2024:08:29 10:49:40.710"
+      sys_up_time_first: "36697"
+      sys_up_time_last: "36722"
+      ts: 1724928580000
+      vendor: "Gigamon"
+      version: "6.6.00"
+    message: |-
+      {
+        "ssl_common_name" : "10.203.41.158",
+        "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+        "src_packets" : "13",
+        "seq_num" : "18045114",
+        "dst_ip" : "10.203.41.158",
+        "device_inbound_interface" : "0",
+        "src_ip" : "10.203.41.4",
+        "ssl_validity_not_after" : "2029-05-2613:01:03",
+        "intf_name" : "0",
+        "protocol" : "6",
+        "ip_version" : "4",
+        "vendor" : "Gigamon",
+        "src_bytes" : "2728",
+        "id" : "3844000378249019393",
+        "app_id" : "4962",
+        "dst_bytes" : "5045",
+        "src_mac" : "00:0c:29:3d:5c:e6",
+        "sys_up_time_first" : "36697",
+        "ssl_cipher_suite_id" : "49200",
+        "end_reason" : "3",
+        "ssl_validity_not_before" : "2024-05-26 13:01:03",
+        "end_time" : "2024:08:29 10:49:40.735",
+        "version" : "6.6.00",
+        "dst_mac" : "ec:2a:72:22:8a:fa",
+        "ssl_issuer" : "CA",
+        "ddsource" : "gigamon",
+        "src_port" : "55861",
+        "start_time" : "2024:08:29 10:49:40.710",
+        "app_name" : "Unknown ssl",
+        "egress_intf_id" : "0",
+        "dst_port" : "9080",
+        "dst_packets" : "11",
+        "sys_up_time_last" : "36722",
+        "ts" : "Thu Aug 29 10:49:40 2024"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1724928580000
+ -
+  sample: |-
+    {
+      "dns_host_raw" : "766373612e766d776172652e636f6d2e63646e2e636c6f7564666c6172652e6e6574",
+      "dns_query" : "vcsa.vmware.com",
+      "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+      "dns_class" : "1",
+      "seq_num" : "18085532",
+      "dst_ip" : "10.200.50.11",
+      "device_inbound_interface" : "0",
+      "src_ip" : "10.203.41.3",
+      "intf_name" : "0",
+      "protocol" : "17",
+      "ip_version" : "4",
+      "dns_opcode" : "0",
+      "vendor" : "Gigamon",
+      "src_bytes" : "86",
+      "dns_qdcount" : "1",
+      "dns_transaction_id" : "18011",
+      "dns_host_type" : "OPT",
+      "id" : "3844000450554626049",
+      "app_id" : "32",
+      "dst_bytes" : "166",
+      "src_mac" : "00:0c:29:fc:7c:fc",
+      "sys_up_time_first" : "354805",
+      "dns_flags" : "256",
+      "end_reason" : "2",
+      "dns_host_addr" : "162.159.140.167",
+      "end_time" : "2024:08:29 12:14:38.862",
+      "version" : "6.6.00",
+      "dns_response_time" : "0.000561",
+      "dst_mac" : "00:00:0c:9f:f7:f8",
+      "dns_host_class" : "1",
+      "ddsource" : "gigamon",
+      "dns_name" : "vcsa.vmware.com.cdn.cloudflare.net",
+      "dns_reply_code" : "0",
+      "src_port" : "33975",
+      "start_time" : "2024:08:29 2:14:38.861",
+      "app_name" : "dns",
+      "dns_query_type" : "1",
+      "dns_ttl" : "81",
+      "dns_host" : "vcsa.vmware.com.cdn.cloudflare.net",
+      "dns_arcount" : "2",
+      "egress_intf_id" : "0",
+      "dst_port" : "53",
+      "dst_packets" : "1",
+      "sys_up_time_last" : "354806",
+      "ts" : "Thu Aug 29 12:15:39 2024"
+    }
+  result:
+    custom:
+      ddsource: "gigamon"
+      device_inbound_interface: "0"
+      dns:
+        answer:
+          type: "OPT"
+        question:
+          name: "vcsa.vmware.com"
+      dns_arcount: "2"
+      dns_class: "1"
+      dns_flags: "256"
+      dns_host: "vcsa.vmware.com.cdn.cloudflare.net"
+      dns_host_addr: "162.159.140.167"
+      dns_host_class: "1"
+      dns_host_raw: "766373612e766d776172652e636f6d2e63646e2e636c6f7564666c6172652e6e6574"
+      dns_name: "vcsa.vmware.com.cdn.cloudflare.net"
+      dns_opcode: "0"
+      dns_qdcount: "1"
+      dns_query_type: "1"
+      dns_reply_code: "0"
+      dns_response_time: "0.000561"
+      dns_transaction_id: "18011"
+      dst_bytes: "166"
+      egress_intf_id: "0"
+      end_reason: "2"
+      end_time: "2024:08:29 12:14:38.862"
+      generator: "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9"
+      gigamon:
+        app_id: "32"
+        app_name: "dns"
+        dns_ttl: "81"
+        dst_mac: "00:00:0c:9f:f7:f8"
+        dst_packets: "1"
+        ip_version: "4"
+        src_mac: "00:0c:29:fc:7c:fc"
+      id: "3844000450554626049"
+      intf_name: "0"
+      network:
+        client:
+          ip: "10.203.41.3"
+          port: "33975"
+        destination:
+          ip: "10.200.50.11"
+          port: "53"
+      protocol: "17"
+      seq_num: "18085532"
+      src_bytes: "86"
+      start_time: "2024:08:29 2:14:38.861"
+      sys_up_time_first: "354805"
+      sys_up_time_last: "354806"
+      ts: 1724933739000
+      vendor: "Gigamon"
+      version: "6.6.00"
+    message: |-
+      {
+        "dns_host_raw" : "766373612e766d776172652e636f6d2e63646e2e636c6f7564666c6172652e6e6574",
+        "dns_query" : "vcsa.vmware.com",
+        "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+        "dns_class" : "1",
+        "seq_num" : "18085532",
+        "dst_ip" : "10.200.50.11",
+        "device_inbound_interface" : "0",
+        "src_ip" : "10.203.41.3",
+        "intf_name" : "0",
+        "protocol" : "17",
+        "ip_version" : "4",
+        "dns_opcode" : "0",
+        "vendor" : "Gigamon",
+        "src_bytes" : "86",
+        "dns_qdcount" : "1",
+        "dns_transaction_id" : "18011",
+        "dns_host_type" : "OPT",
+        "id" : "3844000450554626049",
+        "app_id" : "32",
+        "dst_bytes" : "166",
+        "src_mac" : "00:0c:29:fc:7c:fc",
+        "sys_up_time_first" : "354805",
+        "dns_flags" : "256",
+        "end_reason" : "2",
+        "dns_host_addr" : "162.159.140.167",
+        "end_time" : "2024:08:29 12:14:38.862",
+        "version" : "6.6.00",
+        "dns_response_time" : "0.000561",
+        "dst_mac" : "00:00:0c:9f:f7:f8",
+        "dns_host_class" : "1",
+        "ddsource" : "gigamon",
+        "dns_name" : "vcsa.vmware.com.cdn.cloudflare.net",
+        "dns_reply_code" : "0",
+        "src_port" : "33975",
+        "start_time" : "2024:08:29 2:14:38.861",
+        "app_name" : "dns",
+        "dns_query_type" : "1",
+        "dns_ttl" : "81",
+        "dns_host" : "vcsa.vmware.com.cdn.cloudflare.net",
+        "dns_arcount" : "2",
+        "egress_intf_id" : "0",
+        "dst_port" : "53",
+        "dst_packets" : "1",
+        "sys_up_time_last" : "354806",
+        "ts" : "Thu Aug 29 12:15:39 2024"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1724933739000
+ -
+  sample: |-
+    {
+      "http_uri_path" : "\\/",
+      "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+      "src_packets" : "6",
+      "http_host" : "connectivity-check.ubuntu.com",
+      "seq_num" : "18085527",
+      "dst_ip" : "91.189.91.49",
+      "device_inbound_interface" : "0",
+      "http_user_agent" : "Mozilla\\/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit\\/534. 10 (KHTML, like Gecko) Chrome\\/8.0.552.237 Safari\\/534.10",
+      "src_ip" : "10.203.43.1",
+      "intf_name" : "0",
+      "protocol" : "6",
+      "http_uri_path_decoded" : "\\/",
+      "http_method" : "GET",
+      "http_request_size" : "87",
+      "ip_version" : "4",
+      "vendor" : "Gigamon",
+      "http_server_agent" : "nginx\\/1.14.0 (Ubuntu)",
+      "src_bytes" : "491",
+      "http_uri_raw" : "\\/",
+      "http_uri_decoded" : "\\/",
+      "id" : "3844000451458498561",
+      "app_id" : "3006",
+      "dst_bytes" : "461",
+      "src_mac" : "00:50:56:b3:a4:e1",
+      "sys_up_time_first" : "412146",
+      "http_uri" : "\\/",
+      "end_reason" : "3",
+      "end_time" : "2024:08:29 12:15:36.997",
+      "http_version" : "1.1",
+      "version" : "6.6.00",
+      "dst_mac" : "00:00:0c:9f:f7:f8",
+      "ddsource" : "gigamon",
+      "src_port" : "55856",
+      "http_uri_full" : "\\/",
+      "start_time" : "2024:08:29 12:15:36.202",
+      "app_name" : "ubuntu",
+      "http_code" : "204",
+      "egress_intf_id" : "0",
+      "dst_port" : "80",
+      "dst_packets" : "4",
+      "http_server" : "connectivity-check.ubuntu.com",
+      "sys_up_time_last" : "412941",
+      "ts" : "Thu Aug 29 12:15:37 2024"
+    }
+  result:
+    custom:
+      ddsource: "gigamon"
+      device_inbound_interface: "0"
+      dst_bytes: "461"
+      egress_intf_id: "0"
+      end_reason: "3"
+      end_time: "2024:08:29 12:15:36.997"
+      generator: "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9"
+      gigamon:
+        app_id: "3006"
+        app_name: "ubuntu"
+        dst_mac: "00:00:0c:9f:f7:f8"
+        dst_packets: "4"
+        ip_version: "4"
+        src_mac: "00:50:56:b3:a4:e1"
+        src_packets: "6"
+      http:
+        method: "GET"
+        url_details:
+          host: "connectivity-check.ubuntu.com"
+          path: "\\/"
+        useragent_details:
+          os:
+            family:
+              browser:
+                family: "Other"
+              device:
+                category: "Desktop"
+                family: "Other"
+              os:
+                family: "Windows"
+                major: "7"
+        version: "1.1"
+      http_code: "204"
+      http_request_size: "87"
+      http_server: "connectivity-check.ubuntu.com"
+      http_server_agent: "nginx\\/1.14.0 (Ubuntu)"
+      http_uri: "\\/"
+      http_uri_decoded: "\\/"
+      http_uri_path: "\\/"
+      http_uri_path_decoded: "\\/"
+      http_uri_raw: "\\/"
+      http_user_agent: "Mozilla\\/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit\\/534. 10 (KHTML, like Gecko) Chrome\\/8.0.552.237 Safari\\/534.10"
+      id: "3844000451458498561"
+      intf_name: "0"
+      network:
+        client:
+          ip: "10.203.43.1"
+          port: "55856"
+        destination:
+          ip: "91.189.91.49"
+          port: "80"
+      protocol: "6"
+      seq_num: "18085527"
+      src_bytes: "491"
+      start_time: "2024:08:29 12:15:36.202"
+      sys_up_time_first: "412146"
+      sys_up_time_last: "412941"
+      ts: 1724933737000
+      vendor: "Gigamon"
+      version: "6.6.00"
+    message: |-
+      {
+        "http_uri_path" : "\\/",
+        "generator" : "gs_apps_appInst9_423330e5-4a3d-f203-14cb-b6642e5054e9",
+        "src_packets" : "6",
+        "http_host" : "connectivity-check.ubuntu.com",
+        "seq_num" : "18085527",
+        "dst_ip" : "91.189.91.49",
+        "device_inbound_interface" : "0",
+        "http_user_agent" : "Mozilla\\/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit\\/534. 10 (KHTML, like Gecko) Chrome\\/8.0.552.237 Safari\\/534.10",
+        "src_ip" : "10.203.43.1",
+        "intf_name" : "0",
+        "protocol" : "6",
+        "http_uri_path_decoded" : "\\/",
+        "http_method" : "GET",
+        "http_request_size" : "87",
+        "ip_version" : "4",
+        "vendor" : "Gigamon",
+        "http_server_agent" : "nginx\\/1.14.0 (Ubuntu)",
+        "src_bytes" : "491",
+        "http_uri_raw" : "\\/",
+        "http_uri_decoded" : "\\/",
+        "id" : "3844000451458498561",
+        "app_id" : "3006",
+        "dst_bytes" : "461",
+        "src_mac" : "00:50:56:b3:a4:e1",
+        "sys_up_time_first" : "412146",
+        "http_uri" : "\\/",
+        "end_reason" : "3",
+        "end_time" : "2024:08:29 12:15:36.997",
+        "http_version" : "1.1",
+        "version" : "6.6.00",
+        "dst_mac" : "00:00:0c:9f:f7:f8",
+        "ddsource" : "gigamon",
+        "src_port" : "55856",
+        "http_uri_full" : "\\/",
+        "start_time" : "2024:08:29 12:15:36.202",
+        "app_name" : "ubuntu",
+        "http_code" : "204",
+        "egress_intf_id" : "0",
+        "dst_port" : "80",
+        "dst_packets" : "4",
+        "http_server" : "connectivity-check.ubuntu.com",
+        "sys_up_time_last" : "412941",
+        "ts" : "Thu Aug 29 12:15:37 2024"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1724933737000

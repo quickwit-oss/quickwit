@@ -1,0 +1,450 @@
+id: azure.containerservice
+metric_id: azure-containerservice
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Azure
+    name: Resource ID
+    path: resourceId
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Resource Name
+    path: resource_name
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Subscription ID
+    path: subscription_id
+    source: tag
+    type: string
+  - groups:
+      - Azure
+    name: Resource Group
+    path: resource_group
+    source: tag
+    type: string
+  - groups:
+      - AKS
+    name: Event Reason
+    path: event.reason
+    source: log
+    type: string
+  - groups:
+      - Kubernetes
+    name: User groups
+    path: usr.groups
+    source: log
+  - groups:
+      - Kubernetes
+    name: Stage
+    path: stage
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Type
+    path: objectRef.resource
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Name
+    path: objectRef.name
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Namespace
+    path: objectRef.namespace
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Subresource
+    path: objectRef.subresource
+    source: log
+  - groups:
+      - Kubernetes
+    name: API Version
+    path: apiVersion
+    source: log
+  - groups:
+      - Kubernetes
+    name: Is Requested Host Network
+    path: requestObject.spec.hostNetwork
+    source: log
+  - groups:
+      - Kubernetes
+    name: Requested Generate Name
+    path: requestObject.metadata.generateName
+    source: log
+  - groups:
+      - Kubernetes
+    name: Requested Spec Type
+    path: requestObject.spec.type
+    source: log
+pipeline:
+  type: pipeline
+  name: Azure Container Service
+  enabled: true
+  filter:
+    query: source:azure.containerservice
+  processors:
+    - type: grok-parser
+      name: Parsing `resource_name` from `resourceId`
+      enabled: true
+      source: resourceId
+      samples:
+        - /SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/DEMO-11287-AKS/PROVIDERS/MICROSOFT.CONTAINERSERVICE/managedClusters/DEMO-11287-AKS-NORTHCENTRALUS
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}
+
+    - type: attribute-remapper
+      name: Map `category` to `evt.category`
+      enabled: true
+      sources:
+        - category
+      target: evt.category
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `operationName` to `evt.name`
+      enabled: true
+      sources:
+        - operationName
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resultType` to `evt.outcome`
+      enabled: true
+      sources:
+        - resultType
+      target: evt.outcome
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `callerIpAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - callerIpAddress
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: pipeline
+      name: AKS kubernetes audit logs
+      enabled: true
+      filter:
+        query: '@evt.category:(kube-audit OR kube-audit-admin) '
+      processors:
+        - type: grok-parser
+          name: Extract kubernetes audit log fields
+          enabled: true
+          source: properties.log
+          samples:
+            - '{"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"Metadata","auditID":"fdfc4cd1-65b4-45e9-a145-2e2a49e38846","stage":"ResponseComplete","requestURI":"/apis/coordination.k8s.io/v1/namespaces/kube-system/leases/external-resizer-file-csi-azure-com","verb":"update","user":{"username":"aksService","groups":["system:masters","system:authenticated"]},"sourceIPs":["172.31.7.198"],"userAgent":"csi-resizer/v0.0.0 (linux/amd64) kubernetes/$Format","objectRef":{"resource":"leases","namespace":"kube-system","name":"external-resizer-file-csi-azure-com","uid":"f8f9eaba-1862-47e5-a65f-6f2e4df37128","apiGroup":"coordination.k8s.io","apiVersion":"v1","resourceVersion":"9761"},"responseStatus":{"metadata":{},"code":200},"requestReceivedTimestamp":"2024-04-16T08:16:59.753663Z","stageTimestamp":"2024-04-16T08:16:59.759332Z","annotations":{"authorization.k8s.io/decision":"allow","authorization.k8s.io/reason":""}}'
+            - '{"kind":"Event","apiVersion":"audit.k8s.io/v1","level":"RequestResponse","auditID":"21b025f8-21fb-4883-bb5d-40e000e0ddee","stage":"ResponseComplete","requestURI":"/apis/rbac.authorization.k8s.io/v1/namespaces/gatekeeper-system/roles/gatekeeper-manager-role?fieldManager=kubectl-client-side-apply\u0026fieldValidation=Strict","verb":"patch","user":{"username":"aksService","groups":["system:masters","system:authenticated"]},"sourceIPs":["172.31.31.115"],"userAgent":"kubectl/v1.27.3 (linux/amd64) kubernetes/d770133","objectRef":{"resource":"roles","namespace":"gatekeeper-system","name":"gatekeeper-manager-role","apiGroup":"rbac.authorization.k8s.io","apiVersion":"v1"},"responseStatus":{"metadata":{},"code":200},"requestObject":{"metadata":{"creationTimestamp":null}},"responseObject":{"kind":"Role","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"gatekeeper-manager-role","namespace":"gatekeeper-system","uid":"d6bec57a-b036-4985-b3cd-362e31520f6d","resourceVersion":"3198","creationTimestamp":"2024-04-16T07:50:17Z","labels":{"addonmanager.kubernetes.io/mode":"Reconcile","gatekeeper.sh/system":"yes"},"annotations":{"kubectl.kubernetes.io/last-applied-configuration":"{\"apiVersion\":\"rbac.authorization.k8s.io/v1\",\"kind\":\"Role\",\"metadata\":{\"annotations\":{},\"creationTimestamp\":null,\"labels\":{\"addonmanager.kubernetes.io/mode\":\"Reconcile\",\"gatekeeper.sh/system\":\"yes\"},\"name\":\"gatekeeper-manager-role\",\"namespace\":\"gatekeeper-system\"},\"rules\":[{\"apiGroups\":[\"\"],\"resources\":[\"events\"],\"verbs\":[\"create\",\"patch\"]},{\"apiGroups\":[\"\"],\"resources\":[\"secrets\"],\"verbs\":[\"create\",\"delete\",\"get\",\"list\",\"patch\",\"update\",\"watch\"]}]}\n"},"managedFields":[{"manager":"kubectl-client-side-apply","operation":"Update","apiVersion":"rbac.authorization.k8s.io/v1","time":"2024-04-16T07:50:17Z","fieldsType":"FieldsV1","fieldsV1":{"f:metadata":{"f:annotations":{".":{},"f:kubectl.kubernetes.io/last-applied-configuration":{}},"f:labels":{".":{},"f:addonmanager.kubernetes.io/mode":{},"f:gatekeeper.sh/system":{}}},"f:rules":{}}}]},"rules":[{"verbs":["create","patch"],"apiGroups":[""],"resources":["events"]},{"verbs":["create","delete","get","list","patch","update","watch"],"apiGroups":[""],"resources":["secrets"]}]},"requestReceivedTimestamp":"2024-04-16T10:12:59.981483Z","stageTimestamp":"2024-04-16T10:12:59.987997Z","annotations":{"authorization.k8s.io/decision":"allow","authorization.k8s.io/reason":""}}'
+          grok:
+            supportRules: ''
+            matchRules: extract_audit_log_properties %{data::json}
+        - type: grok-parser
+          name: Parsing requestReceivedTimestamp
+          enabled: true
+          source: requestReceivedTimestamp
+          grok:
+            supportRules: |
+            matchRules: |
+              parsing_date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):requestReceivedTimestamp_ms}
+          samples:
+            - 2019-07-15T21:44:41.498428Z
+        - type: grok-parser
+          name: Parsing stageTimestamp
+          enabled: true
+          source: stageTimestamp
+          grok:
+            supportRules: |
+            matchRules: |
+              parsing_date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):stageTimestamp_ms}
+          samples:
+            - 2019-07-15T21:44:41.501278Z
+        - type: attribute-remapper
+          name: Map `requestURI` to `http.url`
+          enabled: true
+          sources:
+            - requestURI
+          target: http.url
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: url-parser
+          name: ''
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+        - type: attribute-remapper
+          name: Map `userAgent` to `http.useragent`
+          enabled: true
+          sources:
+            - userAgent
+          target: http.useragent
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: user-agent-parser
+          name: ''
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+        - type: attribute-remapper
+          name: Map `responseStatus.code` to `http.status_code`
+          enabled: true
+          sources:
+            - responseStatus.code
+          target: http.status_code
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: attribute-remapper
+          name: Map `verb` to `http.method`
+          enabled: true
+          sources:
+            - verb
+          target: http.method
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: attribute-remapper
+          name: Map `user` to `usr`
+          enabled: true
+          sources:
+            - user
+          target: usr
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: attribute-remapper
+          name: Map `usr.username` to `usr.name`
+          enabled: true
+          sources:
+            - usr.username
+          target: usr.name
+          preserveSource: true
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: attribute-remapper
+          name: Map `usr.username` to `usr.id`
+          enabled: true
+          sources:
+            - usr.username
+          target: usr.id
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+          targetType: attribute
+        - type: attribute-remapper
+          name: Map attribute `objectRef.namespace` to tag `kube_namespace`
+          enabled: true
+          sources:
+            - objectRef.namespace
+          target: kube_namespace
+          targetType: tag
+          preserveSource: false
+          overrideOnConflict: false
+          sourceType: attribute
+        - type: category-processor
+          name: Categorise status code
+          enabled: true
+          categories:
+            - filter:
+                query: '@http.status_code:[200 TO 299]'
+              name: OK
+            - filter:
+                query: '@http.status_code:[300 TO 399]'
+              name: notice
+            - filter:
+                query: '@http.status_code:[400 TO 499]'
+              name: warning
+            - filter:
+                query: '@http.status_code:[500 TO 599]'
+              name: error
+          target: http.status_category
+        - type: arithmetic-processor
+          name: Calculate request response time
+          enabled: true
+          expression: (stageTimestamp_ms - requestReceivedTimestamp_ms)*1000000
+          target: duration
+          replaceMissing: false
+        - type: status-remapper
+          name: Define `http.status_category` as the official status of the log
+          enabled: true
+          sources:
+            - http.status_category
+        - type: date-remapper
+          name: Define `stageTimestamp_ms` as the official date of the log
+          enabled: true
+          sources:
+            - stageTimestamp_ms
+    - type: arithmetic-processor
+      name: Compute duration in nanoseconds from durationMs in miliseconds
+      enabled: true
+      expression: durationMs * 1000000
+      target: duration
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `identity.authorization.evidence.principalId` to `usr.id`
+      enabled: true
+      sources:
+        - identity.authorization.evidence.principalId
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: AKS Control Plane Log Field Extractions
+      enabled: true
+      source: properties.log
+      samples:
+        - 'E0404 17:36:04.881381       1 horizontal.go:227] failed to compute desired number of replicas based on listed metrics for Deployment/healthmonitor/healthmonitor: invalid metrics (2 invalid out of 2), first error is: failed to get memory utilization: missing request for memory'
+        - 'I0524 13:00:01.816866       1 event.go:291] "Event occurred" object="default/api-py" kind="Endpoints" apiVersion="v1" type="Warning" reason="Failed" message="Update endpoint failed default/email-api-py: Operation cannot be fulfilled on endpoints \"email-api-py\": "'
+      grok:
+        supportRules: |
+          _timestamp %{date("MMdd HH:mm:ss.SSSSSS")}
+        matchRules: |
+          key_value_rule %{regex("[WIFE]"):severity}%{_timestamp}\s+%{data}\]\s+\"Event occurred\"\s+%{data:event:keyvalue}\s+message\=\"%{data:event.message}\"
+          text_parser_rule %{regex("[WIFE]"):severity}%{_timestamp}\s+%{data}\]\s+%{data:event.message}
+    - type: message-remapper
+      name: Define `event.message` as the official message of the log
+      enabled: true
+      sources:
+        - event.message
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: status-remapper
+      name: Define `level`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - level
+        - severity

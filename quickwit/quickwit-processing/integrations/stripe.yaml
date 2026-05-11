@@ -1,0 +1,85 @@
+id: stripe
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - Event
+    name: Event Object
+    path: evt.object
+    source: log
+  - groups:
+      - Stripe
+    name: Live Mode
+    path: livemode
+    source: log
+pipeline:
+  type: pipeline
+  name: Stripe
+  enabled: true
+  filter:
+    query: source:stripe
+  processors:
+    - type: arithmetic-processor
+      name: Convert `created` from second to millisecond EPOCH UNIX format
+      enabled: true
+      expression: created * 1000
+      target: created
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `created` to `timestamp`
+      enabled: true
+      sources:
+        - created
+      sourceType: attribute
+      target: timestamp
+      targetType: attribute
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `id` to `evt.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: evt.id
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.object.email` to `usr.email`
+      enabled: true
+      sources:
+        - data.object.email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.object.object` to `evt.object`
+      enabled: true
+      sources:
+        - data.object.object
+      sourceType: attribute
+      target: evt.object
+      targetType: attribute
+      targetFormat: string
+      preserveSource: false
+      overrideOnConflict: false

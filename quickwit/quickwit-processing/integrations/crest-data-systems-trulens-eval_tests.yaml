@@ -1,0 +1,330 @@
+id: "crest-data-systems-trulens-eval"
+tests:
+ -
+  sample: |-
+    {
+      "record_completion_tokens" : 11,
+      "completion_tokens" : 11,
+      "record_cost" : 2.0349999999999999E-4,
+      "latency" : 1.7723329067230225,
+      "feedback_result_id" : "feedback_result_hash_a08073a6dffcf347913cab5bfef7409d",
+      "error" : "None",
+      "calls_json" : {
+        "calls" : [ {
+          "args" : {
+            "statement" : "The University of Washington was founded in 1861.",
+            "source" : [ [ "The University of Washington, founded in 1861 in Seattle, is a public research university\nwith over 45,000 students across three campuses in Seattle, Tacoma, and Bothell.\nAs the flagship institution of the six public universities in Washington state,\nUW encompasses over 500 buildings and 20 million square feet of space,\nincluding one of the largest library systems in the world." ] ]
+          },
+          "ret" : 1,
+          "meta" : {
+            "reasons" : "TEMPLATE: \nStatement Sentence: The University of Washington was founded in 1861., \nSupporting Evidence: The University of Washington, founded in 1861 in Seattle, is a public research university\nScore: 10\nGive me the INFORMATION OVERLAP of this SOURCE and STATEMENT."
+          }
+        } ]
+      },
+      "feedback_definition_id" : "feedback_definition_hash_2b7804c73a8000a97fa73a1c1b3c3bcb",
+      "result" : 1,
+      "output" : "The University of Washington was founded in 1861.",
+      "prompt_tokens" : 129,
+      "tokens" : 140,
+      "record_latency" : 1.7723329067230225,
+      "app_id" : "RAG v1",
+      "main_error" : "None",
+      "record_tokens" : 140,
+      "timestamp" : 1.708506841385427E12,
+      "cost" : 2.0349999999999999E-4,
+      "Groundedness" : 1,
+      "tags" : "-",
+      "record_id" : "record_hash_b96e9082762eef576945f3e7b0182b1c",
+      "input" : "When was the University of Washington founded?",
+      "perf_json" : {
+        "start_time" : "2024-02-21T09:13:59.612889",
+        "end_time" : "2024-02-21T09:14:01.385222"
+      },
+      "name" : "Groundedness",
+      "last_ts" : 1.708506841514899E9,
+      "record_prompt_tokens" : 129,
+      "cost_json" : {
+        "cost" : 2.0349999999999999E-4,
+        "n_completion_tokens" : 11,
+        "n_requests" : 2,
+        "n_prompt_tokens" : 129,
+        "n_tokens" : 140,
+        "n_stream_chunks" : 0,
+        "n_successful_requests" : 2,
+        "n_classes" : 0
+      },
+      "status" : "done",
+      "ts" : 1.708506841385427E9
+    }
+  result:
+    custom:
+      app_id: "RAG v1"
+      calls_json:
+        calls:
+         -
+          args:
+            statement: "The University of Washington was founded in 1861."
+            source:
+             -
+               - |-
+                The University of Washington, founded in 1861 in Seattle, is a public research university
+                with over 45,000 students across three campuses in Seattle, Tacoma, and Bothell.
+                As the flagship institution of the six public universities in Washington state,
+                UW encompasses over 500 buildings and 20 million square feet of space,
+                including one of the largest library systems in the world.
+          ret: 1
+          meta:
+            reasons: "TEMPLATE: \nStatement Sentence: The University of Washington was founded in 1861., \nSupporting Evidence: The University of Washington, founded in 1861 in Seattle, is a public research university\nScore: 10\nGive me the INFORMATION OVERLAP of this SOURCE and STATEMENT."
+      cds:
+        trulens_eval:
+          completion_tokens: 11
+          cost: 2.0349999999999999E-4
+          groundedness: 1
+          latency: 1.7723329067230225
+          prompt_tokens: 129
+          record_completion_tokens: 11
+          record_cost: 2.0349999999999999E-4
+          record_latency: 1.7723329067230225
+          record_prompt_tokens: 129
+          record_tokens: 140
+          result: 1
+          status: "Ok"
+          tokens: 140
+      cost_json:
+        cost: 2.0349999999999999E-4
+        n_classes: 0
+        n_completion_tokens: 11
+        n_prompt_tokens: 129
+        n_requests: 2
+        n_stream_chunks: 0
+        n_successful_requests: 2
+        n_tokens: 140
+      error: "None"
+      feedback_definition_id: "feedback_definition_hash_2b7804c73a8000a97fa73a1c1b3c3bcb"
+      feedback_result_id: "feedback_result_hash_a08073a6dffcf347913cab5bfef7409d"
+      input: "When was the University of Washington founded?"
+      last_ts: 1.708506841514899E9
+      main_error: "None"
+      name: "Groundedness"
+      output: "The University of Washington was founded in 1861."
+      perf_json:
+        end_time: "2024-02-21T09:14:01.385222"
+        start_time: "2024-02-21T09:13:59.612889"
+      record_id: "record_hash_b96e9082762eef576945f3e7b0182b1c"
+      status: "done"
+      tags: "-"
+      timestamp: 1.708506841385427E12
+      ts: 1.708506841385427E9
+    message: |-
+      {
+        "record_completion_tokens" : 11,
+        "completion_tokens" : 11,
+        "record_cost" : 2.0349999999999999E-4,
+        "latency" : 1.7723329067230225,
+        "feedback_result_id" : "feedback_result_hash_a08073a6dffcf347913cab5bfef7409d",
+        "error" : "None",
+        "calls_json" : {
+          "calls" : [ {
+            "args" : {
+              "statement" : "The University of Washington was founded in 1861.",
+              "source" : [ [ "The University of Washington, founded in 1861 in Seattle, is a public research university\nwith over 45,000 students across three campuses in Seattle, Tacoma, and Bothell.\nAs the flagship institution of the six public universities in Washington state,\nUW encompasses over 500 buildings and 20 million square feet of space,\nincluding one of the largest library systems in the world." ] ]
+            },
+            "ret" : 1,
+            "meta" : {
+              "reasons" : "TEMPLATE: \nStatement Sentence: The University of Washington was founded in 1861., \nSupporting Evidence: The University of Washington, founded in 1861 in Seattle, is a public research university\nScore: 10\nGive me the INFORMATION OVERLAP of this SOURCE and STATEMENT."
+            }
+          } ]
+        },
+        "feedback_definition_id" : "feedback_definition_hash_2b7804c73a8000a97fa73a1c1b3c3bcb",
+        "result" : 1,
+        "output" : "The University of Washington was founded in 1861.",
+        "prompt_tokens" : 129,
+        "tokens" : 140,
+        "record_latency" : 1.7723329067230225,
+        "app_id" : "RAG v1",
+        "main_error" : "None",
+        "record_tokens" : 140,
+        "timestamp" : 1.708506841385427E12,
+        "cost" : 2.0349999999999999E-4,
+        "Groundedness" : 1,
+        "tags" : "-",
+        "record_id" : "record_hash_b96e9082762eef576945f3e7b0182b1c",
+        "input" : "When was the University of Washington founded?",
+        "perf_json" : {
+          "start_time" : "2024-02-21T09:13:59.612889",
+          "end_time" : "2024-02-21T09:14:01.385222"
+        },
+        "name" : "Groundedness",
+        "last_ts" : 1.708506841514899E9,
+        "record_prompt_tokens" : 129,
+        "cost_json" : {
+          "cost" : 2.0349999999999999E-4,
+          "n_completion_tokens" : 11,
+          "n_requests" : 2,
+          "n_prompt_tokens" : 129,
+          "n_tokens" : 140,
+          "n_stream_chunks" : 0,
+          "n_successful_requests" : 2,
+          "n_classes" : 0
+        },
+        "status" : "done",
+        "ts" : 1.708506841385427E9
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1708506841385
+ -
+  sample: |-
+    {
+      "completion_tokens" : 11,
+      "cost" : 2.0349999999999999E-4,
+      "latency" : 1.7723329067230225,
+      "feedback_result_id" : "feedback_result_hash_9b77af52252b4f48ad76361dd36b0b32",
+      "error" : "None",
+      "calls_json" : {
+        "calls" : [ {
+          "args" : {
+            "response" : "The University of Washington was founded in 1861.",
+            "prompt" : "When was the University of Washington founded?"
+          },
+          "ret" : 1,
+          "meta" : {
+            "reason" : "Criteria: The response directly answers the prompt with the correct founding year of the University of Washington.\nSupporting Evidence: The response states that the University of Washington was founded in 1861, which is the correct founding year according to historical records. This directly addresses the prompt by providing the specific year of establishment for the University of Washington. Therefore, the response is highly relevant and earns a score of 10."
+          }
+        } ]
+      },
+      "feedback_definition_id" : "feedback_definition_hash_260623ea246f8e42e73f80df49b369b4",
+      "tags" : "-",
+      "result" : 1,
+      "output" : "The University of Washington was founded in 1861.",
+      "Answer-Relevance" : 1,
+      "record_id" : "record_hash_b96e9082762eef576945f3e7b0182b1c",
+      "input" : "When was the University of Washington founded?",
+      "prompt_tokens" : 129,
+      "perf_json" : {
+        "start_time" : "2024-02-21T09:13:59.612889",
+        "end_time" : "2024-02-21T09:14:01.385222"
+      },
+      "name" : "Answer Relevance",
+      "last_ts" : 1.708506841629624E9,
+      "tokens" : 140,
+      "app_id" : "RAG v1",
+      "cost_json" : {
+        "cost" : 2.0349999999999999E-4,
+        "n_completion_tokens" : 11,
+        "n_requests" : 2,
+        "n_prompt_tokens" : 129,
+        "n_tokens" : 140,
+        "n_stream_chunks" : 0,
+        "n_successful_requests" : 2,
+        "n_classes" : 0
+      },
+      "status" : "done",
+      "ts" : 1.708506841385427E9,
+      "main_error" : "None",
+      "timestamp" : 1.708506841385427E12
+    }
+  result:
+    custom:
+      app_id: "RAG v1"
+      calls_json:
+        calls:
+         -
+          args:
+            response: "The University of Washington was founded in 1861."
+            prompt: "When was the University of Washington founded?"
+          ret: 1
+          meta:
+            reason: |-
+              Criteria: The response directly answers the prompt with the correct founding year of the University of Washington.
+              Supporting Evidence: The response states that the University of Washington was founded in 1861, which is the correct founding year according to historical records. This directly addresses the prompt by providing the specific year of establishment for the University of Washington. Therefore, the response is highly relevant and earns a score of 10.
+      cds:
+        trulens_eval:
+          answer-relevance: 1
+          completion_tokens: 11
+          cost: 2.0349999999999999E-4
+          latency: 1.7723329067230225
+          prompt_tokens: 129
+          result: 1
+          status: "Ok"
+          tokens: 140
+      cost_json:
+        cost: 2.0349999999999999E-4
+        n_classes: 0
+        n_completion_tokens: 11
+        n_prompt_tokens: 129
+        n_requests: 2
+        n_stream_chunks: 0
+        n_successful_requests: 2
+        n_tokens: 140
+      error: "None"
+      feedback_definition_id: "feedback_definition_hash_260623ea246f8e42e73f80df49b369b4"
+      feedback_result_id: "feedback_result_hash_9b77af52252b4f48ad76361dd36b0b32"
+      input: "When was the University of Washington founded?"
+      last_ts: 1.708506841629624E9
+      main_error: "None"
+      name: "Answer Relevance"
+      output: "The University of Washington was founded in 1861."
+      perf_json:
+        end_time: "2024-02-21T09:14:01.385222"
+        start_time: "2024-02-21T09:13:59.612889"
+      record_id: "record_hash_b96e9082762eef576945f3e7b0182b1c"
+      status: "done"
+      tags: "-"
+      timestamp: 1.708506841385427E12
+      ts: 1.708506841385427E9
+    message: |-
+      {
+        "completion_tokens" : 11,
+        "cost" : 2.0349999999999999E-4,
+        "latency" : 1.7723329067230225,
+        "feedback_result_id" : "feedback_result_hash_9b77af52252b4f48ad76361dd36b0b32",
+        "error" : "None",
+        "calls_json" : {
+          "calls" : [ {
+            "args" : {
+              "response" : "The University of Washington was founded in 1861.",
+              "prompt" : "When was the University of Washington founded?"
+            },
+            "ret" : 1,
+            "meta" : {
+              "reason" : "Criteria: The response directly answers the prompt with the correct founding year of the University of Washington.\nSupporting Evidence: The response states that the University of Washington was founded in 1861, which is the correct founding year according to historical records. This directly addresses the prompt by providing the specific year of establishment for the University of Washington. Therefore, the response is highly relevant and earns a score of 10."
+            }
+          } ]
+        },
+        "feedback_definition_id" : "feedback_definition_hash_260623ea246f8e42e73f80df49b369b4",
+        "tags" : "-",
+        "result" : 1,
+        "output" : "The University of Washington was founded in 1861.",
+        "Answer-Relevance" : 1,
+        "record_id" : "record_hash_b96e9082762eef576945f3e7b0182b1c",
+        "input" : "When was the University of Washington founded?",
+        "prompt_tokens" : 129,
+        "perf_json" : {
+          "start_time" : "2024-02-21T09:13:59.612889",
+          "end_time" : "2024-02-21T09:14:01.385222"
+        },
+        "name" : "Answer Relevance",
+        "last_ts" : 1.708506841629624E9,
+        "tokens" : 140,
+        "app_id" : "RAG v1",
+        "cost_json" : {
+          "cost" : 2.0349999999999999E-4,
+          "n_completion_tokens" : 11,
+          "n_requests" : 2,
+          "n_prompt_tokens" : 129,
+          "n_tokens" : 140,
+          "n_stream_chunks" : 0,
+          "n_successful_requests" : 2,
+          "n_classes" : 0
+        },
+        "status" : "done",
+        "ts" : 1.708506841385427E9,
+        "main_error" : "None",
+        "timestamp" : 1.708506841385427E12
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1708506841385

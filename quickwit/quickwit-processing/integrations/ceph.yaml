@@ -1,0 +1,65 @@
+id: ceph
+metric_id: ceph
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - System
+    name: Subsystem
+    path: ceph.subsystem
+    source: log
+  - groups:
+      - System
+    name: Priority
+    path: ceph.priority
+    source: log
+pipeline:
+  type: pipeline
+  name: Ceph
+  enabled: true
+  filter:
+    query: source:ceph
+  processors:
+    - type: grok-parser
+      name: Parsing Ceph logs
+      enabled: true
+      source: message
+      samples:
+        - 2019-06-19 08:03:10.859 7f43ff76be00  1 bluefs add_block_device bdev 1 path /var/lib/ceph/osd/ceph-0//block size 20 GiB
+        - "2019-06-19 08:00:05.945153 mon.ceph-node-1 mon.0 10.164.0.4:6789/0 7 : audit [DBG] from='admin socket' entity='admin socket' cmd='mon_status' args=[]: dispatch"
+        - "2021-01-15T00:30:03.410926-0500 mon.mon1 (mon.1) 4867123 : audit [DBG] from='client.? v1:192.0.2.1:0/557007769' entity='client.client1' cmd=[{'prefix':'df','format':'json'}]: dispatch"
+        - '[2019-06-19 08:03:08,911][ceph_volume.main][INFO  ] Running command: ceph-volume --cluster ceph lvm create --bluestore --data /dev/sdb'
+      grok:
+        supportRules: |
+          _timestamp_ms %{date("yyyy-MM-dd HH:mm:ss.SSS"):date}
+          _timestamp_ns %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):date}
+          _timestamp_iso_ms %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}
+          _timestamp_iso_ns %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):date}
+          _timestamp_comma_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):date}
+          _thread %{notSpace:logger.thread_name}
+          _priority %{integer:ceph.priority}
+          _log_index %{integer:logger.index}
+          _subsystem %{notSpace:ceph.subsystem}
+          _address %{notSpace:ceph.address}
+          _node %{notSpace:ceph.node}
+          _function %{notSpace:ceph.function}
+          _level %{notSpace:level}
+        matchRules: |
+          default_format (%{_timestamp_ms}|%{_timestamp_iso_ms})\s+%{_thread}\s+%{_priority}\s+%{_subsystem} .*
+          audit_format %{_timestamp_ns}\s+%{_node}\s+%{_subsystem}\s+%{_address}\s+%{_log_index}\s+: %{data:} \[%{_level}\] .*
+          audit_iso_format %{_timestamp_iso_ns}\s+%{_node}\s+\(%{_subsystem}\)\s+%{_log_index}\s+: %{data:} \[%{_level}\] .*
+          volume_format \[%{_timestamp_comma_ms}\]\[%{_function}\]\[%{_level}\s+\] .*
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

@@ -1,0 +1,246 @@
+id: ruby
+metric_id: ruby
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Active Directory
+    name: Process Status
+    path: active_directory.process_status
+    source: log
+  - facetType: range
+    groups:
+      - Active Directory
+    name: Views
+    path: views
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+  - facetType: range
+    groups:
+      - Active Directory
+    name: Active Records
+    path: activerecord
+    source: log
+    type: double
+    unit:
+      family: time
+      name: millisecond
+pipeline:
+  type: pipeline
+  name: Ruby
+  enabled: true
+  filter:
+    query: source:ruby
+  processors:
+    - type: attribute-remapper
+      name: Map `logger` to `logger.name`
+      enabled: true
+      sources:
+        - logger
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread` to `logger.thread_name`
+      enabled: true
+      sources:
+        - thread
+      target: logger.thread_name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `exception`, `stack_trace` to `error.stack`
+      enabled: true
+      sources:
+        - exception
+        - stack_trace
+      target: error.stack
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing Ruby Default formats
+      enabled: true
+      source: message
+      samples:
+        - 'I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Completed 200 OK in 41ms (Views: 0.2ms | ActiveRecord: 6.2ms)'
+        - 'I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Started GET "/api/v1/example/query" for 123.123.123.123 at 1999-03-03 02:34:24+0000'
+        - 'I, [1999-03-03T02:34:24.895701 #19074]  INFO -- : Processing by MyCheck::CheckController#index as JSON'
+        - 'I, [2018-06-27T08:01:52.991728 #1]  INFO -- : Received: {"action":"cancel","order":{"id":1234567,"timestamp":153012312}}'
+        - '[2019-01-16 15:38:45 +0000][my_app][WARN][dd.trace_id=7396234561907730428 dd.span_id=1152346429682372911] This is a test message!'
+      grok:
+        supportRules: |
+          _date (?:%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSS"):date}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSS"):date})
+          _status %{word:level}
+          _thread_id %{word:logger.thread_id}
+          _thread_name %{notSpace:logger.thread_name}
+          _logger_name %{notSpace:logger.name}
+          _ruby_log_prefix %{word}, \[%{_date} #%{_thread_id}\]\s+%{_status}\s+--\s+(?:%{_logger_name})?:(?:\s+%{_trace_rule})?
+          _trace_rule \[%{data::keyvalue}dd.trace_id=%{word:dd.trace_id} dd.span_id=%{word:dd.span_id}\]
+          _datadog_prefix \[%{date("yyyy-MM-dd HH:mm:ss Z"):date}\]\[%{word:application}\]\[%{_status}\]%{_trace_rule}
+          _activate_status %{word:active_directory.process_status}
+        matchRules: |
+          # Active Directory Rails logs
+
+          completed_rule (?>%{_ruby_log_prefix}\s+|%{_trace_rule}\s+)?%{_activate_status} %{integer:http.status_code}(?: (?:%{word}|Internal Server Error))? in %{number:duration}ms \((?>Views: %{number:views}ms \| )?ActiveRecord: %{number:activerecord}ms\)
+
+          processing_rule (?>%{_ruby_log_prefix}\s+|%{_trace_rule}\s+)?%{_activate_status} by %{notSpace:processor}.*
+
+          started_rule (?>%{_ruby_log_prefix}\s+|%{_trace_rule}\s+)?%{_activate_status} %{word:http.method} "%{notSpace:http.url_details.path}" for %{ipOrHost:network.client.ip}.*
+
+          datadog_format %{_datadog_prefix} %{data::keyvalue("=","/")}(?>(\n|\t)%{data:error.stack})?
+
+          received_rule (?>%{_ruby_log_prefix}\s+|%{_trace_rule}\s+)?Received: %{data::json}
+
+          ## Default Ruby formats
+          Ruby_default %{_ruby_log_prefix}\s+%{data:error.message}(?>(\n|\t)%{data:error.stack})?
+
+          Ruby_keyvalue %{data::keyvalue("=","/")}
+
+          # Extra samples:
+          #I, [1999-03-03T02:34:24.895701 #19074]  INFO -- Main: Some error.
+          ## Datadog Format
+          #[dd.trace_id=1321281354128614668 dd.span_id=5986620922286636160] Completed 200 OK in 9ms (Views: 6.3ms | ActiveRecord: 1.0ms)
+
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: grok-parser
+      name: Parsing Stack trace
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          ZeroDivisionError: divided by 0
+          from devide.rb:6:in `divide`  
+          from devide.rb:14:in `call`
+          from devide.rb:18:in `<main>`
+    - type: attribute-remapper
+      name: Map `method` to `http.method`
+      enabled: true
+      sources:
+        - method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `path` to `http.url_details.path`
+      enabled: true
+      sources:
+        - path
+      target: http.url_details.path
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `status` to `http.status_code`
+      enabled: true
+      sources:
+        - status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: trace-id-remapper
+      name: Define `dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+    - type: attribute-remapper
+      name: Map attribute `dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service
+    - type: arithmetic-processor
+      name: Convert duration unit ms to ns
+      enabled: true
+      expression: duration*1000000
+      target: duration
+      replaceMissing: false

@@ -1,0 +1,126 @@
+id: "cockroachdb"
+tests:
+ -
+  sample: |
+    W210503 15:04:25.849080 1 cli/start.go:987 ⋮ ‹Using the default setting for --cache (128 MiB).›
+    ‹  A significantly larger value is usually needed for good performance.›
+    ‹  If you have a dedicated server a reasonable setting is --cache=.25 (497 MiB).›
+  result:
+    custom:
+      logger:
+        goroutine_id: 1.0
+        line_number: 987.0
+        name: "cli/start.go"
+      status: "W"
+      timestamp: 1620054265849
+    message: |-
+      ‹Using the default setting for --cache (128 MiB).›
+      ‹  A significantly larger value is usually needed for good performance.›
+      ‹  If you have a dedicated server a reasonable setting is --cache=.25 (497 MiB).›
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1620054265849
+ -
+  sample: |
+    I210503 15:04:25.849265 1 server/status/recorder.go:605 ⋮ ‹available memory from cgroups (8.0 EiB) is unsupported, using system memory 1.9 GiB instead:›
+  result:
+    custom:
+      logger:
+        goroutine_id: 1.0
+        line_number: 605.0
+        name: "server/status/recorder.go"
+      status: "I"
+      timestamp: 1620054265849
+    message: "‹available memory from cgroups (8.0 EiB) is unsupported, using system memory 1.9 GiB instead:›"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1620054265849
+ -
+  sample: |
+    I210503 15:05:35.881985 197 server/status/runtime.go:525 ⋮ [n1] runtime stats: 106 MiB RSS, 175 goroutines, 30 MiB/26 MiB/50 MiB GO alloc/idle/total, 5.5 MiB/6.9 MiB CGO alloc/total, 0.1 CGO/sec, 1.3/1.7 %(u/s)time, 0.0 %gc (0x), 3.1 KiB/136 KiB (r/w)net
+  result:
+    custom:
+      logger:
+        goroutine_id: 197.0
+        line_number: 525.0
+        name: "server/status/runtime.go"
+      runtime_stats:
+        cgo_alloc: "5.5 MiB"
+        cgo_per_sec: "0.1"
+        cgo_total: "6.9 MiB"
+        go_alloc: "30 MiB"
+        go_idle: "26 MiB"
+        go_total: "50 MiB"
+        goroutines: 175.0
+        percent_gc: "0.0"
+        read_net: "3.1 KiB"
+        rss: "106 MiB"
+        sytem_cpu_percent: "1.7"
+        user_cpu_percent: "1.3"
+        write_net: "136 KiB"
+      status: "I"
+      timestamp: 1620054335881
+    message: |
+      I210503 15:05:35.881985 197 server/status/runtime.go:525 ⋮ [n1] runtime stats: 106 MiB RSS, 175 goroutines, 30 MiB/26 MiB/50 MiB GO alloc/idle/total, 5.5 MiB/6.9 MiB CGO alloc/total, 0.1 CGO/sec, 1.3/1.7 %(u/s)time, 0.0 %gc (0x), 3.1 KiB/136 KiB (r/w)net
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1620054335881
+ -
+  sample: |
+    I210503 15:04:45.917889 176 kv/kvserver/store.go:2626 ⋮ [n1,s1] ‹›
+    ‹__level_____count____size___score______in__ingest(sz_cnt)____move(sz_cnt)___write(sz_cnt)____read___r-amp___w-amp›
+    ‹    WAL         3   655 K       -   650 K       -       -       -       -   655 K       -       -       -     1.0›
+    ‹      0         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      1         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      2         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      3         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      4         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      5         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹      6         0     0 B       -     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+    ‹  total         0     0 B       -   655 K     0 B       0     0 B       0   655 K       0     0 B       0     1.0›
+    ‹  flush         0›
+    ‹compact         0     0 B          (size == estimated-debt)›
+    ‹ memtbl         3   1.8 M›
+    ‹zmemtbl         0     0 B›
+    ‹   ztbl         0     0 B›
+    ‹ bcache         0     0 B    0.0%  (score == hit-rate)›
+    ‹ tcache         0     0 B    0.0%  (score == hit-rate)›
+    ‹ titers         0›
+    ‹ filter         -       -    0.0%  (score == utility)›
+  result:
+    custom:
+      logger:
+        goroutine_id: 176.0
+        line_number: 2626.0
+        name: "kv/kvserver/store.go"
+      status: "I"
+      timestamp: 1620054285917
+    message: |-
+      [n1,s1] ‹›
+      ‹__level_____count____size___score______in__ingest(sz_cnt)____move(sz_cnt)___write(sz_cnt)____read___r-amp___w-amp›
+      ‹    WAL         3   655 K       -   650 K       -       -       -       -   655 K       -       -       -     1.0›
+      ‹      0         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      1         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      2         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      3         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      4         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      5         0     0 B    0.00     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹      6         0     0 B       -     0 B     0 B       0     0 B       0     0 B       0     0 B       0     0.0›
+      ‹  total         0     0 B       -   655 K     0 B       0     0 B       0   655 K       0     0 B       0     1.0›
+      ‹  flush         0›
+      ‹compact         0     0 B          (size == estimated-debt)›
+      ‹ memtbl         3   1.8 M›
+      ‹zmemtbl         0     0 B›
+      ‹   ztbl         0     0 B›
+      ‹ bcache         0     0 B    0.0%  (score == hit-rate)›
+      ‹ tcache         0     0 B    0.0%  (score == hit-rate)›
+      ‹ titers         0›
+      ‹ filter         -       -    0.0%  (score == utility)›
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1620054285917
+

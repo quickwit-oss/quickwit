@@ -1,0 +1,58 @@
+id: hadoop-yarn
+metric_id: data_jobs_spark_application
+backend_only: true
+facets: null
+pipeline:
+  type: pipeline
+  name: DJM Spark Agent logs
+  enabled: true
+  filter:
+    query: source:hadoop-yarn
+  processors:
+    - type: grok-parser
+      name: Grok Parser
+      enabled: true
+      source: message
+      samples:
+        - "25/02/13 09:18:10 WARN YarnClusterScheduler: Initial job has not
+          accepted any resources; check your cluster UI to ensure that workers
+          are registered and have sufficient resources"
+      grok:
+        supportRules: ""
+        matchRules: 'default (%{date("yy/MM/dd HH:mm:ss"):timestamp} %{word:level}
+          %{data:logger.name}: %{data:message})'
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map tag `dirname` to an attribute
+      enabled: true
+      sources:
+        - dirname
+      sourceType: tag
+      target: dirname
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Dirname attribute processor
+      enabled: true
+      source: dirname
+      samples:
+        - /var/log/hadoop-yarn/containers/application_1740439081048_0001/container_1740439081048_0001_01_000001
+      grok:
+        supportRules: ""
+        matchRules: default
+          (/var/log/hadoop-yarn/containers/%{word:application_id}/%{word:container_id})

@@ -1,0 +1,48 @@
+id: "aerospike"
+tests:
+ -
+  sample: "Nov 16 2020 13:41:29 GMT: INFO (drv_ssd): (drv_ssd.c:1835) {test} /opt/aerospike/data/test.dat: used-bytes 0 free-wblocks 4088 write-q 0 write (0,0.0) defrag-q 0 defrag-read (0,0.0) defrag-write (0,0.0)"
+  result:
+    custom:
+      logger:
+        context: "drv_ssd"
+        line_number: 1835.0
+        name: "drv_ssd.c"
+      status: "INFO"
+      timestamp: 1605534089000
+    message: "{test} /opt/aerospike/data/test.dat: used-bytes 0 free-wblocks 4088 write-q 0 write (0,0.0) defrag-q 0 defrag-read (0,0.0) defrag-write (0,0.0)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605534089000
+ -
+  sample: "Nov 16 2020 13:41:09 GMT: INFO (info): (ticker.c:168) NODE-ID bb902b0a8c04202 CLUSTER-SIZE 1"
+  result:
+    custom:
+      logger:
+        context: "info"
+        line_number: 168.0
+        name: "ticker.c"
+      status: "INFO"
+      timestamp: 1605534069000
+    message: "NODE-ID bb902b0a8c04202 CLUSTER-SIZE 1"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605534069000
+ -
+  sample: "Nov 16 2020 13:39:09 GMT: INFO (hardware): (hardware.c:2025) detected 2 CPU(s), 2 core(s), 1 NUMA node(s)"
+  result:
+    custom:
+      logger:
+        context: "hardware"
+        line_number: 2025.0
+        name: "hardware.c"
+      status: "INFO"
+      timestamp: 1605533949000
+    message: "detected 2 CPU(s), 2 core(s), 1 NUMA node(s)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605533949000
+

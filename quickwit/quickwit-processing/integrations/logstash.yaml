@@ -1,0 +1,145 @@
+id: logstash
+metric_id: logstash
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: Version
+    path: http.version
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Logstash
+  enabled: true
+  filter:
+    query: source:logstash
+  processors:
+    - type: grok-parser
+      name: Parsing logstash logs
+      enabled: true
+      source: message
+      samples:
+        - '[2020-03-13T08:12:00,829][WARN ][logstash.pipeline ] CAUTION: Recommended inflight events max exceeded! Logstash will run with up to 36000 events in memory in your current configuration. If your message sizes are large this may cause instability with the default heap size. Please consider setting a non-standard heap size, changing the batch size (currently 1000), or changing the number of pipeline workers (currently 18) {:pipeline_id=>"main", :thread=>"#<Thread:0x6b7a719f@/usr/share/logstash/logstash-core/lib/logstash/pipeline.rb:246 run>"}'
+        - '[2020-04-03T04:10:30,604][INFO ][logstash.inputs.s3     ] Using default generated file for the sincedb {:filename=>"/var/lib/logstash/plugins/inputs/s3/testdb_ueihqwe8ryw9833hd372387"}'
+        - '[2020-04-03T04:27:20,604][ERROR][logstash.agent ] API HTTP Request {:status=>500, :request_method=>"GET", :path_info=>"/_node/stats", :query_string=>"", :http_version=>"HTTP/1.1", :http_accept=>"*/*"}'
+        - '[2020-04-03T04:30:20,604][ERROR][logstash.agent ] Internal API server error {:status=>500, :request_method=>"GET", :path_info=>"/_node/stats", :query_string=>"", :http_version=>"HTTP/1.1", :http_accept=>"*/*", :error=>"Unexpected Internal Error", :class=>"LogStash::Instrument::MetricStore::MetricNotFound", :message=>"For path: events. Map keys: [:reloads]", :backtrace=>["/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:225:in `block in get_recursively", "org/jruby/RubyArray.java:1734:in `each", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:235:in `block in get_recursively", "org/jruby/RubyArray.java:1734:in `each", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:95:in `block in get", "org/jruby/ext/thread/Mutex.java:148:in `synchronize", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:94:in `get", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:108:in `get_shallow", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:157:in `block in extract_metrics", "org/jruby/RubyArray.java:1734:in `each", "org/jruby/RubyEnumerable.java:936:in `inject", "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:133:in `extract_metrics", "/usr/share/logstash/logstash-core/lib/logstash/api/service.rb:30:in `extract_metrics", "/usr/share/logstash/logstash-core/lib/logstash/api/commands/base.rb:22:in `extract_metrics", "/usr/share/logstash/logstash-core/lib/logstash/api/commands/stats.rb:42:in `events", "/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:35:in `events_payload", "/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:21:in `block in GET /?:filter?", "org/jruby/RubyMethod.java:111:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1611:in `block in compile!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:994:in `route_eval", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1015:in `block in process_route", "org/jruby/RubyKernel.java:1114:in `catch", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1013:in `process_route", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:973:in `block in route!", "org/jruby/RubyArray.java:1734:in `each", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:972:in `route!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1085:in `block in dispatch!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke", "org/jruby/RubyKernel.java:1114:in `catch", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1082:in `dispatch!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `block in call!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke", "org/jruby/RubyKernel.java:1114:in `catch", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `call!", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:895:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/xss_header.rb:18:in
+          `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/path_traversal.rb:16:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/json_csrf.rb:18:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/frame_options.rb:31:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-1.6.6/lib/rack/nulllogger.rb:9:in `call", "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack"}'
+        - '[2020-04-03T04:45:42,604][INFO ][logstash.filters.geoip   ] Using geoip database {:path=>"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/logstash-filter-geoip-5.0.3-java/vendor/GeoLite2-City.mmdb"}'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss,SSS"):timestamp}
+          _date_format2 %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:level}
+          _logger %{notSpace:logger.name}
+        matchRules: |
+          Logstash_rule \[(?>%{_date}|%{_date_format2})\]\[%{_status}\s*\]\[%{_logger}\s*\]\s%{regex("[^\\{]+")}(%{data::rubyhash})?
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `status` to `http.status_code`
+      enabled: true
+      sources:
+        - status
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `request_method` to `http.method`
+      enabled: true
+      sources:
+        - request_method
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `query_string` to `http.url_details.queryString`
+      enabled: true
+      sources:
+        - query_string
+      target: http.url_details.queryString
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `path_info` to `http.url_details.path`
+      enabled: true
+      sources:
+        - path_info
+      target: http.url_details.path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `http_version` to `http.version`
+      enabled: true
+      sources:
+        - http_version
+      target: http.version
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `http_accept` to `http.accept`
+      enabled: true
+      sources:
+        - http_accept
+      target: http.accept
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `error` to `error.msg`
+      enabled: true
+      sources:
+        - error
+      target: error.msg
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map `backtrace` to `error.stack`
+      enabled: true
+      sources:
+        - backtrace
+      target: error.stack
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute

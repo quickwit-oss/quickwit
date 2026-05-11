@@ -1,0 +1,85 @@
+id: sym
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Sym
+    name: Status
+    path: state.status
+    source: log
+  - groups:
+      - Sym
+    name: Target Type
+    path: fields.target.type
+    source: log
+  - groups:
+      - Sym
+    name: Approvers
+    path: run.actors.approve.username
+    source: log
+  - groups:
+      - Sym
+    name: Channel
+    path: event.channel
+    source: log
+  - groups:
+      - Sym
+    name: Sym Flow
+    path: run.flow
+    source: log
+  - groups:
+      - Sym
+    name: Target Name
+    path: fields.target.label
+    source: log
+  - groups:
+      - Sym
+    name: Event Type
+    path: event.type
+    source: log
+  - groups:
+      - Sym
+    name: Requesters
+    path: run.actors.request.username
+    source: log
+pipeline:
+  type: pipeline
+  name: Sym
+  enabled: true
+  filter:
+    query: source:sym
+  processors:
+    - type: attribute-remapper
+      name: Map `actor.username` to `usr.email`
+      enabled: true
+      sources:
+        - actor.username
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.user` to `usr.id`
+      enabled: true
+      sources:
+        - actor.user
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `event.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - event.timestamp

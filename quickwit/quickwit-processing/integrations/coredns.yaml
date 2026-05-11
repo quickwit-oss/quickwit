@@ -1,0 +1,92 @@
+id: coredns
+metric_id: coredns
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - DNS
+    name: Answer Size
+    path: dns.answer.size
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - DNS
+    name: Question Class
+    path: dns.question.class
+    source: log
+  - facetType: range
+    groups:
+      - DNS
+    name: Question Size
+    path: dns.question.size
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - DNS
+    name: Question Type
+    path: dns.question.type
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - DNS
+    name: DNS protocol
+    path: dns.protocol
+    source: log
+  - groups:
+      - DNS
+    name: DNSSEC
+    path: dns.dnssec
+    source: log
+pipeline:
+  type: pipeline
+  name: CoreDNS
+  enabled: true
+  filter:
+    query: source:coredns
+  processors:
+    - type: grok-parser
+      name: Parsing Coredns logs
+      enabled: true
+      source: message
+      samples:
+        - '[INFO] 127.0.0.1:50759 - 29008 "A IN example.org. udp 41 false 4096" NOERROR qr,rd,ra,ad 68 0.037990251s'
+      grok:
+        supportRules: |
+        matchRules: |
+          dns_common_format (%{date("yyyy-MM-dd'T'HH:mm:ss.SSZ"):timestamp}|%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp})?\s*\[%{word:level}\] %{notSpace:network.client.ip}:%{port:network.client.port} - %{number:dns.id} "%{word:dns.question.type} %{word:dns.question.class} %{hostname:dns.question.name} %{word:dns.protocol} %{number:dns.question.size} %{word:dns.dnssec} %{number:dns.buffer}" %{word:dns.flags.rcode} %{notSpace:dns.flags.list:array(",")} %{number:dns.answer.size} %{number:duration:scale(1000000000)}s.*
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

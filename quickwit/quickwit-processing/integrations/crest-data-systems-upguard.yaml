@@ -1,0 +1,924 @@
+id: crest-data-systems-upguard
+metric_id: crest-data-systems-upguard
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Active
+    path: cds.upguard.active
+    source: log
+    type: boolean
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Asn
+    path: cds.upguard.asn
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Assignee user email
+    path: cds.upguard.assignee_user_email
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Automated score
+    path: cds.upguard.automated_score
+    source: log
+    type: integer
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Autonomous system
+    path: cds.upguard.as_name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Breach domain
+    path: cds.upguard.breach_domain
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Breach title
+    path: cds.upguard.breach_title
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Breach type
+    path: cds.upguard.breach_type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Category
+    path: cds.upguard.category
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Country
+    path: cds.upguard.country
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: CVE EPSS
+    path: cds.upguard.cve_epss
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: CVE ID
+    path: cds.upguard.cve_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: CVE mapped severity
+    path: cds.upguard.cve_mapped_severity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: CVE severity
+    path: cds.upguard.cve_severity
+    source: log
+    type: double
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Date occurred
+    path: cds.upguard.date_occurred
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Date published
+    path: cds.upguard.date_published
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Domain name
+    path: cds.upguard.domain-name
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Exposed data classes
+    path: cds.upguard.exposed_data_classes
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Finding
+    path: cds.upguard.finding
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: First detected
+    path: cds.upguard.created_at
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: HostnameCount
+    path: cds.upguard.hostnameCount
+    source: log
+    type: integer
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Hostnames
+    path: cds.upguard.hostnames
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: IP
+    path: cds.upguard.ip
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Labels
+    path: cds.upguard.labels
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Notification context
+    path: cds.upguard.notification.context
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Notification description
+    path: cds.upguard.notification.description
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Notification occurredAt
+    path: cds.upguard.notification.occurredAt
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Notification type
+    path: cds.upguard.notification.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Owner
+    path: cds.upguard.owner
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Related identity names
+    path: cds.upguard.related_identities_names
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Risk ID
+    path: cds.upguard.risk_id
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Services
+    path: cds.upguard.services
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Severity
+    path: cds.upguard.severity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Sources
+    path: cds.upguard.sources
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Total exposures
+    path: cds.upguard.total_exposures
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Crest data systems upguard
+    name: Vulnerable host
+    path: cds.upguard.vulnerable_host
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: UpGuard
+  enabled: true
+  filter:
+    query: source:crest-data-systems-upguard
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Risks
+      enabled: true
+      filter:
+        query: service:cds.upguard.risks
+      processors:
+        - type: attribute-remapper
+          name: Map `category` to `cds.upguard.category`
+          enabled: true
+          sources:
+            - category
+          sourceType: attribute
+          target: cds.upguard.category
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `finding` to `cds.upguard.finding`
+          enabled: true
+          sources:
+            - finding
+          sourceType: attribute
+          target: cds.upguard.finding
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `risk` to `cds.upguard.risk_details`
+          enabled: true
+          sources:
+            - risk
+          sourceType: attribute
+          target: cds.upguard.risk_details
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `description` to `cds.upguard.description`
+          enabled: true
+          sources:
+            - description
+          sourceType: attribute
+          target: cds.upguard.description
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `remediation` to `cds.upguard.remediation`
+          enabled: true
+          sources:
+            - remediation
+          sourceType: attribute
+          target: cds.upguard.remediation
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `firstDetected` to `cds.upguard.firstDetected`
+          enabled: true
+          sources:
+            - firstDetected
+          sourceType: attribute
+          target: cds.upguard.firstDetected
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `hostnameCount` to `cds.upguard.hostnameCount`
+          enabled: true
+          sources:
+            - hostnameCount
+          sourceType: attribute
+          target: cds.upguard.hostnameCount
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `hostnames` to `cds.upguard.hostnames`
+          enabled: true
+          sources:
+            - hostnames
+          sourceType: attribute
+          target: cds.upguard.hostnames
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `risk_id` to `cds.upguard.risk_id`
+          enabled: true
+          sources:
+            - risk_id
+          sourceType: attribute
+          target: cds.upguard.risk_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `riskSubtype` to `cds.upguard.riskSubtype`
+          enabled: true
+          sources:
+            - riskSubtype
+          sourceType: attribute
+          target: cds.upguard.riskSubtype
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `riskType` to `cds.upguard.riskType`
+          enabled: true
+          sources:
+            - riskType
+          sourceType: attribute
+          target: cds.upguard.riskType
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `severity` to `cds.upguard.severity`
+          enabled: true
+          sources:
+            - severity
+          sourceType: attribute
+          target: cds.upguard.severity
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: Category for `severity`
+          enabled: true
+          categories:
+            - filter:
+                query: "@severity:low"
+              name: info
+            - filter:
+                query: "@severity:medium"
+              name: notice
+            - filter:
+                query: "@severity:high"
+              name: error
+          target: severity
+        - type: status-remapper
+          name: Define `severity` as the official status of the log
+          enabled: true
+          sources:
+            - severity
+    - type: pipeline
+      name: Domains
+      enabled: true
+      filter:
+        query: service:cds.upguard.domains
+      processors:
+        - type: string-builder-processor
+          name: Stringify `labels`
+          enabled: true
+          template: "%{labels}"
+          target: labels
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `active` to `cds.upguard.active`
+          enabled: true
+          sources:
+            - active
+          sourceType: attribute
+          target: cds.upguard.active
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `domain-name` to `cds.upguard.domain-name`
+          enabled: true
+          sources:
+            - domain-name
+          sourceType: attribute
+          target: cds.upguard.domain-name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `is-primary-domain` to `cds.upguard.is-primary-domain`
+          enabled: true
+          sources:
+            - is-primary-domain
+          sourceType: attribute
+          target: cds.upguard.is-primary-domain
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `labels` to `cds.upguard.labels`
+          enabled: true
+          sources:
+            - labels
+          sourceType: attribute
+          target: cds.upguard.labels
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `scanned-at` to `cds.upguard.scanned-at`
+          enabled: true
+          sources:
+            - scanned-at
+          sourceType: attribute
+          target: cds.upguard.scanned-at
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `score` to `cds.upguard.score`
+          enabled: true
+          sources:
+            - score
+          sourceType: attribute
+          target: cds.upguard.score
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: IPs
+      enabled: true
+      filter:
+        query: service:cds.upguard.ips
+      processors:
+        - type: string-builder-processor
+          name: Stringify `labels`
+          enabled: true
+          template: "%{labels}"
+          target: labels
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `automated_score` to `cds.upguard.automated_score`
+          enabled: true
+          sources:
+            - automated_score
+          sourceType: attribute
+          target: cds.upguard.automated_score
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `country` to `cds.upguard.country`
+          enabled: true
+          sources:
+            - country
+          sourceType: attribute
+          target: cds.upguard.country
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ip` to `cds.upguard.ip`
+          enabled: true
+          sources:
+            - ip
+          sourceType: attribute
+          target: cds.upguard.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `labels` to `cds.upguard.labels`
+          enabled: true
+          sources:
+            - labels
+          sourceType: attribute
+          target: cds.upguard.labels
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `owner` to `cds.upguard.owner`
+          enabled: true
+          sources:
+            - owner
+          sourceType: attribute
+          target: cds.upguard.owner
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `services` to `cds.upguard.services`
+          enabled: true
+          sources:
+            - services
+          sourceType: attribute
+          target: cds.upguard.services
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `sources` to `cds.upguard.sources`
+          enabled: true
+          sources:
+            - sources
+          sourceType: attribute
+          target: cds.upguard.sources
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `asn` to `cds.upguard.asn`
+          enabled: true
+          sources:
+            - asn
+          sourceType: attribute
+          target: cds.upguard.asn
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `as_name` to `cds.upguard.as_name`
+          enabled: true
+          sources:
+            - as_name
+          sourceType: attribute
+          target: cds.upguard.as_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: IP
+          enabled: true
+          sources:
+            - cds.upguard.ip
+          target: cds.upguard.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Vulnerabilities
+      enabled: true
+      filter:
+        query: service:cds.upguard.vulnerabilities
+      processors:
+        - type: attribute-remapper
+          name: Map `vulnerable_host` to `cds.upguard.vulnerable_host`
+          enabled: true
+          sources:
+            - vulnerable_host
+          sourceType: attribute
+          target: cds.upguard.vulnerable_host
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ip_addresses` to `cds.upguard.ip_addresses`
+          enabled: true
+          sources:
+            - ip_addresses
+          sourceType: attribute
+          target: cds.upguard.ip_addresses
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cve_id` to `cds.upguard.cve_id`
+          enabled: true
+          sources:
+            - cve_id
+          sourceType: attribute
+          target: cds.upguard.cve_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cve_severity` to `cds.upguard.cve_severity`
+          enabled: true
+          sources:
+            - cve_severity
+          sourceType: attribute
+          target: cds.upguard.cve_severity
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cve_mapped_severity` to `cds.upguard.cve_mapped_severity`
+          enabled: true
+          sources:
+            - cve_mapped_severity
+          sourceType: attribute
+          target: cds.upguard.cve_mapped_severity
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cve_description` to `cds.upguard.cve_description`
+          enabled: true
+          sources:
+            - cve_description
+          sourceType: attribute
+          target: cds.upguard.cve_description
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cve_epss` to `cds.upguard.cve_epss`
+          enabled: true
+          sources:
+            - cve_epss
+          sourceType: attribute
+          target: cds.upguard.cve_epss
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `verified` to `cds.upguard.verified`
+          enabled: true
+          sources:
+            - verified
+          sourceType: attribute
+          target: cds.upguard.verified
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `cpes` to `cds.upguard.cpes`
+          enabled: true
+          sources:
+            - cpes
+          sourceType: attribute
+          target: cds.upguard.cpes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `created_at` to `cds.upguard.created_at`
+          enabled: true
+          sources:
+            - created_at
+          sourceType: attribute
+          target: cds.upguard.created_at
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: Category for `cve_mapped_severity`
+          enabled: true
+          categories:
+            - filter:
+                query: "@cve_mapped_severity:Low"
+              name: info
+            - filter:
+                query: "@cve_mapped_severity:Medium"
+              name: notice
+            - filter:
+                query: "@cve_mapped_severity:High"
+              name: error
+          target: cve_mapped_severity
+        - type: status-remapper
+          name: Define `cve_mapped_severity` as the official status of the log
+          enabled: true
+          sources:
+            - cve_mapped_severity
+    - type: pipeline
+      name: Breaches
+      enabled: true
+      filter:
+        query: service:cds.upguard.breaches
+      processors:
+        - type: string-builder-processor
+          name: Retrieve `related_identities_names` from `related_identities`
+          enabled: true
+          template: "%{related_identities.name}"
+          target: related_identities_names
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `related_identities_names` to `cds.upguard.related_identities_names`
+          enabled: true
+          sources:
+            - related_identities_names
+          sourceType: attribute
+          target: cds.upguard.related_identities_names
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: "Stringify `exposed_data_classes` "
+          enabled: true
+          template: "%{exposed_data_classes}"
+          target: exposed_data_classes
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `exposed_data_classes` to `cds.upguard.exposed_data_classes`
+          enabled: true
+          sources:
+            - exposed_data_classes
+          sourceType: attribute
+          target: cds.upguard.exposed_data_classes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_id` to `cds.upguard.breach_id`
+          enabled: true
+          sources:
+            - breach_id
+          sourceType: attribute
+          target: cds.upguard.breach_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_name` to `cds.upguard.breach_name`
+          enabled: true
+          sources:
+            - breach_name
+          sourceType: attribute
+          target: cds.upguard.breach_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_title` to `cds.upguard.breach_title`
+          enabled: true
+          sources:
+            - breach_title
+          sourceType: attribute
+          target: cds.upguard.breach_title
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_domain` to `cds.upguard.breach_domain`
+          enabled: true
+          sources:
+            - breach_domain
+          sourceType: attribute
+          target: cds.upguard.breach_domain
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_description` to `cds.upguard.breach_description`
+          enabled: true
+          sources:
+            - breach_description
+          sourceType: attribute
+          target: cds.upguard.breach_description
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `total_exposures` to `cds.upguard.total_exposures`
+          enabled: true
+          sources:
+            - total_exposures
+          sourceType: attribute
+          target: cds.upguard.total_exposures
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `date_occurred` to `cds.upguard.date_occurred`
+          enabled: true
+          sources:
+            - date_occurred
+          sourceType: attribute
+          target: cds.upguard.date_occurred
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `date_published` to `cds.upguard.date_published`
+          enabled: true
+          sources:
+            - date_published
+          sourceType: attribute
+          target: cds.upguard.date_published
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `assignee_user_email` to `cds.upguard.assignee_user_email`
+          enabled: true
+          sources:
+            - assignee_user_email
+          sourceType: attribute
+          target: cds.upguard.assignee_user_email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `breach_type` to `cds.upguard.breach_type`
+          enabled: true
+          sources:
+            - breach_type
+          sourceType: attribute
+          target: cds.upguard.breach_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `related_identities` to `cds.upguard.related_identities`
+          enabled: true
+          sources:
+            - related_identities
+          sourceType: attribute
+          target: cds.upguard.related_identities
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Notifications
+      enabled: true
+      filter:
+        query: service:cds.upguard.notifications
+      processors:
+        - type: attribute-remapper
+          name: Map `notification` to `cds.upguard.notification`
+          enabled: true
+          sources:
+            - notification
+          sourceType: attribute
+          target: cds.upguard.notification
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

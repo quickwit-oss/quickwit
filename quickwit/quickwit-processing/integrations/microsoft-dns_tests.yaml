@@ -1,0 +1,263 @@
+id: microsoft-dns
+tests:
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "ZoneScope" : "Default",
+            "BufferSize" : "4",
+            "Type" : "1",
+            "Zone" : "dds-dns.local",
+            "TTL" : "0",
+            "Source" : "10.10.10.10",
+            "NAME" : "dds-dns",
+            "RDATA" : "0A110AA1"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "DYNAMIC_UPDATE",
+          "Keywords" : "0x4000000002000000",
+          "Channel" : "Microsoft-Windows-DNSServer/Audit",
+          "Opcode" : "Info",
+          "Security" : {
+            "UserID" : "A-1-1-11"
+          },
+          "Provider" : {
+            "Guid" : "{eb1111a-a111-4698-9119-3ed2807060e7}",
+            "Name" : "Microsoft-Windows-DNSServer"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2025-03-06T07:44:18.8322685Z"
+          },
+          "EventRecordID" : "222",
+          "Execution" : {
+            "ThreadID" : "1111",
+            "ProcessID" : "1111"
+          },
+          "Version" : "0",
+          "Computer" : "DDS-DNS.dds-dns.local",
+          "EventID" : "520",
+          "Level" : "4"
+        }
+      },
+      "message" : "A resource record of type 1, name dds-dns and RDATA 0A110AA1 was deleted from scope Default of zone dds-dns.local via dynamic update from IP Address 10.10.10.10."
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            BufferSize: "4"
+            NAME: "dds-dns"
+            RDATA: "0A110AA1"
+            TTL: "0"
+            Type: "1"
+            TypeName: "Address record"
+            Zone: "dds-dns.local"
+            ZoneScope: "Default"
+        System:
+          Channel: "Microsoft-Windows-DNSServer/Audit"
+          Computer: "DDS-DNS.dds-dns.local"
+          Correlation: ""
+          EventRecordID: "222"
+          Execution:
+            ProcessID: "1111"
+            ThreadID: "1111"
+          Keywords: "0x4000000002000000"
+          Level: "4"
+          Opcode: "Info"
+          Provider:
+            Guid: "{eb1111a-a111-4698-9119-3ed2807060e7}"
+            Name: "Microsoft-Windows-DNSServer"
+          Security:
+            UserID: "A-1-1-11"
+          Task: "DYNAMIC_UPDATE"
+          TimeCreated:
+            SystemTime: "2025-03-06T07:44:18.8322685Z"
+          Version: "0"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      evt:
+        id: "520"
+      level: "Information"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      title: "Record delete - dynamic update"
+    message: "A resource record of type 1, name dds-dns and RDATA 0A110AA1 was deleted from scope Default of zone dds-dns.local via dynamic update from IP Address 10.10.10.10."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1741247058832
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "Zone" : "_msdcs.dds-dns.local"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "OnlineSigning",
+          "Keywords" : "0x4000000000400000",
+          "Channel" : "Microsoft-Windows-DNSServer/Audit",
+          "Opcode" : "Info",
+          "Security" : {
+            "UserID" : "S-1-1-11-1115675242-1113514982-4229196803-111"
+          },
+          "Provider" : {
+            "Guid" : "{eb11111a-a111-111-1111-1ed1111060e7}",
+            "Name" : "Microsoft-Windows-DNSServer"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2025-03-06T13:09:06.1616986Z"
+          },
+          "EventRecordID" : "277",
+          "Execution" : {
+            "ThreadID" : "1111",
+            "ProcessID" : "1111"
+          },
+          "Version" : "0",
+          "Computer" : "DDS-DNS.dds-dns.local",
+          "EventID" : "526",
+          "Level" : "4"
+        }
+      },
+      "message" : "The zone _msdcs.dds-dns.local was unsigned."
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            Zone: "_msdcs.dds-dns.local"
+        System:
+          Channel: "Microsoft-Windows-DNSServer/Audit"
+          Computer: "DDS-DNS.dds-dns.local"
+          Correlation: ""
+          EventRecordID: "277"
+          Execution:
+            ProcessID: "1111"
+            ThreadID: "1111"
+          Keywords: "0x4000000000400000"
+          Level: "4"
+          Opcode: "Info"
+          Provider:
+            Guid: "{eb11111a-a111-111-1111-1ed1111060e7}"
+            Name: "Microsoft-Windows-DNSServer"
+          Security:
+            UserID: "S-1-1-11-1115675242-1113514982-4229196803-111"
+          Task: "OnlineSigning"
+          TimeCreated:
+            SystemTime: "2025-03-06T13:09:06.1616986Z"
+          Version: "0"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      evt:
+        id: "526"
+      level: "Information"
+      title: "Zone unsign"
+    message: "The zone _msdcs.dds-dns.local was unsigned."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1741266546161
+ -
+  sample: |-
+    {
+      "level" : "Information",
+      "Event" : {
+        "xmlns" : "http://schemas.microsoft.com/win/2004/08/events/event",
+        "EventData" : {
+          "Data" : {
+            "ZoneScope" : "Default",
+            "BufferSize" : "16",
+            "Type" : "28",
+            "VirtualizationID" : ".",
+            "Zone" : "dds-dns.local",
+            "TTL" : "1200",
+            "NAME" : "DESKTOP-ABCD.dds-dns.local",
+            "RDATA" : "FAAA000A00D000014E402EB2F12019E"
+          }
+        },
+        "System" : {
+          "Correlation" : "",
+          "Task" : "ZONE_OP",
+          "Keywords" : "0x4000000000100000",
+          "Channel" : "Microsoft-Windows-DNSServer/Audit",
+          "Opcode" : "Info",
+          "Security" : {
+            "UserID" : "S-1-1-11-111111-11111111111-1111-500"
+          },
+          "Provider" : {
+            "Guid" : "{aa00061a-a111-1111-1111-3ed2807060e7}",
+            "Name" : "Microsoft-Windows-DNSServer"
+          },
+          "TimeCreated" : {
+            "SystemTime" : "2025-03-19T05:15:41.3857981Z"
+          },
+          "EventRecordID" : "527",
+          "Execution" : {
+            "ThreadID" : "1111",
+            "ProcessID" : "1111"
+          },
+          "Version" : "0",
+          "Computer" : "DDS-DNS.dds-dns.local",
+          "EventID" : "515",
+          "Level" : "4"
+        }
+      },
+      "message" : "A resource record of type 28, name DESKTOP-ABCD.dds-dns.local, TTL 1200 and RDATA FAAA000A00D000014E402EB2F12019E was created in scope Default of zone dds-dns.local. [virtualization instance: .]."
+    }
+  result:
+    custom:
+      Event:
+        EventData:
+          Data:
+            BufferSize: "16"
+            NAME: "DESKTOP-ABCD.dds-dns.local"
+            RDATA: "FAAA000A00D000014E402EB2F12019E"
+            TTL: "1200"
+            Type: "28"
+            TypeName: "IPv6 address record"
+            VirtualizationID: "."
+            Zone: "dds-dns.local"
+            ZoneScope: "Default"
+        System:
+          Channel: "Microsoft-Windows-DNSServer/Audit"
+          Computer: "DDS-DNS.dds-dns.local"
+          Correlation: ""
+          EventRecordID: "527"
+          Execution:
+            ProcessID: "1111"
+            ThreadID: "1111"
+          Keywords: "0x4000000000100000"
+          Level: "4"
+          Opcode: "Info"
+          Provider:
+            Guid: "{aa00061a-a111-1111-1111-3ed2807060e7}"
+            Name: "Microsoft-Windows-DNSServer"
+          Security:
+            UserID: "S-1-1-11-111111-11111111111-1111-500"
+          Task: "ZONE_OP"
+          TimeCreated:
+            SystemTime: "2025-03-19T05:15:41.3857981Z"
+          Version: "0"
+        xmlns: "http://schemas.microsoft.com/win/2004/08/events/event"
+      evt:
+        id: "515"
+      level: "Information"
+      title: "Record create"
+    message: "A resource record of type 28, name DESKTOP-ABCD.dds-dns.local, TTL 1200 and RDATA FAAA000A00D000014E402EB2F12019E was created in scope Default of zone dds-dns.local. [virtualization instance: .]."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1742361341385

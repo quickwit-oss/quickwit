@@ -1,0 +1,286 @@
+id: "tomcat"
+tests:
+ -
+  sample: "2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application."
+  result:
+    custom:
+      logger:
+        name: "MyApp"
+        thread_name: "main"
+      status: "INFO"
+      timestamp: 968335661508
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335661508
+ -
+  sample: "2021-01-29 13:42:58,152 [Workflow Event Thread 1] ERROR MyApp - Starting Workflow"
+  result:
+    custom:
+      logger:
+        name: "MyApp"
+        thread_name: "Workflow Event Thread 1"
+      status: "ERROR"
+      timestamp: 1611927778152
+    message: "Starting Workflow"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1611927778152
+ -
+  sample: "54 [main] INFO MyApp.foo.bar - Entering application."
+  result:
+    custom:
+      duration: 54
+      logger:
+        name: "MyApp.foo.bar"
+        thread_name: "main"
+      status: "INFO"
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application."
+  result:
+    custom:
+      line: 32
+      logger:
+        name: "org.foo.bar"
+      status: "INFO"
+      timestamp: 968335664000
+    message: "Entering application."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 968335664000
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+  result:
+    custom:
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_category: "OK"
+        status_code: 200
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+      timestamp: 1483719397000
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+ -
+  sample: "127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] \"GET /apache_pb.gif HTTP/1.0\" 200 2326"
+  result:
+    custom:
+      http:
+        auth: "frank"
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "1.0"
+      network:
+        bytes_written: 2326
+        client:
+          ip: "127.0.0.1"
+      timestamp: 1468407336000
+    message: "127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] \"GET /apache_pb.gif HTTP/1.0\" 200 2326"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1468407336000
+ -
+  sample: "28-Nov-2018 20:51:29.344 INFO [main] org.apache.catalina.startup.Catalina.start Server startup in 1335 ms"
+  result:
+    custom:
+      logger:
+        name: "org.apache.catalina.startup.Catalina.start"
+        thread_name: "main"
+      status: "INFO"
+      timestamp: 1543438289344
+    message: "Server startup in 1335 ms"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1543438289344
+ -
+  sample: "2019-03-20T14:36:30.111+0000: 40.054: [GC pause (G1 Evacuation Pause) (young), 0.0672591 secs] [Parallel Time: 12.8 ms, GC Workers: 20] [GC Worker Start (ms): Min: 40054.7, Avg: 40060.6, Max: 40066.6, Diff: 11.9] [Ext Root Scanning (ms): Min: 0.2, Avg: 0.4, Max: 0.9, Diff: 0.8, Sum: 7.9] [Update RS (ms): Min: 0.0, Avg: 1.3, Max: 10.3, Diff: 10.3, Sum: 25.7] [Processed Buffers: Min: 0, Avg: 1.6, Max: 7, Diff: 7, Sum: 31] [Scan RS (ms): Min: 0.0, Avg: 0.4, Max: 1.1, Diff: 1.1, Sum: 8.4] [Code Root Scanning (ms): Min: 0.0, Avg: 0.1, Max: 0.5, Diff: 0.5, Sum: 2.8] [Object Copy (ms): Min: 0.0, Avg: 3.2, Max: 8.1, Diff: 8.1, Sum: 64.2] [Termination (ms): Min: 0.0, Avg: 0.7, Max: 1.1, Diff: 1.1, Sum: 14.3] [Termination Attempts: Min: 1, Avg: 1.4, Max: 5, Diff: 4, Sum: 28] [GC Worker Other (ms): Min: 0.1, Avg: 0.1, Max: 0.2, Diff: 0.2, Sum: 2.2] [GC Worker Total (ms): Min: 0.3, Avg: 6.3, Max: 12.3, Diff: 11.9, Sum: 125.8] [GC Worker End (ms): Min: 40066.9, Avg: 40066.9, Max: 40067.0, Diff: 0.1] [Code Root Fixup: 0.1 ms] [Code Root Purge: 0.0 ms] [Clear CT: 1.5 ms] [Other: 52.9 ms] [Choose CSet: 0.0 ms] [Ref Proc: 50.0 ms] [Ref Enq: 0.2 ms] [Redirty Cards: 1.4 ms] [Humongous Register: 0.3 ms] [Humongous Reclaim: 0.0 ms] [Free CSet: 0.5 ms] [Eden: 276.0M(276.0M)->0.0B(276.0M) Survivors: 40.0M->40.0M Heap: 370.5M(528.0M)->111.0M(528.0M)] [Times: user=0.17 sys=0.00, real=0.06 secs]"
+  result:
+    custom:
+      choose_cset: 0.0
+      clear_ct: 1.5
+      code_root:
+        fixup: 0.1
+        purge: 0.0
+        scan:
+          avg: 0.1
+          diff: 0.5
+          max: 0.5
+          min: 0.0
+          sum: 2.8
+      duration: 6.72591E7
+      eden:
+        memory_after: 0.0
+        memory_allocated_after: 276.0
+        memory_allocated_before: 276.0
+        memory_before: 276.0
+      exit_root_scanning:
+        avg: 0.4
+        diff: 0.8
+        max: 0.9
+        min: 0.2
+        sum: 7.9
+      free: 0.5
+      gc:
+        action: "pause"
+        memory_freed: 259.5
+        phase: "(G1 Evacuation Pause) (young)"
+      gc_worker:
+        count: 20.0
+        end:
+          avg: 40066.9
+          diff: 0.1
+          max: 40067.0
+          min: 40066.9
+        other:
+          avg: 0.1
+          diff: 0.2
+          max: 0.2
+          min: 0.1
+          sum: 2.2
+        start:
+          avg: 40060.6
+          diff: 11.9
+          max: 40066.6
+          min: 40054.7
+        total:
+          avg: 6.3
+          diff: 11.9
+          max: 12.3
+          min: 0.3
+          sum: 125.8
+      heap:
+        memory_after: 111.0
+        memory_allocated_after: 528.0
+        memory_allocated_before: 528.0
+        memory_before: 370.5
+      humongous_reclaim: 0.0
+      humongous_register: 0.3
+      object_copy:
+        avg: 3.2
+        diff: 8.1
+        max: 8.1
+        min: 0.0
+        sum: 64.2
+      other: 52.9
+      parallel_time: 12.8
+      processed_buffer:
+        avg: 1.6
+        diff: 7.0
+        max: 7.0
+        min: 0.0
+        sum: 31.0
+      redirty_cards: 1.4
+      ref:
+        enq: 0.2
+        proc: 50.0
+      scan_rs:
+        avg: 0.4
+        diff: 1.1
+        max: 1.1
+        min: 0.0
+        sum: 8.4
+      survivor:
+        memory_after: 40.0
+        memory_before: 40.0
+      termination:
+        attempts:
+          avg: 1.4
+          diff: 4.0
+          max: 5.0
+          min: 1.0
+          sum: 28.0
+        avg: 0.7
+        diff: 1.1
+        max: 1.1
+        min: 0.0
+        sum: 14.3
+      times:
+        real: 0.06
+        system: 0.0
+        user: 0.17
+      timestamp: 1553092590111
+      update_rs:
+        avg: 1.3
+        diff: 10.3
+        max: 10.3
+        min: 0.0
+        sum: 25.7
+    message: "2019-03-20T14:36:30.111+0000: 40.054: [GC pause (G1 Evacuation Pause) (young), 0.0672591 secs] [Parallel Time: 12.8 ms, GC Workers: 20] [GC Worker Start (ms): Min: 40054.7, Avg: 40060.6, Max: 40066.6, Diff: 11.9] [Ext Root Scanning (ms): Min: 0.2, Avg: 0.4, Max: 0.9, Diff: 0.8, Sum: 7.9] [Update RS (ms): Min: 0.0, Avg: 1.3, Max: 10.3, Diff: 10.3, Sum: 25.7] [Processed Buffers: Min: 0, Avg: 1.6, Max: 7, Diff: 7, Sum: 31] [Scan RS (ms): Min: 0.0, Avg: 0.4, Max: 1.1, Diff: 1.1, Sum: 8.4] [Code Root Scanning (ms): Min: 0.0, Avg: 0.1, Max: 0.5, Diff: 0.5, Sum: 2.8] [Object Copy (ms): Min: 0.0, Avg: 3.2, Max: 8.1, Diff: 8.1, Sum: 64.2] [Termination (ms): Min: 0.0, Avg: 0.7, Max: 1.1, Diff: 1.1, Sum: 14.3] [Termination Attempts: Min: 1, Avg: 1.4, Max: 5, Diff: 4, Sum: 28] [GC Worker Other (ms): Min: 0.1, Avg: 0.1, Max: 0.2, Diff: 0.2, Sum: 2.2] [GC Worker Total (ms): Min: 0.3, Avg: 6.3, Max: 12.3, Diff: 11.9, Sum: 125.8] [GC Worker End (ms): Min: 40066.9, Avg: 40066.9, Max: 40067.0, Diff: 0.1] [Code Root Fixup: 0.1 ms] [Code Root Purge: 0.0 ms] [Clear CT: 1.5 ms] [Other: 52.9 ms] [Choose CSet: 0.0 ms] [Ref Proc: 50.0 ms] [Ref Enq: 0.2 ms] [Redirty Cards: 1.4 ms] [Humongous Register: 0.3 ms] [Humongous Reclaim: 0.0 ms] [Free CSet: 0.5 ms] [Eden: 276.0M(276.0M)->0.0B(276.0M) Survivors: 40.0M->40.0M Heap: 370.5M(528.0M)->111.0M(528.0M)] [Times: user=0.17 sys=0.00, real=0.06 secs]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1553092590111
+ -
+  sample: "2019-03-20T14:36:30.111+0000: 41.098: [GC concurrent-mark-end, 0.0272767 secs]"
+  result:
+    custom:
+      duration: 2.72767E7
+      gc:
+        action: "concurrent-mark-end,"
+      timestamp: 1553092590111
+    message: "2019-03-20T14:36:30.111+0000: 41.098: [GC concurrent-mark-end, 0.0272767 secs]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1553092590111
+ -
+  sample: "2019-03-20T14:36:30.111+0000: 41.099: [Finalize Marking, 0.0011661 secs]"
+  result:
+    custom:
+      duration: 1166100.0
+      gc:
+        action: "Finalize Marking"
+      timestamp: 1553092590111
+    message: "2019-03-20T14:36:30.111+0000: 41.099: [Finalize Marking, 0.0011661 secs]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1553092590111
+ -
+  sample: "2019-03-20T14:36:30.111+0000: 41.071: [GC concurrent-mark-start]"
+  result:
+    custom:
+      gc:
+        action: "concurrent-mark-start"
+      timestamp: 1553092590111
+    message: "2019-03-20T14:36:30.111+0000: 41.071: [GC concurrent-mark-start]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1553092590111
+

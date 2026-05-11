@@ -1,0 +1,212 @@
+id: palo-alto-cortex-xdr
+metric_id: palo-alto-cortex-xdr
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Palo Alto Cortex XDR
+  enabled: true
+  filter:
+    query: "source:palo-alto-cortex-xdr"
+  processors:
+    - type: pipeline
+      name: Palo Alto Cortex XDR - Incident
+      enabled: true
+      filter:
+        query: "service:incident"
+      processors:
+        - type: date-remapper
+          name: Define `modification_time` as the official date of the log
+          enabled: true
+          sources:
+            - modification_time
+        - name: Lookup on `severity` to `severity_status`
+          enabled: true
+          source: severity
+          target: severity_status
+          lookupTable: |-
+            low, info
+            medium, warning
+            high, critical
+            critical, critical
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `severity_status` as the official status of the log
+          enabled: true
+          sources:
+            - severity_status
+        - type: attribute-remapper
+          name: Map `assigned_user_mail` to `usr.email`
+          enabled: true
+          sources:
+            - assigned_user_mail
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `assigned_user_pretty_name` to `usr.name`
+          enabled: true
+          sources:
+            - assigned_user_pretty_name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `xdr_url` to `http.url`
+          enabled: true
+          sources:
+            - xdr_url
+          sourceType: attribute
+          target: http.url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Palo Alto Cortex XDR - Alert
+      enabled: true
+      filter:
+        query: "service:alert"
+      processors:
+        - type: date-remapper
+          name: Define `detection_timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - detection_timestamp
+        - name: Lookup on `severity` to `status`
+          enabled: true
+          source: severity
+          target: status
+          lookupTable: |-
+            informational, info
+            low, info
+            medium, warning
+            high, critical
+            critical, critical
+            unknown, unknown
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: attribute-remapper
+          name: Map `host_ip` to `network.client.ip`
+          enabled: true
+          sources:
+            - host_ip
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `fw_email_recipient` to `usr.email`
+          enabled: true
+          sources:
+            - fw_email_recipient
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `malicious_urls` to `http.defanged.url`
+          enabled: true
+          sources:
+            - malicious_urls
+          sourceType: attribute
+          target: http.defanged.url
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user_name` to `usr.name`
+          enabled: true
+          sources:
+            - user_name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dns_query_name` to `dns.question.name`
+          enabled: true
+          sources:
+            - dns_query_name
+          sourceType: attribute
+          target: dns.question.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIp Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing

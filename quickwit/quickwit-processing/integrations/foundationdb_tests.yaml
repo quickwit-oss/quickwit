@@ -1,0 +1,234 @@
+id: "foundationdb"
+tests:
+ -
+  sample: |-
+    {
+      "OriginalTime" : "1643098420.845074",
+      "Locality" : "zoneid=5ccadef83cfe38105663afc2f75c252c processid=7e0225c2b04358590c3fcf5a61720528 machineid=5ccadef83cfe38105663afc2f75c252c",
+      "Severity" : "10",
+      "Time" : "1643923866.826768",
+      "Roles" : "SS",
+      "OnWorker" : "137231945ec52989",
+      "Origination" : "Recruited",
+      "DateTime" : "2022-02-03T21:31:06Z",
+      "DataFolder" : "/var/lib/foundationdb/data/4500",
+      "Machine" : "127.0.0.1:4500",
+      "Type" : "Role",
+      "As" : "Worker",
+      "LogGroup" : "default",
+      "StoresPresent" : "2",
+      "Transition" : "Begin",
+      "ID" : "137231945ec52989",
+      "OriginalDateTime" : "2022-01-25T08:13:40Z",
+      "TrackLatestType" : "Rolled"
+    }
+  result:
+    custom:
+      As: "Worker"
+      DataFolder: "/var/lib/foundationdb/data/4500"
+      DateTime: "2022-02-03T21:31:06Z"
+      ID: "137231945ec52989"
+      Locality: "zoneid=5ccadef83cfe38105663afc2f75c252c processid=7e0225c2b04358590c3fcf5a61720528 machineid=5ccadef83cfe38105663afc2f75c252c"
+      LogGroup: "default"
+      Machine: "127.0.0.1:4500"
+      OnWorker: "137231945ec52989"
+      OriginalDateTime: "2022-01-25T08:13:40Z"
+      OriginalTime: "1643098420.845074"
+      Origination: "Recruited"
+      Roles: "SS"
+      Severity: "10"
+      Status: "Info"
+      StoresPresent: "2"
+      Time: "1643923866.826768"
+      TrackLatestType: "Rolled"
+      Transition: "Begin"
+      Type: "Role"
+      evt:
+        name: "Role"
+      machine:
+        ip: "127.0.0.1"
+        port: "4500"
+    message: |-
+      {
+        "OriginalTime" : "1643098420.845074",
+        "Locality" : "zoneid=5ccadef83cfe38105663afc2f75c252c processid=7e0225c2b04358590c3fcf5a61720528 machineid=5ccadef83cfe38105663afc2f75c252c",
+        "Severity" : "10",
+        "Time" : "1643923866.826768",
+        "Roles" : "SS",
+        "OnWorker" : "137231945ec52989",
+        "Origination" : "Recruited",
+        "DateTime" : "2022-02-03T21:31:06Z",
+        "DataFolder" : "/var/lib/foundationdb/data/4500",
+        "Machine" : "127.0.0.1:4500",
+        "Type" : "Role",
+        "As" : "Worker",
+        "LogGroup" : "default",
+        "StoresPresent" : "2",
+        "Transition" : "Begin",
+        "ID" : "137231945ec52989",
+        "OriginalDateTime" : "2022-01-25T08:13:40Z",
+        "TrackLatestType" : "Rolled"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1643923866000
+ -
+  sample: |-
+    {
+      "Type" : "Role",
+      "As" : "StorageServer",
+      "LogGroup" : "default",
+      "Transition" : "Refresh",
+      "Severity" : "20",
+      "Time" : "1643923866.843796",
+      "Roles" : "CC,CD,DD,MP,MS,RK,RV,SS,TL",
+      "ID" : "ff37951617459b85",
+      "DateTime" : "2022-02-03T21:31:06Z",
+      "Machine" : "127.0.0.1:4500"
+    }
+  result:
+    custom:
+      As: "StorageServer"
+      DateTime: "2022-02-03T21:31:06Z"
+      ID: "ff37951617459b85"
+      LogGroup: "default"
+      Machine: "127.0.0.1:4500"
+      Roles: "CC,CD,DD,MP,MS,RK,RV,SS,TL"
+      Severity: "20"
+      Status: "Warn"
+      Time: "1643923866.843796"
+      Transition: "Refresh"
+      Type: "Role"
+      evt:
+        name: "Role"
+      machine:
+        ip: "127.0.0.1"
+        port: "4500"
+    message: |-
+      {
+        "Type" : "Role",
+        "As" : "StorageServer",
+        "LogGroup" : "default",
+        "Transition" : "Refresh",
+        "Severity" : "20",
+        "Time" : "1643923866.843796",
+        "Roles" : "CC,CD,DD,MP,MS,RK,RV,SS,TL",
+        "ID" : "ff37951617459b85",
+        "DateTime" : "2022-02-03T21:31:06Z",
+        "Machine" : "127.0.0.1:4500"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1643923866000
+ -
+  sample: |-
+    {
+      "TotalDiskUsageBytes" : "307265536",
+      "TagsAutoThrottled" : "0",
+      "Time" : "1643923867.228980",
+      "DateTime" : "2022-02-03T21:31:07Z",
+      "Reason" : "6",
+      "Machine" : "127.0.0.1:4500",
+      "WorstStorageServerQueue" : "2000",
+      "WorstFreeSpaceTLog" : "748579615267",
+      "ID" : "a1296c5841afe8a7",
+      "LimitingStorageServerQueue" : "0",
+      "TPSBasis" : "2.86906",
+      "StorageServers" : "1",
+      "TLogs" : "1",
+      "Proxies" : "1",
+      "LimitingStorageServerVersionLag" : "0",
+      "Severity" : "15",
+      "Roles" : "CC,CD,DD,MP,MS,RK,RV,SS,TL",
+      "WorstFreeSpaceStorageServer" : "821204856",
+      "Type" : "RkUpdate",
+      "ReleasedTPS" : "2.86906",
+      "TPSLimit" : "1.08089e+07",
+      "TagsManuallyThrottled" : "0",
+      "LogGroup" : "default",
+      "ReasonServerID" : "ff37951617459b85",
+      "ReleasedBatchTPS" : "0.0467232",
+      "WorstStorageServerDurabilityLag" : "5000000",
+      "WorstTLogQueue" : "151",
+      "WorstStorageServerVersionLag" : "0",
+      "LimitingStorageServerDurabilityLag" : "5000000",
+      "TrackLatestType" : "Original"
+    }
+  result:
+    custom:
+      DateTime: "2022-02-03T21:31:07Z"
+      ID: "a1296c5841afe8a7"
+      LimitingStorageServerDurabilityLag: "5000000"
+      LimitingStorageServerQueue: "0"
+      LimitingStorageServerVersionLag: "0"
+      LogGroup: "default"
+      Machine: "127.0.0.1:4500"
+      Proxies: "1"
+      Reason: "6"
+      ReasonServerID: "ff37951617459b85"
+      ReleasedBatchTPS: "0.0467232"
+      ReleasedTPS: "2.86906"
+      Roles: "CC,CD,DD,MP,MS,RK,RV,SS,TL"
+      Severity: "15"
+      Status: "Info"
+      StorageServers: "1"
+      TLogs: "1"
+      TPSBasis: "2.86906"
+      TPSLimit: "1.08089e+07"
+      TagsAutoThrottled: "0"
+      TagsManuallyThrottled: "0"
+      Time: "1643923867.228980"
+      TotalDiskUsageBytes: "307265536"
+      TrackLatestType: "Original"
+      Type: "RkUpdate"
+      WorstFreeSpaceStorageServer: "821204856"
+      WorstFreeSpaceTLog: "748579615267"
+      WorstStorageServerDurabilityLag: "5000000"
+      WorstStorageServerQueue: "2000"
+      WorstStorageServerVersionLag: "0"
+      WorstTLogQueue: "151"
+      evt:
+        name: "RkUpdate"
+      machine:
+        ip: "127.0.0.1"
+        port: "4500"
+    message: |-
+      {
+        "TotalDiskUsageBytes" : "307265536",
+        "TagsAutoThrottled" : "0",
+        "Time" : "1643923867.228980",
+        "DateTime" : "2022-02-03T21:31:07Z",
+        "Reason" : "6",
+        "Machine" : "127.0.0.1:4500",
+        "WorstStorageServerQueue" : "2000",
+        "WorstFreeSpaceTLog" : "748579615267",
+        "ID" : "a1296c5841afe8a7",
+        "LimitingStorageServerQueue" : "0",
+        "TPSBasis" : "2.86906",
+        "StorageServers" : "1",
+        "TLogs" : "1",
+        "Proxies" : "1",
+        "LimitingStorageServerVersionLag" : "0",
+        "Severity" : "15",
+        "Roles" : "CC,CD,DD,MP,MS,RK,RV,SS,TL",
+        "WorstFreeSpaceStorageServer" : "821204856",
+        "Type" : "RkUpdate",
+        "ReleasedTPS" : "2.86906",
+        "TPSLimit" : "1.08089e+07",
+        "TagsManuallyThrottled" : "0",
+        "LogGroup" : "default",
+        "ReasonServerID" : "ff37951617459b85",
+        "ReleasedBatchTPS" : "0.0467232",
+        "WorstStorageServerDurabilityLag" : "5000000",
+        "WorstTLogQueue" : "151",
+        "WorstStorageServerVersionLag" : "0",
+        "LimitingStorageServerDurabilityLag" : "5000000",
+        "TrackLatestType" : "Original"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1643923867000
+

@@ -1,0 +1,476 @@
+id: jfrog_artifactory
+metric_id: jfrog-platform-cloud
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Action Response
+    path: jfrog.cloud.action_response
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Audit Data Changed
+    path: jfrog.cloud.audit_data_changed
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Company Name
+    path: jfrog.cloud.company_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Entity Name
+    path: jfrog.cloud.entity_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Event Type
+    path: jfrog.cloud.evt.type
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Image Name
+    path: jfrog.cloud.image
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Instance Name
+    path: jfrog.cloud.instance_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Logged Principal
+    path: jfrog.cloud.logged_principal
+    source: log
+    type: string
+  - description: Artifactory package type
+    facetType: list
+    groups:
+      - JFrog Cloud
+    name: Package Type
+    path: jfrog.cloud.package_type
+    source: log
+    type: double
+  - description: Artifactory Project Name
+    facetType: list
+    groups:
+      - JFrog Cloud
+    name: Project Name
+    path: jfrog.cloud.project_key
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Repository Name
+    path: jfrog.cloud.repo
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Repository path (Access)
+    path: jfrog.cloud.repo_path
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Request Content Length
+    path: jfrog.cloud.request_content_length
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Response Content Length
+    path: jfrog.cloud.response_content_length
+    source: log
+    type: string
+  - description: |-
+      The name of the audited service: 
+      - jfob - Observability
+      - jfac - Access
+      - jfrou - Router
+      - jffe - Frontend
+      - jfrt - Artifactory
+      - jfcon - JFLink
+    facetType: list
+    groups:
+      - JFrog Cloud
+    name: Subject (Audit)
+    path: jfrog.cloud.subject
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Tenant ID
+    path: jfrog.cloud.tenant_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - JFrog Cloud
+    name: Token ID
+    path: jfrog.cloud.token_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: JFrog Artifactory Cloud
+  enabled: true
+  filter:
+    query: source:jfrog_artifactory
+  processors:
+    - type: trace-id-remapper
+      name: Define `trace_id`, `request_Uber-Trace-Id` as the official trace ID of the
+        log
+      enabled: true
+      sources:
+        - trace_id
+        - request_Uber-Trace-Id
+    - type: status-remapper
+      name: Define `log_level`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - log_level
+        - level
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `time`, `log_timestamp`, `@timestamp` as the official date of the
+        log
+      enabled: true
+      sources:
+        - time
+        - log_timestamp
+        - "@timestamp"
+    - type: attribute-remapper
+      name: Map `entity_name`, `entityname` to `jfrog.cloud.entity_name`
+      enabled: true
+      sources:
+        - entity_name
+        - entityname
+      sourceType: attribute
+      target: jfrog.cloud.entity_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event_type` to `jfrog.cloud.evt.type`
+      enabled: true
+      sources:
+        - event_type
+      sourceType: attribute
+      target: jfrog.cloud.evt.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `image` to `jfrog.cloud.image`
+      enabled: true
+      sources:
+        - image
+      sourceType: attribute
+      target: jfrog.cloud.image
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `repo` to `jfrog.cloud.repo`
+      enabled: true
+      sources:
+        - repo
+      sourceType: attribute
+      target: jfrog.cloud.repo
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `msg` to `jfrog.cloud.msg`
+      enabled: true
+      sources:
+        - msg
+      sourceType: attribute
+      target: jfrog.cloud.msg
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `logged_principal`, `loggedinprincipal` to
+        `jfrog.cloud.logged_principal`
+      enabled: true
+      sources:
+        - logged_principal
+        - loggedinprincipal
+      sourceType: attribute
+      target: jfrog.cloud.logged_principal
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_content_length` to `jfrog.cloud.request_content_length`
+      enabled: true
+      sources:
+        - request_content_length
+      sourceType: attribute
+      target: jfrog.cloud.request_content_length
+      targetType: attribute
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `response_content_length` to `jfrog.cloud.response_content_length`
+      enabled: true
+      sources:
+        - response_content_length
+      sourceType: attribute
+      target: jfrog.cloud.response_content_length
+      targetType: attribute
+      targetFormat: integer
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `subject` to `jfrog.cloud.subject`
+      enabled: true
+      sources:
+        - subject
+      sourceType: attribute
+      target: jfrog.cloud.subject
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `tenant_id` to `jfrog.cloud.tenant_id`
+      enabled: true
+      sources:
+        - tenant_id
+      sourceType: attribute
+      target: jfrog.cloud.tenant_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `token_id` to `jfrog.cloud.token_id`
+      enabled: true
+      sources:
+        - token_id
+      sourceType: attribute
+      target: jfrog.cloud.token_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data_changed`, `datachanged` to `jfrog.cloud.audit_data_changed`
+      enabled: true
+      sources:
+        - data_changed
+        - datachanged
+      sourceType: attribute
+      target: jfrog.cloud.audit_data_changed
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user_name`, `user`, `username` to `usr.id`
+      enabled: true
+      sources:
+        - user_name
+        - user
+        - username
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_url` to `http.url_details.path`
+      enabled: true
+      sources:
+        - request_url
+      sourceType: attribute
+      target: http.url_details.path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `RequestMethod`, `request_method` to `http.method`
+      enabled: true
+      sources:
+        - RequestMethod
+        - request_method
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `return_status` to `http.status_code`
+      enabled: true
+      sources:
+        - return_status
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_User-Agent`, `request_user_agent` to `http.useragent`
+      enabled: true
+      sources:
+        - request_User-Agent
+        - request_user_agent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ClientAddr`, `ip`, `ip_address`, `remote_address` to
+        `network.client.ip`
+      enabled: true
+      sources:
+        - ClientAddr
+        - ip
+        - ip_address
+        - remote_address
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `hostname` to `host`
+      enabled: true
+      sources:
+        - hostname
+      sourceType: attribute
+      target: host
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request_duration`, `Duration` to `duration`
+      enabled: true
+      sources:
+        - request_duration
+        - Duration
+      sourceType: attribute
+      target: duration
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `company_name` to `jfrog.cloud.company_name`
+      enabled: true
+      sources:
+        - company_name
+      sourceType: attribute
+      target: jfrog.cloud.company_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `instance_name` to `jfrog.cloud.instance_name`
+      enabled: true
+      sources:
+        - instance_name
+      sourceType: attribute
+      target: jfrog.cloud.instance_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `action_response` to `jfrog.cloud.action_response`
+      enabled: true
+      sources:
+        - action_response
+      sourceType: attribute
+      target: jfrog.cloud.action_response
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `repository_path` to `jfrog.cloud.repo_path`
+      enabled: true
+      sources:
+        - repository_path
+      sourceType: attribute
+      target: jfrog.cloud.repo_path
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

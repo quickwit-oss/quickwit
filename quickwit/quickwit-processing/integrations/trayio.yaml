@@ -1,0 +1,150 @@
+id: trayio
+backend_only: true # trayio is only defined in logs-backend - there is no tile.
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Tray.io
+    name: Caller Email
+    path: calledBy.email
+    source: log
+  - groups:
+      - Event
+    name: Event Type
+    path: eventType
+    source: log
+  - groups:
+      - Tray.io
+    name: Log Type
+    path: logType
+    source: log
+  - groups:
+      - Tray.io
+    name: Workflow Id
+    path: workflowId
+    source: log
+pipeline:
+  type: pipeline
+  name: Tray.io
+  enabled: true
+  filter:
+    query: source:trayio
+  processors:
+    - type: category-processor
+      name: Step, Categorise stepState
+      enabled: true
+      categories:
+        - filter:
+            query: '@stepState:success'
+          name: OK
+        - filter:
+            query: '@stepState:running'
+          name: Info
+        - filter:
+            query: '@stepState:(failure OR error)'
+          name: Error
+      target: http.status_category
+    - type: category-processor
+      name: Event execution, Categorise eventType
+      enabled: true
+      categories:
+        - filter:
+            query: '@eventType:(successful OR created)'
+          name: OK
+        - filter:
+            query: '@eventType:(started OR retrying OR manually_retried)'
+          name: Info
+        - filter:
+            query: '@eventType:(failed OR created_failed OR terminated)'
+          name: Error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+    - type: message-remapper
+      name: Define `errorMessage` as the official message of the log
+      enabled: true
+      sources:
+        - errorMessage
+    - type: grok-parser
+      name: Date parser on timestamp
+      enabled: true
+      source: timestamp
+      grok:
+        matchRules: |
+          timestamp_parser %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}
+        supportRules: ''
+      samples:
+        - '2021-01-27T12:39:17.061Z'
+    - type: grok-parser
+      name: Date parser on created
+      enabled: true
+      source: created
+      grok:
+        matchRules: |
+          Created_parser %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}
+        supportRules: ''
+      samples:
+        - '2021-02-05T10:24:17.076Z'
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: attribute-remapper
+      name: Map `clientIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - clientIp
+      target: network.client.ip
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: geo-ip-parser
+      name: GeoIP enrichment
+      enabled: true
+      sources:
+        - clientIp
+      target: network.client.geoip
+      encoded: false

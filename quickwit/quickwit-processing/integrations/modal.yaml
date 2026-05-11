@@ -1,0 +1,30 @@
+id: modal
+backend_only: false
+facets:
+  - groups:
+      - modal
+    name: RPC
+    path: rpc
+    source: log
+pipeline:
+  type: pipeline
+  name: Modal
+  enabled: true
+  filter:
+    query: source:modal
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

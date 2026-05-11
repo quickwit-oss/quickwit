@@ -1,0 +1,450 @@
+id: "crest_data_systems_opnsense"
+tests:
+  - sample: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 9,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,16,0,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          action: "block"
+          data_length: 362
+          destination_ip: "255.255.255.255"
+          destination_port: "5041"
+          direction: "in"
+          flags: "none"
+          id: 0
+          interface: "vmx0"
+          ip_version: "4"
+          offset: 0
+          packet_length: 382
+          protocol_id: 17
+          protocol_name: "UDP"
+          reason: "match"
+          rule_number: 9
+          source_ip: "0.0.0.0"
+          source_port: "5041"
+          toc: "0x10"
+          ttl: 16
+          uuid: "02f4bab031b57d1e30553ce08e0ec131"
+        priority: "134"
+        process_id: 77392.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31505177000
+      message: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 9,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,16,0,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31505177000
+  - sample: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 6,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,16,0,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          action: "block"
+          data_length: 362
+          destination_ip: "255.255.255.255"
+          destination_port: "5041"
+          direction: "in"
+          flags: "none"
+          id: 0
+          interface: "vmx0"
+          ip_version: "4"
+          offset: 0
+          packet_length: 382
+          protocol_id: 17
+          protocol_name: "UDP"
+          reason: "match"
+          rule_number: 6
+          source_ip: "0.0.0.0"
+          source_port: "5041"
+          toc: "0x10"
+          ttl: 16
+          uuid: "02f4bab031b57d1e30553ce08e0ec131"
+        priority: "134"
+        process_id: 77392.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31505177000
+      message: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 6,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x10,,16,0,0,none,17,udp,382,0.0.0.0,255.255.255.255,5041,5041,362"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31505177000
+  - sample: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 11,,,1d245529367b2e34eeaff16086aeafe9,vmx0,match,pass,in,6,0x00,0x00000,255,ipv6-icmp,58,32,fdfe:9042:c53d:0:5d50:1c62:5241:ac54,ff02::1,datalength=32"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          action: "pass"
+          class: "0x00"
+          destination_ip: "ff02::1"
+          direction: "in"
+          flow_label: "0x00000"
+          hope_limit: 255
+          interface: "vmx0"
+          ip_version: "6"
+          packet_length: 32
+          protocol_id: 58
+          protocol_name: "IPV6-ICMP"
+          reason: "match"
+          rule_number: 11
+          source_ip: "fdfe:9042:c53d:0:5d50:1c62:5241:ac54"
+          uuid: "1d245529367b2e34eeaff16086aeafe9"
+        priority: "134"
+        process_id: 77392.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31505177000
+      message: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 11,,,1d245529367b2e34eeaff16086aeafe9,vmx0,match,pass,in,6,0x00,0x00000,255,ipv6-icmp,58,32,fdfe:9042:c53d:0:5d50:1c62:5241:ac54,ff02::1,datalength=32"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31505177000
+  - sample: "<134>Dec 10 08:25:30 OPNsense.localdomain filterlog[41675]: 7,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,91,10.50.1.60,10.50.5.242,8089,5490,909,PA,774275614:774276523,3302914870,436,,nop;nop;TS"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          ack: 3302914870
+          action: "block"
+          data_length: 909
+          destination_ip: "10.50.5.242"
+          destination_port: "5490"
+          direction: "in"
+          flags: "DF"
+          id: 0
+          interface: "vmx0"
+          ip_version: "4"
+          offset: 0
+          packet_length: 91
+          protocol_id: 6
+          protocol_name: "TCP"
+          reason: "match"
+          rule_number: 7
+          sequence: "774275614:774276523"
+          source_ip: "10.50.1.60"
+          source_port: "8089"
+          tcp_flags: "PA"
+          tcp_options: "nop;nop;TS"
+          tcp_window: 436
+          toc: "0x0"
+          ttl: 64
+          uuid: "02f4bab031b57d1e30553ce08e0ec131"
+        priority: "134"
+        process_id: 41675.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31566330000
+      message: "<134>Dec 10 08:25:30 OPNsense.localdomain filterlog[41675]: 7,,,02f4bab031b57d1e30553ce08e0ec131,vmx0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,91,10.50.1.60,10.50.5.242,8089,5490,909,PA,774275614:774276523,3302914870,436,,nop;nop;TS"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31566330000
+  - sample: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 60,,,fae559338f65e11c53669fc3642c93c2,lo0,match,pass,out,6,0x00,0xae4fb,64,udp,17,20,::1,::1,27332,123,20"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          action: "pass"
+          class: "0x00"
+          data_length: 20
+          destination_ip: "::1"
+          destination_port: "123"
+          direction: "out"
+          flow_label: "0xae4fb"
+          hope_limit: 64
+          interface: "lo0"
+          ip_version: "6"
+          packet_length: 20
+          protocol_id: 17
+          protocol_name: "UDP"
+          reason: "match"
+          rule_number: 60
+          source_ip: "::1"
+          source_port: "27332"
+          uuid: "fae559338f65e11c53669fc3642c93c2"
+        priority: "134"
+        process_id: 77392.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31505177000
+      message: "<134>Nov 21 15:26:17 OPNsense.localdomain filterlog[77392]: 60,,,fae559338f65e11c53669fc3642c93c2,lo0,match,pass,out,6,0x00,0xae4fb,64,udp,17,20,::1,::1,27332,123,20"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31505177000
+  - sample: "<134>Nov 26 17:18:37 OPNsense.localdomain filterlog[187]: 10,,,02f4bab031b57d1e30553ce08e0ec131,vmx1,match,block,in,6,0x00,0x00000,1,icmp,1,36,::,ff02::1,truncated-ip6=36"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          action: "block"
+          class: "0x00"
+          destination_ip: "ff02::1"
+          direction: "in"
+          flow_label: "0x00000"
+          hope_limit: 1
+          icmp_type: 1
+          interface: "vmx1"
+          ip_version: "6"
+          packet_size: 36
+          protocol_name: "ICMP"
+          reason: "match"
+          rule_number: 10
+          source_ip: "::"
+          uuid: "02f4bab031b57d1e30553ce08e0ec131"
+        priority: "134"
+        process_id: 187.0
+        sourcetype: "filterlog"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31511917000
+      message: "<134>Nov 26 17:18:37 OPNsense.localdomain filterlog[187]: 10,,,02f4bab031b57d1e30553ce08e0ec131,vmx1,match,block,in,6,0x00,0x00000,1,icmp,1,36,::,ff02::1,truncated-ip6=36"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31511917000
+  - sample: "<190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPINFORM from 10.50.12.73 via vmx0"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          device_interface: "vmx0"
+          dhcp_message: "DHCPINFORM"
+          leased_geoip: {}
+          leased_ip: "10.50.12.73"
+        priority: "190"
+        process_id: 22302.0
+        sourcetype: "dhcpd"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31574706000
+      message: "<190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPINFORM from 10.50.12.73 via vmx0"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31574706000
+  - sample: |
+      <190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPACK to 10.50.12.73 (00:00:00:00:00:00) via vmx0
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          device_interface: "vmx0"
+          device_mac: "00:00:00:00:00:00"
+          dhcp_message: "DHCPACK"
+          leased_geoip: {}
+          leased_ip: "10.50.12.73"
+        priority: "190"
+        process_id: 22302.0
+        sourcetype: "dhcpd"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31574706000
+      message: |
+        <190>Nov 15 10:45:06 OPNsense.localdomain dhcpd[22302]: DHCPACK to 10.50.12.73 (00:00:00:00:00:00) via vmx0
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31574706000
+  - sample: "<190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPDISCOVER from 00:50:56:81:16:e3 via vmx0"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          device_interface: "vmx0"
+          device_mac: "00:50:56:81:16:e3"
+          dhcp_message: "DHCPDISCOVER"
+        priority: "190"
+        process_id: 22302.0
+        sourcetype: "dhcpd"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31538668000
+      message: "<190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPDISCOVER from 00:50:56:81:16:e3 via vmx0"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31538668000
+  - sample: |
+      <190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPREQUEST for 10.50.12.69 (10.50.7.101) from 00:50:56:81:16:e3 via vmx0: unknown lease 10.50.12.69.
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          device_interface: "vmx0"
+          device_mac: "00:50:56:81:16:e3"
+          dhcp_message: "DHCPREQUEST"
+          leased_geoip: {}
+          leased_ip: "10.50.12.69"
+        priority: "190"
+        process_id: 22302.0
+        sourcetype: "dhcpd"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31538668000
+      message: |
+        <190>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPREQUEST for 10.50.12.69 (10.50.7.101) from 00:50:56:81:16:e3 via vmx0: unknown lease 10.50.12.69.
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31538668000
+  - sample: "<131>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPOFFER on 10.50.2.10 to 00:50:56:81:16:e3 (armisappliance) via vmx0"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          device_interface: "vmx0"
+          device_mac: "00:50:56:81:16:e3"
+          device_name: "armisappliance"
+          dhcp_message: "DHCPOFFER"
+          leased_geoip: {}
+          leased_ip: "10.50.2.10"
+        priority: "131"
+        process_id: 22302.0
+        sourcetype: "dhcpd"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31538668000
+      message: "<131>Nov 15 00:44:28 OPNsense.localdomain dhcpd[22302]: DHCPOFFER on 10.50.2.10 to 00:50:56:81:16:e3 (armisappliance) via vmx0"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31538668000
+  - sample: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: [25%]=2.5e-07 median[50%]=1.5e-07 [75%]=0.123"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          log_level: "info"
+          percentile_25: 2.5E-7
+          percentile_50: 1.5E-7
+          percentile_75: 0.123
+          thread: 0
+          unbound_pid: 21919
+        priority: "30"
+        process_id: 21919.0
+        sourcetype: "unbound"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31575625000
+      message: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: [25%]=2.5e-07 median[50%]=1.5e-07 [75%]=0.123"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31575625000
+  - sample: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: average recursion processing time 0.287493 sec"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          average_recursion_processing_time: 0.287493
+          log_level: "info"
+          thread: 0
+          unbound_pid: 21919
+        priority: "30"
+        process_id: 21919.0
+        sourcetype: "unbound"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31575625000
+      message: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: average recursion processing time 0.287493 sec"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31575625000
+  - sample: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: server stats for thread 3: 3 queries, 2 answers from cache, 1 recursions, 0 prefetch, 0 rejected by ip ratelimiting"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          cache_hits: 2
+          log_level: "info"
+          prefetch: 0
+          recursions: 1
+          rejected_queries: 0
+          thread: 0
+          thread_no: 3
+          total_queries: 3
+          unbound_pid: 21919
+        priority: "30"
+        process_id: 21919.0
+        sourcetype: "unbound"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31575625000
+      message: "<30>Nov 25 11:00:25 OPNsense.localdomain unbound[21919]: [21919:0] info: server stats for thread 3: 3 queries, 2 answers from cache, 1 recursions, 0 prefetch, 0 rejected by ip ratelimiting"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31575625000
+  - sample: "<173>Dec 10 06:22:38 OPNsense.localdomain suricata[62913]: [1:2027757:5] ET DNS Query for .to TLD [Classification: Potentially Bad Traffic] [Priority: 2] {UDP} 10.50.8.58:30450 -> 108.162.192.219:53"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          category: "Potentially Bad Traffic"
+          destination_geoip: {}
+          destination_ip: "108.162.192.219"
+          destination_port: "53"
+          generator_id: 1
+          ids_priority: 2
+          protocol_name: "UDP"
+          rule_revision: 5
+          signature: "ET DNS Query for .to TLD"
+          signature_id: 2027757
+          source_geoip: {}
+          source_ip: "10.50.8.58"
+          source_port: "30450"
+        priority: "173"
+        process_id: 62913.0
+        sourcetype: "suricata"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31558958000
+      message: "<173>Dec 10 06:22:38 OPNsense.localdomain suricata[62913]: [1:2027757:5] ET DNS Query for .to TLD [Classification: Potentially Bad Traffic] [Priority: 2] {UDP} 10.50.8.58:30450 -> 108.162.192.219:53"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31558958000
+  - sample: "<29>Nov 27 16:04:00 OPNsense.localdomain openvpn[88884]: user 'test1' authenticated using 'Local Database'"
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          openvpn_auth_action: "authenticated"
+          openvpn_user: "test1"
+        priority: "29"
+        process_id: 88884.0
+        sourcetype: "openvpn"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31507440000
+      message: "<29>Nov 27 16:04:00 OPNsense.localdomain openvpn[88884]: user 'test1' authenticated using 'Local Database'"
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31507440000
+  - sample: "<29>Nov 28 18:36:00 OPNsense.localdomain openvpn[88884]: user 'opnvpn' could not authenticate."
+    service: "crest_data_systems_opnsense"
+    result:
+      custom:
+        cd_opnsense:
+          openvpn_auth_action: "could not authenticate"
+          openvpn_user: "opnvpn"
+        priority: "29"
+        process_id: 88884.0
+        sourcetype: "openvpn"
+        syslog:
+          hostname: "OPNsense.localdomain"
+        timestamp: 31516560000
+      message: "<29>Nov 28 18:36:00 OPNsense.localdomain openvpn[88884]: user 'opnvpn' could not authenticate."
+      service: "crest_data_systems_opnsense"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 31516560000

@@ -1,0 +1,143 @@
+id: "stunnel"
+tests:
+ -
+  sample: "2018.08.29 15:37:24 LOG5[abcedcazedsazea]: Service [myservice-123] connected remote server from 127.0.0.1:12341"
+  result:
+    custom:
+      date: 1535557044000
+      level: 5
+      network:
+        local:
+          ip: "127.0.0.1"
+          port: 12341.0
+      proxy:
+        service_name: "myservice"
+        service_port: 123.0
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:37:24 LOG5[abcedcazedsazea]: Service [myservice-123] connected remote server from 127.0.0.1:12341"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535557044000
+ -
+  sample: "2018.08.29 15:37:24 LOG5[abcedcazedsazea]: Service [myservice] connected remote server from 127.0.0.1:12341"
+  result:
+    custom:
+      date: 1535557044000
+      level: 5
+      network:
+        local:
+          ip: "127.0.0.1"
+          port: 12341.0
+      proxy:
+        service_name: "myservice"
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:37:24 LOG5[abcedcazedsazea]: Service [myservice] connected remote server from 127.0.0.1:12341"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535557044000
+ -
+  sample: "2018.08.29 15:38:31 LOG5[abcedcazedsazea]: Service [myservice-123] accepted connection from 127.0.0.1:12341"
+  result:
+    custom:
+      date: 1535557111000
+      level: 5
+      network:
+        client:
+          ip: "127.0.0.1"
+          port: 12341.0
+      proxy:
+        service_name: "myservice"
+        service_port: 123.0
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:38:31 LOG5[abcedcazedsazea]: Service [myservice-123] accepted connection from 127.0.0.1:12341"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535557111000
+ -
+  sample: "2018.08.29 15:25:28 LOG5[abcedcazedsazea]: Certificate accepted at depth=0: CN=cn.cn.eu, O=Transaction Network Services, L=Paris, C=FR"
+  result:
+    custom:
+      date: 1535556328000
+      level: 5
+      proxy:
+        certificate:
+          depth: 0
+          info:
+            C: "FR"
+            CN: "cn.cn.eu"
+            L: "Paris"
+            O: "Transaction"
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:25:28 LOG5[abcedcazedsazea]: Certificate accepted at depth=0: CN=cn.cn.eu, O=Transaction Network Services, L=Paris, C=FR"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535556328000
+ -
+  sample: "2018.08.29 15:41:43 LOG5[abcedcazedsazea]: Connection closed: 133 byte(s) sent to SSL, 44 byte(s) sent to socket"
+  result:
+    custom:
+      date: 1535557303000
+      level: 5
+      network:
+        bytes_socket: 44
+        bytes_ssl: 133
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:41:43 LOG5[abcedcazedsazea]: Connection closed: 133 byte(s) sent to SSL, 44 byte(s) sent to socket"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535557303000
+ -
+  sample: "2018.08.29 14:46:28 LOG5[abcedcazedsazea]: Connection reset: 3 byte(s) sent to SSL, 6 byte(s) sent to socket"
+  result:
+    custom:
+      date: 1535553988000
+      level: 5
+      network:
+        bytes_socket: 6
+        bytes_ssl: 3
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 14:46:28 LOG5[abcedcazedsazea]: Connection reset: 3 byte(s) sent to SSL, 6 byte(s) sent to socket"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535553988000
+ -
+  sample: "2018.08.29 15:43:59 LOG5[abcedcazedsazea]: s_connect: connected 127.0.0.1:12341"
+  result:
+    custom:
+      date: 1535557439000
+      level: 5
+      network:
+        backend:
+          ip: "127.0.0.1"
+          port: 12341.0
+      session_id: "abcedcazedsazea"
+    message: "2018.08.29 15:43:59 LOG5[abcedcazedsazea]: s_connect: connected 127.0.0.1:12341"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535557439000
+ -
+  sample: "2018.08.25 07:00:50 LOG3[abcedcazedsazea]: s_connect: connect 127.0.0.1:12341: Connection refused (111)"
+  result:
+    custom:
+      date: 1535180450000
+      error:
+        message: "Connection refused (111)"
+      level: 3
+      network:
+        backend:
+          ip: "127.0.0.1"
+          port: 12341.0
+      session_id: "abcedcazedsazea"
+    message: "2018.08.25 07:00:50 LOG3[abcedcazedsazea]: s_connect: connect 127.0.0.1:12341: Connection refused (111)"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1535180450000
+

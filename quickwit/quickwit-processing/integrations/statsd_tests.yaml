@@ -1,0 +1,23 @@
+id: "statsd"
+tests:
+ -
+  sample: "9 Oct 13:06:36 - DEBUG: debug message"
+  result:
+    custom:
+      status: "DEBUG"
+      timestamp: 24325596000
+    message: "debug message"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24325596000
+ -
+  sample: "8 Oct 16:55:56 - server is up INFO"
+  result:
+    custom:
+      timestamp: 24252956000
+    message: "server is up INFO"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24252956000
+

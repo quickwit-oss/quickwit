@@ -1,0 +1,144 @@
+Datadog CloudPrem
+END USER LICENSE AGREEMENT
+
+Please read this End-User License Agreement (“Agreement”) carefully before clicking the “I Agree” button, downloading or using the Datadog Materials.
+
+By clicking the “I Agree,” “I Accept,” “Sign up,” or similar button or checkbox, downloading or using the Datadog Materials, you are agreeing to be bound by the terms and conditions of this Agreement. The terms of this Agreement are effective upon the earliest of when you or an Authorized User: (a) downloads, installs, accesses or uses the Datadog Materials, or (b) clicks the button or checkbox referencing this Agreement.
+
+This Agreement is a legal agreement between you as either an individual or a single entity, and Datadog, Inc. (“Datadog”), and it governs your use of the Datadog Materials made available to you by Datadog.
+
+If you are an individual using the Datadog Materials for your own purposes: (1) all references to “you” are to you and (2) you represent and warrant that you are at least 18 years of age, or have otherwise reached the age of “majority” where you reside, and that you have the right, power and authority to enter into this Agreement.
+
+If you are using the Datadog Materials on behalf of an entity or organization that you represent: (1) all references to “you” are to that entity or organization and (2) you represent and warrant that you are at least 18 years of age, or have otherwise reached the age of “majority” where you reside, and that you have the right, power and authority to enter into this Agreement on behalf of that entity or organization.
+
+If you do not agree to the terms of this Agreement, do not click on the “I Agree” button and do not download or use the Datadog Materials.
+
+The Datadog Materials are licensed, not sold, to you by Datadog for use strictly in accordance with the terms of this Agreement.
+
+TERMS AND CONDITIONS
+Definitions. For purposes of this Agreement, the following terms have the following meanings:
+
+“Account Data” means information about you that you provide to Datadog in connection with the creation or administration of your, or your organization’s Datadog accounts, such as first and last name, user name and email address of an Authorized User or your organization’s billing contact. You shall ensure that all Account Data is current and accurate at all times, and shall in no event include Sensitive Information in Account Data. Account Data is subject to Datadog’s privacy policy, currently available at https://www.datadoghq.com/legal/privacy/.
+
+“Administrator” means the individual(s) identified in the Account Data as admin users.
+
+“Affiliate” means, with respect to a party, a business entity that directly or indirectly controls, is controlled by or is under common control with, such party, where “control” means the direct or indirect ownership of more than 50% of the voting securities of a business entity.
+
+“Applicable Law” means any and all governmental laws, rules, directives, regulations or orders that are applicable to a particular party’s performance under this Agreement.
+
+“Authorized User” means an individual employee, agent, contractor, or service provider of you or your Affiliate who has been supplied user credentials for the Services by you (or by Datadog at your request).
+
+“Environment” means the systems, platforms, services, software, devices, sites and/or networks that you use for your operations (exclusive of the subscribed Datadog Services).
+
+“Datadog Services” means the hosted services that Datadog makes available through the applicable login page (e.g., https://app.datadoghq.com/) and other web pages designated by Datadog.
+
+“Documentation” means Datadog’s standard user documentation for the Datadog Services, currently available at https://docs.datadoghq.com/.
+
+“Datadog Materials” means the applicable software, program, web or downloadable application, driver, configuration file(s), software setting, or other material being provided or made available to you.
+
+“Intermediary” means a third party marketplace or a Datadog approved reseller through which the Datadog Services are made available for purchase.
+
+“Malicious Code” means code, files, scripts, agents or programs intended to do harm, including, for example, viruses, worms, time bombs, and Trojan horses.
+
+“Personal Data” means any information relating to an identified or identifiable natural person.
+
+“Sensitive Information” means (a) government-issued identification numbers, including Social Security numbers; (b) financial information; (c) special categories of personal data subject to Article 9 of the GDPR; (d) personal data relating to criminal convictions and offenses subject to Article 10 of the GDPR; (e) protected health information subject to the Health Insurance Portability and Accountability Act of 1996, as amended; and (f) any other information that is subject to specific or heightened requirements under Applicable Law or industry standards. “GDPR” means the General Data Protection Regulation 2016/679 of the European Parliament and of the Council of 27 April 2016 on the protection of natural persons with regard to the Processing of personal data and on the free movement of such data, and repealing of Directive 95/46/EC.
+
+“Subscription Agreement” means the terms and conditions of Datadog’s standard Subscription Agreement, currently available at https://www.datadoghq.com/legal/msa/ governing a subscription to the Datadog Services that permits you or an Intermediary, as applicable, to access and use the subscribed Datadog Services for your business operations.
+
+1. LICENSE
+Datadog agrees to provide you with a revocable, limited, personal, non-exclusive, non-transferable, non-sublicensable, limited license to download, install and use the Datadog Materials in accordance with the terms of this Agreement. You may not use the Datadog Materials for anything other than as intended by Datadog. Unless otherwise agreed by the parties in writing, you are prohibited from accessing or using the Datadog Materials if you are or may become a direct competitor of Datadog. Any such access or use may be suspended or terminated by Datadog at any time and without notice.
+
+2. RESTRICTIONS
+A. You agree NOT to, and you will not permit others to, use the Datadog Materials to (a) enable any unauthorized person or entity to access and use the Datadog Materials; (b) modify, copy or create any derivative work based upon the Datadog Materials or any portion, feature or function of the Datadog Materials; (c) resell, distribute or otherwise make available the Datadog Materials to any third party, including as part of a managed services offering; (d) reverse engineer, disassemble or decompile all or any portion of, or attempt to access, discover or recreate the source code for, the Datadog Materials; (e) access or use the Datadog Materials in order to (1) copy ideas, features, functions or graphics, (2) develop competing products or services, or (3) perform competitive analyses; (f) remove, obscure or alter any proprietary notice related to the Datadog Materials; (g) send or store Malicious Code; (h) use or permit others to use the Datadog Materials in violation of Applicable Law; or (i) use or permit others to use the Datadog Materials other to support your use of a Datadog Service, or as described in this Agreement.
+
+B. You are responsible for violations of the restrictions set forth in this section by anyone using the Datadog Materials with your permission or using your account for the Datadog Materials on an unauthorized basis. Your use of the Datadog Materials to assist another person in an activity that would violate these prohibitions if performed by you is a violation of this Agreement.
+
+C. Datadog reserves the right, but does not assume the obligation, to investigate any violation of this Section or misuse of the Datadog Materials. Datadog may report any activity that it suspects violates any law or regulation to appropriate law enforcement officials, regulators, or other appropriate third parties. Such reporting may include disclosing appropriate data originating from or about you. Datadog also may cooperate with appropriate law enforcement agencies, regulators, or other appropriate third parties to help with the investigation and prosecution of illegal conduct by providing network and systems information related to alleged violations of these terms.
+
+3. INTELLECTUAL PROPERTY
+The Datadog Materials, including without limitation all copyrights, patents, trademarks, trade secrets and other intellectual property rights associated therewith (“Intellectual Property Rights”) are, and shall remain, the property of Datadog. You acknowledge and agree that unless otherwise agreed by the parties in writing, you do not acquire any ownership interest or other rights in the Datadog Materials. You shall not take any action to interfere with Datadog’s or its licensor’s ownership of or rights in the Datadog Materials.
+
+4. YOUR SUGGESTIONS
+By providing feedback, comments, ideas, improvements or suggestions with respect to the Datadog Materials (collectively, “Suggestions”) to Datadog, you assign all rights and ownership in those Suggestions exclusively to Datadog and Datadog shall be free to use, copy, modify, publish, or redistribute the Suggestions for any purpose and in any way without any credit or any compensation to you.
+
+5. MODIFICATIONS AND UPDATES TO DATADOG MATERIALS
+Datadog reserves the right to modify, suspend or discontinue, temporarily or permanently, the Datadog Materials or any service to which it connects, with or without notice and without liability to you. ‍Datadog may from time to time, but has no obligation to, provide enhancements or improvements to the features/functionality of the Datadog Materials, which may include patches, bug fixes, updates, upgrades and other modifications (“Updates”).
+
+Updates may modify or delete certain features and/or functionalities of the Datadog Materials. You agree that Datadog has no obligation to (i) provide any Updates, or (ii) continue to provide or enable any particular features and/or functionalities of the Datadog Materials to you. In the event Datadog makes one or more Updates available, you agree to promptly download and install all Updates and acknowledge and agree that Datadog Materials or portions thereof may not properly operate should you fail to do so.
+
+You further agree that all Updates will be (i) deemed to constitute an integral part of the Datadog Materials, and (ii) subject to the terms and conditions of this Agreement.
+
+6. THIRD-PARTY CONTENT
+The Datadog Materials may use, display, include or make available third-party content (including data, information, software and other products or services) or provide links to third-party websites or services (“Third-Party Dependencies”).
+
+You acknowledge and agree that Datadog shall not be responsible for any Third-Party Dependencies, including their accuracy, completeness, timeliness, validity, copyright compliance, legality, decency, quality or any other aspect thereof. Datadog does not assume and shall not have any liability or responsibility to you or any other person or entity for any Third-Party Dependencies. Third-Party Dependencies and links thereto are provided solely as a convenience to you and you access and use them entirely at your own risk and subject to such third parties’ terms and conditions.
+
+7. DATA AND PRIVACY
+The Datadog Materials may collect data about you, including Personal Data, and your use of the Datadog Materials. Datadog may use the data collected to provide and improve its products, and to provide you with support. If the Datadog Materials collect any Personal Data related to you, Datadog will process it in accordance with Datadog’s Privacy Policy.
+
+Except for filtering, masking and otherwise removing Sensitive Information, or as may otherwise be expressly described in the Datadog’s Documentation, or agreed by the parties in writing, you shall not use the Datadog Materials to process any Sensitive Information and shall use reasonable efforts to restrict the inclusion of other Personal Data submitted or otherwise uploaded to the Datadog Services, including by applying filters, masking, and other tools and configurations described in the Documentation, including at https://docs.datadoghq.com/data_security/.
+
+8. YOUR RESPONSIBILITIES
+If you use the Datadog Materials in connection with the Datadog Services, your use of those Datadog Services are subject to the terms and pricing in the applicable Subscription Agreement. You are responsible for payment of any and all fees incurred as a result of your use of the Datadog Services, whether or not facilitated through the Datadog Materials, in accordance with the Subscription Agreement.
+
+Without limiting anything in this Agreement, you agree that you are solely responsible for configuring any applicable usage and privacy and security settings in the Datadog Materials.
+
+9. TERM AND TERMINATION
+This Agreement shall remain in effect until terminated by you or Datadog, or earlier termination of your subscription to the applicable Datadog Service. Datadog may, in its sole discretion, at any time and for any or no reason, suspend or terminate this Agreement with or without prior notice.
+
+This Agreement will terminate immediately, without prior notice from Datadog in the event that you fail to comply with any provision of this Agreement. You may also terminate this Agreement by deleting the Datadog Materials and all copies thereof from your device. Upon termination of this Agreement, you shall cease all use of the Datadog Materials and delete all copies of the Datadog Materials from your device.
+
+Termination of this Agreement will not limit any of Datadog’s rights or remedies at law or in equity in case of breach by you (during the term of this Agreement) of any of your obligations under the present Agreement.
+
+10. INDEMNIFICATION
+You agree to indemnify and hold Datadog and its parents, subsidiaries, affiliates, officers, employees, agents, partners and licensors (if any) harmless from any claim or demand, including reasonable attorneys’ fees, due to or arising out of your: (a) use of the Datadog Materials; (b) violation of this Agreement or any law or regulation; or (c) violation of any right of a third party.
+
+11. NO WARRANTIES
+THE DATADOG MATERIALS ARE PROVIDED TO YOU “AS IS” AND “AS AVAILABLE” AND WITH ALL FAULTS AND DEFECTS WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED UNDER APPLICABLE LAW, DATADOG ON ITS OWN BEHALF AND ON BEHALF OF ITS AFFILIATES AND ITS AND THEIR RESPECTIVE LICENSORS AND SERVICE PROVIDERS, EXPRESSLY DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY OR OTHERWISE, WITH RESPECT TO THE DATADOG MATERIALS, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT, AND WARRANTIES THAT MAY ARISE OUT OF COURSE OF DEALING, COURSE OF PERFORMANCE, USAGE OR TRADE PRACTICE. WITHOUT LIMITATION TO THE FOREGOING, DATADOG PROVIDES NO WARRANTY OR UNDERTAKING, AND MAKES NO REPRESENTATION OF ANY KIND THAT THE DATADOG MATERIALS WILL MEET YOUR REQUIREMENTS, ACHIEVE ANY INTENDED RESULTS, BE COMPATIBLE OR WORK WITH ANY OTHER SOFTWARE, APPLICATIONS, SYSTEMS OR SERVICES, OPERATE WITHOUT INTERRUPTION, MEET ANY PERFORMANCE OR RELIABILITY STANDARDS OR BE ERROR FREE OR THAT ANY ERRORS OR DEFECTS CAN OR WILL BE CORRECTED.
+
+WITHOUT LIMITING THE FOREGOING, DATADOG MAKES NO REPRESENTATION OR WARRANTY OF ANY KIND, EXPRESS OR IMPLIED: (I) AS TO THE OPERATION OR AVAILABILITY OF THE DATADOG MATERIALS, OR THE INFORMATION, CONTENT, AND MATERIALS OR PRODUCTS INCLUDED THEREON; (II) THAT THE DATADOG MATERIALS WILL BE UNINTERRUPTED OR ERROR-FREE; (III) AS TO THE ACCURACY, RELIABILITY, OR CURRENCY OF ANY INFORMATION OR CONTENT PROVIDED THROUGH THE DATADOG MATERIALS; OR (IV) THAT THE DATADOG MATERIALS, ITS SERVERS, THE CONTENT, OR E-MAILS SENT FROM OR ON BEHALF OF DATADOG ARE FREE OF VIRUSES, SCRIPTS, TROJAN HORSES, WORMS, MALWARE, TIMEBOMBS OR OTHER HARMFUL COMPONENTS.
+
+12. LIMITATION OF LIABILITY
+Notwithstanding any damages that you might incur, Datadog has no liability under any provision of this Agreement.
+
+To the maximum extent permitted by Applicable Law, in no event shall Datadog be liable for any special, incidental, indirect, or consequential damages whatsoever (including, but not limited to, damages for loss of profits, for loss of data or other information, for business interruption, for personal injury, for loss of privacy arising out of or in any way related to the use of or inability to use the Datadog Materials, third-party software and/or third-party hardware used with the Datadog Materials, or otherwise in connection with any provision of this Agreement), even if Datadog has been advised of the possibility of such damages and even if the remedy fails of its essential purpose.
+
+13. GOVERNING LAW/VENUE
+Except to the extent the issue arising under this Agreement is governed by United States Federal law, this Agreement shall be governed by and construed and enforced in accordance with the laws of the State of New York, without giving effect to the choice of law rules of that State. Any legal action or proceeding arising under or relating to this Agreement shall be brought exclusively in the state or federal courts located in New York County, New York, USA, and the Parties expressly consent to personal jurisdiction and venue in those courts. The Parties agree that the United Nations Convention on Contracts for the International Sale of Goods are specifically excluded from application to this Agreement.
+
+14. SEVERABILITY
+If any provision of this Agreement is held to be unenforceable or invalid, such provision will be changed and interpreted to accomplish the objectives of such provision to the greatest extent possible under Applicable Law and the remaining provisions will continue in full force and effect.
+
+15. WAIVER
+Except as provided herein, the failure to exercise a right or to require performance of an obligation under this Agreement shall not affect a party’s ability to exercise such right or require such performance at any time thereafter nor shall the waiver of a breach constitute waiver of any subsequent breach.
+
+16. U.S. GOVERNMENT CUSTOMERS
+If you are using the Datadog Materials on behalf of the U.S. Government, the Datadog Materials are provided to the U.S. Government as “commercial items,” “commercial computer software,” “commercial computer software documentation,” and “technical data” as those terms are defined and used under Applicable Law, including the Federal Acquisition Regulations and the Defense Federal Acquisition Regulation Supplement. If these terms fail to meet the U.S. Government’s needs or are inconsistent in any respect with federal law, you must immediately discontinue use of the Datadog Materials.
+
+17. EXPORT COMPLIANCE
+You may not export or re-export the Datadog Materials except as authorized by United States law and the laws of the jurisdiction in which the Datadog Materials was obtained.
+
+In particular, but without limitation, the Datadog Materials may not be exported or re-exported to an individual, or entity, country, or region identified on the Consolidated Screening List, available at https://www.trade.gov/consolidated-screening-list or to any individual or entity in Russia or Belarus (“Sanctions Target”).
+
+By installing or using any component of the Datadog Materials, you represent and warrant that you are not located in, under control of, or a national or resident of any Sanctions Target.
+
+18. AMENDMENTS TO THIS AGREEMENT
+Datadog reserves the right, at its sole discretion, to modify or replace this Agreement at any time. If a revision is material we will provide at least 30 days’ notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion.
+
+By continuing to access or use our Datadog Materials after any revisions become effective, you agree to be bound by the revised terms. If you do not agree to the new terms, you are no longer authorized to use the Datadog Materials.
+
+19. ENTIRE AGREEMENT
+The Agreement constitutes the entire agreement between you and Datadog regarding your use of the Datadog Materials and supersedes all prior and contemporaneous written or oral agreements between you and Datadog or any Datadog affiliate or subsidiary.
+
+You may be subject to additional terms and conditions that apply when you use or purchase other Datadog Services.
+
+20. NOTICE
+All notices or communications required or permitted in connection with the Datadog Services shall be made pursuant to the notice terms under the applicable Subscription Agreement. All other notices shall be made as set forth below. Notices shall be made in writing and shall be deemed to be sufficiently given two business days after being sent, unless the sender has knowledge that such notice was not received.
+
+a. To Datadog
+For notices or communications to Datadog, you may contact, as appropriate, (i) support@datadoghq.com, or (ii) legal@datadoghq.com.
+
+b. To You
+For all other notices or communications to you, Datadog will contact: (i) your Administrator via email, or (ii) for notices not specific to you, through the Datadog Materials or Datadog Services.
+

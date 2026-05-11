@@ -1,0 +1,151 @@
+id: iis
+metric_id: iis
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: IIS
+  enabled: true
+  filter:
+    query: source:iis
+  processors:
+    - type: grok-parser
+      name: ''
+      enabled: true
+      source: message
+      samples:
+        - 2002-05-02 17:42:15 172.22.255.255 GET /images/picture.jpg ?toto=tata 80 toto 123.123.123.123 Mozilla/4.0+(compatible;MSIE+5.5;+Windows+2000+Server) 200 211 322 1234
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _bytes_read %{integer:network.bytes_read}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _cookie %{notSpace:http.cookie:querystring}
+          _date_iis %{date("yyyy-MM-dd HH:mm:ss"):date_access}
+          _http_url %{notSpace:http.url}
+          _http_version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _http_query (?>\?|)%{notSpace:http.url_details.queryString:querystring}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _duration %{integer:duration:scale(1000000)}
+          _referer %{notSpace:http.referer}
+          _server_name %{ipOrHost:http.server_name}
+          _server_port %{integer:server.port}
+          _server_ip %{ip:server.ip}
+          _status_code %{integer:http.status_code}
+          _sub_status_code %{integer:http.sub_status_code}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _username %{notSpace:user.name}
+          _method %{word:http.method}
+          _win32_status %{integer:iis.win32_status}
+        matchRules: |
+          iis.default %{_date_iis} %{_server_name} %{_method} %{_http_url} %{_http_query} %{_client_port} %{_auth} %{_client_ip} %{_user_agent} %{_status_code} %{_sub_status_code} %{_win32_status} %{_duration}
+
+          iis.fully_expanded %{_date_iis} %{_ident} %{word:hostname} %{_server_ip} %{_method} %{_http_url} %{_http_query} %{_server_port} %{_username} %{_client_ip} %{_http_version} %{_user_agent} %{_cookie} %{_referer} %{_server_name} %{_status_code} %{_sub_status_code} %{_win32_status} %{_bytes_written} %{_bytes_read} %{_duration}
+
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: true
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

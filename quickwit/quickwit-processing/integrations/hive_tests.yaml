@@ -1,0 +1,129 @@
+id: "hive"
+tests:
+ -
+  sample: "2019-05-17T10:01:17,153 INFO  [pool-10-thread-2]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root\tip=127.0.0.1\tcmd=source:127.0.0.1 get_all_functions"
+  result:
+    custom:
+      date: 1558087277153
+      db:
+        command:
+          source: "127.0.0.1"
+        operation: "get_all_functions"
+        user: "root"
+      level: "INFO"
+      logger:
+        method_name: "HiveMetaStore.java:logAuditEvent(309)"
+        name: "HiveMetaStore.audit"
+        thread_name: "pool-10-thread-2"
+      network:
+        client:
+          ip: "127.0.0.1"
+    message: "2019-05-17T10:01:17,153 INFO  [pool-10-thread-2]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root\tip=127.0.0.1\tcmd=source:127.0.0.1 get_all_functions"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558087277153
+ -
+  sample: "2019-05-17T10:05:19,321 INFO  [pool-10-thread-3]: metastore.HiveMetaStore (HiveMetaStore.java:logInfo(777)) - 2: source:127.0.0.1 get_database: default"
+  result:
+    custom:
+      date: 1558087519321
+      db:
+        command:
+          source: "127.0.0.1"
+        name: "default"
+        operation: "get_database"
+      level: "INFO"
+      logger:
+        method_name: "HiveMetaStore.java:logInfo(777)"
+        name: "metastore.HiveMetaStore"
+        thread_name: "pool-10-thread-3"
+    message: "2019-05-17T10:05:19,321 INFO  [pool-10-thread-3]: metastore.HiveMetaStore (HiveMetaStore.java:logInfo(777)) - 2: source:127.0.0.1 get_database: default"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558087519321
+ -
+  sample: "2019-04-25T13:12:51,755 INFO  [pool-7-thread-9]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root ip=172.27.0.7   cmd=source:172.27.0.7 get_table: db=default tbl=pokes"
+  result:
+    custom:
+      date: 1556197971755
+      db:
+        command:
+          source: "172.27.0.7"
+          table: "pokes"
+        name: "default"
+        operation: "get_table"
+        user: "root"
+      level: "INFO"
+      logger:
+        method_name: "HiveMetaStore.java:logAuditEvent(309)"
+        name: "HiveMetaStore.audit"
+        thread_name: "pool-7-thread-9"
+      network:
+        client:
+          ip: "172.27.0.7"
+    message: "2019-04-25T13:12:51,755 INFO  [pool-7-thread-9]: HiveMetaStore.audit (HiveMetaStore.java:logAuditEvent(309)) - ugi=root ip=172.27.0.7   cmd=source:172.27.0.7 get_table: db=default tbl=pokes"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556197971755
+ -
+  sample: "2019-05-17T10:05:19,719 INFO  [pool-10-thread-3]: metastore.HiveMetaStore (HiveMetaStore.java:logInfo(777)) - 2: source:127.0.0.1 create_table: Table(tableName:pokes, dbName:default, owner:root, createTime:1558087519, lastAccessTime:0, retention:0, sd:StorageDescriptor(cols:[FieldSchema(name:foo, type:int, comment:null), FieldSchema(name:bar, type:string, comment:null)], location:null, inputFormat:org.apache.hadoop.mapred.TextInputFormat, outputFormat:org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat, compressed:false, numBuckets:-1, serdeInfo:SerDeInfo(name:null, serializationLib:org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe, parameters:{serialization.format=1}), bucketCols:[], sortCols:[], parameters:{}, skewedInfo:SkewedInfo(skewedColNames:[], skewedColValues:[], skewedColValueLocationMaps:{}), storedAsSubDirectories:false), partitionKeys:[], parameters:{totalSize=0, numRows=0, rawDataSize=0, COLUMN_STATS_ACCURATE={\"BASIC_STATS\":\"true\"}, numFiles=0}, viewOriginalText:null, viewExpandedText:null, tableType:MANAGED_TABLE, privileges:PrincipalPrivilegeSet(userPrivileges:{root=[PrivilegeGrantInfo(privilege:INSERT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:SELECT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:UPDATE, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:DELETE, createTime:-1, grantor:root, grantorType:USER, grantOption:true)]}, groupPrivileges:null, rolePrivileges:null), temporary:false)"
+  result:
+    custom:
+      date: 1558087519719
+      db:
+        command:
+          description: "Table(tableName:pokes, dbName:default, owner:root, createTime:1558087519, lastAccessTime:0, retention:0, sd:StorageDescriptor(cols:[FieldSchema(name:foo, type:int, comment:null), FieldSchema(name:bar, type:string, comment:null)], location:null, inputFormat:org.apache.hadoop.mapred.TextInputFormat, outputFormat:org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat, compressed:false, numBuckets:-1, serdeInfo:SerDeInfo(name:null, serializationLib:org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe, parameters:{serialization.format=1}), bucketCols:[], sortCols:[], parameters:{}, skewedInfo:SkewedInfo(skewedColNames:[], skewedColValues:[], skewedColValueLocationMaps:{}), storedAsSubDirectories:false), partitionKeys:[], parameters:{totalSize=0, numRows=0, rawDataSize=0, COLUMN_STATS_ACCURATE={\"BASIC_STATS\":\"true\"}, numFiles=0}, viewOriginalText:null, viewExpandedText:null, tableType:MANAGED_TABLE, privileges:PrincipalPrivilegeSet(userPrivileges:{root=[PrivilegeGrantInfo(privilege:INSERT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:SELECT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:UPDATE, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:DELETE, createTime:-1, grantor:root, grantorType:USER, grantOption:true)]}, groupPrivileges:null, rolePrivileges:null), temporary:false)"
+          source: "127.0.0.1"
+        operation: "create_table"
+      level: "INFO"
+      logger:
+        method_name: "HiveMetaStore.java:logInfo(777)"
+        name: "metastore.HiveMetaStore"
+        thread_name: "pool-10-thread-3"
+    message: "2019-05-17T10:05:19,719 INFO  [pool-10-thread-3]: metastore.HiveMetaStore (HiveMetaStore.java:logInfo(777)) - 2: source:127.0.0.1 create_table: Table(tableName:pokes, dbName:default, owner:root, createTime:1558087519, lastAccessTime:0, retention:0, sd:StorageDescriptor(cols:[FieldSchema(name:foo, type:int, comment:null), FieldSchema(name:bar, type:string, comment:null)], location:null, inputFormat:org.apache.hadoop.mapred.TextInputFormat, outputFormat:org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat, compressed:false, numBuckets:-1, serdeInfo:SerDeInfo(name:null, serializationLib:org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe, parameters:{serialization.format=1}), bucketCols:[], sortCols:[], parameters:{}, skewedInfo:SkewedInfo(skewedColNames:[], skewedColValues:[], skewedColValueLocationMaps:{}), storedAsSubDirectories:false), partitionKeys:[], parameters:{totalSize=0, numRows=0, rawDataSize=0, COLUMN_STATS_ACCURATE={\"BASIC_STATS\":\"true\"}, numFiles=0}, viewOriginalText:null, viewExpandedText:null, tableType:MANAGED_TABLE, privileges:PrincipalPrivilegeSet(userPrivileges:{root=[PrivilegeGrantInfo(privilege:INSERT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:SELECT, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:UPDATE, createTime:-1, grantor:root, grantorType:USER, grantOption:true), PrivilegeGrantInfo(privilege:DELETE, createTime:-1, grantor:root, grantorType:USER, grantOption:true)]}, groupPrivileges:null, rolePrivileges:null), temporary:false)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558087519719
+ -
+  sample: "2019-04-25T13:11:03,575 INFO  [main]: service.AbstractService (AbstractService.java:start(104)) - Service:OperationManager is started."
+  result:
+    custom:
+      date: 1556197863575
+      description: "Service:OperationManager is started."
+      level: "INFO"
+      logger:
+        method_name: "AbstractService.java:start(104)"
+        name: "service.AbstractService"
+        thread_name: "main"
+    message: "2019-04-25T13:11:03,575 INFO  [main]: service.AbstractService (AbstractService.java:start(104)) - Service:OperationManager is started."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1556197863575
+ -
+  sample: |-
+    2019-05-21T08:26:33,280 ERROR [f107bf5e-a0af-420a-ba56-462b8c60cabf HiveServer2-Handler-Pool: Thread-101]: ql.Driver (SessionState.java:printError(1126)) - FAILED: SemanticException [Error 10001]: Line 1:14 Table not found 'aze'
+    org.apache.hadoop.hive.ql.parse.SemanticException: Line 1:14 Table not found 'aze'
+     at org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.getMetaData(SemanticAnalyzer.java:2006)
+  result:
+    custom:
+      date: 1558427193280
+      description: "FAILED: SemanticException [Error 10001]: Line 1:14 Table not found 'aze'"
+      error:
+        kind: "org.apache.hadoop.hive.ql.parse.SemanticException"
+        message: "Line 1:14 Table not found 'aze'"
+        stack: |-
+          org.apache.hadoop.hive.ql.parse.SemanticException: Line 1:14 Table not found 'aze'
+           at org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.getMetaData(SemanticAnalyzer.java:2006)
+      level: "ERROR"
+      logger:
+        method_name: "SessionState.java:printError(1126)"
+        name: "ql.Driver"
+        thread_name: "f107bf5e-a0af-420a-ba56-462b8c60cabf HiveServer2-Handler-Pool: Thread-101"
+    message: |-
+      2019-05-21T08:26:33,280 ERROR [f107bf5e-a0af-420a-ba56-462b8c60cabf HiveServer2-Handler-Pool: Thread-101]: ql.Driver (SessionState.java:printError(1126)) - FAILED: SemanticException [Error 10001]: Line 1:14 Table not found 'aze'
+      org.apache.hadoop.hive.ql.parse.SemanticException: Line 1:14 Table not found 'aze'
+       at org.apache.hadoop.hive.ql.parse.SemanticAnalyzer.getMetaData(SemanticAnalyzer.java:2006)
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1558427193280
+

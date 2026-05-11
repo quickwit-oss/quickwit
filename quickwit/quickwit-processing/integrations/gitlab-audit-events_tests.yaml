@@ -1,0 +1,162 @@
+id: "gitlab-audit-events"
+tests:
+  - sample: |-
+        {
+          "id": 2595188849,
+          "author_id": 20643843,
+          "entity_id": 17478274,
+          "entity_type": "Project",
+          "event_name": "project_access_token_created",
+          "details": {
+            "action": "custom",
+            "event_name": "project_access_token_created",
+            "author_name": "User A",
+            "author_class": "User",
+            "target_id": 10112574,
+            "target_type": "PersonalAccessToken",
+            "target_details": "user-a-coscreen-audit-events-2",
+            "custom_message": "Created project access token with token_id: 10112574 with scopes: [\"read_api\"] and Maintainer access level.",
+            "ip_address": "41.000.000.00",
+            "entity_path": "coscreen/coscreen-beta",
+            "author_email": "user-a@datadoghq.com"
+          },
+          "created_at": "2024-06-27T20:23:46.946Z"
+        }
+    result:
+      custom:
+        action: "custom"
+        custom_message: "Created project access token with token_id: 10112574 with scopes: [\"read_api\"] and Maintainer access level."
+        created_at: "2024-06-27T20:23:46.946Z"
+        date_ms: 1719519826946
+        details:
+          action: "custom"
+          author_class: "User"
+          custom_message: "Created project access token with token_id: 10112574 with scopes: [\"read_api\"] and Maintainer access level."
+          entity_path: "coscreen/coscreen-beta"
+          event_name: "project_access_token_created"
+          target_details: "user-a-coscreen-audit-events-2"
+          target_id: 10112574
+          target_type: "PersonalAccessToken"
+        entity_id: 17478274
+        entity_type: "Project"
+        event_name: "project_access_token_created"
+        evt:
+          id: 2595188849
+          name: "project_access_token_created"
+        network:
+          client:
+            ip: "41.000.000.00"
+        usr:
+          email: "user-a@datadoghq.com"
+          id: "20643843"
+          name: "User A"
+      message: |-
+        {
+          "entity_type" : "Project",
+          "event_name" : "project_access_token_created",
+          "created_at" : "2024-06-27T20:23:46.946Z",
+          "details" : {
+            "author_name" : "User A",
+            "author_class" : "User",
+            "custom_message" : "Created project access token with token_id: 10112574 with scopes: [\"read_api\"] and Maintainer access level.",
+            "entity_path" : "coscreen/coscreen-beta",
+            "target_type" : "PersonalAccessToken",
+            "action" : "custom",
+            "event_name" : "project_access_token_created",
+            "author_email" : "user-a@datadoghq.com",
+            "target_id" : 10112574,
+            "ip_address" : "41.000.000.00",
+            "target_details" : "user-a-coscreen-audit-events-2"
+          },
+          "id" : 2595188849,
+          "author_id" : 20643843,
+          "entity_id" : 17478274
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1719519826946
+  - sample: |-
+      {
+          "id": 2594666410,
+          "author_id": 5610009,
+          "entity_id": 17478274,
+          "entity_type": "Project",
+          "event_name": "member_destroyed",
+          "details": {
+            "remove": "user_access",
+            "as": "Default role: Maintainer",
+            "member_id": 75742130,
+            "event_name": "member_destroyed",
+            "author_name": "User B",
+            "author_class": "User",
+            "target_id": 14611596,
+            "target_type": "User",
+            "target_details": "User C",
+            "custom_message": "Membership destroyed",
+            "ip_address": "97.000.000.000",
+            "entity_path": "coscreen/coscreen-beta",
+            "author_email": "user-b@coscreen.co"
+          },
+          "created_at": "2024-06-27T16:14:58.711Z"
+        }
+    result:
+      custom:
+        created_at: "2024-06-27T16:14:58.711Z"
+        custom_message: "Membership destroyed"
+        date_ms: 1719504898711
+        details:
+          as: "Default role: Maintainer"
+          author_class: "User"
+          custom_message: "Membership destroyed"
+          entity_path: "coscreen/coscreen-beta"
+          event_name: "member_destroyed"
+          member_id: 75742130
+          remove: "user_access"
+          target_details: "User C"
+          target_id: 14611596
+          target_type: "User"
+        entity_id: 17478274
+        entity_type: "Project"
+        event_name: "member_destroyed"
+        evt:
+          id: 2594666410
+          name: "member_destroyed"
+        network:
+          client:
+            ip: "97.000.000.000"
+        usr:
+          email: "user-b@coscreen.co"
+          id: "5610009"
+          name: "User B"
+      message: |-
+        {
+          "entity_type" : "Project",
+          "event_name" : "member_destroyed",
+          "created_at" : "2024-06-27T16:14:58.711Z",
+          "details" : {
+            "member_id" : 75742130,
+            "author_name" : "User B",
+            "entity_path" : "coscreen/coscreen-beta",
+            "target_type" : "User",
+            "target_id" : 14611596,
+            "ip_address" : "97.000.000.000",
+            "remove" : "user_access",
+            "author_class" : "User",
+            "as" : "Default role: Maintainer",
+            "custom_message" : "Membership destroyed",
+            "event_name" : "member_destroyed",
+            "author_email" : "user-b@coscreen.co",
+            "target_details" : "User C"
+          },
+          "id" : 2594666410,
+          "author_id" : 5610009,
+          "entity_id" : 17478274
+        }
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1719504898711
+
+# The `result` field should be left blank to start. Once you submit your log asset files with
+# your integration pull-request in a Datadog GitHub repository, Datadog's validations will
+# run your raw logs against your pipeline and return the result. If the result output in the
+# validation is accurate, take the output and add it to the `result` field in your test YAML file.

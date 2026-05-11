@@ -1,0 +1,62 @@
+id: ntpd
+backend_only: true # This integration has no ID and is defined as an exception in the declarative integration pipeline (no tile). For this reason, it should be a backend_only integration. https://github.com/DataDog/declarative-integration-pipeline/blob/4c0b97d57261c4af32525a7db0c2356ac8c09741/declarative_integrations/create_agent_integration/constants.py#L90-L136
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+pipeline:
+  type: pipeline
+  name: NTPD
+  enabled: true
+  filter:
+    query: source:ntpd
+  processors:
+    - type: grok-parser
+      name: Parsing NTPD logs
+      enabled: true
+      source: message
+      samples:
+        - 'Nov 9 01:10:09 <example> ntpd[27847]: Deleting interface #2617 vethee9dd864, fe80::8404:3ff:fef9:f8c9%2607#123, interface stats: received=0, sent=0, dropped=0, active_time=35 secs'
+        - 'Mar 26 11:43:17 <example> ntpd[2783]: Listen normally on 16008 veth918bcf18 [fe80::98ba:92ff:feaa:6f2f%13893]:123'
+        - 'Mar 26 11:43:17  ntpd[2783]: unable to create socket on vethf539492f (21115) for fe80::e888:eeff:fe18:4d88%18389#123'
+        - 'Mar 26 11:43:17  ntpd[2783]: bind(27) AF_INET6 fe80::ec19:18ff:fefc:810e%14124#123 flags 0x11 failed: Cannot assign requested address'
+        - "Mar 26 11:43:17  ntpd[2783]: bind() fd 23, family AF_INET6, port 123, scope 1, addr fe80::92e2:baff:fe2b:3a00, mcast=0 flags=0x11 fails: Can't assign requested address"
+      grok:
+        supportRules: |
+          _date (%{date("MMM d HH:mm:ss"):date}|%{date("MMM dd HH:mm:ss"):timestamp})
+          _interface_name %{regex("[^,]*"):interface.name}
+          _networkip %{ip:network.client.ip}
+          _networkport %{number:network.client.port}
+        matchRules: |
+          interface_deleted %{_date}(\s*%{notSpace})?\s*ntpd\[%{number}\]:\s*Deleting interface \#%{notSpace:connection_instance} %{_interface_name}, %{_networkip}\#%{_networkport}, interface stats: %{data:interface.stats:keyvalue("=","\\w.\\-_@\\s")}
+
+          connection_successful %{_date}(\s*%{notSpace})?\s*ntpd\[%{number}\]:\s*Listen normally on %{notSpace:connection_instance} %{_interface_name} \[%{_networkip}\]:%{_networkport}.*
+
+          connection_failed %{_date}(\s*%{notSpace})?\s*ntpd\[%{number}\]:\s*unable to create socket on %{_interface_name} \(%{notSpace:connection_instance}\) for %{_networkip}\#%{_networkport}.*
+
+          bind_failed %{_date}(\s*%{notSpace})?\s*ntpd\[%{number}\]:\s*bind\((%{notSpace:connection_instance})?\) %{notSpace} %{_networkip}\#%{_networkport} %{data}
+
+          bind_failed2 %{_date}(\s*%{notSpace})?\s*ntpd\[%{number}\]:\s*bind\((%{notSpace:connection_instance})?\) fd %{notSpace} family %{notSpace:family}, port %{_networkport}, scope %{number:scope}, addr %{_networkip}, mcast=%{number:mcast} flags=%{notSpace:flags} fails:%{data}
+
+    - type: grok-parser
+      name: Convert active time to milliseconds
+      enabled: true
+      source: interface.stats.active_time
+      grok:
+        matchRules: |
+          seconds_to_milliseconds %{number:interface.stats.active_time:scale(1000)} secs
+        supportRules: ''
+      samples:
+        - 35 secs
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

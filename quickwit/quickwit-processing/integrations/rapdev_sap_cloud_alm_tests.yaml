@@ -1,0 +1,922 @@
+id: "rapdev_sap_cloud_alm"
+tests:
+ -
+  sample: |-
+    {
+      "datadog" : {
+        "log" : {
+          "source" : "rapdev_sap_cloud_alm",
+          "sourcecategory" : "im"
+        }
+      },
+      "NormalizedEvents" : {
+        "Status" : "03",
+        "Category" : "IDOC_MESSAGES",
+        "CorrelationData" : {
+          "Passport" : {
+            "ConnectionId" : "00000000000000000000000000000000",
+            "ComponentType" : "0",
+            "Action" : "null",
+            "ActionType" : "0",
+            "ConnectionCounter" : 0,
+            "PreviousComponent" : "null",
+            "Service" : "0",
+            "ComponentName" : "null",
+            "RootContextId" : "00000000000000000000000000000000",
+            "TransactionId" : ""
+          }
+        },
+        "EventTimestamp" : "2025-05-02T16:45:45.000",
+        "StatusGroup" : "SUCCESSFUL",
+        "StatusText" : "IDoc sent with SOAP HTTP",
+        "EventEndTimestamp" : "2025-05-02T16:45:46.000",
+        "ApplicationData" : [ {
+          "ParamId" : "RCVPOR",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "BATCH3PL",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "ImDataId",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "cf38bec9-6b25-3463-9db6-35db15309991",
+          "IsSensitiveData" : false
+        }, {
+          "SequenceNo" : 3,
+          "ParamId" : "STATUS_DETAILS",
+          "ValueType" : "SIMPLE",
+          "DisplayText" : "Status Details",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "{\"Status\":\"30\",\"Message\":\"Receiver exists, No filters, No conversion, No version change\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"S\",\"Message Number\":6,\"Message Id\":\"B1\",\"Transaction Id\":\"\"}",
+          "IsSensitiveData" : false,
+          "PackageNo" : 0
+        }, {
+          "SequenceNo" : 2,
+          "ParamId" : "STATUS_DETAILS",
+          "ValueType" : "SIMPLE",
+          "DisplayText" : "Status Details",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "{\"Status\":\"01\",\"Message\":\"\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"\",\"Message Type\":\"\",\"Message Number\":0,\"Message Id\":\"\",\"Transaction Id\":\"\"}",
+          "IsSensitiveData" : false,
+          "PackageNo" : 0
+        }, {
+          "SequenceNo" : 1,
+          "ParamId" : "STATUS_DETAILS",
+          "ValueType" : "SIMPLE",
+          "DisplayText" : "Status Details",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "{\"Status\":\"03\",\"Message\":\"IDoc sent with SOAP HTTP\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"I\",\"Message Number\":392,\"Message Id\":\"EA\",\"Transaction Id\":\"\"}",
+          "IsSensitiveData" : false,
+          "PackageNo" : 0
+        }, {
+          "ParamId" : "IDOCTP",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "BATMAS03",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "MAXSEGNUM",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "000009",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "RCVPRN",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "QRSTU_V",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "SNDPRT",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "LS",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "SNDPOR",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "SAPABC",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "MESTYP",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "BATMAS",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "RCVPRT",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "LS",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "SNDPRN",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "ABCCLNT123",
+          "IsSensitiveData" : false
+        }, {
+          "ParamId" : "MANDT",
+          "ValueType" : "SIMPLE",
+          "Classification" : "MESSAGE",
+          "IsPersonalData" : false,
+          "ParamValue" : "123",
+          "IsSensitiveData" : false
+        } ],
+        "SourceEventId" : "0000000001085412",
+        "Direction" : "OUTBOUND"
+      }
+    }
+  result:
+    custom:
+      NormalizedEvents:
+        ApplicationData:
+         -
+          ParamId: "RCVPOR"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "BATCH3PL"
+          IsSensitiveData: false
+         -
+          ParamId: "ImDataId"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "cf38bec9-6b25-3463-9db6-35db15309991"
+          IsSensitiveData: false
+         -
+          SequenceNo: 3
+          ParamId: "STATUS_DETAILS"
+          ValueType: "SIMPLE"
+          DisplayText: "Status Details"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "{\"Status\":\"30\",\"Message\":\"Receiver exists, No filters, No conversion, No version change\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"S\",\"Message Number\":6,\"Message Id\":\"B1\",\"Transaction Id\":\"\"}"
+          IsSensitiveData: false
+          PackageNo: 0
+         -
+          SequenceNo: 2
+          ParamId: "STATUS_DETAILS"
+          ValueType: "SIMPLE"
+          DisplayText: "Status Details"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "{\"Status\":\"01\",\"Message\":\"\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"\",\"Message Type\":\"\",\"Message Number\":0,\"Message Id\":\"\",\"Transaction Id\":\"\"}"
+          IsSensitiveData: false
+          PackageNo: 0
+         -
+          SequenceNo: 1
+          ParamId: "STATUS_DETAILS"
+          ValueType: "SIMPLE"
+          DisplayText: "Status Details"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "{\"Status\":\"03\",\"Message\":\"IDoc sent with SOAP HTTP\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"I\",\"Message Number\":392,\"Message Id\":\"EA\",\"Transaction Id\":\"\"}"
+          IsSensitiveData: false
+          PackageNo: 0
+         -
+          ParamId: "IDOCTP"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "BATMAS03"
+          IsSensitiveData: false
+         -
+          ParamId: "MAXSEGNUM"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "000009"
+          IsSensitiveData: false
+         -
+          ParamId: "RCVPRN"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "QRSTU_V"
+          IsSensitiveData: false
+         -
+          ParamId: "SNDPRT"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "LS"
+          IsSensitiveData: false
+         -
+          ParamId: "SNDPOR"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "SAPABC"
+          IsSensitiveData: false
+         -
+          ParamId: "MESTYP"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "BATMAS"
+          IsSensitiveData: false
+         -
+          ParamId: "RCVPRT"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "LS"
+          IsSensitiveData: false
+         -
+          ParamId: "SNDPRN"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "ABCCLNT123"
+          IsSensitiveData: false
+         -
+          ParamId: "MANDT"
+          ValueType: "SIMPLE"
+          Classification: "MESSAGE"
+          IsPersonalData: false
+          ParamValue: "123"
+          IsSensitiveData: false
+        Category: "IDOC_MESSAGES"
+        CorrelationData:
+          Passport:
+            Action: "null"
+            ActionType: "0"
+            ComponentName: "null"
+            ComponentType: "0"
+            ConnectionCounter: 0
+            ConnectionId: "00000000000000000000000000000000"
+            PreviousComponent: "null"
+            RootContextId: "00000000000000000000000000000000"
+            Service: "0"
+            TransactionId: ""
+        Direction: "OUTBOUND"
+        EventEndTimestamp: "2025-05-02T16:45:46.000"
+        EventTimestamp: "2025-05-02T16:45:45.000"
+        SourceEventId: "0000000001085412"
+        Status: "03"
+        StatusGroup: "SUCCESSFUL"
+        StatusText: "IDoc sent with SOAP HTTP"
+      datadog:
+        log:
+          source: "rapdev_sap_cloud_alm"
+      sap:
+        im:
+          direction: "outbound"
+        log:
+          sourcecategory: "im"
+      status: "successful"
+    message: |-
+      {
+        "datadog" : {
+          "log" : {
+            "source" : "rapdev_sap_cloud_alm",
+            "sourcecategory" : "im"
+          }
+        },
+        "NormalizedEvents" : {
+          "Status" : "03",
+          "Category" : "IDOC_MESSAGES",
+          "CorrelationData" : {
+            "Passport" : {
+              "ConnectionId" : "00000000000000000000000000000000",
+              "ComponentType" : "0",
+              "Action" : "null",
+              "ActionType" : "0",
+              "ConnectionCounter" : 0,
+              "PreviousComponent" : "null",
+              "Service" : "0",
+              "ComponentName" : "null",
+              "RootContextId" : "00000000000000000000000000000000",
+              "TransactionId" : ""
+            }
+          },
+          "EventTimestamp" : "2025-05-02T16:45:45.000",
+          "StatusGroup" : "SUCCESSFUL",
+          "StatusText" : "IDoc sent with SOAP HTTP",
+          "EventEndTimestamp" : "2025-05-02T16:45:46.000",
+          "ApplicationData" : [ {
+            "ParamId" : "RCVPOR",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "BATCH3PL",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "ImDataId",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "cf38bec9-6b25-3463-9db6-35db15309991",
+            "IsSensitiveData" : false
+          }, {
+            "SequenceNo" : 3,
+            "ParamId" : "STATUS_DETAILS",
+            "ValueType" : "SIMPLE",
+            "DisplayText" : "Status Details",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "{\"Status\":\"30\",\"Message\":\"Receiver exists, No filters, No conversion, No version change\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"S\",\"Message Number\":6,\"Message Id\":\"B1\",\"Transaction Id\":\"\"}",
+            "IsSensitiveData" : false,
+            "PackageNo" : 0
+          }, {
+            "SequenceNo" : 2,
+            "ParamId" : "STATUS_DETAILS",
+            "ValueType" : "SIMPLE",
+            "DisplayText" : "Status Details",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "{\"Status\":\"01\",\"Message\":\"\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"\",\"Message Type\":\"\",\"Message Number\":0,\"Message Id\":\"\",\"Transaction Id\":\"\"}",
+            "IsSensitiveData" : false,
+            "PackageNo" : 0
+          }, {
+            "SequenceNo" : 1,
+            "ParamId" : "STATUS_DETAILS",
+            "ValueType" : "SIMPLE",
+            "DisplayText" : "Status Details",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "{\"Status\":\"03\",\"Message\":\"IDoc sent with SOAP HTTP\",\"Creation Time\":\"2025-05-02 16:45:46\",\"CODE\":\"SAP\",\"Message Type\":\"I\",\"Message Number\":392,\"Message Id\":\"EA\",\"Transaction Id\":\"\"}",
+            "IsSensitiveData" : false,
+            "PackageNo" : 0
+          }, {
+            "ParamId" : "IDOCTP",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "BATMAS03",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "MAXSEGNUM",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "000009",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "RCVPRN",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "QRSTU_V",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "SNDPRT",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "LS",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "SNDPOR",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "SAPABC",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "MESTYP",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "BATMAS",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "RCVPRT",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "LS",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "SNDPRN",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "ABCCLNT123",
+            "IsSensitiveData" : false
+          }, {
+            "ParamId" : "MANDT",
+            "ValueType" : "SIMPLE",
+            "Classification" : "MESSAGE",
+            "IsPersonalData" : false,
+            "ParamValue" : "123",
+            "IsSensitiveData" : false
+          } ],
+          "SourceEventId" : "0000000001085412",
+          "Direction" : "OUTBOUND"
+        }
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746204346000
+ -
+  sample: |-
+    {
+      "exception" : {
+        "type" : "ABAP Aborted Job"
+      },
+      "Job Id" : "WORKFLOW_0.5_EMP-DEV1@13121502",
+      "@timestamp" : "2025-05-30T13:14:20.000Z",
+      "sap" : {
+        "calm" : {
+          "service" : {
+            "lms_id" : "12345678-b123-456c-7e8w-s9dkf9093g22"
+          }
+        },
+        "service" : {
+          "object_type" : "LogicalSystem",
+          "name" : "ABC.123",
+          "display_name" : "ABC.123"
+        },
+        "exm" : {
+          "category" : "ABAP Aborted Job",
+          "user" : "XX123456"
+        }
+      },
+      "Subcategory" : "WORKFLOW_0.5_EMP-DEV1",
+      "service" : {
+        "instance" : {
+          "id" : "000000000"
+        },
+        "name" : "ABC.123",
+        "namespace" : "SAP_S4HANA_OP"
+      },
+      "datadog" : {
+        "log" : {
+          "source" : "sap_cloud_alm",
+          "sourcecategory" : "exm.im"
+        }
+      },
+      "JOBLOG" : "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>516</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Job WORKFLOW_0.5_EMP-DEV1 13121502 started</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1>WORKFLOW_0.5_EMP-DEV1</MSGV1><MSGV2>13121502</MSGV2><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>BT</MSGID><MSGNO>513</MSGNO><MSGTYPE>E</MSGTYPE><TEXT>Job has exceeded its latest start date</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>564</MSGNO><MSGTYPE>A</MSGTYPE><TEXT>Job canceled after system exception ERROR_MESSAGE</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5></CONTENT></asx:values></asx:abap>",
+      "otel" : {
+        "severity_text" : "Error",
+        "severity_number" : "17",
+        "timestamp" : "1748610860000000000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "sap.calm",
+          "language" : "java",
+          "version" : "1.0.0"
+        }
+      },
+      "job" : {
+        "abap" : {
+          "values" : {
+            "CONTENT" : {
+              "TBTC5" : [ {
+                "DYNPRO" : "",
+                "MSGNO" : "516",
+                "PFKEY" : "",
+                "RABAXKEYLN" : "0",
+                "ENTERTIME" : "13:14:20",
+                "RABAXKEY" : "",
+                "MSGTYPE" : "S",
+                "TEXT" : "Job WORKFLOW_0.5_EMP-DEV1 13121502 started",
+                "ENTERDATE" : "2025-05-30",
+                "MSGV4" : "",
+                "MSGV3" : "",
+                "MSGV2" : "13121502",
+                "PROGRAM" : "",
+                "MSGID" : "00",
+                "MSGV1" : "WORKFLOW_0.5_EMP-DEV1"
+              }, {
+                "DYNPRO" : "",
+                "MSGNO" : "513",
+                "PFKEY" : "",
+                "RABAXKEYLN" : "0",
+                "ENTERTIME" : "13:14:20",
+                "RABAXKEY" : "",
+                "MSGTYPE" : "E",
+                "TEXT" : "Job has exceeded its latest start date",
+                "ENTERDATE" : "2025-05-30",
+                "MSGV4" : "",
+                "MSGV3" : "",
+                "MSGV2" : "",
+                "PROGRAM" : "",
+                "MSGID" : "BT",
+                "MSGV1" : ""
+              }, {
+                "DYNPRO" : "",
+                "MSGNO" : "564",
+                "PFKEY" : "",
+                "RABAXKEYLN" : "0",
+                "ENTERTIME" : "13:14:20",
+                "RABAXKEY" : "",
+                "MSGTYPE" : "A",
+                "TEXT" : "Job canceled after system exception ERROR_MESSAGE",
+                "ENTERDATE" : "2025-05-30",
+                "MSGV4" : "",
+                "MSGV3" : "",
+                "MSGV2" : "",
+                "PROGRAM" : "",
+                "MSGID" : "00",
+                "MSGV1" : ""
+              } ]
+            }
+          },
+          "version" : "1.0"
+        }
+      },
+      "status" : "Error"
+    }
+  result:
+    custom:
+      '@timestamp': "2025-05-30T13:14:20.000Z"
+      JOBLOG: "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>516</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Job WORKFLOW_0.5_EMP-DEV1 13121502 started</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1>WORKFLOW_0.5_EMP-DEV1</MSGV1><MSGV2>13121502</MSGV2><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>BT</MSGID><MSGNO>513</MSGNO><MSGTYPE>E</MSGTYPE><TEXT>Job has exceeded its latest start date</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>564</MSGNO><MSGTYPE>A</MSGTYPE><TEXT>Job canceled after system exception ERROR_MESSAGE</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5></CONTENT></asx:values></asx:abap>"
+      Job Id: "WORKFLOW_0.5_EMP-DEV1@13121502"
+      datadog:
+        log:
+          service: "abc.123"
+          source: "sap_cloud_alm"
+      job:
+        abap:
+          values:
+            CONTENT:
+              TBTC5:
+               -
+                DYNPRO: ""
+                MSGNO: "516"
+                PFKEY: ""
+                RABAXKEYLN: "0"
+                ENTERTIME: "13:14:20"
+                RABAXKEY: ""
+                MSGTYPE: "S"
+                TEXT: "Job WORKFLOW_0.5_EMP-DEV1 13121502 started"
+                ENTERDATE: "2025-05-30"
+                MSGV4: ""
+                MSGV3: ""
+                MSGV2: "13121502"
+                PROGRAM: ""
+                MSGID: "00"
+                MSGV1: "WORKFLOW_0.5_EMP-DEV1"
+               -
+                DYNPRO: ""
+                MSGNO: "513"
+                PFKEY: ""
+                RABAXKEYLN: "0"
+                ENTERTIME: "13:14:20"
+                RABAXKEY: ""
+                MSGTYPE: "E"
+                TEXT: "Job has exceeded its latest start date"
+                ENTERDATE: "2025-05-30"
+                MSGV4: ""
+                MSGV3: ""
+                MSGV2: ""
+                PROGRAM: ""
+                MSGID: "BT"
+                MSGV1: ""
+               -
+                DYNPRO: ""
+                MSGNO: "564"
+                PFKEY: ""
+                RABAXKEYLN: "0"
+                ENTERTIME: "13:14:20"
+                RABAXKEY: ""
+                MSGTYPE: "A"
+                TEXT: "Job canceled after system exception ERROR_MESSAGE"
+                ENTERDATE: "2025-05-30"
+                MSGV4: ""
+                MSGV3: ""
+                MSGV2: ""
+                PROGRAM: ""
+                MSGID: "00"
+                MSGV1: ""
+          version: "1.0"
+      otel:
+        severity_number: "17"
+        severity_text: "Error"
+        timestamp: "1748610860000000000"
+      sap:
+        calm:
+          service:
+            lms_id: "12345678-b123-456c-7e8w-s9dkf9093g22"
+        exm:
+          category: "ABAP Aborted Job"
+          subcategory: "WORKFLOW_0.5_EMP-DEV1"
+          user: "XX123456"
+        log:
+          sourcecategory: "exm.im"
+        service:
+          display_name: "ABC.123"
+          name: "ABC.123"
+          object_type: "LogicalSystem"
+      service:
+        instance:
+          id: "000000000"
+        name: "ABC.123"
+        namespace: "SAP_S4HANA_OP"
+      status: "Error"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "sap.calm"
+          version: "1.0.0"
+    message: |-
+      {
+        "exception" : {
+          "type" : "ABAP Aborted Job"
+        },
+        "Job Id" : "WORKFLOW_0.5_EMP-DEV1@13121502",
+        "@timestamp" : "2025-05-30T13:14:20.000Z",
+        "sap" : {
+          "calm" : {
+            "service" : {
+              "lms_id" : "12345678-b123-456c-7e8w-s9dkf9093g22"
+            }
+          },
+          "service" : {
+            "object_type" : "LogicalSystem",
+            "name" : "ABC.123",
+            "display_name" : "ABC.123"
+          },
+          "exm" : {
+            "category" : "ABAP Aborted Job",
+            "user" : "XX123456"
+          }
+        },
+        "Subcategory" : "WORKFLOW_0.5_EMP-DEV1",
+        "service" : {
+          "instance" : {
+            "id" : "000000000"
+          },
+          "name" : "ABC.123",
+          "namespace" : "SAP_S4HANA_OP"
+        },
+        "datadog" : {
+          "log" : {
+            "source" : "sap_cloud_alm",
+            "sourcecategory" : "exm.im"
+          }
+        },
+        "JOBLOG" : "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>516</MSGNO><MSGTYPE>S</MSGTYPE><TEXT>Job WORKFLOW_0.5_EMP-DEV1 13121502 started</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1>WORKFLOW_0.5_EMP-DEV1</MSGV1><MSGV2>13121502</MSGV2><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>BT</MSGID><MSGNO>513</MSGNO><MSGTYPE>E</MSGTYPE><TEXT>Job has exceeded its latest start date</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5><TBTC5><ENTERTIME>13:14:20</ENTERTIME><ENTERDATE>2025-05-30</ENTERDATE><MSGID>00</MSGID><MSGNO>564</MSGNO><MSGTYPE>A</MSGTYPE><TEXT>Job canceled after system exception ERROR_MESSAGE</TEXT><RABAXKEY/><RABAXKEYLN>0</RABAXKEYLN><MSGV1/><MSGV2/><MSGV3/><MSGV4/><PROGRAM/><PFKEY/><DYNPRO/></TBTC5></CONTENT></asx:values></asx:abap>",
+        "otel" : {
+          "severity_text" : "Error",
+          "severity_number" : "17",
+          "timestamp" : "1748610860000000000"
+        },
+        "telemetry" : {
+          "sdk" : {
+            "name" : "sap.calm",
+            "language" : "java",
+            "version" : "1.0.0"
+          }
+        },
+        "job" : {
+          "abap" : {
+            "values" : {
+              "CONTENT" : {
+                "TBTC5" : [ {
+                  "DYNPRO" : "",
+                  "MSGNO" : "516",
+                  "PFKEY" : "",
+                  "RABAXKEYLN" : "0",
+                  "ENTERTIME" : "13:14:20",
+                  "RABAXKEY" : "",
+                  "MSGTYPE" : "S",
+                  "TEXT" : "Job WORKFLOW_0.5_EMP-DEV1 13121502 started",
+                  "ENTERDATE" : "2025-05-30",
+                  "MSGV4" : "",
+                  "MSGV3" : "",
+                  "MSGV2" : "13121502",
+                  "PROGRAM" : "",
+                  "MSGID" : "00",
+                  "MSGV1" : "WORKFLOW_0.5_EMP-DEV1"
+                }, {
+                  "DYNPRO" : "",
+                  "MSGNO" : "513",
+                  "PFKEY" : "",
+                  "RABAXKEYLN" : "0",
+                  "ENTERTIME" : "13:14:20",
+                  "RABAXKEY" : "",
+                  "MSGTYPE" : "E",
+                  "TEXT" : "Job has exceeded its latest start date",
+                  "ENTERDATE" : "2025-05-30",
+                  "MSGV4" : "",
+                  "MSGV3" : "",
+                  "MSGV2" : "",
+                  "PROGRAM" : "",
+                  "MSGID" : "BT",
+                  "MSGV1" : ""
+                }, {
+                  "DYNPRO" : "",
+                  "MSGNO" : "564",
+                  "PFKEY" : "",
+                  "RABAXKEYLN" : "0",
+                  "ENTERTIME" : "13:14:20",
+                  "RABAXKEY" : "",
+                  "MSGTYPE" : "A",
+                  "TEXT" : "Job canceled after system exception ERROR_MESSAGE",
+                  "ENTERDATE" : "2025-05-30",
+                  "MSGV4" : "",
+                  "MSGV3" : "",
+                  "MSGV2" : "",
+                  "PROGRAM" : "",
+                  "MSGID" : "00",
+                  "MSGV1" : ""
+                } ]
+              }
+            },
+            "version" : "1.0"
+          }
+        },
+        "status" : "Error"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "categoryname:abap_aborted_job"
+    timestamp: 1748610860000
+ - 
+  sample: |-
+    {
+      "exception" : {
+        "type" : "ABAP Job Log"
+      },
+      "sap" : {
+        "calm" : {
+          "service" : {
+            "lms_id" : "12345678-b123-456c-7e8w-s9dkf9093g22"
+          }
+        },
+        "service" : {
+          "object_type" : "LogicalSystem",
+          "name" : "ABC.123",
+          "display_name" : "ABC.123"
+        },
+        "exm" : {
+          "correlation_id" : "/UI5/APP_INDEX_CALCULATE@12391800",
+          "category" : "ABAP Job Log",
+          "user" : "BTC-BAS"
+        }
+      },
+      "@timestamp" : "2025-05-30T13:09:33.000Z",
+      "service" : {
+        "instance" : {
+          "id" : "000000000"
+        },
+        "name" : "ABC.123",
+        "namespace" : "SAP_S4HANA_OP"
+      },
+      "datadog" : {
+        "log" : {
+          "source" : "sap_cloud_alm",
+          "sourcecategory" : "exm.jam"
+        }
+      },
+      "JOBLOG" : "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT>*** xml payload too large ( &gt; 100K chars ) ***</CONTENT></asx:values></asx:abap>",
+      "otel" : {
+        "trace_id" : "394f88bee1f280efea826878a62ab716",
+        "severity_text" : "Warning",
+        "severity_number" : "13",
+        "timestamp" : "1748610573000000000"
+      },
+      "telemetry" : {
+        "sdk" : {
+          "name" : "sap.calm",
+          "language" : "java",
+          "version" : "1.0.0"
+        }
+      },
+      "job" : {
+        "aborted" : "False",
+        "name" : "/UI5/APP_INDEX_CALCULATE",
+        "abap" : {
+          "values" : {
+            "CONTENT" : "*** xml payload too large ( > 100K chars ) ***"
+          },
+          "version" : "1.0"
+        }
+      },
+      "status" : "Warning"
+    }
+  result:
+    custom:
+      '@timestamp': "2025-05-30T13:09:33.000Z"
+      JOBLOG: "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT>*** xml payload too large ( &gt; 100K chars ) ***</CONTENT></asx:values></asx:abap>"
+      datadog:
+        log:
+          service: "abc.123"
+          source: "sap_cloud_alm"
+      job:
+        abap:
+          values:
+            CONTENT: "*** xml payload too large ( > 100K chars ) ***"
+          version: "1.0"
+        aborted: "False"
+        name: "/UI5/APP_INDEX_CALCULATE"
+      otel:
+        severity_number: "13"
+        severity_text: "Warning"
+        timestamp: "1748610573000000000"
+        trace_id: "394f88bee1f280efea826878a62ab716"
+      sap:
+        calm:
+          service:
+            lms_id: "12345678-b123-456c-7e8w-s9dkf9093g22"
+        exm:
+          category: "ABAP Job Log"
+          correlation_id: "/UI5/APP_INDEX_CALCULATE@12391800"
+          user: "BTC-BAS"
+        log:
+          sourcecategory: "exm.jam"
+        service:
+          display_name: "ABC.123"
+          name: "ABC.123"
+          object_type: "LogicalSystem"
+      service:
+        instance:
+          id: "000000000"
+        name: "ABC.123"
+        namespace: "SAP_S4HANA_OP"
+      status: "Warning"
+      telemetry:
+        sdk:
+          language: "java"
+          name: "sap.calm"
+          version: "1.0.0"
+    message: |-
+      {
+        "exception" : {
+          "type" : "ABAP Job Log"
+        },
+        "sap" : {
+          "calm" : {
+            "service" : {
+              "lms_id" : "12345678-b123-456c-7e8w-s9dkf9093g22"
+            }
+          },
+          "service" : {
+            "object_type" : "LogicalSystem",
+            "name" : "ABC.123",
+            "display_name" : "ABC.123"
+          },
+          "exm" : {
+            "correlation_id" : "/UI5/APP_INDEX_CALCULATE@12391800",
+            "category" : "ABAP Job Log",
+            "user" : "BTC-BAS"
+          }
+        },
+        "@timestamp" : "2025-05-30T13:09:33.000Z",
+        "service" : {
+          "instance" : {
+            "id" : "000000000"
+          },
+          "name" : "ABC.123",
+          "namespace" : "SAP_S4HANA_OP"
+        },
+        "datadog" : {
+          "log" : {
+            "source" : "sap_cloud_alm",
+            "sourcecategory" : "exm.jam"
+          }
+        },
+        "JOBLOG" : "<?xml version=\"1.0\" encoding=\"utf-16\"?><asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\"><asx:values><CONTENT>*** xml payload too large ( &gt; 100K chars ) ***</CONTENT></asx:values></asx:abap>",
+        "otel" : {
+          "trace_id" : "394f88bee1f280efea826878a62ab716",
+          "severity_text" : "Warning",
+          "severity_number" : "13",
+          "timestamp" : "1748610573000000000"
+        },
+        "telemetry" : {
+          "sdk" : {
+            "name" : "sap.calm",
+            "language" : "java",
+            "version" : "1.0.0"
+          }
+        },
+        "job" : {
+          "aborted" : "False",
+          "name" : "/UI5/APP_INDEX_CALCULATE",
+          "abap" : {
+            "values" : {
+              "CONTENT" : "*** xml payload too large ( > 100K chars ) ***"
+            },
+            "version" : "1.0"
+          }
+        },
+        "status" : "Warning"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "categoryname:abap_job_log"
+    timestamp: 1748610573000

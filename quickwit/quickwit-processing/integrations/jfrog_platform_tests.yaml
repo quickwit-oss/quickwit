@@ -1,0 +1,839 @@
+id: "jfrog_platform"
+tests:
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:20:36.065Z",
+      "service_type" : "jfac",
+      "trace_id" : "7fb34bc09bfb7ef0",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "o.j.a.s.r.s.RpcLockResource:30",
+      "log_source" : "jfrog.rt.access.service",
+      "log_level" : "WARN",
+      "thread" : "c-default-executor-5",
+      "message" : "Lockisbusy"
+    }
+  result:
+    custom:
+      class_line_number: "o.j.a.s.r.s.RpcLockResource:30"
+      host: "mahithab-mac"
+      log_level: "WARN"
+      log_source: "jfrog.rt.access.service"
+      log_timestamp: "2023-07-21T17:20:36.065Z"
+      logger:
+        thread_name: "c-default-executor-5"
+      service_type: "jfac"
+    message: "Lockisbusy"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689960036065
+    trace_id: "7fb34bc09bfb7ef0"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:20:35.230Z",
+      "service_type" : "jfrt",
+      "trace_id" : "4861d9398fc96643",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "o.j.c.ConfigWrapperImpl:342",
+      "log_source" : "jfrog.rt.artifactory.service",
+      "log_level" : "INFO",
+      "thread" : "http-nio-8081-exec-8",
+      "message" : "[NodeID:artifactory-ha-artifactory-ha-member-0]detectedremotemodifyforconfig'artifactory/config/security/access/access.admin.token'"
+    }
+  result:
+    custom:
+      class_line_number: "o.j.c.ConfigWrapperImpl:342"
+      host: "mahithab-mac"
+      log_level: "INFO"
+      log_source: "jfrog.rt.artifactory.service"
+      log_timestamp: "2023-07-21T17:20:35.230Z"
+      logger:
+        thread_name: "http-nio-8081-exec-8"
+      service_type: "jfrt"
+    message: "[NodeID:artifactory-ha-artifactory-ha-member-0]detectedremotemodifyforconfig'artifactory/config/security/access/access.admin.token'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689960035230
+    trace_id: "4861d9398fc96643"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:18:16.012Z",
+      "service_type" : "jfmd",
+      "trace_id" : "",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "router_middlewares.go:56",
+      "log_source" : "jfrog.rt.metadata.service",
+      "log_level" : "INFO",
+      "thread" : "main",
+      "message" : "Metadata(jfmd)serviceinitializationcompletedin14.166seconds.Listeningonport:8086[router]"
+    }
+  result:
+    custom:
+      class_line_number: "router_middlewares.go:56"
+      host: "mahithab-mac"
+      log_level: "INFO"
+      log_source: "jfrog.rt.metadata.service"
+      log_timestamp: "2023-07-21T17:18:16.012Z"
+      logger:
+        thread_name: "main"
+      service_type: "jfmd"
+    message: "Metadata(jfmd)serviceinitializationcompletedin14.166seconds.Listeningonport:8086[router]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689959896012
+    trace_id: ""
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:20:34.170Z",
+      "service_type" : "jfrou",
+      "trace_id" : "555390fe8966444e",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "external_topology.go:118",
+      "log_source" : "jfrog.rt.router.service",
+      "log_level" : "WARN",
+      "thread" : "main",
+      "message" : "Topologyupdatedbecauseofthetimeschedule"
+    }
+  result:
+    custom:
+      class_line_number: "external_topology.go:118"
+      host: "mahithab-mac"
+      log_level: "WARN"
+      log_source: "jfrog.rt.router.service"
+      log_timestamp: "2023-07-21T17:20:34.170Z"
+      logger:
+        thread_name: "main"
+      service_type: "jfrou"
+    message: "Topologyupdatedbecauseofthetimeschedule"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689960034170
+    trace_id: "555390fe8966444e"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:18:12.810Z",
+      "service_type" : "jfrou",
+      "trace_id" : "",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "logger.go:58",
+      "log_source" : "jfrog.rt.router.traefik",
+      "log_level" : "INFO",
+      "thread" : "main",
+      "message" : "Startingprovideraggregatoraggregator.ProviderAggregator"
+    }
+  result:
+    custom:
+      class_line_number: "logger.go:58"
+      host: "mahithab-mac"
+      log_level: "INFO"
+      log_source: "jfrog.rt.router.traefik"
+      log_timestamp: "2023-07-21T17:18:12.810Z"
+      logger:
+        thread_name: "main"
+      service_type: "jfrou"
+    message: "Startingprovideraggregatoraggregator.ProviderAggregator"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689959892810
+    trace_id: ""
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:48:07.184Z",
+      "trace_id" : "3330dfb318b5f02c",
+      "remote_address " : "127.0.0.1",
+      "request_method" : "GET",
+      "response_content_length" : 118,
+      "request_url" : "/access/api/v1/users/jffe@01h5wq77wad0ns08shpac3112f",
+      "request_user_agent" : "JFrog Access Java Client/7.63.4 76304900 Artifactory/7.55.16 75516900",
+      "hostname" : "mahithab-mac",
+      "request_content_length" : -1,
+      "request_duration" : "4",
+      "log_source" : "jfrog.rt.access.request",
+      "return_status" : 404,
+      "username" : "jfrt@01h5wq7xhx9m001fk5t51m0b8r"
+    }
+  result:
+    custom:
+      duration: "4"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: 404
+        url: "/access/api/v1/users/jffe@01h5wq77wad0ns08shpac3112f"
+        useragent: "JFrog Access Java Client/7.63.4 76304900 Artifactory/7.55.16 75516900"
+      log_source: "jfrog.rt.access.request"
+      log_timestamp: "2023-07-21T17:48:07.184Z"
+      'remote_address ': "127.0.0.1"
+      request_content_length: -1
+      response_content_length: 118
+      usr:
+        id: "jfrt@01h5wq7xhx9m001fk5t51m0b8r"
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T17:48:07.184Z",
+        "trace_id" : "3330dfb318b5f02c",
+        "remote_address " : "127.0.0.1",
+        "request_method" : "GET",
+        "response_content_length" : 118,
+        "request_url" : "/access/api/v1/users/jffe@01h5wq77wad0ns08shpac3112f",
+        "request_user_agent" : "JFrog Access Java Client/7.63.4 76304900 Artifactory/7.55.16 75516900",
+        "hostname" : "mahithab-mac",
+        "request_content_length" : -1,
+        "request_duration" : "4",
+        "log_source" : "jfrog.rt.access.request",
+        "return_status" : 404,
+        "username" : "jfrt@01h5wq7xhx9m001fk5t51m0b8r"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689961687184
+    trace_id: "3330dfb318b5f02c"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:48:07.188Z",
+      "image" : "",
+      "trace_id" : "b3890d74554326d",
+      "remote_address " : "127.0.0.1",
+      "repo" : "",
+      "request_method" : "GET",
+      "response_content_length" : -1.0,
+      "request_url" : "/api/httpsso",
+      "request_user_agent" : "JFrog-Frontend/1.55.4",
+      "hostname" : "mahithab-mac",
+      "request_duration" : "22",
+      "request_content_length" : 0.0,
+      "log_source" : "jfrog.rt.artifactory.request",
+      "return_status" : "200",
+      "username" : "jffe@01h5wq77wad0ns08shpac3112f"
+    }
+  result:
+    custom:
+      duration: "22"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: "200"
+        url: "/api/httpsso"
+        useragent: "JFrog-Frontend/1.55.4"
+      image: ""
+      log_source: "jfrog.rt.artifactory.request"
+      log_timestamp: "2023-07-21T17:48:07.188Z"
+      'remote_address ': "127.0.0.1"
+      repo: ""
+      request_content_length: 0.0
+      response_content_length: -1.0
+      usr:
+        id: "jffe@01h5wq77wad0ns08shpac3112f"
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T17:48:07.188Z",
+        "image" : "",
+        "trace_id" : "b3890d74554326d",
+        "remote_address " : "127.0.0.1",
+        "repo" : "",
+        "request_method" : "GET",
+        "response_content_length" : -1.0,
+        "request_url" : "/api/httpsso",
+        "request_user_agent" : "JFrog-Frontend/1.55.4",
+        "hostname" : "mahithab-mac",
+        "request_duration" : "22",
+        "request_content_length" : 0.0,
+        "log_source" : "jfrog.rt.artifactory.request",
+        "return_status" : "200",
+        "username" : "jffe@01h5wq77wad0ns08shpac3112f"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689961687188
+    trace_id: "b3890d74554326d"
+ -
+  sample: |-
+    {
+      "trace_id" : "36d40cefdbb75ab8",
+      "hostname" : "mahithab-mac",
+      "request_content_length" : "-",
+      "request_duration" : "3.483",
+      "log_source" : "jfrog.rt.frontend.request",
+      "return_status" : "200",
+      "remote_address" : "127.0.0.1",
+      "request_method" : "GET",
+      "response_content_length" : "29",
+      "request_url" : "/api/v1/auth/login/autoRedirectState",
+      "request_user_agent" : "Chrome Headless|115.0.5790.90|Linux|x86_64",
+      "username" : "anonymous"
+    }
+  result:
+    custom:
+      duration: "3.483"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: "200"
+        url: "/api/v1/auth/login/autoRedirectState"
+        useragent: "Chrome Headless|115.0.5790.90|Linux|x86_64"
+      log_source: "jfrog.rt.frontend.request"
+      network:
+        client:
+          ip: "127.0.0.1"
+      request_content_length: "-"
+      response_content_length: "29"
+      usr:
+        id: "anonymous"
+    message: |-
+      {
+        "trace_id" : "36d40cefdbb75ab8",
+        "hostname" : "mahithab-mac",
+        "request_content_length" : "-",
+        "request_duration" : "3.483",
+        "log_source" : "jfrog.rt.frontend.request",
+        "return_status" : "200",
+        "remote_address" : "127.0.0.1",
+        "request_method" : "GET",
+        "response_content_length" : "29",
+        "request_url" : "/api/v1/auth/login/autoRedirectState",
+        "request_user_agent" : "Chrome Headless|115.0.5790.90|Linux|x86_64",
+        "username" : "anonymous"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "36d40cefdbb75ab8"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:48:08.350Z",
+      "trace_id" : "7a938a8b8b518a6f",
+      "remote_address" : "127.0.0.1",
+      "request_method" : "GET",
+      "response_content_length" : "3",
+      "request_url" : "/api/v1/system/readiness",
+      "request_user_agent" : "JFrog-Router/7.61.3-1",
+      "hostname" : "mahithab-mac",
+      "request_content_length" : "0",
+      "request_duration" : "0",
+      "log_source" : "jfrog.rt.metadata.request",
+      "return_status" : "200",
+      "username" : "anonymous"
+    }
+  result:
+    custom:
+      duration: "0"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: "200"
+        url: "/api/v1/system/readiness"
+        useragent: "JFrog-Router/7.61.3-1"
+      log_source: "jfrog.rt.metadata.request"
+      log_timestamp: "2023-07-21T17:48:08.350Z"
+      network:
+        client:
+          ip: "127.0.0.1"
+      request_content_length: "0"
+      response_content_length: "3"
+      usr:
+        id: "anonymous"
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T17:48:08.350Z",
+        "trace_id" : "7a938a8b8b518a6f",
+        "remote_address" : "127.0.0.1",
+        "request_method" : "GET",
+        "response_content_length" : "3",
+        "request_url" : "/api/v1/system/readiness",
+        "request_user_agent" : "JFrog-Router/7.61.3-1",
+        "hostname" : "mahithab-mac",
+        "request_content_length" : "0",
+        "request_duration" : "0",
+        "log_source" : "jfrog.rt.metadata.request",
+        "return_status" : "200",
+        "username" : "anonymous"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689961688350
+    trace_id: "7a938a8b8b518a6f"
+ -
+  sample: |-
+    {
+      "RequestPath" : "/artifactory/api/crowd",
+      "msg" : "",
+      "DownstreamStatus" : 200,
+      "request_Uber-Trace-Id" : "3330dfb318b5f02c:2ea7834a9f8a7557:3330dfb318b5f02c:0",
+      "ClientAddr" : "127.0.0.1:50914",
+      "level" : "info",
+      "RequestMethod" : "GET",
+      "Duration" : 28790339,
+      "hostname" : "mahithab-mac",
+      "StartUTC" : "2023-07-21T17:48:07.166466889Z",
+      "DownstreamContentSize" : 204,
+      "ServiceAddr" : "localhost:8081",
+      "log_source" : "jfrog.rt.router.request",
+      "request_User-Agent" : "JFrog-Frontend/1.55.4"
+    }
+  result:
+    custom:
+      DownstreamContentSize: 204
+      ServiceAddr: "localhost:8081"
+      StartUTC: "2023-07-21T17:48:07.166466889Z"
+      duration: 28790339
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: 200
+        url_details:
+          path: "/artifactory/api/crowd"
+        useragent: "JFrog-Frontend/1.55.4"
+      jfrog:
+        msg: ""
+      level: "info"
+      log_source: "jfrog.rt.router.request"
+      network:
+        client:
+          ip: "127.0.0.1:50914"
+    message: |-
+      {
+        "RequestPath" : "/artifactory/api/crowd",
+        "msg" : "",
+        "DownstreamStatus" : 200,
+        "request_Uber-Trace-Id" : "3330dfb318b5f02c:2ea7834a9f8a7557:3330dfb318b5f02c:0",
+        "ClientAddr" : "127.0.0.1:50914",
+        "level" : "info",
+        "RequestMethod" : "GET",
+        "Duration" : 28790339,
+        "hostname" : "mahithab-mac",
+        "StartUTC" : "2023-07-21T17:48:07.166466889Z",
+        "DownstreamContentSize" : 204,
+        "ServiceAddr" : "localhost:8081",
+        "log_source" : "jfrog.rt.router.request",
+        "request_User-Agent" : "JFrog-Frontend/1.55.4"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "3330dfb318b5f02c:2ea7834a9f8a7557:3330dfb318b5f02c:0"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T10:56:13.474Z",
+      "remote_url" : "https://rubygems.org/ specs.4.8.gz",
+      "trace_id" : "981b809eff749e4",
+      "hostname" : "mahithab-mac",
+      "request_content_length" : "50 55723",
+      "request_duration" : "2",
+      "log_source" : "jfrog.rt.request.out",
+      "return_status" : "200",
+      "request_method" : "GET",
+      "response_content_length" : "0",
+      "remote_repo_name" : "gems-remote",
+      "username" : ""
+    }
+  result:
+    custom:
+      duration: "2"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: "200"
+      log_source: "jfrog.rt.request.out"
+      log_timestamp: "2023-07-21T10:56:13.474Z"
+      remote_repo_name: "gems-remote"
+      remote_url: "https://rubygems.org/ specs.4.8.gz"
+      request_content_length: "50 55723"
+      response_content_length: "0"
+      usr:
+        id: ""
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T10:56:13.474Z",
+        "remote_url" : "https://rubygems.org/ specs.4.8.gz",
+        "trace_id" : "981b809eff749e4",
+        "hostname" : "mahithab-mac",
+        "request_content_length" : "50 55723",
+        "request_duration" : "2",
+        "log_source" : "jfrog.rt.request.out",
+        "return_status" : "200",
+        "request_method" : "GET",
+        "response_content_length" : "0",
+        "remote_repo_name" : "gems-remote",
+        "username" : ""
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689936973474
+    trace_id: "981b809eff749e4"
+ -
+  sample: |-
+    {
+      "repo_path" : " ",
+      "trace_id" : "b2dad95216cd2468",
+      "action_response" : "ACCEPTED LOGIN",
+      "hostname" : "mahithab-mac",
+      "ip" : " 10.168.0.49",
+      "log_source" : "jfrog.rt.artifactory.access",
+      "message" : " [token]",
+      "username" : "admin "
+    }
+  result:
+    custom:
+      action_response: "ACCEPTED LOGIN"
+      host: "mahithab-mac"
+      log_source: "jfrog.rt.artifactory.access"
+      network:
+        client:
+          ip: " 10.168.0.49"
+      repo_path: " "
+      usr:
+        id: "admin "
+    message: " [token]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "b2dad95216cd2468"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T17:47:22.094Z",
+      "user_ip" : "UNK NOWN",
+      "hostname" : "mahithab-mac",
+      "event_type" : "C",
+      "data_changed" : "{\"added\":{\"owner\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"created\":\"1689961642092\",\" expirationTime\":\"1689961762092\",\"subject\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"scop e\":\"api:* applied-permissions/admin\",\"id\":\"1c581e20-4f3d-415b-94fd-e347ebd121eb\",\"type\":\"generic \"}}",
+      "token_id" : "0c43aa624a5d6a89",
+      "entity_name" : "jfob@01h5wq7xhx9m001fk5t51m0b8r",
+      "log_source" : "jfrog.rt.access.audit",
+      "logged_principal" : "jfob@01h5wq7xhx9m001fk5t51m0b8r",
+      "event" : "TKN",
+      "user" : "UNKNOWN"
+    }
+  result:
+    custom:
+      data_changed: "{\"added\":{\"owner\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"created\":\"1689961642092\",\" expirationTime\":\"1689961762092\",\"subject\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"scop e\":\"api:* applied-permissions/admin\",\"id\":\"1c581e20-4f3d-415b-94fd-e347ebd121eb\",\"type\":\"generic \"}}"
+      event_type: "C"
+      evt:
+        name: "TKN"
+      host: "mahithab-mac"
+      jfrog:
+        entity_name: "jfob@01h5wq7xhx9m001fk5t51m0b8r"
+      log_source: "jfrog.rt.access.audit"
+      log_timestamp: "2023-07-21T17:47:22.094Z"
+      logged_principal: "jfob@01h5wq7xhx9m001fk5t51m0b8r"
+      token_id: "0c43aa624a5d6a89"
+      user_ip: "UNK NOWN"
+      usr:
+        id: "UNKNOWN"
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T17:47:22.094Z",
+        "user_ip" : "UNK NOWN",
+        "hostname" : "mahithab-mac",
+        "event_type" : "C",
+        "data_changed" : "{\"added\":{\"owner\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"created\":\"1689961642092\",\" expirationTime\":\"1689961762092\",\"subject\":\"jfob@01h5wq7xhx9m001fk5t51m0b8r\",\"scop e\":\"api:* applied-permissions/admin\",\"id\":\"1c581e20-4f3d-415b-94fd-e347ebd121eb\",\"type\":\"generic \"}}",
+        "token_id" : "0c43aa624a5d6a89",
+        "entity_name" : "jfob@01h5wq7xhx9m001fk5t51m0b8r",
+        "log_source" : "jfrog.rt.access.audit",
+        "logged_principal" : "jfob@01h5wq7xhx9m001fk5t51m0b8r",
+        "event" : "TKN",
+        "user" : "UNKNOWN"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689961642094
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:13:02.620256081Z",
+      "service_type" : "jfxr ",
+      "trace_id" : "defd8ad52f18b6ec",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "unified_config_sync_job:34 ",
+      "log_source" : "jfrog.xray.server.service",
+      "log_level" : "INFO ",
+      "thread" : "main ",
+      "message" : "Synced projects resources successfully"
+    }
+  result:
+    custom:
+      class_line_number: "unified_config_sync_job:34 "
+      host: "mahithab-mac"
+      log_level: "INFO "
+      log_source: "jfrog.xray.server.service"
+      log_timestamp: "2023-07-21T19:13:02.620256081Z"
+      logger:
+        thread_name: "main "
+      service_type: "jfxr "
+    message: "Synced projects resources successfully"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966782620
+    trace_id: "defd8ad52f18b6ec"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:08:05.21215991Z",
+      "service_type" : "jfxps",
+      "trace_id" : " ",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "zerolog_factory:105 ",
+      "log_source" : "jfrog.xray.persist.service",
+      "log_level" : "INFO ",
+      "thread" : "main ",
+      "message" : "Got log rotation for usage with value: 900"
+    }
+  result:
+    custom:
+      class_line_number: "zerolog_factory:105 "
+      host: "mahithab-mac"
+      log_level: "INFO "
+      log_source: "jfrog.xray.persist.service"
+      log_timestamp: "2023-07-21T19:08:05.21215991Z"
+      logger:
+        thread_name: "main "
+      service_type: "jfxps"
+    message: "Got log rotation for usage with value: 900"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966485212
+    trace_id: " "
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:08:05.132329188Z",
+      "service_type" : "jfxid",
+      "trace_id" : " ",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "zerolog_factory:105 ",
+      "log_source" : "jfrog.xray.indexer.service",
+      "log_level" : "INFO ",
+      "thread" : "main ",
+      "message" : "Got log rotation for usage with value: 900"
+    }
+  result:
+    custom:
+      class_line_number: "zerolog_factory:105 "
+      host: "mahithab-mac"
+      log_level: "INFO "
+      log_source: "jfrog.xray.indexer.service"
+      log_timestamp: "2023-07-21T19:08:05.132329188Z"
+      logger:
+        thread_name: "main "
+      service_type: "jfxid"
+    message: "Got log rotation for usage with value: 900"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966485132
+    trace_id: " "
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:14:00.234228699Z",
+      "service_type" : "jfxan",
+      "trace_id" : " ",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "asm_amd64.s:1594",
+      "log_source" : "jfrog.xray.analysis.service",
+      "log_level" : "ERROR",
+      "thread" : "main ",
+      "message" : "Failed to list jobs from execution service failed to list K8s jobs\n --- at /go/src/jfrog.com/xray/backend/service/execution/k8s.go:362 (executionServiceK8s.ListJobs) ---\nCaused by: jobs.batch is forbidden: User \"system:serviceaccount:default:default\" cannot list resource \"jobs\" in API group \"batch\" in the namespace \"default\""
+    }
+  result:
+    custom:
+      class_line_number: "asm_amd64.s:1594"
+      host: "mahithab-mac"
+      log_level: "ERROR"
+      log_source: "jfrog.xray.analysis.service"
+      log_timestamp: "2023-07-21T19:14:00.234228699Z"
+      logger:
+        thread_name: "main "
+      service_type: "jfxan"
+    message: |-
+      Failed to list jobs from execution service failed to list K8s jobs
+       --- at /go/src/jfrog.com/xray/backend/service/execution/k8s.go:362 (executionServiceK8s.ListJobs) ---
+      Caused by: jobs.batch is forbidden: User "system:serviceaccount:default:default" cannot list resource "jobs" in API group "batch" in the namespace "default"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966840234
+    trace_id: " "
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:08:12.614Z",
+      "service_type" : "jfrou",
+      "trace_id" : "65ecd1767ab6bb22",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "external_topology.go:118 ",
+      "log_source" : "jfrog.xray.router.service",
+      "log_level" : "WARN ",
+      "thread" : "main ",
+      "message" : " Topology updated because of the time schedule"
+    }
+  result:
+    custom:
+      class_line_number: "external_topology.go:118 "
+      host: "mahithab-mac"
+      log_level: "WARN "
+      log_source: "jfrog.xray.router.service"
+      log_timestamp: "2023-07-21T19:08:12.614Z"
+      logger:
+        thread_name: "main "
+      service_type: "jfrou"
+    message: " Topology updated because of the time schedule"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966492614
+    trace_id: "65ecd1767ab6bb22"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:07:38.210Z",
+      "service_type" : "jfrou",
+      "trace_id" : " ",
+      "hostname" : "mahithab-mac",
+      "class_line_number" : "logger.go:58 ] [main ",
+      "log_source" : "jfrog.xray.router.traefik",
+      "log_level" : "INFO",
+      "thread" : "",
+      "message" : " Starting provider aggregator aggregator.ProviderAggregator"
+    }
+  result:
+    custom:
+      class_line_number: "logger.go:58 ] [main "
+      host: "mahithab-mac"
+      log_level: "INFO"
+      log_source: "jfrog.xray.router.traefik"
+      log_timestamp: "2023-07-21T19:07:38.210Z"
+      logger:
+        thread_name: ""
+      service_type: "jfrou"
+    message: " Starting provider aggregator aggregator.ProviderAggregator"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966458210
+    trace_id: " "
+ -
+  sample: |-
+    {
+      "RequestPath" : "/com.jfrog.access.v1.token.TokenResource/Exists",
+      "msg" : "",
+      "DownstreamStatus" : 200,
+      "request_Uber-Trace-Id" : "2bb74eb54254764a:6fab5583d555a15d:67e869477e8809cb:0",
+      "ClientAddr" : "127.0.0.1:50942",
+      "level" : "info",
+      "RequestMethod" : "POST",
+      "Duration" : 5718282,
+      "hostname" : "mahithab-mac",
+      "StartUTC" : "2023-07-21T19:14:50.444641761Z",
+      "DownstreamContentSize" : 7,
+      "ServiceAddr" : "10.32.2.47:8082",
+      "log_source" : "jfr og.xray.router.request",
+      "request_User-Agent" : "grpc-go/1.47.0"
+    }
+  result:
+    custom:
+      DownstreamContentSize: 7
+      ServiceAddr: "10.32.2.47:8082"
+      StartUTC: "2023-07-21T19:14:50.444641761Z"
+      duration: 5718282
+      host: "mahithab-mac"
+      http:
+        method: "POST"
+        status_code: 200
+        url_details:
+          path: "/com.jfrog.access.v1.token.TokenResource/Exists"
+        useragent: "grpc-go/1.47.0"
+      jfrog:
+        msg: ""
+      level: "info"
+      log_source: "jfr og.xray.router.request"
+      network:
+        client:
+          ip: "127.0.0.1:50942"
+    message: |-
+      {
+        "RequestPath" : "/com.jfrog.access.v1.token.TokenResource/Exists",
+        "msg" : "",
+        "DownstreamStatus" : 200,
+        "request_Uber-Trace-Id" : "2bb74eb54254764a:6fab5583d555a15d:67e869477e8809cb:0",
+        "ClientAddr" : "127.0.0.1:50942",
+        "level" : "info",
+        "RequestMethod" : "POST",
+        "Duration" : 5718282,
+        "hostname" : "mahithab-mac",
+        "StartUTC" : "2023-07-21T19:14:50.444641761Z",
+        "DownstreamContentSize" : 7,
+        "ServiceAddr" : "10.32.2.47:8082",
+        "log_source" : "jfr og.xray.router.request",
+        "request_User-Agent" : "grpc-go/1.47.0"
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+    trace_id: "2bb74eb54254764a:6fab5583d555a15d:67e869477e8809cb:0"
+ -
+  sample: |-
+    {
+      "log_timestamp" : "2023-07-21T19:14:50.453Z",
+      "trace_id" : "2bb74eb54254764a",
+      "hostname" : "mahithab-mac",
+      "request_duration" : "0|9.130000|rest-client/2.1.0 (linux x86_64) ruby/3.1.2p20",
+      "log_source" : "jfrog.xray.xray.request",
+      "return_status" : "200",
+      "remote_address" : "10.32.3.1, 10.32.3.27, 10.32.3.28",
+      "request_method" : "GET",
+      "response_content_length" : "-1",
+      "request_url" : "/api/v1/metrics",
+      "username" : "admin"
+    }
+  result:
+    custom:
+      duration: "0|9.130000|rest-client/2.1.0 (linux x86_64) ruby/3.1.2p20"
+      host: "mahithab-mac"
+      http:
+        method: "GET"
+        status_code: "200"
+        url: "/api/v1/metrics"
+      log_source: "jfrog.xray.xray.request"
+      log_timestamp: "2023-07-21T19:14:50.453Z"
+      network:
+        client:
+          ip: "10.32.3.1, 10.32.3.27, 10.32.3.28"
+      response_content_length: "-1"
+      usr:
+        id: "admin"
+    message: |-
+      {
+        "log_timestamp" : "2023-07-21T19:14:50.453Z",
+        "trace_id" : "2bb74eb54254764a",
+        "hostname" : "mahithab-mac",
+        "request_duration" : "0|9.130000|rest-client/2.1.0 (linux x86_64) ruby/3.1.2p20",
+        "log_source" : "jfrog.xray.xray.request",
+        "return_status" : "200",
+        "remote_address" : "10.32.3.1, 10.32.3.27, 10.32.3.28",
+        "request_method" : "GET",
+        "response_content_length" : "-1",
+        "request_url" : "/api/v1/metrics",
+        "username" : "admin"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689966890453
+    trace_id: "2bb74eb54254764a"
+

@@ -1,0 +1,232 @@
+id: traefik
+metric_id: traefik-mesh
+backend_only: false
+installation_sources:
+  - traefik
+  - traefik_mesh
+  - mesh
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+pipeline:
+  type: pipeline
+  name: Traefik Mesh
+  enabled: true
+  filter:
+    query: source:(traefik OR traefik_mesh OR mesh)
+  processors:
+    - type: grok-parser
+      name: Parsing Traefik logs
+      enabled: true
+      source: message
+      samples:
+        - 10.32.0.1 - - [07/Dec/2018:06:07:03 +0000] "GET / HTTP/1.1" 302 5 "-" "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36" 132170 "entrypoint redirect for http" "/" 0ms
+        - time="2019-04-05T11:57:47Z" level=info msg="Skipping same configuration for provider consul_catalog"
+      grok:
+        supportRules: |
+          _duration %{number:duration:scale(1000000)}
+          _traefik_backend_url %{regex("[^\\\"“]*"):traefik.backend_url}
+          _traefik_name %{regex("[^\\\"]*"):traefik.name}
+          _total_request %{number:traefik.request_total}
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-) "%{_referer}" "%{_user_agent}" %{_total_request} "?%{_traefik_name}"? "?%{_traefik_backend_url}["“]? %{_duration}ms.*
+
+          keyvalue %{data::keyvalue}
+
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: attribute-remapper
+      name: Map `RequestMethod` to `http.method`
+      enabled: true
+      sources:
+        - RequestMethod
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `Duration` to `duration`
+      enabled: true
+      sources:
+        - Duration
+      target: duration
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `ClientHost` to `network.client.ip`
+      enabled: true
+      sources:
+        - ClientHost
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `ClientPort` to `network.client.port`
+      enabled: true
+      sources:
+        - ClientPort
+      target: network.client.port
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `OriginStatus`, `DownstreamStatus` to `http.status_code`
+      enabled: true
+      sources:
+        - OriginStatus
+        - DownstreamStatus
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `RequestContentSize` to `network.bytes_read`
+      enabled: true
+      sources:
+        - RequestContentSize
+      target: network.bytes_read
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `DownstreamContentSize` to `network.bytes_written`
+      enabled: true
+      sources:
+        - DownstreamContentSize
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+        - RequestPath
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level

@@ -1,0 +1,51 @@
+id: agent
+metric_id: datadog-cluster-agent # Only one official integration for the agent for now
+backend_only: false
+installation_sources:
+  - agent
+  - datadog-agent
+  - datadog-agent-cluster-worker
+  - datadog-cluster-agent
+  - process-agent
+  - security-agent
+  - system-probe
+  - trace-agent
+  - cluster-agent
+facets:
+pipeline:
+  type: pipeline
+  name: Datadog Agent
+  enabled: true
+  # source:(agent,process-agent,security-agent,system-probe,trace-agent) = Host installation
+  # source:datadog-agent = K8S
+  # source:datadog-agent-cluster-worker = K8S - Cluster worker
+  # source:(cluster-agent, datadog-cluster-agent) = K8S - Cluster Agent
+  filter:
+    query: source:(agent OR datadog-agent OR datadog-agent-cluster-worker OR datadog-cluster-agent OR process-agent OR security-agent OR system-probe OR trace-agent OR cluster-agent)
+  processors:
+    - type: grok-parser
+      name: Parsing Datadog Agent logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-07-01 09:48:14 UTC | CORE | INFO | (pkg/collector/runner/runner.go:327 in work) | check:network,type:core | Done running check
+        - 2020-09-15 10:00:07 UTC | CORE | INFO | (pkg/collector/python/datadog_agent.go:120 in LogMessage) | kafka_cluster_status:8ca7b736f0aa43e5 | (kafka_cluster_status.py:213) | Checking for out of sync partition replicas
+        - 2019-04-08 13:53:48 UTC | TRACE | INFO | (pkg/trace/agent/agent.go:145 in loop) | exiting
+        - 2019-02-01 16:59:41 UTC | INFO | (connection_manager.go:124 in CloseConnection) | Connection closed
+        - '2020-11-18 10:31:13 UTC | JMX | INFO  | App | Successfully initialized instance: cassandra-localhost-7199'
+      grok:
+        supportRules: |
+        matchRules: |
+          agent_rule         %{date("yyyy-MM-dd HH:mm:ss z"):timestamp} \| %{notSpace:agent} \| %{word:level} \| \(%{notSpace:filename}:%{number:lineno} in %{word:process}\) \|( %{data::keyvalue(":")} \|)?( - \|)?( \(%{notSpace:pyFilename}:%{number:pyLineno}\) \|)?%{data}
+          agent_rule_pre_611 %{date("yyyy-MM-dd HH:mm:ss z"):timestamp} \| %{word:level} \| \(%{notSpace:filename}:%{number:lineno} in %{word:process}\)%{data}
+          jmxfetch_rule      %{date("yyyy-MM-dd HH:mm:ss z"):timestamp} \| %{notSpace:agent} \| %{word:level}\s+\| %{word:class} \| %{data}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

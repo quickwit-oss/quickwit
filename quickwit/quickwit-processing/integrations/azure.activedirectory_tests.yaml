@@ -1,0 +1,231 @@
+id: "azure.activedirectory"
+tests:
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "52.163.50.84",
+      "resourceId" : "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam",
+      "level" : "Informational",
+      "operationName" : "Add owner to service principal",
+      "resultSignature" : "None",
+      "operationVersion" : "1.0",
+      "tenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "correlationId" : "d38a4a5b-dea6-4fb4-aa82-7d42c51d0d60",
+      "resultDescription" : "User registered Authenticator App with Code",
+      "time" : "2020-04-08T07:40:53.1695436Z",
+      "category" : "AuditLogs",
+      "durationMs" : 123,
+      "properties" : {
+        "result" : "success",
+        "id" : "Directory_d38a4a5b-dea6-4fb4-aa82-7d42c51d0d60_8X8M4_47251981",
+        "initiatedBy" : {
+          "app" : {
+            "displayName" : "Microsoft.Intune"
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      correlationId: "d38a4a5b-dea6-4fb4-aa82-7d42c51d0d60"
+      duration: 1.23E8
+      durationMs: 123
+      evt:
+        category: "AuditLogs"
+        name: "Add owner to service principal"
+        outcome: "success"
+      level: "Informational"
+      network:
+        client:
+          geoip: {}
+          ip: "52.163.50.84"
+      operationVersion: "1.0"
+      properties:
+        id: "Directory_d38a4a5b-dea6-4fb4-aa82-7d42c51d0d60_8X8M4_47251981"
+        initiatedBy:
+          app:
+            displayName: "Microsoft.Intune"
+      resourceId: "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
+      resultSignature: "None"
+      tenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      time: "2020-04-08T07:40:53.1695436Z"
+      title: "'Add owner to service principal' resulted in success initiated by  Microsoft.Intune"
+    message: "User registered Authenticator App with Code"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586331653169
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "192.182.149.21",
+      "resourceId" : "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam",
+      "operationName" : "Sign-in activity",
+      "resultSignature" : "None",
+      "duration" : 0,
+      "operationVersion" : "1.0",
+      "service" : "azure",
+      "identity" : "Test Test",
+      "tenantId" : "4d3bac44-0230-4732-9e70-cc00736f0a97",
+      "correlationId" : "d47198c3-f726-47b8-b683-3f6244c9ceb5",
+      "Level" : 4,
+      "location" : "US",
+      "category" : "SignInLogs",
+      "resultType" : "0",
+      "durationMs" : 0,
+      "properties" : {
+        "resourceId" : "00000002-0000-0000-c000-000000000000",
+        "deviceDetail" : {
+          "browser" : "Chrome 81.0.4044",
+          "deviceId" : "",
+          "operatingSystem" : "Windows 10"
+        },
+        "appliedConditionalAccessPolicies" : [ {
+          "result" : "success",
+          "conditionsNotSatisfied" : 0,
+          "conditionsSatisfied" : 3,
+          "enforcedGrantControls" : [ "Mfa" ],
+          "displayName" : "Require MFA",
+          "id" : "ccb90f89-cdaf-4ae6-9dd1-a9ee6ea86a90"
+        } ],
+        "isInteractive" : false,
+        "conditionalAccessStatus" : "success",
+        "createdDateTime" : "2020-05-13T12:35:19.6363979+00:00",
+        "clientAppUsed" : "Browser",
+        "riskLevelAggregated" : "none",
+        "processingTimeInMilliseconds" : 131,
+        "appId" : "23523755-3a2b-41ca-9315-f81f3f566a95",
+        "correlationId" : "d47198c3-f726-47b8-b683-3f6244c9ceb5",
+        "id" : "b95c8eca-487b-4631-b6e5-0469cb7c0800",
+        "riskState" : "none",
+        "userPrincipalName" : "testtest@datadoghq.com",
+        "authenticationDetails" : [ {
+          "authenticationStepDateTime" : "2020-05-13T12:35:19.6363979+00:00",
+          "authenticationStepResultDetail" : "MFA requirement satisfied by claim in the token",
+          "authenticationStepRequirement" : "MultiConditionalAccess",
+          "succeeded" : false
+        } ],
+        "servicePrincipalId" : "",
+        "tokenIssuerType" : "AzureAD",
+        "resourceDisplayName" : "Windows Azure Active Directory",
+        "originalRequestId" : "b95c8eca-487b-4631-b6e5-0469cb7c0800",
+        "appDisplayName" : "ACOM Azure Website",
+        "riskLevelDuringSignIn" : "none",
+        "ipAddress" : "192.182.149.21",
+        "userDisplayName" : "Test Test",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
+        "userId" : "0abb8889-005c-4307-85c2-97a5d3cd0964",
+        "tokenIssuerName" : "",
+        "riskDetail" : "none",
+        "location" : {
+          "countryOrRegion" : "US",
+          "city" : "Kirkland",
+          "state" : "Washington",
+          "geoCoordinates" : {
+            "latitude" : 47.654361724853516,
+            "longitude" : -122.19957733154297
+          }
+        },
+        "status" : {
+          "errorCode" : 0,
+          "additionalDetails" : "MFA requirement satisfied by claim in the token"
+        }
+      }
+    }
+  result:
+    custom:
+      Level: 4
+      correlationId: "d47198c3-f726-47b8-b683-3f6244c9ceb5"
+      duration: 0.0
+      durationMs: 0
+      evt:
+        category: "SignInLogs"
+        name: "Sign-in activity"
+        outcome: "success"
+      http:
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "81"
+            minor: "0"
+            patch: "4044"
+            patch_minor: "138"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      identity: "Test Test"
+      location: "US"
+      network:
+        client:
+          geoip: {}
+          ip: "192.182.149.21"
+      operationVersion: "1.0"
+      properties:
+        appDisplayName: "ACOM Azure Website"
+        appId: "23523755-3a2b-41ca-9315-f81f3f566a95"
+        appliedConditionalAccessPolicies:
+         -
+          result: "success"
+          conditionsNotSatisfied: 0
+          conditionsSatisfied: 3
+          enforcedGrantControls:
+           - "Mfa"
+          displayName: "Require MFA"
+          id: "ccb90f89-cdaf-4ae6-9dd1-a9ee6ea86a90"
+        authenticationDetails:
+         -
+          authenticationStepDateTime: "2020-05-13T12:35:19.6363979+00:00"
+          authenticationStepResultDetail: "MFA requirement satisfied by claim in the token"
+          authenticationStepRequirement: "MultiConditionalAccess"
+          succeeded: false
+        clientAppUsed: "Browser"
+        conditionalAccessStatus: "success"
+        correlationId: "d47198c3-f726-47b8-b683-3f6244c9ceb5"
+        createdDateTime: "2020-05-13T12:35:19.6363979+00:00"
+        deviceDetail:
+          browser: "Chrome 81.0.4044"
+          deviceId: ""
+          operatingSystem: "Windows 10"
+        id: "b95c8eca-487b-4631-b6e5-0469cb7c0800"
+        ipAddress: "192.182.149.21"
+        isInteractive: false
+        location:
+          city: "Kirkland"
+          countryOrRegion: "US"
+          geoCoordinates:
+            latitude: 47.654361724853516
+            longitude: -122.19957733154297
+          state: "Washington"
+        originalRequestId: "b95c8eca-487b-4631-b6e5-0469cb7c0800"
+        processingTimeInMilliseconds: 131
+        resourceDisplayName: "Windows Azure Active Directory"
+        resourceId: "00000002-0000-0000-c000-000000000000"
+        riskDetail: "none"
+        riskLevelAggregated: "none"
+        riskLevelDuringSignIn: "none"
+        riskState: "none"
+        servicePrincipalId: ""
+        status:
+          errorCode: 0
+        tokenIssuerName: ""
+        tokenIssuerType: "AzureAD"
+        userId: "0abb8889-005c-4307-85c2-97a5d3cd0964"
+      resourceId: "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
+      resultSignature: "None"
+      resultType: "0"
+      service: "azure"
+      tenantId: "4d3bac44-0230-4732-9e70-cc00736f0a97"
+      title: "'Sign-in activity' resulted in success initiated by testtest@datadoghq.com "
+      usr:
+        email: "testtest@datadoghq.com"
+        id: "testtest@datadoghq.com"
+        name: "Test Test"
+    message: "MFA requirement satisfied by claim in the token"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1589373319636
+

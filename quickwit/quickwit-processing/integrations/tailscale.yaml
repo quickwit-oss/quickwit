@@ -1,0 +1,131 @@
+id: tailscale
+metric_id: tailscale
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Type
+    path: usr.type
+    source: log
+  - groups:
+      - Tailscale
+    name: Target ID
+    path: target.id
+    source: log
+  - groups:
+      - Tailscale
+    name: Target Name
+    path: target.name
+    source: log
+  - groups:
+      - Tailscale
+    name: Target Property
+    path: target.property
+    source: log
+  - groups:
+      - Tailscale
+    name: Target Type
+    path: target.type
+    source: log
+  - groups:
+      - Tailscale
+    name: New Value
+    path: new
+    source: log
+  - groups:
+      - Tailscale
+    name: New Capabilities
+    path: new.capabilities
+    source: log
+  - groups:
+      - Tailscale
+    name: Old Value
+    path: old
+    source: log
+pipeline:
+  type: pipeline
+  name: tailscale
+  enabled: true
+  filter:
+    query: source:tailscale
+  processors:
+    - type: attribute-remapper
+      name: Map `action` to `evt.name`
+      enabled: true
+      sources:
+        - action
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `nodeId` to `host`
+      enabled: true
+      sources:
+        - nodeId
+      target: host
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `actor.displayName` to `usr.name`
+      enabled: true
+      sources:
+        - actor.displayName
+      target: usr.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `actor.id` to `usr.id`
+      enabled: true
+      sources:
+        - actor.id
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `actor.loginName` to `usr.email`
+      enabled: true
+      sources:
+        - actor.loginName
+      target: usr.email
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `actor.type` to `usr.type`
+      enabled: true
+      sources:
+        - actor.type
+      target: usr.type
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

@@ -1,0 +1,71 @@
+id: riak
+metric_id: riak
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Riak
+  enabled: true
+  filter:
+    query: source:riak
+  processors:
+    - type: grok-parser
+      name: Parsing Riak logs
+      enabled: true
+      source: message
+      samples:
+        - 2019-06-24 19:44:16.702 [info] <0.7.0> Application ibrowse started on node 'riak@127.0.0.1'
+        - 2019-06-24 19:44:16.635 [info] <0.550.0>@riak_core:wait_for_service:483 Wait complete for service riak_kv (9 seconds)
+        - "2019-06-24 12:34:27.999 [error] gen_server riak_core_capability terminated with reason: no function clause matching orddict:fetch('riak@192.168.2.81', []) line 72"
+        - |-
+          2014-10-17 15:56:38 =ERROR REPORT====
+          Error in process <0.4330.323> on node 'dev1@127.0.0.1' with exit value: ...
+        - 2015-06-23 13:53:59.485 [error] <0.1433.0> CRASH REPORT Process <0.1433.0> with 0 neighbours exited ...
+      grok:
+        supportRules: |
+          _date_console %{date("yyyy-MM-dd HH:mm:ss.SSS"):date}
+          _date_crash %{date("yyyy-MM-dd HH:mm:ss"):date}
+          _level \[%{word:level}\]
+        matchRules: |
+          rule_prefix %{_date_console}\s%{_level}\s\<%{notSpace:logger.thread_name}\>\@%{notSpace:error.kind}\s%{data}
+          rule_default %{_date_console}\s%{_level}\s\<%{notSpace:logger.thread_name}\> (%{regex("\\w+\\sREPORT"):error.kind} )?%{data}( \'%{word:usr.name}\@%{ipOrHost:network.client.ip}\')?
+
+          rule_crash %{_date_crash}\s=%{data:error.kind}====\s%{data:error.message}
+          rule_error %{_date_console}\s%{_level}\s+%{data:error.message}
+
+          # https://riak.docs.hw.ag/riak/kv/latest/using/reference/logging/
+          # <date> <time> [<level>] <PID> <prefix>: <message>
+
+    - type: category-processor
+      name: Categorise error level
+      enabled: true
+      categories:
+        - filter:
+            query: '@error.kind:*REPORT'
+          name: error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access

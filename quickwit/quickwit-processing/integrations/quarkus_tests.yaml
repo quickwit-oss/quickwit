@@ -1,0 +1,28 @@
+id: "quarkus"
+tests:
+  - sample: |-
+      2024-12-12 12:57:36,184 INFO  [io.quarkus] (Quarkus Main Thread) code-with-quarkus 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.17.4) started in 0.378s. Listening on: http://localhost:8080
+    result:
+      custom:
+        timestamp: 1734008256184
+        level: "INFO"
+        logger: "io.quarkus"
+        thread: "Quarkus Main Thread"
+      message: "code-with-quarkus 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.17.4) started in 0.378s. Listening on: http://localhost:8080"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1734008256184
+  - sample: |-
+      2024-12-13 11:05:38,618 ERROR  [org.acm.GreetingResource] (executor-thread-1) Custom log message
+    result:
+      custom:
+        timestamp: 1734087938618
+        level: "ERROR"
+        logger: "org.acm.GreetingResource"
+        thread: "executor-thread-1"
+      message: "Custom log message"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1734087938618

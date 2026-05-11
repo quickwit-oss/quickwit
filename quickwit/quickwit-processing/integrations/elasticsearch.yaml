@@ -1,0 +1,85 @@
+id: elasticsearch
+metric_id: elasticsearch
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Elasticsearch
+    name: Index
+    path: elasticsearch.index
+    source: log
+  - groups:
+      - Elasticsearch
+    name: Shard
+    path: elasticsearch.shard
+    source: log
+  - groups:
+      - Elasticsearch
+    name: Operation
+    path: elasticsearch.operation
+    source: log
+pipeline:
+  type: pipeline
+  name: Elasticsearch
+  enabled: true
+  filter:
+    query: source:elasticsearch
+  processors:
+    - type: grok-parser
+      name: Parsing elasticsearch logs
+      enabled: true
+      source: message
+      samples:
+        - '[2018-03-15T10:49:37,857][INFO ][index.search.slowlog.query] [i-0a78cf272c227585e] [8.1520909160000.4][0] took[6.9s], took_millis[6962], types[], stats[], search_type[QUERY_THEN_FETCH], total_shards[2], source[{"size":0,"timeout":"1m","query":"myquery}]'
+        - '[2018-03-15T10:49:37,857][INFO ][foo.bar] new node installed'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ss,SSS"):timestamp}
+          _date_format2 %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:level}
+          _operation %{notSpace:elasticsearch.operation}
+          _node %{hostname:nodeId}
+          _index %{notSpace:elasticsearch.index}
+          _shard %{integer:elasticsearch.shard}
+          _duration %{integer:duration:scale(1000000)}
+          _logger %{notSpace:logger.name}
+        matchRules: |
+          Elasticsearch_search_query \[(?>%{_date}|%{_date_format2})\]\[%{_status}\s*\]\[index.search.slowlog.%{_operation}\] (\[%{_node}\] )?\[%{_index}\]\[%{_shard}\] took\[.*\], took_millis\[%{_duration}\].*
+
+          Elasticsearch_slow_indexing \[(?>%{_date}|%{_date_format2})\]\[%{_status}\s*\]\[index.indexing.slowlog.%{_operation}\] (\[%{_node}\] )?\[%{_index}\] took\[.*\], took_millis\[%{_duration}\].*
+
+          Elasticsearch_default \[(?>%{_date}|%{_date_format2})\]\[%{_status}\s*\]\[%{_logger}\s*\]\s*(\[%{_node}\])?.*
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `nodeId` to `node_name`
+      enabled: true
+      sources:
+        - nodeId
+      target: node_name
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

@@ -1,0 +1,386 @@
+id: crest_data_systems_microsoft_defender
+metric_id: crest-data-systems-microsoft-defender
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Email Direction
+    path: EmailDirection
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Incident Id
+    path: incidentId
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Endpoint Id
+    path: endpoint-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Severity
+    path: alert-severity
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Incident Status
+    path: incident-status
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Deprecated
+    path: deprecated
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Implementation Cost
+    path: implementation_cost
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Missing KB Id
+    path: missing-kb-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Threat Types
+    path: ThreatTypes
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Endpoint Name
+    path: endpoint-name
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Failure Reason
+    path: Defender-FailureReason
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Recipient Email Address
+    path: RecipientEmailAddress
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Risk Score
+    path: endpoint-risk
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Logon Type
+    path: LogonType
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Incident Severity
+    path: incident-severity
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Category
+    path: alert-category
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Action Type
+    path: cds.defender.actiontype
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Detection Methods
+    path: DetectionMethods
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Device Type
+    path: Defender-DeviceType
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Status
+    path: alert-status
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: File Type
+    path: FileType
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Detection Source
+    path: detectionSource
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Application
+    path: Application
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Vulnerability Severity
+    path: vuln-severity
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Investigation Status
+    path: investigation-status
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Control Category
+    path: controlCategory
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Service Source
+    path: serviceSource
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: OS Platform
+    path: OSPlatform
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Destination IP Address
+    path: DestinationIPAddress
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Activity Type
+    path: ActivityType
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Vulnerability Id
+    path: vulnerability-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Id
+    path: alert-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Sender From Address
+    path: SenderFromAddress
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Health Status
+    path: endpoint-health-status
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Software Id
+    path: software-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Aad Tenant Id
+    path: aadTenantId
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Update Time
+    path: alert-update-time
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Threat Family Name
+    path: threatFamilyName
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Incident Name
+    path: incidentName
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Endpoint Last Seen Time
+    path: endpoint-seen-time
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Alert Creation Time
+    path: alertCreationTime
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Last Seen
+    path: lastSeen
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Threat Name
+    path: threatName
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Last Event Time
+    path: lastEventTime
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Investigation Id
+    path: investigation-id
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Last Update Time
+    path: lastUpdateTime
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Software Version
+    path: software-version
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: First Event Time
+    path: firstEventTime
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Location
+    path: cds.defender.location
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Computer DNS Name
+    path: computerDnsName
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Triggering Alert ID
+    path: triggeringAlertId
+    source: log
+  - groups:
+      - Crest Data Systems Microsoft 365 Defender
+    name: Control Profile ID
+    path: control-profile-id
+    source: log
+pipeline:
+  type: pipeline
+  name: Microsoft 365 Defender by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_microsoft_defender
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `description` as the official message of the log
+      enabled: true
+      sources:
+        - description
+    - type: status-remapper
+      name: Define `healthStatus` as the official status of the log
+      enabled: true
+      sources:
+        - healthStatus
+    - type: attribute-remapper
+      name: Map `EmailAddress` to `usr.email`
+      enabled: true
+      sources:
+        - EmailAddress
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `City` to `network.client.geoip.city.name`
+      enabled: true
+      sources:
+        - City
+      sourceType: attribute
+      target: network.client.geoip.city.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Country` to `network.client.geoip.country.iso_code`
+      enabled: true
+      sources:
+        - Country
+      sourceType: attribute
+      target: network.client.geoip.country.iso_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ActionType` to `cds.defender.actiontype`
+      enabled: true
+      sources:
+        - ActionType
+      sourceType: attribute
+      target: cds.defender.actiontype
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `AccountName` to `usr.name`
+      enabled: true
+      sources:
+        - AccountName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Location` to `cds.defender.location`
+      enabled: true
+      sources:
+        - Location
+      sourceType: attribute
+      target: cds.defender.location
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `AccountObjectId` to `usr.id`
+      enabled: true
+      sources:
+        - AccountObjectId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false

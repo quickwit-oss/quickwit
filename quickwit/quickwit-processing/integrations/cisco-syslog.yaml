@@ -1,0 +1,42 @@
+id: cisco-syslog
+backend_only: true
+facets: []
+pipeline:
+  type: pipeline
+  name: cisco syslog
+  enabled: true
+  filter:
+    query: source:cisco-syslog
+  processors:
+    - type: grok-parser
+      name: parser
+      enabled: true
+      source: message
+      samples:
+        - '<123>0023:*Mar  1 18:46:11: %SYS-5-CONFIG_I: Configured from console by vty2 (10.34.195.36)'
+        - '00023:18:46:11: %LINK-3-UPDOWN: Interface Port-channel1, changed state to up'
+        - '*Feb  8 08:52:05.064: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up'
+        - '<180> machine1: .Nov 18 21:03:22.631 GMT: %CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on TenGigabitEthernet.'
+        - '<172>25616: [syslog@9 s_id ="some_id"]: Aug 31 22:39:43.765 PDT: %C6KENV-4-MINORTEMPALARM: XDB 1/0 inlet temperature crossed threshold #1(=70C). It has exceeded normal operating temperature range.'
+      grok:
+        supportRules: |
+          _optional_fields (<%{integer:priority}>)?(%{integer:sequence_number}:)?( )?(%{data:origin}: )?
+
+          _date_parser (%{date("HH:mm:ss"):date}|%{date("HH:mm:ss.SSS"):date}|%{date("MMM dd HH:mm:ss"):date}|%{date("MMM dd HH:mm:ss.SSS"):date}|%{date("MMM  dd HH:mm:ss"):date}|%{date("MMM  dd HH:mm:ss.SSS"):date}|%{date("MMM d HH:mm:ss"):date}|%{date("MMM d HH:mm:ss.SSS"):date}|%{date("MMM  d HH:mm:ss"):date}|%{date("MMM  d HH:mm:ss.SSS"):date}|%{date("MMM dd HH:mm:ss z"):date}|%{date("MMM dd HH:mm:ss.SSS z"):date}|%{date("MMM  dd HH:mm:ss z"):date}|%{date("MMM  dd HH:mm:ss.SSS z"):date}|%{date("MMM d HH:mm:ss z"):date}|%{date("MMM d HH:mm:ss.SSS z"):date}|%{date("MMM  d HH:mm:ss z"):date}|%{date("MMM  d HH:mm:ss.SSS z"):date})
+        matchRules: |
+          general_cisco_syslog_parser %{_optional_fields}(\*)?(\.)?%{_date_parser}:\s+%+%{notSpace:facility}\-%{integer:severity_level}-%{notSpace:mnemonic}:( )?%{data:message}
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `severity_level` as the official status of the log
+      enabled: true
+      sources:
+        - severity_level

@@ -1,0 +1,1220 @@
+id: "cloudflare"
+tests:
+ -
+  sample: |-
+    {
+      "ClientASN" : "testASN",
+      "EdgeResponseStatus" : 200,
+      "RayID" : "3a6050bcbe121a87",
+      "ClientRequestHost" : "www.theburritobot.com",
+      "EdgeResponseBytes" : 69045,
+      "ClientRequestMethod" : "GET",
+      "ClientIP" : "89.163.242.206",
+      "ClientRequestURI" : "/static/img/testimonial-hipster.png",
+      "EdgeEndTimestamp" : 1506702504461999900,
+      "EdgeStartTimestamp" : 1506702504433000200
+    }
+  result:
+    custom:
+      ClientASN: "testASN"
+      ClientRequestHost: "www.theburritobot.com"
+      ClientRequestMethod: "GET"
+      ClientRequestURI: "/static/img/testimonial-hipster.png"
+      EdgeEndTimestamp: 1506702504461999900
+      EdgeResponseStatus: 200
+      EdgeStartTimestamp: 1506702504433000200
+      RayID: "3a6050bcbe121a87"
+      duration: 2.899968E7
+      http:
+        method: "GET"
+        request_id: "3a6050bcbe121a87"
+        status_category: "OK"
+        status_code: 200
+        url_details:
+          host: "www.theburritobot.com"
+          path: "/static/img/testimonial-hipster.png"
+      network:
+        bytes_written: 69045
+        client:
+          asn: "testASN"
+          geoip: {}
+          ip: "89.163.242.206"
+      ocsf:
+        activity_id: 3
+        activity_name: "Get"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "HTTP Activity"
+        class_uid: 4002
+        dst_endpoint:
+          hostname: "www.theburritobot.com"
+        http_request:
+          http_method: "GET"
+          url:
+            hostname: "www.theburritobot.com"
+        http_response:
+          code: 200
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          profiles:
+           - "security_control"
+           - "host"
+          uid: "3a6050bcbe121a87"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          autonomous_system:
+            number: "testASN"
+          ip: "89.163.242.206"
+        time: 1506702504461999900
+        type_uid: 400203
+    message: |-
+      {
+        "ClientASN" : "testASN",
+        "EdgeResponseStatus" : 200,
+        "RayID" : "3a6050bcbe121a87",
+        "ClientRequestHost" : "www.theburritobot.com",
+        "EdgeResponseBytes" : 69045,
+        "ClientRequestMethod" : "GET",
+        "ClientIP" : "89.163.242.206",
+        "ClientRequestURI" : "/static/img/testimonial-hipster.png",
+        "EdgeEndTimestamp" : 1506702504461999900,
+        "EdgeStartTimestamp" : 1506702504433000200
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1506702504461999900
+ -
+  sample: |-
+    {
+      "Policy" : "",
+      "Email" : "mythili@cloudflare.com",
+      "TimeZoneInferredMethod" : "noScheduleConfigured",
+      "LocationID" : "f233bd67-78c7-4050-9aff-ad63cce25732",
+      "ColoID" : 658,
+      "ColoCode" : "ORD",
+      "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+      "QueryCategoryNames" : [ "Technology", "Content Servers", "Information Technology", "Technology" ],
+      "QueryTypeName" : "AAAA",
+      "ApplicationID" : 761,
+      "Protocol" : "https",
+      "PolicyID" : "",
+      "Datetime" : "2023-05-04T22:25:21Z",
+      "QueryCategoryIDs" : [ 26, 81, 109, 155 ],
+      "SrcPort" : 0,
+      "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+      "DstPort" : 443,
+      "SrcIP" : "35.238.199.221",
+      "QueryName" : "incoming.telemetry.mozilla.org",
+      "TimeZone" : "",
+      "QuerySize" : 59,
+      "DstIP" : "162.159.36.1",
+      "QueryNameReversed" : "org.mozilla.telemetry.incoming",
+      "RCode" : 0,
+      "QueryType" : 28,
+      "DeviceName" : "zt-test-vm1",
+      "Location" : "GCP default",
+      "RData" : [ {
+        "data" : "CGluY29taW5nCXRlbGVtZXRyeQdtb3ppbGxhA29yZwAABQABAAAAKQAvEnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQA=",
+        "type" : "5"
+      }, {
+        "data" : "EnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQAABQABAAABGQAtBHByb2QOaW5nZXN0aW9uLWVkZ2UEcHJvZAdkYXRhb3BzBm1vemdjcANuZXQA",
+        "type" : "5"
+      } ],
+      "ResolverDecision" : "allowedOnNoPolicyMatch"
+    }
+  result:
+    custom:
+      ApplicationID: 761
+      ColoCode: "ORD"
+      ColoID: 658
+      Datetime: "2023-05-04T22:25:21Z"
+      DeviceID: "083a8354-d56c-11ed-9771-6a842b100cff"
+      DeviceName: "zt-test-vm1"
+      Email: "mythili@cloudflare.com"
+      Location: "GCP default"
+      LocationID: "f233bd67-78c7-4050-9aff-ad63cce25732"
+      Policy: ""
+      PolicyID: ""
+      Protocol: "https"
+      QueryCategoryIDs:
+       - 26
+       - 81
+       - 109
+       - 155
+      QueryCategoryNames:
+       - "Technology"
+       - "Content Servers"
+       - "Information Technology"
+       - "Technology"
+      QueryName: "incoming.telemetry.mozilla.org"
+      QueryNameReversed: "org.mozilla.telemetry.incoming"
+      QueryType: 28
+      QueryTypeName: "AAAA"
+      RData:
+       -
+        data: "CGluY29taW5nCXRlbGVtZXRyeQdtb3ppbGxhA29yZwAABQABAAAAKQAvEnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQA="
+        type: "5"
+       -
+        data: "EnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQAABQABAAABGQAtBHByb2QOaW5nZXN0aW9uLWVkZ2UEcHJvZAdkYXRhb3BzBm1vemdjcANuZXQA"
+        type: "5"
+      ResolverDecision: "allowedOnNoPolicyMatch"
+      TimeZone: ""
+      TimeZoneInferredMethod: "noScheduleConfigured"
+      UserID: "166befbb-00e3-5e20-bd6e-27245723949f"
+      dns:
+        flag:
+          rcode: 0
+        question:
+          name: "incoming.telemetry.mozilla.org"
+          size: 59
+          type: "AAAA"
+      host: "zt-test-vm1"
+      network:
+        client:
+          geoip: {}
+          ip: "35.238.199.221"
+          port: 0
+        destination:
+          ip: "162.159.36.1"
+          port: 443
+      ocsf:
+        activity_id: 6
+        activity_name: "Traffic"
+        actor:
+          user:
+            uid: "166befbb-00e3-5e20-bd6e-27245723949f"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "DNS Activity"
+        class_uid: 4003
+        device:
+          hostname: "zt-test-vm1"
+          type: "Unknown"
+          type_id: 0
+          uid: "083a8354-d56c-11ed-9771-6a842b100cff"
+        dst_endpoint:
+          ip: "162.159.36.1"
+          port: 443
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          profiles:
+           - "host"
+          version: "1.3.0"
+        query:
+          hostname: "incoming.telemetry.mozilla.org"
+          type: "AAAA"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "35.238.199.221"
+          port: 0
+        time: 1683239121000
+        type_uid: 400306
+      usr:
+        email: "mythili@cloudflare.com"
+        id: "166befbb-00e3-5e20-bd6e-27245723949f"
+    message: |-
+      {
+        "Policy" : "",
+        "Email" : "mythili@cloudflare.com",
+        "TimeZoneInferredMethod" : "noScheduleConfigured",
+        "LocationID" : "f233bd67-78c7-4050-9aff-ad63cce25732",
+        "ColoID" : 658,
+        "ColoCode" : "ORD",
+        "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+        "QueryCategoryNames" : [ "Technology", "Content Servers", "Information Technology", "Technology" ],
+        "QueryTypeName" : "AAAA",
+        "ApplicationID" : 761,
+        "Protocol" : "https",
+        "PolicyID" : "",
+        "Datetime" : "2023-05-04T22:25:21Z",
+        "QueryCategoryIDs" : [ 26, 81, 109, 155 ],
+        "SrcPort" : 0,
+        "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+        "DstPort" : 443,
+        "SrcIP" : "35.238.199.221",
+        "QueryName" : "incoming.telemetry.mozilla.org",
+        "TimeZone" : "",
+        "QuerySize" : 59,
+        "DstIP" : "162.159.36.1",
+        "QueryNameReversed" : "org.mozilla.telemetry.incoming",
+        "RCode" : 0,
+        "QueryType" : 28,
+        "DeviceName" : "zt-test-vm1",
+        "Location" : "GCP default",
+        "RData" : [ {
+          "data" : "CGluY29taW5nCXRlbGVtZXRyeQdtb3ppbGxhA29yZwAABQABAAAAKQAvEnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQA=",
+          "type" : "5"
+        }, {
+          "data" : "EnRlbGVtZXRyeS1pbmNvbWluZwVyNTMtMghzZXJ2aWNlcwdtb3ppbGxhA2NvbQAABQABAAABGQAtBHByb2QOaW5nZXN0aW9uLWVkZ2UEcHJvZAdkYXRhb3BzBm1vemdjcANuZXQA",
+          "type" : "5"
+        } ],
+        "ResolverDecision" : "allowedOnNoPolicyMatch"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "Action" : "bypass",
+      "Email" : "mythili@cloudflare.com",
+      "SourcePort" : 49936,
+      "UntrustedCertificateAction" : "none",
+      "DestinationPort" : 443,
+      "URL" : "",
+      "HTTPHost" : "cisco.com",
+      "SourceIP" : "35.238.199.221",
+      "HTTPStatusCode" : 0,
+      "HTTPMethod" : "UNKNOWN",
+      "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+      "IsIsolated" : false,
+      "UserAgent" : "",
+      "HTTPVersion" : "UNK",
+      "BlockedFileReason" : "unknown",
+      "PolicyID" : "69a87b35-a78b-4bb3-af80-95c3e64e44c9",
+      "Datetime" : "2023-05-04T22:25:14Z",
+      "BlockedFileName" : "",
+      "AccountID" : "e1836771179f98aabb828da5ea69a348",
+      "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+      "Referer" : "",
+      "DestinationIP" : "2001:420:1101:1::185",
+      "SourceInternalIP" : "",
+      "PolicyName" : "DNI",
+      "BlockedFileHash" : "",
+      "BlockedFileSize" : 0,
+      "DeviceName" : "zt-test-vm1"
+    }
+  result:
+    custom:
+      AccountID: "e1836771179f98aabb828da5ea69a348"
+      Action: "bypass"
+      BlockedFileHash: ""
+      BlockedFileName: ""
+      BlockedFileReason: "unknown"
+      BlockedFileSize: 0
+      Datetime: "2023-05-04T22:25:14Z"
+      DeviceID: "083a8354-d56c-11ed-9771-6a842b100cff"
+      DeviceName: "zt-test-vm1"
+      Email: "mythili@cloudflare.com"
+      HTTPHost: "cisco.com"
+      HTTPMethod: "UNKNOWN"
+      HTTPStatusCode: 0
+      HTTPVersion: "UNK"
+      IsIsolated: false
+      PolicyID: "69a87b35-a78b-4bb3-af80-95c3e64e44c9"
+      PolicyName: "DNI"
+      SourceInternalIP: ""
+      URL: ""
+      UntrustedCertificateAction: "none"
+      UserAgent: ""
+      UserID: "166befbb-00e3-5e20-bd6e-27245723949f"
+      host: "zt-test-vm1"
+      http:
+        method: "UNKNOWN"
+        referer: ""
+        status_code: 0
+        url: ""
+        url_details:
+          host: "cisco.com"
+        useragent: ""
+        version: "UNK"
+      network:
+        client:
+          geoip: {}
+          ip: "35.238.199.221"
+          port: 49936
+        destination:
+          ip: "2001:420:1101:1::185"
+          port: 443
+      ocsf:
+        action: "bypass"
+        action_id: 99
+        activity_id: 0
+        activity_name: "Unknown"
+        actor:
+          user:
+            email_addr: "mythili@cloudflare.com"
+            uid: "166befbb-00e3-5e20-bd6e-27245723949f"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "Network Activity"
+        class_uid: 4001
+        device:
+          hostname: "zt-test-vm1"
+          type: "Unknown"
+          type_id: 0
+          uid: "083a8354-d56c-11ed-9771-6a842b100cff"
+        disposition: "bypass"
+        disposition_id: 99
+        dst_endpoint:
+          hostname: "cisco.com"
+          ip: "2001:420:1101:1::185"
+          port: 443
+        http_request:
+          http_method: "UNKNOWN"
+          url:
+            hostname: "cisco.com"
+            url_string: ""
+          user_agent: ""
+          version: "UNK"
+        http_response:
+          code: 0
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          profiles:
+           - "security_control"
+           - "host"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "35.238.199.221"
+          port: 49936
+        time: 1683239114000
+        type_uid: 400100
+      usr:
+        email: "mythili@cloudflare.com"
+        id: "166befbb-00e3-5e20-bd6e-27245723949f"
+    message: |-
+      {
+        "Action" : "bypass",
+        "Email" : "mythili@cloudflare.com",
+        "SourcePort" : 49936,
+        "UntrustedCertificateAction" : "none",
+        "DestinationPort" : 443,
+        "URL" : "",
+        "HTTPHost" : "cisco.com",
+        "SourceIP" : "35.238.199.221",
+        "HTTPStatusCode" : 0,
+        "HTTPMethod" : "UNKNOWN",
+        "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+        "IsIsolated" : false,
+        "UserAgent" : "",
+        "HTTPVersion" : "UNK",
+        "BlockedFileReason" : "unknown",
+        "PolicyID" : "69a87b35-a78b-4bb3-af80-95c3e64e44c9",
+        "Datetime" : "2023-05-04T22:25:14Z",
+        "BlockedFileName" : "",
+        "AccountID" : "e1836771179f98aabb828da5ea69a348",
+        "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+        "Referer" : "",
+        "DestinationIP" : "2001:420:1101:1::185",
+        "SourceInternalIP" : "",
+        "PolicyName" : "DNI",
+        "BlockedFileHash" : "",
+        "BlockedFileSize" : 0,
+        "DeviceName" : "zt-test-vm1"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "ActionType" : "gateway_create",
+      "ActorEmail" : "mythili@cloudflare.com",
+      "ActorIP" : "2a09:bac5:638f:28::4:2e1",
+      "Metadata" : {
+        "account_id" : "e1836771179f98aabb828da5ea69a348",
+        "actor_email" : "mythili@cloudflare.com"
+      },
+      "ResourceType" : "gateway.rule",
+      "ActorID" : "9b53949af5da3e78fe024a2d592fd35c",
+      "ActorType" : "user",
+      "When" : "2023-05-09T02:59:04Z",
+      "ActionResult" : true,
+      "OwnerID" : "e1836771179f98aabb828da5ea69a348",
+      "ResourceID" : "e2a9f964-b103-4d2e-81c4-b96df255e894",
+      "NewValue" : {
+        "rule_settings" : {
+          "override_host" : "",
+          "block_reason" : "",
+          "biso_admin_controls" : {
+            "dcp" : false,
+            "dd" : false,
+            "du" : false,
+            "dcr" : false,
+            "dk" : false,
+            "dp" : false
+          },
+          "block_page_enabled" : false,
+          "insecure_disable_dnssec_validation" : false,
+          "ip_categories" : false
+        },
+        "description" : "",
+        "created_at" : "2023-05-09T02:59:05Z",
+        "filters" : [ "dns" ],
+        "version" : 1,
+        "precedence" : 13000,
+        "enabled" : true,
+        "updated_at" : "2023-05-09T02:59:05Z",
+        "identity" : "",
+        "device_posture" : "",
+        "name" : "Block weather",
+        "action" : "block",
+        "id" : "e2a9f964-b103-4d2e-81c4-b96df255e894",
+        "conditions" : [ {
+          "expression" : {
+            "any" : {
+              "in" : {
+                "lhs" : {
+                  "splat" : "dns.content_category"
+                },
+                "rhs" : [ 167 ]
+              }
+            }
+          },
+          "updated_at" : "2023-05-09T02:59:05Z",
+          "created_at" : "2023-05-09T02:59:05Z",
+          "id" : "ae8bdcd2-c7b7-4221-812f-9256202ff123",
+          "type" : "traffic"
+        } ],
+        "traffic" : "any(dns.content_category[*] in {167})"
+      },
+      "ID" : "d1cb2144-899f-4d0e-ae96-e62c6ec58822",
+      "Interface" : "UI"
+    }
+  result:
+    custom:
+      ActionResult: true
+      ActionType: "gateway_create"
+      ActorEmail: "mythili@cloudflare.com"
+      ActorID: "9b53949af5da3e78fe024a2d592fd35c"
+      ActorType: "user"
+      ID: "d1cb2144-899f-4d0e-ae96-e62c6ec58822"
+      Interface: "UI"
+      Metadata:
+        account_id: "e1836771179f98aabb828da5ea69a348"
+        actor_email: "mythili@cloudflare.com"
+      NewValue:
+        action: "block"
+        conditions:
+         -
+          expression:
+            any:
+              in:
+                lhs:
+                  splat: "dns.content_category"
+                rhs:
+                 - 167
+          updated_at: "2023-05-09T02:59:05Z"
+          created_at: "2023-05-09T02:59:05Z"
+          id: "ae8bdcd2-c7b7-4221-812f-9256202ff123"
+          type: "traffic"
+        created_at: "2023-05-09T02:59:05Z"
+        description: ""
+        device_posture: ""
+        enabled: true
+        filters:
+         - "dns"
+        id: "e2a9f964-b103-4d2e-81c4-b96df255e894"
+        identity: ""
+        name: "Block weather"
+        precedence: 13000
+        rule_settings:
+          biso_admin_controls:
+            dcp: false
+            dcr: false
+            dd: false
+            dk: false
+            dp: false
+            du: false
+          block_page_enabled: false
+          block_reason: ""
+          insecure_disable_dnssec_validation: false
+          ip_categories: false
+          override_host: ""
+        traffic: "any(dns.content_category[*] in {167})"
+        updated_at: "2023-05-09T02:59:05Z"
+        version: 1
+      OwnerID: "e1836771179f98aabb828da5ea69a348"
+      ResourceID: "e2a9f964-b103-4d2e-81c4-b96df255e894"
+      ResourceType: "gateway.rule"
+      When: "2023-05-09T02:59:04Z"
+      network:
+        client:
+          geoip: {}
+          ip: "2a09:bac5:638f:28::4:2e1"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            email_addr: "mythili@cloudflare.com"
+            uid: "9b53949af5da3e78fe024a2d592fd35c"
+        api:
+          operation: "gateway_create"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          uid: "d1cb2144-899f-4d0e-ae96-e62c6ec58822"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "2a09:bac5:638f:28::4:2e1"
+        status: "Success"
+        status_id: 1
+        time: 1683601144000
+        type_uid: 600301
+      usr:
+        email: "mythili@cloudflare.com"
+        id: "9b53949af5da3e78fe024a2d592fd35c"
+    message: |-
+      {
+        "ActionType" : "gateway_create",
+        "ActorEmail" : "mythili@cloudflare.com",
+        "ActorIP" : "2a09:bac5:638f:28::4:2e1",
+        "Metadata" : {
+          "account_id" : "e1836771179f98aabb828da5ea69a348",
+          "actor_email" : "mythili@cloudflare.com"
+        },
+        "ResourceType" : "gateway.rule",
+        "ActorID" : "9b53949af5da3e78fe024a2d592fd35c",
+        "ActorType" : "user",
+        "When" : "2023-05-09T02:59:04Z",
+        "ActionResult" : true,
+        "OwnerID" : "e1836771179f98aabb828da5ea69a348",
+        "ResourceID" : "e2a9f964-b103-4d2e-81c4-b96df255e894",
+        "NewValue" : {
+          "rule_settings" : {
+            "override_host" : "",
+            "block_reason" : "",
+            "biso_admin_controls" : {
+              "dcp" : false,
+              "dd" : false,
+              "du" : false,
+              "dcr" : false,
+              "dk" : false,
+              "dp" : false
+            },
+            "block_page_enabled" : false,
+            "insecure_disable_dnssec_validation" : false,
+            "ip_categories" : false
+          },
+          "description" : "",
+          "created_at" : "2023-05-09T02:59:05Z",
+          "filters" : [ "dns" ],
+          "version" : 1,
+          "precedence" : 13000,
+          "enabled" : true,
+          "updated_at" : "2023-05-09T02:59:05Z",
+          "identity" : "",
+          "device_posture" : "",
+          "name" : "Block weather",
+          "action" : "block",
+          "id" : "e2a9f964-b103-4d2e-81c4-b96df255e894",
+          "conditions" : [ {
+            "expression" : {
+              "any" : {
+                "in" : {
+                  "lhs" : {
+                    "splat" : "dns.content_category"
+                  },
+                  "rhs" : [ 167 ]
+                }
+              }
+            },
+            "updated_at" : "2023-05-09T02:59:05Z",
+            "created_at" : "2023-05-09T02:59:05Z",
+            "id" : "ae8bdcd2-c7b7-4221-812f-9256202ff123",
+            "type" : "traffic"
+          } ],
+          "traffic" : "any(dns.content_category[*] in {167})"
+        },
+        "ID" : "d1cb2144-899f-4d0e-ae96-e62c6ec58822",
+        "Interface" : "UI"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "Action" : "allowedOnNoRuleMatch",
+      "OverrideIP" : "",
+      "AccountID" : "e1836771179f98aabb828da5ea69a348",
+      "Email" : "mythili@cloudflare.com",
+      "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+      "SourcePort" : 56206,
+      "DestinationPort" : 80,
+      "SNI" : "",
+      "OverridePort" : 0,
+      "DestinationIP" : "2a06:98c1:54::5:2de7",
+      "SourceInternalIP" : "",
+      "SourceIP" : "35.238.199.221",
+      "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+      "PolicyName" : "",
+      "Transport" : "tcp",
+      "SessionID" : "188ba83e4f00007fb010c1b400000001",
+      "PolicyID" : "",
+      "Datetime" : "2023-05-05T03:57:54Z",
+      "DeviceName" : "zt-test-vm1"
+    }
+  result:
+    custom:
+      AccountID: "e1836771179f98aabb828da5ea69a348"
+      Action: "allowedOnNoRuleMatch"
+      Datetime: "2023-05-05T03:57:54Z"
+      DeviceID: "083a8354-d56c-11ed-9771-6a842b100cff"
+      DeviceName: "zt-test-vm1"
+      Email: "mythili@cloudflare.com"
+      OverrideIP: ""
+      OverridePort: 0
+      PolicyID: ""
+      PolicyName: ""
+      SNI: ""
+      SessionID: "188ba83e4f00007fb010c1b400000001"
+      SourceInternalIP: ""
+      Transport: "tcp"
+      UserID: "166befbb-00e3-5e20-bd6e-27245723949f"
+      host: "zt-test-vm1"
+      network:
+        client:
+          geoip: {}
+          ip: "35.238.199.221"
+          port: 56206
+        destination:
+          ip: "2a06:98c1:54::5:2de7"
+          port: 80
+      ocsf:
+        action: "allowedonnorulematch"
+        action_id: 99
+        activity_id: 0
+        activity_name: "Unknown"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "Network Activity"
+        class_uid: 4001
+        device:
+          hostname: "zt-test-vm1"
+          type: "Unknown"
+          type_id: 0
+          uid: "083a8354-d56c-11ed-9771-6a842b100cff"
+        disposition: "allowedonnorulematch"
+        disposition_id: 99
+        dst_endpoint:
+          ip: "2a06:98c1:54::5:2de7"
+          port: 80
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          profiles:
+           - "security_control"
+           - "host"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "35.238.199.221"
+          port: 56206
+        time: 1683259074000
+        type_uid: 400100
+      usr:
+        email: "mythili@cloudflare.com"
+        id: "166befbb-00e3-5e20-bd6e-27245723949f"
+    message: |-
+      {
+        "Action" : "allowedOnNoRuleMatch",
+        "OverrideIP" : "",
+        "AccountID" : "e1836771179f98aabb828da5ea69a348",
+        "Email" : "mythili@cloudflare.com",
+        "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+        "SourcePort" : 56206,
+        "DestinationPort" : 80,
+        "SNI" : "",
+        "OverridePort" : 0,
+        "DestinationIP" : "2a06:98c1:54::5:2de7",
+        "SourceInternalIP" : "",
+        "SourceIP" : "35.238.199.221",
+        "UserID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+        "PolicyName" : "",
+        "Transport" : "tcp",
+        "SessionID" : "188ba83e4f00007fb010c1b400000001",
+        "PolicyID" : "",
+        "Datetime" : "2023-05-05T03:57:54Z",
+        "DeviceName" : "zt-test-vm1"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "DeviceModel" : "Google Compute Engine",
+      "PostureCheckName" : "Ubuntu",
+      "Email" : "mythili@cloudflare.com",
+      "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+      "ClientVersion" : "2023.3.258",
+      "DeviceSerialNumber" : "GoogleCloud-958A42FFCBBF569A8F7913F0F855A108",
+      "PostureEvaluatedResult" : false,
+      "Timestamp" : "2023-05-22T16:08:21Z",
+      "DeviceType" : "linux",
+      "PostureCheckType" : "os_version",
+      "PostureReceivedJSON" : {
+        "os_version" : "5.15.0"
+      },
+      "PostureExpectedJSON" : {
+        "os_distro_name" : "ubuntu",
+        "version" : "5.15.0-1025-gcp",
+        "operator" : "==",
+        "os_distro_revision" : "20.04"
+      },
+      "DeviceManufacturer" : "",
+      "host" : "zt-test-vm1",
+      "OSVersion" : "5.15.0",
+      "PolicyID" : "d4ed91f9-8de7-48a7-a96b-455ee8961bf2",
+      "DeviceName" : "zt-test-vm1"
+    }
+  result:
+    custom:
+      ClientVersion: "2023.3.258"
+      DeviceID: "083a8354-d56c-11ed-9771-6a842b100cff"
+      DeviceManufacturer: ""
+      DeviceModel: "Google Compute Engine"
+      DeviceName: "zt-test-vm1"
+      DeviceSerialNumber: "GoogleCloud-958A42FFCBBF569A8F7913F0F855A108"
+      DeviceType: "linux"
+      Email: "mythili@cloudflare.com"
+      OSVersion: "5.15.0"
+      PolicyID: "d4ed91f9-8de7-48a7-a96b-455ee8961bf2"
+      PostureCheckName: "Ubuntu"
+      PostureCheckType: "os_version"
+      PostureEvaluatedResult: false
+      PostureExpectedJSON:
+        operator: "=="
+        os_distro_name: "ubuntu"
+        os_distro_revision: "20.04"
+        version: "5.15.0-1025-gcp"
+      PostureReceivedJSON:
+        os_version: "5.15.0"
+      Timestamp: "2023-05-22T16:08:21Z"
+      host: "zt-test-vm1"
+      ocsf:
+        activity_id: 0
+        activity_name: "Unknown"
+        category_name: "Uncategorized"
+        category_uid: 0
+        class_name: "Base Event"
+        class_uid: 0
+        device:
+          hostname: "zt-test-vm1"
+          type: "Unknown"
+          type_id: 0
+          uid: "083a8354-d56c-11ed-9771-6a842b100cff"
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        time: 1684771701000
+        type_uid: 0
+      usr:
+        email: "mythili@cloudflare.com"
+    message: |-
+      {
+        "DeviceModel" : "Google Compute Engine",
+        "PostureCheckName" : "Ubuntu",
+        "Email" : "mythili@cloudflare.com",
+        "DeviceID" : "083a8354-d56c-11ed-9771-6a842b100cff",
+        "ClientVersion" : "2023.3.258",
+        "DeviceSerialNumber" : "GoogleCloud-958A42FFCBBF569A8F7913F0F855A108",
+        "PostureEvaluatedResult" : false,
+        "Timestamp" : "2023-05-22T16:08:21Z",
+        "DeviceType" : "linux",
+        "PostureCheckType" : "os_version",
+        "PostureReceivedJSON" : {
+          "os_version" : "5.15.0"
+        },
+        "PostureExpectedJSON" : {
+          "os_distro_name" : "ubuntu",
+          "version" : "5.15.0-1025-gcp",
+          "operator" : "==",
+          "os_distro_revision" : "20.04"
+        },
+        "DeviceManufacturer" : "",
+        "host" : "zt-test-vm1",
+        "OSVersion" : "5.15.0",
+        "PolicyID" : "d4ed91f9-8de7-48a7-a96b-455ee8961bf2",
+        "DeviceName" : "zt-test-vm1"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "Action" : "login",
+      "Email" : "mythili@cloudflare.com",
+      "PurposeJustificationPrompt" : "",
+      "CreatedAt" : "2023-05-22T19:15:28Z",
+      "Connection" : "onetimepin",
+      "Allowed" : true,
+      "TemporaryAccessDuration" : 0,
+      "AppDomain" : "partner-zt-logs.cloudflareaccess.com/warp",
+      "RayID" : "7cb763521f0110df",
+      "UserUID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+      "PurposeJustificationResponse" : "",
+      "Country" : "us",
+      "AppUUID" : "b6d3a983-f679-4527-beba-df8dbd92d7cc",
+      "IPAddress" : "34.121.47.219"
+    }
+  result:
+    custom:
+      Allowed: true
+      AppDomain: "partner-zt-logs.cloudflareaccess.com/warp"
+      AppUUID: "b6d3a983-f679-4527-beba-df8dbd92d7cc"
+      Connection: "onetimepin"
+      Country: "us"
+      CreatedAt: "2023-05-22T19:15:28Z"
+      Email: "mythili@cloudflare.com"
+      PurposeJustificationPrompt: ""
+      PurposeJustificationResponse: ""
+      RayID: "7cb763521f0110df"
+      TemporaryAccessDuration: 0
+      UserUID: "166befbb-00e3-5e20-bd6e-27245723949f"
+      http:
+        request_id: "7cb763521f0110df"
+      ocsf:
+        activity_id: 1
+        activity_name: "Login"
+        actor:
+          user:
+            email_addr: "mythili@cloudflare.com"
+            uid: "166befbb-00e3-5e20-bd6e-27245723949f"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          uid: "7cb763521f0110df"
+          version: "1.3.0"
+        service:
+          name: "partner-zt-logs.cloudflareaccess.com/warp"
+          uid: "b6d3a983-f679-4527-beba-df8dbd92d7cc"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "34.121.47.219"
+          location:
+            country: "us"
+        status: "Success"
+        status_id: 1
+        time: 1684782928000
+        type_uid: 300201
+        user:
+          email_addr: "mythili@cloudflare.com"
+          uid: "166befbb-00e3-5e20-bd6e-27245723949f"
+      usr:
+        email: "mythili@cloudflare.com"
+        id: "166befbb-00e3-5e20-bd6e-27245723949f"
+    message: |-
+      {
+        "Action" : "login",
+        "Email" : "mythili@cloudflare.com",
+        "PurposeJustificationPrompt" : "",
+        "CreatedAt" : "2023-05-22T19:15:28Z",
+        "Connection" : "onetimepin",
+        "Allowed" : true,
+        "TemporaryAccessDuration" : 0,
+        "AppDomain" : "partner-zt-logs.cloudflareaccess.com/warp",
+        "RayID" : "7cb763521f0110df",
+        "UserUID" : "166befbb-00e3-5e20-bd6e-27245723949f",
+        "PurposeJustificationResponse" : "",
+        "Country" : "us",
+        "AppUUID" : "b6d3a983-f679-4527-beba-df8dbd92d7cc",
+        "IPAddress" : "34.121.47.219"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "FindingTypeID" : "57e44995-c7ad-46fe-9c55-59706e663adf",
+      "FindingTypeDisplayName" : "Salesforce User Inactive",
+      "FindingTypeSeverity" : "Low",
+      "InstanceID" : "1ceebf5a-2e4c-408e-a184-ce4b468bd0c3",
+      "IntegrationPolicyVendor" : "Salesforce Connection",
+      "IntegrationID" : "c772678d-5cf1-4c73-bf3f-019dbaa015cd",
+      "AssetExternalID" : "005o0000004aK5gAAE",
+      "IntegrationDisplayName" : "Salesforce Testing",
+      "AssetDisplayName" : "Etienne Labaume",
+      "DetectedTimestamp" : "2023-05-25T03:25:47Z",
+      "AssetMetadata" : {
+        "ReceivesAdminInfoEmails" : true,
+        "Email" : "etienne@sales.cloudflare.com",
+        "Address" : {
+          "country" : "Other",
+          "countryCode" : "OT"
+        },
+        "TimeZoneSidKey" : "Europe/London",
+        "LanguageLocaleKey" : "en_US",
+        "UserPermissionsOfflineUser" : false,
+        "UserRoleId" : "00Eo0000000Elt7EAC",
+        "IsActive" : false,
+        "LastLoginDate" : "2018-10-01T16:25:29.000+0000",
+        "ForecastEnabled" : false,
+        "DigestFrequency" : "D",
+        "Name" : "Etienne Labaume",
+        "BadgeText" : "",
+        "BannerPhotoUrl" : "/profilephoto/005/B",
+        "IsProfilePhotoActive" : false,
+        "Department" : "4200 - Prod Engineering",
+        "CommunityNickname" : "etienneDA",
+        "LocaleSidKey" : "en_US",
+        "SmallPhotoUrl" : "https://cloudflare.file.force.com/profilephoto/005/T",
+        "FirstName" : "Etienne",
+        "UserPermissionsCallCenterAutoLogin" : false,
+        "Title" : "Support",
+        "SmallBannerPhotoUrl" : "/profilephoto/005/D",
+        "EmailEncodingKey" : "ISO-8859-1",
+        "ReceivesInfoEmails" : true,
+        "UserPermissionsInteractionUser" : true,
+        "UserPermissionsSupportUser" : false,
+        "UserPermissionsMarketingUser" : false,
+        "FullPhotoUrl" : "https://cloudflare.file.force.com/profilephoto/005/F",
+        "MediumBannerPhotoUrl" : "/profilephoto/005/E",
+        "Alias" : "elaba",
+        "DefaultGroupNotificationFrequency" : "N",
+        "EmailPreferencesAutoBcc" : true,
+        "attributes" : {
+          "type" : "User",
+          "url" : "/services/data/v55.0/sobjects/User/005o0000004aK5gAAE"
+        },
+        "Id" : "005o0000004aK5gAAE",
+        "LastName" : "Labaume",
+        "UserType" : "Standard"
+      },
+      "AssetLink" : ""
+    }
+  result:
+    custom:
+      AssetDisplayName: "Etienne Labaume"
+      AssetExternalID: "005o0000004aK5gAAE"
+      AssetLink: ""
+      AssetMetadata:
+        Address:
+          country: "Other"
+          countryCode: "OT"
+        Alias: "elaba"
+        BadgeText: ""
+        BannerPhotoUrl: "/profilephoto/005/B"
+        CommunityNickname: "etienneDA"
+        DefaultGroupNotificationFrequency: "N"
+        Department: "4200 - Prod Engineering"
+        DigestFrequency: "D"
+        Email: "etienne@sales.cloudflare.com"
+        EmailEncodingKey: "ISO-8859-1"
+        EmailPreferencesAutoBcc: true
+        FirstName: "Etienne"
+        ForecastEnabled: false
+        FullPhotoUrl: "https://cloudflare.file.force.com/profilephoto/005/F"
+        Id: "005o0000004aK5gAAE"
+        IsActive: false
+        IsProfilePhotoActive: false
+        LanguageLocaleKey: "en_US"
+        LastLoginDate: "2018-10-01T16:25:29.000+0000"
+        LastName: "Labaume"
+        LocaleSidKey: "en_US"
+        MediumBannerPhotoUrl: "/profilephoto/005/E"
+        Name: "Etienne Labaume"
+        ReceivesAdminInfoEmails: true
+        ReceivesInfoEmails: true
+        SmallBannerPhotoUrl: "/profilephoto/005/D"
+        SmallPhotoUrl: "https://cloudflare.file.force.com/profilephoto/005/T"
+        TimeZoneSidKey: "Europe/London"
+        Title: "Support"
+        UserPermissionsCallCenterAutoLogin: false
+        UserPermissionsInteractionUser: true
+        UserPermissionsMarketingUser: false
+        UserPermissionsOfflineUser: false
+        UserPermissionsSupportUser: false
+        UserRoleId: "00Eo0000000Elt7EAC"
+        UserType: "Standard"
+        attributes:
+          type: "User"
+          url: "/services/data/v55.0/sobjects/User/005o0000004aK5gAAE"
+      DetectedTimestamp: "2023-05-25T03:25:47Z"
+      FindingTypeDisplayName: "Salesforce User Inactive"
+      FindingTypeID: "57e44995-c7ad-46fe-9c55-59706e663adf"
+      FindingTypeSeverity: "Low"
+      InstanceID: "1ceebf5a-2e4c-408e-a184-ce4b468bd0c3"
+      IntegrationDisplayName: "Salesforce Testing"
+      IntegrationID: "c772678d-5cf1-4c73-bf3f-019dbaa015cd"
+      IntegrationPolicyVendor: "Salesforce Connection"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        category_name: "Findings"
+        category_uid: 2
+        class_name: "Detection Finding"
+        class_uid: 2004
+        finding_info:
+          title: "Salesforce User Inactive"
+          uid: "57e44995-c7ad-46fe-9c55-59706e663adf"
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          version: "1.3.0"
+        severity: "Low"
+        severity_id: 2
+        time: 1684985147000
+        type_uid: 200401
+      usr:
+        email: "etienne@sales.cloudflare.com"
+        id: "005o0000004aK5gAAE"
+        name: "Etienne Labaume"
+    message: |-
+      {
+        "FindingTypeID" : "57e44995-c7ad-46fe-9c55-59706e663adf",
+        "FindingTypeDisplayName" : "Salesforce User Inactive",
+        "FindingTypeSeverity" : "Low",
+        "InstanceID" : "1ceebf5a-2e4c-408e-a184-ce4b468bd0c3",
+        "IntegrationPolicyVendor" : "Salesforce Connection",
+        "IntegrationID" : "c772678d-5cf1-4c73-bf3f-019dbaa015cd",
+        "AssetExternalID" : "005o0000004aK5gAAE",
+        "IntegrationDisplayName" : "Salesforce Testing",
+        "AssetDisplayName" : "Etienne Labaume",
+        "DetectedTimestamp" : "2023-05-25T03:25:47Z",
+        "AssetMetadata" : {
+          "ReceivesAdminInfoEmails" : true,
+          "Email" : "etienne@sales.cloudflare.com",
+          "Address" : {
+            "country" : "Other",
+            "countryCode" : "OT"
+          },
+          "TimeZoneSidKey" : "Europe/London",
+          "LanguageLocaleKey" : "en_US",
+          "UserPermissionsOfflineUser" : false,
+          "UserRoleId" : "00Eo0000000Elt7EAC",
+          "IsActive" : false,
+          "LastLoginDate" : "2018-10-01T16:25:29.000+0000",
+          "ForecastEnabled" : false,
+          "DigestFrequency" : "D",
+          "Name" : "Etienne Labaume",
+          "BadgeText" : "",
+          "BannerPhotoUrl" : "/profilephoto/005/B",
+          "IsProfilePhotoActive" : false,
+          "Department" : "4200 - Prod Engineering",
+          "CommunityNickname" : "etienneDA",
+          "LocaleSidKey" : "en_US",
+          "SmallPhotoUrl" : "https://cloudflare.file.force.com/profilephoto/005/T",
+          "FirstName" : "Etienne",
+          "UserPermissionsCallCenterAutoLogin" : false,
+          "Title" : "Support",
+          "SmallBannerPhotoUrl" : "/profilephoto/005/D",
+          "EmailEncodingKey" : "ISO-8859-1",
+          "ReceivesInfoEmails" : true,
+          "UserPermissionsInteractionUser" : true,
+          "UserPermissionsSupportUser" : false,
+          "UserPermissionsMarketingUser" : false,
+          "FullPhotoUrl" : "https://cloudflare.file.force.com/profilephoto/005/F",
+          "MediumBannerPhotoUrl" : "/profilephoto/005/E",
+          "Alias" : "elaba",
+          "DefaultGroupNotificationFrequency" : "N",
+          "EmailPreferencesAutoBcc" : true,
+          "attributes" : {
+            "type" : "User",
+            "url" : "/services/data/v55.0/sobjects/User/005o0000004aK5gAAE"
+          },
+          "Id" : "005o0000004aK5gAAE",
+          "LastName" : "Labaume",
+          "UserType" : "Standard"
+        },
+        "AssetLink" : ""
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "AccountID" : "test",
+      "UserName" : "test1",
+      "UserID" : "1111-1111",
+      "ServerAddress" : "1.1.1.1",
+      "Error" : "test",
+      "ClientAddress" : "1.1.1.1",
+      "ProgramType" : "shell",
+      "UserEmail" : "test1@test.com",
+      "Datetime" : "2025-05-21T11:00:47Z"
+    }
+  result:
+    custom:
+      AccountID: "test"
+      Datetime: "2025-05-21T11:00:47Z"
+      Error: "test"
+      ProgramType: "shell"
+      UserEmail: "test1@test.com"
+      UserID: "1111-1111"
+      UserName: "test1"
+      ocsf:
+        activity_id: 0
+        activity_name: "Unknown"
+        actor:
+          user:
+            email_addr: "test1@test.com"
+            name: "test1"
+            uid: "1111-1111"
+        category_name: "Network Activity"
+        category_uid: 4
+        class_name: "SSH Activity"
+        class_uid: 4007
+        dst_endpoint:
+          ip: "1.1.1.1"
+        metadata:
+          product:
+            name: "Cloudflare Logs"
+            vendor_name: "Cloudflare"
+          profiles:
+           - "host"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+        status: "Failure"
+        status_id: 2
+        time: 1747825247000
+        type_uid: 400700
+      usr:
+        id: "1111-1111"
+    message: |-
+      {
+        "AccountID" : "test",
+        "UserName" : "test1",
+        "UserID" : "1111-1111",
+        "ServerAddress" : "1.1.1.1",
+        "Error" : "test",
+        "ClientAddress" : "1.1.1.1",
+        "ProgramType" : "shell",
+        "UserEmail" : "test1@test.com",
+        "Datetime" : "2025-05-21T11:00:47Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

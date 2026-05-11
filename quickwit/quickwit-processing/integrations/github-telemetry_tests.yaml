@@ -1,0 +1,1239 @@
+id: "github-telemetry"
+tests:
+ -
+  sample: |-
+    {
+      "workflow_id" : 4706662,
+      "org" : "TestOrg",
+      "repo" : "TestOrg/test-repo",
+      "message" : "a test workflow message",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_actor",
+      "conclusion" : "success",
+      "@timestamp" : 1661317138608,
+      "user_id" : "11111",
+      "name" : "Preprod",
+      "action" : "workflows.completed_workflow_run",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "event" : "schedule",
+      "user" : "test_user",
+      "workflow_run_id" : 2916542825,
+      "user_agent" : "testing",
+      "_document_id" : "m7tW6tsEl_sXCUV1hVSilA",
+      "timestamp" : 1661317138608
+    }
+  result:
+    custom:
+      '@timestamp': 1661317138608
+      _document_id: "m7tW6tsEl_sXCUV1hVSilA"
+      action: "workflows.completed_workflow_run"
+      actor: "test_actor"
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      conclusion: "success"
+      event: "schedule"
+      evt:
+        action: "workflows.completed_workflow_run"
+        category: "schedule"
+        outcome: "success"
+      github:
+        actor: "test_actor"
+        document:
+          id: "m7tW6tsEl_sXCUV1hVSilA"
+        name: "Preprod"
+        org: "TestOrg"
+        repository: "TestOrg/test-repo"
+        workflow:
+          id: 4706662
+          run:
+            id: 2916542825
+      http:
+        useragent: "testing"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      name: "Preprod"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 99
+        activity_name: "workflows.completed_workflow_run"
+        actor:
+          user:
+            account:
+              name: "TestOrg"
+            name: "test_actor"
+        api:
+          operation: "workflows.completed_workflow_run"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        http_request:
+          user_agent: "testing"
+        metadata:
+          event_code: "workflows.completed_workflow_run"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          uid: "m7tW6tsEl_sXCUV1hVSilA"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1661317138608
+        type_uid: 600399
+      org: "TestOrg"
+      repo: "TestOrg/test-repo"
+      timestamp: 1661317138608
+      user: "test_user"
+      user_agent: "testing"
+      user_id: "11111"
+      usr:
+        id: "11111"
+        name: "test_user"
+      workflow_id: 4706662
+      workflow_run_id: 2916542825
+    message: "a test workflow message"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1661317138608
+ -
+  sample: |-
+    {
+      "workflow_id" : 4706662,
+      "visibility" : "private",
+      "org" : "TestOrg",
+      "repo" : "TestOrg/test-repo",
+      "message" : "a test pull request message",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_actor",
+      "conclusion" : "failure",
+      "@timestamp" : 1661315125341,
+      "user_id" : "11111",
+      "name" : "Preprod",
+      "transport_protocol_name" : "ssh",
+      "action" : "pull_request.create",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "event" : "pull_request",
+      "user" : "test_user",
+      "workflow_run_id" : 3116572895,
+      "user_agent" : "testing",
+      "_document_id" : "g5t76ts8l_sXCUV1hVSilA",
+      "timestamp" : 1661315125341
+    }
+  result:
+    custom:
+      '@timestamp': 1661315125341
+      _document_id: "g5t76ts8l_sXCUV1hVSilA"
+      action: "pull_request.create"
+      actor: "test_actor"
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      conclusion: "failure"
+      event: "pull_request"
+      evt:
+        action: "pull_request.create"
+        category: "pull_request"
+        outcome: "failure"
+      github:
+        actor: "test_actor"
+        document:
+          id: "g5t76ts8l_sXCUV1hVSilA"
+        name: "Preprod"
+        org: "TestOrg"
+        repository: "TestOrg/test-repo"
+        transport_protocol_name: "ssh"
+        visibility: "private"
+        workflow:
+          id: 4706662
+          run:
+            id: 3116572895
+      http:
+        useragent: "testing"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      name: "Preprod"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              name: "TestOrg"
+            name: "test_actor"
+        api:
+          operation: "pull_request.create"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        http_request:
+          user_agent: "testing"
+        metadata:
+          event_code: "pull_request.create"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          uid: "g5t76ts8l_sXCUV1hVSilA"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1661315125341
+        type_uid: 600301
+      org: "TestOrg"
+      repo: "TestOrg/test-repo"
+      timestamp: 1661315125341
+      transport_protocol_name: "ssh"
+      user: "test_user"
+      user_agent: "testing"
+      user_id: "11111"
+      usr:
+        id: "11111"
+        name: "test_user"
+      visibility: "private"
+      workflow_id: 4706662
+      workflow_run_id: 3116572895
+    message: "a test pull request message"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1661315125341
+ -
+  sample: |-
+    {
+      "business" : "acme-inc",
+      "operation_type" : "authentication",
+      "external_identity_username" : "",
+      "external_id" : "",
+      "issuer" : "https://accounts.google.com/o/saml2",
+      "actor" : "test_user",
+      "@timestamp" : 1729176166108,
+      "user_id" : 51111,
+      "action" : "business.sso_response",
+      "actor_id" : 51111,
+      "external_identity_nameid" : "test_user@acme.com",
+      "business_id" : 11,
+      "user" : "test_user",
+      "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "_document_id" : "m-111111111111=="
+    }
+  result:
+    custom:
+      '@timestamp': 1729176166108
+      _document_id: "m-111111111111=="
+      action: "business.sso_response"
+      actor: "test_user"
+      actor_id: 51111
+      business: "acme-inc"
+      business_id: 11
+      evt:
+        action: "business.sso_response"
+      external_id: ""
+      external_identity_nameid: "test_user@acme.com"
+      external_identity_username: ""
+      github:
+        actor: "test_user"
+        document:
+          id: "m-111111111111=="
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "130"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      issuer: "https://accounts.google.com/o/saml2"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          session:
+            issuer: "https://accounts.google.com/o/saml2"
+          user:
+            email_addr: "test_user@acme.com"
+            name: "test_user"
+            uid: "51111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "business.sso_response"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          uid: "m-111111111111=="
+          version: "1.3.0"
+        service:
+          name: "GitHub"
+        severity: "Informational"
+        severity_id: 1
+        time: 1729176166108
+        type_uid: 300201
+        user:
+          name: "test_user"
+          uid: "51111"
+      operation_type: "authentication"
+      user: "test_user"
+      user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+      user_id: 51111
+      usr:
+        id: 51111
+        name: "test_user"
+    message: |-
+      {
+        "business" : "acme-inc",
+        "operation_type" : "authentication",
+        "external_identity_username" : "",
+        "external_id" : "",
+        "issuer" : "https://accounts.google.com/o/saml2",
+        "actor" : "test_user",
+        "@timestamp" : 1729176166108,
+        "user_id" : 51111,
+        "action" : "business.sso_response",
+        "actor_id" : 51111,
+        "external_identity_nameid" : "test_user@acme.com",
+        "business_id" : 11,
+        "user" : "test_user",
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "_document_id" : "m-111111111111=="
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "business" : "businessname",
+      "actor_is_bot" : "False",
+      "method" : "POST",
+      "actor_session" : 3495,
+      "server_id" : "11111-1111-11111-1111",
+      "url" : "https://github-test.com/enterprises/examplecompany/admins",
+      "actor_ip" : "11.11.111.1",
+      "actor" : "actor5",
+      "referrer" : "https://github.groups",
+      "@timestamp" : 1727681685875,
+      "user_id" : 147,
+      "name" : "Business Name",
+      "action" : "user.create",
+      "actor_location" : {
+        "country_code" : "",
+        "city" : "",
+        "country_name" : "",
+        "region_name" : "",
+        "region" : "",
+        "postal_code" : ""
+      },
+      "actor_id" : 73,
+      "business_id" : 1,
+      "user" : "user5",
+      "request_id" : "10000000-0000-0000-0000-000000000000",
+      "user_agent" : "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+    }
+  result:
+    custom:
+      '@timestamp': 1727681685875
+      action: "user.create"
+      actor: "actor5"
+      actor_id: 73
+      actor_ip: "11.11.111.1"
+      actor_is_bot: "False"
+      actor_location:
+        city: ""
+        country_code: ""
+        country_name: ""
+        postal_code: ""
+        region: ""
+        region_name: ""
+      actor_session: 3495
+      business: "businessname"
+      business_id: 1
+      evt:
+        action: "user.create"
+      github:
+        actor: "actor5"
+        name: "Business Name"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "129"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      method: "POST"
+      name: "Business Name"
+      network:
+        client:
+          geoip: {}
+          ip: "11.11.111.1"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          session:
+            uid: "3495"
+          user:
+            name: "actor5"
+            uid: "73"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        http_request:
+          http_method: "POST"
+          referrer: "https://github.groups"
+          url:
+            url_string: "https://github-test.com/enterprises/examplecompany/admins"
+          user_agent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "user.create"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "11.11.111.1"
+          location:
+            city: ""
+            country: ""
+            postal_code: ""
+        time: 1727681685875
+        type_uid: 300101
+        user:
+          name: "user5"
+          uid: "147"
+      referrer: "https://github.groups"
+      request_id: "10000000-0000-0000-0000-000000000000"
+      server_id: "11111-1111-11111-1111"
+      url: "https://github-test.com/enterprises/examplecompany/admins"
+      user: "user5"
+      user_agent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+      user_id: 147
+      usr:
+        id: 147
+        name: "user5"
+    message: |-
+      {
+        "business" : "businessname",
+        "actor_is_bot" : "False",
+        "method" : "POST",
+        "actor_session" : 3495,
+        "server_id" : "11111-1111-11111-1111",
+        "url" : "https://github-test.com/enterprises/examplecompany/admins",
+        "actor_ip" : "11.11.111.1",
+        "actor" : "actor5",
+        "referrer" : "https://github.groups",
+        "@timestamp" : 1727681685875,
+        "user_id" : 147,
+        "name" : "Business Name",
+        "action" : "user.create",
+        "actor_location" : {
+          "country_code" : "",
+          "city" : "",
+          "country_name" : "",
+          "region_name" : "",
+          "region" : "",
+          "postal_code" : ""
+        },
+        "actor_id" : 73,
+        "business_id" : 1,
+        "user" : "user5",
+        "request_id" : "10000000-0000-0000-0000-000000000000",
+        "user_agent" : "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "business" : "acme-inc",
+      "org" : "acme",
+      "external_identity_username" : "",
+      "external_id" : "",
+      "team" : "Wiley Coyote",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_user",
+      "@timestamp" : 1729176166108,
+      "user_id" : 222222,
+      "org_id" : 11111,
+      "action" : "team.add_member",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "actor_id" : 51111,
+      "external_identity_nameid" : "test_user@acme.com",
+      "business_id" : 11,
+      "user" : "test_user_2",
+      "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "_document_id" : "m-111111111111=="
+    }
+  result:
+    custom:
+      '@timestamp': 1729176166108
+      _document_id: "m-111111111111=="
+      action: "team.add_member"
+      actor: "test_user"
+      actor_id: 51111
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      business: "acme-inc"
+      business_id: 11
+      evt:
+        action: "team.add_member"
+      external_id: ""
+      external_identity_nameid: "test_user@acme.com"
+      external_identity_username: ""
+      github:
+        actor: "test_user"
+        document:
+          id: "m-111111111111=="
+        org: "acme"
+        team: "Wiley Coyote"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "130"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 3
+        activity_name: "Add User"
+        actor:
+          user:
+            account:
+              name: "acme"
+              uid: "11111"
+            email_addr: "test_user@acme.com"
+            name: "test_user"
+            uid: "51111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Group Management"
+        class_uid: 3006
+        group:
+          name: "Wiley Coyote"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "team.add_member"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          profiles:
+           - "host"
+          uid: "m-111111111111=="
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1729176166108
+        type_uid: 300603
+        user:
+          name: "test_user_2"
+          uid: "222222"
+      org: "acme"
+      org_id: 11111
+      team: "Wiley Coyote"
+      user: "test_user_2"
+      user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+      user_id: 222222
+      usr:
+        id: 222222
+        name: "test_user_2"
+    message: |-
+      {
+        "business" : "acme-inc",
+        "org" : "acme",
+        "external_identity_username" : "",
+        "external_id" : "",
+        "team" : "Wiley Coyote",
+        "actor_ip" : "1.1.1.1",
+        "actor" : "test_user",
+        "@timestamp" : 1729176166108,
+        "user_id" : 222222,
+        "org_id" : 11111,
+        "action" : "team.add_member",
+        "actor_location" : {
+          "country_code" : "US"
+        },
+        "actor_id" : 51111,
+        "external_identity_nameid" : "test_user@acme.com",
+        "business_id" : 11,
+        "user" : "test_user_2",
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "_document_id" : "m-111111111111=="
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "business" : "acme-inc",
+      "org" : "acme",
+      "external_identity_username" : "",
+      "external_id" : "",
+      "team" : "Wiley Coyote",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_user",
+      "@timestamp" : 1729176166108,
+      "org_id" : 11111,
+      "action" : "org.create",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "actor_id" : 51111,
+      "external_identity_nameid" : "test_user@acme.com",
+      "business_id" : 11,
+      "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "_document_id" : "m-111111111111=="
+    }
+  result:
+    custom:
+      '@timestamp': 1729176166108
+      _document_id: "m-111111111111=="
+      action: "org.create"
+      actor: "test_user"
+      actor_id: 51111
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      business: "acme-inc"
+      business_id: 11
+      evt:
+        action: "org.create"
+      external_id: ""
+      external_identity_nameid: "test_user@acme.com"
+      external_identity_username: ""
+      github:
+        actor: "test_user"
+        document:
+          id: "m-111111111111=="
+        org: "acme"
+        team: "Wiley Coyote"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "130"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              name: "acme"
+              uid: "11111"
+            email_addr: "test_user@acme.com"
+            name: "test_user"
+            uid: "51111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Entity Management"
+        class_uid: 3004
+        entity:
+          name: "acme"
+          uid: "11111"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "org.create"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          profiles:
+           - "host"
+          uid: "m-111111111111=="
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1729176166108
+        type_uid: 300401
+      org: "acme"
+      org_id: 11111
+      team: "Wiley Coyote"
+      user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    message: |-
+      {
+        "business" : "acme-inc",
+        "org" : "acme",
+        "external_identity_username" : "",
+        "external_id" : "",
+        "team" : "Wiley Coyote",
+        "actor_ip" : "1.1.1.1",
+        "actor" : "test_user",
+        "@timestamp" : 1729176166108,
+        "org_id" : 11111,
+        "action" : "org.create",
+        "actor_location" : {
+          "country_code" : "US"
+        },
+        "actor_id" : 51111,
+        "external_identity_nameid" : "test_user@acme.com",
+        "business_id" : 11,
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "_document_id" : "m-111111111111=="
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "repo" : "acme/dynamite",
+      "external_id" : "",
+      "repository" : "acme/dynamite",
+      "token_id" : 0,
+      "action" : "git.push",
+      "transport_protocol_name" : "ssh",
+      "repository_id" : 383067938,
+      "user_agent" : "git/2.41.5",
+      "_document_id" : "m-111111111111==",
+      "repository_public" : false,
+      "business" : "acme-inc",
+      "org" : "acme",
+      "external_identity_username" : "",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_user",
+      "hashed_token" : "tO8qpNGhmNe8OMdEXAMPLE",
+      "@timestamp" : 1729176166108,
+      "user_id" : 0,
+      "org_id" : 11111,
+      "programmatic_access_type" : "Public Key (User/Deploy)",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "actor_id" : 51111,
+      "transport_protocol" : 2,
+      "external_identity_nameid" : "test_user@acme.com",
+      "business_id" : 11,
+      "user" : ""
+    }
+  result:
+    custom:
+      '@timestamp': 1729176166108
+      _document_id: "m-111111111111=="
+      action: "git.push"
+      actor: "test_user"
+      actor_id: 51111
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      business: "acme-inc"
+      business_id: 11
+      evt:
+        action: "git.push"
+      external_id: ""
+      external_identity_nameid: "test_user@acme.com"
+      external_identity_username: ""
+      github:
+        actor: "test_user"
+        document:
+          id: "m-111111111111=="
+        org: "acme"
+        repository: "acme/dynamite"
+        transport_protocol_name: "ssh"
+      hashed_token: "tO8qpNGhmNe8OMdEXAMPLE"
+      http:
+        useragent: "git/2.41.5"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 99
+        activity_name: "git.push"
+        actor:
+          user:
+            account:
+              name: "acme"
+              uid: "11111"
+            email_addr: "test_user@acme.com"
+            name: "test_user"
+            uid: "51111"
+        api:
+          operation: "git.push"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        http_request:
+          user_agent: "git/2.41.5"
+        metadata:
+          event_code: "git.push"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          uid: "m-111111111111=="
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1729176166108
+        type_uid: 600399
+      org: "acme"
+      org_id: 11111
+      programmatic_access_type: "Public Key (User/Deploy)"
+      repo: "acme/dynamite"
+      repository: "acme/dynamite"
+      repository_id: 383067938
+      repository_public: false
+      token_id: 0
+      transport_protocol: 2
+      transport_protocol_name: "ssh"
+      user: ""
+      user_agent: "git/2.41.5"
+      user_id: 0
+      usr:
+        id: 0
+        name: ""
+    message: |-
+      {
+        "repo" : "acme/dynamite",
+        "external_id" : "",
+        "repository" : "acme/dynamite",
+        "token_id" : 0,
+        "action" : "git.push",
+        "transport_protocol_name" : "ssh",
+        "repository_id" : 383067938,
+        "user_agent" : "git/2.41.5",
+        "_document_id" : "m-111111111111==",
+        "repository_public" : false,
+        "business" : "acme-inc",
+        "org" : "acme",
+        "external_identity_username" : "",
+        "actor_ip" : "1.1.1.1",
+        "actor" : "test_user",
+        "hashed_token" : "tO8qpNGhmNe8OMdEXAMPLE",
+        "@timestamp" : 1729176166108,
+        "user_id" : 0,
+        "org_id" : 11111,
+        "programmatic_access_type" : "Public Key (User/Deploy)",
+        "actor_location" : {
+          "country_code" : "US"
+        },
+        "actor_id" : 51111,
+        "transport_protocol" : 2,
+        "external_identity_nameid" : "test_user@acme.com",
+        "business_id" : 11,
+        "user" : ""
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "business" : "businessname",
+      "actor_is_bot" : "False",
+      "method" : "POST",
+      "actor_session" : 3495,
+      "server_id" : "11111-1111-11111-1111",
+      "url" : "https://github-test.com/enterprises/examplecompany/admins",
+      "actor_ip" : "11.11.111.1",
+      "actor" : "actor5",
+      "referrer" : "https://github.groups",
+      "@timestamp" : 1727681685875,
+      "user_id" : 147,
+      "name" : "Business Name",
+      "action" : "user.create",
+      "actor_location" : {
+        "country_code" : "",
+        "city" : "",
+        "country_name" : "",
+        "region_name" : "",
+        "region" : "",
+        "postal_code" : ""
+      },
+      "actor_id" : 73,
+      "business_id" : 1,
+      "user" : "user5",
+      "request_id" : "10000000-0000-0000-0000-000000000000",
+      "user_agent" : "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+    }
+  result:
+    custom:
+      '@timestamp': 1727681685875
+      action: "user.create"
+      actor: "actor5"
+      actor_id: 73
+      actor_ip: "11.11.111.1"
+      actor_is_bot: "False"
+      actor_location:
+        city: ""
+        country_code: ""
+        country_name: ""
+        postal_code: ""
+        region: ""
+        region_name: ""
+      actor_session: 3495
+      business: "businessname"
+      business_id: 1
+      evt:
+        action: "user.create"
+      github:
+        actor: "actor5"
+        name: "Business Name"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "129"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      method: "POST"
+      name: "Business Name"
+      network:
+        client:
+          geoip: {}
+          ip: "11.11.111.1"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          session:
+            uid: "3495"
+          user:
+            name: "actor5"
+            uid: "73"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Account Change"
+        class_uid: 3001
+        http_request:
+          http_method: "POST"
+          referrer: "https://github.groups"
+          url:
+            url_string: "https://github-test.com/enterprises/examplecompany/admins"
+          user_agent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "user.create"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "11.11.111.1"
+          location:
+            city: ""
+            country: ""
+            postal_code: ""
+        time: 1727681685875
+        type_uid: 300101
+        user:
+          name: "user5"
+          uid: "147"
+      referrer: "https://github.groups"
+      request_id: "10000000-0000-0000-0000-000000000000"
+      server_id: "11111-1111-11111-1111"
+      url: "https://github-test.com/enterprises/examplecompany/admins"
+      user: "user5"
+      user_agent: "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+      user_id: 147
+      usr:
+        id: 147
+        name: "user5"
+    message: |-
+      {
+        "business" : "businessname",
+        "actor_is_bot" : "False",
+        "method" : "POST",
+        "actor_session" : 3495,
+        "server_id" : "11111-1111-11111-1111",
+        "url" : "https://github-test.com/enterprises/examplecompany/admins",
+        "actor_ip" : "11.11.111.1",
+        "actor" : "actor5",
+        "referrer" : "https://github.groups",
+        "@timestamp" : 1727681685875,
+        "user_id" : 147,
+        "name" : "Business Name",
+        "action" : "user.create",
+        "actor_location" : {
+          "country_code" : "",
+          "city" : "",
+          "country_name" : "",
+          "region_name" : "",
+          "region" : "",
+          "postal_code" : ""
+        },
+        "actor_id" : 73,
+        "business_id" : 1,
+        "user" : "user5",
+        "request_id" : "10000000-0000-0000-0000-000000000000",
+        "user_agent" : "Mozilla/5.0 (Macintosh Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "business" : "acme-inc",
+      "org" : "acme",
+      "external_identity_username" : "",
+      "external_id" : "",
+      "team" : "Wiley Coyote",
+      "actor_ip" : "1.1.1.1",
+      "actor" : "test_user",
+      "@timestamp" : 1729176166108,
+      "user_id" : 222222,
+      "org_id" : 11111,
+      "action" : "team.add_member",
+      "actor_location" : {
+        "country_code" : "US"
+      },
+      "actor_id" : 51111,
+      "external_identity_nameid" : "test_user@acme.com",
+      "business_id" : 11,
+      "user" : "test_user_2",
+      "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "_document_id" : "m-111111111111=="
+    }
+  result:
+    custom:
+      '@timestamp': 1729176166108
+      _document_id: "m-111111111111=="
+      action: "team.add_member"
+      actor: "test_user"
+      actor_id: 51111
+      actor_ip: "1.1.1.1"
+      actor_location:
+        country_code: "US"
+      business: "acme-inc"
+      business_id: 11
+      evt:
+        action: "team.add_member"
+      external_id: ""
+      external_identity_nameid: "test_user@acme.com"
+      external_identity_username: ""
+      github:
+        actor: "test_user"
+        document:
+          id: "m-111111111111=="
+        org: "acme"
+        team: "Wiley Coyote"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "130"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "15"
+            patch: "7"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      ocsf:
+        activity_id: 3
+        activity_name: "Add User"
+        actor:
+          user:
+            account:
+              name: "acme"
+              uid: "11111"
+            email_addr: "test_user@acme.com"
+            name: "test_user"
+            uid: "51111"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Group Management"
+        class_uid: 3006
+        group:
+          name: "Wiley Coyote"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        metadata:
+          event_code: "team.add_member"
+          product:
+            name: "Github Audit Log"
+            vendor_name: "GitHub"
+          profiles:
+           - "host"
+          uid: "m-111111111111=="
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "1.1.1.1"
+          location:
+            country: "US"
+        time: 1729176166108
+        type_uid: 300603
+        user:
+          name: "test_user_2"
+          uid: "222222"
+      org: "acme"
+      org_id: 11111
+      team: "Wiley Coyote"
+      user: "test_user_2"
+      user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+      user_id: 222222
+      usr:
+        id: 222222
+        name: "test_user_2"
+    message: |-
+      {
+        "business" : "acme-inc",
+        "org" : "acme",
+        "external_identity_username" : "",
+        "external_id" : "",
+        "team" : "Wiley Coyote",
+        "actor_ip" : "1.1.1.1",
+        "actor" : "test_user",
+        "@timestamp" : 1729176166108,
+        "user_id" : 222222,
+        "org_id" : 11111,
+        "action" : "team.add_member",
+        "actor_location" : {
+          "country_code" : "US"
+        },
+        "actor_id" : 51111,
+        "external_identity_nameid" : "test_user@acme.com",
+        "business_id" : 11,
+        "user" : "test_user_2",
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "_document_id" : "m-111111111111=="
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

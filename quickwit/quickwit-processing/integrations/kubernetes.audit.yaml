@@ -1,0 +1,266 @@
+id: kubernetes.audit
+backend_only: true # kubernetes.audit integration only lives for now in logs-backend
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Kubernetes
+    name: User groups
+    path: usr.groups
+    source: log
+  - groups:
+      - Kubernetes
+    name: Stage
+    path: stage
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Type
+    path: objectRef.resource
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Name
+    path: objectRef.name
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Namespace
+    path: objectRef.namespace
+    source: log
+  - groups:
+      - Kubernetes
+    name: Resource Subresource
+    path: objectRef.subresource
+    source: log
+  - groups:
+      - Kubernetes
+    name: API Version
+    path: apiVersion
+    source: log
+  - groups:
+      - Kubernetes
+    name: Is Requested Host Network
+    path: requestObject.spec.hostNetwork
+    source: log
+  - groups:
+      - Kubernetes
+    name: Requested Generate Name
+    path: requestObject.metadata.generateName
+    source: log
+  - groups:
+      - Kubernetes
+    name: Requested Spec Type
+    path: requestObject.spec.type
+    source: log
+pipeline:
+  type: pipeline
+  name: Kubernetes audit
+  enabled: true
+  filter:
+    query: source:kubernetes.audit
+  processors:
+    - type: grok-parser
+      name: Parsing requestReceivedTimestamp
+      enabled: true
+      source: requestReceivedTimestamp
+      grok:
+        supportRules: |
+        matchRules: |
+          parsing_date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):requestReceivedTimestamp_ms}
+      samples:
+        - 2019-07-15T21:44:41.498428Z
+    - type: grok-parser
+      name: Parsing stageTimestamp
+      enabled: true
+      source: stageTimestamp
+      grok:
+        supportRules: |
+        matchRules: |
+          parsing_date %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):stageTimestamp_ms}
+      samples:
+        - 2019-07-15T21:44:41.501278Z
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - requestURI
+      target: http.url_details
+    - type: attribute-remapper
+      name: Map `userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - userAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: attribute-remapper
+      name: Map `responseStatus.code` to `http.status_code`
+      enabled: true
+      sources:
+        - responseStatus.code
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `verb` to `http.method`
+      enabled: true
+      sources:
+        - verb
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `user` to `usr`
+      enabled: true
+      sources:
+        - user
+      target: usr
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `usr.username` to `usr.name`
+      enabled: true
+      sources:
+        - usr.username
+      target: usr.name
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `usr.username` to `usr.id`
+      enabled: true
+      sources:
+        - usr.username
+      target: usr.id
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map attribute `objectRef.namespace` to tag `kube_namespace`
+      enabled: true
+      sources:
+        - objectRef.namespace
+      target: kube_namespace
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: arithmetic-processor
+      name: Calculate request response time
+      enabled: true
+      expression: (stageTimestamp_ms - requestReceivedTimestamp_ms)*1000000
+      target: duration
+      replaceMissing: false
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+    - type: date-remapper
+      name: Define `stageTimestamp_ms` as the official date of the log
+      enabled: true
+      sources:
+        - stageTimestamp_ms

@@ -1,0 +1,252 @@
+id: "google.workspace.alert.center"
+tests:
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "severity" : "HIGH",
+        "status" : "NOT_STARTED"
+      },
+      "data" : {
+        "loginDetails" : {
+          "ipAddress" : "1.1.1.1"
+        }
+      },
+      "service" : "google.workspace.alert.center",
+      "startTime" : "2022-09-02T22:08:00.140244Z",
+      "endTime" : "2022-09-02T22:08:00.140244Z",
+      "source" : "Google Identity",
+      "type" : "Leaked Password"
+    }
+  result:
+    custom:
+      data:
+        loginDetails:
+          ipAddress: "1.1.1.1"
+      endTime: "2022-09-02T22:08:00.140244Z"
+      evt:
+        category: "Google Identity"
+        name: "Leaked Password"
+      metadata:
+        severity: "HIGH"
+        status: "NOT_STARTED"
+      network:
+        client:
+          geoip: {}
+          ip: "1.1.1.1"
+      service: "google.workspace.alert.center"
+      source: "Google Identity"
+      startTime: "2022-09-02T22:08:00.140244Z"
+      type: "Leaked Password"
+    message: |-
+      {
+        "metadata" : {
+          "severity" : "HIGH",
+          "status" : "NOT_STARTED"
+        },
+        "data" : {
+          "loginDetails" : {
+            "ipAddress" : "1.1.1.1"
+          }
+        },
+        "service" : "google.workspace.alert.center",
+        "startTime" : "2022-09-02T22:08:00.140244Z",
+        "endTime" : "2022-09-02T22:08:00.140244Z",
+        "source" : "Google Identity",
+        "type" : "Leaked Password"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "status" : "NOT_STARTED"
+      },
+      "service" : "google.workspace.alert.center",
+      "source" : "Reporting Rule",
+      "type" : "Reporting Rule"
+    }
+  result:
+    custom:
+      evt:
+        category: "Reporting Rule"
+        name: "Reporting Rule"
+      metadata:
+        status: "NOT_STARTED"
+      service: "google.workspace.alert.center"
+      source: "Reporting Rule"
+      type: "Reporting Rule"
+    message: |-
+      {
+        "metadata" : {
+          "status" : "NOT_STARTED"
+        },
+        "service" : "google.workspace.alert.center",
+        "source" : "Reporting Rule",
+        "type" : "Reporting Rule"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "severity" : "HIGH",
+        "status" : "NOT_STARTED"
+      },
+      "data" : {
+        "ruleViolationInfo" : {
+          "triggeringUserEmail" : "dummy@email.com",
+          "ruleInfo" : {
+            "displayName" : "Prevent PII information sharing (US)"
+          }
+        }
+      },
+      "service" : "google.workspace.alert.center",
+      "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfab",
+      "source" : "Data Loss Prevention",
+      "type" : "Data Loss Prevention"
+    }
+  result:
+    custom:
+      alertId: "e1fdb1a6-b01a-4e47-8886-9697346dcfab"
+      data:
+        ruleViolationInfo:
+          ruleInfo:
+            displayName: "Prevent PII information sharing (US)"
+          triggeringUserEmail: "dummy@email.com"
+      evt:
+        category: "Data Loss Prevention"
+        name: "Prevent PII information sharing (US)"
+      metadata:
+        severity: "HIGH"
+        status: "NOT_STARTED"
+      service: "google.workspace.alert.center"
+      source: "Data Loss Prevention"
+      type: "Data Loss Prevention"
+      usr:
+        email: "dummy@email.com"
+    message: |-
+      {
+        "metadata" : {
+          "severity" : "HIGH",
+          "status" : "NOT_STARTED"
+        },
+        "data" : {
+          "ruleViolationInfo" : {
+            "triggeringUserEmail" : "dummy@email.com",
+            "ruleInfo" : {
+              "displayName" : "Prevent PII information sharing (US)"
+            }
+          }
+        },
+        "service" : "google.workspace.alert.center",
+        "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfab",
+        "source" : "Data Loss Prevention",
+        "type" : "Data Loss Prevention"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "severity" : "HIGH",
+        "status" : "NOT_STARTED"
+      },
+      "data" : {
+        "maliciousEntity" : {
+          "fromHeader" : "dummy@email.com"
+        }
+      },
+      "service" : "google.workspace.alert.center",
+      "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfac",
+      "source" : "Data Loss Prevention",
+      "type" : "Data Loss Prevention"
+    }
+  result:
+    custom:
+      alertId: "e1fdb1a6-b01a-4e47-8886-9697346dcfac"
+      data:
+        maliciousEntity:
+          emailAddress: "dummy@email.com"
+          fromHeader: "dummy@email.com"
+      evt:
+        category: "Data Loss Prevention"
+        name: "Data Loss Prevention"
+      metadata:
+        severity: "HIGH"
+        status: "NOT_STARTED"
+      service: "google.workspace.alert.center"
+      source: "Data Loss Prevention"
+      type: "Data Loss Prevention"
+    message: |-
+      {
+        "metadata" : {
+          "severity" : "HIGH",
+          "status" : "NOT_STARTED"
+        },
+        "data" : {
+          "maliciousEntity" : {
+            "fromHeader" : "dummy@email.com"
+          }
+        },
+        "service" : "google.workspace.alert.center",
+        "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfac",
+        "source" : "Data Loss Prevention",
+        "type" : "Data Loss Prevention"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "severity" : "HIGH",
+        "status" : "NOT_STARTED"
+      },
+      "data" : {
+        "name" : "Primary admin changed",
+        "actorEmail" : "dummy@email.com"
+      },
+      "service" : "google.workspace.alert.center",
+      "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfaf",
+      "source" : "Sensitive Admin Action",
+      "type" : "Primary admin changed"
+    }
+  result:
+    custom:
+      alertId: "e1fdb1a6-b01a-4e47-8886-9697346dcfaf"
+      data:
+        actorEmail: "dummy@email.com"
+        name: "Primary admin changed"
+      evt:
+        category: "Sensitive Admin Action"
+        name: "Primary admin changed"
+      metadata:
+        severity: "HIGH"
+        status: "NOT_STARTED"
+      service: "google.workspace.alert.center"
+      source: "Sensitive Admin Action"
+      type: "Primary admin changed"
+      usr:
+        email: "dummy@email.com"
+    message: |-
+      {
+        "metadata" : {
+          "severity" : "HIGH",
+          "status" : "NOT_STARTED"
+        },
+        "data" : {
+          "name" : "Primary admin changed",
+          "actorEmail" : "dummy@email.com"
+        },
+        "service" : "google.workspace.alert.center",
+        "alertId" : "e1fdb1a6-b01a-4e47-8886-9697346dcfaf",
+        "source" : "Sensitive Admin Action",
+        "type" : "Primary admin changed"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

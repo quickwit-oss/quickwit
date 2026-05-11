@@ -1,0 +1,98 @@
+id: amazon-ecs-agent
+metric_id: amazon-ecs
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Lambda
+    name: Lambda ARN
+    path: lambda.arn
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS ECS-Agent
+  enabled: true
+  filter:
+    query: source:amazon-ecs-agent
+  processors:
+    - type: grok-parser
+      name: Parsing ecs-agent logs
+      enabled: true
+      source: message
+      samples:
+        - '2019-08-01T15:28:07Z [INFO] Managed task [arn:aws:ecs:us-east-1:123456789012:task/test-dev-test-ecs-general/123456e12a2c1234bf311e12a1d123a1]: got resource [cgroup] event: [CREATED]'
+        - 2019-08-01T15:18:23Z 200 123.11.0.1:12345 "/v2/credentials" "Java/1.8.0_111" arn:aws:ecs:eu-west-1:123456789012:task/12f3b123-d12e-4c12-9ed0-a89daaf12345 GetCredentials 2 test-dev-test-ecs-general arn:aws:ecs:eu-west-1:123456789012:container-instance/test-dev-test-ecs-general/2bcef0cd123456a234f7cffb234bb234
+        - '2019-08-01T14:59:17Z [INFO] Managed task [arn:aws:ecs:us-east-1:123456789012:task/123ea123-1234-4c4e-a123-8cf4daw4d6sa]: task not steady state or terminal; progressing it'
+        - 2019-08-01T14:47:05Z [INFO] Saving state! module=“statemanager"
+        - level=info time=2019-12-12T23:43:29Z msg="Restored from checkpoint file. I am running as 'arn:aws:ecs:us-west-2:0123456789:container-instance/auto-robc/3330a8a91d15464ea30662d5840164cd' in cluster 'auto-robc'" module=agent.go
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss'Z'"):timestamp}
+          _level %{word:level}
+          _tasktype %{regex("[^\\[]*"):task-type}
+          _arn %{notSpace:lambda.arn}
+          _status_code %{integer:http.status_code}
+          _url_path %{notSpace:http.url_details.path}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _clientIP %{ip:network.client.ip}
+          _clientPort %{number:network.client.port}
+        matchRules: |
+          ecsagent_rule1 %{_timestamp} \[%{_level}\] (%{_tasktype} \[)?(%{_arn}\]\: )?%{data:message}
+
+          ecsagent_rule2 %{_timestamp} %{_status_code} %{_clientIP}\:%{_clientPort} "%{_url_path}" "%{_user_agent}" %{_arn} %{data:message}
+
+          ecsagent_rule3 %{data::keyvalue("=",":")}
+    - type: grok-parser
+      name: Parsing time logs
+      enabled: true
+      source: time
+      samples:
+        - 2019-12-12T23:43:29Z
+      grok:
+        supportRules: ''
+        matchRules: |
+          timestamp %{date("yyyy-MM-dd'T'HH:mm:ss'Z'"):time}
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: date-remapper
+      name: Define `time`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - time
+        - timestamp
+    - type: message-remapper
+      name: Define `msg`, `message` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+        - message

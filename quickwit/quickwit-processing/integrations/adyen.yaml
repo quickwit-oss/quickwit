@@ -1,0 +1,83 @@
+id: adyen
+metric_id: adyen
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Adyen
+  enabled: true
+  filter:
+    query: "source:adyen"
+  processors:
+    - type: string-builder-processor
+      name: Map `notificationItems.NotificationRequestItem.eventCode` to `evt.name`
+      enabled: true
+      template: "%{notificationItems.NotificationRequestItem.eventCode}"
+      target: evt.name
+      replaceMissing: false
+    - type: string-builder-processor
+      name: Map `notificationItems.NotificationRequestItem.eventDate` to `eventDate`
+      enabled: true
+      template: "%{notificationItems.NotificationRequestItem.eventDate}"
+      target: eventDate
+      replaceMissing: false
+    - type: string-builder-processor
+      name: Map `notificationItems.NotificationRequestItem.pspReference` to
+        `pspReference`
+      enabled: true
+      template: "%{notificationItems.NotificationRequestItem.pspReference}"
+      target: pspReference
+      replaceMissing: false
+    - type: date-remapper
+      name: Define `eventDate` as the official date of the log
+      enabled: true
+      sources:
+        - eventDate
+    - name: Lookup for `evt.name` to `service`
+      enabled: true
+      source: evt.name
+      target: service
+      lookupTable: |-
+        AUTHORISATION, transaction
+        AUTHORISATION_ADJUSTMENT, transaction
+        AUTORESCUE, transaction
+        CANCEL_AUTORESCUE, transaction
+        CANCEL_OR_REFUND, transaction
+        CANCELLATION, transaction
+        CAPTURE, transaction
+        CAPTURE_FAILED, transaction
+        CHARGEBACK, dispute
+        CHARGEBACK_REVERSED, dispute
+        HANDLED_EXTERNALLY, transaction
+        NOTIFICATION_OF_CHARGEBACK, dispute
+        NOTIFICATION_OF_FRAUD, dispute
+        ORDER_CLOSED, transaction
+        ORDER_OPENED, transaction
+        PAIDOUT_REVERSED, payout
+        PAYOUT_DECLINE, payout
+        PAYOUT_EXPIRE, payout
+        PAYOUT_THIRDPARTY, payout
+        PENDING, transaction
+        POSTPONED_REFUND, transaction
+        PREARBITRATION_LOST, dispute
+        PREARBITRATION_WON, dispute
+        REFUND, transaction
+        REFUND_FAILED, transaction
+        REFUND_WITH_DATA, transaction
+        REFUNDED_REVERSED, transaction
+        REPORT_AVAILABLE, transaction
+        REQUEST_FOR_INFORMATION, dispute
+        SECOND_CHARGEBACK, dispute
+        TECHNICAL_CANCEL, transaction
+        VOID_PENDING_REFUND, transaction
+      type: lookup-processor
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

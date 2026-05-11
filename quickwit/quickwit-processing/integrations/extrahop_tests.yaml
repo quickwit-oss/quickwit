@@ -1,0 +1,241 @@
+id: "extrahop"
+tests:
+ -
+  sample: |-
+    {
+      "appliance_id" : 8,
+      "mod_time" : 1709049465950,
+      "create_time" : 1709048931113,
+      "risk_score" : 37,
+      "end_time" : 1708646400000,
+      "description" : "[VMware 81C347](https://test.cloud.extrahop.com#/metrics/devices/f614c22480364499a52ebf71eed7bd49.00505681c3470000/overview?from=1708636140&interval_type=DT&until=1708646400) sent an unusually high number of TCP SYN packets to many IP addresses or ports across your network. An attacker might be looking for devices or services that are listening on open TCP ports. This detection appears when a device sends an unusually large number of TCP SYN packets without completing the connection across a large number of ports or IP addresses.\n\nThis device scanned approximately 6900 port and device combinations.",
+      "mitre_tactics" : [ {
+        "name" : "Discovery",
+        "id" : "TA0007",
+        "url" : "https://attack.mitre.org/tactics/TA0007"
+      } ],
+      "mitre_techniques" : [ {
+        "legacy_ids" : [ "T1046" ],
+        "name" : "Network Service Scanning",
+        "id" : "T1046",
+        "url" : "https://attack.mitre.org/techniques/T1046"
+      } ],
+      "title" : "TCP SYN Scan",
+      "type" : "tcp_syn_scan",
+      "url" : "https://test.cloud.extrahop.com/extrahop/#/detections/detail/34359738432/?from=1708635240&until=1708647300&interval_type=DT",
+      "recommended" : false,
+      "start_time" : 1708636140001,
+      "update_time" : 1708650000000,
+      "is_user_created" : false,
+      "id" : 34359738432,
+      "categories" : [ "sec.recon", "sec", "sec.attack" ],
+      "participants" : [ {
+        "external" : false,
+        "role" : "offender",
+        "object_type" : "device",
+        "object_value" : "172.0.4.100",
+        "id" : 6190704,
+        "object_id" : 34359738588
+      }, {
+        "external" : false,
+        "role" : "victim",
+        "object_type" : "device",
+        "object_value" : "172.0.7.190",
+        "id" : 6190653,
+        "object_id" : 34359738485
+      }, {
+        "external" : false,
+        "role" : "victim",
+        "object_type" : "device",
+        "object_value" : "172.0.7.188",
+        "id" : 6190585,
+        "object_id" : 34359738398
+      }, {
+        "external" : false,
+        "role" : "victim",
+        "object_type" : "device",
+        "object_value" : "172.0.4.222",
+        "id" : 6190639,
+        "object_id" : 34359738408
+      } ]
+    }
+  result:
+    custom:
+      appliance_id: 8
+      categories:
+       - "sec.recon"
+       - "sec"
+       - "sec.attack"
+      create_time: 1709048931113
+      description: |-
+        [VMware 81C347](https://test.cloud.extrahop.com#/metrics/devices/f614c22480364499a52ebf71eed7bd49.00505681c3470000/overview?from=1708636140&interval_type=DT&until=1708646400) sent an unusually high number of TCP SYN packets to many IP addresses or ports across your network. An attacker might be looking for devices or services that are listening on open TCP ports. This detection appears when a device sends an unusually large number of TCP SYN packets without completing the connection across a large number of ports or IP addresses.
+
+        This device scanned approximately 6900 port and device combinations.
+      end_time: 1708646400000
+      http:
+        url: "https://test.cloud.extrahop.com/extrahop/#/detections/detail/34359738432/?from=1708635240&until=1708647300&interval_type=DT"
+      id: 34359738432
+      is_user_created: false
+      mitre_tactics:
+       -
+        name: "Discovery"
+        id: "TA0007"
+        url: "https://attack.mitre.org/tactics/TA0007"
+      mitre_techniques:
+       -
+        legacy_ids:
+         - "T1046"
+        name: "Network Service Scanning"
+        id: "T1046"
+        url: "https://attack.mitre.org/techniques/T1046"
+      mod_time: 1709049465950
+      participants:
+       -
+        external: false
+        role: "offender"
+        object_type: "device"
+        object_value: "172.0.4.100"
+        id: 6190704
+        object_id: 34359738588
+       -
+        external: false
+        role: "victim"
+        object_type: "device"
+        object_value: "172.0.7.190"
+        id: 6190653
+        object_id: 34359738485
+       -
+        external: false
+        role: "victim"
+        object_type: "device"
+        object_value: "172.0.7.188"
+        id: 6190585
+        object_id: 34359738398
+       -
+        external: false
+        role: "victim"
+        object_type: "device"
+        object_value: "172.0.4.222"
+        id: 6190639
+        object_id: 34359738408
+      recommended: false
+      risk_score: 37
+      start_time: 1708636140001
+      title: "TCP SYN Scan"
+      type: "tcp_syn_scan"
+      update_time: 1708650000000
+    message: |-
+      {
+        "appliance_id" : 8,
+        "mod_time" : 1709049465950,
+        "create_time" : 1709048931113,
+        "risk_score" : 37,
+        "end_time" : 1708646400000,
+        "description" : "[VMware 81C347](https://test.cloud.extrahop.com#/metrics/devices/f614c22480364499a52ebf71eed7bd49.00505681c3470000/overview?from=1708636140&interval_type=DT&until=1708646400) sent an unusually high number of TCP SYN packets to many IP addresses or ports across your network. An attacker might be looking for devices or services that are listening on open TCP ports. This detection appears when a device sends an unusually large number of TCP SYN packets without completing the connection across a large number of ports or IP addresses.\n\nThis device scanned approximately 6900 port and device combinations.",
+        "mitre_tactics" : [ {
+          "name" : "Discovery",
+          "id" : "TA0007",
+          "url" : "https://attack.mitre.org/tactics/TA0007"
+        } ],
+        "mitre_techniques" : [ {
+          "legacy_ids" : [ "T1046" ],
+          "name" : "Network Service Scanning",
+          "id" : "T1046",
+          "url" : "https://attack.mitre.org/techniques/T1046"
+        } ],
+        "title" : "TCP SYN Scan",
+        "type" : "tcp_syn_scan",
+        "url" : "https://test.cloud.extrahop.com/extrahop/#/detections/detail/34359738432/?from=1708635240&until=1708647300&interval_type=DT",
+        "recommended" : false,
+        "start_time" : 1708636140001,
+        "update_time" : 1708650000000,
+        "is_user_created" : false,
+        "id" : 34359738432,
+        "categories" : [ "sec.recon", "sec", "sec.attack" ],
+        "participants" : [ {
+          "external" : false,
+          "role" : "offender",
+          "object_type" : "device",
+          "object_value" : "172.0.4.100",
+          "id" : 6190704,
+          "object_id" : 34359738588
+        }, {
+          "external" : false,
+          "role" : "victim",
+          "object_type" : "device",
+          "object_value" : "172.0.7.190",
+          "id" : 6190653,
+          "object_id" : 34359738485
+        }, {
+          "external" : false,
+          "role" : "victim",
+          "object_type" : "device",
+          "object_value" : "172.0.7.188",
+          "id" : 6190585,
+          "object_id" : 34359738398
+        }, {
+          "external" : false,
+          "role" : "victim",
+          "object_type" : "device",
+          "object_value" : "172.0.4.222",
+          "id" : 6190639,
+          "object_id" : 34359738408
+        } ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "creation_time" : 1728987164108,
+      "notes" : "Notes for investigation 902",
+      "created_by" : "rest_api_id_3ni9e...",
+      "url" : "https://test.cloud.extrahop.com/#/detections/investigations/901",
+      "assessment" : "malicious_true_positive",
+      "update_time" : 1728987164111,
+      "last_interaction_by" : "rest_api_id_3ni9e...",
+      "is_user_created" : true,
+      "last_interaction_time" : 1728987164108,
+      "name" : "Investigation 902",
+      "id" : 901,
+      "assignee" : "Assignee 902",
+      "status" : "open",
+      "detections" : [ 34359738430 ]
+    }
+  result:
+    custom:
+      assessment: "malicious_true_positive"
+      assignee: "Assignee 902"
+      created_by: "rest_api_id_3ni9e..."
+      creation_time: 1728987164108
+      detections:
+       - 34359738430
+      http:
+        url: "https://test.cloud.extrahop.com/#/detections/investigations/901"
+      id: 901
+      is_user_created: true
+      last_interaction_by: "rest_api_id_3ni9e..."
+      last_interaction_time: 1728987164108
+      name: "Investigation 902"
+      notes: "Notes for investigation 902"
+      status: "open"
+      update_time: 1728987164111
+    message: |-
+      {
+        "creation_time" : 1728987164108,
+        "notes" : "Notes for investigation 902",
+        "created_by" : "rest_api_id_3ni9e...",
+        "url" : "https://test.cloud.extrahop.com/#/detections/investigations/901",
+        "assessment" : "malicious_true_positive",
+        "update_time" : 1728987164111,
+        "last_interaction_by" : "rest_api_id_3ni9e...",
+        "is_user_created" : true,
+        "last_interaction_time" : 1728987164108,
+        "name" : "Investigation 902",
+        "id" : 901,
+        "assignee" : "Assignee 902",
+        "status" : "open",
+        "detections" : [ 34359738430 ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"

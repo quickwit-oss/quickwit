@@ -1,0 +1,13 @@
+id: "CRON"
+tests:
+ -
+  sample: "(root) CMD (test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly ))"
+  result:
+    custom:
+      system:
+        cmd: "test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )"
+        user: "root"
+    message: "(root) CMD (test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly ))"
+    tags:
+     - "source:LOGS_SOURCE"
+

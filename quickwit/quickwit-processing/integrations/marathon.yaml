@@ -1,0 +1,51 @@
+id: marathon
+metric_id: marathon
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Marathon
+  enabled: true
+  filter:
+    query: source:marathon
+  processors:
+    - type: grok-parser
+      name: Parsing Marathon logs
+      enabled: true
+      source: message
+      samples:
+        - '[2019-06-21 19:16:31,597] DEBUG created mesos heartbeat monitor for scheduler mesosphere.marathon.MarathonScheduler$$EnhancerByGuice$$107a8f82@36c281ed (mesosphere.marathon.core.heartbeat.MesosHeartbeatMonitor$$EnhancerByGuice$$c91d095e:main)'
+        - '[2019-06-21 19:16:33,225] INFO  Session establishment complete on server zookeeper/192.168.48.5:2181, sessionid = 0x1000ec1b87b0004, negotiated timeout = 10000 (org.apache.zookeeper.ClientCnxn:ForkJoinPool-2-worker-13-SendThread(zookeeper:2181))'
+        - 2019-06-21 19:16:35.205 [HttpService$$EnhancerByGuice$$96825a6 STARTING] INFO  m.m.c.plugin.impl.PluginManagerImpl - Found 0 plugins.
+        - '2019-06-21 19:16:44.723 [ForkJoinPool-2-worker-13-SendThread(zookeeper:2181)] DEBUG org.apache.zookeeper.ClientCnxn - Got ping response for sessionid: 0x1000ec1b87b0004 after 6ms'
+      grok:
+        matchRules: |
+          marathon_default \[%{date("yyyy-MM-dd HH:mm:ss,SSS"):date}\]\s+%{word:level}\s+%{data:message} \(%{regex("[^ :]+"):logger.name}:%{notSpace:logger.thread_name}\)
+
+          marathon_dd_format %{date("yyyy-MM-dd HH:mm:ss.SSS"):date} \[%{notSpace:logger.thread_name}.*\]\s+%{word:level}\s+%{notSpace:logger.name} - %{data:message}
+        supportRules: ''
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

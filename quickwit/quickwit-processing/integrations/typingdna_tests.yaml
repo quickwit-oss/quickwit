@@ -1,0 +1,38 @@
+id: "typingdna"
+tests:
+  - sample: |-
+      {
+        "level" : "INFO",
+        "message" : "heartbeat",
+        "installID" : "dffdbb56868bebd254c07e1171a41544",
+        "version" : "2.2.7e",
+        "appStatus" : "operational",
+        "speed" : 230,
+        "trainMode" : "auto",
+        "result" : "OK",
+        "score" : 230,
+        "hostname" : "Alexandra’s MacBook Pro",
+        "domain" : "Alexandra’s MacBook Pro",
+        "action" : "heartbeat",
+        "username" : "alexandradumitrache",
+        "timestamp" : 1667860216776
+      }
+    result:
+      custom:
+        action: "heartbeat"
+        appStatus: "operational"
+        domain: "Alexandra’s MacBook Pro"
+        hostname: "Alexandra’s MacBook Pro"
+        installID: "dffdbb56868bebd254c07e1171a41544"
+        level: "INFO"
+        timestamp: 1667860216776
+        trainMode: "auto"
+        typingdna:
+          result: "OK"
+          score: 230
+          speed: 230
+          username: "alexandradumitrache"
+          version: "2.2.7e"
+      message: "heartbeat"
+      tags:
+        - "source:LOGS_SOURCE"

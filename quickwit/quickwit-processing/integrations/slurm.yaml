@@ -1,0 +1,48 @@
+id: slurm
+metric_id: slurm
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Slurm
+  enabled: true
+  filter:
+    query: source:slurm
+  processors:
+    - type: grok-parser
+      name:  Slurm Parser
+      enabled: true
+      source: message
+      samples:
+        - "[2024-10-22T23:16:26.830] debug:  REQUEST_PERSIST_INIT: CLUSTER:linux VERSION:9472 UID:0 IP:172.22.0.4 CONN:9"
+        - "[2024-10-28T04:52:56.841] debug2: Finish processing RPC: REQUEST_PING"
+        - "[2024-10-28T04:53:03.731] debug2: Processing RPC: REQUEST_SHARE_INFO from UID=0"
+        - "[2024-10-29T04:28:12.937] [63.batch] debug2: _set_limit: RLIMIT_NOFILE : max:1048576 cur:4096 req:1048576"
+      grok:
+        matchRules: |
+          slurm_job \[%{_timestamp}\] \[%{regex("\\d+"):slurm.job_id}.%{regex("\\w+"):slurm.job_name}] %{_level}: %{_msg}
+          slurm_general \[%{_timestamp}\] %{_level}: %{_msg}
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss.SSS"):timestamp}
+          _level %{regex("[A-Za-z]+"):level}%{regex("\\d*"):debug.level}
+          _msg %{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

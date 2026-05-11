@@ -1,0 +1,433 @@
+id: "confluent-cloud-audit-logs"
+tests:
+ -
+  sample: |-
+    {
+      "requestMetadata" : {
+        "requestId" : [ "0000000000000000232c36638b69d50f" ],
+        "clientAddress" : [ {
+          "ip" : "71.204.218.61"
+        } ]
+      },
+      "result" : {
+        "data" : {
+          "name" : "sample_data",
+          "type" : "SOURCE",
+          "user_configs" : {
+            "output" : {
+              "data" : {
+                "format" : "JSON_SR"
+              }
+            },
+            "quickstart" : "STOCK_TRADES",
+            "connector" : {
+              "class" : "DatagenSource"
+            },
+            "kafka" : {
+              "auth" : {
+                "mode" : "SERVICE_ACCOUNT"
+              },
+              "service" : {
+                "account" : {
+                  "id" : "sa-13xndj"
+                }
+              },
+              "topic" : "sample_data"
+            },
+            "name" : "sample_data",
+            "tasks" : {
+              "max" : "1"
+            }
+          }
+        },
+        "status" : "SUCCESS"
+      },
+      "request" : {
+        "accessType" : "MODIFICATION",
+        "data" : {
+          "name" : "sample_data"
+        }
+      },
+      "authenticationInfo" : {
+        "principal" : {
+          "email" : "bo.huang@datadoghq.com",
+          "confluentUser" : {
+            "resourceId" : "u-abc123"
+          }
+        },
+        "result" : "SUCCESS",
+        "identity" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/identity-provider=Confluent/identity=u-abc123"
+      },
+      "cloudResources" : [ {
+        "resource" : {
+          "resourceId" : "lcc-abc123",
+          "type" : "CONNECTOR"
+        },
+        "scope" : {
+          "resources" : [ {
+            "resourceId" : "a0376a52-0bac-48fc-817c-d97fbda18020",
+            "type" : "ORGANIZATION"
+          }, {
+            "resourceId" : "env-abc123",
+            "type" : "ENVIRONMENT"
+          }, {
+            "resourceId" : "lkc-abc123",
+            "type" : "CLOUD_CLUSTER"
+          } ]
+        }
+      } ],
+      "methodName" : "CreateConnector",
+      "resourceName" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/environment=env-abc123/cloud-cluster=lkc-abc123/connector=lcc-abc123",
+      "serviceName" : "crn://confluent.cloud/",
+      "timestamp" : 1721070026665
+    }
+  result:
+    custom:
+      authenticationInfo:
+        identity: "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/identity-provider=Confluent/identity=u-abc123"
+        principal:
+          confluentUser:
+            resourceId: "u-abc123"
+          email: "bo.huang@datadoghq.com"
+        result: "SUCCESS"
+      cloudResources:
+       -
+        resource:
+          resourceId: "lcc-abc123"
+          type: "CONNECTOR"
+        scope:
+          resources:
+           -
+            resourceId: "a0376a52-0bac-48fc-817c-d97fbda18020"
+            type: "ORGANIZATION"
+           -
+            resourceId: "env-abc123"
+            type: "ENVIRONMENT"
+           -
+            resourceId: "lkc-abc123"
+            type: "CLOUD_CLUSTER"
+      evt:
+        name: "CreateConnector"
+      methodName: "CreateConnector"
+      request:
+        accessType: "MODIFICATION"
+        data:
+          name: "sample_data"
+      requestMetadata:
+        clientAddress:
+         -
+          ip: "71.204.218.61"
+        requestId:
+         - "0000000000000000232c36638b69d50f"
+      resourceName: "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/environment=env-abc123/cloud-cluster=lkc-abc123/connector=lcc-abc123"
+      result:
+        data:
+          name: "sample_data"
+          type: "SOURCE"
+          user_configs:
+            connector:
+              class: "DatagenSource"
+            kafka:
+              auth:
+                mode: "SERVICE_ACCOUNT"
+              service:
+                account:
+                  id: "sa-13xndj"
+              topic: "sample_data"
+            name: "sample_data"
+            output:
+              data:
+                format: "JSON_SR"
+            quickstart: "STOCK_TRADES"
+            tasks:
+              max: "1"
+        status: "SUCCESS"
+      serviceName: "crn://confluent.cloud/"
+      timestamp: 1721070026665
+      usr:
+        email: "bo.huang@datadoghq.com"
+        id: "u-abc123"
+    message: |-
+      {
+        "requestMetadata" : {
+          "requestId" : [ "0000000000000000232c36638b69d50f" ],
+          "clientAddress" : [ {
+            "ip" : "71.204.218.61"
+          } ]
+        },
+        "result" : {
+          "data" : {
+            "name" : "sample_data",
+            "type" : "SOURCE",
+            "user_configs" : {
+              "output" : {
+                "data" : {
+                  "format" : "JSON_SR"
+                }
+              },
+              "quickstart" : "STOCK_TRADES",
+              "connector" : {
+                "class" : "DatagenSource"
+              },
+              "kafka" : {
+                "auth" : {
+                  "mode" : "SERVICE_ACCOUNT"
+                },
+                "service" : {
+                  "account" : {
+                    "id" : "sa-13xndj"
+                  }
+                },
+                "topic" : "sample_data"
+              },
+              "name" : "sample_data",
+              "tasks" : {
+                "max" : "1"
+              }
+            }
+          },
+          "status" : "SUCCESS"
+        },
+        "request" : {
+          "accessType" : "MODIFICATION",
+          "data" : {
+            "name" : "sample_data"
+          }
+        },
+        "authenticationInfo" : {
+          "principal" : {
+            "email" : "bo.huang@datadoghq.com",
+            "confluentUser" : {
+              "resourceId" : "u-abc123"
+            }
+          },
+          "result" : "SUCCESS",
+          "identity" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/identity-provider=Confluent/identity=u-abc123"
+        },
+        "cloudResources" : [ {
+          "resource" : {
+            "resourceId" : "lcc-abc123",
+            "type" : "CONNECTOR"
+          },
+          "scope" : {
+            "resources" : [ {
+              "resourceId" : "a0376a52-0bac-48fc-817c-d97fbda18020",
+              "type" : "ORGANIZATION"
+            }, {
+              "resourceId" : "env-abc123",
+              "type" : "ENVIRONMENT"
+            }, {
+              "resourceId" : "lkc-abc123",
+              "type" : "CLOUD_CLUSTER"
+            } ]
+          }
+        } ],
+        "methodName" : "CreateConnector",
+        "resourceName" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020/environment=env-abc123/cloud-cluster=lkc-abc123/connector=lcc-abc123",
+        "serviceName" : "crn://confluent.cloud/",
+        "timestamp" : 1721070026665
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721070026665
+ -
+  sample: |-
+    {
+      "requestMetadata" : {
+        "request_id" : "e9af04cd0380101e6a14cff4c515dfd2"
+      },
+      "request" : {
+        "correlation_id" : "-1"
+      },
+      "authenticationInfo" : {
+        "principal" : "User:u-abc123"
+      },
+      "authorizationInfo" : {
+        "resourceName" : "schema-registry-cluster",
+        "patternType" : "LITERAL",
+        "rbacAuthorization" : {
+          "role" : "EnvironmentAdmin",
+          "scope" : {
+            "outerScope" : [ "organization=abc123-0abc-48bc-817c-abc123abc123", "environment=env-abc123" ]
+          }
+        },
+        "operation" : "AccessMetrics",
+        "granted" : true,
+        "resourceType" : "SchemaRegistry"
+      },
+      "methodName" : "mds.Authorize",
+      "resourceName" : "crn://confluent.cloud/organization=abc123-0abc-48bc-817c-abc123abc123/environment=env-abc123/schema-registry=lsrc-abc123",
+      "serviceName" : "crn://confluent.cloud/",
+      "timestamp" : 1721098040021
+    }
+  result:
+    custom:
+      authenticationInfo:
+        principal: "User:u-abc123"
+      authorizationInfo:
+        granted: true
+        operation: "AccessMetrics"
+        patternType: "LITERAL"
+        rbacAuthorization:
+          role: "EnvironmentAdmin"
+          scope:
+            outerScope:
+             - "organization=abc123-0abc-48bc-817c-abc123abc123"
+             - "environment=env-abc123"
+        resourceName: "schema-registry-cluster"
+        resourceType: "SchemaRegistry"
+      evt:
+        name: "mds.Authorize"
+      methodName: "mds.Authorize"
+      request:
+        correlation_id: "-1"
+      requestMetadata:
+        request_id: "e9af04cd0380101e6a14cff4c515dfd2"
+      resourceName: "crn://confluent.cloud/organization=abc123-0abc-48bc-817c-abc123abc123/environment=env-abc123/schema-registry=lsrc-abc123"
+      serviceName: "crn://confluent.cloud/"
+      timestamp: 1721098040021
+    message: |-
+      {
+        "requestMetadata" : {
+          "request_id" : "e9af04cd0380101e6a14cff4c515dfd2"
+        },
+        "request" : {
+          "correlation_id" : "-1"
+        },
+        "authenticationInfo" : {
+          "principal" : "User:u-abc123"
+        },
+        "authorizationInfo" : {
+          "resourceName" : "schema-registry-cluster",
+          "patternType" : "LITERAL",
+          "rbacAuthorization" : {
+            "role" : "EnvironmentAdmin",
+            "scope" : {
+              "outerScope" : [ "organization=abc123-0abc-48bc-817c-abc123abc123", "environment=env-abc123" ]
+            }
+          },
+          "operation" : "AccessMetrics",
+          "granted" : true,
+          "resourceType" : "SchemaRegistry"
+        },
+        "methodName" : "mds.Authorize",
+        "resourceName" : "crn://confluent.cloud/organization=abc123-0abc-48bc-817c-abc123abc123/environment=env-abc123/schema-registry=lsrc-abc123",
+        "serviceName" : "crn://confluent.cloud/",
+        "timestamp" : 1721098040021
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721098040021
+ -
+  sample: |-
+    {
+      "requestMetadata" : {
+        "requestId" : [ "8421bb5fcd623046771765cfa14d7d28" ],
+        "clientAddress" : [ {
+          "ip" : "71.204.218.61"
+        } ]
+      },
+      "result" : {
+        "data" : {
+          "assigned_principals" : [ "u-mx9jp2" ]
+        },
+        "status" : "SUCCESS"
+      },
+      "authenticationInfo" : {
+        "principal" : {
+          "email" : "bo.huang@datadoghq.com",
+          "confluentUser" : {
+            "resourceId" : "u-mx9jp2"
+          }
+        },
+        "result" : "SUCCESS",
+        "credentials" : {
+          "mechanism" : "HTTP_BEARER"
+        }
+      },
+      "cloudResources" : [ {
+        "resource" : {
+          "resourceId" : "a0376a52-0bac-48fc-817c-d97fbda18020",
+          "type" : "ORGANIZATION"
+        }
+      } ],
+      "methodName" : "SignIn",
+      "resourceName" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020",
+      "serviceName" : "crn://confluent.cloud/",
+      "timestamp" : 1721082805973
+    }
+  result:
+    custom:
+      authenticationInfo:
+        credentials:
+          mechanism: "HTTP_BEARER"
+        principal:
+          confluentUser:
+            resourceId: "u-mx9jp2"
+          email: "bo.huang@datadoghq.com"
+        result: "SUCCESS"
+      cloudResources:
+       -
+        resource:
+          resourceId: "a0376a52-0bac-48fc-817c-d97fbda18020"
+          type: "ORGANIZATION"
+      evt:
+        name: "SignIn"
+      methodName: "SignIn"
+      requestMetadata:
+        clientAddress:
+         -
+          ip: "71.204.218.61"
+        requestId:
+         - "8421bb5fcd623046771765cfa14d7d28"
+      resourceName: "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020"
+      result:
+        data:
+          assigned_principals:
+           - "u-mx9jp2"
+        status: "SUCCESS"
+      serviceName: "crn://confluent.cloud/"
+      timestamp: 1721082805973
+      usr:
+        email: "bo.huang@datadoghq.com"
+        id: "u-mx9jp2"
+    message: |-
+      {
+        "requestMetadata" : {
+          "requestId" : [ "8421bb5fcd623046771765cfa14d7d28" ],
+          "clientAddress" : [ {
+            "ip" : "71.204.218.61"
+          } ]
+        },
+        "result" : {
+          "data" : {
+            "assigned_principals" : [ "u-mx9jp2" ]
+          },
+          "status" : "SUCCESS"
+        },
+        "authenticationInfo" : {
+          "principal" : {
+            "email" : "bo.huang@datadoghq.com",
+            "confluentUser" : {
+              "resourceId" : "u-mx9jp2"
+            }
+          },
+          "result" : "SUCCESS",
+          "credentials" : {
+            "mechanism" : "HTTP_BEARER"
+          }
+        },
+        "cloudResources" : [ {
+          "resource" : {
+            "resourceId" : "a0376a52-0bac-48fc-817c-d97fbda18020",
+            "type" : "ORGANIZATION"
+          }
+        } ],
+        "methodName" : "SignIn",
+        "resourceName" : "crn://confluent.cloud/organization=a0376a52-0bac-48fc-817c-d97fbda18020",
+        "serviceName" : "crn://confluent.cloud/",
+        "timestamp" : 1721082805973
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1721082805973

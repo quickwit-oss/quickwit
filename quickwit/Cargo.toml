@@ -34,6 +34,7 @@ members = [
   "pomsky-intake", # Fork: added (not present upstream)
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
+  "quickwit-processing", # Fork: added (not present upstream)
   "quickwit-proto",
   "quickwit-query",
   "quickwit-remote-api", # Fork: added (not present upstream)
@@ -419,7 +420,7 @@ chrono-tz = "0.10"
 either = "1.13"
 httparse = "1.10"
 pem = "3.0.5"
-pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "7f8ee73" }
+quickwit-processing = { path = "quickwit-processing" }
 ryu = "1.0.20"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 uaparser = "0.6.4"

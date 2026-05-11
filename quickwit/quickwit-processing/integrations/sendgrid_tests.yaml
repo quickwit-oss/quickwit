@@ -1,0 +1,61 @@
+id: "sendgrid"
+tests:
+ -
+  sample: |-
+    {
+      "smtp-id" : "<14c5d75ce93.dfd.64b469@ismtpd-555>",
+      "sg_message_id" : "14c5d75ce93.dfd.64b469.filter0001.16648.5515E0B88.0",
+      "sg_event_id" : "GPrVRZTuQuymudTk-nv6_g==",
+      "event" : "processed",
+      "category" : [ "cat facts" ],
+      "email" : "example@test.com",
+      "timestamp" : 1653505072,
+      "network" : {
+        "client" : {
+          "geoip" : {
+            "as" : {
+              "domain" : "sendgrid.com"
+            }
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      email: "example@test.com"
+      evt:
+        id: "GPrVRZTuQuymudTk-nv6_g=="
+        name: "processed"
+      network:
+        client:
+          geoip:
+            as:
+              domain: "sendgrid.com"
+      sendgrid_category:
+       - "cat facts"
+      sg_message_id: "14c5d75ce93.dfd.64b469.filter0001.16648.5515E0B88.0"
+      smtp-id: "<14c5d75ce93.dfd.64b469@ismtpd-555>"
+      timestamp: 1.653505072E12
+    message: |-
+      {
+        "smtp-id" : "<14c5d75ce93.dfd.64b469@ismtpd-555>",
+        "sg_message_id" : "14c5d75ce93.dfd.64b469.filter0001.16648.5515E0B88.0",
+        "sg_event_id" : "GPrVRZTuQuymudTk-nv6_g==",
+        "event" : "processed",
+        "category" : [ "cat facts" ],
+        "email" : "example@test.com",
+        "timestamp" : 1653505072,
+        "network" : {
+          "client" : {
+            "geoip" : {
+              "as" : {
+                "domain" : "sendgrid.com"
+              }
+            }
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1653505072000
+

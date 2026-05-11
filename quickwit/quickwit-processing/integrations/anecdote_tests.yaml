@@ -1,0 +1,114 @@
+id: anecdote
+tests:
+  - sample: |-
+      {
+        "id" : "AgAAAZB5YmFzhzsIeQAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDdQAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0",
+        "content" : {
+          "service" : "Anecdote",
+          "attributes" : {
+            "date" : "2024-07-03 13:12:12",
+            "service" : "Anecdote",
+            "tags" : [ "feedback_source:Reddit", "app_version:-", "is_feedback_bug:False", "is_first_bug_occurance:False" ]
+          },
+          "message" : "right. communism, anarchism, not to mention fluffy rose colored everything should be free but no one should have to work? \ni consider myself a centrist and imo this is the only position that actually looks at the issues. the extremes on both sides are unrealistic and out to lunch. both sides stake their claim to reality and *the truth* but are more similar than not.",
+          "timestamp" : "2024-07-03T16:16:49.011Z",
+          "tags" : [ "is_first_bug_occurance:false", "app_version:-", "feedback_source:reddit", "source:anecdote", "is_feedback_bug:false", "datadog.submission_auth:api_key" ]
+        }
+      }
+    result:
+      custom:
+        content:
+          attributes:
+            service: "Anecdote"
+            tags:
+              - "feedback_source:Reddit"
+              - "app_version:-"
+              - "is_feedback_bug:False"
+              - "is_first_bug_occurance:False"
+          message: "right. communism, anarchism, not to mention fluffy rose colored everything should be free but no one should have to work? \ni consider myself a centrist and imo this is the only position that actually looks at the issues. the extremes on both sides are unrealistic and out to lunch. both sides stake their claim to reality and *the truth* but are more similar than not."
+          service: "Anecdote"
+          timestamp: "2024-07-03T16:16:49.011Z"
+        log_date: "2024-07-03 13:12:12"
+        log_id: "AgAAAZB5YmFzhzsIeQAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDdQAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0"
+        tags:
+          - "is_first_bug_occurance:false"
+          - "app_version:-"
+          - "feedback_source:reddit"
+          - "source:anecdote"
+          - "is_feedback_bug:false"
+          - "datadog.submission_auth:api_key"
+      message: |-
+        {
+          "id" : "AgAAAZB5YmFzhzsIeQAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDdQAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0",
+          "content" : {
+            "service" : "Anecdote",
+            "attributes" : {
+              "date" : "2024-07-03 13:12:12",
+              "service" : "Anecdote",
+              "tags" : [ "feedback_source:Reddit", "app_version:-", "is_feedback_bug:False", "is_first_bug_occurance:False" ]
+            },
+            "message" : "right. communism, anarchism, not to mention fluffy rose colored everything should be free but no one should have to work? \ni consider myself a centrist and imo this is the only position that actually looks at the issues. the extremes on both sides are unrealistic and out to lunch. both sides stake their claim to reality and *the truth* but are more similar than not.",
+            "timestamp" : "2024-07-03T16:16:49.011Z",
+            "tags" : [ "is_first_bug_occurance:false", "app_version:-", "feedback_source:reddit", "source:anecdote", "is_feedback_bug:false", "datadog.submission_auth:api_key" ]
+          }
+        }
+      service: "Anecdote"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1720023409011
+  - sample: |-
+      {
+        "id" : "AgAAAZB5YmFzhzsIdgAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDcgAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0",
+        "content" : {
+          "service" : "Anecdote",
+          "attributes" : {
+            "date" : "2024-07-03 08:46:56",
+            "service" : "Anecdote",
+            "tags" : [ "feedback_source:Reddit", "app_version:-", "is_feedback_bug:False", "is_first_bug_occurance:False" ]
+          },
+          "message" : "why would you take an f if you didn't do it?",
+          "timestamp" : "2024-07-03T16:16:49.011Z",
+          "tags" : [ "is_first_bug_occurance:false", "app_version:-", "feedback_source:reddit", "source:anecdote", "is_feedback_bug:false", "datadog.submission_auth:api_key" ]
+        }
+      }
+    result:
+      custom:
+        content:
+          attributes:
+            service: "Anecdote"
+            tags:
+              - "feedback_source:Reddit"
+              - "app_version:-"
+              - "is_feedback_bug:False"
+              - "is_first_bug_occurance:False"
+          message: "why would you take an f if you didn't do it?"
+          service: "Anecdote"
+          timestamp: "2024-07-03T16:16:49.011Z"
+        log_date: "2024-07-03 08:46:56"
+        log_id: "AgAAAZB5YmFzhzsIdgAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDcgAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0"
+        tags:
+          - "is_first_bug_occurance:false"
+          - "app_version:-"
+          - "feedback_source:reddit"
+          - "source:anecdote"
+          - "is_feedback_bug:false"
+          - "datadog.submission_auth:api_key"
+      message: |-
+        {
+          "id" : "AgAAAZB5YmFzhzsIdgAAAAAAAAAYAAAAAEFaQjVZbUZ6QUFEbVVJd21ZUWhyMVFDcgAAACQAAAAAMDE5MDc5NjItNjE3My00NjUzLWFiNTgtZTRkNWI3ZmE2ZjU0",
+          "content" : {
+            "service" : "Anecdote",
+            "attributes" : {
+              "date" : "2024-07-03 08:46:56",
+              "service" : "Anecdote",
+              "tags" : [ "feedback_source:Reddit", "app_version:-", "is_feedback_bug:False", "is_first_bug_occurance:False" ]
+            },
+            "message" : "why would you take an f if you didn't do it?",
+            "timestamp" : "2024-07-03T16:16:49.011Z",
+            "tags" : [ "is_first_bug_occurance:false", "app_version:-", "feedback_source:reddit", "source:anecdote", "is_feedback_bug:false", "datadog.submission_auth:api_key" ]
+          }
+        }
+      service: "Anecdote"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1720023409011

@@ -1,0 +1,314 @@
+id: mac-audit-logs
+tests:
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_SYSCTL_NONADMIN\" modifier=\"0\" time=\"Fri Apr 11 21:49:01 2025\" msec=\" + 345 msec\" ><argument arg-num=\"1\" value=\"0x1\" desc=\"name\" /><argument arg-num=\"1\" value=\"0xb\" desc=\"name\" /><subject audit-uid=\"-1\" uid=\"root\" gid=\"wheel\" ruid=\"root\" rgid=\"wheel\" pid=\"116\" sid=\"100001\" tid=\"0 0.0.0.0\" /><return errval=\"success\" retval=\"0\" /><identity signer-type=\"1\" signing-id=\"com.apple.opendirectoryd\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7\" /></record>\n",
+      "timestamp" : 1744388341000
+    }
+  result:
+    custom:
+      device-id: "0"
+      event-category: "Other"
+      network:
+        client:
+          ip: "0.0.0.0"
+      record:
+        argument:
+         -
+          arg-num: "1"
+          value: "0x1"
+          desc: "name"
+         -
+          arg-num: "1"
+          value: "0xb"
+          desc: "name"
+        event: "AUE_SYSCTL_NONADMIN"
+        identity:
+          cdhash: "0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7"
+          signer-type: "1"
+          signing-id: "com.apple.opendirectoryd"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 345 msec"
+        return:
+          errval: "success"
+          retval: "0"
+        subject:
+          audit-uid: "-1"
+          gid: "wheel"
+          pid: "116"
+          rgid: "wheel"
+          sid: "100001"
+          tid: "0 0.0.0.0"
+          uid: "root"
+        time: "Fri Apr 11 21:49:01 2025"
+        version: "11"
+      result: "success"
+      timestamp: 1744388341000
+      usr:
+        name: "root"
+    message: |
+      <record version="11" event="AUE_SYSCTL_NONADMIN" modifier="0" time="Fri Apr 11 21:49:01 2025" msec=" + 345 msec" ><argument arg-num="1" value="0x1" desc="name" /><argument arg-num="1" value="0xb" desc="name" /><subject audit-uid="-1" uid="root" gid="wheel" ruid="root" rgid="wheel" pid="116" sid="100001" tid="0 0.0.0.0" /><return errval="success" retval="0" /><identity signer-type="1" signing-id="com.apple.opendirectoryd" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1744388341000
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_CONNECT\" modifier=\"0\" time=\"Tue Feb 25 12:11:44 2025\" msec=\" + 922 msec\" ><argument arg-num=\"1\" value=\"0x3\" desc=\"fd\" /><socket-inet type=\"2\" port=\"15234\" addr=\"10.10.10.10\" /><subject audit-uid=\"it\" uid=\"root\" gid=\"wheel\" ruid=\"root\" rgid=\"wheel\" pid=\"72739\" sid=\"100003\" tid=\"50331650 0.0.0.0\" /><return errval=\"success\" retval=\"0\" /><identity signer-type=\"1\" signing-id=\"com.apple.nc\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0x023e2436839a72573bd0007c9173f298d9f094f8\" /></record>\n",
+      "timestamp" : 1740465704000
+    }
+  result:
+    custom:
+      action: "allowed"
+      device-id: "50331650"
+      event-category: "Network"
+      network:
+        client:
+          ip: "0.0.0.0"
+        destination:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "15234"
+      record:
+        argument:
+          arg-num: "1"
+          desc: "fd"
+          value: "0x3"
+        event: "AUE_CONNECT"
+        identity:
+          cdhash: "0x023e2436839a72573bd0007c9173f298d9f094f8"
+          signer-type: "1"
+          signing-id: "com.apple.nc"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 922 msec"
+        return:
+          errval: "success"
+          retval: "0"
+        socket-inet:
+          type: "2"
+        subject:
+          audit-uid: "it"
+          gid: "wheel"
+          pid: "72739"
+          rgid: "wheel"
+          sid: "100003"
+          tid: "50331650 0.0.0.0"
+          uid: "root"
+        time: "Tue Feb 25 12:11:44 2025"
+        version: "11"
+      result: "success"
+      timestamp: 1740465704000
+      usr:
+        name: "root"
+    message: |
+      <record version="11" event="AUE_CONNECT" modifier="0" time="Tue Feb 25 12:11:44 2025" msec=" + 922 msec" ><argument arg-num="1" value="0x3" desc="fd" /><socket-inet type="2" port="15234" addr="10.10.10.10" /><subject audit-uid="it" uid="root" gid="wheel" ruid="root" rgid="wheel" pid="72739" sid="100003" tid="50331650 0.0.0.0" /><return errval="success" retval="0" /><identity signer-type="1" signing-id="com.apple.nc" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0x023e2436839a72573bd0007c9173f298d9f094f8" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740465704000
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_MAC_SYSCALL\" modifier=\"0\" time=\"Tue Feb 25 12:11:44 2025\" msec=\" + 921 msec\" ><text>arg:</text><argument arg-num=\"3\" value=\"0x2\" desc=\"call\" /><subject audit-uid=\"-1\" uid=\"root\" gid=\"wheel\" ruid=\"root\" rgid=\"wheel\" pid=\"1\" sid=\"100000\" tid=\"0 0.0.0.0\" /><return errval=\"success\" retval=\"0\" /><identity signer-type=\"1\" signing-id=\"com.apple.xpc.launchd\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0xaa569f0e7eead5051439ea24b5febcbd593f6846\" /></record>\n",
+      "timestamp" : 1740465704000
+    }
+  result:
+    custom:
+      device-id: "0"
+      event-category: "Administrative"
+      network:
+        client:
+          ip: "0.0.0.0"
+      record:
+        argument:
+          arg-num: "3"
+          desc: "call"
+          value: "0x2"
+        event: "AUE_MAC_SYSCALL"
+        identity:
+          cdhash: "0xaa569f0e7eead5051439ea24b5febcbd593f6846"
+          signer-type: "1"
+          signing-id: "com.apple.xpc.launchd"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 921 msec"
+        return:
+          errval: "success"
+          retval: "0"
+        subject:
+          audit-uid: "-1"
+          gid: "wheel"
+          pid: "1"
+          rgid: "wheel"
+          sid: "100000"
+          tid: "0 0.0.0.0"
+          uid: "root"
+        text: "arg:"
+        time: "Tue Feb 25 12:11:44 2025"
+        version: "11"
+      result: "success"
+      timestamp: 1740465704000
+      usr:
+        name: "root"
+    message: |
+      <record version="11" event="AUE_MAC_SYSCALL" modifier="0" time="Tue Feb 25 12:11:44 2025" msec=" + 921 msec" ><text>arg:</text><argument arg-num="3" value="0x2" desc="call" /><subject audit-uid="-1" uid="root" gid="wheel" ruid="root" rgid="wheel" pid="1" sid="100000" tid="0 0.0.0.0" /><return errval="success" retval="0" /><identity signer-type="1" signing-id="com.apple.xpc.launchd" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0xaa569f0e7eead5051439ea24b5febcbd593f6846" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740465704000
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_OPEN\" modifier=\"0\" time=\"Tue Feb 25 12:11:44 2025\" msec=\" + 919 msec\" ><argument arg-num=\"2\" value=\"0x0\" desc=\"flags\" /><path>/usr/bin/Info.plist</path><subject audit-uid=\"it\" uid=\"root\" gid=\"wheel\" ruid=\"root\" rgid=\"wheel\" pid=\"72739\" sid=\"100003\" tid=\"50331650 0.0.0.0\" /><return errval=\"failure : No such file or directory\" retval=\"4294967295\" /><identity signer-type=\"1\" signing-id=\"com.apple.nc\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0x023e2436839a72573bd0007c9173f298d9f094f8\" /></record>\n",
+      "timestamp" : 1740465704000
+    }
+  result:
+    custom:
+      device-id: "50331650"
+      event-category: "File Access"
+      network:
+        client:
+          ip: "0.0.0.0"
+      reason: "No such file or directory"
+      record:
+        argument:
+          arg-num: "2"
+          desc: "flags"
+          value: "0x0"
+        event: "AUE_OPEN"
+        identity:
+          cdhash: "0x023e2436839a72573bd0007c9173f298d9f094f8"
+          signer-type: "1"
+          signing-id: "com.apple.nc"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 919 msec"
+        path: "/usr/bin/Info.plist"
+        return:
+          errval: "failure : No such file or directory"
+          retval: "4294967295"
+        subject:
+          audit-uid: "it"
+          gid: "wheel"
+          pid: "72739"
+          rgid: "wheel"
+          sid: "100003"
+          tid: "50331650 0.0.0.0"
+          uid: "root"
+        time: "Tue Feb 25 12:11:44 2025"
+        version: "11"
+      result: "failure"
+      timestamp: 1740465704000
+      usr:
+        name: "root"
+    message: |
+      <record version="11" event="AUE_OPEN" modifier="0" time="Tue Feb 25 12:11:44 2025" msec=" + 919 msec" ><argument arg-num="2" value="0x0" desc="flags" /><path>/usr/bin/Info.plist</path><subject audit-uid="it" uid="root" gid="wheel" ruid="root" rgid="wheel" pid="72739" sid="100003" tid="50331650 0.0.0.0" /><return errval="failure : No such file or directory" retval="4294967295" /><identity signer-type="1" signing-id="com.apple.nc" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0x023e2436839a72573bd0007c9173f298d9f094f8" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740465704000
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_FORK\" modifier=\"0\" time=\"Tue Feb 25 12:11:44 2025\" msec=\" + 907 msec\" ><argument arg-num=\"0\" value=\"0x11c23\" desc=\"child PID\" /><subject audit-uid=\"it\" uid=\"root\" gid=\"wheel\" ruid=\"root\" rgid=\"wheel\" pid=\"54037\" sid=\"100003\" tid=\"50331650 0.0.0.0\" /><return errval=\"success\" retval=\"72739\" /><identity signer-type=\"1\" signing-id=\"com.apple.bash\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0xe194dccdf65ea5e8c12413a8ac7ddaf68adc3ad2\" /></record>\n",
+      "timestamp" : 1740465704000
+    }
+  result:
+    custom:
+      device-id: "50331650"
+      event-category: "Process"
+      network:
+        client:
+          ip: "0.0.0.0"
+      record:
+        argument:
+          arg-num: "0"
+          desc: "child PID"
+          value: "0x11c23"
+        event: "AUE_FORK"
+        identity:
+          cdhash: "0xe194dccdf65ea5e8c12413a8ac7ddaf68adc3ad2"
+          signer-type: "1"
+          signing-id: "com.apple.bash"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 907 msec"
+        return:
+          errval: "success"
+          retval: "72739"
+        subject:
+          audit-uid: "it"
+          gid: "wheel"
+          pid: "54037"
+          rgid: "wheel"
+          sid: "100003"
+          tid: "50331650 0.0.0.0"
+          uid: "root"
+        time: "Tue Feb 25 12:11:44 2025"
+        version: "11"
+      result: "success"
+      timestamp: 1740465704000
+      usr:
+        name: "root"
+    message: |
+      <record version="11" event="AUE_FORK" modifier="0" time="Tue Feb 25 12:11:44 2025" msec=" + 907 msec" ><argument arg-num="0" value="0x11c23" desc="child PID" /><subject audit-uid="it" uid="root" gid="wheel" ruid="root" rgid="wheel" pid="54037" sid="100003" tid="50331650 0.0.0.0" /><return errval="success" retval="72739" /><identity signer-type="1" signing-id="com.apple.bash" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0xe194dccdf65ea5e8c12413a8ac7ddaf68adc3ad2" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740465704000
+ -
+  sample: |-
+    {
+      "message" : "<record version=\"11\" event=\"AUE_auth_user\" modifier=\"0\" time=\"Fri Mar 28 15:52:27 2025\" msec=\" + 772 msec\" ><subject audit-uid=\"it\" uid=\"root\" gid=\"staff\" ruid=\"it\" rgid=\"staff\" pid=\"85671\" sid=\"100078\" tid=\"1074205 0.0.0.0\" /><text>Verify password for record type Users &apos;it&apos; node &apos;/Local/Default&apos;</text><return errval=\"success\" retval=\"0\" /><identity signer-type=\"1\" signing-id=\"com.apple.opendirectoryd\" signing-id-truncated=\"no\" team-id=\"\" team-id-truncated=\"no\" cdhash=\"0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7\" /></record>\n",
+      "timestamp" : 1743157347000
+    }
+  result:
+    custom:
+      device-id: "1074205"
+      event-category: "Authentication and Authorization"
+      network:
+        client:
+          ip: "0.0.0.0"
+      record:
+        event: "AUE_auth_user"
+        identity:
+          cdhash: "0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7"
+          signer-type: "1"
+          signing-id: "com.apple.opendirectoryd"
+          signing-id-truncated: "no"
+          team-id: ""
+          team-id-truncated: "no"
+        modifier: "0"
+        msec: " + 772 msec"
+        return:
+          errval: "success"
+          retval: "0"
+        subject:
+          audit-uid: "it"
+          gid: "staff"
+          pid: "85671"
+          rgid: "staff"
+          sid: "100078"
+          tid: "1074205 0.0.0.0"
+          uid: "root"
+        text: "Verify password for record type Users 'it' node '/Local/Default'"
+        time: "Fri Mar 28 15:52:27 2025"
+        version: "11"
+      result: "success"
+      timestamp: 1743157347000
+      usr:
+        name: "it"
+    message: |
+      <record version="11" event="AUE_auth_user" modifier="0" time="Fri Mar 28 15:52:27 2025" msec=" + 772 msec" ><subject audit-uid="it" uid="root" gid="staff" ruid="it" rgid="staff" pid="85671" sid="100078" tid="1074205 0.0.0.0" /><text>Verify password for record type Users &apos;it&apos; node &apos;/Local/Default&apos;</text><return errval="success" retval="0" /><identity signer-type="1" signing-id="com.apple.opendirectoryd" signing-id-truncated="no" team-id="" team-id-truncated="no" cdhash="0x4a21fe7d1588f7dea2909b5d490d45dbd6d61ed7" /></record>
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1743157347000

@@ -1,0 +1,196 @@
+id: "securityhub"
+tests:
+ -
+  sample: |-
+    {
+      "resources" : [ "arn:aws:securityhub:us-east-1::product/aws/securityhub/arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71" ],
+      "source" : "aws.securityhub",
+      "message" : "This Amazon EC2 security group is not associated with an EC2 instance or an ENI.",
+      "title" : "PCI.EC2.3 Unused EC2 security groups should be removed",
+      "version" : "0",
+      "service" : "securityhub",
+      "detail-type" : "Security Hub Findings - Imported",
+      "detail" : {
+        "finding" : {
+          "ProductArn" : "arn:aws:securityhub:us-east-1::product/aws/securityhub",
+          "Types" : [ "Software and Configuration Checks/Industry and Regulatory Standards/PCI-DSS" ],
+          "Description" : "This AWS control will assist you maintain an accurate asset inventory of needed Security Groups by checking that security groups are attached to EC2 instances or to an ENI.",
+          "Compliance" : {
+            "Status" : "FAILED",
+            "RelatedRequirements" : [ "PCI DSS 2.4" ]
+          },
+          "ProductName" : "Security Hub",
+          "SchemaVersion" : "2018-10-08",
+          "GeneratorId" : "pci-dss/v/3.2.1/PCI.EC2.3",
+          "FirstObservedAt" : "2021-06-25T19:44:20.783Z",
+          "CreatedAt" : "2021-06-25T19:44:20.783Z",
+          "RecordState" : "ACTIVE",
+          "Workflow" : {
+            "Status" : "NEW"
+          },
+          "resources" : {
+            "AwsEc2SecurityGroup" : {
+              "Partition" : "aws",
+              "Details" : {
+                "AwsEc2SecurityGroup" : {
+                  "GroupName" : "sg-name-1234",
+                  "VpcId" : "vpc-abcdefgh",
+                  "OwnerId" : "0123456789",
+                  "IpPermissionsEgress" : [ {
+                    "IpProtocol" : "-1",
+                    "IpRanges" : [ {
+                      "CidrIp" : "0.0.0.0/0"
+                    } ]
+                  } ],
+                  "GroupId" : "sg-abcdefgh"
+                }
+              },
+              "Region" : "us-east-1",
+              "Id" : "arn:aws:ec2:us-east-1:0123456789:security-group/sg-abcdefgh"
+            }
+          },
+          "LastObservedAt" : "2021-06-25T19:44:21.754Z",
+          "Severity" : {
+            "Normalized" : 39,
+            "Label" : "LOW",
+            "Product" : 39,
+            "Original" : "LOW"
+          },
+          "UpdatedAt" : "2021-06-25T19:44:20.783Z",
+          "FindingProviderFields" : {
+            "Types" : [ "Software and Configuration Checks/Industry and Regulatory Standards/PCI-DSS" ],
+            "Severity" : {
+              "Normalized" : 39,
+              "Label" : "LOW",
+              "Product" : 39,
+              "Original" : "LOW"
+            }
+          },
+          "CompanyName" : "AWS",
+          "WorkflowState" : "NEW",
+          "ProductFields" : {
+            "StandardsArn" : "arn:aws:securityhub:::standards/pci-dss/v/3.2.1",
+            "RelatedAWSResources:0/type" : "AWS::Config::ConfigRule",
+            "StandardsSubscriptionArn" : "arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1",
+            "Resources:0/Id" : "arn:aws:ec2:us-east-1:0123456789:security-group/sg-abcdefgh",
+            "RecommendationUrl" : "https://docs.aws.amazon.com/console/securityhub/PCI.EC2.3/remediation",
+            "aws/securityhub/ProductName" : "Security Hub",
+            "StandardsControlArn" : "arn:aws:securityhub:us-east-1:0123456789:control/pci-dss/v/3.2.1/PCI.EC2.3",
+            "aws/securityhub/CompanyName" : "AWS",
+            "ControlId" : "PCI.EC2.3",
+            "aws/securityhub/annotation" : "This Amazon EC2 security group is not associated with an EC2 instance or an ENI.",
+            "RelatedAWSResources:0/name" : "securityhub-ec2-security-group-attached-to-eni-abcdefgh",
+            "aws/securityhub/FindingId" : "arn:aws:securityhub:us-east-1::product/aws/securityhub/arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71"
+          },
+          "Region" : "us-east-1",
+          "Remediation" : {
+            "Recommendation" : {
+              "Text" : "For directions on how to fix this issue, please consult the AWS Security Hub PCI DSS documentation.",
+              "Url" : "https://docs.aws.amazon.com/console/securityhub/PCI.EC2.3/remediation"
+            }
+          },
+          "Id" : "arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71"
+        }
+      },
+      "id" : "5c0dc037-f917-beb3-7fb9-0c5b7ede29c0",
+      "time" : "2021-06-25T19:44:27Z",
+      "aws" : {
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:0123456789:function:DatadogForwarder",
+        "function_version" : "$LATEST"
+      },
+      "region" : "us-east-1",
+      "account" : "0123456789"
+    }
+  result:
+    custom:
+      account: "0123456789"
+      aws:
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:0123456789:function:DatadogForwarder"
+      detail:
+        finding:
+          CompanyName: "AWS"
+          Compliance:
+            RelatedRequirements:
+             - "PCI DSS 2.4"
+            Status: "FAILED"
+          CreatedAt: "2021-06-25T19:44:20.783Z"
+          Description: "This AWS control will assist you maintain an accurate asset inventory of needed Security Groups by checking that security groups are attached to EC2 instances or to an ENI."
+          FindingProviderFields:
+            Severity:
+              Label: "LOW"
+              Normalized: 39
+              Original: "LOW"
+              Product: 39
+            Types:
+             - "Software and Configuration Checks/Industry and Regulatory Standards/PCI-DSS"
+          FirstObservedAt: "2021-06-25T19:44:20.783Z"
+          GeneratorId: "pci-dss/v/3.2.1/PCI.EC2.3"
+          Id: "arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71"
+          LastObservedAt: "2021-06-25T19:44:21.754Z"
+          ProductArn: "arn:aws:securityhub:us-east-1::product/aws/securityhub"
+          ProductFields:
+            ControlId: "PCI.EC2.3"
+            RecommendationUrl: "https://docs.aws.amazon.com/console/securityhub/PCI.EC2.3/remediation"
+            RelatedAWSResources:0/name: "securityhub-ec2-security-group-attached-to-eni-abcdefgh"
+            RelatedAWSResources:0/type: "AWS::Config::ConfigRule"
+            Resources:0/Id: "arn:aws:ec2:us-east-1:0123456789:security-group/sg-abcdefgh"
+            StandardsArn: "arn:aws:securityhub:::standards/pci-dss/v/3.2.1"
+            StandardsControlArn: "arn:aws:securityhub:us-east-1:0123456789:control/pci-dss/v/3.2.1/PCI.EC2.3"
+            StandardsSubscriptionArn: "arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1"
+            aws/securityhub/CompanyName: "AWS"
+            aws/securityhub/FindingId: "arn:aws:securityhub:us-east-1::product/aws/securityhub/arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71"
+            aws/securityhub/ProductName: "Security Hub"
+          ProductName: "Security Hub"
+          RecordState: "ACTIVE"
+          Region: "us-east-1"
+          Remediation:
+            Recommendation:
+              Text: "For directions on how to fix this issue, please consult the AWS Security Hub PCI DSS documentation."
+              Url: "https://docs.aws.amazon.com/console/securityhub/PCI.EC2.3/remediation"
+          SchemaVersion: "2018-10-08"
+          Severity:
+            Label: "LOW"
+            Normalized: 39
+            Original: "LOW"
+            Product: 39
+          Types:
+           - "Software and Configuration Checks/Industry and Regulatory Standards/PCI-DSS"
+          UpdatedAt: "2021-06-25T19:44:20.783Z"
+          Workflow:
+            Status: "NEW"
+          WorkflowState: "NEW"
+          resources:
+            AwsEc2SecurityGroup:
+              Details:
+                AwsEc2SecurityGroup:
+                  GroupId: "sg-abcdefgh"
+                  GroupName: "sg-name-1234"
+                  IpPermissionsEgress:
+                   -
+                    IpProtocol: "-1"
+                    IpRanges:
+                     -
+                      CidrIp: "0.0.0.0/0"
+                  OwnerId: "0123456789"
+                  VpcId: "vpc-abcdefgh"
+              Id: "arn:aws:ec2:us-east-1:0123456789:security-group/sg-abcdefgh"
+              Partition: "aws"
+              Region: "us-east-1"
+      detail-type: "Security Hub Findings - Imported"
+      id: "5c0dc037-f917-beb3-7fb9-0c5b7ede29c0"
+      region: "us-east-1"
+      resourceARN: "arn:aws:ec2:us-east-1:0123456789:security-group/sg-abcdefgh"
+      resources:
+       - "arn:aws:securityhub:us-east-1::product/aws/securityhub/arn:aws:securityhub:us-east-1:0123456789:subscription/pci-dss/v/3.2.1/PCI.EC2.3/finding/4b5179f9-a4a4-4c6d-891c-408411694d71"
+      service: "securityhub"
+      source: "aws.securityhub"
+      time: "2021-06-25T19:44:27Z"
+      title: "PCI.EC2.3 Unused EC2 security groups should be removed"
+      version: "0"
+    message: "This Amazon EC2 security group is not associated with an EC2 instance or an ENI."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1624650260783
+

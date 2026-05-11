@@ -1,0 +1,97 @@
+id: "cisco-syslog"
+tests:
+ -
+  sample: |
+    <180> machine1: .Nov 18 21:03:22.631 GMT: %CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on TenGigabitEthernet.
+  result:
+    custom:
+      date: 27810202631
+      facility: "CDP"
+      mnemonic: "NATIVE_VLAN_MISMATCH"
+      origin: "machine1"
+      priority: 180
+      severity_level: 4
+    message: "Native VLAN mismatch discovered on TenGigabitEthernet."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 27810202631
+ -
+  sample: |
+    *Feb  8 08:52:05.064: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  result:
+    custom:
+      date: 34851125064
+      facility: "LINK"
+      mnemonic: "UPDOWN"
+      severity_level: 3
+    message: "Interface GigabitEthernet0/0, changed state to up"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 34851125064
+ -
+  sample: |
+    <180>782431: machine1: .Aug 11 14:21:30.631 GMT: %CDP-7-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on TenGigabitEthernet.
+  result:
+    custom:
+      date: 19232490631
+      facility: "CDP"
+      mnemonic: "NATIVE_VLAN_MISMATCH"
+      origin: "machine1"
+      priority: 180
+      sequence_number: 782431
+      severity_level: 7
+    message: "Native VLAN mismatch discovered on TenGigabitEthernet."
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 19232490631
+ -
+  sample: |
+    00023:18:46:11: %LINK-3-UPDOWN: Interface Port-channel1, changed state to up
+  result:
+    custom:
+      date: 31517171000
+      facility: "LINK"
+      mnemonic: "UPDOWN"
+      sequence_number: 23
+      severity_level: 3
+    message: "Interface Port-channel1, changed state to up"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 31517171000
+ -
+  sample: |
+    <123>0023:*Mar  1 18:46:11: %SYS-5-CONFIG_I: Configured from console by vty2 (10.34.195.36)
+  result:
+    custom:
+      date: 36701171000
+      facility: "SYS"
+      mnemonic: "CONFIG_I"
+      priority: 123
+      sequence_number: 23
+      severity_level: 5
+    message: "Configured from console by vty2 (10.34.195.36)"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 36701171000
+ -
+  sample: "<172>25616: [syslog@9 s_id =\"some_id\"]: Aug 31 22:39:43.765 PDT: %C6KENV-4-MINORTEMPALARM: XDB 1/0 inlet temperature crossed threshold #1(=70C). It has exceeded normal operating temperature range."
+  result:
+    custom:
+      date: 21015583765
+      facility: "C6KENV"
+      mnemonic: "MINORTEMPALARM"
+      origin: "[syslog@9 s_id =\"some_id\"]"
+      priority: 172
+      sequence_number: 25616
+      severity_level: 4
+    message: "XDB 1/0 inlet temperature crossed threshold #1(=70C). It has exceeded normal operating temperature range."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21015583765
+

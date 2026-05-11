@@ -1,0 +1,96 @@
+id: kafka
+metric_id: kafka
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Kafka
+  enabled: true
+  filter:
+    query: source:kafka
+  processors:
+    - type: grok-parser
+      name: Parsing Kafka logs
+      enabled: true
+      source: message
+      samples:
+        - 2000-09-07 14:07:41,508 [main] INFO  MyApp - Entering application.
+        - 54 [main] INFO MyApp.foo.bar - Entering application.
+        - 2000-09-07 14:07:44 INFO org.foo.bar:32 - Entering application.
+        - '[2020-03-12 16:23:32,543] INFO [ProducerStateManager partition=my_partition] Writing producer snapshot at offset 172041391 (kafka.log.ProducerStateManager)'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _date_ms %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _duration %{integer:duration}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:status}
+          _logger_name %{notSpace:logger.name}
+          _context %{notSpace:logger.context}
+          _line %{integer:line}
+        matchRules: |
+          Kafka_default (%{_date_ms}|%{_duration})\s+\[%{_thread_name}\]\s+%{_status}\s+%{_logger_name}\s*(%{_context}\s*)?- %{data:msg}((\n|\t)%{data:error.stack})?
+
+          Kafka_recommended %{_date} %{_status}\s+%{_logger_name}:%{_line}\s+- %{data:msg}((\n|\t)%{data:error.stack})?
+
+          Kafka_standard \[%{_date_ms}\] %{_status} %{data:msg} \(%{_logger_name}\)
+
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          java.net.ConnectException: Connection refused
+            at sun.nio.ch.Net.connect0(Native Method)
+            at sun.nio.ch.Net.connect(Net.java:465)
+            at sun.nio.ch.Net.connect(Net.java:457)
+            at sun.nio.ch.SocketChannelImpl.connect(SocketChannelImpl.java:639)
+            at kafka.network.BlockingChannel.connect(BlockingChannel.scala:57)
+            at kafka.producer.SyncProducer.connect(SyncProducer.scala:146)
+            at kafka.producer.SyncProducer.getOrMakeConnection(SyncProducer.scala:161)
+            at kafka.producer.SyncProducer.kafka$producer$SyncProducer$$doSend(SyncProducer.scala:68)
+            at kafka.producer.SyncProducer.send(SyncProducer.scala:112)
+            at kafka.client.ClientUtils$.fetchTopicMetadata(ClientUtils.scala:53)
+            at kafka.producer.BrokerPartitionInfo.updateInfo(BrokerPartitionInfo.scala:82)
+            at kafka.producer.async.DefaultEventHandler$$anonfun$handle$1.apply$mcV$sp(DefaultEventHandler.scala:69)
+            at kafka.utils.Utils$.swallow(Utils.scala:186)
+            at kafka.utils.Logging$class.swallowError(Logging.scala:105)
+            at kafka.utils.Utils$.swallowError(Utils.scala:45)
+            at kafka.producer.async.DefaultEventHandler.handle(DefaultEventHandler.scala:69)
+            at kafka.producer.Producer.send(Producer.scala:74)
+            at kafka.javaapi.producer.Producer.send(Producer.scala:32)
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

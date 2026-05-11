@@ -1,0 +1,198 @@
+id: "orca-security"
+tests:
+ -
+  sample: |-
+    {
+      "group_val" : "nongroup",
+      "asset_type_string" : "AwsKmsKey",
+      "data" : {
+        "mitre_category" : "collection",
+        "recommendation" : "It is recommended to verify the CMK which have been scheduled for deletion in order to avoid loss of data encrypted with those keys.",
+        "details" : "It was found that {AwsKmsKey} is pending deletion. Identify and recover any KMS Customer Master Keys (CMK) scheduled for deletion.",
+        "mitre_techniques" : [ "Data from Information Repositories (T1213)" ],
+        "title" : "KMS CMK schedule deletion",
+        "remediation_console" : [ ">1. Open the AWS KMS console at **[KMS console](https://console.aws.amazon.com/kms/)**.", ">2. Select the desired AWS Region by using the Region selector in the upper-right corner of the page.", ">3. In the left navigation pane, select **Customer managed keys**.", ">4. Select the desired KMS key that you want to recover.", ">5. Click Key actions drop down menu and then, select **Cancel key deletion**." ],
+        "mitre_technique" : [ "Data from Information Repositories (T1213)" ]
+      },
+      "alert_labels" : [ "mitre: collection" ],
+      "is_compliance" : "False",
+      "group_type_string" : "NonGroup",
+      "related_compliances" : [ "AWS Foundational Security Best Practices", "CCPA", "CJIS (Criminal Justice Information Services)", "CMMC (Cybersecurity Maturity Model Certification) Level 2", "COPPA (Children’s Online Privacy Protection)", "CPRA (California Privacy Rights Act)", "DORA (Digital Operational Resilience Act)", "FFIEC (Federal Financial Institutions Examination Council)", "FedRAMP", "HIPAA", "HITRUST Level 1", "HITRUST Level 2", "HITRUST Level 3", "ISM (Australian Government Information Security Manual) September 2022", "ISMS-P (Personal information & Information Security Management System)", "ISO 27001 2013", "ISO 27001 2022", "ISO 27002 2022", "LGPD (Brazilian General Data Protection)", "MITRE ATT&CK v12", "MITRE ATT&CK v13", "MPA (Motion Picture Association) v5", "NIS (Network and Information Security) v2", "NIST 800-171 (Rev 2)", "NIST 800-171 (Rev 3)", "NIST 800-172", "NIST 800-53 (Rev 5.1.1)", "NZISM", "Orca Best Practices", "PDPA (Personal Data Protection Act)", "PDPO (Personal Data Privacy Ordinance)", "PIPEDA (Personal Information Protection and Electronic Documents Act)", "RBI (Reserve Bank of India)", "SOC 2", "TISAX VDA", "UK Cyber Essentials" ],
+      "recommendation" : "It is recommended to verify the CMK which have been scheduled for deletion in order to avoid loss of data encrypted with those keys.",
+      "description" : "KMS CMK schedule deletion",
+      "source" : "alias/JAY_ODS",
+      "group_type" : "AwsKmsKey",
+      "cluster_type" : "AwsKmsKey",
+      "type" : "aws_kms_cmk_pending_deletion",
+      "group_unique_id" : "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91",
+      "cloud_account_id" : "f77d16af-0f52-44e8-9496-d1c9bd46d930",
+      "score" : "normal",
+      "hostname" : "alias/JAY_ODS",
+      "type_string" : "KMS CMK schedule deletion",
+      "asset_name" : "alias/JAY_ODS",
+      "account_name" : "cds-avataar",
+      "alert_source" : "Orca Scan",
+      "context" : "control",
+      "asset_type" : "AwsKmsKey",
+      "details" : "It was found that alias/JAY_ODS is pending deletion. Identify and recover any KMS Customer Master Keys (CMK) scheduled for deletion.",
+      "state" : {
+        "severity" : "informational",
+        "rule_source" : "Orca",
+        "last_updated" : "2024-11-20T16:17:40+00:00",
+        "last_seen" : "2024-11-19T15:28:57+00:00",
+        "low_since" : "2024-11-13T16:07:48+00:00",
+        "created_at" : "2024-11-13T15:21:12+00:00",
+        "closed_time" : "2024-11-20T16:17:40+00:00",
+        "score" : 4,
+        "risk_level" : "informational",
+        "orca_score" : 1.8,
+        "alert_id" : "orca-5903",
+        "closed_reason" : "asset deleted",
+        "status_time" : "2024-11-20T16:17:40+00:00",
+        "status" : "closed"
+      },
+      "rule_query" : "AwsKmsKey with KeyState = 'PendingDeletion'",
+      "cluster_unique_id" : "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91",
+      "cluster_name" : "alias/JAY_ODS",
+      "subject_type" : "AwsKmsKey",
+      "group_name" : "alias/JAY_ODS",
+      "level" : 0,
+      "tags_info_list" : [ "ODS|JAY" ],
+      "is_rule" : "True",
+      "cloud_provider" : "aws",
+      "organization_name" : "test",
+      "cloud_vendor_id" : "748335378900",
+      "type_key" : "ad59fd836bc225b159dcfbf413191c77",
+      "rule_id" : "r4c1559f2e0",
+      "asset_category" : "Encryption and Secrets",
+      "asset_state" : "enabled",
+      "service" : "Orca Alerts",
+      "asset_tags_info_list" : [ "ODS|JAY" ],
+      "asset_unique_id" : "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91",
+      "cloud_provider_id" : "748335378900",
+      "category" : "Data protection",
+      "cloud_account_type" : "Regular",
+      "asset_vendor_id" : "arn:aws:kms:us-east-1:748335378900:key/afcaa647-4393-4a29-b869-0c97914a1773"
+    }
+  result:
+    custom:
+      account_name: "cds-avataar"
+      alert_labels:
+       - "mitre: collection"
+      alert_source: "Orca Scan"
+      asset_category: "Encryption and Secrets"
+      asset_name: "alias/JAY_ODS"
+      asset_state: "enabled"
+      asset_tags_info_list:
+       - "ODS|JAY"
+      asset_type: "AwsKmsKey"
+      asset_type_string: "AwsKmsKey"
+      asset_unique_id: "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91"
+      asset_vendor_id: "arn:aws:kms:us-east-1:748335378900:key/afcaa647-4393-4a29-b869-0c97914a1773"
+      category: "Data protection"
+      cloud_account_id: "f77d16af-0f52-44e8-9496-d1c9bd46d930"
+      cloud_account_type: "Regular"
+      cloud_provider: "aws"
+      cloud_provider_id: "748335378900"
+      cloud_vendor_id: "748335378900"
+      cluster_name: "alias/JAY_ODS"
+      cluster_type: "AwsKmsKey"
+      cluster_unique_id: "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91"
+      context: "control"
+      data:
+        details: "It was found that {AwsKmsKey} is pending deletion. Identify and recover any KMS Customer Master Keys (CMK) scheduled for deletion."
+        mitre_category: "collection"
+        mitre_technique:
+         - "Data from Information Repositories (T1213)"
+        mitre_techniques:
+         - "Data from Information Repositories (T1213)"
+        recommendation: "It is recommended to verify the CMK which have been scheduled for deletion in order to avoid loss of data encrypted with those keys."
+        remediation_console:
+         - ">1. Open the AWS KMS console at **[KMS console](https://console.aws.amazon.com/kms/)**."
+         - ">2. Select the desired AWS Region by using the Region selector in the upper-right corner of the page."
+         - ">3. In the left navigation pane, select **Customer managed keys**."
+         - ">4. Select the desired KMS key that you want to recover."
+         - ">5. Click Key actions drop down menu and then, select **Cancel key deletion**."
+      description: "KMS CMK schedule deletion"
+      details: "It was found that alias/JAY_ODS is pending deletion. Identify and recover any KMS Customer Master Keys (CMK) scheduled for deletion."
+      group_name: "alias/JAY_ODS"
+      group_type: "AwsKmsKey"
+      group_type_string: "NonGroup"
+      group_unique_id: "AwsKmsKey_748335378900_5832f325-2adb-3211-7d8c-2bd9a4829e91"
+      group_val: "nongroup"
+      hostname: "alias/JAY_ODS"
+      is_compliance: "False"
+      is_rule: "True"
+      level: 0
+      organization_name: "test"
+      recommendation: "It is recommended to verify the CMK which have been scheduled for deletion in order to avoid loss of data encrypted with those keys."
+      related_compliances:
+       - "AWS Foundational Security Best Practices"
+       - "CCPA"
+       - "CJIS (Criminal Justice Information Services)"
+       - "CMMC (Cybersecurity Maturity Model Certification) Level 2"
+       - "COPPA (Children’s Online Privacy Protection)"
+       - "CPRA (California Privacy Rights Act)"
+       - "DORA (Digital Operational Resilience Act)"
+       - "FFIEC (Federal Financial Institutions Examination Council)"
+       - "FedRAMP"
+       - "HIPAA"
+       - "HITRUST Level 1"
+       - "HITRUST Level 2"
+       - "HITRUST Level 3"
+       - "ISM (Australian Government Information Security Manual) September 2022"
+       - "ISMS-P (Personal information & Information Security Management System)"
+       - "ISO 27001 2013"
+       - "ISO 27001 2022"
+       - "ISO 27002 2022"
+       - "LGPD (Brazilian General Data Protection)"
+       - "MITRE ATT&CK v12"
+       - "MITRE ATT&CK v13"
+       - "MPA (Motion Picture Association) v5"
+       - "NIS (Network and Information Security) v2"
+       - "NIST 800-171 (Rev 2)"
+       - "NIST 800-171 (Rev 3)"
+       - "NIST 800-172"
+       - "NIST 800-53 (Rev 5.1.1)"
+       - "NZISM"
+       - "Orca Best Practices"
+       - "PDPA (Personal Data Protection Act)"
+       - "PDPO (Personal Data Privacy Ordinance)"
+       - "PIPEDA (Personal Information Protection and Electronic Documents Act)"
+       - "RBI (Reserve Bank of India)"
+       - "SOC 2"
+       - "TISAX VDA"
+       - "UK Cyber Essentials"
+      rule_id: "r4c1559f2e0"
+      rule_query: "AwsKmsKey with KeyState = 'PendingDeletion'"
+      score: "normal"
+      service: "Orca Alerts"
+      source: "alias/JAY_ODS"
+      state:
+        alert_id: "orca-5903"
+        closed_reason: "asset deleted"
+        closed_time: "2024-11-20T16:17:40+00:00"
+        created_at: "2024-11-13T15:21:12+00:00"
+        last_seen: "2024-11-19T15:28:57+00:00"
+        last_updated: "2024-11-20T16:17:40+00:00"
+        low_since: "2024-11-13T16:07:48+00:00"
+        orca_score: 1.8
+        risk_level: "informational"
+        rule_source: "Orca"
+        score: 4
+        severity: "informational"
+        status: "closed"
+        status_time: "2024-11-20T16:17:40+00:00"
+      status: "info"
+      subject_type: "AwsKmsKey"
+      tags_info_list:
+       - "ODS|JAY"
+      type: "aws_kms_cmk_pending_deletion"
+      type_key: "ad59fd836bc225b159dcfbf413191c77"
+      type_string: "KMS CMK schedule deletion"
+    message: "KMS CMK schedule deletion"
+    service: "Orca Alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1732119460000
