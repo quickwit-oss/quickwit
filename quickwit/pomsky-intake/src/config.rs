@@ -52,6 +52,8 @@ pub struct IntakeConfig {
     pub logs_endpoint: String,
     #[serde(default = "default_metrics_endpoint")]
     pub metrics_endpoint: String,
+    #[serde(default = "default_sketches_endpoint")]
+    pub sketches_endpoint: String,
     #[serde(default = "default_traces_endpoint")]
     pub traces_endpoint: String,
     /// Path to the CSV file used by the `metric_metadata` transform to
@@ -74,6 +76,7 @@ impl Default for IntakeConfig {
             data_dir: default_data_dir(),
             logs_endpoint: default_logs_endpoint(),
             metrics_endpoint: default_metrics_endpoint(),
+            sketches_endpoint: default_sketches_endpoint(),
             traces_endpoint: default_traces_endpoint(),
             metric_metadata_persist_file_path: default_metric_metadata_persist_file_path(),
             host_tags: HostTagsConfig::default(),
@@ -136,6 +139,10 @@ fn default_logs_endpoint() -> String {
 
 fn default_metrics_endpoint() -> String {
     "http://127.0.0.1:7280/api/datadog/v1/byoc/metrics".to_string()
+}
+
+fn default_sketches_endpoint() -> String {
+    "http://127.0.0.1:7280/api/datadog/v1/byoc/sketches".to_string()
 }
 
 fn default_traces_endpoint() -> String {
