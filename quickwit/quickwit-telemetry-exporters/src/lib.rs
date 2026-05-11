@@ -90,6 +90,11 @@ pub(crate) fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
 pub(crate) type ReloadLayer =
     tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
 
+/// Initializes logging/tracing/metrics providers for the process.
+///
+/// NOTE: this function must be called before any metric is emitted so metric handles
+/// are registered against the production recorder instead of a noop/default
+/// recorder.
 pub fn init_telemetry(
     service_version: &str,
     level: Level,

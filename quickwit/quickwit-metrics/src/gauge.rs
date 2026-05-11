@@ -34,6 +34,18 @@ static GAUGES: LazyLock<DashMap<u64, Arc<GaugeInner>>> = LazyLock::new(DashMap::
 /// the static metadata, key, and recorder handle that live for the
 /// lifetime of the process.
 ///
+/// # Recorder-binding invariant
+///
+/// The `metrics::Gauge` handle returned by `register_gauge` is
+/// permanently bound to whichever [`metrics::Recorder`] is active at
+/// first-access time. If this function is called before the production
+/// recorder is installed (e.g. while the noop default is still active),
+/// the cached handle will silently discard all subsequent mutations.
+///
+/// **Callers must ensure that the global recorder is installed before
+/// any metric is first accessed.** In Quickwit this is guaranteed by
+/// `init_telemetry()` running before any `LazyLock<Gauge>` is forced.
+///
 /// Prefer the `gauge!` macro over calling this directly.
 #[doc(hidden)]
 pub fn __gauge_get_or_register(
