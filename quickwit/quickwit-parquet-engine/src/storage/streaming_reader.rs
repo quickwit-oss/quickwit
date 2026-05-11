@@ -640,9 +640,11 @@ fn parse_footer_slice(
 }
 
 /// Extension: classify a page header for callers that want to filter
-/// (e.g., \"sum num_values across data pages only\"). Index pages, as
-/// of parquet 58, are not emitted by `ArrowWriter`, but we surface
-/// the variant for completeness.
+/// (e.g., "sum num_values across data pages only"). `INDEX_PAGE` is a
+/// historical variant in the Parquet Thrift schema that no production
+/// writer emits (not to be confused with PR-1's column / offset index,
+/// which lives outside the column chunk); the arm exists only for
+/// exhaustiveness and returns `None`.
 pub(crate) fn page_num_values(header: &PageHeader) -> Option<i32> {
     match header.type_ {
         PageType::DICTIONARY_PAGE => header.dictionary_page_header.as_ref().map(|h| h.num_values),
