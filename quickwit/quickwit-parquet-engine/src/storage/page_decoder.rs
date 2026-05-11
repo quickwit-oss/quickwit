@@ -12,55 +12,79 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Page-stream → `RecordBatch` decoder, one row group at a time.
+//! Page-stream → Arrow `ArrayRef` decoder, one input page at a time.
 //!
-//! Bridges PR-4's [`ColumnPageStream`] (raw compressed pages in storage
-//! order) to arrow's standard `ParquetRecordBatchReaderBuilder` (decoded
-//! arrays). Used by PR-6's streaming merge engine to drain inputs into
-//! the form the row-major merge planner already understands, while
-//! keeping per-RG memory bounded — the decoder reconstructs the byte
-//! layout of one input row group at a time and discards it before
-//! starting the next.
+//! Each [`StreamDecoder::decode_next_page`] call pulls one [`Page`] from
+//! the underlying [`ColumnPageStream`] and (for data pages) emits a
+//! [`DecodedPage`] carrying the Arrow array for that page's rows. Memory
+//! is bounded by:
+//!
+//! - **One in-flight page** (compressed + decompressed bytes during the current decode).
+//! - **One cached dictionary page** per (rg, col) when the column is dictionary-encoded — needed to
+//!   decode subsequent data pages that reference it. Dict pages are typically small relative to
+//!   data.
+//! - **One [`ColumnReader`] per (rg, col)** holding small internal bookkeeping (level decoders,
+//!   value decoder). The reader holds the current page during decode; we feed pages one at a time,
+//!   so it never holds more than one data page at a time.
+//!
+//! The decoder does **not** buffer a row group, a column chunk, or any
+//! materialised array beyond the one currently being emitted. PR-6b's
+//! merge engine takes the emitted [`DecodedPage`]s in storage order
+//! (row-group-major, column-major-within-rg, page-major-within-col),
+//! consults sort columns to compute the local merge order for each RG,
+//! and streams take-applied output pages directly into the writer.
 //!
 //! # How it works
 //!
-//! Each [`Page`] carries `header_bytes` (raw Thrift-compact bytes) and
-//! `bytes` (raw compressed body). Concatenating those two fields back-
-//! to-back for every page in a column chunk reproduces the column
-//! chunk's on-disk byte layout — *byte-exact*, not re-encoded — which
-//! arrow's standard reader can decode through the public
-//! [`ParquetRecordBatchReaderBuilder`] API. We allocate one buffer per
-//! RG sized to `max(col_byte_range_end)`, place each column chunk at
-//! its original offset, and ask the reader to read just that RG via
-//! `with_row_groups`. Bytes outside known column-chunk ranges are
-//! zero-padded; the standard reader only reads the byte ranges
-//! advertised by metadata, so the padding is never inspected.
-//!
-//! # Why this avoids re-encoding
-//!
-//! Thrift-compact encoding is deterministic for a given struct value,
-//! so we *could* re-encode parsed [`PageHeader`] structs and get
-//! byte-equal output most of the time. But "most of the time" is not
-//! a contract: encoder version drift inside the compactor would
-//! silently corrupt outputs. Carrying the original header bytes
-//! sidesteps the problem entirely.
+//! 1. Pull one [`Page`] from the stream. Skip `INDEX_PAGE` (never emitted by production writers;
+//!    the variant exists in the Thrift schema for completeness).
+//! 2. Look up (or initialise) per-(rg, col) state: a `PageQueue` that feeds a parquet-rs
+//!    [`ColumnReader`] one page at a time, plus a counter tracking how many rows of this column
+//!    we've decoded.
+//! 3. Convert our [`Page`] (raw compressed bytes + parsed Thrift header) to parquet-rs's
+//!    [`column::page::Page`] enum: decompress with [`create_codec`], translate `format::Encoding`
+//!    (Thrift wrapper) to `basic::Encoding`, drop optional statistics (not needed for decoding
+//!    values).
+//! 4. Push the converted page onto the queue. If it was a dictionary or index page, loop back to
+//!    step 1 — those don't yield rows.
+//! 5. For a data page: ask the [`ColumnReader`] to decode exactly `header.num_values` records. The
+//!    reader pulls the queued data page (plus the cached dict if not yet consumed), decodes values
+//!    + def/rep levels into typed buffers, and returns the count.
+//! 6. Build an `ArrayRef` from `(values, def_levels, rep_levels)` per the column's parquet physical
+//!    type. Emit [`DecodedPage`].
 //!
 //! [`ColumnPageStream`]: super::streaming_reader::ColumnPageStream
 //! [`Page`]: super::streaming_reader::Page
-//! [`PageHeader`]: parquet::format::PageHeader
+//! [`ColumnReader`]: parquet::column::reader::ColumnReader
+//! [`column::page::Page`]: parquet::column::page::Page
+//! [`create_codec`]: parquet::compression::create_codec
 
 #![allow(dead_code)]
+#![allow(deprecated)]
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
 
-use arrow::array::RecordBatch;
+use arrow::array::{
+    Array, ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
+    Int64Array, LargeBinaryArray, LargeStringArray, ListArray, StringArray, UInt8Array,
+    UInt16Array, UInt32Array, UInt64Array,
+};
+use arrow::buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
+use arrow::datatypes::{DataType, Field};
 use bytes::Bytes;
-use parquet::arrow::arrow_reader::{
-    ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReaderBuilder,
+use parquet::basic::{Encoding as BasicEncoding, Type as PhysicalType};
+use parquet::column::page::Page as ColumnPage;
+use parquet::column::reader::{ColumnReader, get_column_reader};
+use parquet::compression::{Codec, CodecOptions, create_codec};
+use parquet::data_type::{
+    BoolType, ByteArray, ByteArrayType, DataType as ParquetDataType, DoubleType, FloatType,
+    Int32Type, Int64Type,
 };
 use parquet::errors::ParquetError;
 use parquet::file::metadata::ParquetMetaData;
+use parquet::format::{PageHeader, PageType};
+use parquet::schema::types::ColumnDescPtr;
 use thiserror::Error;
 
 use super::streaming_reader::{ColumnPageStream, Page, ParquetReadError};
@@ -77,226 +101,1041 @@ pub enum PageDecodeError {
     #[error("page stream error: {0}")]
     PageStream(#[from] ParquetReadError),
 
-    /// Parquet decode error from the standard record-batch reader after
-    /// reconstructing the column chunks.
+    /// Parquet decode error from the column reader or page decompression.
     #[error("parquet decode error: {0}")]
     Parquet(#[from] ParquetError),
 
-    /// Arrow decode error (e.g., concatenating multiple batches from
-    /// the standard reader for one row group).
-    #[error("arrow decode error: {0}")]
+    /// Arrow array-construction error.
+    #[error("arrow build error: {0}")]
     Arrow(#[from] arrow::error::ArrowError),
 
-    /// The reconstructed column-chunk bytes don't match the size
-    /// advertised by metadata. Means either the input file is
-    /// inconsistent (unlikely from a valid producer) or the streaming
-    /// reader produced incorrect [`Page::header_bytes`] / [`Page::bytes`]
-    /// for the chunk.
-    #[error(
-        "reconstructed column chunk for ({rg_idx}, {col_idx}) is {actual} bytes but metadata \
-         advertises byte_range size {expected}"
-    )]
-    ColumnChunkSizeMismatch {
+    /// A page header carried a field type we don't understand (e.g., an
+    /// `Encoding` value the parquet spec didn't define when this code
+    /// was written).
+    #[error("unsupported encoding value {encoding} on page at ({rg_idx}, {col_idx})")]
+    UnsupportedEncoding {
         rg_idx: usize,
         col_idx: usize,
-        expected: u64,
-        actual: u64,
+        encoding: i32,
+    },
+
+    /// A column's parquet physical type pairs with an Arrow type we
+    /// don't construct from raw values (e.g., decimals, FIXED_LEN_BYTE_ARRAY
+    /// outside the supported set).
+    #[error(
+        "field '{name}' has unsupported parquet physical type / arrow type pairing: \
+         physical={physical:?}, arrow={arrow:?}"
+    )]
+    UnsupportedColumnType {
+        name: String,
+        physical: PhysicalType,
+        arrow: DataType,
     },
 }
 
-/// Drains a [`ColumnPageStream`] one row group at a time, decoding each
-/// row group into a `RecordBatch`.
+/// One decoded data page yielded by [`StreamDecoder::decode_next_page`].
+#[derive(Debug)]
+pub struct DecodedPage {
+    /// Row group this page belongs to.
+    pub rg_idx: usize,
+    /// Column chunk this page belongs to (within the row group).
+    pub col_idx: usize,
+    /// Index of this data page within its column chunk (0-based,
+    /// counting data pages only — dictionary pages do not increment).
+    pub page_idx_in_col: usize,
+    /// Cumulative row offset for `(rg_idx, col_idx)` *before* this
+    /// page. Together with `array.len()` this gives the row range
+    /// `row_start..row_start + array.len()` that this page covers,
+    /// which PR-6b's merge engine uses to slice take indices per page.
+    pub row_start: usize,
+    /// Decoded Arrow array. Length equals the number of records this
+    /// page contributes (i.e. `header.num_values` for the data page).
+    pub array: ArrayRef,
+}
+
+/// Drains a [`ColumnPageStream`] one *page* at a time and emits Arrow
+/// arrays. Caller drives via [`Self::decode_next_page`] until it returns
+/// `Ok(None)` (idempotent EOF).
 ///
-/// # Caller contract
-/// 1. [`Self::new`] over an open [`ColumnPageStream`].
-/// 2. Loop on [`Self::next_rg`] until it returns `Ok(None)` (idempotent EOF). Each call yields one
-///    row group's `RecordBatch`, in metadata order.
-///
-/// The decoder borrows the stream for its lifetime; the caller keeps
-/// ownership so multiple decoders can be combined (e.g. one per merge
-/// input) without nesting boxes.
+/// Memory is bounded by ~one in-flight page per decoder, plus one
+/// cached dictionary page per (rg, col) for dictionary-encoded columns.
+/// Does not buffer the row group.
 pub struct StreamDecoder<'a> {
     stream: &'a mut dyn ColumnPageStream,
-    /// First page of the next row group, held back from the previous
-    /// `next_rg` call. Cleared once consumed at the start of the next
-    /// call.
-    pending_page: Option<Page>,
-    /// Set after the underlying stream returns `Ok(None)` for the first
-    /// time. Subsequent `next_rg` calls return `Ok(None)` directly.
+    metadata: Arc<ParquetMetaData>,
+    columns: HashMap<(usize, usize), ColumnState>,
     eof: bool,
 }
 
+/// Per-(rg, col) state. Holds the [`ColumnReader`] that owns the
+/// page-decoder pipeline, plus a handle to the `PageQueue` we push
+/// converted pages into. The same `Arc<Mutex<...>>` queue lives both
+/// here (so we can push) and inside the `Box<dyn PageReader>` the
+/// `ColumnReader` consumes from (so it can pop).
+struct ColumnState {
+    queue: Arc<Mutex<VecDeque<ColumnPage>>>,
+    reader: ColumnReader,
+    rows_decoded: usize,
+    next_data_page_idx: usize,
+    field: Arc<Field>,
+}
+
 impl<'a> StreamDecoder<'a> {
-    /// Wrap an open page stream.
     pub fn new(stream: &'a mut dyn ColumnPageStream) -> Self {
+        let metadata = Arc::clone(stream.metadata());
         Self {
             stream,
-            pending_page: None,
+            metadata,
+            columns: HashMap::new(),
             eof: false,
         }
     }
 
-    /// Read pages until the row-group index advances (or EOF), then
-    /// decode the buffered pages into a `RecordBatch`.
-    ///
-    /// Returns `Ok(None)` after the last row group; further calls
-    /// continue to return `Ok(None)` (idempotent EOF).
-    pub async fn next_rg(&mut self) -> Result<Option<RecordBatch>, PageDecodeError> {
-        if self.eof && self.pending_page.is_none() {
+    /// Pull and decode the next data page in storage order. Dictionary
+    /// pages are absorbed silently (fed to the column reader for use by
+    /// subsequent data pages). Returns `Ok(None)` at EOF.
+    pub async fn decode_next_page(&mut self) -> Result<Option<DecodedPage>, PageDecodeError> {
+        if self.eof {
             return Ok(None);
         }
-
-        let metadata: Arc<ParquetMetaData> = Arc::clone(self.stream.metadata());
-
-        let mut pages_by_col: BTreeMap<usize, Vec<Page>> = BTreeMap::new();
-        let mut current_rg_idx: Option<usize> = None;
-
-        if let Some(p) = self.pending_page.take() {
-            current_rg_idx = Some(p.rg_idx);
-            pages_by_col.entry(p.col_idx).or_default().push(p);
-        }
-
-        if !self.eof {
-            loop {
-                let next = self.stream.next_page().await?;
-                let page = match next {
-                    Some(p) => p,
-                    None => {
-                        self.eof = true;
-                        break;
-                    }
-                };
-                match current_rg_idx {
-                    None => {
-                        current_rg_idx = Some(page.rg_idx);
-                        pages_by_col.entry(page.col_idx).or_default().push(page);
-                    }
-                    Some(rg) if page.rg_idx == rg => {
-                        pages_by_col.entry(page.col_idx).or_default().push(page);
-                    }
-                    Some(_) => {
-                        self.pending_page = Some(page);
-                        break;
-                    }
+        loop {
+            let page = match self.stream.next_page().await? {
+                Some(p) => p,
+                None => {
+                    self.eof = true;
+                    return Ok(None);
                 }
+            };
+
+            // INDEX_PAGE is the historical Thrift-schema variant that
+            // no production writer emits; PR-1's column / offset index
+            // lives outside the column chunk. Skip defensively.
+            if page.header.type_ == PageType::INDEX_PAGE {
+                continue;
             }
+
+            let key = (page.rg_idx, page.col_idx);
+            // Initialise per-(rg, col) state on first sight of the column.
+            if !self.columns.contains_key(&key) {
+                let state = init_column_state(&self.metadata, key)?;
+                self.columns.insert(key, state);
+            }
+
+            // Convert our `Page` (raw compressed bytes + parsed Thrift
+            // header) to parquet-rs's `column::page::Page`. Need the
+            // column's physical type for this — read it from metadata.
+            let col_meta = self.metadata.row_group(key.0).column(key.1);
+            let physical = col_meta.column_type();
+            let compression = col_meta.compression();
+            let col_page = convert_page(&page, physical, compression, key)?;
+
+            let is_data = matches!(
+                col_page,
+                ColumnPage::DataPage { .. } | ColumnPage::DataPageV2 { .. },
+            );
+            let num_values_in_page = col_page.num_values() as usize;
+
+            // Push to the queue so the column reader can consume it.
+            let state = self
+                .columns
+                .get_mut(&key)
+                .expect("just inserted above if missing");
+            state
+                .queue
+                .lock()
+                .expect("PageQueue mutex poisoned")
+                .push_back(col_page);
+
+            if !is_data {
+                // Dictionary page — the column reader picks it up on
+                // its next `read_records` call. Loop for the next
+                // input page.
+                continue;
+            }
+
+            // Data page: decode exactly its `num_values` records.
+            let array = decode_one_data_page_into_array(state, num_values_in_page)?;
+            let row_start = state.rows_decoded;
+            let page_idx_in_col = state.next_data_page_idx;
+            state.rows_decoded += array.len();
+            state.next_data_page_idx += 1;
+
+            return Ok(Some(DecodedPage {
+                rg_idx: key.0,
+                col_idx: key.1,
+                page_idx_in_col,
+                row_start,
+                array,
+            }));
         }
+    }
 
-        let rg_idx = match current_rg_idx {
-            Some(idx) => idx,
-            None => return Ok(None),
-        };
-
-        let batch = decode_row_group(&metadata, rg_idx, pages_by_col)?;
-        Ok(Some(batch))
+    /// File metadata. Schema, row-group layout, and KV `qh.*` metadata
+    /// come from here.
+    pub fn metadata(&self) -> &Arc<ParquetMetaData> {
+        &self.metadata
     }
 }
 
-/// Decode one row group into a `RecordBatch` by reconstructing its
-/// column-chunk byte layout in a buffer and feeding that buffer through
-/// arrow's standard reader.
-fn decode_row_group(
-    metadata: &Arc<ParquetMetaData>,
-    rg_idx: usize,
-    pages_by_col: BTreeMap<usize, Vec<Page>>,
-) -> Result<RecordBatch, PageDecodeError> {
-    let rg = metadata.row_group(rg_idx);
+// -------- Per-(rg, col) initialisation --------
 
-    // Compute the buffer size we need to cover every column chunk in
-    // this row group. `byte_range` returns `(start, size)` per column;
-    // we allocate up to the max end so the column chunks land at
-    // their original offsets.
-    let mut max_end: u64 = 0;
-    for col_idx in 0..rg.num_columns() {
-        let (start, size) = rg.column(col_idx).byte_range();
-        let end = start + size;
-        if end > max_end {
-            max_end = end;
+fn init_column_state(
+    metadata: &Arc<ParquetMetaData>,
+    key: (usize, usize),
+) -> Result<ColumnState, PageDecodeError> {
+    let (rg_idx, col_idx) = key;
+    let parquet_schema = metadata.file_metadata().schema_descr();
+    let col_descr: ColumnDescPtr = parquet_schema.column(col_idx);
+
+    // Compute the arrow Field for this column. We use
+    // `parquet_to_arrow_schema` over the full schema and pick the
+    // matching top-level field. Most columns will be flat (one leaf
+    // per top-level field), so the col_idx is also the field idx.
+    // Nested columns (List<primitive>) still have one top-level field,
+    // matching one entry in the arrow schema.
+    //
+    // We deliberately pass `None` for kv_metadata so the
+    // `ARROW:schema` hint is ignored — that hint reconstructs the
+    // writer's original Dictionary<...> types, but the parquet
+    // column reader decodes values back to their physical type (Utf8
+    // / Binary for byte-array columns), so a `Dictionary` Arrow field
+    // wouldn't match the array we produce. PR-6b's union schema
+    // normalises strings to Utf8 anyway, and the streaming writer
+    // re-applies dict encoding on output based on observed cardinality.
+    let arrow_schema = parquet::arrow::parquet_to_arrow_schema(parquet_schema, None)?;
+    let field = arrow_schema
+        .fields()
+        .get(col_idx)
+        .ok_or_else(|| {
+            PageDecodeError::Parquet(ParquetError::General(format!(
+                "column index {col_idx} out of range for arrow schema (rg {rg_idx})",
+            )))
+        })?
+        .clone();
+
+    let queue: Arc<Mutex<VecDeque<ColumnPage>>> = Arc::new(Mutex::new(VecDeque::with_capacity(2)));
+    let page_reader: Box<dyn parquet::column::page::PageReader> =
+        Box::new(PageQueueReader::new(Arc::clone(&queue)));
+    let reader = get_column_reader(col_descr, page_reader);
+
+    Ok(ColumnState {
+        queue,
+        reader,
+        rows_decoded: 0,
+        next_data_page_idx: 0,
+        field,
+    })
+}
+
+// -------- PageReader over a shared queue --------
+
+/// Implements [`parquet::column::page::PageReader`] over an
+/// `Arc<Mutex<VecDeque<ColumnPage>>>`. The owning [`StreamDecoder`]
+/// pushes converted pages into the queue; the reader pops them on
+/// demand. When the queue is empty the reader returns `Ok(None)` —
+/// the column reader interprets that as "no more pages for this column
+/// chunk *right now*" and stops mid-decode. Since we always push exactly
+/// one data page at a time and then drive the column reader to decode
+/// `num_values` records (which the reader does in one swoop, draining
+/// the page), the queue is empty between calls and refilled before the
+/// next call.
+struct PageQueueReader {
+    queue: Arc<Mutex<VecDeque<ColumnPage>>>,
+}
+
+impl PageQueueReader {
+    fn new(queue: Arc<Mutex<VecDeque<ColumnPage>>>) -> Self {
+        Self { queue }
+    }
+}
+
+impl Iterator for PageQueueReader {
+    type Item = parquet::errors::Result<ColumnPage>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let popped = self
+            .queue
+            .lock()
+            .expect("PageQueue mutex poisoned")
+            .pop_front();
+        popped.map(Ok)
+    }
+}
+
+impl parquet::column::page::PageReader for PageQueueReader {
+    fn get_next_page(&mut self) -> parquet::errors::Result<Option<ColumnPage>> {
+        Ok(self
+            .queue
+            .lock()
+            .expect("PageQueue mutex poisoned")
+            .pop_front())
+    }
+
+    fn peek_next_page(
+        &mut self,
+    ) -> parquet::errors::Result<Option<parquet::column::page::PageMetadata>> {
+        // Used by the rep-level decoder (`at_record_boundary`) to know
+        // whether the next page begins a new record. We build the
+        // metadata directly from the front of our queue.
+        let guard = self.queue.lock().expect("PageQueue mutex poisoned");
+        Ok(guard.front().map(page_metadata_from_column_page))
+    }
+
+    fn skip_next_page(&mut self) -> parquet::errors::Result<()> {
+        let mut guard = self.queue.lock().expect("PageQueue mutex poisoned");
+        guard.pop_front();
+        Ok(())
+    }
+}
+
+/// Build a [`parquet::column::page::PageMetadata`] from a decoded
+/// [`ColumnPage`]. Mirrors the shape of parquet-rs's
+/// `TryFrom<&PageHeader> for PageMetadata` for the variants we use.
+fn page_metadata_from_column_page(p: &ColumnPage) -> parquet::column::page::PageMetadata {
+    match p {
+        ColumnPage::DataPage { num_values, .. } => parquet::column::page::PageMetadata {
+            num_rows: None,
+            num_levels: Some(*num_values as usize),
+            is_dict: false,
+        },
+        ColumnPage::DataPageV2 {
+            num_values,
+            num_rows,
+            ..
+        } => parquet::column::page::PageMetadata {
+            num_rows: Some(*num_rows as usize),
+            num_levels: Some(*num_values as usize),
+            is_dict: false,
+        },
+        ColumnPage::DictionaryPage { .. } => parquet::column::page::PageMetadata {
+            num_rows: None,
+            num_levels: None,
+            is_dict: true,
+        },
+    }
+}
+
+// -------- Page conversion (our format::Page → column::page::Page) --------
+
+/// Convert our [`Page`] to parquet-rs's [`ColumnPage`] enum, decompressing
+/// the body bytes where applicable.
+fn convert_page(
+    page: &Page,
+    physical: PhysicalType,
+    compression: parquet::basic::Compression,
+    key: (usize, usize),
+) -> Result<ColumnPage, PageDecodeError> {
+    let header: &PageHeader = &page.header;
+    let raw = &page.bytes;
+
+    // For DATA_PAGE_V2, def + rep levels precede the value bytes and
+    // are NOT compressed. Only the suffix beyond the levels is
+    // compressed (and only when `is_compressed` is true).
+    let mut levels_prefix_len = 0usize;
+    let mut can_decompress = true;
+    if let Some(v2) = header.data_page_header_v2.as_ref() {
+        if v2.definition_levels_byte_length < 0 || v2.repetition_levels_byte_length < 0 {
+            return Err(PageDecodeError::Parquet(ParquetError::General(format!(
+                "DataPageV2 at ({}, {}) has negative level byte lengths",
+                key.0, key.1,
+            ))));
+        }
+        levels_prefix_len =
+            (v2.definition_levels_byte_length + v2.repetition_levels_byte_length) as usize;
+        can_decompress = v2.is_compressed.unwrap_or(true);
+    }
+
+    let body: Bytes = decompress_page_body(
+        raw,
+        compression,
+        header.uncompressed_page_size as usize,
+        levels_prefix_len,
+        can_decompress,
+    )?;
+
+    let _ = physical; // currently unused — kept for future page-type-specific validation
+    let _ = key;
+
+    match header.type_ {
+        PageType::DICTIONARY_PAGE => {
+            let h = header.dictionary_page_header.as_ref().ok_or_else(|| {
+                PageDecodeError::Parquet(ParquetError::General(
+                    "dictionary page header missing".into(),
+                ))
+            })?;
+            Ok(ColumnPage::DictionaryPage {
+                buf: body,
+                num_values: h.num_values as u32,
+                encoding: format_encoding_to_basic(h.encoding, key)?,
+                is_sorted: h.is_sorted.unwrap_or(false),
+            })
+        }
+        PageType::DATA_PAGE => {
+            let h = header.data_page_header.as_ref().ok_or_else(|| {
+                PageDecodeError::Parquet(ParquetError::General("data page header missing".into()))
+            })?;
+            Ok(ColumnPage::DataPage {
+                buf: body,
+                num_values: h.num_values as u32,
+                encoding: format_encoding_to_basic(h.encoding, key)?,
+                def_level_encoding: format_encoding_to_basic(h.definition_level_encoding, key)?,
+                rep_level_encoding: format_encoding_to_basic(h.repetition_level_encoding, key)?,
+                statistics: None,
+            })
+        }
+        PageType::DATA_PAGE_V2 => {
+            let h = header.data_page_header_v2.as_ref().ok_or_else(|| {
+                PageDecodeError::Parquet(ParquetError::General(
+                    "data page v2 header missing".into(),
+                ))
+            })?;
+            Ok(ColumnPage::DataPageV2 {
+                buf: body,
+                num_values: h.num_values as u32,
+                encoding: format_encoding_to_basic(h.encoding, key)?,
+                num_nulls: h.num_nulls as u32,
+                num_rows: h.num_rows as u32,
+                def_levels_byte_len: h.definition_levels_byte_length as u32,
+                rep_levels_byte_len: h.repetition_levels_byte_length as u32,
+                is_compressed: h.is_compressed.unwrap_or(true),
+                statistics: None,
+            })
+        }
+        other => Err(PageDecodeError::Parquet(ParquetError::General(format!(
+            "unexpected page type {other:?} at ({}, {})",
+            key.0, key.1,
+        )))),
+    }
+}
+
+fn decompress_page_body(
+    raw: &Bytes,
+    compression: parquet::basic::Compression,
+    uncompressed_page_size: usize,
+    levels_prefix_len: usize,
+    can_decompress: bool,
+) -> Result<Bytes, PageDecodeError> {
+    if !can_decompress {
+        // DataPageV2 with is_compressed=false: body is already plain.
+        return Ok(raw.clone());
+    }
+    let codec_opt: Option<Box<dyn Codec>> = create_codec(compression, &CodecOptions::default())?;
+    let mut codec: Box<dyn Codec> = match codec_opt {
+        Some(c) => c,
+        None => {
+            // UNCOMPRESSED.
+            return Ok(raw.clone());
+        }
+    };
+
+    if levels_prefix_len > raw.len() || levels_prefix_len > uncompressed_page_size {
+        return Err(PageDecodeError::Parquet(ParquetError::General(format!(
+            "level prefix length {levels_prefix_len} exceeds page bounds",
+        ))));
+    }
+
+    let mut out: Vec<u8> = Vec::with_capacity(uncompressed_page_size);
+    out.extend_from_slice(&raw[..levels_prefix_len]);
+    let values_uncompressed = uncompressed_page_size - levels_prefix_len;
+    if values_uncompressed > 0 {
+        codec.decompress(
+            &raw[levels_prefix_len..],
+            &mut out,
+            Some(values_uncompressed),
+        )?;
+    }
+    if out.len() != uncompressed_page_size {
+        return Err(PageDecodeError::Parquet(ParquetError::General(format!(
+            "decompressed size {} does not match uncompressed_page_size {}",
+            out.len(),
+            uncompressed_page_size,
+        ))));
+    }
+    Ok(Bytes::from(out))
+}
+
+/// Translate the Thrift-wrapped `format::Encoding` (i32) to the
+/// strongly-typed `basic::Encoding` parquet-rs uses for page decoding.
+/// `parquet-rs` doesn't expose a public `From<i32>` so we mirror the
+/// match here.
+fn format_encoding_to_basic(
+    encoding: parquet::format::Encoding,
+    key: (usize, usize),
+) -> Result<BasicEncoding, PageDecodeError> {
+    let v = encoding.0;
+    match v {
+        0 => Ok(BasicEncoding::PLAIN),
+        // 1 is GROUP_VAR_INT, deprecated and never written by arrow-rs.
+        2 => Ok(BasicEncoding::PLAIN_DICTIONARY),
+        3 => Ok(BasicEncoding::RLE),
+        4 => Ok(BasicEncoding::BIT_PACKED),
+        5 => Ok(BasicEncoding::DELTA_BINARY_PACKED),
+        6 => Ok(BasicEncoding::DELTA_LENGTH_BYTE_ARRAY),
+        7 => Ok(BasicEncoding::DELTA_BYTE_ARRAY),
+        8 => Ok(BasicEncoding::RLE_DICTIONARY),
+        9 => Ok(BasicEncoding::BYTE_STREAM_SPLIT),
+        _ => Err(PageDecodeError::UnsupportedEncoding {
+            rg_idx: key.0,
+            col_idx: key.1,
+            encoding: v,
+        }),
+    }
+}
+
+// -------- Decode one data page into an Arrow ArrayRef --------
+
+const READ_BATCH: usize = 4096;
+
+fn decode_one_data_page_into_array(
+    state: &mut ColumnState,
+    num_values: usize,
+) -> Result<ArrayRef, PageDecodeError> {
+    match &mut state.reader {
+        ColumnReader::BoolColumnReader(r) => {
+            let (records, defs, _reps, values) = read_typed::<BoolType>(r, num_values)?;
+            build_bool_array(&state.field, records, &defs, &values)
+        }
+        ColumnReader::Int32ColumnReader(r) => {
+            let (records, defs, reps, values) = read_typed::<Int32Type>(r, num_values)?;
+            build_int32_array(&state.field, records, &defs, &reps, &values)
+        }
+        ColumnReader::Int64ColumnReader(r) => {
+            let (records, defs, reps, values) = read_typed::<Int64Type>(r, num_values)?;
+            build_int64_array(&state.field, records, &defs, &reps, &values)
+        }
+        ColumnReader::FloatColumnReader(r) => {
+            let (records, defs, _reps, values) = read_typed::<FloatType>(r, num_values)?;
+            build_float32_array(&state.field, records, &defs, &values)
+        }
+        ColumnReader::DoubleColumnReader(r) => {
+            let (records, defs, _reps, values) = read_typed::<DoubleType>(r, num_values)?;
+            build_float64_array(&state.field, records, &defs, &values)
+        }
+        ColumnReader::ByteArrayColumnReader(r) => {
+            let (records, defs, _reps, values) = read_typed::<ByteArrayType>(r, num_values)?;
+            build_byte_array(&state.field, records, &defs, &values)
+        }
+        ColumnReader::Int96ColumnReader(_) | ColumnReader::FixedLenByteArrayColumnReader(_) => {
+            Err(PageDecodeError::UnsupportedColumnType {
+                name: state.field.name().to_string(),
+                physical: PhysicalType::INT96,
+                arrow: state.field.data_type().clone(),
+            })
         }
     }
+}
 
-    // Empty / zero-row row group: produce an empty batch with the
-    // file's arrow schema rather than driving the parquet reader.
-    if rg.num_columns() == 0 || max_end == 0 || rg.num_rows() == 0 {
-        let arrow_meta =
-            ArrowReaderMetadata::try_new(Arc::clone(metadata), ArrowReaderOptions::default())?;
-        return Ok(RecordBatch::new_empty(arrow_meta.schema().clone()));
+/// Read up to `num_values` records out of one typed column reader,
+/// returning `(records_read, def_levels, rep_levels, values)`. The reader
+/// pulls pages from its `PageQueueReader`; since we push exactly one
+/// data page (plus optional dictionary) before each call and the data
+/// page advertises `num_values` records, this single call consumes the
+/// queued page in full.
+/// `(records_read, def_levels, rep_levels, values)`.
+type ReadOutput<T> = (usize, Vec<i16>, Vec<i16>, Vec<<T as ParquetDataType>::T>);
+
+fn read_typed<T>(
+    reader: &mut parquet::column::reader::ColumnReaderImpl<T>,
+    num_values: usize,
+) -> Result<ReadOutput<T>, PageDecodeError>
+where
+    T: ParquetDataType,
+    T::T: Default + Clone,
+{
+    let mut values: Vec<T::T> = Vec::with_capacity(num_values);
+    let mut def_levels: Vec<i16> = Vec::new();
+    let mut rep_levels: Vec<i16> = Vec::new();
+    let mut total_records = 0usize;
+
+    while total_records < num_values {
+        let want = num_values - total_records;
+        let (records, _values_read, _levels_read) = reader.read_records(
+            want.min(READ_BATCH),
+            Some(&mut def_levels),
+            Some(&mut rep_levels),
+            &mut values,
+        )?;
+        if records == 0 {
+            break;
+        }
+        total_records += records;
     }
+    Ok((total_records, def_levels, rep_levels, values))
+}
 
-    let mut buf = vec![0u8; max_end as usize];
+// -------- Array builders, parquet physical type → arrow ArrayRef --------
 
-    for (col_idx_ref, pages) in &pages_by_col {
-        let col_idx = *col_idx_ref;
-        let col_meta = rg.column(col_idx);
-        let (col_start, col_size) = col_meta.byte_range();
+fn null_buffer_from_defs(num_records: usize, defs: &[i16], max_def: i16) -> Option<NullBuffer> {
+    if defs.is_empty() || max_def == 0 {
+        return None;
+    }
+    let presence: Vec<bool> = defs
+        .iter()
+        .take(num_records)
+        .map(|d| *d >= max_def)
+        .collect();
+    Some(NullBuffer::from(presence))
+}
 
-        let chunk_bytes = reconstruct_column_chunk(pages);
-        let actual = chunk_bytes.len() as u64;
-        if actual != col_size {
-            return Err(PageDecodeError::ColumnChunkSizeMismatch {
-                rg_idx,
-                col_idx,
-                expected: col_size,
-                actual,
+fn build_bool_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    values: &[bool],
+) -> Result<ArrayRef, PageDecodeError> {
+    let max_def = max_def_for(field);
+    let arr = if defs.is_empty() || max_def == 0 {
+        BooleanArray::from(values.to_vec())
+    } else {
+        let mut full: Vec<Option<bool>> = Vec::with_capacity(records);
+        let mut val_idx = 0usize;
+        for d in defs.iter().take(records) {
+            if *d >= max_def {
+                full.push(Some(values[val_idx]));
+                val_idx += 1;
+            } else {
+                full.push(None);
+            }
+        }
+        BooleanArray::from(full)
+    };
+    Ok(Arc::new(arr))
+}
+
+fn build_int32_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[i32],
+) -> Result<ArrayRef, PageDecodeError> {
+    if matches!(
+        field.data_type(),
+        DataType::List(_) | DataType::LargeList(_)
+    ) {
+        return build_list_i32_array(field, defs, reps, values);
+    }
+    let max_def = max_def_for(field);
+    let nulls = null_buffer_from_defs(records, defs, max_def);
+    match field.data_type() {
+        DataType::Int8 => {
+            let nulls_clone = nulls.clone();
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as i8);
+            Ok(Arc::new(arrow::array::Int8Array::new(scalars, nulls_clone)))
+        }
+        DataType::Int16 => {
+            let nulls_clone = nulls.clone();
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as i16);
+            Ok(Arc::new(Int16Array::new(scalars, nulls_clone)))
+        }
+        DataType::Int32 => {
+            let nulls_clone = nulls.clone();
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
+            Ok(Arc::new(Int32Array::new(scalars, nulls_clone)))
+        }
+        DataType::UInt8 => {
+            let nulls_clone = nulls.clone();
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u8);
+            Ok(Arc::new(UInt8Array::new(scalars, nulls_clone)))
+        }
+        DataType::UInt16 => {
+            let nulls_clone = nulls.clone();
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u16);
+            Ok(Arc::new(UInt16Array::new(scalars, nulls_clone)))
+        }
+        DataType::UInt32 => {
+            let nulls_clone = nulls.clone();
+            // Bit-reinterpret: parquet stores u32 as INT32 physical with
+            // unsigned logical annotation. The on-wire i32 maps to u32
+            // by reinterpreting bits.
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u32);
+            Ok(Arc::new(UInt32Array::new(scalars, nulls_clone)))
+        }
+        other => Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::INT32,
+            arrow: other.clone(),
+        }),
+    }
+}
+
+fn build_int64_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[i64],
+) -> Result<ArrayRef, PageDecodeError> {
+    if matches!(
+        field.data_type(),
+        DataType::List(_) | DataType::LargeList(_)
+    ) {
+        return build_list_i64_array(field, defs, reps, values);
+    }
+    let max_def = max_def_for(field);
+    let nulls = null_buffer_from_defs(records, defs, max_def);
+    match field.data_type() {
+        DataType::Int64 => {
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
+            Ok(Arc::new(Int64Array::new(scalars, nulls)))
+        }
+        DataType::UInt64 => {
+            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u64);
+            Ok(Arc::new(UInt64Array::new(scalars, nulls)))
+        }
+        other => Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::INT64,
+            arrow: other.clone(),
+        }),
+    }
+}
+
+fn build_float32_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    values: &[f32],
+) -> Result<ArrayRef, PageDecodeError> {
+    let max_def = max_def_for(field);
+    let nulls = null_buffer_from_defs(records, defs, max_def);
+    let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
+    Ok(Arc::new(Float32Array::new(scalars, nulls)))
+}
+
+fn build_float64_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    values: &[f64],
+) -> Result<ArrayRef, PageDecodeError> {
+    let max_def = max_def_for(field);
+    let nulls = null_buffer_from_defs(records, defs, max_def);
+    let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
+    Ok(Arc::new(Float64Array::new(scalars, nulls)))
+}
+
+fn build_byte_array(
+    field: &Field,
+    records: usize,
+    defs: &[i16],
+    values: &[ByteArray],
+) -> Result<ArrayRef, PageDecodeError> {
+    let max_def = max_def_for(field);
+    match field.data_type() {
+        DataType::Utf8 => Ok(Arc::new(build_string_array(
+            records, defs, max_def, values,
+        )?)),
+        DataType::LargeUtf8 => Ok(Arc::new(build_large_string_array(
+            records, defs, max_def, values,
+        )?)),
+        DataType::Binary => Ok(Arc::new(build_binary_array(records, defs, max_def, values))),
+        DataType::LargeBinary => Ok(Arc::new(build_large_binary_array(
+            records, defs, max_def, values,
+        ))),
+        DataType::Dictionary(_, value_type) => {
+            // Materialise as the value type (Utf8 / Binary); the merge
+            // engine's union schema normalises strings to Utf8 anyway,
+            // and the output writer re-applies dict encoding based on
+            // observed cardinality. Decoding to a Dictionary array
+            // directly would require synthesising keys; not needed.
+            match value_type.as_ref() {
+                DataType::Utf8 => Ok(Arc::new(build_string_array(
+                    records, defs, max_def, values,
+                )?)),
+                DataType::LargeUtf8 => Ok(Arc::new(build_large_string_array(
+                    records, defs, max_def, values,
+                )?)),
+                DataType::Binary => {
+                    Ok(Arc::new(build_binary_array(records, defs, max_def, values)))
+                }
+                DataType::LargeBinary => Ok(Arc::new(build_large_binary_array(
+                    records, defs, max_def, values,
+                ))),
+                _ => Err(PageDecodeError::UnsupportedColumnType {
+                    name: field.name().to_string(),
+                    physical: PhysicalType::BYTE_ARRAY,
+                    arrow: field.data_type().clone(),
+                }),
+            }
+        }
+        other => Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::BYTE_ARRAY,
+            arrow: other.clone(),
+        }),
+    }
+}
+
+fn build_string_array(
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[ByteArray],
+) -> Result<StringArray, PageDecodeError> {
+    let mut builder = arrow::array::StringBuilder::with_capacity(records, records * 8);
+    if defs.is_empty() || max_def == 0 {
+        for v in values {
+            let s = std::str::from_utf8(v.data())
+                .map_err(|e| PageDecodeError::Parquet(ParquetError::General(e.to_string())))?;
+            builder.append_value(s);
+        }
+    } else {
+        let mut val_idx = 0usize;
+        for d in defs.iter().take(records) {
+            if *d >= max_def {
+                let s = std::str::from_utf8(values[val_idx].data())
+                    .map_err(|e| PageDecodeError::Parquet(ParquetError::General(e.to_string())))?;
+                builder.append_value(s);
+                val_idx += 1;
+            } else {
+                builder.append_null();
+            }
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn build_large_string_array(
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[ByteArray],
+) -> Result<LargeStringArray, PageDecodeError> {
+    let mut builder = arrow::array::LargeStringBuilder::with_capacity(records, records * 8);
+    if defs.is_empty() || max_def == 0 {
+        for v in values {
+            let s = std::str::from_utf8(v.data())
+                .map_err(|e| PageDecodeError::Parquet(ParquetError::General(e.to_string())))?;
+            builder.append_value(s);
+        }
+    } else {
+        let mut val_idx = 0usize;
+        for d in defs.iter().take(records) {
+            if *d >= max_def {
+                let s = std::str::from_utf8(values[val_idx].data())
+                    .map_err(|e| PageDecodeError::Parquet(ParquetError::General(e.to_string())))?;
+                builder.append_value(s);
+                val_idx += 1;
+            } else {
+                builder.append_null();
+            }
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn build_binary_array(
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[ByteArray],
+) -> BinaryArray {
+    let mut builder = arrow::array::BinaryBuilder::with_capacity(records, records * 8);
+    if defs.is_empty() || max_def == 0 {
+        for v in values {
+            builder.append_value(v.data());
+        }
+    } else {
+        let mut val_idx = 0usize;
+        for d in defs.iter().take(records) {
+            if *d >= max_def {
+                builder.append_value(values[val_idx].data());
+                val_idx += 1;
+            } else {
+                builder.append_null();
+            }
+        }
+    }
+    builder.finish()
+}
+
+fn build_large_binary_array(
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[ByteArray],
+) -> LargeBinaryArray {
+    let mut builder = arrow::array::LargeBinaryBuilder::with_capacity(records, records * 8);
+    if defs.is_empty() || max_def == 0 {
+        for v in values {
+            builder.append_value(v.data());
+        }
+    } else {
+        let mut val_idx = 0usize;
+        for d in defs.iter().take(records) {
+            if *d >= max_def {
+                builder.append_value(values[val_idx].data());
+                val_idx += 1;
+            } else {
+                builder.append_null();
+            }
+        }
+    }
+    builder.finish()
+}
+
+fn scalar_buffer_from_present<T, U, F>(
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[T],
+    cast: F,
+) -> ScalarBuffer<U>
+where
+    T: Copy,
+    U: arrow::datatypes::ArrowNativeType,
+    F: Fn(T) -> U,
+{
+    if defs.is_empty() || max_def == 0 {
+        let casted: Vec<U> = values.iter().copied().map(&cast).collect();
+        return ScalarBuffer::from(casted);
+    }
+    let mut out: Vec<U> = Vec::with_capacity(records);
+    let mut val_idx = 0usize;
+    for d in defs.iter().take(records) {
+        if *d >= max_def {
+            out.push(cast(values[val_idx]));
+            val_idx += 1;
+        } else {
+            out.push(U::default());
+        }
+    }
+    ScalarBuffer::from(out)
+}
+
+/// Compute the `ListArray` offsets vector from Dremel def/rep levels
+/// for the `List<non-nullable primitive>` shape used by DDSketch
+/// `keys` / `counts`. `max_def = 1`, `max_rep = 1`. Each entry with
+/// `def == 1` is a present element; `def == 0` is an empty list slot
+/// (no element). `rep == 0` starts a new row; `rep == 1` continues the
+/// current list.
+fn list_offsets_from_levels(defs: &[i16], reps: &[i16]) -> Vec<i32> {
+    if defs.is_empty() {
+        return vec![0];
+    }
+    let mut offsets: Vec<i32> = Vec::with_capacity(defs.len() + 1);
+    offsets.push(0);
+    let mut current_len: i32 = 0;
+    for i in 0..defs.len() {
+        if i > 0 && reps[i] == 0 {
+            // Boundary between rows: close the previous row's list.
+            offsets.push(current_len);
+        }
+        if defs[i] == 1 {
+            current_len += 1;
+        }
+    }
+    offsets.push(current_len);
+    offsets
+}
+
+/// Build a `ListArray` over Int32-physical values (parquet inner type
+/// Int8/Int16/Int32 or UInt8/UInt16/UInt32). Outer + inner must be
+/// non-nullable.
+fn build_list_i32_array(
+    field: &Field,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[i32],
+) -> Result<ArrayRef, PageDecodeError> {
+    let inner_field = match field.data_type() {
+        DataType::List(inner) | DataType::LargeList(inner) => Arc::clone(inner),
+        _ => unreachable!("caller guards on List/LargeList"),
+    };
+    if field.is_nullable() || inner_field.is_nullable() {
+        return Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::INT32,
+            arrow: field.data_type().clone(),
+        });
+    }
+    let inner_array: ArrayRef = match inner_field.data_type() {
+        DataType::Int8 => {
+            let v: Vec<i8> = values.iter().map(|&x| x as i8).collect();
+            Arc::new(arrow::array::Int8Array::from(v))
+        }
+        DataType::Int16 => {
+            let v: Vec<i16> = values.iter().map(|&x| x as i16).collect();
+            Arc::new(Int16Array::from(v))
+        }
+        DataType::Int32 => Arc::new(Int32Array::from(values.to_vec())),
+        DataType::UInt8 => {
+            let v: Vec<u8> = values.iter().map(|&x| x as u8).collect();
+            Arc::new(UInt8Array::from(v))
+        }
+        DataType::UInt16 => {
+            let v: Vec<u16> = values.iter().map(|&x| x as u16).collect();
+            Arc::new(UInt16Array::from(v))
+        }
+        DataType::UInt32 => {
+            // Bit-reinterpret cast preserves the unsigned-logical
+            // round trip — same convention as the flat path.
+            let v: Vec<u32> = values.iter().map(|&x| x as u32).collect();
+            Arc::new(UInt32Array::from(v))
+        }
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::INT32,
+                arrow: other.clone(),
             });
         }
-        let start = col_start as usize;
-        let end = start + chunk_bytes.len();
-        buf[start..end].copy_from_slice(&chunk_bytes);
-    }
-
-    let bytes = Bytes::from(buf);
-
-    let arrow_meta =
-        ArrowReaderMetadata::try_new(Arc::clone(metadata), ArrowReaderOptions::default())?;
-    let builder = ParquetRecordBatchReaderBuilder::new_with_metadata(bytes, arrow_meta)
-        .with_row_groups(vec![rg_idx]);
-    let reader = builder.build()?;
-    let batches: Vec<RecordBatch> = reader.collect::<Result<Vec<_>, _>>()?;
-
-    consolidate_batches(metadata, batches)
+    };
+    let offsets = OffsetBuffer::new(ScalarBuffer::from(list_offsets_from_levels(defs, reps)));
+    Ok(Arc::new(ListArray::new(
+        inner_field,
+        offsets,
+        inner_array,
+        None,
+    )))
 }
 
-/// Concatenate `header_bytes ++ bytes` for every page in storage order.
-fn reconstruct_column_chunk(pages: &[Page]) -> Vec<u8> {
-    let total: usize = pages
-        .iter()
-        .map(|p| p.header_bytes.len() + p.bytes.len())
-        .sum();
-    let mut buf = Vec::with_capacity(total);
-    for page in pages {
-        buf.extend_from_slice(&page.header_bytes);
-        buf.extend_from_slice(&page.bytes);
+/// Build a `ListArray` over Int64-physical values (parquet inner type
+/// Int64 or UInt64). Outer + inner must be non-nullable. DDSketch
+/// `counts` is the primary use.
+fn build_list_i64_array(
+    field: &Field,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[i64],
+) -> Result<ArrayRef, PageDecodeError> {
+    let inner_field = match field.data_type() {
+        DataType::List(inner) | DataType::LargeList(inner) => Arc::clone(inner),
+        _ => unreachable!("caller guards on List/LargeList"),
+    };
+    if field.is_nullable() || inner_field.is_nullable() {
+        return Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::INT64,
+            arrow: field.data_type().clone(),
+        });
     }
-    buf
-}
-
-/// Collapse the arrow reader's per-call output (which may emit several
-/// `RecordBatch`es per row group at the configured batch size) into a
-/// single `RecordBatch` per row group, matching the
-/// [`StreamDecoder::next_rg`] contract.
-fn consolidate_batches(
-    metadata: &Arc<ParquetMetaData>,
-    batches: Vec<RecordBatch>,
-) -> Result<RecordBatch, PageDecodeError> {
-    if batches.is_empty() {
-        let arrow_meta =
-            ArrowReaderMetadata::try_new(Arc::clone(metadata), ArrowReaderOptions::default())?;
-        return Ok(RecordBatch::new_empty(arrow_meta.schema().clone()));
-    }
-    if batches.len() == 1 {
-        let mut iter = batches.into_iter();
-        match iter.next() {
-            Some(b) => return Ok(b),
-            None => {
-                return Err(PageDecodeError::Parquet(ParquetError::General(
-                    "Vec::into_iter on len-1 vec yielded no element".to_string(),
-                )));
-            }
+    let inner_array: ArrayRef = match inner_field.data_type() {
+        DataType::Int64 => Arc::new(Int64Array::from(values.to_vec())),
+        DataType::UInt64 => {
+            let v: Vec<u64> = values.iter().map(|&x| x as u64).collect();
+            Arc::new(UInt64Array::from(v))
         }
-    }
-    let schema = batches[0].schema();
-    Ok(arrow::compute::concat_batches(&schema, &batches)?)
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::INT64,
+                arrow: other.clone(),
+            });
+        }
+    };
+    let offsets = OffsetBuffer::new(ScalarBuffer::from(list_offsets_from_levels(defs, reps)));
+    Ok(Arc::new(ListArray::new(
+        inner_field,
+        offsets,
+        inner_array,
+        None,
+    )))
+}
+
+fn max_def_for(field: &Field) -> i16 {
+    if field.is_nullable() { 1 } else { 0 }
 }
 
 #[cfg(test)]
@@ -304,13 +1143,10 @@ mod tests {
     use std::io;
     use std::ops::Range;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
 
-    use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array, UInt64Array,
-    };
+    use arrow::array::{ArrayRef, DictionaryArray, RecordBatch};
     use arrow::compute::concat_batches;
-    use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+    use arrow::datatypes::{Field as ArrowField, Int32Type, Schema as ArrowSchema};
     use async_trait::async_trait;
     use parquet::arrow::ArrowWriter;
     use parquet::basic::Compression;
@@ -323,17 +1159,15 @@ mod tests {
         ColumnPageStream, RemoteByteSource, StreamingParquetReader,
     };
 
-    // -------- Fixture --------
-
     fn make_metrics_batch(num_rows: usize) -> RecordBatch {
         let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
         let schema = Arc::new(ArrowSchema::new(vec![
-            Field::new("metric_name", dict_type.clone(), false),
-            Field::new("metric_type", DataType::UInt8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-            Field::new("timeseries_id", DataType::Int64, false),
-            Field::new("service", dict_type, true),
+            ArrowField::new("metric_name", dict_type.clone(), false),
+            ArrowField::new("metric_type", DataType::UInt8, false),
+            ArrowField::new("timestamp_secs", DataType::UInt64, false),
+            ArrowField::new("value", DataType::Float64, false),
+            ArrowField::new("timeseries_id", DataType::Int64, false),
+            ArrowField::new("service", dict_type, true),
         ]));
 
         let metric_keys: Vec<i32> = (0..num_rows as i32).map(|i| i % 2).collect();
@@ -352,7 +1186,7 @@ mod tests {
         let value: ArrayRef = Arc::new(Float64Array::from(values));
         let tsids: Vec<i64> = (0..num_rows as i64).map(|i| 1000 + i).collect();
         let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
-        // Sprinkle nulls into `service` to exercise null preservation.
+        // sprinkle nulls
         let svc_keys: Vec<Option<i32>> = (0..num_rows as i32)
             .map(|i| if i % 5 == 0 { None } else { Some(i % 3) })
             .collect();
@@ -379,8 +1213,6 @@ mod tests {
         .unwrap()
     }
 
-    /// Write a parquet file with configurable page-row limit, RG row
-    /// limit, and compression.
     fn write_parquet(
         batches: &[RecordBatch],
         page_row_limit: Option<usize>,
@@ -405,13 +1237,10 @@ mod tests {
         buf
     }
 
-    // -------- In-memory byte source --------
-
     #[derive(Clone)]
     struct InMemorySource {
         bytes: Bytes,
     }
-
     impl InMemorySource {
         fn new(bytes: Vec<u8>) -> Arc<Self> {
             Arc::new(Self {
@@ -419,33 +1248,27 @@ mod tests {
             })
         }
     }
-
     #[async_trait]
     impl RemoteByteSource for InMemorySource {
         async fn file_size(&self, _path: &Path) -> io::Result<u64> {
             Ok(self.bytes.len() as u64)
         }
-
         async fn get_slice(&self, _path: &Path, range: Range<u64>) -> io::Result<Bytes> {
             Ok(self.bytes.slice(range.start as usize..range.end as usize))
         }
-
         async fn get_slice_stream(
             &self,
             _path: &Path,
             range: Range<u64>,
         ) -> io::Result<Box<dyn AsyncRead + Send + Unpin>> {
             let slice = self.bytes.slice(range.start as usize..range.end as usize);
-            Ok(Box::new(std::io::Cursor::new(slice.to_vec())))
+            Ok(Box::new(io::Cursor::new(slice.to_vec())))
         }
     }
-
     fn dummy_path() -> PathBuf {
         PathBuf::from("test.parquet")
     }
 
-    /// Read a parquet file synchronously to derive the canonical
-    /// `RecordBatch` for comparison.
     fn read_canonical(bytes: &[u8]) -> RecordBatch {
         let cursor = Bytes::copy_from_slice(bytes);
         let builder =
@@ -460,21 +1283,41 @@ mod tests {
         }
     }
 
-    /// Drain the decoder until EOF, returning all per-RG batches.
-    async fn drain_all(decoder: &mut StreamDecoder<'_>) -> Vec<RecordBatch> {
-        let mut out = Vec::new();
-        while let Some(b) = decoder.next_rg().await.unwrap() {
-            out.push(b);
+    /// Drain every DecodedPage from the decoder and assemble the
+    /// resulting per-(rg, col) arrays back into a single RecordBatch by
+    /// concatenation in storage order. This is what PR-6b would do if it
+    /// wanted a full RecordBatch view; the decoder itself never
+    /// materialises one.
+    async fn drain_to_record_batch(reader: &mut StreamingParquetReader) -> RecordBatch {
+        let metadata = Arc::clone(reader.metadata());
+        let parquet_schema = metadata.file_metadata().schema_descr();
+        // None for kv_metadata: skip the ARROW:schema hint so the
+        // computed schema matches what the decoder actually produces
+        // (Utf8 instead of Dictionary<Int32, Utf8>, etc.).
+        let arrow_schema = parquet::arrow::parquet_to_arrow_schema(parquet_schema, None).unwrap();
+        let num_cols = arrow_schema.fields().len();
+        let num_rgs = metadata.num_row_groups();
+
+        let mut per_col: Vec<Vec<ArrayRef>> = vec![Vec::new(); num_cols];
+
+        let mut decoder = StreamDecoder::new(reader as &mut dyn ColumnPageStream);
+        while let Some(dp) = decoder.decode_next_page().await.unwrap() {
+            per_col[dp.col_idx].push(dp.array);
         }
-        out
+
+        let _ = num_rgs;
+        let columns: Vec<ArrayRef> = per_col
+            .into_iter()
+            .map(|chunks| {
+                let refs: Vec<&dyn Array> = chunks.iter().map(|a| a.as_ref()).collect();
+                arrow::compute::concat(&refs).unwrap()
+            })
+            .collect();
+        RecordBatch::try_new(Arc::new(arrow_schema), columns).unwrap()
     }
 
-    // -------- Tests --------
-
-    /// Single-RG file: decoder yields exactly one batch and it equals
-    /// the canonical decode of the file.
     #[tokio::test]
-    async fn test_drain_single_rg_matches_canonical() {
+    async fn test_drain_single_rg_round_trip() {
         let batch = make_metrics_batch(64);
         let bytes = write_parquet(
             std::slice::from_ref(&batch),
@@ -488,92 +1331,119 @@ mod tests {
         let mut reader = StreamingParquetReader::try_open(source, dummy_path())
             .await
             .unwrap();
+        let drained = drain_to_record_batch(&mut reader).await;
 
-        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let drained = drain_all(&mut decoder).await;
-        assert_eq!(drained.len(), 1, "single-RG file yields one batch");
-        assert_eq!(drained[0], canonical);
+        // Compare per-column. Dict columns decode to their value type
+        // (Utf8), so compare against the canonical's value-cast.
+        for (col_idx, want_field) in canonical.schema().fields().iter().enumerate() {
+            let want = canonical.column(col_idx);
+            let got = drained.column(col_idx);
+            assert_eq!(want.len(), got.len(), "col {col_idx} length mismatch",);
+            // Cast the canonical to the decoded type for comparison.
+            let want_cast = arrow::compute::cast(want, got.data_type()).unwrap();
+            assert_eq!(
+                want_cast.as_ref(),
+                got.as_ref(),
+                "col {col_idx} ({}) data mismatch",
+                want_field.name(),
+            );
+        }
     }
 
-    /// Multi-RG file: decoder yields one batch per RG; concatenation
-    /// equals the canonical decode.
     #[tokio::test]
-    async fn test_drain_multi_rg_yields_one_batch_per_rg() {
+    async fn test_drain_multi_rg_round_trip() {
         let batch = make_metrics_batch(300);
         let bytes = write_parquet(&[batch], None, Some(100), Compression::SNAPPY);
         let canonical = read_canonical(&bytes);
 
         let source = InMemorySource::new(bytes.clone());
         let sync_reader = SerializedFileReader::new(Bytes::from(bytes)).unwrap();
-        let expected_num_rgs = sync_reader.metadata().num_row_groups();
         assert!(
-            expected_num_rgs >= 2,
-            "fixture must produce multi-RG; got {expected_num_rgs}",
+            sync_reader.metadata().num_row_groups() >= 2,
+            "fixture must produce multi-RG",
         );
 
         let mut reader = StreamingParquetReader::try_open(source, dummy_path())
             .await
             .unwrap();
-        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let drained = drain_all(&mut decoder).await;
-
-        assert_eq!(drained.len(), expected_num_rgs);
-        let schema = canonical.schema();
-        let concatenated = concat_batches(&schema, &drained).unwrap();
-        assert_eq!(concatenated, canonical);
-    }
-
-    /// Multi-page columns within a single RG decode correctly. Forces
-    /// the reader to traverse multiple page headers per column.
-    #[tokio::test]
-    async fn test_drain_multi_page_column() {
-        let batch = make_metrics_batch(2048);
-        let bytes = write_parquet(&[batch], Some(256), None, Compression::SNAPPY);
-        let canonical = read_canonical(&bytes);
-
-        let source = InMemorySource::new(bytes);
-        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
-            .await
-            .unwrap();
-        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let drained = drain_all(&mut decoder).await;
-
-        assert_eq!(drained.len(), 1);
-        assert_eq!(drained[0], canonical);
-    }
-
-    /// Dictionary-encoded columns survive the page-stream → batch
-    /// round trip. Verified implicitly by full equality with the
-    /// canonical decode (which preserves dict encoding).
-    #[tokio::test]
-    async fn test_drain_preserves_dict_columns() {
-        let batch = make_metrics_batch(64);
-        let bytes = write_parquet(&[batch], None, None, Compression::SNAPPY);
-        let canonical = read_canonical(&bytes);
-        let source = InMemorySource::new(bytes);
-        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
-            .await
-            .unwrap();
-
-        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let drained = drain_all(&mut decoder).await;
-        assert_eq!(drained.len(), 1);
-        // Confirm dict types survived the round trip by name+datatype
-        // before relying on full equality.
-        let drained_schema = drained[0].schema();
-        for field in canonical.schema().fields() {
-            let drained_field = drained_schema.field_with_name(field.name()).unwrap();
-            assert_eq!(field.data_type(), drained_field.data_type());
+        let drained = drain_to_record_batch(&mut reader).await;
+        for (col_idx, _) in canonical.schema().fields().iter().enumerate() {
+            let want = canonical.column(col_idx);
+            let got = drained.column(col_idx);
+            assert_eq!(want.len(), got.len());
+            let want_cast = arrow::compute::cast(want, got.data_type()).unwrap();
+            assert_eq!(want_cast.as_ref(), got.as_ref(), "col {col_idx} mismatch");
         }
-        assert_eq!(drained[0], canonical);
     }
 
-    /// Null values in `service` survive the round trip (the fixture
-    /// inserts nulls every 5th row).
+    /// Each `decode_next_page` returns exactly one data page worth of
+    /// rows — `row_start + array.len()` advances monotonically per
+    /// (rg, col), with row_start = 0 at the start of each (rg, col).
     #[tokio::test]
-    async fn test_drain_preserves_nulls() {
+    async fn test_decoded_page_row_indexing() {
+        let batch = make_metrics_batch(2048);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            Some(256),
+            None,
+            Compression::SNAPPY,
+        );
+
+        let source = InMemorySource::new(bytes);
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .unwrap();
+        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
+
+        let mut per_col_cumulative: HashMap<(usize, usize), usize> = HashMap::new();
+        let mut next_idx: HashMap<(usize, usize), usize> = HashMap::new();
+        while let Some(dp) = decoder.decode_next_page().await.unwrap() {
+            let key = (dp.rg_idx, dp.col_idx);
+            let prior = per_col_cumulative.get(&key).copied().unwrap_or(0);
+            assert_eq!(
+                dp.row_start, prior,
+                "row_start for ({}, {}) page {} should equal prior cumulative",
+                dp.rg_idx, dp.col_idx, dp.page_idx_in_col,
+            );
+            per_col_cumulative.insert(key, prior + dp.array.len());
+
+            let expected_idx = next_idx.get(&key).copied().unwrap_or(0);
+            assert_eq!(dp.page_idx_in_col, expected_idx);
+            next_idx.insert(key, expected_idx + 1);
+        }
+    }
+
+    /// `decode_next_page` is idempotent at EOF.
+    #[tokio::test]
+    async fn test_eof_idempotent() {
+        let batch = make_metrics_batch(32);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
+        let source = InMemorySource::new(bytes);
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .unwrap();
+        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
+        while decoder.decode_next_page().await.unwrap().is_some() {}
+        assert!(decoder.decode_next_page().await.unwrap().is_none());
+        assert!(decoder.decode_next_page().await.unwrap().is_none());
+    }
+
+    /// Nullable columns: `service` has nulls every 5th row. The decoded
+    /// page must surface those nulls — the null mask round-trips.
+    #[tokio::test]
+    async fn test_nullable_column_round_trip() {
         let batch = make_metrics_batch(50);
-        let bytes = write_parquet(&[batch], None, None, Compression::SNAPPY);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
         let canonical = read_canonical(&bytes);
         let svc_idx = canonical.schema().index_of("service").unwrap();
         assert!(canonical.column(svc_idx).null_count() > 0);
@@ -582,72 +1452,145 @@ mod tests {
         let mut reader = StreamingParquetReader::try_open(source, dummy_path())
             .await
             .unwrap();
-        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let drained = drain_all(&mut decoder).await;
-        assert_eq!(drained.len(), 1);
-        let drained_svc = drained[0].column(svc_idx);
+        let drained = drain_to_record_batch(&mut reader).await;
         assert_eq!(
-            drained_svc.null_count(),
+            drained.column(svc_idx).null_count(),
             canonical.column(svc_idx).null_count(),
         );
-        assert_eq!(drained[0], canonical);
     }
 
-    /// Round-trip through every compression we support in production.
-    /// The crate's `parquet` dependency is built with `snap` and
-    /// `zstd` features (see `quickwit/Cargo.toml`); LZ4 is not enabled
-    /// because Quickwit doesn't write LZ4-compressed parquet.
+    /// Compression codec round trips. The crate's parquet feature set
+    /// is `arrow + snap + zstd` (see `quickwit/Cargo.toml`); LZ4 is
+    /// intentionally not in scope.
     #[tokio::test]
-    async fn test_drain_supports_compression_codecs() {
+    async fn test_compression_codecs() {
         for compression in [
             Compression::UNCOMPRESSED,
             Compression::SNAPPY,
             Compression::ZSTD(parquet::basic::ZstdLevel::default()),
         ] {
-            let batch = make_metrics_batch(128);
-            let bytes = write_parquet(&[batch], None, None, compression);
+            let batch = make_metrics_batch(64);
+            let bytes = write_parquet(std::slice::from_ref(&batch), None, None, compression);
             let canonical = read_canonical(&bytes);
             let source = InMemorySource::new(bytes);
             let mut reader = StreamingParquetReader::try_open(source, dummy_path())
                 .await
                 .unwrap();
-            let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-            let drained = drain_all(&mut decoder).await;
-            assert_eq!(
-                drained.len(),
-                1,
-                "single-RG fixture must produce 1 batch (compression={compression:?})",
-            );
-            assert_eq!(
-                drained[0], canonical,
-                "round trip diverged for compression={compression:?}",
-            );
+            let drained = drain_to_record_batch(&mut reader).await;
+            for col_idx in 0..canonical.num_columns() {
+                let want = canonical.column(col_idx);
+                let got = drained.column(col_idx);
+                assert_eq!(want.len(), got.len());
+                let want_cast = arrow::compute::cast(want, got.data_type()).unwrap();
+                assert_eq!(
+                    want_cast.as_ref(),
+                    got.as_ref(),
+                    "compression {compression:?} col {col_idx} diverged",
+                );
+            }
         }
     }
 
-    /// `next_rg` is idempotent at EOF — repeated calls after the last
-    /// row group keep returning `Ok(None)` instead of stalling or
-    /// erroring.
+    /// The decoder must not buffer the row group: across a long stream,
+    /// the number of pages held in any single column's `PageQueue` at
+    /// any instant stays ≤ 2 (at most a queued dictionary plus the
+    /// current data page). This is a structural check of the page-
+    /// bounded contract.
     #[tokio::test]
-    async fn test_eof_idempotent() {
-        let batch = make_metrics_batch(32);
-        let bytes = write_parquet(&[batch], None, None, Compression::SNAPPY);
+    async fn test_page_bounded_queue_depth() {
+        let batch = make_metrics_batch(8192);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            Some(256),
+            None,
+            Compression::SNAPPY,
+        );
         let source = InMemorySource::new(bytes);
         let mut reader = StreamingParquetReader::try_open(source, dummy_path())
             .await
             .unwrap();
         let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-
-        assert!(decoder.next_rg().await.unwrap().is_some());
-        assert!(decoder.next_rg().await.unwrap().is_none());
-        assert!(decoder.next_rg().await.unwrap().is_none());
-        assert!(decoder.next_rg().await.unwrap().is_none());
+        while decoder.decode_next_page().await.unwrap().is_some() {
+            for (_, state) in decoder.columns.iter() {
+                let depth = state.queue.lock().unwrap().len();
+                assert!(
+                    depth <= 2,
+                    "PageQueue depth {depth} exceeds page-bounded contract (≤2)",
+                );
+            }
+        }
     }
 
-    /// Page-stream I/O failures surface as
-    /// [`PageDecodeError::PageStream`] — they are NOT masked as
-    /// parquet decode errors. Verifies the policy from CLAUDE.md
-    /// (no silent error swallowing).
+    /// `List<UInt64>` (the DDSketch `counts` shape) round-trips with
+    /// variable list lengths including the empty list and `u64::MAX`.
+    /// This exercises the Dremel level → ListArray reconstruction in
+    /// `build_list_i64_array`.
+    #[tokio::test]
+    async fn test_list_uint64_round_trip() {
+        use arrow::array::ListBuilder;
+
+        let item_field = Arc::new(ArrowField::new("item", DataType::UInt64, false));
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "counts",
+            DataType::List(Arc::clone(&item_field)),
+            false,
+        )]));
+
+        let rows: Vec<Vec<u64>> = vec![
+            vec![1, 2, 3],
+            vec![],
+            vec![42],
+            vec![u64::MAX, 0, 0x8000_0000_0000_0000],
+            vec![],
+            vec![100],
+        ];
+        let mut builder = ListBuilder::new(arrow::array::UInt64Builder::new())
+            .with_field(Arc::clone(&item_field));
+        for row in &rows {
+            for &v in row {
+                builder.values().append_value(v);
+            }
+            builder.append(true);
+        }
+        let counts: ArrayRef = Arc::new(builder.finish());
+        let batch = RecordBatch::try_new(schema.clone(), vec![counts]).unwrap();
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
+
+        let source = InMemorySource::new(bytes);
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .unwrap();
+        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
+        let dp = decoder
+            .decode_next_page()
+            .await
+            .unwrap()
+            .expect("at least one page");
+        let got_list = dp
+            .array
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .expect("counts must decode to ListArray");
+        assert_eq!(got_list.len(), rows.len());
+        for (row_idx, want) in rows.iter().enumerate() {
+            let got = got_list.value(row_idx);
+            let got_u64: Vec<u64> = got
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .expect("inner must be UInt64Array")
+                .values()
+                .to_vec();
+            assert_eq!(got_u64, *want, "row {row_idx} list mismatch");
+        }
+    }
+
+    /// I/O failures from the page stream surface as
+    /// `PageDecodeError::PageStream(ParquetReadError::Io(_))`.
     #[tokio::test]
     async fn test_io_failure_surfaces_as_page_stream_error() {
         struct FailingBodySource {
@@ -660,15 +1603,13 @@ mod tests {
                 Ok(self.file_size)
             }
             async fn get_slice(&self, _path: &Path, range: Range<u64>) -> io::Result<Bytes> {
-                // Footer reads succeed; that's how `try_open` parses
-                // metadata. Body reads (start near 0) fail.
                 if range.start >= self.file_size - self.footer.len() as u64 {
                     let foot_start = self.file_size - self.footer.len() as u64;
                     let off = (range.start - foot_start) as usize;
                     let len = (range.end - range.start) as usize;
                     return Ok(self.footer.slice(off..off + len));
                 }
-                Err(io::Error::other("simulated body GET failure"))
+                Err(io::Error::other("simulated body get failure"))
             }
             async fn get_slice_stream(
                 &self,
@@ -678,70 +1619,27 @@ mod tests {
                 Err(io::Error::other("simulated body stream failure"))
             }
         }
-
-        // Build a real file so the footer parses, then plug it into
-        // a source that errors on body reads.
         let batch = make_metrics_batch(16);
-        let bytes = write_parquet(&[batch], None, None, Compression::SNAPPY);
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
         let file_size = bytes.len() as u64;
-        // Read the entire file as the "footer" buffer so any footer
-        // GET (with retry) succeeds.
         let source = Arc::new(FailingBodySource {
             footer: Bytes::from(bytes),
             file_size,
         });
-
         let mut reader = StreamingParquetReader::try_open(source, dummy_path())
             .await
             .unwrap();
         let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
-        let err = decoder.next_rg().await.unwrap_err();
+        let err = decoder.decode_next_page().await.unwrap_err();
         match err {
             PageDecodeError::PageStream(ParquetReadError::Io(_)) => {}
             other => panic!("expected PageStream(Io), got {other:?}"),
         }
     }
-
-    /// The reconstructed column-chunk byte size must equal the size
-    /// metadata advertises — proves byte-exact reconstruction
-    /// (`header_bytes + bytes` per page) for production-shape inputs.
-    #[tokio::test]
-    async fn test_byte_exact_reconstruction() {
-        let batch = make_metrics_batch(512);
-        let bytes = write_parquet(&[batch], Some(64), Some(200), Compression::SNAPPY);
-        let sync_reader = SerializedFileReader::new(Bytes::from(bytes.clone())).unwrap();
-        let metadata = sync_reader.metadata();
-
-        let source = InMemorySource::new(bytes);
-        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
-            .await
-            .unwrap();
-
-        // Drain pages and verify per-(rg, col) reconstructed-chunk
-        // sizes match metadata.
-        let chunk_sizes: Mutex<BTreeMap<(usize, usize), u64>> = Mutex::new(BTreeMap::new());
-        loop {
-            let page = reader.next_page().await.unwrap();
-            let p = match page {
-                Some(p) => p,
-                None => break,
-            };
-            let total = (p.header_bytes.len() + p.bytes.len()) as u64;
-            *chunk_sizes
-                .lock()
-                .unwrap()
-                .entry((p.rg_idx, p.col_idx))
-                .or_insert(0) += total;
-        }
-
-        let chunk_sizes = chunk_sizes.into_inner().unwrap();
-        for ((rg_idx, col_idx), reconstructed_size) in &chunk_sizes {
-            let (_, expected) = metadata.row_group(*rg_idx).column(*col_idx).byte_range();
-            assert_eq!(
-                *reconstructed_size, expected,
-                "rg={rg_idx} col={col_idx}: reconstructed {reconstructed_size} != metadata \
-                 {expected}",
-            );
-        }
-    }
 }
+

@@ -176,7 +176,7 @@ opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
-parquet = { version = "58", default-features = false, features = ["arrow", "snap", "variant_experimental", "zstd"] }
+parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
