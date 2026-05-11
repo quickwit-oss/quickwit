@@ -803,7 +803,6 @@ thiserror,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <d
 thiserror-impl,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 thousands,https://github.com/tov/thousands-rs,MIT OR Apache-2.0,Jesse A. Tov <jesse.tov@gmail.com>
 thread_local,https://github.com/Amanieu/thread_local-rs,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
-threadpool,https://github.com/rust-threadpool/rust-threadpool,MIT OR Apache-2.0,"The Rust Project Developers, Corey Farwell <coreyf@rwell.org>, Stefan Schindler <dns2utf8@estada.ch>"
 thrift,https://github.com/apache/thrift/tree/master/lib/rs,Apache-2.0,Apache Thrift Developers <dev@thrift.apache.org>
 tikv-jemalloc-ctl,https://github.com/tikv/jemallocator,MIT OR Apache-2.0,"Steven Fackler <sfackler@gmail.com>, Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>, The TiKV Project Developers"
 tikv-jemalloc-sys,https://github.com/tikv/jemallocator,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>, The TiKV Project Developers"
