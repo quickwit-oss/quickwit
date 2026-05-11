@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use quickwit_common::metrics::MEMORY_METRICS;
 use tikv_jemallocator::Jemalloc;
-use tracing::error;
+use tracing::{error, warn};
 
 #[cfg(feature = "jemalloc-profiled")]
 #[global_allocator]
@@ -43,18 +43,25 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     loop {
         poll_interval.tick().await;
 
-        // Many statistics are cached and only updated when the epoch is advanced:
-        epoch_mib.advance()?;
-
-        // Read statistics using MIB keys:
-        let active = active_mib.read()?;
-        memory_metrics.active_bytes.set(active as i64);
-
-        let allocated = allocated_mib.read()?;
-        memory_metrics.allocated_bytes.set(allocated as i64);
-
-        let resident = resident_mib.read()?;
-        memory_metrics.resident_bytes.set(resident as i64);
+        // Many statistics are cached and only updated when the epoch is advanced. A transient
+        // failure here would not be expected, but we log and retry on the next tick rather than
+        // exiting the loop and leaving the metrics frozen forever.
+        if let Err(error) = epoch_mib.advance() {
+            warn!(%error, "failed to advance jemalloc epoch");
+            continue;
+        }
+        match active_mib.read() {
+            Ok(active) => memory_metrics.active_bytes.set(active as i64),
+            Err(error) => warn!(%error, "failed to read jemalloc stats.active"),
+        }
+        match allocated_mib.read() {
+            Ok(allocated) => memory_metrics.allocated_bytes.set(allocated as i64),
+            Err(error) => warn!(%error, "failed to read jemalloc stats.allocated"),
+        }
+        match resident_mib.read() {
+            Ok(resident) => memory_metrics.resident_bytes.set(resident as i64),
+            Err(error) => warn!(%error, "failed to read jemalloc stats.resident"),
+        }
     }
 }
 
