@@ -9,8 +9,6 @@
 # `ring` has a custom license that is mostly "ISC-style" but parts of it also fall under OpenSSL licensing.
 "ring-0.17.8" = { license = "ISC AND Custom" }
 
-"quickwit-processing" = { license = "Datadog" }
-
 "event-percolation" = { license = "Datadog" }
 
 # Vector subcrates don't set license metadata in their Cargo.toml.

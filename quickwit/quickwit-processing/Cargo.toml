@@ -2,7 +2,7 @@
 name = "quickwit-processing"
 version.workspace = true
 edition.workspace = true
-license = "Datadog"
+license.workspace = true
 publish = false
 
 [dependencies]

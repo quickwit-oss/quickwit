@@ -128,9 +128,7 @@ pub fn get_nested<'a>(
 }
 
 fn dotted_key_matches_segments<S>(key: &str, segments: &[S]) -> bool
-where
-    S: AsRef<str>,
-{
+where S: AsRef<str> {
     let mut parts = key.split('.');
     for segment in segments {
         if parts.next() != Some(segment.as_ref()) {

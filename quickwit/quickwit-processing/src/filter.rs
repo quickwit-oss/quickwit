@@ -210,7 +210,7 @@ impl Filter<ProcessedLog> for FilterResolver {
                 }
 
                 VRLField::Attribute(custom_path) => {
-                    if let Some(v) = get_nested(&log.custom, &custom_path) {
+                    if let Some(v) = get_nested(&log.custom, custom_path) {
                         match v {
                             serde_json::Value::Number(num) => num.as_f64(),
                             serde_json::Value::String(s) => s.parse::<f64>().ok(),
@@ -261,9 +261,7 @@ impl Filter<ProcessedLog> for FilterResolver {
 /// field) Match on default fields (`message`, `title`, `error.message` or `error.stack`) behave
 /// different, more like a fulltext search.
 fn match_on_string<F>(field: VRLField, pred: F) -> Box<dyn Matcher<ProcessedLog>>
-where
-    F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync,
-{
+where F: Fn(&str, bool) -> bool + Clone + 'static + Send + Sync {
     match field {
         VRLField::Default(_) => unreachable!(),
         VRLField::Reserved(attr) => Run::boxed(move |log: &ProcessedLog| {

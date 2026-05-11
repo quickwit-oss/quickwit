@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use itertools::Itertools;
 use std::fmt::Display;
 
+use itertools::Itertools;
 use time::OffsetDateTime;
 use time::format_description::well_known::{Iso8601, Rfc2822, Rfc3339};
 

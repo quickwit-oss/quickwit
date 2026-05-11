@@ -1,3 +1,17 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::borrow::Cow;
 
 pub use event_percolation::Percolator;
@@ -106,9 +120,7 @@ fn direct_value<'a>(log: &'a ProcessedLog, column: &str) -> PercValue<'a> {
 }
 
 fn custom_value<'a, S>(log: &'a ProcessedLog, segments: &[S]) -> PercValue<'a>
-where
-    S: AsRef<str>,
-{
+where S: AsRef<str> {
     to_percolation_value(get_nested_segments(&log.custom, segments))
 }
 

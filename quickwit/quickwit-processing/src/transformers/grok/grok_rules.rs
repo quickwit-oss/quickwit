@@ -88,9 +88,7 @@ pub struct LogsProcessingGrokRules {
 /// Custom deserializer for fields that are multiline rules strings, null, or arrays of Rule
 /// objects.
 pub fn parse_rules<'de, D>(deserializer: D) -> Result<Vec<Rule>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     deserializer.deserialize_any(RulesVisitor)
 }
 
@@ -125,33 +123,25 @@ impl<'de> serde::de::Visitor<'de> for RulesVisitor {
 
     // For multiline string
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
+    where E: de::Error {
         Ok(parse_rules_from_str(v))
     }
 
     fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
+    where E: de::Error {
         Ok(parse_rules_from_str(&v))
     }
 
     // Single object deserialization
     fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-    where
-        M: de::MapAccess<'de>,
-    {
+    where M: de::MapAccess<'de> {
         let rule = Rule::deserialize(de::value::MapAccessDeserializer::new(map))?;
         Ok(vec![rule])
     }
 
     // Array of objects deserialization
     fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-    where
-        S: de::SeqAccess<'de>,
-    {
+    where S: de::SeqAccess<'de> {
         let mut rules = Vec::new();
         while let Some(rule) = seq.next_element()? {
             rules.push(rule);
@@ -160,16 +150,12 @@ impl<'de> serde::de::Visitor<'de> for RulesVisitor {
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
+    where E: de::Error {
         Ok(Vec::new())
     }
 
     fn visit_none<E>(self) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
+    where E: de::Error {
         Ok(Vec::new())
     }
 }

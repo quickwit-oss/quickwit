@@ -192,7 +192,9 @@ fn generate_synthetic_messages(count: usize) -> Vec<DatadogLogMsg> {
             });
 
             DatadogLogMsg {
-                message: quickwit_processing::MessageValue::Obj(message_obj.as_object().unwrap().clone()),
+                message: quickwit_processing::MessageValue::Obj(
+                    message_obj.as_object().unwrap().clone(),
+                ),
                 service: Some(service.to_string()),
                 hostname: Some(hostname.to_string()),
                 ddsource: Some(source.to_string()),

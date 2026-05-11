@@ -17,7 +17,6 @@ use std::time::Instant;
 
 use bytes::Bytes;
 use metrics::Counter;
-use quickwit_processing::DatadogLogMsg;
 use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
@@ -29,6 +28,7 @@ use quickwit_opentelemetry::otlp::{
 use quickwit_parquet_engine::ingest::{ArrowSketchBatchBuilder, SketchDataPoint};
 use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_parquet_engine::schema::sketch_fields::SketchParquetField;
+use quickwit_processing::DatadogLogMsg;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,

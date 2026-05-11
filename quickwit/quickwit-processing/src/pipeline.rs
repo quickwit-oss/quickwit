@@ -442,9 +442,7 @@ impl From<&str> for Filter {
 
 /// Custom deserializer that accepts either a string or a number and produces a `String`.
 fn deserialize_string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     struct StringOrNumberVisitor;
 
     impl Visitor<'_> for StringOrNumberVisitor {
@@ -455,37 +453,27 @@ where
         }
 
         fn visit_str<E>(self, value: &str) -> Result<String, E>
-        where
-            E: de::Error,
-        {
+        where E: de::Error {
             Ok(value.to_owned())
         }
 
         fn visit_string<E>(self, value: String) -> Result<String, E>
-        where
-            E: de::Error,
-        {
+        where E: de::Error {
             Ok(value)
         }
 
         fn visit_i64<E>(self, value: i64) -> Result<String, E>
-        where
-            E: de::Error,
-        {
+        where E: de::Error {
             Ok(value.to_string())
         }
 
         fn visit_u64<E>(self, value: u64) -> Result<String, E>
-        where
-            E: de::Error,
-        {
+        where E: de::Error {
             Ok(value.to_string())
         }
 
         fn visit_f64<E>(self, value: f64) -> Result<String, E>
-        where
-            E: de::Error,
-        {
+        where E: de::Error {
             Ok(value.to_string())
         }
     }

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use itertools::Itertools;
-use quickwit_processing::DatadogLogMsg;
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
+use quickwit_processing::DatadogLogMsg;
 use quickwit_proto::cloudprem::*;
 use quickwit_proto::types::IndexId;
 use serde_json::Value;

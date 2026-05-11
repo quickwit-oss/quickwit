@@ -140,9 +140,7 @@ impl CompiledTemplateString {
         Self { parts }
     }
     fn render<F>(&self, mut lookup: F) -> String
-    where
-        F: FnMut(&ParsedPath) -> String,
-    {
+    where F: FnMut(&ParsedPath) -> String {
         let mut result = String::new();
         for part in &self.parts {
             match part {

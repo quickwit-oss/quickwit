@@ -208,9 +208,7 @@ impl TagField {
 
 impl Serialize for TagField {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    where S: serde::Serializer {
         let mut st = serializer.serialize_struct("TagField", 2)?;
         st.serialize_field("tag", &self.tag)?;
         st.serialize_field("tags", &self.tags_vec())?;
@@ -257,7 +255,8 @@ fn flatten_nested_message_object(
                     current_map = Some(nested);
                 }
                 Value::String(s) => {
-                    // If the message is a JSON-serialized object, try parse and continue flattening.
+                    // If the message is a JSON-serialized object, try parse and continue
+                    // flattening.
                     if let Ok(nested) = serde_json::from_str::<serde_json::Map<String, Value>>(&s) {
                         current_map = Some(nested);
                     } else {
