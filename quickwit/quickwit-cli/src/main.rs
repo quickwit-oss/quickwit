@@ -23,6 +23,8 @@ use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
+#[cfg(target_os = "linux")]
+use quickwit_cli::procfs::start_proc_io_metrics_loop;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
@@ -99,6 +101,9 @@ async fn main_impl() -> anyhow::Result<()> {
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
+
+    #[cfg(target_os = "linux")]
+    start_proc_io_metrics_loop();
 
     let build_info = BuildInfo::get();
     let (env_filter_reload_fn, tracer_provider_opt) =

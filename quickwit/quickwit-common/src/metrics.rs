@@ -451,3 +451,50 @@ pub fn index_label(index_id: &str) -> &str {
 }
 
 pub static MEMORY_METRICS: LazyLock<MemoryMetrics> = LazyLock::new(MemoryMetrics::default);
+
+#[derive(Clone)]
+pub struct IoMetrics {
+    pub read_bytes_total: IntCounter,
+    pub write_bytes_total: IntCounter,
+    pub read_syscalls_total: IntCounter,
+    pub write_syscalls_total: IntCounter,
+}
+
+impl Default for IoMetrics {
+    fn default() -> Self {
+        Self {
+            read_bytes_total: new_counter(
+                "read_bytes_total",
+                "Cumulative bytes read from storage by the process, as reported by \
+                 `/proc/self/io` `read_bytes`. Reflects block-layer I/O after page cache absorbs \
+                 reads served from RAM",
+                "io",
+                &[],
+            ),
+            write_bytes_total: new_counter(
+                "write_bytes_total",
+                "Cumulative bytes written to storage by the process, as reported by \
+                 `/proc/self/io` `write_bytes`. Reflects block-layer I/O after page cache \
+                 coalescing — what EBS `VolumeWriteOps` ultimately bills",
+                "io",
+                &[],
+            ),
+            read_syscalls_total: new_counter(
+                "read_syscalls_total",
+                "Cumulative number of read syscalls issued by the process, as reported by \
+                 `/proc/self/io` `syscr`",
+                "io",
+                &[],
+            ),
+            write_syscalls_total: new_counter(
+                "write_syscalls_total",
+                "Cumulative number of write syscalls issued by the process, as reported by \
+                 `/proc/self/io` `syscw`",
+                "io",
+                &[],
+            ),
+        }
+    }
+}
+
+pub static IO_METRICS: LazyLock<IoMetrics> = LazyLock::new(IoMetrics::default);

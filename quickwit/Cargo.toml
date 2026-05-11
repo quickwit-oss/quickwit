@@ -188,6 +188,7 @@ predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", default-features = false, features = ["process"] }
+procfs = { version = "0.17", default-features = false }
 proptest = "1"
 prost = { version = "0.14", default-features = false, features = [
   "derive",

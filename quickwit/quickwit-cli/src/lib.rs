@@ -51,6 +51,8 @@ pub mod index;
 pub mod jemalloc;
 pub mod logger;
 pub mod metrics;
+#[cfg(target_os = "linux")]
+pub mod procfs;
 pub mod service;
 pub mod source;
 pub mod split;
