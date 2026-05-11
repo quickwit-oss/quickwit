@@ -129,11 +129,28 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
 
     derive_timestamps(trace);
     stringify_ids(trace);
+    promote_host_and_env(trace);
+    derive_status_and_error_type(trace);
 
-    // Promote host/env from `meta` to top-level fields. Keys in `meta` are
-    // stored with literal dots (e.g. "_dd.hostname"), so we read them
-    // directly off the inner ObjectMap rather than through Vector's
-    // path-traversal API which would split on the dot.
+    // Hardcode the SaaS-side flags we have no signal for; populated as
+    // `false` by convention so the columnar fast-field is dense.
+    trace.insert("single_span", false);
+    trace.insert("analytics_enabled", false);
+
+    // Random positive 32-bit number — matches the magnitude SaaS produces.
+    let tiebreaker = rand::rng().random_range(0i64..=i64::from(u32::MAX));
+    trace.insert("tiebreaker", tiebreaker);
+
+    derive_resource_fields(trace);
+    trace.remove("start");
+    fold_into_custom(trace);
+}
+
+/// Promotes `meta._dd.hostname` → `host` and `meta.env` → `env`. Keys in
+/// `meta` are stored with literal dots (e.g. `"_dd.hostname"`), so we read
+/// them directly off the inner `ObjectMap` rather than through Vector's
+/// path-traversal API which would split on the dot.
+fn promote_host_and_env(trace: &mut TraceEvent) {
     let host_opt;
     let env_opt;
     {
@@ -151,7 +168,14 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
     if let Some(env) = env_opt {
         trace.insert("env", env);
     }
+}
 
+/// Derives `status` from the wire `error` flag (0 → `"ok"`, else `"error"`)
+/// and lifts `meta.error.type` to a top-level `error` object carrying only
+/// `type`. The rest of `error.*` stays under `custom.error.*` via the
+/// meta fold — matches SaaS shape; narrow lifting keeps cross-product
+/// query semantics consistent.
+fn derive_status_and_error_type(trace: &mut TraceEvent) {
     if let Some(Value::Integer(raw)) = trace.get("error") {
         let status = if *raw == 0 {
             STATUS_OK.clone()
@@ -162,10 +186,6 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
     }
     trace.remove("error");
 
-    // SaaS docs surface only `error.type` at the top level under `error.type`
-    // and leave everything else (`error.message`, `error.stack`, …) under
-    // `custom.error.*` via the meta fold. Mirror that — narrow lifting keeps
-    // cross-product query semantics consistent.
     if let Some(error_type) = trace
         .get("meta")
         .and_then(|v| v.as_object())
@@ -176,16 +196,11 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
         error_obj.insert("type".into(), error_type);
         trace.insert("error", Value::Object(error_obj));
     }
+}
 
-    // Hardcode the SaaS-side flags we have no signal for; populated as
-    // `false` by convention so the columnar fast-field is dense.
-    trace.insert("single_span", false);
-    trace.insert("analytics_enabled", false);
-
-    // Random positive 32-bit number — matches the magnitude SaaS produces.
-    let tiebreaker = rand::rng().random_range(0i64..=i64::from(u32::MAX));
-    trace.insert("tiebreaker", tiebreaker);
-
+/// Renames `name` → `operation_name`, `resource` → `resource_name`, and
+/// emits `resource_hash` from the original resource string.
+fn derive_resource_fields(trace: &mut TraceEvent) {
     if let Some(name) = trace.remove("name") {
         trace.insert("operation_name", name);
     }
@@ -195,30 +210,18 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
         }
         trace.insert("resource_name", resource_value);
     }
-    trace.remove("start");
+}
 
+/// Folds `meta`, `metrics`, `meta_struct`, `duration`, `span_links`, and
+/// `span_events` into the catch-all `custom` JSON field. Keys from the
+/// tag maps are filtered through `is_valid_tag` (mirroring dd-go's
+/// `events.isValidTag`): underscore-prefixed and `ddtags` keys are
+/// stripped unless allowlisted.
+fn fold_into_custom(trace: &mut TraceEvent) {
     let mut custom = ObjectMap::new();
-    if let Some(Value::Object(meta_map)) = trace.remove("meta") {
-        for (k, v) in meta_map {
-            if is_valid_tag(k.as_str()) {
-                custom.insert(k, v);
-            }
-        }
-    }
-    if let Some(Value::Object(metrics_map)) = trace.remove("metrics") {
-        for (k, v) in metrics_map {
-            if is_valid_tag(k.as_str()) {
-                custom.insert(k, v);
-            }
-        }
-    }
-    if let Some(Value::Object(meta_struct_map)) = trace.remove("meta_struct") {
-        for (k, v) in meta_struct_map {
-            if is_valid_tag(k.as_str()) {
-                custom.insert(k, v);
-            }
-        }
-    }
+    fold_filtered_map(trace, "meta", &mut custom);
+    fold_filtered_map(trace, "metrics", &mut custom);
+    fold_filtered_map(trace, "meta_struct", &mut custom);
     if let Some(duration) = trace.remove("duration") {
         custom.insert("duration".into(), duration);
     }
@@ -230,6 +233,19 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
     }
     if !custom.is_empty() {
         trace.insert("custom", Value::Object(custom));
+    }
+}
+
+/// Removes `key` from `trace` (expected to be a flat `ObjectMap`) and
+/// inserts each entry that passes `is_valid_tag` into `custom`.
+fn fold_filtered_map(trace: &mut TraceEvent, key: &str, custom: &mut ObjectMap) {
+    let Some(Value::Object(map)) = trace.remove(key) else {
+        return;
+    };
+    for (k, v) in map {
+        if is_valid_tag(k.as_str()) {
+            custom.insert(k, v);
+        }
     }
 }
 

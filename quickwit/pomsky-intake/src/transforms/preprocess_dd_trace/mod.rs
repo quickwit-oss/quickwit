@@ -24,9 +24,9 @@ use vector_lib::config::clone_input_definitions;
 /// Preprocesses Datadog agent trace chunks before they are exploded into
 /// individual spans. Propagates chunk-level fields onto each span so they
 /// survive `explode_trace_spans`, and canonicalizes each span into the
-/// apm-processing-aligned shape (hex IDs, single i64 ns `start`, msgpack-
-/// decoded `meta_struct` leaves) so downstream span-level processors see
-/// the same paths the Java pipeline operates on.
+/// apm-processing-aligned shape (single i64-ns `start`, msgpack-decoded
+/// `meta_struct` leaves) so downstream span-level processors see the same
+/// paths the Java pipeline operates on.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreprocessDdTraceConfig;
@@ -154,26 +154,22 @@ fn canonicalize_start(span_fields: &mut ObjectMap) {
 
 /// Decodes each `meta_struct` leaf (msgpack `Value::Bytes`) into a structured
 /// Vector `Value`. Mirrors `SpansProtobufPayloadParser.decodeMetaStructValue`
-/// in logs-backend: a malformed leaf is dropped, not failed.
+/// in logs-backend: a malformed leaf is dropped, not failed. Non-`Bytes`
+/// leaves are passed through unchanged.
 fn canonicalize_meta_struct(span_fields: &mut ObjectMap) {
     let Some(Value::Object(meta_struct)) = span_fields.get_mut("meta_struct") else {
         return;
     };
-    let keys: Vec<_> = meta_struct.keys().cloned().collect();
-    for key in keys {
-        let bytes = match meta_struct.get(&key) {
-            Some(Value::Bytes(b)) => b.clone(),
-            _ => continue,
-        };
-        match rmp_serde::from_slice::<Value>(&bytes) {
+    meta_struct.retain(|_k, v| match v {
+        Value::Bytes(bytes) => match rmp_serde::from_slice::<Value>(bytes) {
             Ok(decoded) => {
-                meta_struct.insert(key, decoded);
+                *v = decoded;
+                true
             }
-            Err(_) => {
-                meta_struct.remove(&key);
-            }
-        }
-    }
+            Err(_) => false,
+        },
+        _ => true,
+    });
 }
 
 #[cfg(test)]

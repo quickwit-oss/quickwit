@@ -12,8 +12,7 @@ OTLP is not supported today; `preprocess_span` only handles `datadog_agent`.
 
 | apm-processing path | preprocess_span path | Notes |
 | --- | --- | --- |
-| `meta` | `.meta` | flat `ObjectMap` with literal-dotted keys (e.g. `meta["_dd.hostname"]`); Java nests dotted keys. **Legacy — do not change.** |
-| `metrics` | `.metrics` | flat with literal-dotted keys. **Legacy.** |
+| `meta`, `metrics`, `meta_struct` | `.meta`, `.metrics`, `.meta_struct` | top-level keys are flat with literal dots; Java nests them. **Pomsky convention — do not change.** Consumers read the literal-dotted key directly; splitting on `.` would force every consumer to switch to nested path traversal. `meta_struct` leaves are msgpack-decoded into structured `Value`s, so the values themselves are nested even though the top-level keys are flat. |
 
 ## What's gone or out of scope
 
