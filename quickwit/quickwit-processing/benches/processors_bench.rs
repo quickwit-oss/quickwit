@@ -5,7 +5,7 @@ use quickwit_processing::{
     DatadogLogMsg, PipelineStep, ProcessedLog, get_integrations_processor,
     get_preprocessing_pipeline,
 };
-use rand::Rng;
+use rand::RngExt;
 use time::OffsetDateTime;
 
 #[global_allocator]
@@ -25,12 +25,12 @@ fn make_test_processed_log(message: String) -> ProcessedLog {
 }
 
 fn generate_syslog_processed_logs(count: usize) -> Vec<ProcessedLog> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut processed_logs = Vec::with_capacity(count);
 
     for _ in 0..count {
         // Randomize various parts of the message
-        let prival = rng.gen_range(0..192); // 0-191 are valid syslog priorities
+        let prival = rng.random_range(0..192); // 0-191 are valid syslog priorities
         let hostname = "mymachine.example.com";
         let app_names = [
             "nginx_access",
@@ -40,7 +40,7 @@ fn generate_syslog_processed_logs(count: usize) -> Vec<ProcessedLog> {
             "sshd",
             "kernel",
         ];
-        let app_name = app_names[rng.gen_range(0..app_names.len())];
+        let app_name = app_names[rng.random_range(0..app_names.len())];
         let methods = ["GET", "POST", "PUT", "DELETE", "HEAD"];
         let paths = [
             "/healthz",
@@ -50,8 +50,8 @@ fn generate_syslog_processed_logs(count: usize) -> Vec<ProcessedLog> {
             "/login",
             "/dashboard",
         ];
-        let method = methods[rng.gen_range(0..methods.len())];
-        let path = paths[rng.gen_range(0..paths.len())];
+        let method = methods[rng.random_range(0..methods.len())];
+        let path = paths[rng.random_range(0..paths.len())];
         let status_code = 200;
         let response_size = 1024;
         let ip = "192.168.1.100";
@@ -78,28 +78,28 @@ fn generate_syslog_processed_logs(count: usize) -> Vec<ProcessedLog> {
 }
 
 fn generate_go_processed_logs(count: usize) -> Vec<ProcessedLog> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut processed_logs = Vec::with_capacity(count);
 
     for _ in 0..count {
         // Generate different types of Go log messages based on the integration patterns
-        let log_type = rng.gen_range(0..3);
+        let log_type = rng.random_range(0..3);
 
         let message = match log_type {
             0 => {
                 // go_prefixed pattern: [Oct 27 02:18:00] DEBUG main: started observing beach
                 // animal=walrus
                 let levels = ["DEBUG", "INFO", "WARN", "ERROR"];
-                let level = levels[rng.gen_range(0..levels.len())];
+                let level = levels[rng.random_range(0..levels.len())];
                 let thread_names = ["main", "worker", "handler", "scheduler"];
-                let thread_name = thread_names[rng.gen_range(0..thread_names.len())];
+                let thread_name = thread_names[rng.random_range(0..thread_names.len())];
                 let messages = [
                     "started observing beach animal=walrus",
                     "processing request id=12345 user=john",
                     "connection established host=localhost port=8080",
                     "task completed duration=1.5s status=success",
                 ];
-                let msg = messages[rng.gen_range(0..messages.len())];
+                let msg = messages[rng.random_range(0..messages.len())];
 
                 format!("[Oct 27 02:18:00] {} {}: {}", level, thread_name, msg)
             }
@@ -112,7 +112,7 @@ fn generate_go_processed_logs(count: usize) -> Vec<ProcessedLog> {
                     "Database connection failed",
                     "Authentication token expired",
                 ];
-                let error_msg = error_messages[rng.gen_range(0..error_messages.len())];
+                let error_msg = error_messages[rng.random_range(0..error_messages.len())];
 
                 format!("2017/03/02 16:07:16 {}", error_msg)
             }
@@ -120,17 +120,17 @@ fn generate_go_processed_logs(count: usize) -> Vec<ProcessedLog> {
                 // go_fallback keyvalue pattern: timestamp="2015-03-26T01:27:38-04:00" level=debug
                 // msg="Started observing beach" animal=walrus number=8
                 let levels = ["debug", "info", "warn", "error"];
-                let level = levels[rng.gen_range(0..levels.len())];
+                let level = levels[rng.random_range(0..levels.len())];
                 let messages = [
                     "Started observing beach",
                     "Processing user request",
                     "Database query executed",
                     "Cache miss occurred",
                 ];
-                let msg = messages[rng.gen_range(0..messages.len())];
+                let msg = messages[rng.random_range(0..messages.len())];
                 let animals = ["walrus", "seal", "penguin", "dolphin"];
-                let animal = animals[rng.gen_range(0..animals.len())];
-                let number = rng.gen_range(1..100);
+                let animal = animals[rng.random_range(0..animals.len())];
+                let number = rng.random_range(1..100);
 
                 format!(
                     r#"timestamp="2015-03-26T01:27:38-04:00" level={} msg="{}" animal={} number={}"#,

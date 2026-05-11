@@ -9,7 +9,7 @@ publish = false
 fnv = { workspace = true }
 grok = "2.4.0"
 itertools = { workspace = true }
-rand = "0.9"
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

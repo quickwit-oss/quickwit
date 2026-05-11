@@ -10482,7 +10482,7 @@ dependencies = [
  "fnv",
  "grok",
  "itertools 0.14.0",
- "rand 0.9.4",
+ "rand 0.10.1",
  "serde",
  "serde_json",
  "serde_with",
