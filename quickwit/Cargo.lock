@@ -8849,7 +8849,9 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arrow",
+ "async-trait",
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "parquet",
  "proptest",
@@ -8865,6 +8867,8 @@ dependencies = [
  "storekey",
  "tempfile",
  "thiserror 2.0.18",
+ "thrift",
+ "tokio",
  "tracing",
  "ulid",
 ]

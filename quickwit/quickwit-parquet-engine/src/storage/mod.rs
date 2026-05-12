@@ -17,6 +17,8 @@
 mod config;
 pub mod inspect;
 pub(crate) mod split_writer;
+pub(crate) mod streaming_reader;
+pub(crate) mod streaming_writer;
 mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};
