@@ -160,11 +160,48 @@ pub struct DecodedPage {
 /// Memory is bounded by ~one in-flight page per decoder, plus one
 /// cached dictionary page per (rg, col) for dictionary-encoded columns.
 /// Does not buffer the row group.
+///
+/// The decoder accepts the underlying stream either by mutable borrow
+/// (via [`Self::new`]) or by ownership (via [`Self::from_owned`]).
+/// Use the owned form when the decoder must persist across multiple
+/// callers — its per-(rg, col) state (`rows_decoded`, cached pages,
+/// `ColumnReader` instances) MUST live as long as the column is being
+/// consumed; recreating a decoder mid-column discards the
+/// `rows_decoded` counter (so subsequent pages report `row_start = 0`)
+/// and the cached dictionary page (so subsequent data pages can't be
+/// decoded). See the streaming merge engine for an example that holds
+/// the decoder across phases 0 → 3.
 pub struct StreamDecoder<'a> {
-    stream: &'a mut dyn ColumnPageStream,
+    stream: StreamSource<'a>,
     metadata: Arc<ParquetMetaData>,
     columns: HashMap<(usize, usize), ColumnState>,
     eof: bool,
+}
+
+/// Holds the underlying [`ColumnPageStream`] either by mutable borrow
+/// or by ownership. The borrowed form is the original short-lived
+/// pattern used by unit tests; the owned form lets a [`StreamDecoder`]
+/// outlive its construction scope (required to preserve per-column
+/// state across multi-page / multi-consumer passes).
+enum StreamSource<'a> {
+    Borrowed(&'a mut dyn ColumnPageStream),
+    Owned(Box<dyn ColumnPageStream>),
+}
+
+impl StreamSource<'_> {
+    fn as_mut(&mut self) -> &mut dyn ColumnPageStream {
+        match self {
+            StreamSource::Borrowed(s) => *s,
+            StreamSource::Owned(b) => b.as_mut(),
+        }
+    }
+
+    fn metadata(&self) -> &Arc<ParquetMetaData> {
+        match self {
+            StreamSource::Borrowed(s) => s.metadata(),
+            StreamSource::Owned(b) => b.metadata(),
+        }
+    }
 }
 
 /// Per-(rg, col) state. Holds the [`ColumnReader`] that owns the
@@ -184,7 +221,7 @@ impl<'a> StreamDecoder<'a> {
     pub fn new(stream: &'a mut dyn ColumnPageStream) -> Self {
         let metadata = Arc::clone(stream.metadata());
         Self {
-            stream,
+            stream: StreamSource::Borrowed(stream),
             metadata,
             columns: HashMap::new(),
             eof: false,
@@ -221,7 +258,7 @@ impl<'a> StreamDecoder<'a> {
                 return Ok(None);
             }
 
-            match self.stream.next_page().await? {
+            match self.stream.as_mut().next_page().await? {
                 Some(page) => self.route_page_to_queue(page)?,
                 None => {
                     self.eof = true;
@@ -282,7 +319,7 @@ impl<'a> StreamDecoder<'a> {
         };
 
         if needs_lookahead && !self.eof {
-            match self.stream.next_page().await? {
+            match self.stream.as_mut().next_page().await? {
                 Some(page) => self.route_page_to_queue(page)?,
                 None => self.eof = true,
             }
@@ -353,6 +390,24 @@ impl<'a> StreamDecoder<'a> {
     /// come from here.
     pub fn metadata(&self) -> &Arc<ParquetMetaData> {
         &self.metadata
+    }
+}
+
+impl StreamDecoder<'static> {
+    /// Build a decoder that owns its stream. Use this when the decoder
+    /// must outlive the scope that constructed the stream — e.g., when
+    /// the same decoder must be reused across multiple traversals of the
+    /// same column chunk, since reconstructing it would reset the
+    /// per-column `rows_decoded` counter and lose any cached dictionary
+    /// page.
+    pub fn from_owned(stream: Box<dyn ColumnPageStream>) -> Self {
+        let metadata = Arc::clone(stream.metadata());
+        Self {
+            stream: StreamSource::Owned(stream),
+            metadata,
+            columns: HashMap::new(),
+            eof: false,
+        }
     }
 }
 
