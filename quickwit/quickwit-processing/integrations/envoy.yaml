@@ -1,0 +1,119 @@
+id: envoy
+metric_id: envoy
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+pipeline:
+  type: pipeline
+  name: Envoy
+  enabled: true
+  filter:
+    query: source:envoy
+  processors:
+    - type: grok-parser
+      name: Parsing Envoy logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+        matchRules: |
+          access_log \[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):date}\] "%{word:http.method} %{notSpace:http.url} %{notSpace:http.protocol}" %{integer:http.status_code} %{data:response.flags} %{integer:network.bytes_read} %{integer:network.bytes_written} %{integer:duration:scale(1000000)} (%{integer:response.x_envoy_upstream_service_time}|-) "%{data:http._x_forwarded_for}" "%{data:http.useragent}" "%{notSpace:http.request_id}" "%{notSpace:http.authority}" %{data:upstream_host}
+      samples:
+        - '[2019-03-06T09:31:27.354Z] "GET /status/418 HTTP/1.1" 418 - "-" 0 135 11 10 "-" "curl/7.60.0" "d209e46f-9ed5-9b61-bbdd-43e22662702a" "httpbin:8000" "172.30.146.73:80" outbound|8000||httpbin.default.svc.cluster.local - 172.21.13.94:8000 172.30.146.82:60290 -'
+        - '[2019-03-06T09:31:27.360Z] "GET /status/418 HTTP/1.1" 418 - "-" 0 135 5 2 "-" "curl/7.60.0" "d209e46f-9ed5-9b61-bbdd-43e22662702a" "httpbin:8000" "127.0.0.1:80" inbound|8000|http|httpbin.default.svc.cluster.local - 172.30.146.73:80 172.30.146.82:38618 outbound_.8000_._.httpbin.default.svc.cluster.local'
+        - '[2021-03-12T09:11:51.592Z] "GET /server_info HTTP/1.1" 200 - 0 27805 1 - "64.145.79.247" "Datadog Agent/7.26.0" "d0000a1f-0000-4b42-0000-0000e13d78ca" "64.145.79.247:8001" "-"'
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details

@@ -1,0 +1,81 @@
+id: sidekiq
+metric_id: sidekiq
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Sidekiq
+    name: Class
+    path: sidekiq.class
+    source: log
+  - groups:
+      - Sidekiq
+    name: Job ID
+    path: sidekiq.jobid
+    source: log
+pipeline:
+  type: pipeline
+  name: Sidekiq
+  enabled: true
+  filter:
+    query: source:sidekiq
+  processors:
+    - type: grok-parser
+      name: Parsing Sidekiq logs
+      enabled: true
+      source: message
+      samples:
+        - '2012-03-02T19:40:45Z 32515 TID-oveajt7ro INFO: HardWorker JID-oveaish94 start'
+        - '2012-03-02T19:40:55Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg done: 10.003 sec'
+        - '2012-03-02T19:40:55.031Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: start'
+        - '2012-03-02T19:40:55.032Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: custom message send from sidekiq worker'
+        - '2012-03-02T19:40:55.077Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: done: 0.046 sec'
+      grok:
+        supportRules: |
+          _class %{notSpace:sidekiq.class}
+          _thread_id %{notSpace:logger.thread_id}
+          _pid %{integer:pid}
+          _level %{word:level}
+          _jobid %{notSpace:sidekiq.jobid}
+          _date %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _date_millisec %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}
+          _duration %{number:duration:scale(1000000000)}
+          _jobname %{notSpace:sidekiq.jobname}
+        matchRules: |
+          start_format_v5 %{_date} %{_pid} TID-%{_thread_id} %{_level}: %{_class} JID-%{_jobid} start
+          finish_format_v5 %{_date} %{_pid} %{_thread_id} %{_level}: %{_class} JID-%{_jobid} done: %{_duration} sec
+          fallback_format_v5 %{_date} %{_pid} %{_thread_id} %{_level}:.*
+          fallback_format_new_v5 %{_date_millisec} %{_pid} TID-%{_thread_id} %{_jobname} JID-%{_jobid} %{_level}: (done: %{_duration})?.*
+
+          start_format_v6 %{_date_millisec} pid=%{_pid} tid=%{_thread_id} class=%{_class} jid=%{_jobid} %{_level}: start
+          finish_format_v6 %{_date_millisec} pid=%{_pid} tid=%{_thread_id} class=%{_class} jid=%{_jobid} elapsed=%{_duration} %{_level}: done
+
+          #Sample v5
+          #2012-03-02T19:40:45Z 32515 TID-oveajt7ro INFO: HardWorker JID-oveaish94 start
+          #2012-03-02T19:40:55Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg done: 10.003 sec
+          #2012-03-02T19:40:55.031Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: start
+          #2012-03-02T19:40:55.032Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: custom message send from sidekiq worker
+          #2012-03-02T19:40:55.077Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: done: 0.046 sec
+
+          #Sample v6
+          #2019-11-13T14:09:52.169Z pid=1 tid=oveahmcxw class=BackgroundCounter jid=12343drgwe23413 INFO: start
+          #2019-11-13T14:09:52.250Z pid=1 tid=oveahmcxw class=BackgroundCounter jid=12343drgwe23413 elapsed=0.082 INFO: done
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

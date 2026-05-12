@@ -1,0 +1,492 @@
+id: trellix-endpoint-security
+tests:
+ -
+  sample: |-
+    {
+      "links" : {
+        "self" : "/epo/v2/events/3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad"
+      },
+      "attributes" : {
+        "detectedutc" : "1726009831000",
+        "analyzermac" : "000000000a01",
+        "receivedutc" : "1726009912159",
+        "sourceprocessname" : "test.exe",
+        "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "sourceipv4" : "10.10.10.10",
+        "analyzerdetectionmethod" : "Access Protection",
+        "targetusername" : "Test",
+        "threatseverity" : "2",
+        "sourceprocesssigned" : true,
+        "targethash" : "7a0c833ecb19260e4a108c9e7e947038",
+        "analyzer" : "ENDP_AM_1070",
+        "nodepath" : "1\\2942564",
+        "threattype" : "IDS_THREAT_TYPE_VALUE_AP",
+        "threateventid" : 1092,
+        "timestamp" : "2024-09-10T23:11:52.159Z",
+        "targetport" : "1850",
+        "analyzerversion" : "10.7.0.6711",
+        "sourcefilepath" : "C:\\Program Files (x86)\\Test\\130.0.6679.0",
+        "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+        "targetfilename" : "C:\\ProgramData\\Test.log",
+        "threatactiontaken" : "blocked",
+        "threatname" : "Protect Endpoint Security logs folder",
+        "analyzername" : "Trellix Endpoint Security",
+        "threatcategory" : "hip.file",
+        "autoguid" : "4c99b752-ae2d-4de9-bfbe-61969c0a80dc",
+        "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+        "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "sourceprocesshash" : "c583e91ddee7c0e8ac2a3d3aacad2f4c",
+        "analyzeripv4" : "10.10.10.10",
+        "sourceusername" : "TEST\\TEST",
+        "analyzerhostname" : "DESKTOP-TEST",
+        "targetipv4" : "20.20.20.20",
+        "extendedattributes" : {
+          "EPExtendedEvent" : {
+            "TargetModifyTime" : 1725614523000,
+            "SourceProcessSigner" : "OID.1.3.6.1.4.1.311.60.2.1.3=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.2.5.4.15=PRIVATE ORGANIZATION, SERIALNUMBER=3582691, C=US, S=CALIFORNIA, L=MOUNTAIN VIEW, O=GOOGLE LLC, CN=GOOGLE LLC",
+            "DurationBeforeDetection" : 1029904,
+            "TargetPath" : "C:\\ProgramData\\Test",
+            "TargetFileSize" : 3420,
+            "AttackVectorType" : 4,
+            "SourceProcessSigned" : true,
+            "TargetName" : "Test.log",
+            "TargetAccessTime" : 1726007902000,
+            "SourceFileSize" : 4884584,
+            "TargetHash" : "7a0c833ecb19260e4a108c9e7e947038",
+            "SourceModifyTime" : 1724658416000,
+            "AnalyzerContentVersion" : "10.7.0",
+            "SourceProcessHash" : "c583e91ddee7c0e8ac2a3d3aacad2f4c",
+            "AnalyzerContentCreationDate" : 1442920271000,
+            "SourceFilePath" : "C:\\Program Files (x86)\\Test\\130.0.6679.0",
+            "SourceCreateTime" : 1724979927000,
+            "TargetCreateTime" : 1725613710000,
+            "SourceAccessTime" : 1726009831000,
+            "TargetSigned" : false
+          }
+        },
+        "threathandled" : true
+      },
+      "id" : "3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad",
+      "type" : "MVEvents"
+    }
+  service: "threat-events"
+  result:
+    custom:
+      attributes:
+        agentguid: "a078a2e6-e490-4345-839e-7c1f8665a2b9"
+        analyzer: "ENDP_AM_1070"
+        analyzerdetectionmethod: "Access Protection"
+        analyzerhostname: "DESKTOP-TEST"
+        analyzeripv4: "10.10.10.10"
+        analyzeripv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        analyzermac: "000000000a01"
+        analyzername: "Trellix Endpoint Security"
+        analyzerversion: "10.7.0.6711"
+        autoguid: "4c99b752-ae2d-4de9-bfbe-61969c0a80dc"
+        detectedutc: "1726009831000"
+        extendedattributes:
+          EPExtendedEvent:
+            AnalyzerContentCreationDate: 1442920271000
+            AnalyzerContentVersion: "10.7.0"
+            AttackVectorType: "Local System"
+            DurationBeforeDetection: 1029904
+            SourceAccessTime: 1726009831000
+            SourceCreateTime: 1724979927000
+            SourceFilePath: "C:\\Program Files (x86)\\Test\\130.0.6679.0"
+            SourceFileSize: 4884584
+            SourceModifyTime: 1724658416000
+            SourceProcessHash: "c583e91ddee7c0e8ac2a3d3aacad2f4c"
+            SourceProcessSigned: true
+            SourceProcessSigner: "OID.1.3.6.1.4.1.311.60.2.1.3=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.2.5.4.15=PRIVATE ORGANIZATION, SERIALNUMBER=3582691, C=US, S=CALIFORNIA, L=MOUNTAIN VIEW, O=GOOGLE LLC, CN=GOOGLE LLC"
+            TargetAccessTime: 1726007902000
+            TargetCreateTime: 1725613710000
+            TargetFileSize: 3420
+            TargetHash: "7a0c833ecb19260e4a108c9e7e947038"
+            TargetModifyTime: 1725614523000
+            TargetName: "Test.log"
+            TargetPath: "C:\\ProgramData\\Test"
+            TargetSigned: false
+        nodepath: "1\\2942564"
+        receivedutc: "1726009912159"
+        sourcefilepath: "C:\\Program Files (x86)\\Test\\130.0.6679.0"
+        sourceipv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        sourceprocesshash: "c583e91ddee7c0e8ac2a3d3aacad2f4c"
+        sourceprocessname: "test.exe"
+        sourceprocesssigned: true
+        targetfilename: "C:\\ProgramData\\Test.log"
+        targethash: "7a0c833ecb19260e4a108c9e7e947038"
+        targetipv6: "/0:0:0:0:0:ffff:0:0"
+        targetusername: "Test"
+        threatactiontaken: "Blocked"
+        threatcategory: "'File' class or access"
+        threateventid: 1092
+        threathandled: true
+        threatname: "Protect Endpoint Security logs folder"
+        threatseverity: "2"
+        threattype: "Access Protection"
+        timestamp: "2024-09-10T23:11:52.159Z"
+      id: "3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad"
+      links:
+        self: "/epo/v2/events/3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad"
+      modulename: "threat-prevention"
+      network:
+        client:
+          ip: "10.10.10.10"
+        destination:
+          ip: "20.20.20.20"
+          port: "1850"
+      severity: "Critical"
+      type: "MVEvents"
+      usr:
+        name: "TEST\\TEST"
+    message: |-
+      {
+        "links" : {
+          "self" : "/epo/v2/events/3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad"
+        },
+        "attributes" : {
+          "detectedutc" : "1726009831000",
+          "analyzermac" : "000000000a01",
+          "receivedutc" : "1726009912159",
+          "sourceprocessname" : "test.exe",
+          "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "sourceipv4" : "10.10.10.10",
+          "analyzerdetectionmethod" : "Access Protection",
+          "targetusername" : "Test",
+          "threatseverity" : "2",
+          "sourceprocesssigned" : true,
+          "targethash" : "7a0c833ecb19260e4a108c9e7e947038",
+          "analyzer" : "ENDP_AM_1070",
+          "nodepath" : "1\\2942564",
+          "threattype" : "IDS_THREAT_TYPE_VALUE_AP",
+          "threateventid" : 1092,
+          "timestamp" : "2024-09-10T23:11:52.159Z",
+          "targetport" : "1850",
+          "analyzerversion" : "10.7.0.6711",
+          "sourcefilepath" : "C:\\Program Files (x86)\\Test\\130.0.6679.0",
+          "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+          "targetfilename" : "C:\\ProgramData\\Test.log",
+          "threatactiontaken" : "blocked",
+          "threatname" : "Protect Endpoint Security logs folder",
+          "analyzername" : "Trellix Endpoint Security",
+          "threatcategory" : "hip.file",
+          "autoguid" : "4c99b752-ae2d-4de9-bfbe-61969c0a80dc",
+          "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+          "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "sourceprocesshash" : "c583e91ddee7c0e8ac2a3d3aacad2f4c",
+          "analyzeripv4" : "10.10.10.10",
+          "sourceusername" : "TEST\\TEST",
+          "analyzerhostname" : "DESKTOP-TEST",
+          "targetipv4" : "20.20.20.20",
+          "extendedattributes" : {
+            "EPExtendedEvent" : {
+              "TargetModifyTime" : 1725614523000,
+              "SourceProcessSigner" : "OID.1.3.6.1.4.1.311.60.2.1.3=US, OID.1.3.6.1.4.1.311.60.2.1.2=DELAWARE, OID.2.5.4.15=PRIVATE ORGANIZATION, SERIALNUMBER=3582691, C=US, S=CALIFORNIA, L=MOUNTAIN VIEW, O=GOOGLE LLC, CN=GOOGLE LLC",
+              "DurationBeforeDetection" : 1029904,
+              "TargetPath" : "C:\\ProgramData\\Test",
+              "TargetFileSize" : 3420,
+              "AttackVectorType" : 4,
+              "SourceProcessSigned" : true,
+              "TargetName" : "Test.log",
+              "TargetAccessTime" : 1726007902000,
+              "SourceFileSize" : 4884584,
+              "TargetHash" : "7a0c833ecb19260e4a108c9e7e947038",
+              "SourceModifyTime" : 1724658416000,
+              "AnalyzerContentVersion" : "10.7.0",
+              "SourceProcessHash" : "c583e91ddee7c0e8ac2a3d3aacad2f4c",
+              "AnalyzerContentCreationDate" : 1442920271000,
+              "SourceFilePath" : "C:\\Program Files (x86)\\Test\\130.0.6679.0",
+              "SourceCreateTime" : 1724979927000,
+              "TargetCreateTime" : 1725613710000,
+              "SourceAccessTime" : 1726009831000,
+              "TargetSigned" : false
+            }
+          },
+          "threathandled" : true
+        },
+        "id" : "3f88c4ad-8d89-4a0e-bc9b-e21f2c4c08ad",
+        "type" : "MVEvents"
+      }
+    service: "threat-prevention"
+    status: "critical"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726009831000
+ -
+  sample: |-
+    {
+      "links" : {
+        "self" : "/epo/v2/events/502301bb-cc98-4708-ae12-1be817f8cf50"
+      },
+      "attributes" : {
+        "detectedutc" : "1726561344000",
+        "analyzermac" : "000000000a01",
+        "receivedutc" : "1726561912739",
+        "sourceprocessname" : "test.exe",
+        "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "sourceipv4" : "10.10.10.10",
+        "analyzerdetectionmethod" : "Dynamic Application Containment",
+        "threatseverity" : "4",
+        "analyzer" : "ENDPATP_1070",
+        "nodepath" : "1\\2942564",
+        "threattype" : "IDS_THREAT_TYPE_VALUE_DACAP",
+        "threateventid" : 37275,
+        "timestamp" : "2024-09-17T08:31:52.739Z",
+        "analyzerversion" : "10.7.0",
+        "sourcefilepath" : "C:\\Program Files\\Test",
+        "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+        "targetfilename" : "C:\\Program Files\\Test\\test.exe",
+        "threatactiontaken" : "IDS_ACTION_CONTAINED",
+        "threatname" : "DAC:Contained",
+        "analyzername" : "Trellix Endpoint Security",
+        "threatcategory" : "hip.process",
+        "autoguid" : "5a23a888-8af1-41ce-9f6a-14150433704c",
+        "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+        "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "sourceprocesshash" : "2662decb9c421566ef5a73b977c56205",
+        "analyzeripv4" : "10.10.10.10",
+        "analyzerhostname" : "DESKTOP-TEST",
+        "targetipv4" : "20.20.20.20",
+        "extendedattributes" : {
+          "EPExtendedEvent" : {
+            "SourceFileSize" : 92672,
+            "SourceModifyTime" : 1726328621000,
+            "TargetPath" : "C:\\Program Files\\Test",
+            "SourceProcessHash" : "2662decb9c421566ef5a73b977c56205",
+            "AttackVectorType" : 4,
+            "SourceFilePath" : "C:\\Program Files\\Test",
+            "SourceCreateTime" : 1726328564000,
+            "TargetName" : "test.exe",
+            "SourceAccessTime" : 1726561343000
+          }
+        },
+        "threathandled" : true
+      },
+      "id" : "502301bb-cc98-4708-ae12-1be817f8cf50",
+      "type" : "MVEvents"
+    }
+  service: "threat-events"
+  result:
+    custom:
+      attributes:
+        agentguid: "a078a2e6-e490-4345-839e-7c1f8665a2b9"
+        analyzer: "ENDPATP_1070"
+        analyzerdetectionmethod: "Dynamic Application Containment"
+        analyzerhostname: "DESKTOP-TEST"
+        analyzeripv4: "10.10.10.10"
+        analyzeripv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        analyzermac: "000000000a01"
+        analyzername: "Trellix Endpoint Security"
+        analyzerversion: "10.7.0"
+        autoguid: "5a23a888-8af1-41ce-9f6a-14150433704c"
+        detectedutc: "1726561344000"
+        extendedattributes:
+          EPExtendedEvent:
+            AttackVectorType: "Local System"
+            SourceAccessTime: 1726561343000
+            SourceCreateTime: 1726328564000
+            SourceFilePath: "C:\\Program Files\\Test"
+            SourceFileSize: 92672
+            SourceModifyTime: 1726328621000
+            SourceProcessHash: "2662decb9c421566ef5a73b977c56205"
+            TargetName: "test.exe"
+            TargetPath: "C:\\Program Files\\Test"
+        nodepath: "1\\2942564"
+        receivedutc: "1726561912739"
+        sourcefilepath: "C:\\Program Files\\Test"
+        sourceipv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        sourceprocesshash: "2662decb9c421566ef5a73b977c56205"
+        sourceprocessname: "test.exe"
+        targetfilename: "C:\\Program Files\\Test\\test.exe"
+        targetipv6: "/0:0:0:0:0:ffff:0:0"
+        threatactiontaken: "Contained"
+        threatcategory: "'Process' class or access"
+        threateventid: 37275
+        threathandled: true
+        threatname: "DAC:Contained"
+        threatseverity: "4"
+        threattype: "Dynamic Application Containment"
+        timestamp: "2024-09-17T08:31:52.739Z"
+      id: "502301bb-cc98-4708-ae12-1be817f8cf50"
+      links:
+        self: "/epo/v2/events/502301bb-cc98-4708-ae12-1be817f8cf50"
+      modulename: "adaptive-threat-protection"
+      network:
+        client:
+          ip: "10.10.10.10"
+        destination:
+          ip: "20.20.20.20"
+      severity: "Warning"
+      type: "MVEvents"
+    message: |-
+      {
+        "links" : {
+          "self" : "/epo/v2/events/502301bb-cc98-4708-ae12-1be817f8cf50"
+        },
+        "attributes" : {
+          "detectedutc" : "1726561344000",
+          "analyzermac" : "000000000a01",
+          "receivedutc" : "1726561912739",
+          "sourceprocessname" : "test.exe",
+          "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "sourceipv4" : "10.10.10.10",
+          "analyzerdetectionmethod" : "Dynamic Application Containment",
+          "threatseverity" : "4",
+          "analyzer" : "ENDPATP_1070",
+          "nodepath" : "1\\2942564",
+          "threattype" : "IDS_THREAT_TYPE_VALUE_DACAP",
+          "threateventid" : 37275,
+          "timestamp" : "2024-09-17T08:31:52.739Z",
+          "analyzerversion" : "10.7.0",
+          "sourcefilepath" : "C:\\Program Files\\Test",
+          "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+          "targetfilename" : "C:\\Program Files\\Test\\test.exe",
+          "threatactiontaken" : "IDS_ACTION_CONTAINED",
+          "threatname" : "DAC:Contained",
+          "analyzername" : "Trellix Endpoint Security",
+          "threatcategory" : "hip.process",
+          "autoguid" : "5a23a888-8af1-41ce-9f6a-14150433704c",
+          "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+          "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "sourceprocesshash" : "2662decb9c421566ef5a73b977c56205",
+          "analyzeripv4" : "10.10.10.10",
+          "analyzerhostname" : "DESKTOP-TEST",
+          "targetipv4" : "20.20.20.20",
+          "extendedattributes" : {
+            "EPExtendedEvent" : {
+              "SourceFileSize" : 92672,
+              "SourceModifyTime" : 1726328621000,
+              "TargetPath" : "C:\\Program Files\\Test",
+              "SourceProcessHash" : "2662decb9c421566ef5a73b977c56205",
+              "AttackVectorType" : 4,
+              "SourceFilePath" : "C:\\Program Files\\Test",
+              "SourceCreateTime" : 1726328564000,
+              "TargetName" : "test.exe",
+              "SourceAccessTime" : 1726561343000
+            }
+          },
+          "threathandled" : true
+        },
+        "id" : "502301bb-cc98-4708-ae12-1be817f8cf50",
+        "type" : "MVEvents"
+      }
+    service: "adaptive-threat-protection"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726561344000
+ -
+  sample: |-
+    {
+      "links" : {
+        "self" : "/epo/v2/events/b34295d8-f1d0-4da5-b8b6-344fe0cf9923"
+      },
+      "attributes" : {
+        "detectedutc" : "1726138800000",
+        "analyzermac" : "000000000a01",
+        "receivedutc" : "1726142214046",
+        "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "sourceipv4" : "10.10.10.10",
+        "threatseverity" : "6",
+        "analyzer" : "ENDP_WP_1070",
+        "nodepath" : "1\\2942564",
+        "threattype" : " ",
+        "threateventid" : 18600,
+        "timestamp" : "2024-09-12T11:56:54.046Z",
+        "analyzerversion" : "10.7.0",
+        "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+        "threatactiontaken" : "none",
+        "threatname" : " ",
+        "analyzername" : "Trellix Endpoint Security",
+        "sourceurl" : "reports.allowedSite",
+        "threatcategory" : "ops.informational.event",
+        "autoguid" : "9de8bc2c-27bd-4160-9edb-bfe0bf9d90eb",
+        "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+        "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+        "analyzeripv4" : "10.10.10.10",
+        "sourceusername" : "TEST\\TEST",
+        "analyzerhostname" : "TEST",
+        "targetipv4" : "20.20.20.20"
+      },
+      "id" : "b34295d8-f1d0-4da5-b8b6-344fe0cf9923",
+      "type" : "MVEvents"
+    }
+  service: "threat-events"
+  result:
+    custom:
+      attributes:
+        agentguid: "a078a2e6-e490-4345-839e-7c1f8665a2b9"
+        analyzer: "ENDP_WP_1070"
+        analyzerhostname: "TEST"
+        analyzeripv4: "10.10.10.10"
+        analyzeripv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        analyzermac: "000000000a01"
+        analyzername: "Trellix Endpoint Security"
+        analyzerversion: "10.7.0"
+        autoguid: "9de8bc2c-27bd-4160-9edb-bfe0bf9d90eb"
+        detectedutc: "1726138800000"
+        nodepath: "1\\2942564"
+        receivedutc: "1726142214046"
+        sourceipv6: "/0:0:0:0:0:ffff:ffff:ffff"
+        sourceurl: "reports.allowedSite"
+        targetipv6: "/0:0:0:0:0:ffff:0:0"
+        threatactiontaken: "None"
+        threatcategory: "Informational event"
+        threateventid: 18600
+        threatname: "N/A"
+        threatseverity: "6"
+        threattype: "N/A"
+        timestamp: "2024-09-12T11:56:54.046Z"
+      id: "b34295d8-f1d0-4da5-b8b6-344fe0cf9923"
+      links:
+        self: "/epo/v2/events/b34295d8-f1d0-4da5-b8b6-344fe0cf9923"
+      modulename: "web-protection"
+      network:
+        client:
+          ip: "10.10.10.10"
+        destination:
+          ip: "20.20.20.20"
+      severity: "Info"
+      type: "MVEvents"
+      usr:
+        name: "TEST\\TEST"
+    message: |-
+      {
+        "links" : {
+          "self" : "/epo/v2/events/b34295d8-f1d0-4da5-b8b6-344fe0cf9923"
+        },
+        "attributes" : {
+          "detectedutc" : "1726138800000",
+          "analyzermac" : "000000000a01",
+          "receivedutc" : "1726142214046",
+          "sourceipv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "sourceipv4" : "10.10.10.10",
+          "threatseverity" : "6",
+          "analyzer" : "ENDP_WP_1070",
+          "nodepath" : "1\\2942564",
+          "threattype" : " ",
+          "threateventid" : 18600,
+          "timestamp" : "2024-09-12T11:56:54.046Z",
+          "analyzerversion" : "10.7.0",
+          "agentguid" : "a078a2e6-e490-4345-839e-7c1f8665a2b9",
+          "threatactiontaken" : "none",
+          "threatname" : " ",
+          "analyzername" : "Trellix Endpoint Security",
+          "sourceurl" : "reports.allowedSite",
+          "threatcategory" : "ops.informational.event",
+          "autoguid" : "9de8bc2c-27bd-4160-9edb-bfe0bf9d90eb",
+          "targetipv6" : "/0:0:0:0:0:ffff:0:0",
+          "analyzeripv6" : "/0:0:0:0:0:ffff:ffff:ffff",
+          "analyzeripv4" : "10.10.10.10",
+          "sourceusername" : "TEST\\TEST",
+          "analyzerhostname" : "TEST",
+          "targetipv4" : "20.20.20.20"
+        },
+        "id" : "b34295d8-f1d0-4da5-b8b6-344fe0cf9923",
+        "type" : "MVEvents"
+      }
+    service: "web-protection"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726138800000

@@ -1,0 +1,467 @@
+id: crest_data_systems_airtable
+metric_id: crest-data-systems-airtable
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Actor Type
+    path: cds.airtable.event.actor_type
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Authentication Type
+    path: cds.airtable.event.payload_type
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Current MFA Policy
+    path: cds.airtable.event.current_mfaPolicyType
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Action ID
+    path: cds.airtable.event.context_actionId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Automation ID
+    path: cds.airtable.event.actor_automationId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Base ID
+    path: cds.airtable.event.context_baseId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Enterprise Account ID
+    path: cds.airtable.event.context_enterpriseAccountId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event ID
+    path: cds.airtable.event.id
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Interface ID
+    path: cds.airtable.event.context_interfaceId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Model ID
+    path: cds.airtable.event.modelId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Model Type
+    path: cds.airtable.event.modelType
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Payload Version
+    path: cds.airtable.event.payloadVersion
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event View ID
+    path: cds.airtable.event.actor_viewId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Event Workspace ID
+    path: cds.airtable.event.context_workspaceId
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Login Type
+    path: cds.airtable.event.payload_method
+    source: log
+    type: string
+  - description: ''
+    facetType: list
+    groups:
+      - Crest data systems airtable
+    name: Previous MFA Policy
+    path: cds.airtable.event.previous_mfaPolicyType
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Airtable Pipeline
+  enabled: true
+  filter:
+    query: source:crest_data_systems_airtable
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `id` to `cds.airtable.event.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: cds.airtable.event.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `modelId` to `cds.airtable.event.modelId`
+      enabled: true
+      sources:
+        - modelId
+      sourceType: attribute
+      target: cds.airtable.event.modelId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `modelType` to `cds.airtable.event.modelType`
+      enabled: true
+      sources:
+        - modelType
+      sourceType: attribute
+      target: cds.airtable.event.modelType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `origin.ipAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - origin.ipAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: GeoIp Parser for `network.client.ip`
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `action` to `evt.name`
+      enabled: true
+      sources:
+        - action
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.type` to `cds.airtable.event.actor_type`
+      enabled: true
+      sources:
+        - actor.type
+      sourceType: attribute
+      target: cds.airtable.event.actor_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.viewId` to `cds.airtable.event.actor_viewId`
+      enabled: true
+      sources:
+        - actor.viewId
+      sourceType: attribute
+      target: cds.airtable.event.actor_viewId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.automationId` to `cds.airtable.event.actor_automationId`
+      enabled: true
+      sources:
+        - actor.automationId
+      sourceType: attribute
+      target: cds.airtable.event.actor_automationId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.user.name` to `usr.name`
+      enabled: true
+      sources:
+        - actor.user.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.user.id` to `usr.id`
+      enabled: true
+      sources:
+        - actor.user.id
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `actor.user.email` to `usr.email`
+      enabled: true
+      sources:
+        - actor.user.email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `context.actionId` to `cds.airtable.event.context_actionId`
+      enabled: true
+      sources:
+        - context.actionId
+      sourceType: attribute
+      target: cds.airtable.event.context_actionId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `context.baseId` to `cds.airtable.event.context_baseId`
+      enabled: true
+      sources:
+        - context.baseId
+      sourceType: attribute
+      target: cds.airtable.event.context_baseId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `context.enterpriseAccountId` to
+        `cds.airtable.event.context_enterpriseAccountId`
+      enabled: true
+      sources:
+        - context.enterpriseAccountId
+      sourceType: attribute
+      target: cds.airtable.event.context_enterpriseAccountId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `context.interfaceId` to `cds.airtable.event.context_interfaceId`
+      enabled: true
+      sources:
+        - context.interfaceId
+      sourceType: attribute
+      target: cds.airtable.event.context_interfaceId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `context.workspaceId` to `cds.airtable.event.context_workspaceId`
+      enabled: true
+      sources:
+        - context.workspaceId
+      sourceType: attribute
+      target: cds.airtable.event.context_workspaceId
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `payloadVersion` to `cds.airtable.event.payloadVersion`
+      enabled: true
+      sources:
+        - payloadVersion
+      sourceType: attribute
+      target: cds.airtable.event.payloadVersion
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `origin.userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - origin.userAgent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `payload.current.mfaPolicyType` to
+        `cds.airtable.event.current_mfaPolicyType`
+      enabled: true
+      sources:
+        - payload.current.mfaPolicyType
+      sourceType: attribute
+      target: cds.airtable.event.current_mfaPolicyType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `payload.previous.mfaPolicyType` to
+        `cds.airtable.event.previous_mfaPolicyType`
+      enabled: true
+      sources:
+        - payload.previous.mfaPolicyType
+      sourceType: attribute
+      target: cds.airtable.event.previous_mfaPolicyType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `payload.method` to `cds.airtable.event.payload_method`
+      enabled: true
+      sources:
+        - payload.method
+      sourceType: attribute
+      target: cds.airtable.event.payload_method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: Define User Agent Parser
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `payload.type` to `cds.airtable.event.payload_type`
+      enabled: true
+      sources:
+        - payload.type
+      sourceType: attribute
+      target: cds.airtable.event.payload_type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

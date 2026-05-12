@@ -1,0 +1,152 @@
+id: "falco"
+tests:
+ -
+  sample: |-
+    {
+      "output" : "09:48:02.285310579: Warning Sensitive file opened for reading by non-trusted program (file=/etc/shadow gparent=containerd-shim ggparent=systemd gggparent=<NA> evt_type=openat user=root user_uid=0 user_loginuid=-1 process=cat proc_exepath=/usr/bin/cat parent=runc command=cat /etc/shadow terminal=0 container_id=c1f3a8646e7f container_image=docker.io/library/nginx container_image_tag=latest container_name=nginx k8s_ns=default k8s_pod_name=nginx-7854ff8877-vrlrs)",
+      "output_fields" : {
+        "container" : {
+          "image" : {
+            "tag" : "latest",
+            "repository" : "docker.io/library/nginx"
+          },
+          "name" : "nginx",
+          "id" : "c1f3a8646e7f"
+        },
+        "evt" : {
+          "time" : 1730281682285310500,
+          "type" : "openat"
+        },
+        "proc" : {
+          "cmdline" : "cat /etc/shadow",
+          "pname" : "runc",
+          "name" : "cat",
+          "tty" : 0,
+          "exepath" : "/usr/bin/cat",
+          "aname[3]" : "systemd",
+          "aname[2]" : "containerd-shim"
+        },
+        "k8s" : {
+          "pod" : {
+            "name" : "nginx-7854ff8877-vrlrs"
+          },
+          "ns" : {
+            "name" : "default"
+          }
+        },
+        "user" : {
+          "uid" : 0,
+          "loginuid" : -1,
+          "name" : "root"
+        },
+        "fd" : {
+          "name" : "/etc/shadow"
+        }
+      },
+      "hostname" : "k8s-node1",
+      "rule" : "Read sensitive file untrusted",
+      "source" : "syscall",
+      "time" : "2024-10-30T09:48:02.285310579Z",
+      "priority" : "Warning",
+      "tags" : [ "T1555", "container", "filesystem", "host", "maturity_stable", "mitre_credential_access" ]
+    }
+  result:
+    custom:
+      evt:
+        name: "openat"
+      hostname: "k8s-node1"
+      output: "09:48:02.285310579: Warning Sensitive file opened for reading by non-trusted program (file=/etc/shadow gparent=containerd-shim ggparent=systemd gggparent=<NA> evt_type=openat user=root user_uid=0 user_loginuid=-1 process=cat proc_exepath=/usr/bin/cat parent=runc command=cat /etc/shadow terminal=0 container_id=c1f3a8646e7f container_image=docker.io/library/nginx container_image_tag=latest container_name=nginx k8s_ns=default k8s_pod_name=nginx-7854ff8877-vrlrs)"
+      output_fields:
+        container:
+          id: "c1f3a8646e7f"
+          image:
+            repository: "docker.io/library/nginx"
+            tag: "latest"
+          name: "nginx"
+        evt:
+          time: 1730281682285310500
+        fd:
+          name: "/etc/shadow"
+        k8s:
+          ns:
+            name: "default"
+          pod:
+            name: "nginx-7854ff8877-vrlrs"
+        proc:
+          aname[2]: "containerd-shim"
+          aname[3]: "systemd"
+          cmdline: "cat /etc/shadow"
+          exepath: "/usr/bin/cat"
+          name: "cat"
+          pname: "runc"
+          tty: 0
+        user:
+          loginuid: -1
+          uid: 0
+      priority: "Warning"
+      rule: "Read sensitive file untrusted"
+      source: "syscall"
+      status: "warning"
+      tags:
+       - "T1555"
+       - "container"
+       - "filesystem"
+       - "host"
+       - "maturity_stable"
+       - "mitre_credential_access"
+      time: "2024-10-30T09:48:02.285310579Z"
+      usr:
+        name: "root"
+    message: |-
+      {
+        "output" : "09:48:02.285310579: Warning Sensitive file opened for reading by non-trusted program (file=/etc/shadow gparent=containerd-shim ggparent=systemd gggparent=<NA> evt_type=openat user=root user_uid=0 user_loginuid=-1 process=cat proc_exepath=/usr/bin/cat parent=runc command=cat /etc/shadow terminal=0 container_id=c1f3a8646e7f container_image=docker.io/library/nginx container_image_tag=latest container_name=nginx k8s_ns=default k8s_pod_name=nginx-7854ff8877-vrlrs)",
+        "output_fields" : {
+          "container" : {
+            "image" : {
+              "tag" : "latest",
+              "repository" : "docker.io/library/nginx"
+            },
+            "name" : "nginx",
+            "id" : "c1f3a8646e7f"
+          },
+          "evt" : {
+            "time" : 1730281682285310500,
+            "type" : "openat"
+          },
+          "proc" : {
+            "cmdline" : "cat /etc/shadow",
+            "pname" : "runc",
+            "name" : "cat",
+            "tty" : 0,
+            "exepath" : "/usr/bin/cat",
+            "aname[3]" : "systemd",
+            "aname[2]" : "containerd-shim"
+          },
+          "k8s" : {
+            "pod" : {
+              "name" : "nginx-7854ff8877-vrlrs"
+            },
+            "ns" : {
+              "name" : "default"
+            }
+          },
+          "user" : {
+            "uid" : 0,
+            "loginuid" : -1,
+            "name" : "root"
+          },
+          "fd" : {
+            "name" : "/etc/shadow"
+          }
+        },
+        "hostname" : "k8s-node1",
+        "rule" : "Read sensitive file untrusted",
+        "source" : "syscall",
+        "time" : "2024-10-30T09:48:02.285310579Z",
+        "priority" : "Warning",
+        "tags" : [ "T1555", "container", "filesystem", "host", "maturity_stable", "mitre_credential_access" ]
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1730281682285

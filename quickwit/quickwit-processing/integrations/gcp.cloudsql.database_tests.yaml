@@ -1,0 +1,507 @@
+id: "gcp.cloudsql.database"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2019-04-08T16:20:14.869Z",
+      "data" : {
+        "logName" : "projects/qa-2-fdh-product-1/logs/cloudsql.googleapis.com%2Fmysql.err",
+        "resource" : {
+          "type" : "cloudsql_database",
+          "labels" : {
+            "database_id" : "qa-2-fdh-product-1:qa-2-fdh-product-1-us-east4-database-02",
+            "project_id" : "qa-2-fdh-product-1",
+            "region" : "us-east4"
+          }
+        },
+        "textPayload" : "2019-04-08T16:20:07.718913Z 6781998 [Note] Aborted connection 6781998 to db: FLEX_DB user: proxyuser host: cloudsqlproxy~35.199.25.85 (Got an error reading communication packets)",
+        "receiveTimestamp" : "2019-04-08T16:20:14.184660604Z",
+        "insertId" : "s=6cf2693b742e4e60a4b3005664004efe;i=e8363;b=4a3ee18ba4f4477ebfdb912d28966f86;m=d3d27ebe42;t=5860735b8556c;x=fc2846f2c64f181a-0@a1",
+        "timestamp" : "2019-04-08T16:20:07.719276Z"
+      },
+      "publish_time" : "2019-04-08T16:20:14.869Z",
+      "messageId" : "483841959144859",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T16:20:07.719276Z"
+          }
+        }
+      },
+      "message_id" : "483841959144859",
+      "subscription" : "projects/qa-2-fdh-product-1/subscriptions/datadog-export-subscription"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T16:20:07.719276Z"
+      data:
+        insertId: "s=6cf2693b742e4e60a4b3005664004efe;i=e8363;b=4a3ee18ba4f4477ebfdb912d28966f86;m=d3d27ebe42;t=5860735b8556c;x=fc2846f2c64f181a-0@a1"
+        logName: "projects/qa-2-fdh-product-1/logs/cloudsql.googleapis.com%2Fmysql.err"
+        receiveTimestamp: "2019-04-08T16:20:14.184660604Z"
+        resource:
+          labels:
+            database_id: "qa-2-fdh-product-1:qa-2-fdh-product-1-us-east4-database-02"
+            project_id: "qa-2-fdh-product-1"
+            region: "us-east4"
+          type: "cloudsql_database"
+        timestamp: "2019-04-08T16:20:07.719276Z"
+      db:
+        db: "FLEX_DB"
+        user: "proxyuser"
+      messageId: "483841959144859"
+      message_id: "483841959144859"
+      publishTime: "2019-04-08T16:20:14.869Z"
+      publish_time: "2019-04-08T16:20:14.869Z"
+      subscription: "projects/qa-2-fdh-product-1/subscriptions/datadog-export-subscription"
+    message: "2019-04-08T16:20:07.718913Z 6781998 [Note] Aborted connection 6781998 to db: FLEX_DB user: proxyuser host: cloudsqlproxy~35.199.25.85 (Got an error reading communication packets)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554740407719
+ -
+  sample: |-
+    {
+      "publishTime" : "2019-04-08T16:31:05.916Z",
+      "data" : {
+        "logName" : "projects/qa-3-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "cloudsql_database",
+          "labels" : {
+            "database_id" : "qa-3-fdh-product-1:qa-3-fdh-product-1-us-east4-database",
+            "project_id" : "qa-3-fdh-product-1",
+            "region" : "us-east4"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2019-04-08T16:31:04.593Z"
+            },
+            "callerIp" : "35.194.65.226"
+          },
+          "request" : {
+            "resourceId" : {
+              "instanceId" : "qa-3-fdh-product-1-us-east4-database",
+              "fullProjectId" : "qa-3-fdh-product-1"
+            },
+            "@type" : "type.googleapis.com/cloudsql.admin.InstancesGetRequest"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "instances/qa-3-fdh-product-1-us-east4-database",
+            "permission" : "cloudsql.instances.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "cloudsql.instances.get",
+          "resourceName" : "instances/qa-3-fdh-product-1-us-east4-database",
+          "serviceName" : "cloudsql.googleapis.com"
+        },
+        "receiveTimestamp" : "2019-04-08T16:31:05.507577912Z",
+        "insertId" : "-1ns46xe11tlr",
+        "timestamp" : "2019-04-08T16:31:04.587Z"
+      },
+      "publish_time" : "2019-04-08T16:31:05.916Z",
+      "messageId" : "483843047696178",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T16:31:04.587Z"
+          }
+        }
+      },
+      "message_id" : "483843047696178",
+      "subscription" : "projects/qa-3-fdh-product-1/subscriptions/datadog-export-subscription"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T16:31:04.587Z"
+      data:
+        insertId: "-1ns46xe11tlr"
+        logName: "projects/qa-3-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authorizationInfo:
+           -
+            resource: "instances/qa-3-fdh-product-1-us-east4-database"
+            permission: "cloudsql.instances.get"
+            granted: true
+          methodName: "cloudsql.instances.get"
+          request:
+            '@type': "type.googleapis.com/cloudsql.admin.InstancesGetRequest"
+            resourceId:
+              fullProjectId: "qa-3-fdh-product-1"
+              instanceId: "qa-3-fdh-product-1-us-east4-database"
+          requestMetadata:
+            callerIp: "35.194.65.226"
+            requestAttributes:
+              time: "2019-04-08T16:31:04.593Z"
+          resourceName: "instances/qa-3-fdh-product-1-us-east4-database"
+          serviceName: "cloudsql.googleapis.com"
+        receiveTimestamp: "2019-04-08T16:31:05.507577912Z"
+        resource:
+          labels:
+            database_id: "qa-3-fdh-product-1:qa-3-fdh-product-1-us-east4-database"
+            project_id: "qa-3-fdh-product-1"
+            region: "us-east4"
+          type: "cloudsql_database"
+        timestamp: "2019-04-08T16:31:04.587Z"
+      db:
+        operation: "cloudsql.instances.get"
+      evt:
+        name: "cloudsql.instances.get"
+      messageId: "483843047696178"
+      message_id: "483843047696178"
+      network:
+        client:
+          geoip: {}
+          ip: "35.194.65.226"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "qa-3-fdh-product-1"
+        api:
+          operation: "cloudsql.instances.get"
+          request:
+            data:
+              '@type': "type.googleapis.com/cloudsql.admin.InstancesGetRequest"
+              resourceId:
+                fullProjectId: "qa-3-fdh-product-1"
+                instanceId: "qa-3-fdh-product-1-us-east4-database"
+            uid: "Unknown"
+          service:
+            name: "cloudsql.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "qa-3-fdh-product-1"
+          provider: "Google Cloud"
+        metadata:
+          event_code: "cloudsql.instances.get"
+          log_name: "projects/qa-3-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-1ns46xe11tlr"
+          version: "1.3.0"
+        src_endpoint:
+          ip: "35.194.65.226"
+        status: "Success"
+        status_id: 1
+        time: 1554741064587
+        time_dt: "2019-04-08T16:31:04.587Z"
+        type_uid: 600302
+      publishTime: "2019-04-08T16:31:05.916Z"
+      publish_time: "2019-04-08T16:31:05.916Z"
+      subscription: "projects/qa-3-fdh-product-1/subscriptions/datadog-export-subscription"
+    message: |-
+      {
+        "publishTime" : "2019-04-08T16:31:05.916Z",
+        "data" : {
+          "logName" : "projects/qa-3-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "cloudsql_database",
+            "labels" : {
+              "database_id" : "qa-3-fdh-product-1:qa-3-fdh-product-1-us-east4-database",
+              "project_id" : "qa-3-fdh-product-1",
+              "region" : "us-east4"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2019-04-08T16:31:04.593Z"
+              },
+              "callerIp" : "35.194.65.226"
+            },
+            "request" : {
+              "resourceId" : {
+                "instanceId" : "qa-3-fdh-product-1-us-east4-database",
+                "fullProjectId" : "qa-3-fdh-product-1"
+              },
+              "@type" : "type.googleapis.com/cloudsql.admin.InstancesGetRequest"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "instances/qa-3-fdh-product-1-us-east4-database",
+              "permission" : "cloudsql.instances.get",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "cloudsql.instances.get",
+            "resourceName" : "instances/qa-3-fdh-product-1-us-east4-database",
+            "serviceName" : "cloudsql.googleapis.com"
+          },
+          "receiveTimestamp" : "2019-04-08T16:31:05.507577912Z",
+          "insertId" : "-1ns46xe11tlr",
+          "timestamp" : "2019-04-08T16:31:04.587Z"
+        },
+        "publish_time" : "2019-04-08T16:31:05.916Z",
+        "messageId" : "483843047696178",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2019-04-08T16:31:04.587Z"
+            }
+          }
+        },
+        "message_id" : "483843047696178",
+        "subscription" : "projects/qa-3-fdh-product-1/subscriptions/datadog-export-subscription"
+      }
+    service: "cloudsql.googleapis.com"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554741064587
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-16T18:38:00.374Z",
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/datadog-prod/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "cloudsql_database",
+          "labels" : {
+            "project_id" : "datadog-prod",
+            "database_id" : "datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+            "region" : "europe-west3"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-16T18:37:58.668Z"
+            },
+            "callerIp" : "98.207.94.212"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "testemail@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+            "permission" : "cloudsql.instances.create",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "methodName" : "cloudsql.instances.create",
+          "resourceName" : "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+          "serviceName" : "cloudsql.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-16T18:37:59.600716697Z",
+        "insertId" : "-ld4jpue3e9hn",
+        "timestamp" : "2020-04-16T18:37:58.665Z"
+      },
+      "publish_time" : "2020-04-16T18:38:00.374Z",
+      "messageId" : "1127230239360311",
+      "message_id" : "1127230239360311",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-16T18:37:58.665Z"
+          }
+        }
+      },
+      "subscription" : "projects/datadog-prod/subscriptions/export-logs-to-prod-us1-2",
+      "timestamp" : 1587062278665
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-16T18:37:58.665Z"
+      data:
+        insertId: "-ld4jpue3e9hn"
+        logName: "projects/datadog-prod/logs/cloudaudit.googleapis.com%2Factivity"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "testemail@datadoghq.com"
+          authorizationInfo:
+           -
+            resource: "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog"
+            permission: "cloudsql.instances.create"
+            granted: true
+          methodName: "cloudsql.instances.create"
+          requestMetadata:
+            callerIp: "98.207.94.212"
+            requestAttributes:
+              time: "2020-04-16T18:37:58.668Z"
+          resourceName: "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog"
+          serviceName: "cloudsql.googleapis.com"
+        receiveTimestamp: "2020-04-16T18:37:59.600716697Z"
+        resource:
+          labels:
+            database_id: "datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog"
+            project_id: "datadog-prod"
+            region: "europe-west3"
+          type: "cloudsql_database"
+        severity: "NOTICE"
+        timestamp: "2020-04-16T18:37:58.665Z"
+      db:
+        operation: "cloudsql.instances.create"
+      evt:
+        name: "cloudsql.instances.create"
+      messageId: "1127230239360311"
+      message_id: "1127230239360311"
+      network:
+        client:
+          geoip: {}
+          ip: "98.207.94.212"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "datadog-prod"
+            email_addr: "testemail@datadoghq.com"
+            name: "testemail"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "cloudsql.instances.create"
+          request:
+            uid: "Unknown"
+          service:
+            name: "cloudsql.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "datadog-prod"
+          provider: "Google Cloud"
+        metadata:
+          event_code: "cloudsql.instances.create"
+          log_name: "projects/datadog-prod/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "-ld4jpue3e9hn"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "98.207.94.212"
+        status: "Success"
+        status_id: 1
+        time: 1587062278665
+        time_dt: "2020-04-16T18:37:58.665Z"
+        type_uid: 600301
+      publishTime: "2020-04-16T18:38:00.374Z"
+      publish_time: "2020-04-16T18:38:00.374Z"
+      subscription: "projects/datadog-prod/subscriptions/export-logs-to-prod-us1-2"
+      timestamp: 1587062278665
+      usr:
+        email: "testemail@datadoghq.com"
+        id: "testemail@datadoghq.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-16T18:38:00.374Z",
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/datadog-prod/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "cloudsql_database",
+            "labels" : {
+              "project_id" : "datadog-prod",
+              "database_id" : "datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+              "region" : "europe-west3"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-16T18:37:58.668Z"
+              },
+              "callerIp" : "98.207.94.212"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "testemail@datadoghq.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+              "permission" : "cloudsql.instances.create",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "methodName" : "cloudsql.instances.create",
+            "resourceName" : "instances/datadog-prod:incidents-audit-db-incidents-audit-db-replica-0-eu1-prod-dog",
+            "serviceName" : "cloudsql.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-16T18:37:59.600716697Z",
+          "insertId" : "-ld4jpue3e9hn",
+          "timestamp" : "2020-04-16T18:37:58.665Z"
+        },
+        "publish_time" : "2020-04-16T18:38:00.374Z",
+        "messageId" : "1127230239360311",
+        "message_id" : "1127230239360311",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-16T18:37:58.665Z"
+            }
+          }
+        },
+        "subscription" : "projects/datadog-prod/subscriptions/export-logs-to-prod-us1-2",
+        "timestamp" : 1587062278665
+      }
+    service: "cloudsql.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1587062278665
+ -
+  sample: |-
+    {
+      "logName" : "projects/qa-2-fdh-product-1/logs/cloudsql.googleapis.com%2Fmysql.err",
+      "resource" : {
+        "type" : "cloudsql_database",
+        "labels" : {
+          "database_id" : "qa-2-fdh-product-1:qa-2-fdh-product-1-us-east4-database-02",
+          "project_id" : "qa-2-fdh-product-1",
+          "region" : "us-east4"
+        }
+      },
+      "textPayload" : "2019-04-08T16:20:07.718913Z 6781998 [Note] Aborted connection 6781998 to db: FLEX_DB user: proxyuser host: cloudsqlproxy~35.199.25.85 (Got an error reading communication packets)",
+      "receiveTimestamp" : "2019-04-08T16:20:14.184660604Z",
+      "insertId" : "s=6cf2693b742e4e60a4b3005664004efe;i=e8363;b=4a3ee18ba4f4477ebfdb912d28966f86;m=d3d27ebe42;t=5860735b8556c;x=fc2846f2c64f181a-0@a1",
+      "timestamp" : "2019-04-08T16:20:07.719276Z"
+    }
+  result:
+    custom:
+      db:
+        db: "FLEX_DB"
+        user: "proxyuser"
+      insertId: "s=6cf2693b742e4e60a4b3005664004efe;i=e8363;b=4a3ee18ba4f4477ebfdb912d28966f86;m=d3d27ebe42;t=5860735b8556c;x=fc2846f2c64f181a-0@a1"
+      logName: "projects/qa-2-fdh-product-1/logs/cloudsql.googleapis.com%2Fmysql.err"
+      receiveTimestamp: "2019-04-08T16:20:14.184660604Z"
+      resource:
+        labels:
+          database_id: "qa-2-fdh-product-1:qa-2-fdh-product-1-us-east4-database-02"
+          project_id: "qa-2-fdh-product-1"
+          region: "us-east4"
+        type: "cloudsql_database"
+      timestamp: "2019-04-08T16:20:07.719276Z"
+    message: "2019-04-08T16:20:07.718913Z 6781998 [Note] Aborted connection 6781998 to db: FLEX_DB user: proxyuser host: cloudsqlproxy~35.199.25.85 (Got an error reading communication packets)"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554740407719
+

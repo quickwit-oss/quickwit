@@ -1,0 +1,59 @@
+id: "spark"
+tests:
+ -
+  sample: "2020-07-09 03:01:22 INFO  JobScheduler:54 - Started JobScheduler"
+  result:
+    custom:
+      level: "INFO"
+      line: 54
+      logger:
+        name: "JobScheduler"
+      timestamp: 1594263682000
+    message: "Started JobScheduler"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594263682000
+ -
+  sample: "2020-07-09 03:01:13 INFO  Master:54 - Starting Spark master at spark://spark-master:7077"
+  result:
+    custom:
+      level: "INFO"
+      line: 54
+      logger:
+        name: "Master"
+      timestamp: 1594263673000
+    message: "Starting Spark master at spark://spark-master:7077"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594263673000
+ -
+  sample: "2020-07-09 03:22:24 INFO  Worker:54 - Executor app-20200709030119-0000/379 finished with state EXITED message Command exited with code 1 exitStatus 1"
+  result:
+    custom:
+      level: "INFO"
+      line: 54
+      logger:
+        name: "Worker"
+      timestamp: 1594264944000
+    message: "Executor app-20200709030119-0000/379 finished with state EXITED message Command exited with code 1 exitStatus 1"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594264944000
+ -
+  sample: "2020-07-09 03:01:38 WARN  TaskSchedulerImpl:66 - Initial job has not accepted any resources; check your cluster UI to ensure that workers are registered and have sufficient resources"
+  result:
+    custom:
+      level: "WARN"
+      line: 66
+      logger:
+        name: "TaskSchedulerImpl"
+      timestamp: 1594263698000
+    message: "Initial job has not accepted any resources; check your cluster UI to ensure that workers are registered and have sufficient resources"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1594263698000
+

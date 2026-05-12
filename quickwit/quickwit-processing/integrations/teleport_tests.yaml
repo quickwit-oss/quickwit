@@ -1,0 +1,318 @@
+id: teleport
+tests:
+  - sample: 2024-06-24T15:36:48Z INFO [AUDIT]     user.login
+      addr.remote:90.118.178.162:19954 cluster_name:teleport-plint code:T1000W
+      ei:0 error:[invalid username, password or second factor] event:user.login
+      method:local success:false time:2024-06-24T15:36:48.688Z
+      uid:f9ec53d9-0263-43a3-a5e6-fc41351e63bb user:teleport-admin
+      user_agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
+      AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36
+      events/emitter.go:288
+    result:
+      custom:
+        date: 1719243408000
+        http:
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "126"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              brand: "Apple"
+              category: "Desktop"
+              family: "Mac"
+              model: "Mac"
+            os:
+              family: "Mac OS X"
+              major: "10"
+              minor: "15"
+              patch: "7"
+        log:
+          level: "INFO"
+        network:
+          destination:
+            ip: "90.118.178.162"
+            port: "19954"
+        teleport:
+          cluster_name: "teleport-plint"
+          code: "T1000W"
+          component: "AUDIT"
+          eid: "0"
+          event_error: "[invalid username, password or second factor]"
+          event_type: "user.login"
+          method: "local"
+          success: "false"
+          time: "2024-06-24T15:36:48.688Z"
+          uid: "f9ec53d9-0263-43a3-a5e6-fc41351e63bb"
+          user: "teleport-admin"
+      message: "2024-06-24T15:36:48Z INFO [AUDIT]     user.login addr.remote:90.118.178.162:19954 cluster_name:teleport-plint code:T1000W ei:0 error:[invalid username, password or second factor] event:user.login method:local success:false time:2024-06-24T15:36:48.688Z uid:f9ec53d9-0263-43a3-a5e6-fc41351e63bb user:teleport-admin user_agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 events/emitter.go:288"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719243408000
+  - sample: >
+      2024-05-28T14:21:41Z WARN [PROXY:1:C] Cache was forced to load session
+      web_session/936cdcda1df1a7a97e5ce2239bd39f71d7e7524a29560fdfdbf206e342f8fddc
+      from upstream. Frequent occurrence may indicate sync/perf issues.
+      cache/cache.go:2494
+    result:
+      custom:
+        date: 1716906101000
+        log:
+          level: "WARN"
+        teleport:
+          component: "PROXY:1:C"
+      message: |
+        2024-05-28T14:21:41Z WARN [PROXY:1:C] Cache was forced to load session web_session/936cdcda1df1a7a97e5ce2239bd39f71d7e7524a29560fdfdbf206e342f8fddc from upstream. Frequent occurrence may indicate sync/perf issues. cache/cache.go:2494
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1716906101000
+  - sample: >
+      2024-05-28T14:21:52Z INFO [AUDIT]     session.start
+      addr.local:172.29.245.165:443 addr.remote:90.118.178.162:41482
+      cluster_name:teleport-plint code:T2000I ei:0 event:session.start
+      initial_command:[] login:ec2-user namespace:default
+      private_key_policy:none proto:ssh server_addr:[::]:3022
+      server_hostname:ip-172-29-245-165-ec2-internal
+      server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node
+      sid:3cce2999-5e30-4415-b9b6-a92dadc3725b size:80:25
+      time:2024-05-28T14:21:52.888Z uid:84f7fc1b-575a-4357-aedb-932508acbf23
+      user:teleport-admin user_kind:1 events/emitter.go:288
+    result:
+      custom:
+        date: 1716906112000
+        log:
+          file: "events/emitter.go"
+          level: "INFO"
+          line_number: 288.0
+        network:
+          client:
+            ip: "172.29.245.165"
+            port: "443"
+          destination:
+            ip: "90.118.178.162"
+            port: "41482"
+          host:
+            name: "ip-172-29-245-165-ec2-internal"
+        teleport:
+          cluster_name: "teleport-plint"
+          code: "T2000I"
+          component: "AUDIT"
+          eid: "0"
+          event_type: "session.start"
+          initial_command: "[]"
+          login: "ec2-user"
+          namespace: "default"
+          private_key_policy: "none"
+          proto: "ssh"
+          server_addr: "[::]:3022"
+          server_id: "b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1"
+          session_recording: "node"
+          sid: "3cce2999-5e30-4415-b9b6-a92dadc3725b"
+          size: "80:25"
+          time: "2024-05-28T14:21:52.888Z"
+          uid: "84f7fc1b-575a-4357-aedb-932508acbf23"
+          user: "teleport-admin"
+          user_kind: "1"
+      message: |
+        2024-05-28T14:21:52Z INFO [AUDIT]     session.start addr.local:172.29.245.165:443 addr.remote:90.118.178.162:41482 cluster_name:teleport-plint code:T2000I ei:0 event:session.start initial_command:[] login:ec2-user namespace:default private_key_policy:none proto:ssh server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node sid:3cce2999-5e30-4415-b9b6-a92dadc3725b size:80:25 time:2024-05-28T14:21:52.888Z uid:84f7fc1b-575a-4357-aedb-932508acbf23 user:teleport-admin user_kind:1 events/emitter.go:288
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1716906112000
+  - sample: >
+      2024-05-28T14:21:56Z INFO [AUDIT]     session.leave
+      cluster_name:teleport-plint code:T2003I ei:20 event:session.leave
+      login:ec2-user namespace:default private_key_policy:none
+      server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal
+      server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1
+      sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:21:56.593Z
+      uid:4d0f781f-f99e-4363-a953-231978b03bbd user:teleport-admin user_kind:1
+      events/emitter.go:288
+    result:
+      custom:
+        date: 1716906116000
+        log:
+          file: "sid"
+          level: "INFO"
+          line_number: 3.0
+        server_hostname: "ip-172-29-245-165-ec2-internal"
+        server_id: "b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1"
+        teleport:
+          cluster_name: "teleport-plint"
+          code: "T2003I"
+          component: "AUDIT"
+          eid: "20"
+          event_type: "session.leave"
+          login: "ec2-user"
+          namespace: "default"
+          private_key_policy: "none"
+          server_addr: "[::]:3022"
+      message: |
+        2024-05-28T14:21:56Z INFO [AUDIT]     session.leave cluster_name:teleport-plint code:T2003I ei:20 event:session.leave login:ec2-user namespace:default private_key_policy:none server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:21:56.593Z uid:4d0f781f-f99e-4363-a953-231978b03bbd user:teleport-admin user_kind:1 events/emitter.go:288
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1716906116000
+  - sample: >
+      2024-05-28T14:22:01Z INFO [AUDIT]     session.end
+      addr.remote:90.118.178.162:41482 cluster_name:teleport-plint code:T2004I
+      ei:21 enhanced_recording:false event:session.end interactive:true
+      login:ec2-user namespace:default participants:[teleport-admin]
+      private_key_policy:none proto:ssh server_addr:[::]:3022
+      server_hostname:ip-172-29-245-165-ec2-internal
+      server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node
+      session_start:2024-05-28T14:21:52.874611176Z
+      session_stop:2024-05-28T14:22:01.60145508Z
+      sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:22:01.603Z
+      uid:6346cbd5-fcf7-4619-90d9-114b392edfb5 user:teleport-admin user_kind:1
+      events/emitter.go:288
+    result:
+      custom:
+        date: 1716906121000
+        log:
+          file: "events/emitter.go"
+          level: "INFO"
+          line_number: 288.0
+        network:
+          destination:
+            ip: "90.118.178.162"
+            port: "41482"
+          host:
+            name: "ip-172-29-245-165-ec2-internal"
+        teleport:
+          cluster_name: "teleport-plint"
+          code: "T2004I"
+          component: "AUDIT"
+          eid: "21"
+          enhanced_recording: "false"
+          event_type: "session.end"
+          interactive: "true"
+          login: "ec2-user"
+          namespace: "default"
+          participants: "[teleport-admin]"
+          private_key_policy: "none"
+          proto: "ssh"
+          server_addr: "[::]:3022"
+          server_id: "b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1"
+          session_recording: "node"
+          session_start: "2024-05-28T14:21:52.874611176Z"
+          session_stop: "2024-05-28T14:22:01.60145508Z"
+          sid: "3cce2999-5e30-4415-b9b6-a92dadc3725b"
+          time: "2024-05-28T14:22:01.603Z"
+          uid: "6346cbd5-fcf7-4619-90d9-114b392edfb5"
+          user: "teleport-admin"
+          user_kind: "1"
+      message: |
+        2024-05-28T14:22:01Z INFO [AUDIT]     session.end addr.remote:90.118.178.162:41482 cluster_name:teleport-plint code:T2004I ei:21 enhanced_recording:false event:session.end interactive:true login:ec2-user namespace:default participants:[teleport-admin] private_key_policy:none proto:ssh server_addr:[::]:3022 server_hostname:ip-172-29-245-165-ec2-internal server_id:b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1 session_recording:node session_start:2024-05-28T14:21:52.874611176Z session_stop:2024-05-28T14:22:01.60145508Z sid:3cce2999-5e30-4415-b9b6-a92dadc3725b time:2024-05-28T14:22:01.603Z uid:6346cbd5-fcf7-4619-90d9-114b392edfb5 user:teleport-admin user_kind:1 events/emitter.go:288
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1716906121000
+  - sample: >
+      2024-05-28T14:37:32Z INFO [AUDIT]     user.login
+      addr.remote:90.118.178.162:37044 cluster_name:teleport-plint code:T1000I
+      ei:0 event:user.login method:local mfa_device_name:otp-device
+      mfa_device_type:TOTP mfa_device_uuid:efda61ff-6fa6-4434-bcec-ca0bafbafa68
+      required_private_key_policy:none success:true
+      time:2024-05-28T14:37:32.309Z uid:d7fcf864-66cf-4b7d-9c3a-1acd5abc91e7
+      user:teleport-admin user_agent:Mozilla/5.0 (Macintosh; Intel Mac OS X
+      10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0
+      Safari/537.36 events/emitter.go:288
+    result:
+      custom:
+        date: 1716907052000
+        http:
+          useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "125"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+            device:
+              brand: "Apple"
+              category: "Desktop"
+              family: "Mac"
+              model: "Mac"
+            os:
+              family: "Mac OS X"
+              major: "10"
+              minor: "15"
+              patch: "7"
+        log:
+          level: "INFO"
+        network:
+          destination:
+            ip: "90.118.178.162"
+            port: "37044"
+        teleport:
+          cluster_name: "teleport-plint"
+          code: "T1000I"
+          component: "AUDIT"
+          eid: "0"
+          event_type: "user.login"
+          method: "local"
+          mfa_device_name: "otp-device"
+          mfa_device_type: "TOTP"
+          mfa_device_uuid: "efda61ff-6fa6-4434-bcec-ca0bafbafa68"
+          required_private_key_policy: "none"
+          success: "true"
+          time: "2024-05-28T14:37:32.309Z"
+          uid: "d7fcf864-66cf-4b7d-9c3a-1acd5abc91e7"
+          user: "teleport-admin"
+      message: |
+        2024-05-28T14:37:32Z INFO [AUDIT]     user.login addr.remote:90.118.178.162:37044 cluster_name:teleport-plint code:T1000I ei:0 event:user.login method:local mfa_device_name:otp-device mfa_device_type:TOTP mfa_device_uuid:efda61ff-6fa6-4434-bcec-ca0bafbafa68 required_private_key_policy:none success:true time:2024-05-28T14:37:32.309Z uid:d7fcf864-66cf-4b7d-9c3a-1acd5abc91e7 user:teleport-admin user_agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 events/emitter.go:288
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1716907052000
+  - sample: >-
+      2024-06-26T15:25:13Z WARN             "Failed to keep alive ssh server
+      \"b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1\": ConditionalCheckFailedException:
+      The conditional request failed
+
+      {
+        RespMetadata: {
+          StatusCode: 400,
+          RequestID: \"5LUDO9VEIGQ436RMP6HEDM0D6FVV4KQNSO5AEMVJF66Q9ASUAAJG\"
+        },
+        Message_: \"The conditional request failed\"
+      } (count=2, closing=false)." inventory/controller.go:510
+    result:
+      custom:
+        date: 1719415513000
+        log:
+          level: "WARN"
+      message: |-
+        2024-06-26T15:25:13Z WARN             "Failed to keep alive ssh server \"b05b3c10-c35a-4f25-b6c4-3b315a1d4ec1\": ConditionalCheckFailedException: The conditional request failed
+        {
+          RespMetadata: {
+            StatusCode: 400,
+            RequestID: \"5LUDO9VEIGQ436RMP6HEDM0D6FVV4KQNSO5AEMVJF66Q9ASUAAJG\"
+          },
+          Message_: \"The conditional request failed\"
+        } (count=2, closing=false)." inventory/controller.go:510
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719415513000
+  - sample:
+      "2024-06-26T15:00:36Z WARN             Restarting watch on error after
+      waiting 208.931858ms. Error: watcher closed.
+      local/headlessauthn_watcher.go:158"
+    result:
+      custom:
+        date: 1719414036000
+        log:
+          level: "WARN"
+      message: "2024-06-26T15:00:36Z WARN             Restarting watch on error after waiting 208.931858ms. Error: watcher closed. local/headlessauthn_watcher.go:158"
+      status: "warn"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719414036000

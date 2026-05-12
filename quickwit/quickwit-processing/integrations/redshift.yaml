@@ -1,0 +1,119 @@
+id: redshift
+metric_id: amazon-redshift
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - AWS
+    name: Event Name
+    path: eventName
+    source: log
+  - groups:
+      - AWS
+    name: S3 Bucket
+    path: aws.s3.bucket
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: AWS Redshift
+  enabled: true
+  filter:
+    query: source:redshift
+  processors:
+    - type: attribute-remapper
+      name: Map `requestID` to `http.request_id`
+      enabled: true
+      sources:
+        - requestID
+      target: http.request_id
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sourceIPAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - sourceIPAddress
+      target: network.client.ip
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `userAgent` to `http.useragent`
+      enabled: true
+      sources:
+        - userAgent
+      target: http.useragent
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: attribute-remapper
+      name: Map `eventName` to `db.operation`
+      enabled: true
+      sources:
+        - eventName
+      target: db.operation
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `responseElements.dBName` to `db.instance`
+      enabled: true
+      sources:
+        - responseElements.dBName
+      target: db.instance
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

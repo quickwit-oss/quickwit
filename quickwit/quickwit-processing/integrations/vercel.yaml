@@ -1,0 +1,318 @@
+id: vercel
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Vercel
+  enabled: true
+  filter:
+    query: source:vercel
+  processors:
+    - type: grok-parser
+      name: Parsing Lambda Report Logs
+      enabled: true
+      source: message
+      samples:
+        - "START RequestId: ddb0e0c7-ba4d-457a-b82e-1d40bfb9f1b7 Version: $LATEST\nEND RequestId: ddb0e0c7-ba4d-457a-b82e-1d40bfb9f1b7\nREPORT RequestId: ddb0e0c7-ba4d-457a-b82e-1d40bfb9f1b7\tDuration: 49.44 ms\tBilled Duration: 50 ms\tMemory Size: 1024 MB\tMax Memory Used: 91 MB"
+      grok:
+        supportRules: ''
+        matchRules: 'report_rule .*REPORT RequestId: %{notSpace:lambda.request_id}\s+Duration: %{number:lambda.duration:scale(1000000)} ms\s+Billed Duration: %{number:lambda.billed_duration} ms\s+Memory Size: %{number:lambda.memorysize} MB\s+Max Memory Used: %{number:lambda.max_memory_used} MB(\s+Init Duration: %{number:lambda.init_duration} ms)?.*'
+    - type: arithmetic-processor
+      name: Calculate Lambda Execution
+      enabled: true
+      expression: lambda.billed_duration*lambda.memorysize
+      target: lambda.execution
+      replaceMissing: false
+    - type: category-processor
+      name: Status Code Remapper
+      enabled: true
+      categories:
+        - filter:
+            query: '@proxy.statusCode:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@proxy.statusCode:[300 TO 399]'
+          name: Notice
+        - filter:
+            query: '@proxy.statusCode:[400 TO 499]'
+          name: Warning
+        - filter:
+            query: '@proxy.statusCode:[500 TO 599]'
+          name: Error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+    - type: service-remapper
+      name: Define `proxy.host` as the official service of the log
+      enabled: true
+      sources:
+        - proxy.host
+    - type: attribute-remapper
+      name: Map `host` to `url_host`
+      enabled: true
+      sources:
+        - host
+      sourceType: attribute
+      target: url_host
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Geo IP mapper
+      enabled: true
+      sources:
+        - proxy.clientIp
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: date-remapper
+      name: Define `proxy.timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - proxy.timestamp
+metrics:
+  - name: vercel.functions.invocations
+    query: source:vercel @source:lambda REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+  - name: vercel.functions.errors
+    query: source:vercel @source:lambda status:error REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+  - name: vercel.functions.duration
+    query: source:vercel @source:lambda REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+    aggregation:
+      path: '@lambda.duration'
+      includePercentiles: true
+  - name: vercel.functions.execution
+    query: source:vercel @source:lambda REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+    aggregation:
+      path: '@lambda.execution'
+      includePercentiles: true
+  - name: vercel.functions.max_memory_used
+    query: source:vercel @source:lambda REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+    aggregation:
+      path: '@lambda.max_memory_used'
+      includePercentiles: true
+  - name: vercel.functions.memorysize
+    query: source:vercel @source:lambda REPORT
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+    aggregation:
+      path: '@lambda.memorysize'
+      includePercentiles: false
+  - name: vercel.requests
+    query: source:vercel ((@source:lambda REPORT) OR @source:static)
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@path'
+        tagName: path
+      - path: '@branch'
+        tagName: branch
+      - path: '@environment'
+        tagName: environment
+      - path: '@projectId'
+        tagName: project_id
+      - path: '@statusCode'
+        tagName: status_code
+      - path: '@proxy.host'
+        tagName: proxy_host
+      - path: '@proxy.method'
+        tagName: request_method
+      - path: '@proxy.pathType'
+        tagName: path_type
+      - path: '@proxy.region'
+        tagName: region
+      - path: '@proxy.vercelCache'
+        tagName: vercel_cache
+      - path: '@source'
+        tagName: source
+  - name: vercel.projects.build_count
+    query: source:vercel "Build completed in"
+    groupBys:
+      - path: '@projectName'
+        tagName: project_name
+      - path: '@projectId'
+        tagName: project_id

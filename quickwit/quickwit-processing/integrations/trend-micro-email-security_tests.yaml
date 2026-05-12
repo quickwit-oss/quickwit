@@ -1,0 +1,265 @@
+id: trend-micro-email-security
+tests:
+ -
+  sample: |-
+    {
+      "attachments" : [ {
+        "fileName" : "test1.zip",
+        "sha256" : "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+      }, {
+        "fileName" : "test2.zip",
+        "sha256" : "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+      } ],
+      "deliveryTime" : "2024-01-01T01:01:05Z",
+      "subject" : "response sample",
+      "deliveredTo" : "2.2.2.2",
+      "messageID" : "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>",
+      "genTime" : "2024-01-01T01:01:01Z",
+      "type" : "accepted_traffic",
+      "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com", "header_rcpt3@example.com" ],
+      "headerFrom" : "header_sender@example.com",
+      "size" : 66390,
+      "sender" : "sender@example.com",
+      "embeddedUrls" : [ "http://example1.com", "http://example2.com" ],
+      "recipient" : "rcpt@example.com",
+      "action" : "Delivered",
+      "mailID" : "73173f80-2e0e-46df-b2dc-a62e80167067",
+      "details" : "250 2.0.0 Ok: queued as 3CBEFC0811",
+      "tlsInfo" : "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2",
+      "senderIP" : "1.1.1.1",
+      "timestamp" : "2024-01-01T01:01:02Z",
+      "direction" : "in"
+    }
+  service: "tracking"
+  result:
+    custom:
+      action: "Delivered"
+      attachments:
+       -
+        fileName: "test1.zip"
+        sha256: "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+       -
+        fileName: "test2.zip"
+        sha256: "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+      deliveredTo: "2.2.2.2"
+      deliveryTime: "2024-01-01T01:01:05Z"
+      details: "250 2.0.0 Ok: queued as 3CBEFC0811"
+      direction: "incoming"
+      embeddedUrls:
+       - "http://example1.com"
+       - "http://example2.com"
+      genTime: "2024-01-01T01:01:01Z"
+      headerFrom: "header_sender@example.com"
+      headerTo:
+       - "header_rcpt1@example.com"
+       - "header_rcpt2@example.com"
+       - "header_rcpt3@example.com"
+      mailID: "73173f80-2e0e-46df-b2dc-a62e80167067"
+      messageID: "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>"
+      recipient: "rcpt@example.com"
+      sender: "sender@example.com"
+      senderIP: "1.1.1.1"
+      subject: "response sample"
+      timestamp: "2024-01-01T01:01:02Z"
+      tlsInfo: "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2"
+      trend_micro_email_security:
+        messageSize: 66390
+      type: "accepted_traffic"
+    message: |-
+      {
+        "attachments" : [ {
+          "fileName" : "test1.zip",
+          "sha256" : "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+        }, {
+          "fileName" : "test2.zip",
+          "sha256" : "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+        } ],
+        "deliveryTime" : "2024-01-01T01:01:05Z",
+        "subject" : "response sample",
+        "deliveredTo" : "2.2.2.2",
+        "messageID" : "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>",
+        "genTime" : "2024-01-01T01:01:01Z",
+        "type" : "accepted_traffic",
+        "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com", "header_rcpt3@example.com" ],
+        "headerFrom" : "header_sender@example.com",
+        "size" : 66390,
+        "sender" : "sender@example.com",
+        "embeddedUrls" : [ "http://example1.com", "http://example2.com" ],
+        "recipient" : "rcpt@example.com",
+        "action" : "Delivered",
+        "mailID" : "73173f80-2e0e-46df-b2dc-a62e80167067",
+        "details" : "250 2.0.0 Ok: queued as 3CBEFC0811",
+        "tlsInfo" : "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2",
+        "senderIP" : "1.1.1.1",
+        "timestamp" : "2024-01-01T01:01:02Z",
+        "direction" : "in"
+      }
+    service: "tracking"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1704070861000
+ -
+  sample: |-
+    {
+      "attachments" : [ {
+        "fileName" : "test1.zip",
+        "sha256" : "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+      }, {
+        "fileName" : "test2.zip",
+        "sha256" : "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+      } ],
+      "deliveryTime" : "2024-01-01T01:01:05Z",
+      "subject" : "response sample",
+      "deliveredTo" : "example.com[2.2.2.2]:25",
+      "messageID" : "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>",
+      "genTime" : "2024-01-01T01:01:01Z",
+      "type" : "accepted_traffic",
+      "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com", "header_rcpt3@example.com" ],
+      "headerFrom" : "header_sender@example.com",
+      "size" : 66390,
+      "sender" : "sender@example.com",
+      "embeddedUrls" : [ "http://example1.com", "http://example2.com" ],
+      "recipient" : "rcpt@example.com",
+      "action" : "Delivered",
+      "mailID" : "73173f80-2e0e-46df-b2dc-a62e80167067",
+      "details" : "250 2.0.0 Ok: queued as 3CBEFC0811",
+      "tlsInfo" : "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2",
+      "senderIP" : "1.1.1.1",
+      "timestamp" : "2024-01-01T01:01:02Z",
+      "direction" : "out"
+    }
+  service: "tracking"
+  result:
+    custom:
+      action: "Delivered"
+      attachments:
+       -
+        fileName: "test1.zip"
+        sha256: "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+       -
+        fileName: "test2.zip"
+        sha256: "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+      deliveredTo: "example.com[2.2.2.2]:25"
+      deliveryTime: "2024-01-01T01:01:05Z"
+      details: "250 2.0.0 Ok: queued as 3CBEFC0811"
+      direction: "outgoing"
+      embeddedUrls:
+       - "http://example1.com"
+       - "http://example2.com"
+      genTime: "2024-01-01T01:01:01Z"
+      headerFrom: "header_sender@example.com"
+      headerTo:
+       - "header_rcpt1@example.com"
+       - "header_rcpt2@example.com"
+       - "header_rcpt3@example.com"
+      mailID: "73173f80-2e0e-46df-b2dc-a62e80167067"
+      messageID: "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>"
+      recipient: "rcpt@example.com"
+      sender: "sender@example.com"
+      senderIP: "1.1.1.1"
+      subject: "response sample"
+      timestamp: "2024-01-01T01:01:02Z"
+      tlsInfo: "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2"
+      trend_micro_email_security:
+        messageSize: 66390
+      type: "accepted_traffic"
+    message: |-
+      {
+        "attachments" : [ {
+          "fileName" : "test1.zip",
+          "sha256" : "f78960148721b59dcb563b9964a4d47e2a834a4259f46cd12db7c1cfe82ff32e"
+        }, {
+          "fileName" : "test2.zip",
+          "sha256" : "329436266f3927e89ea961e26855c8bd1f51401d92babd6627e493295376daf5"
+        } ],
+        "deliveryTime" : "2024-01-01T01:01:05Z",
+        "subject" : "response sample",
+        "deliveredTo" : "example.com[2.2.2.2]:25",
+        "messageID" : "<7bebfeb6-f035-451f-8c4f-3377ab457b07@atl1s07mta2135.xt.local>",
+        "genTime" : "2024-01-01T01:01:01Z",
+        "type" : "accepted_traffic",
+        "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com", "header_rcpt3@example.com" ],
+        "headerFrom" : "header_sender@example.com",
+        "size" : 66390,
+        "sender" : "sender@example.com",
+        "embeddedUrls" : [ "http://example1.com", "http://example2.com" ],
+        "recipient" : "rcpt@example.com",
+        "action" : "Delivered",
+        "mailID" : "73173f80-2e0e-46df-b2dc-a62e80167067",
+        "details" : "250 2.0.0 Ok: queued as 3CBEFC0811",
+        "tlsInfo" : "upstreamTLS: TLS 1.2; downstreamTLS: TLS 1.2",
+        "senderIP" : "1.1.1.1",
+        "timestamp" : "2024-01-01T01:01:02Z",
+        "direction" : "out"
+      }
+    service: "tracking"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1704070861000
+ -
+  sample: |-
+    {
+      "policyAction" : "Bypass",
+      "policyName" : "test_policy: example.com: Virus",
+      "subject" : "response sample",
+      "messageID" : "<20200725033505.DC75B100860D8@example.com>",
+      "eventType" : "Suspicious Objects",
+      "genTime" : "2024-01-01T01:01:01.001Z",
+      "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com" ],
+      "headerFrom" : "header_sender@example.com",
+      "eventSubtype" : "Suspicious URLs",
+      "size" : 6564,
+      "sender" : "sender@example.com",
+      "recipients" : [ "rcpt1@example.com", "rcpt2@example.com" ],
+      "domainName" : "example.com",
+      "details" : "{\"urlInfo\":[{\"url\":\"https://mcusercontent.com/87564ad664ceeac44909ec631/images/a8730208-6096-404c-9dd6-1c61c47a2861.png);background-repeat:\",\"extractType\":\"body\"}]}",
+      "timestamp" : "2024-01-01T01:01:02.002Z",
+      "direction" : "in"
+    }
+  service: "detection"
+  result:
+    custom:
+      details: "{\"urlInfo\":[{\"url\":\"https://mcusercontent.com/87564ad664ceeac44909ec631/images/a8730208-6096-404c-9dd6-1c61c47a2861.png);background-repeat:\",\"extractType\":\"body\"}]}"
+      direction: "incoming"
+      domainName: "example.com"
+      eventSubtype: "Suspicious URLs"
+      eventType: "Suspicious Objects"
+      genTime: "2024-01-01T01:01:01.001Z"
+      headerFrom: "header_sender@example.com"
+      headerTo:
+       - "header_rcpt1@example.com"
+       - "header_rcpt2@example.com"
+      messageID: "<20200725033505.DC75B100860D8@example.com>"
+      policyAction: "Bypass"
+      policyName: "test_policy: example.com: Virus"
+      recipients:
+       - "rcpt1@example.com"
+       - "rcpt2@example.com"
+      sender: "sender@example.com"
+      subject: "response sample"
+      timestamp: "2024-01-01T01:01:02.002Z"
+      trend_micro_email_security:
+        messageSize: 6564
+    message: |-
+      {
+        "policyAction" : "Bypass",
+        "policyName" : "test_policy: example.com: Virus",
+        "subject" : "response sample",
+        "messageID" : "<20200725033505.DC75B100860D8@example.com>",
+        "eventType" : "Suspicious Objects",
+        "genTime" : "2024-01-01T01:01:01.001Z",
+        "headerTo" : [ "header_rcpt1@example.com", "header_rcpt2@example.com" ],
+        "headerFrom" : "header_sender@example.com",
+        "eventSubtype" : "Suspicious URLs",
+        "size" : 6564,
+        "sender" : "sender@example.com",
+        "recipients" : [ "rcpt1@example.com", "rcpt2@example.com" ],
+        "domainName" : "example.com",
+        "details" : "{\"urlInfo\":[{\"url\":\"https://mcusercontent.com/87564ad664ceeac44909ec631/images/a8730208-6096-404c-9dd6-1c61c47a2861.png);background-repeat:\",\"extractType\":\"body\"}]}",
+        "timestamp" : "2024-01-01T01:01:02.002Z",
+        "direction" : "in"
+      }
+    service: "detection"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1704070861001

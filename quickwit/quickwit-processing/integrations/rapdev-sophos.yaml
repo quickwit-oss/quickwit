@@ -1,0 +1,119 @@
+id: rapdev-sophos
+backend_only: false
+facets:
+  - groups:
+      - Rapdev Sophos
+    name: Common Alert Managed Agent Type
+    path: managedAgent.type
+    source: log
+  - groups:
+      - Rapdev Sophos
+    name: SIEM Event Group
+    path: group
+    source: log
+  - groups:
+      - Rapdev Sophos
+    name: SIEM Alert Endpoint Type
+    path: data.endpoint_type
+    source: log
+  - groups:
+      - Rapdev Sophos
+    name: Common Alert Category
+    path: rapdev.sophos.category
+    source: log
+  - groups:
+      - Rapdev Sophos
+    name: SIEM Alert Endpoint Platform
+    path: data.endpoint_platform
+    source: log
+  - groups:
+      - Rapdev Sophos
+    name: Common Alert Product
+    path: rapdev.sophos.product
+    source: log
+  - groups:
+      - Sophos
+    name: Common Alert Managed Agent Name
+    path: managedAgent.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Sophos by RapDev
+  enabled: true
+  filter:
+    query: source:rapdev-sophos
+  processors:
+    - type: category-processor
+      name: Map Severity to Log Levels
+      enabled: true
+      categories:
+        - filter:
+            query: '@severity:low'
+          name: notice
+        - filter:
+            query: '@severity:high'
+          name: alert
+        - filter:
+            query: '@severity:medium'
+          name: warning
+      target: log_level
+    - type: status-remapper
+      name: Define `log_level` as the official status of the log
+      enabled: true
+      sources:
+        - log_level
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `category` to `rapdev.sophos.category`
+      enabled: true
+      sources:
+        - category
+      sourceType: attribute
+      target: rapdev.sophos.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `product` to `rapdev.sophos.product`
+      enabled: true
+      sources:
+        - product
+      sourceType: attribute
+      target: rapdev.sophos.product
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `group` to `rapdev.sophos.group`
+      enabled: true
+      sources:
+        - group
+      sourceType: attribute
+      target: rapdev.sophos.group
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id` to `rapdev.sophos.id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: rapdev.sophos.id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `type` to `rapdev.sophos.type`
+      enabled: true
+      sources:
+        - type
+      sourceType: attribute
+      target: rapdev.sophos.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

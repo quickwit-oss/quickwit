@@ -1,0 +1,348 @@
+id: crest_data_systems_cyberark_pam
+metric_id: crest-data-systems-cyberark-pam
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: CyberArk PAM Batch
+    path: cyberark.pam.batch
+    source: tag
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: Event ID
+    path: cyberark.pam.event_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: Host
+    path: cyberark.pam.host
+    source: tag
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: Safe Name
+    path: cyberark.pam.safe_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: Severity
+    path: cyberark.pam.severity
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest Data Systems CyberArk PAM
+    name: Source Action
+    path: cyberark.pam.source_action
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: CyberArk PAM by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_cyberark_pam
+  processors:
+    - type: grok-parser
+      name: Parsing CyberArk PAM Logs
+      enabled: true
+      source: message
+      samples:
+        - <5>1 2023-07-12T09:10:54Z VAULT
+          CEF:0|Cyber-Ark|Vault|12.6.0006|357|Monitor FW rules
+          start|5|act=Monitor FW rules start suser=Batch fname= dvc=
+          shost=0.0.0.0 dhost= duser= externalId= app= reason=
+          cs1Label="Affected User Name" cs1= cs2Label="Safe Name" cs2=
+          cs3Label="Device Type" cs3= cs4Label="Database" cs4= cs5Label="Other
+          info" cs5= cn1Label="Request Id" cn1= cn2Label="Ticket Id" cn2=  msg=
+      grok:
+        supportRules: log_prefix <%{word:}>%{word:} (%{date("MMM d
+          HH:mm:ss"):}|%{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp})
+          (%{notSpace:})
+          (%{word:}):(%{word:})\|%{regex("[^|]*"):vendor.name}\|%{word:vendor.product.name}\|%{regex("[0-9.]*"):vendor.product.version}\|%{word:event_id}\|%{regex("[a-zA-Z:,
+          ]*"):action}\|%{word:severity}\|
+        matchRules: rule1 %{log_prefix}%{data::keyvalue("=", "\\]\\[{}\"\"
+          :;,/!''\\(\\)*~#&$%^?\\\\")}
+    - name: Lookup for `event_id` to `source_type`
+      enabled: true
+      source: event_id
+      target: source_type
+      lookupTable: |-
+        0,event
+        3,event
+        4,event
+        5,event
+        6,event
+        9,event
+        10,event
+        11,event
+        12,event
+        13,event
+        14,event
+        15,event
+        16,event
+        17,event
+        18,event
+        21,event
+        23,event
+        25,event
+        26,event
+        27,event
+        28,event
+        29,event
+        30,event
+        34,event
+        35,event
+        38,event
+        40,event
+        41,event
+        42,event
+        43,event
+        44,event
+        45,event
+        46,event
+        47,event
+        48,event
+        49,event
+        55,event
+        56,event
+        57,event
+        60,event
+        63,event
+        65,event
+        70,event
+        72,event
+        74,event
+        76,event
+        77,event
+        78,event
+        82,event
+        85,event
+        87,event
+        89,event
+        90,event
+        92,event
+        96,event
+        97,event
+        100,event
+        101,event
+        102,event
+        103,event
+        104,event
+        110,event
+        113,event
+        116,event
+        117,event
+        130,event
+        131,event
+        132,event
+        133,event
+        134,event
+        135,event
+        137,event
+        142,event
+        145,event
+        146,event
+        147,event
+        148,event
+        149,event
+        150,event
+        152,event
+        153,event
+        154,event
+        155,event
+        156,event
+        157,event
+        158,event
+        159,event
+        160,event
+        161,event
+        162,event
+        163,event
+        164,event
+        165,event
+        166,event
+        167,event
+        168,event
+        169,event
+        170,event
+        171,event
+        172,event
+        173,event
+        174,event
+        175,event
+        176,event
+        177,event
+        178,event
+        179,event
+        186,event
+        189,event
+        191,event
+        193,event
+        196,event
+        197,event
+        198,event
+        204,event
+        205,event
+        206,event
+        207,event
+        208,event
+        214,event
+        215,event
+        216,event
+        221,event
+        222,event
+        225,event
+        226,event
+        227,event
+        228,event
+        237,event
+        238,event
+        243,event
+        244,event
+        248,event
+        249,event
+        250,event
+        253,event
+        255,event
+        260,event
+        261,event
+        262,event
+        263,event
+        269,event
+        271,event
+        272,event
+        280,event
+        281,event
+        284,event
+        297,event
+        298,event
+        301,event
+        303,event
+        306,event
+        307,event
+        309,event
+        314,event
+        315,event
+        320,event
+        333,event
+        336,event
+        338,event
+        339,event
+        342,event
+        345S,event
+        347S,event
+        349,event
+        350,event
+        352,event
+        353,event
+        360,event
+        362,event
+        363,event
+        365,event
+        366,event
+        369,event
+        371,event
+        373,event
+        375,event
+        377,event
+        379,event
+        381,event
+        399,event
+        403,event
+        404,event
+        408,event
+        409,event
+        413,event
+        440,event
+        442,event
+        444,event
+        464,event
+        475,event
+        476,event
+        478,event
+        479,event
+      type: lookup-processor
+    - name: Lookup for `severity` to `cyberark.pam.severity`
+      enabled: true
+      source: severity
+      target: cyberark.pam.severity
+      lookupTable: |-
+        1,Informational
+        2,Informational
+        3,Informational
+        4,Medium
+        5,Medium
+        6,High
+        7,High
+        8,High
+        9,Critical
+        10,Critical
+      type: lookup-processor
+    - type: attribute-remapper
+      name: Map `event_id` to `cyberark.pam.event_id`
+      enabled: true
+      sources:
+        - event_id
+      sourceType: attribute
+      target: cyberark.pam.event_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs2`, `safe-name` to `cyberark.pam.safe_name`
+      enabled: true
+      sources:
+        - cs2
+        - safe-name
+      sourceType: attribute
+      target: cyberark.pam.safe_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cs5` to `cyberark.pam.source_action`
+      enabled: true
+      sources:
+        - cs5
+      sourceType: attribute
+      target: cyberark.pam.source_action
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: CyberArk PAM Severity Processor
+      enabled: true
+      categories:
+        - filter:
+            query: "@cyberark.pam.severity:Informational"
+          name: info
+        - filter:
+            query: "@cyberark.pam.severity:Critical"
+          name: critical
+        - name: warning
+          filter:
+            query: "@cyberark.pam.severity:Medium"
+        - name: error
+          filter:
+            query: "@cyberark.pam.severity:High"
+      target: status
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      preserveSource: true
+      enabled: true
+      sources:
+        - timestamp

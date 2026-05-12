@@ -1,0 +1,511 @@
+id: "gcp.pubsub.topic"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2020-04-06T21:08:45.414Z",
+      "data" : {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "pubsub_topic",
+          "labels" : {
+            "project_id" : "test-271317",
+            "topic_id" : "projects/test-271317/topics/test123"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-06T21:08:42.788418917Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "messageRetentionDuration" : "604800s",
+            "name" : "projects/test-271317/subscriptions/test123",
+            "topic" : "projects/test-271317/topics/test123",
+            "ackDeadlineSeconds" : 10
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317/topics/test123",
+            "permission" : "pubsub.topics.attachSubscription",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "messageRetentionDuration" : "604800s",
+            "name" : "projects/test-271317/subscriptions/test123",
+            "topic" : "projects/test-271317/topics/test123",
+            "ackDeadlineSeconds" : 10
+          },
+          "methodName" : "google.pubsub.v1.Subscriber.CreateSubscription",
+          "resourceName" : "projects/test-271317/topics/test123",
+          "serviceName" : "pubsub.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-06T21:08:44.6162453Z",
+        "insertId" : "1y7pntnc183",
+        "timestamp" : "2020-04-06T21:08:42.785155748Z"
+      },
+      "publish_time" : "2020-04-06T21:08:45.414Z",
+      "messageId" : "1114269073980366",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2020-04-06T21:08:42.785155748Z"
+          }
+        }
+      },
+      "message_id" : "1114269073980366",
+      "subscription" : "projects/test-271317/subscriptions/datadog"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2020-04-06T21:08:42.785155748Z"
+      data:
+        insertId: "1y7pntnc183"
+        logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "test@testmail.com"
+          authorizationInfo:
+           -
+            resource: "projects/test-271317/topics/test123"
+            permission: "pubsub.topics.attachSubscription"
+            granted: true
+          methodName: "google.pubsub.v1.Subscriber.CreateSubscription"
+          request:
+            '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+            ackDeadlineSeconds: 10
+            messageRetentionDuration: "604800s"
+            name: "projects/test-271317/subscriptions/test123"
+            topic: "projects/test-271317/topics/test123"
+          requestMetadata:
+            callerIp: "67.243.209.244"
+            callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+            requestAttributes:
+              time: "2020-04-06T21:08:42.788418917Z"
+          resourceName: "projects/test-271317/topics/test123"
+          response:
+            '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+            ackDeadlineSeconds: 10
+            messageRetentionDuration: "604800s"
+            name: "projects/test-271317/subscriptions/test123"
+            topic: "projects/test-271317/topics/test123"
+          serviceName: "pubsub.googleapis.com"
+        receiveTimestamp: "2020-04-06T21:08:44.6162453Z"
+        resource:
+          labels:
+            project_id: "test-271317"
+            topic_id: "projects/test-271317/topics/test123"
+          type: "pubsub_topic"
+        severity: "NOTICE"
+        timestamp: "2020-04-06T21:08:42.785155748Z"
+      evt:
+        name: "google.pubsub.v1.Subscriber.CreateSubscription"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      messageId: "1114269073980366"
+      message_id: "1114269073980366"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.pubsub.v1.subscriber.createsubscription"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              ackDeadlineSeconds: 10
+              messageRetentionDuration: "604800s"
+              name: "projects/test-271317/subscriptions/test123"
+              topic: "projects/test-271317/topics/test123"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              ackDeadlineSeconds: 10
+              messageRetentionDuration: "604800s"
+              name: "projects/test-271317/subscriptions/test123"
+              topic: "projects/test-271317/topics/test123"
+          service:
+            name: "pubsub.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.pubsub.v1.subscriber.createsubscription"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1y7pntnc183"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1586207322785
+        time_dt: "2020-04-06T21:08:42.785155748Z"
+        type_uid: 600301
+      publishTime: "2020-04-06T21:08:45.414Z"
+      publish_time: "2020-04-06T21:08:45.414Z"
+      subscription: "projects/test-271317/subscriptions/datadog"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "publishTime" : "2020-04-06T21:08:45.414Z",
+        "data" : {
+          "severity" : "NOTICE",
+          "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+          "resource" : {
+            "type" : "pubsub_topic",
+            "labels" : {
+              "project_id" : "test-271317",
+              "topic_id" : "projects/test-271317/topics/test123"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "requestAttributes" : {
+                "time" : "2020-04-06T21:08:42.788418917Z"
+              },
+              "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+              "callerIp" : "67.243.209.244"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+              "messageRetentionDuration" : "604800s",
+              "name" : "projects/test-271317/subscriptions/test123",
+              "topic" : "projects/test-271317/topics/test123",
+              "ackDeadlineSeconds" : 10
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "test@testmail.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/test-271317/topics/test123",
+              "permission" : "pubsub.topics.attachSubscription",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "response" : {
+              "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+              "messageRetentionDuration" : "604800s",
+              "name" : "projects/test-271317/subscriptions/test123",
+              "topic" : "projects/test-271317/topics/test123",
+              "ackDeadlineSeconds" : 10
+            },
+            "methodName" : "google.pubsub.v1.Subscriber.CreateSubscription",
+            "resourceName" : "projects/test-271317/topics/test123",
+            "serviceName" : "pubsub.googleapis.com"
+          },
+          "receiveTimestamp" : "2020-04-06T21:08:44.6162453Z",
+          "insertId" : "1y7pntnc183",
+          "timestamp" : "2020-04-06T21:08:42.785155748Z"
+        },
+        "publish_time" : "2020-04-06T21:08:45.414Z",
+        "messageId" : "1114269073980366",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2020-04-06T21:08:42.785155748Z"
+            }
+          }
+        },
+        "message_id" : "1114269073980366",
+        "subscription" : "projects/test-271317/subscriptions/datadog"
+      }
+    service: "pubsub.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586207322785
+ -
+  sample: |-
+    {
+      "severity" : "NOTICE",
+      "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+      "resource" : {
+        "type" : "pubsub_topic",
+        "labels" : {
+          "project_id" : "test-271317",
+          "topic_id" : "projects/test-271317/topics/test123"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "requestAttributes" : {
+            "time" : "2020-04-06T21:08:42.788418917Z"
+          },
+          "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+          "callerIp" : "67.243.209.244"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+          "messageRetentionDuration" : "604800s",
+          "name" : "projects/test-271317/subscriptions/test123",
+          "topic" : "projects/test-271317/topics/test123",
+          "ackDeadlineSeconds" : 10
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "test@testmail.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/test-271317/topics/test123",
+          "permission" : "pubsub.topics.attachSubscription",
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "response" : {
+          "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+          "messageRetentionDuration" : "604800s",
+          "name" : "projects/test-271317/subscriptions/test123",
+          "topic" : "projects/test-271317/topics/test123",
+          "ackDeadlineSeconds" : 10
+        },
+        "methodName" : "google.pubsub.v1.Subscriber.CreateSubscription",
+        "resourceName" : "projects/test-271317/topics/test123",
+        "serviceName" : "pubsub.googleapis.com"
+      },
+      "receiveTimestamp" : "2020-04-06T21:08:44.6162453Z",
+      "insertId" : "1y7pntnc183",
+      "timestamp" : "2020-04-06T21:08:42.785155748Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "google.pubsub.v1.Subscriber.CreateSubscription"
+      http:
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "80"
+            minor: "0"
+            patch: "3987"
+            patch_minor: "149"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "1"
+      insertId: "1y7pntnc183"
+      logName: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+      network:
+        client:
+          geoip: {}
+          ip: "67.243.209.244"
+      ocsf:
+        activity_id: 1
+        activity_name: "Create"
+        actor:
+          user:
+            account:
+              uid: "test-271317"
+            email_addr: "test@testmail.com"
+            name: "test"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.pubsub.v1.subscriber.createsubscription"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              ackDeadlineSeconds: 10
+              messageRetentionDuration: "604800s"
+              name: "projects/test-271317/subscriptions/test123"
+              topic: "projects/test-271317/topics/test123"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              ackDeadlineSeconds: 10
+              messageRetentionDuration: "604800s"
+              name: "projects/test-271317/subscriptions/test123"
+              topic: "projects/test-271317/topics/test123"
+          service:
+            name: "pubsub.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "test-271317"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+        metadata:
+          event_code: "google.pubsub.v1.subscriber.createsubscription"
+          log_name: "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1y7pntnc183"
+          version: "1.3.0"
+        severity: "NOTICE"
+        severity_id: 99
+        src_endpoint:
+          ip: "67.243.209.244"
+        status: "Success"
+        status_id: 1
+        time: 1586207322785
+        time_dt: "2020-04-06T21:08:42.785155748Z"
+        type_uid: 600301
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "test@testmail.com"
+        authorizationInfo:
+         -
+          resource: "projects/test-271317/topics/test123"
+          permission: "pubsub.topics.attachSubscription"
+          granted: true
+        methodName: "google.pubsub.v1.Subscriber.CreateSubscription"
+        request:
+          '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+          ackDeadlineSeconds: 10
+          messageRetentionDuration: "604800s"
+          name: "projects/test-271317/subscriptions/test123"
+          topic: "projects/test-271317/topics/test123"
+        requestMetadata:
+          callerIp: "67.243.209.244"
+          callerSuppliedUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)"
+          requestAttributes:
+            time: "2020-04-06T21:08:42.788418917Z"
+        resourceName: "projects/test-271317/topics/test123"
+        response:
+          '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+          ackDeadlineSeconds: 10
+          messageRetentionDuration: "604800s"
+          name: "projects/test-271317/subscriptions/test123"
+          topic: "projects/test-271317/topics/test123"
+        serviceName: "pubsub.googleapis.com"
+      receiveTimestamp: "2020-04-06T21:08:44.6162453Z"
+      resource:
+        labels:
+          project_id: "test-271317"
+          topic_id: "projects/test-271317/topics/test123"
+        type: "pubsub_topic"
+      severity: "NOTICE"
+      timestamp: "2020-04-06T21:08:42.785155748Z"
+      usr:
+        email: "test@testmail.com"
+        id: "test@testmail.com"
+    message: |-
+      {
+        "severity" : "NOTICE",
+        "logName" : "projects/test-271317/logs/cloudaudit.googleapis.com%2Factivity",
+        "resource" : {
+          "type" : "pubsub_topic",
+          "labels" : {
+            "project_id" : "test-271317",
+            "topic_id" : "projects/test-271317/topics/test123"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "requestAttributes" : {
+              "time" : "2020-04-06T21:08:42.788418917Z"
+            },
+            "callerSuppliedUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36,gzip(gfe),gzip(gfe)",
+            "callerIp" : "67.243.209.244"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "messageRetentionDuration" : "604800s",
+            "name" : "projects/test-271317/subscriptions/test123",
+            "topic" : "projects/test-271317/topics/test123",
+            "ackDeadlineSeconds" : 10
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "test@testmail.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/test-271317/topics/test123",
+            "permission" : "pubsub.topics.attachSubscription",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "messageRetentionDuration" : "604800s",
+            "name" : "projects/test-271317/subscriptions/test123",
+            "topic" : "projects/test-271317/topics/test123",
+            "ackDeadlineSeconds" : 10
+          },
+          "methodName" : "google.pubsub.v1.Subscriber.CreateSubscription",
+          "resourceName" : "projects/test-271317/topics/test123",
+          "serviceName" : "pubsub.googleapis.com"
+        },
+        "receiveTimestamp" : "2020-04-06T21:08:44.6162453Z",
+        "insertId" : "1y7pntnc183",
+        "timestamp" : "2020-04-06T21:08:42.785155748Z"
+      }
+    service: "pubsub.googleapis.com"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1586207322785
+

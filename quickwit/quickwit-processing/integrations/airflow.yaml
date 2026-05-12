@@ -1,0 +1,109 @@
+id: airflow
+metric_id: airflow
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Filename
+    path: filename
+    source: log
+pipeline:
+  type: pipeline
+  name: Airflow
+  enabled: true
+  filter:
+    query: source:airflow
+  processors:
+    - type: grok-parser
+      name: Parsing Default formats
+      enabled: true
+      source: message
+      samples:
+        - '[2019-12-26 17:33:29,431] {{dag_processing.py:820}} INFO - Processing files using up to 1 processes at a time'
+        - "[2019-12-26 17:34:47,977] {{taskinstance.py:647}} DEBUG - <TaskInstance: hello_world_fail.hello_world_fail_task 2017-03-20T00:00:00+00:00 [queued]> dependency 'Previous Dagrun State' PASSED: True, The task did not have depends_on_past set."
+        - '[2019-12-26 17:34:48,568] {{base_task_runner.py:115}} INFO - Job 8: Subtask hello_world_fail_task [2019-12-26 17:34:48,568] {{settings.py:211}} DEBUG - Setting up DB connection pool (PID 202)'
+        - |
+          [2019-12-26 17:34:49,039] {{python_operator.py:105}} INFO - Exporting the following env vars:
+          AIRFLOW_CTX_DAG_ID=hello_world_fail
+          AIRFLOW_CTX_TASK_ID=hello_world_fail_task
+        - |
+          [2019-12-26 17:34:49,039] {{taskinstance.py:1058}} ERROR - Hello world fail!
+          Traceback (most recent call last):
+            File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 118, in execute_callable
+            return self.python_callable(*self.op_args, **self.op_kwargs)
+            File "/usr/local/airflow/dags/task_fail.py", line 9, in print_hello
+            raise Exception('Hello world fail!')
+          Exception: Hello world fail!
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _file %{notSpace:filename}:%{integer:lineno}
+          _base_prefix \[%{_date}\]\s+(\{\{%{_file}\}\}|\{%{_file}\})\s+%{word:level}\s+-
+          # Some logs have duplicate prefixes, we only collect job_id and subtask name from first prefix if present.
+          _prefix (\[%{date("yyyy-MM-dd HH:mm:ss,SSS")}\]\s+\{\{%{notSpace}:%{integer}\}\}\s+%{word}\s+-\s+)?(Job %{integer:jobid}: Subtask %{word:subtask}\s+)?%{_base_prefix}
+
+        matchRules: |
+          airflow_stacktrace %{_prefix}\s+%{data:message}\nTraceback \(most recent call last\):\n%{data:error.stack}
+
+          airflow_env_vars %{_prefix}\s+Exporting the following env vars:(\n%{data:env_vars:keyvalue("=", ":+")})?
+
+          airflow_default %{_prefix}\s+%{data:message}
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule .*(\n|\t)%{notSpace:error.kind}: %{data:error.message}
+      samples:
+        - |
+          File "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py", line 118, in execute_callable
+          return self.python_callable(*self.op_args, **self.op_kwargs)
+          File "/usr/local/airflow/dags/task_fail.py", line 9, in print_hello
+          raise Exception('Hello world fail!')
+          Exception: Hello world fail!
+        - |
+          File "/usr/local/lib/python3.7/site-packages/airflow/models/dagbag.py", line 204, in process_file
+            m = imp.load_source(mod_name, filepath)
+          airflow.exceptions.AirflowException: The key (hello_world invalid DAG name) has to be made of alphanumeric characters, dashes, dots and underscores exclusively
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: pipeline
+      name: Task logs pipeline 
+      enabled: true
+      filter:
+        query: "dirname:*dag_id*"
+      processors:
+        - type: attribute-remapper
+          name: Map tag `dirname` to an attribute
+          enabled: true
+          sources:
+            - dirname
+          sourceType: tag
+          target: dirname
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: true
+        - type: grok-parser
+          name: Task Attributes Parser
+          enabled: true
+          source: dirname
+          samples:
+            - /airflow_logs/dag_id_log_heavy_test_dag/run_id_manual__2025-05-09t13:51:47.462683_00:00/task_id_generate_logs_1
+          grok:
+            supportRules: ""
+            matchRules: default (.*dag_id_%{data:airflow.dagRun.dag_id}/run_id_%{data:airflow.dagRun.run_id}/task_id_%{data:airflow.task.task_id})

@@ -1,0 +1,312 @@
+id: eset-protect
+metric_id: eset-protect
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: ESET Protect
+  enabled: true
+  filter:
+    query: source:eset-protect
+  processors:
+    - type: grok-parser
+      name: Parsing the `occured` attribute to convert it into milliseconds
+      enabled: true
+      source: occured
+      samples:
+        - 06-May-2025 03:51:08
+      grok:
+        supportRules: ""
+        matchRules: |
+          convert_to_millisecond %{date("dd-MMM-yyyy HH:mm:ss"):occured}
+    - type: date-remapper
+      name: Define `occured` as the official date of the log
+      enabled: true
+      sources:
+        - occured
+    - type: service-remapper
+      name: Define `event_type` as the official service of the log
+      enabled: true
+      sources:
+        - event_type
+    - type: pipeline
+      name: Processing for target attribute
+      enabled: true
+      filter:
+        query: service:Audit_Event @domain:"Native user" @action:"Login attempt"
+          -@target:""
+      processors:
+        - type: attribute-remapper
+          name: Map `target` to `usr.name`
+          enabled: true
+          sources:
+            - target
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing for all not null user attribute
+      enabled: true
+      filter:
+        query: ((@username:* AND -@username:"") OR (@user:* AND -@user:"") OR
+          (@account:* AND -@account:""))
+      processors:
+        - type: attribute-remapper
+          name: Map `username`, `user`, `account` to `usr.name`
+          enabled: true
+          sources:
+            - username
+            - user
+            - account
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event` to `evt.name`
+      enabled: true
+      sources:
+        - event
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `os_name` to `os.name`
+      enabled: true
+      sources:
+        - os_name
+      sourceType: attribute
+      target: os.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - name: Lookup on `severity` to `status`
+      enabled: true
+      source: severity
+      target: status
+      lookupTable: |-
+        Information, info
+        Notice, notice
+        Warning, warning
+        Error, error
+        Critical, critical
+        Fatal, critical
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: pipeline
+      name: Processing for license logs
+      enabled: true
+      filter:
+        query: service:Audit_Event @domain:License @action:Deactivate
+      processors:
+        - type: grok-parser
+          name: Extract license and computer names
+          enabled: true
+          source: detail
+          samples:
+            - Deactivating all active units for license '3BB-VD8-EKH' on
+              computer 'assettag-eid'.
+          grok:
+            supportRules: ""
+            matchRules: extract_name %{regex("[^']*")} '%{data:license_name}' on computer
+              '%{data:computer_name}'.
+    - type: pipeline
+      name: Processing for create and delete actions
+      enabled: true
+      filter:
+        query: service:Audit_Event @action:(Create OR Delete)
+      processors:
+        - type: grok-parser
+          name: Extract name from detail
+          enabled: true
+          source: detail
+          samples:
+            - Creating native user 'Datadog'.
+            - Creating client task 'Reboot Computer - via context menu' of type
+              'Shutdown/restart computer'.
+            - Creating client trigger of type 'As Soon As Possible' for task
+              'New Task- inspect' with description 'Execute ASAP'.
+            - Creating native user 'test_user's test'.
+            - |
+              Removing computer 'test for delete' in group 'All'.
+          grok:
+            supportRules: ""
+            matchRules: |+
+              extract_name %{regex("[^']*")} '%{data:object_name}'%{data}
+
+    - type: pipeline
+      name: Processing for source attributes
+      enabled: true
+      filter:
+        query: service:FirewallAggregated_Event @source_address_type:IPv4
+      processors:
+        - type: attribute-remapper
+          name: Map `source_address` to `network.client.ip`
+          enabled: true
+          sources:
+            - source_address
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `source_port` to `network.client.port`
+          enabled: true
+          sources:
+            - source_port
+          sourceType: attribute
+          target: network.client.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: Extracting geolocation information from the client IP
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+    - type: pipeline
+      name: Processing for target attributes
+      enabled: true
+      filter:
+        query: service:(FirewallAggregated_Event OR FilteredWebsites_Event)
+          @target_address_type:IPv4
+      processors:
+        - type: attribute-remapper
+          name: Map `target_address` to `network.destination.ip`
+          enabled: true
+          sources:
+            - target_address
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `target_port` to `network.destination.port`
+          enabled: true
+          sources:
+            - target_port
+          sourceType: attribute
+          target: network.destination.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: Extracting geolocation information from the destination IP
+          enabled: true
+          sources:
+            - network.destination.ip
+          target: network.destination.geoip
+          ip_processing_behavior: do-nothing

@@ -1,0 +1,320 @@
+id: crest_data_systems_cisco_ise
+metric_id: crest-data-systems-cisco-ise
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Anti-Spyware Installed
+    path: AntiSpywareInstalled
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Authentication Status
+    path: AuthenticationStatus
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: NAS Port
+    path: NAS-Port
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Posture Report
+    path: PostureReport
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Endpoint MAC Address
+    path: EndPointMACAddress
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Authentication Method
+    path: cds.ciscoise.authenticationmethod
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Failure Reason
+    path: FailureReason
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Antivirus Installed
+    path: AntiVirusInstalled
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: NAS Port Type
+    path: NAS-Port-Type
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Network Device Name
+    path: NetworkDeviceName
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Host Identity Group
+    path: HostIdentityGroup
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Authorization Policy Matched Rule
+    path: AuthorizationPolicyMatchedRule
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Posture Policy Matched
+    path: PosturePolicyMatched
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Called Station ID
+    path: Called-Station-ID
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Posture Status
+    path: PostureStatus
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: EAP Authentication
+    path: EapAuthentication
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: DeviceType
+    path: DeviceType
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Network Device Profile Name
+    path: NetworkDeviceProfileName
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: System User
+    path: SystemUser
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Ip Address
+    path: IpAddress
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Mac Address
+    path: MacAddress
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Message Text
+    path: MessageText
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Device Registration Status
+    path: DeviceRegistrationStatus
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Allowed Protocol Matched Rule
+    path: AllowedProtocolMatchedRule
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: EAP Tunnel
+    path: EapTunnel
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Endpoint Matched Policy
+    path: EndpointMatchedPolicy
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Location
+    path: Location
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: NAS Port Id
+    path: NAS-Port-Id
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Operating System
+    path: OperatingSystem
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: System Name
+    path: SystemName
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Endpoint Matched Profile
+    path: EndPointMatchedProfile
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Posture Agent Version
+    path: PostureAgentVersion
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Endpoint Policy
+    path: EndpointPolicy
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Identity Policy Matched Rule
+    path: IdentityPolicyMatchedRule
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Use Case
+    path: UseCase
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: NAS IP Address
+    path: NAS-IP-Address
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: Calling Station ID
+    path: Calling-Station-ID
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: MessageClass
+    path: MessageClass
+    source: log
+  - groups:
+      - Crest Data Systems Cisco ISE
+    name: IdentityGroup
+    path: IdentityGroup
+    source: log
+pipeline:
+  type: pipeline
+  name: Cisco ISE by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_cisco_ise
+  processors:
+    - type: grok-parser
+      name: Parse Logs
+      enabled: true
+      source: message
+      samples:
+        - '<184>Feb 4 19:13:08 ise CISE_Dummy 0000000001 4 0 2020-02-21 19:13:08.328 +00:00 0018427857 3000 NOTICE Radius-Accounting: RADIUS Accounting start request, ConfigVersionId=1829, Device IP Address=164.123.228.46, UserName=p66wlcprobe, RequestLatency=2, NetworkDeviceName=borwlc2, User-Name=p66wlcprobe, NAS-IP-Address=164.123.228.46, Called-Station-ID=164.123.228.46, Calling-Station-ID=164.123.228.46, NAS-Identifier=borwlc2, Acct-Status-Type=Start, Acct-Session-Id=18:26:d4:9a, Acct-Authentic=RADIUS, AcsSessionID=ldnnacpsn1/359344348/955153, SelectedAccessService=Network Access - RADIUS, Step=11004, Step=11017, Step=11117, Step=15049, Step=15008, Step=15048, Step=15048, Step=15048, Step=15048, Step=15048, Step=15048, Step=22095, Step=11005, NetworkDeviceGroups=Location#All Locations#Americas#Central#Borger, NetworkDeviceGroups=Device Type#All Device Types#WLC, NetworkDeviceGroups=IPSEC#Is IPSEC Device, CPMSessionID=902ecefdekLiKDolwlhtvhwLd3hfyhjayi1Y8Ip8sncl1rrRyRM, Model Name=Unknown, Software Version=Unknown, Network Device Profile=Cisco, Location=Location#All Locations#Americas#Central#Borger, Device Type=Device Type#All Device Types#WLC, IPSEC=IPSEC#Is IPSEC Device,  Software Version=Unknown, Network Device Profile=Cisco'
+        - '<184>Apr 27 11:19:17 dddd.eee.ff.com CISE_Failed_Attempts 0000139040 1 0 2020-04-27 10:48:17.059992 +00:00 0095976620 5400 NOTICE Failed-Attempt: Authentication failed, ConfigVersionId=33, Device IP Address=173.209.254.11, Device Port=32770, DestinationIPAddress=10.0.0.4, DestinationPort=1812, RadiusPacketType=AccessRequest, UserName=DieEnormous, Protocol=Radius, RequestLatency=5, NetworkDeviceName=sjcm-00a-acme-wlc1, User-Name=GhadaMN, NAS-IP-Address=173.209.254.11, NAS-Port=1, Service-Type=Framed, Framed-MTU=1300, State=37CPMSessionID=0a224cd4000296e152d04860;42SessionID=abc.def.com/176956368/1151323;, Called-Station-ID=a4:56:30:0e:36:00:Blizzard-ISE, Calling-Station-ID=40:6a:ab:89:16:aa, NAS-Identifier=sjcm-00a-acme-wlc1, NAS-Port-Type=Wireless - IEEE 802.11, Tunnel-Type=(tag=0) VLAN, Tunnel-Medium-Type=(tag=0) 802, Tunnel-Private-Group-ID=(tag=0) 606, acme-av-pair=audit-session-id=0a222bc0000000d123e111f0, Airespace-Wlan-Id=9, AcsSessionID=abc.def.com/176956368/1151323, SelectedAccessService=Default Network Access, FailureReason=12321 PEAP failed SSL/TLS handshake because the client rejected the ISE local-certificate, Step=11001, Step=11017, Step=15049, Step=15008, Step=15048, Step=15048, Step=15048, Step=15048, Step=15004, Step=15048, Step=15048, Step=15048, Step=15048, Step=15004, Step=11507, Step=12300, Step=11006, Step=11001, Step=11018, Step=12302, Step=12319, Step=12800, Step=12805, Step=12806, Step=12807, Step=12810, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12319, Step=12815, Step=12321, Step=12307, Step=11504, Step=11003, NetworkDeviceGroups=Location#All Locations#CUP#CUPM1, NetworkDeviceGroups=Device Type#All Device Types#Wireless#WLC, EapTunnel=PEAP, OpenSSLErrorMessage=SSL alert: code=0x230=560 ; source=remote ; type=fatal ; message="unknown CA", OpenSSLErrorStack=  47402458548544:error:14094418:SSL routines:SSL3_READ_BYTES:tlsv1 alert unknown ca:s3_pkt.c:1102:SSL alert number 48, CPMSessionID=0a222bc0000000d123e111f0, EndPointMACAddress=XX:XX:7d:XX:XX:XX, ISEPolicySetName=Building_CUPM1_Wireless, AllowedProtocolMatchedRule=Byod-Dot1x-CUPM1, Model Name=5508, Software Version=89.11.192.18, Location=Location#All Locations##CUP##CUPM1, Device Type=Device Type#All Device Types#Wireless#WLC, Response={RadiusPacketType=AccessReject; },'
+        - '<179>May 26 05:28:23 cisco-ise-host-v3-1 CISE_Profiler 0000000020 1 0 2022-05-26 05:28:23.482 +00:00 0000000132 80003 ERROR Profiler: Profiler Probe failed to load, ConfigVersionId=11, ProfilerProbeLoadFailMsg=com.cisco.profiler.probes.snmpinfrastructure.SNMPProbeException: Fail to open address mapping.:udp:/162, ProfilerProbeName=snmptrap, ProfilerServer=cisco-ise-host-v3-1.google.com, ProfilerErrorMessage=com.cisco.profiler.probes.snmpinfrastructure.SNMPProbeException: Fail to open address mapping.:udp:/162,'
+        - 'May 31 14:06:58 10.50.3.134 May 31 08:36:58 ISELAB CISE_System_Statistics 0000000718 1 0 2023-05-31 08:36:58.314 +00:00 0000011004 70011 NOTICE System-Stats: ISE Counters, ConfigVersionId=1162, OperationCounters=Counter=17_vaEventsReceived:0,17_threatEventsReceived:0,4_HostName_Event_Fetch_FromAD:0,13_Protocol_Runtime_Context:0,17_eventsReceived:0,4_Probe_Requests_Dropped:0,4_Probe_Requests_Received:0,4_ArpCache_InsertUpdate_Received:0,17_coaIssued:0,16_iowait:31,4_EndpointCache_InsertUpdate_Received:0,4_NMAP_ScanEvent_Query:0, '
+        - 'Jun 03 05:43:23 ise CISE_Posture_and_Client_Provisioning_Audit 0000001412 1 0 2022-06-03 05:43:23.626 +00:00 0000013954 87602 NOTICE Supplicant Provisioning: Supplicant provisioning is in progress, ConfigVersionId=92, RequestTime=1654235003625, ResponseTime=1654235003625, MacAddress=FC-FC-48-00-00-01, OperatingSystem=MAC_iPhone_ALL, UserName=employee51, SessionId=c612851bh6Z/tKTqVhZCN/Z9OC1h7FLdKkQzJtL7zpoZifbfQcQ, SupplicantProfile=dCloud_NSP,'
+      grok:
+        supportRules: "_timeFormat1 %{date(\"MMM d HH:mm:ss\"):}\n_timeFormat2 %{date(\"yyyy-MM-dd HH:mm:ss.SSSSSS ZZ\"):Timestamp}\n_timeFormat3 %{date(\"yyyy-MM-dd HH:mm:ss.SSS ZZ\"):Timestamp}\n_space %{regex(\"(\\\\s)*\"):}"
+        matchRules: 'Cisco_ISE_Rule (%{regex("<[0-9]+>"):})?%{_space}(%{_timeFormat1} %{ipOrHost:} )?%{_timeFormat1} %{ipOrHost:host} CISE_%{notSpace:LogType} %{integer:} %{integer:} %{integer:} (%{_timeFormat2}|%{_timeFormat3}) %{integer:} %{integer:MessageCode} %{word:LogLevel} %{regex("[^:]*"):MessageClass}: %{regex("[^,]*"):MessageText},%{data::keyvalue("=","();\\\\#:/ ")}'
+    - type: grok-parser
+      name: Extract DeviceType, DeviceIpAddress and DevicePort from  Parsed Log
+      enabled: true
+      source: message
+      samples:
+        - '<184>Apr 27 11:19:17 dddd.eee.ff.com CISE_Failed_Attempts 0000139040 1 0 2020-04-27 10:48:17.059992 +00:00 0095976620 5400 NOTICE Failed-Attempt: Authentication failed, ConfigVersionId=33, Device IP Address=173.209.254.11, Device Port=32770, DestinationIPAddress=10.0.0.4, DestinationPort=1812, RadiusPacketType=AccessRequest, UserName=DieEnormous, Protocol=Radius, RequestLatency=5, NetworkDeviceName=sjcm-00a-acme-wlc1, User-Name=GhadaMN, NAS-IP-Address=173.209.254.11, NAS-Port=1, Service-Type=Framed, Framed-MTU=1300, State=37CPMSessionID=0a224cd4000296e152d04860;42SessionID=abc.def.com/176956368/1151323;, Called-Station-ID=a4:56:30:0e:36:00:Blizzard-ISE, Calling-Station-ID=40:6a:ab:89:16:aa, NAS-Identifier=sjcm-00a-acme-wlc1, NAS-Port-Type=Wireless - IEEE 802.11, Tunnel-Type=(tag=0) VLAN, Tunnel-Medium-Type=(tag=0) 802, Tunnel-Private-Group-ID=(tag=0) 606, acme-av-pair=audit-session-id=0a222bc0000000d123e111f0, Airespace-Wlan-Id=9, AcsSessionID=abc.def.com/176956368/1151323, SelectedAccessService=Default Network Access, FailureReason=12321 PEAP failed SSL/TLS handshake because the client rejected the ISE local-certificate, Step=11001, Step=11017, Step=15049, Step=15008, Step=15048, Step=15048, Step=15048, Step=15048, Step=15004, Step=15048, Step=15048, Step=15048, Step=15048, Step=15004, Step=11507, Step=12300, Step=11006, Step=11001, Step=11018, Step=12302, Step=12319, Step=12800, Step=12805, Step=12806, Step=12807, Step=12810, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12319, Step=12815, Step=12321, Step=12307, Step=11504, Step=11003, NetworkDeviceGroups=Location#All Locations#CUP#CUPM1, NetworkDeviceGroups=Device Type#All Device Types#Wireless#WLC, EapTunnel=PEAP, OpenSSLErrorMessage=SSL alert: code=0x230=560 ; source=remote ; type=fatal ; message="unknown CA", OpenSSLErrorStack=  47402458548544:error:14094418:SSL routines:SSL3_READ_BYTES:tlsv1 alert unknown ca:s3_pkt.c:1102:SSL alert number 48, CPMSessionID=0a222bc0000000d123e111f0, EndPointMACAddress=XX:XX:7d:XX:XX:XX, ISEPolicySetName=Building_CUPM1_Wireless, AllowedProtocolMatchedRule=Byod-Dot1x-CUPM1, Model Name=5508, Software Version=89.11.192.18, Location=Location#All Locations#CUP#CUPM1, Device Type=Device Type#All Device Types#Wireless#WLC, Response={RadiusPacketType=AccessReject; },'
+        - '<184>Apr 27 11:12:24 172.0.0.7 Apr 27 11:12:24 gg.hhh.iii.com CISE_RADIUS_Diagnostics 0000136247 1 0 2020-04-27 11:12:24.076398 +00:00 0095802404 12948 WARN  Failed-Attempt: Supplicant sent unexpected unencrypted TLS handshake message instead of TLS application data in PEAP protocol, ConfigVersionId=33, Device IP Address=20.24.84.239, Device Port=32770, DestinationIPAddress=10.0.0.9, DestinationPort=1812, RadiusPacketType=AccessRequest, RadiusIdentifier=253, User-Name=anujjain2, NAS-IP-Address=20.24.84.239, NAS-Port=13, Service-Type=Framed, Framed-MTU=1300, State=37CPMSessionID=0a222bc0000000d123e111f1\;42SessionID=gg.hhh.iii.com/176956368/1148528\;, Called-Station-ID=54-78-1a-bf-f0-30:alpha-cx, Calling-Station-ID=bc-f5-ac-f5-f5-90, NAS-Identifier=Cisco_d5:02:4f, NAS-Port-Type=Wireless - IEEE 802.11, Tunnel-Type=(tag=0) VLAN, Tunnel-Medium-Type=(tag=0) 802, Tunnel-Private-Group-ID=(tag=0) 770, cisco-av-pair=audit-session-id=0a20220200004aab52d04539, Airespace-Wlan-Id=9, AcsSessionID=gg.hhh.iii.com/176956368/1148528, SelectedAccessService=Default Network Access, DetailedInfo=Invalid username or password specified\, Retry is  allowed, EapTunnel=PEAP, EapAuthentication=EAP-MSCHAPv2, CPMSessionID=0a222bc0000000d123e111f1'
+        - 'Jun 03 05:43:25 ise CISE_RADIUS_Diagnostics 0000001420 1 0 2022-06-03 05:43:25.358 +00:00 0000014032 12552 WARN  EAP: Conversation with OCSP server ended with failure, ConfigVersionId=92, Device IP Address=198.18.134.150, Device Port=35965, DestinationIPAddress=198.18.133.27, DestinationPort=1812, RadiusPacketType=AccessRequest, RadiusIdentifier=24, User-Name=employee51, NAS-IP-Address=198.18.134.150, NAS-Port=1, Service-Type=Framed, State=64CPMSessionID=c612851bFkrbDy5vAVBJzcHEgsTFSVevS6kHh8CzZlf_hHz1w_U\;27SessionID=ise/443553809/104\;, Session-Timeout=15, Calling-Station-ID=FC-FC-48-00-00-01, NAS-Port-Type=Wireless - IEEE 802.11, AcsSessionID=ise/443553809/104, SelectedAccessService=Default Network Access, EapAuthentication=EAP-TLS, CPMSessionID=c612851bFkrbDy5vAVBJzcHEgsTFSVevS6kHh8CzZlf_hHz1w_U,'
+        - '<184>Apr 27 11:14:27 172.0.0.10 Apr 27 11:14:27 dddd.eee.ff.com CISE_RADIUS_Diagnostics 0000001264 1 0 2020-04-27 11:14:27.000002 +00:00 0004144378 12937 WARN  Failed-Attempt: Supplicant stopped responding to ISE after sending it the first inner EAP-MSCHAPv2 message, ConfigVersionId=33, RadiusPacketType=Drop, Device IP Address=100.147.109.9, DestinationIPAddress=10.0.0.5, AcsSessionID=dddd.eee.ff.com/176954515/2609, SelectedAccessService=HYD-Default Network Access, EapTunnel=PEAP, EapAuthentication=EAP-MSCHAPv2, User-Name=Yowsa777, NAS-IP-Address=100.147.109.9, NAS-Port=13, Calling-Station-ID=34:c0:59:d5:67:54, NAS-Identifier=snsbu-hyd04-a-wlc01, NAS-Port-Type=Wireless - IEEE 802.11, CPMSessionID=0a222bc0000000d123e111f1'
+        - '<184>Apr 27 11:14:27 172.0.0.10 Apr 27 11:14:27 dddd.eee.ff.com CISE_RADIUS_Diagnostics 0000001264 1 0 2020-04-27 11:14:27.000002 +00:00 0004144378 12937 WARN  Failed-Attempt: Supplicant stopped responding to ISE after sending it the first inner EAP-MSCHAPv2 message, ConfigVersionId=33, RadiusPacketType=Drop, Device Port=100, DestinationIPAddress=10.0.0.5, AcsSessionID=dddd.eee.ff.com/176954515/2609, SelectedAccessService=HYD-Default Network Access, EapTunnel=PEAP, EapAuthentication=EAP-MSCHAPv2, User-Name=Yowsa777, NAS-IP-Address=100.147.109.9, NAS-Port=13, Calling-Station-ID=34:c0:59:d5:67:54, NAS-Identifier=snsbu-hyd04-a-wlc01, NAS-Port-Type=Wireless - IEEE 802.11, CPMSessionID=0a222bc0000000d123e111f1'
+      grok:
+        supportRules: _space %{regex("(\\s)*"):}
+        matchRules: "extract_device_type %{data:} (Device IP Address=%{ip:network.client.ip},)?( Device Port=%{integer:network.client.port},)? %{data:}, Device Type=%{regex(\"[^,]*\"):DeviceType},%{data:}\nextract_device_ip_and_port %{data:} Device IP Address=%{ip:network.client.ip}, Device Port=%{integer:network.client.port}, %{data:}\nextract_device_ip %{data:} Device IP Address=%{ip:network.client.ip}, %{data:}\nextract_device_port %{data:} Device Port=%{integer:network.client.port}, %{data:}"
+    - name: Map MessageCode to MessageType
+      enabled: true
+      source: MessageCode
+      target: MessageType
+      lookupTable: "5200,passed-authentication\n5201,passed-authentication\n5202,passed-authentication\n5203,passed-authentication\n60116,passed-authentication\n60206,passed-authentication\n60115,passed-authentication\n60205,passed-authentication\n60184,passed-authentication\n5206,passed-authentication\n60075,passed-authentication\n12304,passed-authentication\n12305,passed-authentication\n11520,passed-authentication\n11810,passed-authentication\n61076,passed-authentication\n51002,passed-authentication\n51001,passed-authentication\n11808,passed-authentication\n11806,passed-authentication\n11522,passed-authentication\n12313,passed-authentication\n12310,passed-authentication\n12816,passed-authentication\n12802,passed-authentication\n12801,passed-authentication\n12804,passed-authentication\n12813,passed-authentication\n12812,passed-authentication\n12811,passed-authentication\n12810,passed-authentication\n12807,passed-authentication\n12806,passed-authentication\n12805,passed-authentication\n12800,passed-authentication\n12302,passed-authentication\n12300,passed-authentication\n12301,passed-authentication\n12500,passed-authentication\n11507,passed-authentication\n60080,passed-authentication\n5205,passed-authentication\n60204,passed-authentication\n5233,passed-authentication\n5232,passed-authentication\n60197,passed-authentication\n60214,passed-authentication\n11521,passed-authentication\n5400,failed-authentication\n5401,failed-authentication\n5411,failed-authentication\n12508,failed-authentication\n12514,failed-authentication\n12516,failed-authentication\n60188,failed-authentication\n60081,failed-authentication\n60082,failed-authentication\n60185,failed-authentication\n11504,failed-authentication\n12307,failed-authentication\n11815,failed-authentication\n11823,failed-authentication\n51021,failed-authentication\n11213,failed-authentication\n12512,failed-authentication\n12552,failed-authentication\n12561,failed-authentication\n5418,failed-authentication\n5236,guest-authentication\n5231,guest-authentication\n86017,guest-authentication-failed\n86009,guest-authentication-failed\n86010,guest-authentication-failed\n86011,guest-authentication-failed\n86012,guest-authentication-failed\n86013,guest-authentication-failed\n86014,guest-authentication-failed\n86015,guest-authentication-failed\n86016,guest-authentication-failed\n86018,guest-authentication-failed\n86019,guest-authentication-failed\n5417,guest-authentication-failed-attempts\n80002,profiler\n5434,alert\n5435,alert\n5449,alert\n61027,alert\n60125,alert\n60165,alert\n25006,alert\n31107,alert\n32005,alert\n32018,alert\n89003,alert\n60093,alert\n60095,alert\n60227,alert\n11015,alert\n61026,alert\n35055,alert\n35051,alert\n35001,alert\n35050,alert\n35048,alert\n35046,alert\n35000,alert\n61075,alert\n61236,alert\n25018,alert\n25045,alert\n25016,alert\n25012,alert\n25046,alert\n25020,alert\n91002,alert\n91006,alert\n60191,alert\n60164,alert\n11036,alert\n91007,alert\n11010,service\n34127,service\n34126,service\n58001,service\n58002,service\n58005,service\n11009,service\n25004,service\n34050,service\n32000,service\n60234,service\n60235,service\n87751,service\n87604,service\n13002,service\n87608,service\n87609,service\n91004,service\n91018,service\n52002,change\n60086,change\n58022,change\n58023,change\n58024,change\n60131,change\n60132,change\n60198,change\n60085,change\n60190,change\n51100,change\n60461,change\n61025,traffic\n91003,change-all\n58004,change-all\n58003,change-all\n90051,change-all\n90200,change-all\n60237,change-all\n52001,change-all\n60094,change-all\n60153,change-all\n60208,change-all\n60216,change-all\n58016,change-all\n60106,change-all\n88010,inventory\n51101,change-account\n51003,change-account\n52000,change-account"
+      type: lookup-processor
+    - type: attribute-remapper
+      name: Map `OriginalUserName`, `UserName`, `User-Name`, `User_Name`, `Admin`, `AdminName`, `PortalUser`, `User` to `usr.name`
+      enabled: true
+      sources:
+        - OriginalUserName
+        - UserName
+        - User-Name
+        - User_Name
+        - Admin
+        - AdminName
+        - PortalUser
+        - User
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `DestinationIPAddress` to `network.destination.ip`
+      enabled: true
+      sources:
+        - DestinationIPAddress
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `DestinationPort` to `network.destination.port`
+      enabled: true
+      sources:
+        - DestinationPort
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `AuthenticationMethod` to `cds.ciscoise.authenticationmethod`
+      enabled: true
+      sources:
+        - AuthenticationMethod
+      sourceType: attribute
+      target: cds.ciscoise.authenticationmethod
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `LogLevel` as the official status of the log
+      enabled: true
+      sources:
+        - LogLevel
+    - type: attribute-remapper
+      name: Map attribute `host` to tag `cisco_ise_host`
+      enabled: true
+      sources:
+        - host
+      sourceType: attribute
+      target: cisco_ise_host
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `Timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - Timestamp

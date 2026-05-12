@@ -1,0 +1,210 @@
+id: "jfrog_artifactory"
+tests:
+  -
+    sample: |-
+      {
+        "tenant_id" : "partnership-test-company-0",
+        "hostname" : "jfrog-cloud",
+        "instance_name" : "instance1",
+        "ddtags" : "key1:val1,key2:val2,key3:val3",
+        "service" : "jfrog.saas.rt.artifactory.access",
+        "company_name" : "JFrog Test Company",
+        "message" : {
+          "log_timestamp" : "2024-04-22T18:46:18.610Z",
+          "action_response" : "ACCEPTED DELETE",
+          "log_type" : "artifactory-access",
+          "trace_id" : "7d4c40fbd47e5459",
+          "repository_path" : "generic-local:jfrog_platform_cloud_logs_2.png",
+          "user_name" : "danielmi",
+          "ip_address" : "255.255.255.1",
+          "message" : "for client",
+          "type" : "token"
+        },
+        "ddsource" : "jfrog_artifactory"
+      }
+    result:
+      custom:
+        ddsource: "jfrog_artifactory"
+        ddtags: "key1:val1,key2:val2,key3:val3"
+        host: "jfrog-cloud"
+        jfrog:
+          cloud:
+            action_response: "ACCEPTED DELETE"
+            company_name: "JFrog Test Company"
+            instance_name: "instance1"
+            repo_path: "generic-local:jfrog_platform_cloud_logs_2.png"
+            tenant_id: "partnership-test-company-0"
+        log_timestamp: "2024-04-22T18:46:18.610Z"
+        log_type: "artifactory-access"
+        message: "for client"
+        network:
+          client:
+            ip: "255.255.255.1"
+        service: "jfrog.saas.rt.artifactory.access"
+        type: "token"
+        usr:
+          id: "danielmi"
+      message: |-
+        {
+          "tenant_id" : "partnership-test-company-0",
+          "hostname" : "jfrog-cloud",
+          "instance_name" : "instance1",
+          "ddtags" : "key1:val1,key2:val2,key3:val3",
+          "service" : "jfrog.saas.rt.artifactory.access",
+          "company_name" : "JFrog Test Company",
+          "message" : {
+            "log_timestamp" : "2024-04-22T18:46:18.610Z",
+            "action_response" : "ACCEPTED DELETE",
+            "log_type" : "artifactory-access",
+            "trace_id" : "7d4c40fbd47e5459",
+            "repository_path" : "generic-local:jfrog_platform_cloud_logs_2.png",
+            "user_name" : "danielmi",
+            "ip_address" : "255.255.255.1",
+            "message" : "for client",
+            "type" : "token"
+          },
+          "ddsource" : "jfrog_artifactory"
+        }
+      service: "jfrog.saas.rt.artifactory.access"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1713811578610
+      trace_id: "7d4c40fbd47e5459"
+  -
+    sample: |-
+      {
+        "tenant_id" : "partnership-test-company-0",
+        "hostname" : "jfrog-cloud",
+        "instance_name" : "instance1",
+        "ddtags" : "key1:val1,key2:val2,key3:val3",
+        "service" : "jfrog.saas.rt.access.security.audit",
+        "company_name" : "JFrog Test Company",
+        "message" : {
+          "log_timestamp" : "2024-02-06T22:15:11.665Z",
+          "trace_id" : "6420b6d27625d991",
+          "data_changed" : "{\"added\":{\"owner\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"created\":\"1706739014223\",\"expirationTime\":\"1706739134223\",\"subject\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"scope\":\"api:* applied-permissions/admin\",\"id\":\"0634d4e8-5338-4f65-9310-ddfe4f4e8401\",\"type\":\"generic\"}}",
+          "event_type" : "C",
+          "entity_name" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+          "user_name" : "UNKNOWN",
+          "logged_principal" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+          "ip_address" : "UNKNOWN",
+          "event" : "TKN"
+        },
+        "ddsource" : "jfrog_artifactory"
+      }
+    result:
+      custom:
+        ddsource: "jfrog_artifactory"
+        ddtags: "key1:val1,key2:val2,key3:val3"
+        evt:
+          name: "TKN"
+        host: "jfrog-cloud"
+        jfrog:
+          cloud:
+            audit_data_changed: "{\"added\":{\"owner\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"created\":\"1706739014223\",\"expirationTime\":\"1706739134223\",\"subject\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"scope\":\"api:* applied-permissions/admin\",\"id\":\"0634d4e8-5338-4f65-9310-ddfe4f4e8401\",\"type\":\"generic\"}}"
+            company_name: "JFrog Test Company"
+            entity_name: "jfob@01h90ampkvn2wy0e10sgyx174d"
+            evt:
+              type: "C"
+            instance_name: "instance1"
+            logged_principal: "jfob@01h90ampkvn2wy0e10sgyx174d"
+            tenant_id: "partnership-test-company-0"
+        log_timestamp: "2024-02-06T22:15:11.665Z"
+        network:
+          client:
+            ip: "UNKNOWN"
+        service: "jfrog.saas.rt.access.security.audit"
+        usr:
+          id: "UNKNOWN"
+      message: |-
+        {
+          "tenant_id" : "partnership-test-company-0",
+          "hostname" : "jfrog-cloud",
+          "instance_name" : "instance1",
+          "ddtags" : "key1:val1,key2:val2,key3:val3",
+          "service" : "jfrog.saas.rt.access.security.audit",
+          "company_name" : "JFrog Test Company",
+          "message" : {
+            "log_timestamp" : "2024-02-06T22:15:11.665Z",
+            "trace_id" : "6420b6d27625d991",
+            "data_changed" : "{\"added\":{\"owner\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"created\":\"1706739014223\",\"expirationTime\":\"1706739134223\",\"subject\":\"jfob@01h90ampkvn2wy0e10sgyx174d\",\"scope\":\"api:* applied-permissions/admin\",\"id\":\"0634d4e8-5338-4f65-9310-ddfe4f4e8401\",\"type\":\"generic\"}}",
+            "event_type" : "C",
+            "entity_name" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+            "user_name" : "UNKNOWN",
+            "logged_principal" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+            "ip_address" : "UNKNOWN",
+            "event" : "TKN"
+          },
+          "ddsource" : "jfrog_artifactory"
+        }
+      service: "jfrog.saas.rt.access.security.audit"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1707257711665
+      trace_id: "6420b6d27625d991"
+  -
+    sample: |-
+      {
+        "tenant_id" : "partnership-test-company-0",
+        "hostname" : "jfrog-cloud",
+        "instance_name" : "instance1",
+        "ddtags" : "key1:val1,key2:val2,key3:val3",
+        "service" : "jfrog.saas.rt.access.audit",
+        "company_name" : "JFrog Test Company",
+        "message" : {
+          "log_timestamp" : "2024-02-08T22:21:11.665Z",
+          "refreshable" : false,
+          "expirationtime" : "1706739134223",
+          "token_id" : "0634d4e8-5338-4f65-9310-ddfe4f4e8401",
+          "subject" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+          "user_name" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+          "event" : "created",
+          "issuer" : "jfob@01h90ampkvn2wy0e10sgyx174d"
+        },
+        "ddsource" : "jfrog_artifactory"
+      }
+    result:
+      custom:
+        ddsource: "jfrog_artifactory"
+        ddtags: "key1:val1,key2:val2,key3:val3"
+        evt:
+          name: "created"
+        expirationtime: "1706739134223"
+        host: "jfrog-cloud"
+        issuer: "jfob@01h90ampkvn2wy0e10sgyx174d"
+        jfrog:
+          cloud:
+            company_name: "JFrog Test Company"
+            instance_name: "instance1"
+            subject: "jfob@01h90ampkvn2wy0e10sgyx174d"
+            tenant_id: "partnership-test-company-0"
+            token_id: "0634d4e8-5338-4f65-9310-ddfe4f4e8401"
+        log_timestamp: "2024-02-08T22:21:11.665Z"
+        refreshable: false
+        service: "jfrog.saas.rt.access.audit"
+        usr:
+          id: "jfob@01h90ampkvn2wy0e10sgyx174d"
+      message: |-
+        {
+          "tenant_id" : "partnership-test-company-0",
+          "hostname" : "jfrog-cloud",
+          "instance_name" : "instance1",
+          "ddtags" : "key1:val1,key2:val2,key3:val3",
+          "service" : "jfrog.saas.rt.access.audit",
+          "company_name" : "JFrog Test Company",
+          "message" : {
+            "log_timestamp" : "2024-02-08T22:21:11.665Z",
+            "refreshable" : false,
+            "expirationtime" : "1706739134223",
+            "token_id" : "0634d4e8-5338-4f65-9310-ddfe4f4e8401",
+            "subject" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+            "user_name" : "jfob@01h90ampkvn2wy0e10sgyx174d",
+            "event" : "created",
+            "issuer" : "jfob@01h90ampkvn2wy0e10sgyx174d"
+          },
+          "ddsource" : "jfrog_artifactory"
+        }
+      service: "jfrog.saas.rt.access.audit"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1707430871665

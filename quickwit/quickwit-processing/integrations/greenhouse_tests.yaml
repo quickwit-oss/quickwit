@@ -1,0 +1,78 @@
+id: "greenhouse"
+tests:
+ -
+  sample: |-
+    {
+      "request" : {
+        "id" : "7061a2ccacae8d2b49e17a46a1328fd6",
+        "type" : "my_dashboard/controllers/my_dashboard#index"
+      },
+      "performer" : {
+        "meta" : {
+          "name" : "TestUser1",
+          "username" : "testuser1@example.com"
+        },
+        "id" : 11111111,
+        "ip_address" : "0.0.0.0",
+        "type" : "user"
+      },
+      "organization_id" : 1111111111,
+      "event" : {
+        "meta" : {
+          "path" : "/dashboard"
+        },
+        "target_type" : "PII Page Accessed",
+        "type" : "action"
+      },
+      "event_time" : "2024-09-23T00:10:45.277Z"
+    }
+  result:
+    custom:
+      event:
+        meta:
+          path: "/dashboard"
+        target_type: "PII Page Accessed"
+        type: "action"
+      event_time: "2024-09-23T00:10:45.277Z"
+      network:
+        client:
+          geoip: {}
+          ip: "0.0.0.0"
+      organization_id: 1111111111
+      performer:
+        id: 11111111
+        meta:
+          name: "TestUser1"
+          username: "testuser1@example.com"
+        type: "user"
+      request:
+        id: "7061a2ccacae8d2b49e17a46a1328fd6"
+        type: "my_dashboard/controllers/my_dashboard#index"
+    message: |-
+      {
+        "request" : {
+          "id" : "7061a2ccacae8d2b49e17a46a1328fd6",
+          "type" : "my_dashboard/controllers/my_dashboard#index"
+        },
+        "performer" : {
+          "meta" : {
+            "name" : "TestUser1",
+            "username" : "testuser1@example.com"
+          },
+          "id" : 11111111,
+          "ip_address" : "0.0.0.0",
+          "type" : "user"
+        },
+        "organization_id" : 1111111111,
+        "event" : {
+          "meta" : {
+            "path" : "/dashboard"
+          },
+          "target_type" : "PII Page Accessed",
+          "type" : "action"
+        },
+        "event_time" : "2024-09-23T00:10:45.277Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727050245277

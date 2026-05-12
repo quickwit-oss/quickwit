@@ -1,0 +1,393 @@
+id: crest_data_systems_lansweeper
+metric_id: crest-data-systems-lansweeper
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: Crest Data Systems Lansweeper
+  enabled: true
+  filter:
+    query: source:crest_data_systems_lansweeper
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Inventory Data Pipeline
+      enabled: true
+      filter:
+        query: -service:cds.lansweeper.vulnerabilities
+      processors:
+        - type: attribute-remapper
+          name: Map tag `lansweeper-batch` to attribute `timestamp`
+          enabled: true
+          sources:
+            - lansweeper-batch
+          sourceType: tag
+          target: timestamp
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: convert `timestamp` to epoch
+          enabled: true
+          source: timestamp
+          samples:
+            - 2024-12-09_07:23:45
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd_HH:mm:ss"):timestamp}
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+    - type: pipeline
+      name: Vulnerabilities pipeline
+      enabled: true
+      filter:
+        query: service:cds.lansweeper.vulnerabilities
+      processors:
+        - type: grok-parser
+          name: convert `updatedOn` to epoch
+          enabled: true
+          source: updatedOn
+          samples:
+            - 2024-08-07 22:06:48
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd' 'HH:mm:ss"):updatedOn}
+        - type: date-remapper
+          name: Define `updatedOn` as the official date of the log
+          enabled: true
+          sources:
+            - updatedOn
+        - type: attribute-remapper
+          name: Map `source` to `vulnerability_source`
+          enabled: true
+          sources:
+            - source
+          sourceType: attribute
+          target: vulnerability_source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: status-remapper
+          name: Define `severity` as the official status of the log
+          enabled: true
+          sources:
+            - severity
+    - type: pipeline
+      name: Accounts pipelines
+      enabled: true
+      filter:
+        query: service:cds.lansweeper.accounts
+      processors:
+        - type: attribute-remapper
+          name: Map `status` to `account_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: account_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: convert `lastTimeAccess` to epoch
+          enabled: true
+          source: lastTimeAccess
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):InactiveSince}
+        - type: arithmetic-processor
+          name: Calculate `InactiveSince`
+          enabled: true
+          expression: (((timestamp - InactiveSince) / 1000) / 3600) / 24
+          target: InactiveSince
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `InactiveSince` to `InactiveSince`
+          enabled: true
+          sources:
+            - InactiveSince
+          sourceType: attribute
+          target: InactiveSince
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Software Dates processing pipelines
+      enabled: true
+      filter:
+        query: service:cds.lansweeper.softwares
+      processors:
+        - type: grok-parser
+          name: convert `installDate` to epoch
+          enabled: true
+          source: installDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):DaysSinceInstall}
+        - type: arithmetic-processor
+          name: Calculate `DaysSinceInstall`
+          enabled: true
+          expression: (((timestamp - DaysSinceInstall ) / 1000) / 3600) / 24
+          target: DaysSinceInstall
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `DaysSinceInstall` to `DaysSinceInstall`
+          enabled: true
+          sources:
+            - DaysSinceInstall
+          sourceType: attribute
+          target: DaysSinceInstall
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Asset Dates processing pipelines
+      enabled: true
+      filter:
+        query: service:cds.lansweeper.assets
+      processors:
+        - type: grok-parser
+          name: convert `osMetadata.endOfSupportDate` to epoch
+          enabled: true
+          source: recognitionInfo.osMetadata.endOfSupportDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule
+              %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):OsSupportRemainingDays}
+        - type: grok-parser
+          name: convert `modelMetadata.endOfSupportDate` to epoch
+          enabled: true
+          source: recognitionInfo.modelMetadata.endOfSupportDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule
+              %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):ModelSupportRemainingDays}
+        - type: grok-parser
+          name: convert `osMetadata.endOfLifeDate` to epoch
+          enabled: true
+          source: recognitionInfo.osMetadata.endOfLifeDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):OsEOLRemainingDays}
+        - type: grok-parser
+          name: convert `modelMetadata.endOfLifeDate` to epoch
+          enabled: true
+          source: recognitionInfo.modelMetadata.endOfLifeDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule
+              %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):ModelEOLRemainingDays}
+        - type: grok-parser
+          name: convert `warrantyDate` to epoch
+          enabled: true
+          source: assetCustom.warrantyDate
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule
+              %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):WarrantyRemainingDays}
+        - type: grok-parser
+          name: convert `firstSeen` to epoch
+          enabled: true
+          source: assetBasicInfo.firstSeen
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):DaysFromFirstSeen}
+        - type: grok-parser
+          name: convert `lastSeen` to epoch
+          enabled: true
+          source: assetBasicInfo.lastSeen
+          samples:
+            - 2024-12-09T07:23:45.723Z
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):InactiveDays}
+        - type: arithmetic-processor
+          name: Calculate `WarrantyRemainingDays`
+          enabled: true
+          expression: (((WarrantyRemainingDays - timestamp) / 1000) / 3600) / 24
+          target: WarrantyRemainingDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `OsSupportRemainingDays`
+          enabled: true
+          expression: (((OsSupportRemainingDays - timestamp) / 1000) / 3600) / 24
+          target: OsSupportRemainingDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `OsEOLRemainingDays`
+          enabled: true
+          expression: (((OsEOLRemainingDays - timestamp) / 1000) / 3600) / 24
+          target: OsEOLRemainingDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `ModelSupportRemainingDays`
+          enabled: true
+          expression: (((ModelSupportRemainingDays - timestamp) / 1000) / 3600) / 24
+          target: ModelSupportRemainingDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `ModelEOLRemainingDays`
+          enabled: true
+          expression: (((ModelEOLRemainingDays - timestamp) / 1000) / 3600) / 24
+          target: ModelEOLRemainingDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `DaysFromFirstSeen`
+          enabled: true
+          expression: (((timestamp - DaysFromFirstSeen) / 1000) / 3600) / 24
+          target: DaysFromFirstSeen
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `InactiveDays`
+          enabled: true
+          expression: (((timestamp - InactiveDays) / 1000) / 3600) / 24
+          target: InactiveDays
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `InactiveDays` to `InactiveDays`
+          enabled: true
+          sources:
+            - InactiveDays
+          sourceType: attribute
+          target: InactiveDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `WarrantyRemainingDays` to `WarrantyRemainingDays`
+          enabled: true
+          sources:
+            - WarrantyRemainingDays
+          sourceType: attribute
+          target: WarrantyRemainingDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `OsEOLRemainingDays` to `OsEOLRemainingDays`
+          enabled: true
+          sources:
+            - OsEOLRemainingDays
+          sourceType: attribute
+          target: OsEOLRemainingDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ModelSupportRemainingDays` to `ModelSupportRemainingDays`
+          enabled: true
+          sources:
+            - ModelSupportRemainingDays
+          sourceType: attribute
+          target: ModelSupportRemainingDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ModelEOLRemainingDays` to `ModelEOLRemainingDays`
+          enabled: true
+          sources:
+            - ModelEOLRemainingDays
+          sourceType: attribute
+          target: ModelEOLRemainingDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `DaysFromFirstSeen` to `DaysFromFirstSeen`
+          enabled: true
+          sources:
+            - DaysFromFirstSeen
+          sourceType: attribute
+          target: DaysFromFirstSeen
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `OsSupportRemainingDays` to `OsSupportRemainingDays`
+          enabled: true
+          sources:
+            - OsSupportRemainingDays
+          sourceType: attribute
+          target: OsSupportRemainingDays
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Calculate `OsSupportExceededDays`
+          enabled: true
+          expression: 0 - OsSupportRemainingDays
+          target: OsSupportExceededDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `DaysOutOfWarranty`
+          enabled: true
+          expression: 0 - WarrantyRemainingDays
+          target: DaysOutOfWarranty
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `OsEOLExceededDays`
+          enabled: true
+          expression: 0 - OsEOLRemainingDays
+          target: OsEOLExceededDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `ModelEOLExceededDays`
+          enabled: true
+          expression: 0 - ModelEOLRemainingDays
+          target: ModelEOLExceededDays
+          replaceMissing: false
+        - type: arithmetic-processor
+          name: Calculate `ModelSupportExceededDays`
+          enabled: true
+          expression: 0 - ModelSupportRemainingDays
+          target: ModelSupportExceededDays
+          replaceMissing: false
+    - type: pipeline
+      name: Sites Pipeline
+      enabled: true
+      filter:
+        query: service:cds.lansweeper.sites
+      processors:
+        - type: attribute-remapper
+          name: Map `name` to `site_name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: site_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

@@ -1,0 +1,49 @@
+id: "cacti"
+tests:
+ -
+  sample: "10/01/2020 09:14:50 - POLLER: Poller[1] WARNING: Cacti Master Poller process terminated by user"
+  result:
+    custom:
+      level: "WARNING"
+      logger:
+        name: "POLLER"
+        thread_name: "Poller"
+      timestamp: 1578647690000
+    message: "Cacti Master Poller process terminated by user"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1578647690000
+ -
+  sample: "2020/10/01 09:21:10 - SPINE: Poller[Main Poller] PID[999] FATAL: MySQL Error:'2013', Message:'Lost connection to MySQL server during query'"
+  result:
+    custom:
+      level: "FATAL"
+      logger:
+        name: "SPINE"
+        thread_name: "Poller"
+      timestamp: 1601544070000
+    message: "MySQL Error:'2013', Message:'Lost connection to MySQL server during query'"
+    status: "emergency"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1601544070000
+ -
+  sample: "2020/01/04 21:25:52 - PING Device[2] SNMP: Device responded to SNMP"
+  result:
+    custom:
+      timestamp: 1578173152000
+    message: "PING Device[2] SNMP: Device responded to SNMP"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1578173152000
+ -
+  sample: "2020/09/21 22:44:05 - INSTALL: Checking arguments"
+  result:
+    custom:
+      timestamp: 1600728245000
+    message: "INSTALL: Checking arguments"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600728245000
+

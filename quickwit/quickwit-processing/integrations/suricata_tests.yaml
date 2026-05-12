@@ -1,0 +1,645 @@
+id: suricata
+tests:
+ -
+  sample: |-
+    {
+      "tx_id" : 0,
+      "app_proto" : "http",
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 39952,
+      "community_id" : "1:l3GiQDaN0AKDeOe6TVIqMakFW98=",
+      "event_type" : "alert",
+      "alert" : {
+        "severity" : 3,
+        "signature_id" : 2013504,
+        "rev" : 6,
+        "metadata" : {
+          "updated_at" : [ "2020_04_22" ],
+          "former_category" : [ "POLICY" ],
+          "created_at" : [ "2011_08_31" ]
+        },
+        "gid" : 1,
+        "signature" : "ET POLICY GNU/Linux APT User-Agent Outbound likely related to package management",
+        "action" : "allowed",
+        "category" : "Not Suspicious Traffic"
+      },
+      "flow_id" : 2192789171815790,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "TCP",
+      "http" : {
+        "hostname" : "in.archive.ubuntu.com",
+        "protocol" : "HTTP/1.1",
+        "http_method" : "GET",
+        "http_content_type" : "application/vnd.debian.binary-package",
+        "length" : 1158,
+        "url" : "/ubuntu/pool/main/u/util-linux/bsdutils_2.34-0.1ubuntu9.6_amd64.deb",
+        "http_user_agent" : "Debian APT-HTTP/1.3 (2.0.9) non-interactive",
+        "status" : 200
+      },
+      "dest_port" : 80,
+      "pkt_src" : "wire/pcap",
+      "flow" : {
+        "src_ip" : "10.10.10.10",
+        "src_port" : 39952,
+        "pkts_toserver" : 4,
+        "dest_ip" : "20.20.20.20",
+        "start" : "2024-04-25T03:06:31.576084+0530",
+        "bytes_toclient" : 12252,
+        "bytes_toserver" : 442,
+        "pkts_toclient" : 10,
+        "dest_port" : 80
+      },
+      "timestamp" : "2024-04-25T03:06:32.258446+0530",
+      "direction" : "to_server"
+    }
+  result:
+    custom:
+      alert:
+        action: "allowed"
+        category: "Not Suspicious Traffic"
+        gid: 1
+        metadata:
+          created_at:
+           - "2011_08_31"
+          former_category:
+           - "POLICY"
+          updated_at:
+           - "2020_04_22"
+        rev: 6
+        severity: 3
+        signature: "ET POLICY GNU/Linux APT User-Agent Outbound likely related to package management"
+        signature_id: 2013504
+      alert_severity: "Info"
+      app_proto: "http"
+      community_id: "1:l3GiQDaN0AKDeOe6TVIqMakFW98="
+      direction: "to_server"
+      event_type: "alert"
+      flow:
+        dest_ip: "20.20.20.20"
+        dest_port: 80
+        src_ip: "10.10.10.10"
+        src_port: 39952
+        start: "2024-04-25T03:06:31.576084+0530"
+      flow_id: 2192789171815790
+      http:
+        http_content_type: "application/vnd.debian.binary-package"
+        length: 1158
+        method: "GET"
+        protocol: "HTTP/1.1"
+        status_category: "Successful"
+        status_code: 200
+        url: "http://in.archive.ubuntu.com/ubuntu/pool/main/u/util-linux/bsdutils_2.34-0.1ubuntu9.6_amd64.deb"
+        url_details:
+          host: "in.archive.ubuntu.com"
+          path: "/ubuntu/pool/main/u/util-linux/bsdutils_2.34-0.1ubuntu9.6_amd64.deb"
+        useragent: "Debian APT-HTTP/1.3 (2.0.9) non-interactive"
+      in_iface: "ens160"
+      network:
+        bytes_read: 442
+        bytes_written: 12252
+        client:
+          ip: "10.10.10.10"
+          port: 39952
+        destination:
+          ip: "20.20.20.20"
+          port: 80
+      pkt_src: "wire/pcap"
+      suricata:
+        flow:
+          pkts_toclient: 10
+          pkts_toserver: 4
+        proto: "TCP"
+      timestamp: "2024-04-25T03:06:32.258446+0530"
+      tx_id: 0
+    message: |-
+      {
+        "tx_id" : 0,
+        "app_proto" : "http",
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 39952,
+        "community_id" : "1:l3GiQDaN0AKDeOe6TVIqMakFW98=",
+        "event_type" : "alert",
+        "alert" : {
+          "severity" : 3,
+          "signature_id" : 2013504,
+          "rev" : 6,
+          "metadata" : {
+            "updated_at" : [ "2020_04_22" ],
+            "former_category" : [ "POLICY" ],
+            "created_at" : [ "2011_08_31" ]
+          },
+          "gid" : 1,
+          "signature" : "ET POLICY GNU/Linux APT User-Agent Outbound likely related to package management",
+          "action" : "allowed",
+          "category" : "Not Suspicious Traffic"
+        },
+        "flow_id" : 2192789171815790,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "TCP",
+        "http" : {
+          "hostname" : "in.archive.ubuntu.com",
+          "protocol" : "HTTP/1.1",
+          "http_method" : "GET",
+          "http_content_type" : "application/vnd.debian.binary-package",
+          "length" : 1158,
+          "url" : "/ubuntu/pool/main/u/util-linux/bsdutils_2.34-0.1ubuntu9.6_amd64.deb",
+          "http_user_agent" : "Debian APT-HTTP/1.3 (2.0.9) non-interactive",
+          "status" : 200
+        },
+        "dest_port" : 80,
+        "pkt_src" : "wire/pcap",
+        "flow" : {
+          "src_ip" : "10.10.10.10",
+          "src_port" : 39952,
+          "pkts_toserver" : 4,
+          "dest_ip" : "20.20.20.20",
+          "start" : "2024-04-25T03:06:31.576084+0530",
+          "bytes_toclient" : 12252,
+          "bytes_toserver" : 442,
+          "pkts_toclient" : 10,
+          "dest_port" : 80
+        },
+        "timestamp" : "2024-04-25T03:06:32.258446+0530",
+        "direction" : "to_server"
+      }
+    service: "alert"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713994592258
+ -
+  sample: |-
+    {
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 138,
+      "community_id" : "1:2ae4Z1d+/DRATT+AKFH+qkii5YE=",
+      "event_type" : "flow",
+      "flow_id" : 674704251484567,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "UDP",
+      "app_proto" : "failed",
+      "dest_port" : 138,
+      "flow" : {
+        "reason" : "timeout",
+        "pkts_toserver" : 1,
+        "alerted" : false,
+        "start" : "2024-04-25T03:06:02.353699+0530",
+        "bytes_toclient" : 0,
+        "end" : "2024-04-25T03:06:02.353699+0530",
+        "state" : "new",
+        "bytes_toserver" : 243,
+        "pkts_toclient" : 0,
+        "age" : 0
+      },
+      "timestamp" : "2024-04-25T03:06:41.058582+0530"
+    }
+  result:
+    custom:
+      app_proto: "failed"
+      community_id: "1:2ae4Z1d+/DRATT+AKFH+qkii5YE="
+      event_type: "flow"
+      flow:
+        alerted: false
+        end: "2024-04-25T03:06:02.353699+0530"
+        reason: "timeout"
+        start: "2024-04-25T03:06:02.353699+0530"
+        state: "new"
+      flow_id: 674704251484567
+      in_iface: "ens160"
+      network:
+        bytes_read: 243
+        bytes_written: 0
+        client:
+          ip: "10.10.10.10"
+          port: 138
+        destination:
+          ip: "20.20.20.20"
+          port: 138
+      suricata:
+        flow:
+          age: 0
+          pkts_toclient: 0
+          pkts_toserver: 1
+        proto: "UDP"
+      timestamp: "2024-04-25T03:06:41.058582+0530"
+    message: |-
+      {
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 138,
+        "community_id" : "1:2ae4Z1d+/DRATT+AKFH+qkii5YE=",
+        "event_type" : "flow",
+        "flow_id" : 674704251484567,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "UDP",
+        "app_proto" : "failed",
+        "dest_port" : 138,
+        "flow" : {
+          "reason" : "timeout",
+          "pkts_toserver" : 1,
+          "alerted" : false,
+          "start" : "2024-04-25T03:06:02.353699+0530",
+          "bytes_toclient" : 0,
+          "end" : "2024-04-25T03:06:02.353699+0530",
+          "state" : "new",
+          "bytes_toserver" : 243,
+          "pkts_toclient" : 0,
+          "age" : 0
+        },
+        "timestamp" : "2024-04-25T03:06:41.058582+0530"
+      }
+    service: "flow"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713994601058
+ -
+  sample: |-
+    {
+      "tx_id" : 0,
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 44182,
+      "community_id" : "1:E5ndQkn6JkiIdEaXeLRB6yJO7Ps=",
+      "event_type" : "http",
+      "flow_id" : 891677046600244,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "TCP",
+      "http" : {
+        "hostname" : "in.archive.ubuntu.com",
+        "protocol" : "HTTP/1.1",
+        "http_method" : "GET",
+        "http_content_type" : "application/vnd.debian.binary-package",
+        "length" : 95188,
+        "url" : "/ubuntu/pool/main/k/klibc/klibc-utils_2.0.7-1ubuntu5.2_amd64.deb",
+        "http_user_agent" : "Debian APT-HTTP/1.3 (2.0.9) non-interactive",
+        "status" : 200
+      },
+      "dest_port" : 80,
+      "pkt_src" : "wire/pcap",
+      "timestamp" : "2024-04-25T03:06:53.130838+0530"
+    }
+  result:
+    custom:
+      community_id: "1:E5ndQkn6JkiIdEaXeLRB6yJO7Ps="
+      event_type: "http"
+      flow_id: 891677046600244
+      http:
+        http_content_type: "application/vnd.debian.binary-package"
+        length: 95188
+        method: "GET"
+        protocol: "HTTP/1.1"
+        status_category: "Successful"
+        status_code: 200
+        url: "http://in.archive.ubuntu.com/ubuntu/pool/main/k/klibc/klibc-utils_2.0.7-1ubuntu5.2_amd64.deb"
+        url_details:
+          host: "in.archive.ubuntu.com"
+          path: "/ubuntu/pool/main/k/klibc/klibc-utils_2.0.7-1ubuntu5.2_amd64.deb"
+        useragent: "Debian APT-HTTP/1.3 (2.0.9) non-interactive"
+      in_iface: "ens160"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: 44182
+        destination:
+          ip: "20.20.20.20"
+          port: 80
+      pkt_src: "wire/pcap"
+      suricata:
+        proto: "TCP"
+      timestamp: "2024-04-25T03:06:53.130838+0530"
+      tx_id: 0
+    message: |-
+      {
+        "tx_id" : 0,
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 44182,
+        "community_id" : "1:E5ndQkn6JkiIdEaXeLRB6yJO7Ps=",
+        "event_type" : "http",
+        "flow_id" : 891677046600244,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "TCP",
+        "http" : {
+          "hostname" : "in.archive.ubuntu.com",
+          "protocol" : "HTTP/1.1",
+          "http_method" : "GET",
+          "http_content_type" : "application/vnd.debian.binary-package",
+          "length" : 95188,
+          "url" : "/ubuntu/pool/main/k/klibc/klibc-utils_2.0.7-1ubuntu5.2_amd64.deb",
+          "http_user_agent" : "Debian APT-HTTP/1.3 (2.0.9) non-interactive",
+          "status" : 200
+        },
+        "dest_port" : 80,
+        "pkt_src" : "wire/pcap",
+        "timestamp" : "2024-04-25T03:06:53.130838+0530"
+      }
+    service: "http"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713994613130
+ -
+  sample: |-
+    {
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 36980,
+      "community_id" : "1:mRIoKCzYJvKosz+YNdT+SWSclHg=",
+      "event_type" : "dns",
+      "flow_id" : 370400192513559,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "UDP",
+      "dns" : {
+        "qr" : true,
+        "rd" : true,
+        "flags" : "8180",
+        "rrname" : "_http._tcp.in.archive.ubuntu.com",
+        "rcode" : "NOERROR",
+        "id" : 51436,
+        "type" : "answer",
+        "opcode" : 0,
+        "version" : 2,
+        "authorities" : [ {
+          "soa" : {
+            "rname" : "hostmaster.canonical.com",
+            "serial" : 2018058001,
+            "expire" : 604800,
+            "refresh" : 10800,
+            "mname" : "ns1.canonical.com",
+            "minimum" : 3600,
+            "retry" : 3600
+          },
+          "rrname" : "ubuntu.com",
+          "ttl" : 412,
+          "rrtype" : "SOA"
+        } ],
+        "ra" : true,
+        "rrtype" : "SRV"
+      },
+      "dest_port" : 53,
+      "pkt_src" : "wire/pcap",
+      "timestamp" : "2024-04-25T03:10:41.151776+0530"
+    }
+  result:
+    custom:
+      community_id: "1:mRIoKCzYJvKosz+YNdT+SWSclHg="
+      dns:
+        authorities:
+         -
+          soa:
+            rname: "hostmaster.canonical.com"
+            serial: 2018058001
+            expire: 604800
+            refresh: 10800
+            mname: "ns1.canonical.com"
+            minimum: 3600
+            retry: 3600
+          rrname: "ubuntu.com"
+          ttl: 412
+          rrtype: "SOA"
+        flags:
+          rcode: "NOERROR"
+        id: 51436
+        opcode: 0
+        qr: true
+        question:
+          name: "_http._tcp.in.archive.ubuntu.com"
+          type: "SRV"
+        ra: true
+        rd: true
+        type: "answer"
+        version: 2
+      event_type: "dns"
+      flow_id: 370400192513559
+      in_iface: "ens160"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: 36980
+        destination:
+          ip: "20.20.20.20"
+          port: 53
+      pkt_src: "wire/pcap"
+      suricata:
+        dns:
+          flags: "8180"
+        proto: "UDP"
+      timestamp: "2024-04-25T03:10:41.151776+0530"
+    message: |-
+      {
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 36980,
+        "community_id" : "1:mRIoKCzYJvKosz+YNdT+SWSclHg=",
+        "event_type" : "dns",
+        "flow_id" : 370400192513559,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "UDP",
+        "dns" : {
+          "qr" : true,
+          "rd" : true,
+          "flags" : "8180",
+          "rrname" : "_http._tcp.in.archive.ubuntu.com",
+          "rcode" : "NOERROR",
+          "id" : 51436,
+          "type" : "answer",
+          "opcode" : 0,
+          "version" : 2,
+          "authorities" : [ {
+            "soa" : {
+              "rname" : "hostmaster.canonical.com",
+              "serial" : 2018058001,
+              "expire" : 604800,
+              "refresh" : 10800,
+              "mname" : "ns1.canonical.com",
+              "minimum" : 3600,
+              "retry" : 3600
+            },
+            "rrname" : "ubuntu.com",
+            "ttl" : 412,
+            "rrtype" : "SOA"
+          } ],
+          "ra" : true,
+          "rrtype" : "SRV"
+        },
+        "dest_port" : 53,
+        "pkt_src" : "wire/pcap",
+        "timestamp" : "2024-04-25T03:10:41.151776+0530"
+      }
+    service: "dns"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1713994841151
+ -
+  sample: |-
+    {
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 67,
+      "community_id" : "1:8WHSuznco6czcpxAeRFNW/Rlq88=",
+      "event_type" : "dhcp",
+      "flow_id" : 806218797870847,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "UDP",
+      "dest_port" : 68,
+      "pkt_src" : "wire/pcap",
+      "dhcp" : {
+        "client_mac" : "00:00:00:00:00:00",
+        "dhcp_type" : "ack",
+        "id" : 609205267,
+        "assigned_ip" : "0.0.0.0",
+        "type" : "reply"
+      },
+      "timestamp" : "2024-04-25T06:09:30.777536+0530"
+    }
+  result:
+    custom:
+      community_id: "1:8WHSuznco6czcpxAeRFNW/Rlq88="
+      dhcp:
+        assigned_ip: "0.0.0.0"
+        client_mac: "00:00:00:00:00:00"
+        dhcp_type: "ack"
+        id: 609205267
+        type: "reply"
+      event_type: "dhcp"
+      flow_id: 806218797870847
+      in_iface: "ens160"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: 67
+        destination:
+          ip: "20.20.20.20"
+          port: 68
+      pkt_src: "wire/pcap"
+      suricata:
+        proto: "UDP"
+      timestamp: "2024-04-25T06:09:30.777536+0530"
+    message: |-
+      {
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 67,
+        "community_id" : "1:8WHSuznco6czcpxAeRFNW/Rlq88=",
+        "event_type" : "dhcp",
+        "flow_id" : 806218797870847,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "UDP",
+        "dest_port" : 68,
+        "pkt_src" : "wire/pcap",
+        "dhcp" : {
+          "client_mac" : "00:00:00:00:00:00",
+          "dhcp_type" : "ack",
+          "id" : 609205267,
+          "assigned_ip" : "0.0.0.0",
+          "type" : "reply"
+        },
+        "timestamp" : "2024-04-25T06:09:30.777536+0530"
+      }
+    service: "dhcp"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1714005570777
+ -
+  sample: |-
+    {
+      "in_iface" : "ens160",
+      "src_ip" : "10.10.10.10",
+      "src_port" : 55315,
+      "event_type" : "smb",
+      "flow_id" : 1171333647135642,
+      "dest_ip" : "20.20.20.20",
+      "proto" : "UDP",
+      "smb" : {
+        "dialect" : "unknown",
+        "status_code" : "0x0",
+        "access" : "normal",
+        "tree_id" : 1,
+        "created" : 0,
+        "session_id" : 4398046511201,
+        "accessed" : 0,
+        "command" : "SMB2_COMMAND_CREATE",
+        "disposition" : "FILE_OPEN",
+        "filename" : "atsvc",
+        "size" : 0,
+        "modified" : 0,
+        "fuid" : "0000004d-0000-0000-0005-0000ffffffff",
+        "id" : 1,
+        "status" : "STATUS_SUCCESS",
+        "changed" : 0
+      },
+      "dest_port" : 53,
+      "pkt_src" : "wire/pcap",
+      "timestamp" : "2024-04-25T06:09:30.777536+0530"
+    }
+  result:
+    custom:
+      event_type: "smb"
+      flow_id: 1171333647135642
+      in_iface: "ens160"
+      network:
+        client:
+          ip: "10.10.10.10"
+          port: 55315
+        destination:
+          ip: "20.20.20.20"
+          port: 53
+      pkt_src: "wire/pcap"
+      smb:
+        access: "normal"
+        accessed: 0
+        changed: 0
+        command: "SMB2_COMMAND_CREATE"
+        created: 0
+        dialect: "unknown"
+        disposition: "FILE_OPEN"
+        filename: "atsvc"
+        fuid: "0000004d-0000-0000-0005-0000ffffffff"
+        id: 1
+        modified: 0
+        session_id: 4398046511201
+        status: "STATUS_SUCCESS"
+        status_code: "0x0"
+        tree_id: 1
+      suricata:
+        proto: "UDP"
+        smb:
+          size: 0
+      timestamp: "2024-04-25T06:09:30.777536+0530"
+    message: |-
+      {
+        "in_iface" : "ens160",
+        "src_ip" : "10.10.10.10",
+        "src_port" : 55315,
+        "event_type" : "smb",
+        "flow_id" : 1171333647135642,
+        "dest_ip" : "20.20.20.20",
+        "proto" : "UDP",
+        "smb" : {
+          "dialect" : "unknown",
+          "status_code" : "0x0",
+          "access" : "normal",
+          "tree_id" : 1,
+          "created" : 0,
+          "session_id" : 4398046511201,
+          "accessed" : 0,
+          "command" : "SMB2_COMMAND_CREATE",
+          "disposition" : "FILE_OPEN",
+          "filename" : "atsvc",
+          "size" : 0,
+          "modified" : 0,
+          "fuid" : "0000004d-0000-0000-0005-0000ffffffff",
+          "id" : 1,
+          "status" : "STATUS_SUCCESS",
+          "changed" : 0
+        },
+        "dest_port" : 53,
+        "pkt_src" : "wire/pcap",
+        "timestamp" : "2024-04-25T06:09:30.777536+0530"
+      }
+    service: "smb"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1714005570777

@@ -1,0 +1,157 @@
+id: "alcide"
+tests:
+ -
+  sample: |-
+    {
+      "ua-linux" : "amd6",
+      "cluster" : "devel",
+      "api-version" : "v1",
+      "ua-kubectl" : "v1.16.2",
+      "subresource" : "portforward",
+      "caller-ip-asn" : "GlobalConnect A/S",
+      "caller-ip-country" : "DK",
+      "api-group" : "",
+      "verb" : "create",
+      "resource-namespace" : "alcide-kaudit",
+      "rule" : "pods creation",
+      "project" : "alcide-rnd",
+      "resource-name" : "alcide-kaudit/pods/kaudit-0",
+      "ua-kubernetes" : "c97fe50",
+      "uri" : "core/v1/namespaces/alcide-kaudit/pods/kaudit-0",
+      "caller-ip" : "212.98.91.43",
+      "principal" : "gadi@alcide.io",
+      "access-type" : "write",
+      "resource-type" : "pods",
+      "time" : 1572346955811
+    }
+  result:
+    custom:
+      access-type: "write"
+      api-group: ""
+      api-version: "v1"
+      cluster: "devel"
+      evt:
+        action: "create"
+      network:
+        client:
+          asn: "GlobalConnect A/S"
+          geoip:
+            country:
+              iso_code: "DK"
+          ip: "212.98.91.43"
+      project: "alcide-rnd"
+      resource-name: "alcide-kaudit/pods/kaudit-0"
+      resource-namespace: "alcide-kaudit"
+      resource-type: "pods"
+      rule: "pods creation"
+      subresource: "portforward"
+      time: 1572346955811
+      ua-kubectl: "v1.16.2"
+      ua-kubernetes: "c97fe50"
+      ua-linux: "amd6"
+      uri: "core/v1/namespaces/alcide-kaudit/pods/kaudit-0"
+      usr:
+        id: "gadi@alcide.io"
+    message: |-
+      {
+        "ua-linux" : "amd6",
+        "cluster" : "devel",
+        "api-version" : "v1",
+        "ua-kubectl" : "v1.16.2",
+        "subresource" : "portforward",
+        "caller-ip-asn" : "GlobalConnect A/S",
+        "caller-ip-country" : "DK",
+        "api-group" : "",
+        "verb" : "create",
+        "resource-namespace" : "alcide-kaudit",
+        "rule" : "pods creation",
+        "project" : "alcide-rnd",
+        "resource-name" : "alcide-kaudit/pods/kaudit-0",
+        "ua-kubernetes" : "c97fe50",
+        "uri" : "core/v1/namespaces/alcide-kaudit/pods/kaudit-0",
+        "caller-ip" : "212.98.91.43",
+        "principal" : "gadi@alcide.io",
+        "access-type" : "write",
+        "resource-type" : "pods",
+        "time" : 1572346955811
+      }
+    service: "alcide-rnd"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cluster:devel"
+     - "project:alcide-rnd"
+    timestamp: 1572346955811
+ -
+  sample: |-
+    {
+      "date" : 1572440220000,
+      "cluster" : "devel",
+      "eid" : "e2e-runner-admin@alcide-rnd.iam.gserviceaccount.com",
+      "reasons" : [ {
+        "period" : 180000,
+        "values" : {
+          "high" : [ 1 ]
+        },
+        "doc" : "change in count of unique caller gcloud versions in read access attempts",
+        "direction" : "read"
+      }, {
+        "period" : 180000,
+        "values" : {
+          "high" : [ 1 ]
+        },
+        "doc" : "change in count of unique caller python versions in read access attempts",
+        "direction" : "read"
+      } ],
+      "confidence" : "high",
+      "project" : "alcide-rnd",
+      "short-doc" : "change in caller's environment",
+      "service" : "devel",
+      "context" : {
+        "ua-python" : [ "2.7.16" ],
+        "ua-gcloud" : [ "262.0.0" ]
+      },
+      "doc" : "unusual change in caller's environment in access attempts",
+      "etype" : "principal",
+      "time" : 1572440220000,
+      "category" : "anomaly"
+    }
+  result:
+    custom:
+      category: "anomaly"
+      cluster: "devel"
+      confidence: "high"
+      context:
+        ua-gcloud:
+         - "262.0.0"
+        ua-python:
+         - "2.7.16"
+      date: 1572440220000
+      eid: "e2e-runner-admin@alcide-rnd.iam.gserviceaccount.com"
+      etype: "principal"
+      project: "alcide-rnd"
+      reasons:
+       -
+        period: 180000
+        values:
+          high:
+           - 1
+        doc: "change in count of unique caller gcloud versions in read access attempts"
+        direction: "read"
+       -
+        period: 180000
+        values:
+          high:
+           - 1
+        doc: "change in count of unique caller python versions in read access attempts"
+        direction: "read"
+      service: "devel"
+      time: 1572440220000
+      title: "change in caller's environment"
+    message: "unusual change in caller's environment in access attempts"
+    service: "alcide-rnd"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "cluster:devel"
+     - "project:alcide-rnd"
+    timestamp: 1572440220000
+

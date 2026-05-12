@@ -1,0 +1,67 @@
+id: "hbase"
+tests:
+ -
+  sample: "2020-09-08 13:17:14,127 INFO org.apache.hadoop.hdfs.server.namenode.NameNode: registered UNIX signal handlers for [TERM, HUP, INT]"
+  result:
+    custom:
+      logger:
+        class: "org.apache.hadoop.hdfs.server.namenode.NameNode"
+      status: "INFO"
+      timestamp: 1599571034127
+    message: "registered UNIX signal handlers for [TERM, HUP, INT]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599571034127
+ -
+  sample: "2020-09-08 13:17:11,994 DEBUG  [main] zookeeper.ZooKeeper: Client environment:java.vendor=Oracle Corporation"
+  result:
+    custom:
+      logger:
+        class: "zookeeper.ZooKeeper"
+        name: "main"
+      status: "DEBUG"
+      timestamp: 1599571031994
+    message: "Client environment:java.vendor=Oracle Corporation"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599571031994
+ -
+  sample: |
+    2020-09-08 13:17:14,894 FATAL [bad55d2f2640:60000.activeMasterManager] master.HMaster: Unhandled exception. Starting shutdown.
+    java.net.ConnectException: Call From bad55d2f2640/172.26.0.4 to hadoop:8020 failed on connection exception: java.net.ConnectException: Connection refused; For more details see:  http://wiki.apache.org/hadoop/ConnectionRefused
+    at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+    ... 29 more
+  result:
+    custom:
+      error:
+        stack: |-
+          java.net.ConnectException: Call From bad55d2f2640/172.26.0.4 to hadoop:8020 failed on connection exception: java.net.ConnectException: Connection refused; For more details see:  http://wiki.apache.org/hadoop/ConnectionRefused
+          at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+          ... 29 more
+      logger:
+        class: "master.HMaster"
+        name: "bad55d2f2640:60000.activeMasterManager"
+      status: "FATAL"
+      timestamp: 1599571034894
+    message: "Unhandled exception. Starting shutdown."
+    status: "emergency"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1599571034894
+ -
+  sample: "2011-09-08 10:01:25,824 WARN org.apache.hadoop.ipc.HBaseServer: (responseTooSlow): {\"tables\":{\"riley2\":{\"puts\":[{\"totalColumns\":11,\"families\":{\"actions\":[{\"timestamp\":1315501284459,\"qualifier\":\"0\",\"vlen\":9667580},{\"timestamp\":1315501284459,\"qualifier\":\"1\",\"vlen\":10122412},{\"timestamp\":1315501284459,\"qualifier\":\"2\",\"vlen\":11104617},{\"timestamp\":1315501284459,\"qualifier\":\"3\",\"vlen\":13430635}]},\"row\":\"cfcd208495d565ef66e7dff9f98764da:0\"}],\"families\":[\"actions\"]}},\"processingtimems\":956,\"client\":\"10.47.34.63:33623\",\"starttimems\":1315501284456,\"queuetimems\":0,\"totalPuts\":1,\"class\":\"HRegionServer\",\"responsesize\":0,\"method\":\"multiPut\"}"
+  result:
+    custom:
+      logger:
+        class: "org.apache.hadoop.ipc.HBaseServer"
+        slow: "responseTooSlow"
+      status: "WARN"
+      timestamp: 1315476085824
+    message: "{\"tables\":{\"riley2\":{\"puts\":[{\"totalColumns\":11,\"families\":{\"actions\":[{\"timestamp\":1315501284459,\"qualifier\":\"0\",\"vlen\":9667580},{\"timestamp\":1315501284459,\"qualifier\":\"1\",\"vlen\":10122412},{\"timestamp\":1315501284459,\"qualifier\":\"2\",\"vlen\":11104617},{\"timestamp\":1315501284459,\"qualifier\":\"3\",\"vlen\":13430635}]},\"row\":\"cfcd208495d565ef66e7dff9f98764da:0\"}],\"families\":[\"actions\"]}},\"processingtimems\":956,\"client\":\"10.47.34.63:33623\",\"starttimems\":1315501284456,\"queuetimems\":0,\"totalPuts\":1,\"class\":\"HRegionServer\",\"responsesize\":0,\"method\":\"multiPut\"}"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1315476085824
+

@@ -1,0 +1,106 @@
+id: stunnel
+backend_only: true # stunnel integration only lives for now in logs-backend
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Proxy
+    name: Service Name
+    path: proxy.service_name
+    source: log
+  - groups:
+      - Proxy
+    name: Service Port
+    path: proxy.service_port
+    source: log
+  - groups:
+      - Web Access
+    name: Session ID
+    path: session_id
+    source: log
+  - facetType: range
+    groups:
+      - Proxy
+    name: SSL Bytes
+    path: network.bytes_ssl
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Proxy
+    name: Socket Bytes
+    path: network.bytes_socket
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+pipeline:
+  type: pipeline
+  name: Stunnel Proxy
+  enabled: true
+  filter:
+    query: source:stunnel
+  processors:
+    - type: grok-parser
+      name: Parsing Stunnel Proxy logs
+      enabled: true
+      source: message
+      samples:
+        - '2018.08.29 15:37:24 LOG5[abcedcazedsazea]: Service [myservice-123] connected remote server from 127.0.0.1:12341'
+        - '2018.08.29 15:38:31 LOG5[abcedcazedsazea]: Service [myservice-123] accepted connection from 127.0.0.1:12341'
+        - '2018.08.29 15:25:28 LOG5[abcedcazedsazea]: Certificate accepted at depth=0: CN=cn.cn.eu, O=Transaction Network Services, L=Paris, C=FR'
+        - '2018.08.29 15:41:43 LOG5[abcedcazedsazea]: Connection closed: 133 byte(s) sent to SSL, 44 byte(s) sent to socket'
+        - '2018.08.25 07:00:50 LOG3[abcedcazedsazea]: s_connect: connect 127.0.0.1:12341: Connection refused (111)'
+      grok:
+        supportRules: |
+          _backend_ip  %{ipOrHost:network.backend.ip}
+          _backend_port %{number:network.backend.port}
+          _byte_sent_to_socket %{integer:network.bytes_socket}
+          _byte_sent_to_ssl %{integer:network.bytes_ssl}
+          _cert_depth %{integer:proxy.certificate.depth}
+          _cert_info %{data:proxy.certificate.info:keyvalue}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{number:network.client.port}$
+          _date_stunnel %{date("yyyy.MM.dd HH:mm:ss"):date}
+          _local_ip %{ipOrHost:network.local.ip}
+          _local_port %{number:network.local.port}
+          _log_status %{integer:level}
+          _session_id %{data:session_id}
+          _service_name (%{notSpace:proxy.service_name}-%{number:proxy.service_port}|%{notSpace:proxy.service_name})
+          _error_message %{data:error.message}
+        matchRules: |
+          stunnel.service.connected_remote_server_from %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: Service \[%{_service_name}\] connected remote server from %{_local_ip}\:%{_local_port}
+
+          stunnel.service.accepted_connection_from %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: Service \[%{_service_name}\] accepted connection from %{_client_ip}\:%{_client_port}
+
+          stunnel.certificate.accepted %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: Certificate accepted at depth\=%{_cert_depth}\: %{_cert_info}
+
+          stunnel.connection.closed_reset %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: Connection (closed|reset)\: %{_byte_sent_to_ssl} byte\(s\) sent to SSL\, %{_byte_sent_to_socket} byte\(s\) sent to socket
+
+          stunnel.s_connect %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: (s_connect|transfer)\: (connect|connected|connecting|s_poll_wait) %{_backend_ip}\:%{_backend_port}(\: %{_error_message})?
+
+          stunnel.fallback %{_date_stunnel} LOG%{_log_status}\[%{_session_id}\]\: %{_error_message}
+
+          #Extra samples:
+          #connection
+          #2018.08.29 14:46:28 LOG5[abcedcazedsazea]: Connection reset: 3 byte(s) sent to SSL, 6 byte(s) sent to socket
+          #connect
+          #2018.08.29 15:43:59 LOG5[abcedcazedsazea]: s_connect: connected 127.0.0.1:12341
+
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

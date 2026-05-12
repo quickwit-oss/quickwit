@@ -1,0 +1,218 @@
+id: heroku
+backend_only: true # heroku integration is for now only defined to collect logs
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Heroku
+    name: Dyno
+    path: dyno
+    source: tag
+  - groups:
+      - Heroku
+    name: Dynotype
+    path: dynotype
+    source: tag
+pipeline:
+  type: pipeline
+  name: Heroku
+  enabled: true
+  filter:
+    query: source:heroku
+  processors:
+    - type: grok-parser
+      name: Parsing Heroku Router and Metric logs
+      enabled: true
+      source: message
+      samples:
+        - at=info method=POST path="/en/admin/post/1/edit?k0=v0&k1=v1" host=helloworld-symfony.herokuapp.com request_id=e8843b25-3587-4229-a430-c93360a0e89f fwd="82.239.107.161" dyno=web.1 connect=1ms service=243ms status=302 bytes=559 protocol=https
+        - source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#load_avg_1m=0.00 sample#load_avg_5m=0.00 sample#load_avg_15m=0.00
+        - source=web.1 dyno=heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b sample#memory_total=124.17MB sample#memory_rss=124.16MB sample#memory_cache=0.01MB sample#memory_swap=0.00MB sample#memory_pgpgin=35470pages sample#memory_pgpgout=3682pages sample#memory_quota=512.00MB
+        - 2013-05-07T17:41:06+00:00 source=HEROKU_POSTGRESQL_VIOLET addon=postgres-metric-68904 sample#current_transaction=1873 sample#db_size=26219348792bytes sample#tables=13 sample#active-connections=92 sample#waiting-connections=1 sample#index-cache-hit-rate=0.99723 sample#table-cache-hit-rate=0.99118 sample#load-avg-1m=1.42 sample#load-avg-5m=1.45 sample#load-avg-15m=1.34 sample#read-iops=0 sample#write-iops=2.875 sample#memory-total=1692568kB sample#memory-free=73876kB sample#memory-cached=1344128kB sample#memory-postgres=22388kB
+        - Nov 09 23:56:02 source=HEROKU_POSTGRESQL_SILVER addon=postgresql-devcenter-123456 sample#current_transaction=54017686 sample#db_size=16012956319bytes sample#tables=97 sample#active-connections=7 sample#waiting-connections=0 sample#index-cache-hit-rate=0.9239 sample#table-cache-hit-rate=0.93609 sample#load-avg-1m=0 sample#load-avg-5m=0 sample#load-avg-15m=0 sample#read-iops=0 sample#write-iops=0.13333 sample#tmp-disk-used=33849344 sample#tmp-disk-available=72944943104 sample#memory-total=4044960kB sample#memory-free=46920kB sample#memory-cached=3667532kB sample#memory-postgres=20824kB sample#wal-percentage-used=0.06512959334021144
+      grok:
+        supportRules: |
+          _dyno dyno=%{notSpace:dyno}
+          _error_code code=%{notSpace:error.kind}
+          _error_desc desc="%{data:error.msg}"
+          _bytes_write bytes=%{integer:network.bytes_written}
+          _client_ip fwd="%{ipOrHost:network.client.ip}%{regex("[^\"]*")}"
+          _url path="%{notSpace:http.url}"
+          _hostname source=%{ipOrHost:syslog.hostname}
+          _request_id request_id=%{notSpace:http.request_id}
+          _response_time service=(%{integer:duration:scale(1000000)}ms|%{integer:duration:scale(1000000000)}s)
+          _server_name host=%{ipOrHost:http.server.name}
+          _status at=%{notSpace:status}
+          _status_code status=%{integer:http.status_code}
+          _time_backend_connect connect=(%{integer:load_balancer.time_backend_connect}%{notSpace:load_balancer.connect_time_unit})?
+          _method method=%{word:http.method}
+          _scheme protocol=%{word:http.url_details.scheme}
+          _cpu_1m sample#load(_|-)avg(_|-)1m=%{number:heroku.cpu["1m"]}
+          _cpu_5m sample#load(_|-)avg(_|-)5m=%{number:heroku.cpu["5m"]}
+          _cpu_15m sample#load(_|-)avg(_|-)15m=%{number:heroku.cpu["15m"]}
+          _mem_total sample#memory(_|-)total=(%{number:heroku.memory.total:scale(1000000)}MB|%{number:heroku.memory.total:scale(1000)}kB)
+          _mem_free sample#memory-free=%{number:heroku.memory.free:scale(1000)}kB
+          _mem_rss sample#memory_rss=%{number:heroku.memory.rss:scale(1000000)}MB
+          _mem_cache sample#memory(_|-)cache(d)?=(%{number:heroku.memory.cache:scale(1000000)}MB|%{number:heroku.memory.cache:scale(1000)}kB)
+          _mem_swap sample#memory_swap=%{number:heroku.memory.swap:scale(1000000)}MB
+          _mem_postgres sample#memory(_|-)postgres=(%{number:heroku.memory.postgres:scale(1000000)}MB|%{number:heroku.memory.postgres:scale(1000)}kB)
+          _mem_pgpgin sample#memory_pgpgin=%{number:heroku.memory.pgpgin}%{number:heroku.memory.pgpgin_unit}
+          _mem_pgpgout sample#memory_pgpgin=%{number:heroku.memory.pgpout}%{number:heroku.memory.pgpgout_unit}
+          _mem_quota sample#memory_quota=%{number:heroku.memory.quota:scale(1000000)}MB
+          _db_size sample#db_size=%{number:heroku.db.size}bytes
+          _db_tables sample#tables=%{number:heroku.db.tables}
+          _db_active_connections sample#active-connections=%{number:heroku.db.active_connections}
+          _db_current_transaction sample#current_transaction=%{notSpace:heroku.db.transaction_id}
+          _db_index_cache_hit_rate sample#index-cache-hit-rate=%{number:heroku.db.cache_hit_rate.index}
+          _db_table_cache_hit_rate sample#table-cache-hit-rate=%{number:heroku.db.cache_hit_rate.table}
+          _db_waiting_connections sample#waiting-connections=%{number:heroku.db.waiting_connections}
+          _db_memory_postgres sample#memory-postgres=%{number:heroku.db.memory:scale(1000)}
+          _db_follower_lag_commits sample#follower-lag-commits=%{number:heroku.db.follower_lag_commits}
+          _iops_read sample#read-iops=%{number:heroku.iops.read}
+          _iops_write sample#write-iops=%{number:heroku.iops.write}
+          _tmp_disk_avail sample#tmp-disk-available=%{number:heroku.tmp_disk.available}
+          _tmp_disk_used sample#tmp-disk-used=%{number:heroku.tmp_disk.used}
+          _wal_pct_used sample#wal-percentage-used=%{number:heroku.wal.percentage_used}
+        matchRules: |
+          heroku.router %{_status}(?> %{_error_code} %{_error_desc})? %{_method} %{_url} %{_server_name} %{_request_id} %{_client_ip} %{_dyno} %{_time_backend_connect} %{_response_time} %{_status_code} %{_bytes_write} %{_scheme}.*
+
+          heroku.cpu_metrics (?>%{_hostname} %{_dyno}) %{_cpu_1m} %{_cpu_5m} %{_cpu_15m}.*
+
+          heroku.memory_metrics (?>%{_hostname} %{_dyno}) %{_mem_total} %{_mem_rss} %{_mem_cache} %{_mem_swap} %{notSpace} %{notSpace} %{_mem_quota}.*
+
+          heroku.postgres_metrics (%{date("yyyy-MM-dd'T'HH:mm:ssZ"):date}|%{date("MMM dd HH:mm:ss"):date}) %{_hostname} addon=%{notSpace:heroku.addon} %{_db_current_transaction} %{_db_size} %{_db_tables} %{_db_active_connections} %{_db_waiting_connections} %{_db_index_cache_hit_rate} %{_db_table_cache_hit_rate} %{_cpu_1m} %{_cpu_5m} %{_cpu_15m} %{_iops_read} %{_iops_write}( %{_tmp_disk_used} %{_tmp_disk_avail})? %{_mem_total} %{_mem_free} %{_mem_cache}( %{_mem_postgres} %{_wal_pct_used})?.*
+
+          fallback %{data::keyvalue("=","/")}
+    - type: grok-parser
+      name: Parsing Heroku appname from server name
+      enabled: true
+      source: http.server.name
+      grok:
+        supportRules: |
+        matchRules: |
+          extract_appname_tag %{notSpace:appname}.herokuapp.com
+      samples:
+        - helloworld-symfony.herokuapp.com
+    - type: attribute-remapper
+      name: Map attribute `appname` to a tag
+      enabled: true
+      sources:
+        - appname
+      target: appname
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: grok-parser
+      name: Parsing Dyno to get the Dyno type
+      enabled: true
+      source: dyno
+      grok:
+        supportRules: ''
+        matchRules: |
+          extract_dynotype %{regex("[a-zA-Z]*"):dynotype}.*
+      samples:
+        - heroku.52965314.d56ad963-e305-42f5-b1b1-3e6a5b16e08b
+    - type: attribute-remapper
+      name: Map attribute `dynotype` to a tag
+      enabled: true
+      sources:
+        - dynotype
+      target: dynotype
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dyno` to a tag
+      enabled: true
+      sources:
+        - dyno
+      target: dyno
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `status`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - status
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

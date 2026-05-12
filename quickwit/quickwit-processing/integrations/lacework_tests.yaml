@@ -1,0 +1,288 @@
+id: "lacework"
+tests:
+ -
+  sample: |-
+    {
+      "lw_severity" : "Info",
+      "severity" : "info",
+      "hostname" : "lacework.com",
+      "service" : "lacework",
+      "link" : "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000",
+      "details" : {
+        "EVENT_CATEGORY" : "Aws",
+        "START_TIME" : "06 Nov 2019 18:00 GMT",
+        "SUMMARY" : " For account: 631664038012   (zzz-qa-account) : 8 IAM policy arn:aws:iam::aws:policy/AmazonEC2FullAccess attached, deleted, detached or changed  by user AssumedRole/631664038012:qa-test-instances  ",
+        "EVENT_TYPE" : "IAMPolicyChanged",
+        "EVENT_NAME" : "IAM Policy Changed",
+        "EVENT_DETAILS" : {
+          "data" : [ {
+            "START_TIME" : "2019-11-06T18:00:00Z",
+            "END_TIME" : "2019-11-06T19:00:00Z",
+            "EVENT_MODEL" : "CloudTrailCep",
+            "EVENT_TYPE" : "IAMPolicyChanged",
+            "ENTITY_MAP" : {
+              "Resource" : [ {
+                "VALUE" : "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+                "mapConfig" : {
+                  "VALUE" : "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+                  "NAME" : "policyArn"
+                },
+                "NAME" : "policyArn"
+              }, {
+                "VALUE" : "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+                "mapConfig" : {
+                  "VALUE" : "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+                  "NAME" : "policyArn"
+                },
+                "NAME" : "policyArn"
+              }, {
+                "VALUE" : "demowed06nov19180003",
+                "mapConfig" : {
+                  "VALUE" : "demowed06nov19180003",
+                  "NAME" : "userName"
+                },
+                "NAME" : "userName"
+              }, {
+                "VALUE" : "demowed06nov19183002",
+                "mapConfig" : {
+                  "VALUE" : "demowed06nov19183002",
+                  "NAME" : "userName"
+                },
+                "NAME" : "userName"
+              } ],
+              "Region" : [ {
+                "ACCOUNT_LIST" : [ "631664038012" ],
+                "mapConfig" : {
+                  "ACCOUNT_LIST" : [ "631664038012" ],
+                  "REGION" : "us-east-1"
+                },
+                "REGION" : "us-east-1"
+              } ],
+              "API" : [ {
+                "SERVICE" : "iam.amazonaws.com",
+                "API" : "AttachUserPolicy",
+                "mapConfig" : {
+                  "SERVICE" : "iam.amazonaws.com",
+                  "API" : "AttachUserPolicy"
+                }
+              }, {
+                "SERVICE" : "iam.amazonaws.com",
+                "API" : "DetachUserPolicy",
+                "mapConfig" : {
+                  "SERVICE" : "iam.amazonaws.com",
+                  "API" : "DetachUserPolicy"
+                }
+              } ],
+              "SourceIpAddress" : [ {
+                "COUNTRY" : "United States",
+                "CITY" : "Portland",
+                "IP_ADDRESS" : "34.220.57.225",
+                "mapConfig" : {
+                  "COUNTRY" : "United States",
+                  "CITY" : "Portland",
+                  "IP_ADDRESS" : "34.220.57.225",
+                  "REGION" : "Oregon"
+                },
+                "REGION" : "Oregon"
+              } ]
+            },
+            "EVENT_ACTOR" : "Aws",
+            "EVENT_ID" : "24421"
+          } ]
+        },
+        "LINK" : "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000",
+        "EVENT_ID" : 24421,
+        "SEVERITY" : "5"
+      },
+      "category" : "Aws",
+      "type" : "IAMPolicyChanged",
+      "title" : " For account: 631664038012   (zzz-qa-account) : 8 IAM policy arn:aws:iam::aws:policy/AmazonEC2FullAccess attached, deleted, detached or changed  by user AssumedRole/631664038012:qa-test-instances  "
+    }
+  result:
+    custom:
+      details:
+        EVENT_CATEGORY: "Aws"
+        EVENT_DETAILS:
+          data:
+           -
+            START_TIME: "2019-11-06T18:00:00Z"
+            END_TIME: "2019-11-06T19:00:00Z"
+            EVENT_MODEL: "CloudTrailCep"
+            EVENT_TYPE: "IAMPolicyChanged"
+            ENTITY_MAP:
+              Resource:
+               -
+                VALUE: "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+                mapConfig:
+                  VALUE: "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+                  NAME: "policyArn"
+                NAME: "policyArn"
+               -
+                VALUE: "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+                mapConfig:
+                  VALUE: "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+                  NAME: "policyArn"
+                NAME: "policyArn"
+               -
+                VALUE: "demowed06nov19180003"
+                mapConfig:
+                  VALUE: "demowed06nov19180003"
+                  NAME: "userName"
+                NAME: "userName"
+               -
+                VALUE: "demowed06nov19183002"
+                mapConfig:
+                  VALUE: "demowed06nov19183002"
+                  NAME: "userName"
+                NAME: "userName"
+              Region:
+               -
+                ACCOUNT_LIST:
+                 - "631664038012"
+                mapConfig:
+                  ACCOUNT_LIST:
+                   - "631664038012"
+                  REGION: "us-east-1"
+                REGION: "us-east-1"
+              API:
+               -
+                SERVICE: "iam.amazonaws.com"
+                API: "AttachUserPolicy"
+                mapConfig:
+                  SERVICE: "iam.amazonaws.com"
+                  API: "AttachUserPolicy"
+               -
+                SERVICE: "iam.amazonaws.com"
+                API: "DetachUserPolicy"
+                mapConfig:
+                  SERVICE: "iam.amazonaws.com"
+                  API: "DetachUserPolicy"
+              SourceIpAddress:
+               -
+                COUNTRY: "United States"
+                CITY: "Portland"
+                IP_ADDRESS: "34.220.57.225"
+                mapConfig:
+                  COUNTRY: "United States"
+                  CITY: "Portland"
+                  IP_ADDRESS: "34.220.57.225"
+                  REGION: "Oregon"
+                REGION: "Oregon"
+            EVENT_ACTOR: "Aws"
+            EVENT_ID: "24421"
+        EVENT_ID: 24421
+        EVENT_NAME: "IAM Policy Changed"
+        EVENT_TYPE: "IAMPolicyChanged"
+        LINK: "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000"
+        SEVERITY: "5"
+        START_TIME: "06 Nov 2019 18:00 GMT"
+      evt:
+        category: "Aws"
+        name: "IAMPolicyChanged"
+      hostname: "lacework.com"
+      link: "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000"
+      lw_severity: "Info"
+      service: "lacework"
+      severity: "info"
+      title: " For account: 631664038012   (zzz-qa-account) : 8 IAM policy arn:aws:iam::aws:policy/AmazonEC2FullAccess attached, deleted, detached or changed  by user AssumedRole/631664038012:qa-test-instances  "
+    message: |-
+      {
+        "lw_severity" : "Info",
+        "severity" : "info",
+        "hostname" : "lacework.com",
+        "service" : "lacework",
+        "link" : "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000",
+        "details" : {
+          "EVENT_CATEGORY" : "Aws",
+          "START_TIME" : "06 Nov 2019 18:00 GMT",
+          "SUMMARY" : " For account: 631664038012   (zzz-qa-account) : 8 IAM policy arn:aws:iam::aws:policy/AmazonEC2FullAccess attached, deleted, detached or changed  by user AssumedRole/631664038012:qa-test-instances  ",
+          "EVENT_TYPE" : "IAMPolicyChanged",
+          "EVENT_NAME" : "IAM Policy Changed",
+          "EVENT_DETAILS" : {
+            "data" : [ {
+              "START_TIME" : "2019-11-06T18:00:00Z",
+              "END_TIME" : "2019-11-06T19:00:00Z",
+              "EVENT_MODEL" : "CloudTrailCep",
+              "EVENT_TYPE" : "IAMPolicyChanged",
+              "ENTITY_MAP" : {
+                "Resource" : [ {
+                  "VALUE" : "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+                  "mapConfig" : {
+                    "VALUE" : "arn:aws:iam::aws:policy/AmazonEC2FullAccess",
+                    "NAME" : "policyArn"
+                  },
+                  "NAME" : "policyArn"
+                }, {
+                  "VALUE" : "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+                  "mapConfig" : {
+                    "VALUE" : "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+                    "NAME" : "policyArn"
+                  },
+                  "NAME" : "policyArn"
+                }, {
+                  "VALUE" : "demowed06nov19180003",
+                  "mapConfig" : {
+                    "VALUE" : "demowed06nov19180003",
+                    "NAME" : "userName"
+                  },
+                  "NAME" : "userName"
+                }, {
+                  "VALUE" : "demowed06nov19183002",
+                  "mapConfig" : {
+                    "VALUE" : "demowed06nov19183002",
+                    "NAME" : "userName"
+                  },
+                  "NAME" : "userName"
+                } ],
+                "Region" : [ {
+                  "ACCOUNT_LIST" : [ "631664038012" ],
+                  "mapConfig" : {
+                    "ACCOUNT_LIST" : [ "631664038012" ],
+                    "REGION" : "us-east-1"
+                  },
+                  "REGION" : "us-east-1"
+                } ],
+                "API" : [ {
+                  "SERVICE" : "iam.amazonaws.com",
+                  "API" : "AttachUserPolicy",
+                  "mapConfig" : {
+                    "SERVICE" : "iam.amazonaws.com",
+                    "API" : "AttachUserPolicy"
+                  }
+                }, {
+                  "SERVICE" : "iam.amazonaws.com",
+                  "API" : "DetachUserPolicy",
+                  "mapConfig" : {
+                    "SERVICE" : "iam.amazonaws.com",
+                    "API" : "DetachUserPolicy"
+                  }
+                } ],
+                "SourceIpAddress" : [ {
+                  "COUNTRY" : "United States",
+                  "CITY" : "Portland",
+                  "IP_ADDRESS" : "34.220.57.225",
+                  "mapConfig" : {
+                    "COUNTRY" : "United States",
+                    "CITY" : "Portland",
+                    "IP_ADDRESS" : "34.220.57.225",
+                    "REGION" : "Oregon"
+                  },
+                  "REGION" : "Oregon"
+                } ]
+              },
+              "EVENT_ACTOR" : "Aws",
+              "EVENT_ID" : "24421"
+            } ]
+          },
+          "LINK" : "https://qa1.qa1.corp.lacework.net/ui/investigate/Event/24421?startTime=1573063200000&endTime=1573066800000",
+          "EVENT_ID" : 24421,
+          "SEVERITY" : "5"
+        },
+        "category" : "Aws",
+        "type" : "IAMPolicyChanged",
+        "title" : " For account: 631664038012   (zzz-qa-account) : 8 IAM policy arn:aws:iam::aws:policy/AmazonEC2FullAccess attached, deleted, detached or changed  by user AssumedRole/631664038012:qa-test-instances  "
+      }
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+

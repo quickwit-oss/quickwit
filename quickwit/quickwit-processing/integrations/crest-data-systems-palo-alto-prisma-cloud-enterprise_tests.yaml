@@ -1,0 +1,1584 @@
+id: "crest-data-systems-palo-alto-prisma-cloud-enterprise"
+tests:
+ -
+  sample: |-
+    {
+      "saveSearchId" : "6a3ba52c-1a0e-4359-e417ca280270",
+      "reason" : "RESOURCE_DELETED",
+      "metadata" : {
+        "saveSearchId" : "6a3ba52c-1a0e-4359-e417ca280270"
+      },
+      "resource" : {
+        "data" : {
+          "resourceGroup" : "PCCAGENTLESSSCANRESOURCEGROUP",
+          "publicNetworkAccess" : "Enabled",
+          "diskIOPSReadWrite" : 120,
+          "hyperVGeneration" : "V1",
+          "networkAccessPolicy" : "AllowAll",
+          "type" : "Microsoft.Compute/disks",
+          "encryption" : {
+            "type" : "EncryptionAtRestWithPlatformKey"
+          },
+          "tier" : "P4",
+          "diskState" : "Attached",
+          "managedBy" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAgentlessScanResourceGroup/providers/Microsoft.Compute/virtualMachines/prismacloud-scan-1736735711786256252",
+          "osType" : "Linux",
+          "timeCreated" : "2025-01-13T02:35:18.1925854+00:00",
+          "id" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "sku" : {
+            "tier" : "Premium",
+            "name" : "Premium_LRS"
+          },
+          "diskSizeGB" : 30,
+          "diskMBpsReadWrite" : 25,
+          "LastOwnershipUpdateTime" : "2025-01-13T02:35:18.1925854+00:00",
+          "supportedCapabilities" : {
+            "diskControllerTypes" : "SCSI, NVMe",
+            "acceleratedNetwork" : true,
+            "architecture" : "x64"
+          },
+          "creationData" : {
+            "imageReference" : {
+              "id" : "/Subscriptions/38a0e4d6-5cb5-432c-a09a-49b7beaf2350/Providers/Microsoft.Compute/Locations/eastus/Publishers/canonical/ArtifactTypes/VMImage/Offers/0001-com-ubuntu-server-focal/Skus/20_04-lts/Versions/20.04.202410160"
+            },
+            "createOption" : "FromImage"
+          },
+          "provisioningState" : "Succeeded",
+          "tags" : {
+            "lun0" : "MSLABU20VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+            "prismacloud-agentless-unique-id" : "b455d906-6183-8c35-1559-5904be2f2913",
+            "created-by" : "prismacloud-agentless-scan",
+            "lun1" : "MSLABU20VM2-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+            "lun2" : "MSLABWinSer19VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+          },
+          "name" : "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "location" : "eastus",
+          "diskSizeBytes" : 32213303296,
+          "supportsHibernation" : true,
+          "uniqueId" : "95c6f3cf-2da3-4d3b-8910-f72ceda6ded5"
+        },
+        "resourceTs" : 1736736300271,
+        "resourceConfigJsonAvailable" : true,
+        "unifiedAssetId" : "7aa68f98901892c6a3514ae8a0e60e7a",
+        "cloudServiceName" : "Azure Compute",
+        "url" : "https://portal.azure.com/#@/resource/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+        "rrn" : "rrn::other:eastus:7c68912f-2f1d-47cc-8ca6-ed81c3b26548:0b9b131e62dcd9cdee7e3fa894290822082f5052:%2Fsubscriptions%2F7c68912f-2f1d-47cc-8ca6-ed81c3b26548%2FresourceGroups%2FPCCAGENTLESSSCANRESOURCEGROUP%2Fproviders%2FMicrosoft.Compute%2Fdisks%2Fprismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+        "cloudAccountGroups" : [ "Default Account Group", "CDS Account Group" ],
+        "cloudAccountOwners" : [ "test@gmail.com" ],
+        "accountId" : "7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+        "regionId" : "eastus",
+        "cloudType" : "azure",
+        "resourceApiName" : "azure-disk-list",
+        "name" : "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+        "resourceDetailsAvailable" : true,
+        "id" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+        "region" : "Azure East US",
+        "account" : "Azure Account - MSLAB",
+        "resourceType" : "OTHER"
+      },
+      "alertAdditionalInfo" : {
+        "scannerVersion" : "CS_2.0"
+      },
+      "firstSeen" : 1736736300816,
+      "history" : [ {
+        "reason" : "NEW_ALERT",
+        "modifiedOn" : 1736737605384,
+        "modifiedBy" : "Prisma Cloud",
+        "status" : "open"
+      } ],
+      "lastUpdated" : 1736737605384,
+      "investigateOptions" : {
+        "searchId" : "6a3ba52c-1a0e-4359-aba5-e417ca280270",
+        "hasSearchExecutionSupport" : true
+      },
+      "lastSeen" : 1736737605384,
+      "policyId" : "fa6e9e09-d02e-418a-baed692391ed",
+      "id" : "P-55334",
+      "alertTime" : 1736736300816,
+      "status" : "resolved",
+      "policy" : {
+        "severity" : "high",
+        "lastModifiedBy" : "test@gmail.com",
+        "hasSearchExecutionSupport" : true,
+        "description" : "This policy identifies Azure Virtual Machine disks that are configured with public network access.\n\nAllowing public access to Azure Virtual Machine disk resources increases the risk of unauthorized access and potential security breaches. Public network access exposes sensitive data to external threats, which attackers could exploit to compromise VM disks. Disabling public access and using Azure Private Link reduces exposure, ensuring only trusted networks have access and enhancing the security of your Azure environment by minimizing the risk of data leaks and breaches.\n\nAs a security best practice, it is recommended to disable public network access for Azure Virtual Machine disks.",
+        "recommendation" : "1. Log in to the Azure portal\n2. Navigate to 'Disks'\n3. Click on the reported disk\n4. Under 'Settings', go to 'Networking'\n5. Ensure that Network access is NOT set to 'Enable public access from all networks'\n6. Click 'Save'",
+        "remediable" : true,
+        "labels" : [ "Prisma_Cloud" ],
+        "lastModifiedOn" : 1730917214889,
+        "systemDefault" : true,
+        "remediation" : {
+          "impact" : "Disable public network access for Azure Virtual Machine disk",
+          "description" : "This CLI command requires 'Microsoft.Compute/disks/write' permission. Successful execution will disable public network access and sets the network access policy to DenyAll for the specified disk, blocking external access. \nNote: As a security best practice, we are disabling public and private access to the disk. However, you can choose between the following options based on your security requirements:\n- Disable public access and enable private access\n- Disable public and private access",
+          "cliScriptTemplate" : "az disk update --name ${resourceName} --resource-group ${resourceGroup} --public-network-access Disabled --network-access-policy DenyAll"
+        },
+        "deleted" : false,
+        "policyId" : "fa6e9e09-d02e-418a-baed692391ed",
+        "policyType" : "config",
+        "name" : "Azure VM disk configured with public network access"
+      }
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_alerts"
+  result:
+    custom:
+      alertAdditionalInfo:
+        scannerVersion: "CS_2.0"
+      alertTime: 1736736300816
+      cd_palo_alto_prisma_cloud_enterprise:
+        cloud_security_alerts:
+          id: "P-55334"
+          reason: "RESOURCE_DELETED"
+          status: "resolved"
+      firstSeen: 1736736300816
+      history:
+       -
+        reason: "NEW_ALERT"
+        modifiedOn: 1736737605384
+        modifiedBy: "Prisma Cloud"
+        status: "open"
+      investigateOptions:
+        hasSearchExecutionSupport: true
+        searchId: "6a3ba52c-1a0e-4359-aba5-e417ca280270"
+      lastUpdated: 1736737605384
+      metadata:
+        saveSearchId: "6a3ba52c-1a0e-4359-e417ca280270"
+      policy:
+        deleted: false
+        description: |-
+          This policy identifies Azure Virtual Machine disks that are configured with public network access.
+
+          Allowing public access to Azure Virtual Machine disk resources increases the risk of unauthorized access and potential security breaches. Public network access exposes sensitive data to external threats, which attackers could exploit to compromise VM disks. Disabling public access and using Azure Private Link reduces exposure, ensuring only trusted networks have access and enhancing the security of your Azure environment by minimizing the risk of data leaks and breaches.
+
+          As a security best practice, it is recommended to disable public network access for Azure Virtual Machine disks.
+        hasSearchExecutionSupport: true
+        labels:
+         - "Prisma_Cloud"
+        lastModifiedBy: "test@gmail.com"
+        lastModifiedOn: 1730917214889
+        name: "Azure VM disk configured with public network access"
+        policyId: "fa6e9e09-d02e-418a-baed692391ed"
+        policyType: "config"
+        recommendation: |-
+          1. Log in to the Azure portal
+          2. Navigate to 'Disks'
+          3. Click on the reported disk
+          4. Under 'Settings', go to 'Networking'
+          5. Ensure that Network access is NOT set to 'Enable public access from all networks'
+          6. Click 'Save'
+        remediable: true
+        remediation:
+          cliScriptTemplate: "az disk update --name ${resourceName} --resource-group ${resourceGroup} --public-network-access Disabled --network-access-policy DenyAll"
+          description: "This CLI command requires 'Microsoft.Compute/disks/write' permission. Successful execution will disable public network access and sets the network access policy to DenyAll for the specified disk, blocking external access. \nNote: As a security best practice, we are disabling public and private access to the disk. However, you can choose between the following options based on your security requirements:\n- Disable public access and enable private access\n- Disable public and private access"
+          impact: "Disable public network access for Azure Virtual Machine disk"
+        severity: "high"
+        systemDefault: true
+      policyId: "fa6e9e09-d02e-418a-baed692391ed"
+      resource:
+        account: "Azure Account - MSLAB"
+        accountId: "7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+        cloudAccountGroups:
+         - "Default Account Group"
+         - "CDS Account Group"
+        cloudAccountOwners:
+         - "test@gmail.com"
+        cloudServiceName: "Azure Compute"
+        cloudType: "azure"
+        data:
+          LastOwnershipUpdateTime: "2025-01-13T02:35:18.1925854+00:00"
+          creationData:
+            createOption: "FromImage"
+            imageReference:
+              id: "/Subscriptions/38a0e4d6-5cb5-432c-a09a-49b7beaf2350/Providers/Microsoft.Compute/Locations/eastus/Publishers/canonical/ArtifactTypes/VMImage/Offers/0001-com-ubuntu-server-focal/Skus/20_04-lts/Versions/20.04.202410160"
+          diskIOPSReadWrite: 120
+          diskMBpsReadWrite: 25
+          diskSizeBytes: 32213303296
+          diskSizeGB: 30
+          diskState: "Attached"
+          encryption:
+            type: "EncryptionAtRestWithPlatformKey"
+          hyperVGeneration: "V1"
+          id: "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+          location: "eastus"
+          managedBy: "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAgentlessScanResourceGroup/providers/Microsoft.Compute/virtualMachines/prismacloud-scan-1736735711786256252"
+          name: "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+          networkAccessPolicy: "AllowAll"
+          osType: "Linux"
+          provisioningState: "Succeeded"
+          publicNetworkAccess: "Enabled"
+          resourceGroup: "PCCAGENTLESSSCANRESOURCEGROUP"
+          sku:
+            name: "Premium_LRS"
+            tier: "Premium"
+          supportedCapabilities:
+            acceleratedNetwork: true
+            architecture: "x64"
+            diskControllerTypes: "SCSI, NVMe"
+          supportsHibernation: true
+          tags:
+            created-by: "prismacloud-agentless-scan"
+            lun0: "MSLABU20VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+            lun1: "MSLABU20VM2-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+            lun2: "MSLABWinSer19VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+            prismacloud-agentless-unique-id: "b455d906-6183-8c35-1559-5904be2f2913"
+          tier: "P4"
+          timeCreated: "2025-01-13T02:35:18.1925854+00:00"
+          type: "Microsoft.Compute/disks"
+          uniqueId: "95c6f3cf-2da3-4d3b-8910-f72ceda6ded5"
+        id: "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+        name: "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+        region: "Azure East US"
+        regionId: "eastus"
+        resourceApiName: "azure-disk-list"
+        resourceConfigJsonAvailable: true
+        resourceDetailsAvailable: true
+        resourceTs: 1736736300271
+        resourceType: "OTHER"
+        rrn: "rrn::other:eastus:7c68912f-2f1d-47cc-8ca6-ed81c3b26548:0b9b131e62dcd9cdee7e3fa894290822082f5052:%2Fsubscriptions%2F7c68912f-2f1d-47cc-8ca6-ed81c3b26548%2FresourceGroups%2FPCCAGENTLESSSCANRESOURCEGROUP%2Fproviders%2FMicrosoft.Compute%2Fdisks%2Fprismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+        unifiedAssetId: "7aa68f98901892c6a3514ae8a0e60e7a"
+        url: "https://portal.azure.com/#@/resource/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5"
+      saveSearchId: "6a3ba52c-1a0e-4359-e417ca280270"
+      status: "info"
+      timestamp: 1736737605384
+    message: |-
+      {
+        "saveSearchId" : "6a3ba52c-1a0e-4359-e417ca280270",
+        "reason" : "RESOURCE_DELETED",
+        "metadata" : {
+          "saveSearchId" : "6a3ba52c-1a0e-4359-e417ca280270"
+        },
+        "resource" : {
+          "data" : {
+            "resourceGroup" : "PCCAGENTLESSSCANRESOURCEGROUP",
+            "publicNetworkAccess" : "Enabled",
+            "diskIOPSReadWrite" : 120,
+            "hyperVGeneration" : "V1",
+            "networkAccessPolicy" : "AllowAll",
+            "type" : "Microsoft.Compute/disks",
+            "encryption" : {
+              "type" : "EncryptionAtRestWithPlatformKey"
+            },
+            "tier" : "P4",
+            "diskState" : "Attached",
+            "managedBy" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAgentlessScanResourceGroup/providers/Microsoft.Compute/virtualMachines/prismacloud-scan-1736735711786256252",
+            "osType" : "Linux",
+            "timeCreated" : "2025-01-13T02:35:18.1925854+00:00",
+            "id" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+            "sku" : {
+              "tier" : "Premium",
+              "name" : "Premium_LRS"
+            },
+            "diskSizeGB" : 30,
+            "diskMBpsReadWrite" : 25,
+            "LastOwnershipUpdateTime" : "2025-01-13T02:35:18.1925854+00:00",
+            "supportedCapabilities" : {
+              "diskControllerTypes" : "SCSI, NVMe",
+              "acceleratedNetwork" : true,
+              "architecture" : "x64"
+            },
+            "creationData" : {
+              "imageReference" : {
+                "id" : "/Subscriptions/38a0e4d6-5cb5-432c-a09a-49b7beaf2350/Providers/Microsoft.Compute/Locations/eastus/Publishers/canonical/ArtifactTypes/VMImage/Offers/0001-com-ubuntu-server-focal/Skus/20_04-lts/Versions/20.04.202410160"
+              },
+              "createOption" : "FromImage"
+            },
+            "provisioningState" : "Succeeded",
+            "tags" : {
+              "lun0" : "MSLABU20VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+              "prismacloud-agentless-unique-id" : "b455d906-6183-8c35-1559-5904be2f2913",
+              "created-by" : "prismacloud-agentless-scan",
+              "lun1" : "MSLABU20VM2-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+              "lun2" : "MSLABWinSer19VM1-CDS_MSLAB-7c68912f-2f1d-47cc-8ca6-ed81c3b26548"
+            },
+            "name" : "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+            "location" : "eastus",
+            "diskSizeBytes" : 32213303296,
+            "supportsHibernation" : true,
+            "uniqueId" : "95c6f3cf-2da3-4d3b-8910-f72ceda6ded5"
+          },
+          "resourceTs" : 1736736300271,
+          "resourceConfigJsonAvailable" : true,
+          "unifiedAssetId" : "7aa68f98901892c6a3514ae8a0e60e7a",
+          "cloudServiceName" : "Azure Compute",
+          "url" : "https://portal.azure.com/#@/resource/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "rrn" : "rrn::other:eastus:7c68912f-2f1d-47cc-8ca6-ed81c3b26548:0b9b131e62dcd9cdee7e3fa894290822082f5052:%2Fsubscriptions%2F7c68912f-2f1d-47cc-8ca6-ed81c3b26548%2FresourceGroups%2FPCCAGENTLESSSCANRESOURCEGROUP%2Fproviders%2FMicrosoft.Compute%2Fdisks%2Fprismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "cloudAccountGroups" : [ "Default Account Group", "CDS Account Group" ],
+          "cloudAccountOwners" : [ "test@gmail.com" ],
+          "accountId" : "7c68912f-2f1d-47cc-8ca6-ed81c3b26548",
+          "regionId" : "eastus",
+          "cloudType" : "azure",
+          "resourceApiName" : "azure-disk-list",
+          "name" : "prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "resourceDetailsAvailable" : true,
+          "id" : "/subscriptions/7c68912f-2f1d-47cc-8ca6-ed81c3b26548/resourceGroups/PCCAGENTLESSSCANRESOURCEGROUP/providers/Microsoft.Compute/disks/prismacloud-scan-1736735711786256252_disk1_95c6f3cf2da34d3b8910f72ceda6ded5",
+          "region" : "Azure East US",
+          "account" : "Azure Account - MSLAB",
+          "resourceType" : "OTHER"
+        },
+        "alertAdditionalInfo" : {
+          "scannerVersion" : "CS_2.0"
+        },
+        "firstSeen" : 1736736300816,
+        "history" : [ {
+          "reason" : "NEW_ALERT",
+          "modifiedOn" : 1736737605384,
+          "modifiedBy" : "Prisma Cloud",
+          "status" : "open"
+        } ],
+        "lastUpdated" : 1736737605384,
+        "investigateOptions" : {
+          "searchId" : "6a3ba52c-1a0e-4359-aba5-e417ca280270",
+          "hasSearchExecutionSupport" : true
+        },
+        "lastSeen" : 1736737605384,
+        "policyId" : "fa6e9e09-d02e-418a-baed692391ed",
+        "id" : "P-55334",
+        "alertTime" : 1736736300816,
+        "status" : "resolved",
+        "policy" : {
+          "severity" : "high",
+          "lastModifiedBy" : "test@gmail.com",
+          "hasSearchExecutionSupport" : true,
+          "description" : "This policy identifies Azure Virtual Machine disks that are configured with public network access.\n\nAllowing public access to Azure Virtual Machine disk resources increases the risk of unauthorized access and potential security breaches. Public network access exposes sensitive data to external threats, which attackers could exploit to compromise VM disks. Disabling public access and using Azure Private Link reduces exposure, ensuring only trusted networks have access and enhancing the security of your Azure environment by minimizing the risk of data leaks and breaches.\n\nAs a security best practice, it is recommended to disable public network access for Azure Virtual Machine disks.",
+          "recommendation" : "1. Log in to the Azure portal\n2. Navigate to 'Disks'\n3. Click on the reported disk\n4. Under 'Settings', go to 'Networking'\n5. Ensure that Network access is NOT set to 'Enable public access from all networks'\n6. Click 'Save'",
+          "remediable" : true,
+          "labels" : [ "Prisma_Cloud" ],
+          "lastModifiedOn" : 1730917214889,
+          "systemDefault" : true,
+          "remediation" : {
+            "impact" : "Disable public network access for Azure Virtual Machine disk",
+            "description" : "This CLI command requires 'Microsoft.Compute/disks/write' permission. Successful execution will disable public network access and sets the network access policy to DenyAll for the specified disk, blocking external access. \nNote: As a security best practice, we are disabling public and private access to the disk. However, you can choose between the following options based on your security requirements:\n- Disable public access and enable private access\n- Disable public and private access",
+            "cliScriptTemplate" : "az disk update --name ${resourceName} --resource-group ${resourceGroup} --public-network-access Disabled --network-access-policy DenyAll"
+          },
+          "deleted" : false,
+          "policyId" : "fa6e9e09-d02e-418a-baed692391ed",
+          "policyType" : "config",
+          "name" : "Azure VM disk configured with public network access"
+        }
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_alerts"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736737605384
+ -
+  sample: |-
+    {
+      "severity" : "high",
+      "exploitable" : false,
+      "riskFactors" : [ "High severity", "Has fix", "Attack vector: network" ],
+      "cvssScore" : 7.5,
+      "completeEpssScore" : 0.89936,
+      "cveId" : "CVE-2015-0899",
+      "epssScore" : 90,
+      "run" : {
+        "assetsCount" : 1,
+        "hosts" : {
+          "hostsCount" : 1
+        }
+      },
+      "published" : 1467673140,
+      "totalImpactedAssets" : 1,
+      "patchable" : true,
+      "epssScorePrevious" : 93
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_vulnerabilities"
+  result:
+    custom:
+      cd_palo_alto_prisma_cloud_enterprise:
+        cloud_security_vulnerabilities:
+          cveId: "CVE-2015-0899"
+          severity: "high"
+      completeEpssScore: 0.89936
+      cvssScore: 7.5
+      epssScore: 90
+      epssScorePrevious: 93
+      exploitable: false
+      patchable: true
+      published: 1467673140
+      riskFactors:
+       - "High severity"
+       - "Has fix"
+       - "Attack vector: network"
+      run:
+        assetsCount: 1
+        hosts:
+          hostsCount: 1
+      totalImpactedAssets: 1
+    message: |-
+      {
+        "severity" : "high",
+        "exploitable" : false,
+        "riskFactors" : [ "High severity", "Has fix", "Attack vector: network" ],
+        "cvssScore" : 7.5,
+        "completeEpssScore" : 0.89936,
+        "cveId" : "CVE-2015-0899",
+        "epssScore" : 90,
+        "run" : {
+          "assetsCount" : 1,
+          "hosts" : {
+            "hostsCount" : 1
+          }
+        },
+        "published" : 1467673140,
+        "totalImpactedAssets" : 1,
+        "patchable" : true,
+        "epssScorePrevious" : 93
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_vulnerabilities"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "alertStatus" : {
+        "high" : 1,
+        "critical" : 0,
+        "low" : 0,
+        "informational" : 0,
+        "medium" : 0
+      },
+      "overallPassed" : false,
+      "appNames" : [ "CSPM" ],
+      "accountName" : "CDS_IT_AWS Cloud Account",
+      "resourceConfigJsonAvailable" : true,
+      "regionName" : "AWS Global",
+      "unifiedAssetId" : "e6cb4a59994175c76e0f9cf9cc91",
+      "rrn" : "rrn:aws:iamAccountSummary::7483353700:d48a73810d842c0467c625a7fb5264ea246af964:7483353700",
+      "assetType" : "AWS IAM Account Summary",
+      "accountId" : "7483353700",
+      "regionId" : "",
+      "cloudType" : "aws",
+      "name" : "7483353700",
+      "resourceDetailsAvailable" : true,
+      "id" : "7483353700",
+      "scannedPolicies" : [ {
+        "severity" : "high",
+        "name" : "AWS Access key enabled on root account",
+        "id" : "88db4b66-4dec-48c0-9013-c7871d61b1c8",
+        "passed" : false,
+        "labels" : [ "Prisma_Cloud" ]
+      } ]
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_assets"
+  result:
+    custom:
+      accountId: "7483353700"
+      accountName: "CDS_IT_AWS Cloud Account"
+      alertStatus:
+        critical: 0
+        high: 1
+        informational: 0
+        low: 0
+        medium: 0
+      appNames:
+       - "CSPM"
+      assetType: "AWS IAM Account Summary"
+      cd_palo_alto_prisma_cloud_enterprise:
+        cloud_security_assets:
+          id: "7483353700"
+          name: "7483353700"
+      cloudType: "aws"
+      overallPassed: false
+      regionId: ""
+      regionName: "AWS Global"
+      resourceConfigJsonAvailable: true
+      resourceDetailsAvailable: true
+      rrn: "rrn:aws:iamAccountSummary::7483353700:d48a73810d842c0467c625a7fb5264ea246af964:7483353700"
+      scannedPolicies:
+       -
+        severity: "high"
+        name: "AWS Access key enabled on root account"
+        id: "88db4b66-4dec-48c0-9013-c7871d61b1c8"
+        passed: false
+        labels:
+         - "Prisma_Cloud"
+      unifiedAssetId: "e6cb4a59994175c76e0f9cf9cc91"
+    message: |-
+      {
+        "alertStatus" : {
+          "high" : 1,
+          "critical" : 0,
+          "low" : 0,
+          "informational" : 0,
+          "medium" : 0
+        },
+        "overallPassed" : false,
+        "appNames" : [ "CSPM" ],
+        "accountName" : "CDS_IT_AWS Cloud Account",
+        "resourceConfigJsonAvailable" : true,
+        "regionName" : "AWS Global",
+        "unifiedAssetId" : "e6cb4a59994175c76e0f9cf9cc91",
+        "rrn" : "rrn:aws:iamAccountSummary::7483353700:d48a73810d842c0467c625a7fb5264ea246af964:7483353700",
+        "assetType" : "AWS IAM Account Summary",
+        "accountId" : "7483353700",
+        "regionId" : "",
+        "cloudType" : "aws",
+        "name" : "7483353700",
+        "resourceDetailsAvailable" : true,
+        "id" : "7483353700",
+        "scannedPolicies" : [ {
+          "severity" : "high",
+          "name" : "AWS Access key enabled on root account",
+          "id" : "88db4b66-4dec-48c0-9013-c7871d61b1c8",
+          "passed" : false,
+          "labels" : [ "Prisma_Cloud" ]
+        } ]
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_assets"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "summary" : {
+        "alertCountsBySeverity" : {
+          "high" : 0,
+          "critical" : 0,
+          "low" : 0,
+          "medium" : 0,
+          "info" : 0
+        },
+        "cloudTypes" : [ "aws" ],
+        "assetCount" : {
+          "total" : 2
+        },
+        "findingCountByType" : {
+          "MISCONFIGURATION" : 2
+        },
+        "vulnCountsBySeverity" : {
+          "high" : 0,
+          "critical" : 0,
+          "low" : 0,
+          "medium" : 0
+        }
+      },
+      "createdAt" : 1728529136485,
+      "metadata" : {
+        "criteriaId" : [ "11c31bc7-5431-3065-968d-90d3242d9dc7" ],
+        "criteria" : [ "Default Discovery Criteria" ],
+        "displayName" : [ "Authmind" ],
+        "type" : [ "NON_K8s" ]
+      },
+      "definition" : {
+        "tags" : {
+          "Project" : "Authmind"
+        }
+      },
+      "id" : "e62c38a2-ab29-3ed3-b59d-6dfdcc16ddfa"
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_applications"
+  result:
+    custom:
+      cd_palo_alto_prisma_cloud_enterprise:
+        cloud_security_applications:
+          application_name: "Authmind"
+          critical_alert_counts: 0
+          critical_vulnerability_counts: 0
+          id: "e62c38a2-ab29-3ed3-b59d-6dfdcc16ddfa"
+      createdAt: 1728529136485
+      definition:
+        tags:
+          Project: "Authmind"
+      metadata:
+        criteria:
+         - "Default Discovery Criteria"
+        criteriaId:
+         - "11c31bc7-5431-3065-968d-90d3242d9dc7"
+        displayName:
+         - "Authmind"
+        type:
+         - "NON_K8s"
+      summary:
+        alertCountsBySeverity:
+          high: 0
+          info: 0
+          low: 0
+          medium: 0
+        assetCount:
+          total: 2
+        cloudTypes:
+         - "aws"
+        findingCountByType:
+          MISCONFIGURATION: 2
+        vulnCountsBySeverity:
+          high: 0
+          low: 0
+          medium: 0
+    message: |-
+      {
+        "summary" : {
+          "alertCountsBySeverity" : {
+            "high" : 0,
+            "critical" : 0,
+            "low" : 0,
+            "medium" : 0,
+            "info" : 0
+          },
+          "cloudTypes" : [ "aws" ],
+          "assetCount" : {
+            "total" : 2
+          },
+          "findingCountByType" : {
+            "MISCONFIGURATION" : 2
+          },
+          "vulnCountsBySeverity" : {
+            "high" : 0,
+            "critical" : 0,
+            "low" : 0,
+            "medium" : 0
+          }
+        },
+        "createdAt" : 1728529136485,
+        "metadata" : {
+          "criteriaId" : [ "11c31bc7-5431-3065-968d-90d3242d9dc7" ],
+          "criteria" : [ "Default Discovery Criteria" ],
+          "displayName" : [ "Authmind" ],
+          "type" : [ "NON_K8s" ]
+        },
+        "definition" : {
+          "tags" : {
+            "Project" : "Authmind"
+          }
+        },
+        "id" : "e62c38a2-ab29-3ed3-b59d-6dfdcc16ddfa"
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_applications"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "assignedPolicies" : 48,
+      "failedResources" : 20,
+      "description" : "ISO 27002:2022",
+      "mediumSeverityFailedResources" : 2,
+      "passedResources" : 189,
+      "totalResources" : 209,
+      "default" : true,
+      "criticalSeverityFailedResources" : 0,
+      "name" : "ISO 27002:2022",
+      "lowSeverityFailedResources" : 17,
+      "id" : "822a6114-6faa-46b5-8969-e8a53265b3ec",
+      "informationalSeverityFailedResources" : 0,
+      "highSeverityFailedResources" : 1
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_compliance_standards"
+  result:
+    custom:
+      assignedPolicies: 48
+      cd_palo_alto_prisma_cloud_enterprise:
+        cloud_security_compliance_standards:
+          id: "822a6114-6faa-46b5-8969-e8a53265b3ec"
+          name: "ISO 27002:2022"
+      criticalSeverityFailedResources: 0
+      default: true
+      description: "ISO 27002:2022"
+      failedResources: 20
+      highSeverityFailedResources: 1
+      informationalSeverityFailedResources: 0
+      lowSeverityFailedResources: 17
+      mediumSeverityFailedResources: 2
+      passedResources: 189
+      totalResources: 209
+    message: |-
+      {
+        "assignedPolicies" : 48,
+        "failedResources" : 20,
+        "description" : "ISO 27002:2022",
+        "mediumSeverityFailedResources" : 2,
+        "passedResources" : 189,
+        "totalResources" : 209,
+        "default" : true,
+        "criticalSeverityFailedResources" : 0,
+        "name" : "ISO 27002:2022",
+        "lowSeverityFailedResources" : 17,
+        "id" : "822a6114-6faa-46b5-8969-e8a53265b3ec",
+        "informationalSeverityFailedResources" : 0,
+        "highSeverityFailedResources" : 1
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_compliance_standards"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "result" : "Successful",
+      "actionType" : "LOGIN",
+      "ipAddress" : "103.000.000.00",
+      "action" : "'test@gmail.com'(with role 'System Admin':'System Admin') logged in via password.",
+      "resourceName" : "test@gmail.com",
+      "user" : "test@gmail.com",
+      "timestamp" : 1736738764545,
+      "resourceType" : "Login"
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_audits"
+  result:
+    custom:
+      action: "'test@gmail.com'(with role 'System Admin':'System Admin') logged in via password."
+      actionType: "LOGIN"
+      network:
+        client:
+          ip: "103.000.000.00"
+      resourceName: "test@gmail.com"
+      resourceType: "Login"
+      result: "Successful"
+      timestamp: 1736738764545
+      usr:
+        email: "test@gmail.com"
+    message: |-
+      {
+        "result" : "Successful",
+        "actionType" : "LOGIN",
+        "ipAddress" : "103.000.000.00",
+        "action" : "'test@gmail.com'(with role 'System Admin':'System Admin') logged in via password.",
+        "resourceName" : "test@gmail.com",
+        "user" : "test@gmail.com",
+        "timestamp" : 1736738764545,
+        "resourceType" : "Login"
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.cloud_security_audits"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1736738764545
+ -
+  sample: |-
+    {
+      "fixDate" : 0,
+      "discovered" : "2024-12-04T20:11:35Z",
+      "link" : "https://nvd.nist.gov/vuln/detail/CVE-2020-13936",
+      "cause" : "",
+      "description" : "An attacker that is able to modify Velocity templates may execute arbitrary Java code or run arbitrary system commands with the same privileges as the account running the Servlet container. This applies to applications that allow untrusted users to upload/modify velocity templates running Apache Velocity Engine versions up to 2.2.",
+      "vulnerability_status" : "Fixed in SH28222",
+      "title" : "",
+      "type" : "image",
+      "packageType" : "jar",
+      "functionLayer" : "",
+      "cve" : "CVE-2020-13936",
+      "asset_type" : "host",
+      "text" : "",
+      "id" : 47,
+      "packageName" : "org.apache.velocity_velocity",
+      "cri" : false,
+      "severity" : "high",
+      "applicableRules" : [ "<=1.7" ],
+      "vecStr" : "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "packageVersion" : "1.6.4-atlassian-21",
+      "published" : 1615364114,
+      "layerTime" : 0,
+      "asset" : "ip-100-00-00-000.ec2.internal-i-096a243d25a253ea8",
+      "exploit" : "",
+      "cvss" : 8.8,
+      "twistlock" : false
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_vulnerabilities"
+  result:
+    custom:
+      applicableRules:
+       - "<=1.7"
+      asset: "ip-100-00-00-000.ec2.internal-i-096a243d25a253ea8"
+      asset_type: "host"
+      cause: ""
+      cd_palo_alto_prisma_cloud_enterprise:
+        runtime_security_vulnerabilities:
+          cve: "CVE-2020-13936"
+          severity: "high"
+      cri: false
+      cvss: 8.8
+      description: "An attacker that is able to modify Velocity templates may execute arbitrary Java code or run arbitrary system commands with the same privileges as the account running the Servlet container. This applies to applications that allow untrusted users to upload/modify velocity templates running Apache Velocity Engine versions up to 2.2."
+      discovered: "2024-12-04T20:11:35Z"
+      exploit: ""
+      fixDate: 0
+      functionLayer: ""
+      id: 47
+      layerTime: 0
+      link: "https://nvd.nist.gov/vuln/detail/CVE-2020-13936"
+      packageName: "org.apache.velocity_velocity"
+      packageType: "jar"
+      packageVersion: "1.6.4-atlassian-21"
+      published: 1615364114
+      status: "warning"
+      text: ""
+      title: ""
+      twistlock: false
+      type: "image"
+      vecStr: "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+      vulnerability_status: "fixed"
+    message: |-
+      {
+        "fixDate" : 0,
+        "discovered" : "2024-12-04T20:11:35Z",
+        "link" : "https://nvd.nist.gov/vuln/detail/CVE-2020-13936",
+        "cause" : "",
+        "description" : "An attacker that is able to modify Velocity templates may execute arbitrary Java code or run arbitrary system commands with the same privileges as the account running the Servlet container. This applies to applications that allow untrusted users to upload/modify velocity templates running Apache Velocity Engine versions up to 2.2.",
+        "vulnerability_status" : "Fixed in SH28222",
+        "title" : "",
+        "type" : "image",
+        "packageType" : "jar",
+        "functionLayer" : "",
+        "cve" : "CVE-2020-13936",
+        "asset_type" : "host",
+        "text" : "",
+        "id" : 47,
+        "packageName" : "org.apache.velocity_velocity",
+        "cri" : false,
+        "severity" : "high",
+        "applicableRules" : [ "<=1.7" ],
+        "vecStr" : "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+        "packageVersion" : "1.6.4-atlassian-21",
+        "published" : 1615364114,
+        "layerTime" : 0,
+        "asset" : "ip-100-00-00-000.ec2.internal-i-096a243d25a253ea8",
+        "exploit" : "",
+        "cvss" : 8.8,
+        "twistlock" : false
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_vulnerabilities"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "fixDate" : 0,
+      "discovered" : "0001-01-01T00:00:00Z",
+      "link" : "",
+      "cause" : "Actual auto update value is: 1 (expected: 0)",
+      "description" : "Verify that Windows is configured to automatically download and install updates at a regular interval",
+      "title" : "Verify Windows Update is set to automatically install",
+      "type" : "windows",
+      "packageType" : "",
+      "functionLayer" : "",
+      "cve" : "",
+      "asset_type" : "host",
+      "text" : "",
+      "id" : 200401,
+      "packageName" : "",
+      "cri" : false,
+      "severity" : "critical",
+      "vecStr" : "",
+      "packageVersion" : "",
+      "published" : 0,
+      "layerTime" : 0,
+      "asset" : "CLW738",
+      "exploit" : "",
+      "cvss" : 0,
+      "twistlock" : true,
+      "status" : ""
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_compliance_issues"
+  result:
+    custom:
+      asset: "CLW738"
+      asset_type: "host"
+      cause: "Actual auto update value is: 1 (expected: 0)"
+      cd_palo_alto_prisma_cloud_enterprise:
+        runtime_security_compliance_issues:
+          id: 200401
+      cri: false
+      cve: ""
+      cvss: 0
+      description: "Verify that Windows is configured to automatically download and install updates at a regular interval"
+      discovered: "0001-01-01T00:00:00Z"
+      exploit: ""
+      fixDate: 0
+      functionLayer: ""
+      layerTime: 0
+      link: ""
+      packageName: ""
+      packageType: ""
+      packageVersion: ""
+      published: 0
+      severity: "critical"
+      status: ""
+      text: ""
+      title: "Verify Windows Update is set to automatically install"
+      twistlock: true
+      type: "windows"
+      vecStr: ""
+    message: |-
+      {
+        "fixDate" : 0,
+        "discovered" : "0001-01-01T00:00:00Z",
+        "link" : "",
+        "cause" : "Actual auto update value is: 1 (expected: 0)",
+        "description" : "Verify that Windows is configured to automatically download and install updates at a regular interval",
+        "title" : "Verify Windows Update is set to automatically install",
+        "type" : "windows",
+        "packageType" : "",
+        "functionLayer" : "",
+        "cve" : "",
+        "asset_type" : "host",
+        "text" : "",
+        "id" : 200401,
+        "packageName" : "",
+        "cri" : false,
+        "severity" : "critical",
+        "vecStr" : "",
+        "packageVersion" : "",
+        "published" : 0,
+        "layerTime" : 0,
+        "asset" : "CLW738",
+        "exploit" : "",
+        "cvss" : 0,
+        "twistlock" : true,
+        "status" : ""
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_compliance_issues"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "license" : "",
+      "layerTime" : 0,
+      "name" : "KB4470788",
+      "asset_type" : "host",
+      "cveCount" : 0,
+      "package_type" : "windows",
+      "asset" : "CLW738",
+      "version" : "4470788"
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_packages"
+  result:
+    custom:
+      asset: "CLW738"
+      asset_type: "host"
+      cd_palo_alto_prisma_cloud_enterprise:
+        runtime_security_packages:
+          name: "KB4470788"
+      cveCount: 0
+      layerTime: 0
+      license: ""
+      package_type: "windows"
+      version: "4470788"
+    message: |-
+      {
+        "license" : "",
+        "layerTime" : 0,
+        "name" : "KB4470788",
+        "asset_type" : "host",
+        "cveCount" : 0,
+        "package_type" : "windows",
+        "asset" : "CLW738",
+        "version" : "4470788"
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_packages"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "distro" : "Alpine Linux v3.19",
+      "vulnerabilityDistribution" : {
+        "high" : 2,
+        "total" : 21,
+        "critical" : 2,
+        "low" : 9,
+        "medium" : 8
+      },
+      "creationTime" : "2024-12-16T04:57:57.387Z",
+      "instances" : [ {
+        "image" : "docker.io/san003/ubuntu:latest",
+        "registry" : "docker.io",
+        "repo" : "sandip003/ubuntu",
+        "host" : "ip-172-31-30-0.ec2.internal-i-016b959a2b909ac",
+        "modified" : "2024-12-23T10:08:31.162Z",
+        "tag" : "latest"
+      } ],
+      "scanTime" : "2024-12-23T10:08:31.162Z",
+      "scanID" : 619,
+      "installedProducts" : {
+        "osDistro" : "Alpine Linux v3.19",
+        "agentless" : true,
+        "hasPackageManager" : true,
+        "crio" : true
+      },
+      "type" : "image",
+      "csaWindows" : false,
+      "osDistroVersion" : "3.19.1",
+      "repoDigests" : [ "docker.io/san003/ubuntu@sha256:561dfffc8d3a2f14dfcb05d1b189451322d14d1ad0721ac6628e1b9775b788ec" ],
+      "scanBuildDate" : "20241127",
+      "hostname" : "",
+      "vulnerabilitiesCount" : 21,
+      "firstScanTime" : "2024-12-19T05:33:28.598Z",
+      "collections" : [ "All" ],
+      "layers" : [ "sha256:d4fc045c9e3a848011de66f34b81f052d4f2c15a17bb196d637e526349601820", "sha256:a05d3326ce5af13d999df50efaee804c6fcc031e7fa68c579f382047540a0f7c", "sha256:7b87df18a0ed6cbc6fc70a350d156b382b07aee79a22c314e55296696b29d4f0", "sha256:8d720e2faad33988d164ecc1c4406f9fc367175d45fa9dd68f1b7de8787a4042", "sha256:3b4115e2edd10e78c662bdf193ced3c3eab575037e972bd1113e1b4a8414ef7f", "sha256:d38ed9b519d2c5a1783e768e937b86e18f43c321eb1e3f1d1a24e2a07e4261cd", "sha256:b6d04dc5ecf7f78283e9e39309dd95293f1daeeccc5b23e050b6c722efe2bbcf", "sha256:9cba8117003a8d974c7d6c9497daf422d136e44293725dcb2fda66623e5f5cd7", "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117" ],
+      "id" : "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af",
+      "vulnerabilityRiskScore" : 2020809,
+      "scanVersion" : "33.02.134",
+      "firewallProtection" : {
+        "outOfBandMode" : "",
+        "enabled" : false,
+        "supported" : false
+      },
+      "pushTime" : "0001-01-01T00:00:00Z",
+      "cloudMetadata" : {
+        "accountID" : "748335378900",
+        "image" : "amazon-eks-node-1.31-v20241205",
+        "resourceID" : "i-0aa1954c0c40dc0",
+        "provider" : "aws",
+        "vmImageID" : "ami-03869a2749cf4adc1",
+        "name" : "IS_51432_01",
+        "type" : "t2.medium",
+        "region" : "us-east-1",
+        "labels" : [ {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "eks-IS_51432_Node_Group_1-f6c9dacf-b938-9f97-f952-205ca042afa4",
+          "key" : "aws:autoscaling:groupName",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "lt-0b1e8c93cbbd6008e",
+          "key" : "aws:ec2launchtemplate:id",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "IS_51432_New_Cluster_Updated",
+          "key" : "eks:cluster-name",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "fleet-d9ae1a8c-7bbf-63bc-869a-2ca8a9ff6e5e",
+          "key" : "aws:ec2:fleet-id",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "IS_51432_New_Cluster_Updated",
+          "key" : "aws:eks:cluster-name",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "IS_51432_01",
+          "key" : "Name",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "true",
+          "key" : "k8s.io/cluster-autoscaler/enabled",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "IS_51432_Node_Group_1",
+          "key" : "eks:nodegroup-name",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "IS-51432",
+          "key" : "Jira",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        }, {
+          "sourceType" : "aws",
+          "sourceName" : "i-0aa1954c0c40dc0",
+          "value" : "2",
+          "key" : "aws:ec2launchtemplate:version",
+          "timestamp" : "2024-12-19T05:30:32.102Z"
+        } ]
+      },
+      "clusters" : [ "IS_51432_New_Cluster_Updated" ],
+      "appEmbedded" : false,
+      "image" : {
+        "entrypoint" : [ "/docker-entrypoint.sh", "nginx", "-g", "daemon off;" ],
+        "created" : "2024-12-16T04:57:57.387Z"
+      },
+      "trustStatus" : "untrusted",
+      "err" : "",
+      "malwareAnalyzedTime" : "2024-12-23T10:10:14.634Z",
+      "redHatNonRPMImage" : false,
+      "hosts" : {
+        "ip-100-00-00-0" : {
+          "ec2" : {
+            "internal-i-016b959a2b909ac" : {
+              "cluster" : "IS_51432_New_Cluster_Updated",
+              "accountID" : "748335378900",
+              "agentless" : true,
+              "modified" : "2024-12-23T10:08:31.162Z",
+              "namespaces" : [ "default" ],
+              "agentlessScanID" : 619
+            }
+          }
+        },
+        "ip-100-00-00-00" : {
+          "ec2" : {
+            "internal-i-0aa1954c0c40dc0" : {
+              "cluster" : "IS_51432_New_Cluster_Updated",
+              "accountID" : "748335378900",
+              "agentless" : true,
+              "modified" : "2024-12-23T10:08:23.896Z",
+              "namespaces" : [ "default" ],
+              "agentlessScanID" : 619
+            }
+          }
+        }
+      },
+      "osDistroRelease" : "3.19.1",
+      "complianceIssuesCount" : 1,
+      "complianceRiskScore" : 10000,
+      "packageManager" : true,
+      "topLayer" : "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117",
+      "tags" : [ {
+        "registry" : "docker.io",
+        "repo" : "san003/ubuntu",
+        "tag" : "latest"
+      } ],
+      "labels" : [ "maintainer:NGINX Docker Maintainers <docker-maint@nginx.com>" ],
+      "osDistro" : "alpine",
+      "complianceDistribution" : {
+        "high" : 1,
+        "total" : 1,
+        "critical" : 0,
+        "low" : 0,
+        "medium" : 0
+      },
+      "repoTag" : {
+        "registry" : "docker.io",
+        "repo" : "san003/ubuntu",
+        "tag" : "latest"
+      },
+      "isARM64" : false,
+      "agentless" : true,
+      "_id" : "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af",
+      "applications" : [ {
+        "path" : "/bin/busybox",
+        "knownVulnerabilities" : 34,
+        "layerTime" : 1706315448,
+        "originPackageName" : "busybox",
+        "name" : "busybox",
+        "version" : "1.36.1",
+        "installedFromPackage" : true
+      }, {
+        "path" : "/usr/sbin/nginx",
+        "knownVulnerabilities" : 19,
+        "layerTime" : 1718717177,
+        "originPackageName" : "nginx",
+        "name" : "nginx",
+        "version" : "1.27.0",
+        "installedFromPackage" : true
+      } ],
+      "namespaces" : [ "default" ]
+    }
+  service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_images"
+  result:
+    custom:
+      _id: "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af"
+      agentless: true
+      appEmbedded: false
+      applications:
+       -
+        path: "/bin/busybox"
+        knownVulnerabilities: 34
+        layerTime: 1706315448
+        originPackageName: "busybox"
+        name: "busybox"
+        version: "1.36.1"
+        installedFromPackage: true
+       -
+        path: "/usr/sbin/nginx"
+        knownVulnerabilities: 19
+        layerTime: 1718717177
+        originPackageName: "nginx"
+        name: "nginx"
+        version: "1.27.0"
+        installedFromPackage: true
+      cd_palo_alto_prisma_cloud_enterprise:
+        runtime_security_images:
+          hostname: "ip-172-31-30-0.ec2.internal-i-016b959a2b909ac"
+      cloudMetadata:
+        accountID: "748335378900"
+        image: "amazon-eks-node-1.31-v20241205"
+        labels:
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "eks-IS_51432_Node_Group_1-f6c9dacf-b938-9f97-f952-205ca042afa4"
+          key: "aws:autoscaling:groupName"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "lt-0b1e8c93cbbd6008e"
+          key: "aws:ec2launchtemplate:id"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "IS_51432_New_Cluster_Updated"
+          key: "eks:cluster-name"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "fleet-d9ae1a8c-7bbf-63bc-869a-2ca8a9ff6e5e"
+          key: "aws:ec2:fleet-id"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "IS_51432_New_Cluster_Updated"
+          key: "aws:eks:cluster-name"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "IS_51432_01"
+          key: "Name"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "true"
+          key: "k8s.io/cluster-autoscaler/enabled"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "IS_51432_Node_Group_1"
+          key: "eks:nodegroup-name"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "IS-51432"
+          key: "Jira"
+          timestamp: "2024-12-19T05:30:32.102Z"
+         -
+          sourceType: "aws"
+          sourceName: "i-0aa1954c0c40dc0"
+          value: "2"
+          key: "aws:ec2launchtemplate:version"
+          timestamp: "2024-12-19T05:30:32.102Z"
+        name: "IS_51432_01"
+        provider: "aws"
+        region: "us-east-1"
+        resourceID: "i-0aa1954c0c40dc0"
+        type: "t2.medium"
+        vmImageID: "ami-03869a2749cf4adc1"
+      clusters:
+       - "IS_51432_New_Cluster_Updated"
+      collections:
+       - "All"
+      complianceDistribution:
+        critical: 0
+        high: 1
+        low: 0
+        medium: 0
+        total: 1
+      complianceIssuesCount: 1
+      complianceRiskScore: 10000
+      creationTime: "2024-12-16T04:57:57.387Z"
+      csaWindows: false
+      distro: "Alpine Linux v3.19"
+      err: ""
+      firewallProtection:
+        enabled: false
+        outOfBandMode: ""
+        supported: false
+      firstScanTime: "2024-12-19T05:33:28.598Z"
+      hostname: ""
+      hosts:
+        ip-100-00-00-0:
+          ec2:
+            internal-i-016b959a2b909ac:
+              accountID: "748335378900"
+              agentless: true
+              agentlessScanID: 619
+              cluster: "IS_51432_New_Cluster_Updated"
+              modified: "2024-12-23T10:08:31.162Z"
+              namespaces:
+               - "default"
+        ip-100-00-00-00:
+          ec2:
+            internal-i-0aa1954c0c40dc0:
+              accountID: "748335378900"
+              agentless: true
+              agentlessScanID: 619
+              cluster: "IS_51432_New_Cluster_Updated"
+              modified: "2024-12-23T10:08:23.896Z"
+              namespaces:
+               - "default"
+      id: "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af"
+      image:
+        created: "2024-12-16T04:57:57.387Z"
+        entrypoint:
+         - "/docker-entrypoint.sh"
+         - "nginx"
+         - "-g"
+         - "daemon off;"
+      installedProducts:
+        agentless: true
+        crio: true
+        hasPackageManager: true
+        osDistro: "Alpine Linux v3.19"
+      instances:
+       -
+        image: "docker.io/san003/ubuntu:latest"
+        registry: "docker.io"
+        repo: "sandip003/ubuntu"
+        host: "ip-172-31-30-0.ec2.internal-i-016b959a2b909ac"
+        modified: "2024-12-23T10:08:31.162Z"
+        tag: "latest"
+      isARM64: false
+      labels:
+       - "maintainer:NGINX Docker Maintainers <docker-maint@nginx.com>"
+      layers:
+       - "sha256:d4fc045c9e3a848011de66f34b81f052d4f2c15a17bb196d637e526349601820"
+       - "sha256:a05d3326ce5af13d999df50efaee804c6fcc031e7fa68c579f382047540a0f7c"
+       - "sha256:7b87df18a0ed6cbc6fc70a350d156b382b07aee79a22c314e55296696b29d4f0"
+       - "sha256:8d720e2faad33988d164ecc1c4406f9fc367175d45fa9dd68f1b7de8787a4042"
+       - "sha256:3b4115e2edd10e78c662bdf193ced3c3eab575037e972bd1113e1b4a8414ef7f"
+       - "sha256:d38ed9b519d2c5a1783e768e937b86e18f43c321eb1e3f1d1a24e2a07e4261cd"
+       - "sha256:b6d04dc5ecf7f78283e9e39309dd95293f1daeeccc5b23e050b6c722efe2bbcf"
+       - "sha256:9cba8117003a8d974c7d6c9497daf422d136e44293725dcb2fda66623e5f5cd7"
+       - "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117"
+      malwareAnalyzedTime: "2024-12-23T10:10:14.634Z"
+      namespaces:
+       - "default"
+      osDistro: "alpine"
+      osDistroRelease: "3.19.1"
+      osDistroVersion: "3.19.1"
+      packageManager: true
+      pushTime: "0001-01-01T00:00:00Z"
+      redHatNonRPMImage: false
+      repoDigests:
+       - "docker.io/san003/ubuntu@sha256:561dfffc8d3a2f14dfcb05d1b189451322d14d1ad0721ac6628e1b9775b788ec"
+      repoTag:
+        registry: "docker.io"
+        repo: "san003/ubuntu"
+        tag: "latest"
+      scanBuildDate: "20241127"
+      scanID: 619
+      scanTime: "2024-12-23T10:08:31.162Z"
+      scanVersion: "33.02.134"
+      tags:
+       -
+        registry: "docker.io"
+        repo: "san003/ubuntu"
+        tag: "latest"
+      topLayer: "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117"
+      trustStatus: "untrusted"
+      type: "image"
+      vulnerabilitiesCount: 21
+      vulnerabilityDistribution:
+        critical: 2
+        high: 2
+        low: 9
+        medium: 8
+        total: 21
+      vulnerabilityRiskScore: 2020809
+    message: |-
+      {
+        "distro" : "Alpine Linux v3.19",
+        "vulnerabilityDistribution" : {
+          "high" : 2,
+          "total" : 21,
+          "critical" : 2,
+          "low" : 9,
+          "medium" : 8
+        },
+        "creationTime" : "2024-12-16T04:57:57.387Z",
+        "instances" : [ {
+          "image" : "docker.io/san003/ubuntu:latest",
+          "registry" : "docker.io",
+          "repo" : "sandip003/ubuntu",
+          "host" : "ip-172-31-30-0.ec2.internal-i-016b959a2b909ac",
+          "modified" : "2024-12-23T10:08:31.162Z",
+          "tag" : "latest"
+        } ],
+        "scanTime" : "2024-12-23T10:08:31.162Z",
+        "scanID" : 619,
+        "installedProducts" : {
+          "osDistro" : "Alpine Linux v3.19",
+          "agentless" : true,
+          "hasPackageManager" : true,
+          "crio" : true
+        },
+        "type" : "image",
+        "csaWindows" : false,
+        "osDistroVersion" : "3.19.1",
+        "repoDigests" : [ "docker.io/san003/ubuntu@sha256:561dfffc8d3a2f14dfcb05d1b189451322d14d1ad0721ac6628e1b9775b788ec" ],
+        "scanBuildDate" : "20241127",
+        "hostname" : "",
+        "vulnerabilitiesCount" : 21,
+        "firstScanTime" : "2024-12-19T05:33:28.598Z",
+        "collections" : [ "All" ],
+        "layers" : [ "sha256:d4fc045c9e3a848011de66f34b81f052d4f2c15a17bb196d637e526349601820", "sha256:a05d3326ce5af13d999df50efaee804c6fcc031e7fa68c579f382047540a0f7c", "sha256:7b87df18a0ed6cbc6fc70a350d156b382b07aee79a22c314e55296696b29d4f0", "sha256:8d720e2faad33988d164ecc1c4406f9fc367175d45fa9dd68f1b7de8787a4042", "sha256:3b4115e2edd10e78c662bdf193ced3c3eab575037e972bd1113e1b4a8414ef7f", "sha256:d38ed9b519d2c5a1783e768e937b86e18f43c321eb1e3f1d1a24e2a07e4261cd", "sha256:b6d04dc5ecf7f78283e9e39309dd95293f1daeeccc5b23e050b6c722efe2bbcf", "sha256:9cba8117003a8d974c7d6c9497daf422d136e44293725dcb2fda66623e5f5cd7", "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117" ],
+        "id" : "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af",
+        "vulnerabilityRiskScore" : 2020809,
+        "scanVersion" : "33.02.134",
+        "firewallProtection" : {
+          "outOfBandMode" : "",
+          "enabled" : false,
+          "supported" : false
+        },
+        "pushTime" : "0001-01-01T00:00:00Z",
+        "cloudMetadata" : {
+          "accountID" : "748335378900",
+          "image" : "amazon-eks-node-1.31-v20241205",
+          "resourceID" : "i-0aa1954c0c40dc0",
+          "provider" : "aws",
+          "vmImageID" : "ami-03869a2749cf4adc1",
+          "name" : "IS_51432_01",
+          "type" : "t2.medium",
+          "region" : "us-east-1",
+          "labels" : [ {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "eks-IS_51432_Node_Group_1-f6c9dacf-b938-9f97-f952-205ca042afa4",
+            "key" : "aws:autoscaling:groupName",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "lt-0b1e8c93cbbd6008e",
+            "key" : "aws:ec2launchtemplate:id",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "IS_51432_New_Cluster_Updated",
+            "key" : "eks:cluster-name",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "fleet-d9ae1a8c-7bbf-63bc-869a-2ca8a9ff6e5e",
+            "key" : "aws:ec2:fleet-id",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "IS_51432_New_Cluster_Updated",
+            "key" : "aws:eks:cluster-name",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "IS_51432_01",
+            "key" : "Name",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "true",
+            "key" : "k8s.io/cluster-autoscaler/enabled",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "IS_51432_Node_Group_1",
+            "key" : "eks:nodegroup-name",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "IS-51432",
+            "key" : "Jira",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          }, {
+            "sourceType" : "aws",
+            "sourceName" : "i-0aa1954c0c40dc0",
+            "value" : "2",
+            "key" : "aws:ec2launchtemplate:version",
+            "timestamp" : "2024-12-19T05:30:32.102Z"
+          } ]
+        },
+        "clusters" : [ "IS_51432_New_Cluster_Updated" ],
+        "appEmbedded" : false,
+        "image" : {
+          "entrypoint" : [ "/docker-entrypoint.sh", "nginx", "-g", "daemon off;" ],
+          "created" : "2024-12-16T04:57:57.387Z"
+        },
+        "trustStatus" : "untrusted",
+        "err" : "",
+        "malwareAnalyzedTime" : "2024-12-23T10:10:14.634Z",
+        "redHatNonRPMImage" : false,
+        "hosts" : {
+          "ip-100-00-00-0" : {
+            "ec2" : {
+              "internal-i-016b959a2b909ac" : {
+                "cluster" : "IS_51432_New_Cluster_Updated",
+                "accountID" : "748335378900",
+                "agentless" : true,
+                "modified" : "2024-12-23T10:08:31.162Z",
+                "namespaces" : [ "default" ],
+                "agentlessScanID" : 619
+              }
+            }
+          },
+          "ip-100-00-00-00" : {
+            "ec2" : {
+              "internal-i-0aa1954c0c40dc0" : {
+                "cluster" : "IS_51432_New_Cluster_Updated",
+                "accountID" : "748335378900",
+                "agentless" : true,
+                "modified" : "2024-12-23T10:08:23.896Z",
+                "namespaces" : [ "default" ],
+                "agentlessScanID" : 619
+              }
+            }
+          }
+        },
+        "osDistroRelease" : "3.19.1",
+        "complianceIssuesCount" : 1,
+        "complianceRiskScore" : 10000,
+        "packageManager" : true,
+        "topLayer" : "sha256:7653f921b2c04df13526dce49b8372ed4f9133b4161f495d0ce2280cda93c117",
+        "tags" : [ {
+          "registry" : "docker.io",
+          "repo" : "san003/ubuntu",
+          "tag" : "latest"
+        } ],
+        "labels" : [ "maintainer:NGINX Docker Maintainers <docker-maint@nginx.com>" ],
+        "osDistro" : "alpine",
+        "complianceDistribution" : {
+          "high" : 1,
+          "total" : 1,
+          "critical" : 0,
+          "low" : 0,
+          "medium" : 0
+        },
+        "repoTag" : {
+          "registry" : "docker.io",
+          "repo" : "san003/ubuntu",
+          "tag" : "latest"
+        },
+        "isARM64" : false,
+        "agentless" : true,
+        "_id" : "sha256:e5e5d1db87d9dadc2c030b2cd8939bc3e02a5298a7818f56d3c420724a60f2af",
+        "applications" : [ {
+          "path" : "/bin/busybox",
+          "knownVulnerabilities" : 34,
+          "layerTime" : 1706315448,
+          "originPackageName" : "busybox",
+          "name" : "busybox",
+          "version" : "1.36.1",
+          "installedFromPackage" : true
+        }, {
+          "path" : "/usr/sbin/nginx",
+          "knownVulnerabilities" : 19,
+          "layerTime" : 1718717177,
+          "originPackageName" : "nginx",
+          "name" : "nginx",
+          "version" : "1.27.0",
+          "installedFromPackage" : true
+        } ],
+        "namespaces" : [ "default" ]
+      }
+    service: "cd.palo.alto.prisma.cloud.enterprise.runtime_security_images"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

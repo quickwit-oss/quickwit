@@ -1,0 +1,1758 @@
+id: "crest-data-systems-rudder"
+tests:
+ -
+  sample: |-
+    {
+      "longDescription" : "",
+      "techniqueName" : "downloadFile",
+      "system" : false,
+      "displayName" : "File download (HTTP)",
+      "techniqueVersion" : "4.0",
+      "id" : "1f972c03-c7f9-4369-a777-aa63b6151cd7",
+      "shortDescription" : "test windows",
+      "priority" : 5,
+      "parameters" : {
+        "section" : {
+          "name" : "sections",
+          "sections" : [ {
+            "section" : {
+              "name" : "File",
+              "sections" : [ {
+                "section" : {
+                  "name" : "Download a file",
+                  "vars" : [ {
+                    "var" : {
+                      "name" : "DOWNLOADFILE_DESTINATION",
+                      "value" : "/download"
+                    }
+                  }, {
+                    "var" : {
+                      "name" : "DOWNLOADFILE_SOURCE",
+                      "value" : "https://rufus.ie/en/"
+                    }
+                  } ]
+                }
+              }, {
+                "section" : {
+                  "name" : "Permissions (on UNIX systems)",
+                  "vars" : [ {
+                    "var" : {
+                      "name" : "DOWNLOADFILE_GROUP",
+                      "value" : "root"
+                    }
+                  }, {
+                    "var" : {
+                      "name" : "DOWNLOADFILE_MODE",
+                      "value" : "640"
+                    }
+                  }, {
+                    "var" : {
+                      "name" : "DOWNLOADFILE_USER",
+                      "value" : "root"
+                    }
+                  } ]
+                }
+              } ]
+            }
+          } ]
+        }
+      },
+      "policyMode" : "default",
+      "enabled" : true
+    }
+  service: "cd.rudder.directives"
+  result:
+    custom:
+      cd_rudder:
+        directive_id: "1f972c03-c7f9-4369-a777-aa63b6151cd7"
+        policy_mode: "Enforce"
+      displayName: "File download (HTTP)"
+      enabled: true
+      longDescription: ""
+      parameters:
+        section:
+          name: "sections"
+          sections:
+           -
+            section:
+              name: "File"
+              sections:
+               -
+                section:
+                  name: "Download a file"
+                  vars:
+                   -
+                    var:
+                      name: "DOWNLOADFILE_DESTINATION"
+                      value: "/download"
+                   -
+                    var:
+                      name: "DOWNLOADFILE_SOURCE"
+                      value: "https://rufus.ie/en/"
+               -
+                section:
+                  name: "Permissions (on UNIX systems)"
+                  vars:
+                   -
+                    var:
+                      name: "DOWNLOADFILE_GROUP"
+                      value: "root"
+                   -
+                    var:
+                      name: "DOWNLOADFILE_MODE"
+                      value: "640"
+                   -
+                    var:
+                      name: "DOWNLOADFILE_USER"
+                      value: "root"
+      policyMode: "default"
+      priority: 5
+      shortDescription: "test windows"
+      system: false
+      techniqueName: "downloadFile"
+      techniqueVersion: "4.0"
+    message: |-
+      {
+        "longDescription" : "",
+        "techniqueName" : "downloadFile",
+        "system" : false,
+        "displayName" : "File download (HTTP)",
+        "techniqueVersion" : "4.0",
+        "id" : "1f972c03-c7f9-4369-a777-aa63b6151cd7",
+        "shortDescription" : "test windows",
+        "priority" : 5,
+        "parameters" : {
+          "section" : {
+            "name" : "sections",
+            "sections" : [ {
+              "section" : {
+                "name" : "File",
+                "sections" : [ {
+                  "section" : {
+                    "name" : "Download a file",
+                    "vars" : [ {
+                      "var" : {
+                        "name" : "DOWNLOADFILE_DESTINATION",
+                        "value" : "/download"
+                      }
+                    }, {
+                      "var" : {
+                        "name" : "DOWNLOADFILE_SOURCE",
+                        "value" : "https://rufus.ie/en/"
+                      }
+                    } ]
+                  }
+                }, {
+                  "section" : {
+                    "name" : "Permissions (on UNIX systems)",
+                    "vars" : [ {
+                      "var" : {
+                        "name" : "DOWNLOADFILE_GROUP",
+                        "value" : "root"
+                      }
+                    }, {
+                      "var" : {
+                        "name" : "DOWNLOADFILE_MODE",
+                        "value" : "640"
+                      }
+                    }, {
+                      "var" : {
+                        "name" : "DOWNLOADFILE_USER",
+                        "value" : "root"
+                      }
+                    } ]
+                  }
+                } ]
+              }
+            } ]
+          }
+        },
+        "policyMode" : "default",
+        "enabled" : true
+      }
+    service: "cd.rudder.directives"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "mode" : "full-compliance",
+      "compliance" : 88.89,
+      "name" : "ub22-50-10-90",
+      "complianceDetails" : {
+        "successRepaired" : 11.11,
+        "successAlreadyOK" : 72.23,
+        "successNotApplicable" : 5.55,
+        "unexpectedUnknownComponent" : 11.11
+      },
+      "rules" : [ {
+        "directives" : [ {
+          "components" : [ {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Owner, group and permissions already correct for /home/devuser",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "/home/devuser"
+            } ],
+            "name" : "File permissions",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          } ],
+          "compliance" : 100.0,
+          "name" : "File permissions",
+          "complianceDetails" : {
+            "successAlreadyOK" : 100.0
+          },
+          "id" : "66a26eaa-3c7b-48fc-89f5-362effde5c2f",
+          "policyMode" : "default"
+        } ],
+        "compliance" : 100.0,
+        "name" : "test",
+        "complianceDetails" : {
+          "successAlreadyOK" : 100.0
+        },
+        "id" : "c87fc661-0ce7-46b3-bf2e-a09cb5e79b57",
+        "policyMode" : "enforce"
+      }, {
+        "directives" : [ {
+          "components" : [ {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Execute command as user root ls was repaired",
+                "status" : "successRepaired"
+              } ],
+              "value" : "ls"
+            } ],
+            "name" : "Command execution as user",
+            "complianceDetails" : {
+              "successRepaired" : 100.0
+            }
+          } ],
+          "compliance" : 100.0,
+          "name" : "Directive Detect if there are users who didn't log in the last 3 months",
+          "complianceDetails" : {
+            "successRepaired" : 100.0
+          },
+          "id" : "73e9b87b-4323-4be7-a759-ef4324cdd7a4",
+          "policyMode" : "default"
+        } ],
+        "compliance" : 100.0,
+        "name" : "System base configuration - Linux",
+        "complianceDetails" : {
+          "successRepaired" : 100.0
+        },
+        "id" : "8579ee55-f294-43ba-afae-6a6efa6225f9",
+        "policyMode" : "enforce"
+      }, {
+        "directives" : [ {
+          "components" : [ {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "OpenSSH is starting on boot as required",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH start at boot",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The OpenSSH server listening addresses configuration is not set to be edited",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH listening addresses configuration",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The OpenSSH server configuration was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH configuration",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The OpenSSH server port configuration is not set to be edited",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH port configuration",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 0.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Could not restart the OpenSSH server",
+                "status" : "unexpectedUnknownComponent"
+              }, {
+                "message" : "The OpenSSH server service is running",
+                "status" : "unexpectedUnknownComponent"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH process",
+            "complianceDetails" : {
+              "unexpectedUnknownComponent" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The OpenSSH server package installation was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "SSH installation",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          } ],
+          "compliance" : 71.43,
+          "name" : "SSH server (OpenSSH)",
+          "complianceDetails" : {
+            "successAlreadyOK" : 71.43,
+            "unexpectedUnknownComponent" : 28.57
+          },
+          "id" : "ddad06a2-0c2a-4e3f-9f81-091b47417a6a",
+          "policyMode" : "default"
+        }, {
+          "components" : [ {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Presence of package nftables in any version  was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Installation",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Ensure service nftables is enabled at boot  was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Service activation",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Post-hook command was not applicable",
+                "status" : "successNotApplicable"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Post-modification script",
+            "complianceDetails" : {
+              "successNotApplicable" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Set the string firewall_technique.firewall_conf_ref to the content of /var/rudder/tmp/firewall.ref was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Firewall changes",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Reload service nftables  was repaired",
+                "status" : "successRepaired"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Load configuration",
+            "complianceDetails" : {
+              "successRepaired" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Build file /etc/nftables.conf from string template was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Firewall configuration",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "Ensure that service nftables is running  was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "None"
+            } ],
+            "name" : "Service start",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          } ],
+          "compliance" : 100.0,
+          "name" : "Firewall",
+          "complianceDetails" : {
+            "successRepaired" : 14.28,
+            "successAlreadyOK" : 71.44,
+            "successNotApplicable" : 14.28
+          },
+          "id" : "5cf5944d-5a17-4713-b06a-fc0bd24219f0",
+          "policyMode" : "default"
+        }, {
+          "components" : [ {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The group test is already present and compliant with the policy",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "test"
+            } ],
+            "name" : "Groups",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          }, {
+            "compliance" : 100.0,
+            "values" : [ {
+              "reports" : [ {
+                "message" : "The group test gid set to 90908 was correct",
+                "status" : "successAlreadyOK"
+              } ],
+              "value" : "test"
+            } ],
+            "name" : "Group enforce GID",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            }
+          } ],
+          "compliance" : 100.0,
+          "name" : "Groups",
+          "complianceDetails" : {
+            "successAlreadyOK" : 100.0
+          },
+          "id" : "3bc5b07a-a658-4433-a767-c2cc1e9b3323",
+          "policyMode" : "default"
+        }, {
+          "compliance" : 0.0,
+          "name" : "Package sources and settings (APT)",
+          "id" : "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9",
+          "policyMode" : "default"
+        } ],
+        "compliance" : 87.5,
+        "name" : "Administrative management - Linux",
+        "complianceDetails" : {
+          "successRepaired" : 6.25,
+          "successAlreadyOK" : 75.0,
+          "successNotApplicable" : 6.25,
+          "unexpectedUnknownComponent" : 12.5
+        },
+        "id" : "b98839c6-6544-4705-a4e3-c893efae707e",
+        "policyMode" : "enforce"
+      } ],
+      "id" : "root",
+      "policyMode" : "default"
+    }
+  service: "cd.rudder.compliance"
+  result:
+    custom:
+      cd_rudder:
+        node_id: "root"
+        node_name: "ub22-50-10-90"
+        policy_mode: "Enforce"
+        score_breakdown: "B"
+      compliance: 88.89
+      complianceDetails:
+        successAlreadyOK: 72.23
+        successNotApplicable: 5.55
+        successRepaired: 11.11
+        unexpectedUnknownComponent: 11.11
+      mode: "full-compliance"
+      policyMode: "default"
+      rules:
+       -
+        directives:
+         -
+          components:
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Owner, group and permissions already correct for /home/devuser"
+                status: "successAlreadyOK"
+              value: "/home/devuser"
+            name: "File permissions"
+            complianceDetails:
+              successAlreadyOK: 100.0
+          compliance: 100.0
+          name: "File permissions"
+          complianceDetails:
+            successAlreadyOK: 100.0
+          id: "66a26eaa-3c7b-48fc-89f5-362effde5c2f"
+          policyMode: "default"
+        compliance: 100.0
+        name: "test"
+        complianceDetails:
+          successAlreadyOK: 100.0
+        id: "c87fc661-0ce7-46b3-bf2e-a09cb5e79b57"
+        policyMode: "enforce"
+       -
+        directives:
+         -
+          components:
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Execute command as user root ls was repaired"
+                status: "successRepaired"
+              value: "ls"
+            name: "Command execution as user"
+            complianceDetails:
+              successRepaired: 100.0
+          compliance: 100.0
+          name: "Directive Detect if there are users who didn't log in the last 3 months"
+          complianceDetails:
+            successRepaired: 100.0
+          id: "73e9b87b-4323-4be7-a759-ef4324cdd7a4"
+          policyMode: "default"
+        compliance: 100.0
+        name: "System base configuration - Linux"
+        complianceDetails:
+          successRepaired: 100.0
+        id: "8579ee55-f294-43ba-afae-6a6efa6225f9"
+        policyMode: "enforce"
+       -
+        directives:
+         -
+          components:
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "OpenSSH is starting on boot as required"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "SSH start at boot"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The OpenSSH server listening addresses configuration is not set to be edited"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "SSH listening addresses configuration"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The OpenSSH server configuration was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "SSH configuration"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The OpenSSH server port configuration is not set to be edited"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "SSH port configuration"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 0.0
+            values:
+             -
+              reports:
+               -
+                message: "Could not restart the OpenSSH server"
+                status: "unexpectedUnknownComponent"
+               -
+                message: "The OpenSSH server service is running"
+                status: "unexpectedUnknownComponent"
+              value: "None"
+            name: "SSH process"
+            complianceDetails:
+              unexpectedUnknownComponent: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The OpenSSH server package installation was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "SSH installation"
+            complianceDetails:
+              successAlreadyOK: 100.0
+          compliance: 71.43
+          name: "SSH server (OpenSSH)"
+          complianceDetails:
+            successAlreadyOK: 71.43
+            unexpectedUnknownComponent: 28.57
+          id: "ddad06a2-0c2a-4e3f-9f81-091b47417a6a"
+          policyMode: "default"
+         -
+          components:
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Presence of package nftables in any version  was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "Installation"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Ensure service nftables is enabled at boot  was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "Service activation"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Post-hook command was not applicable"
+                status: "successNotApplicable"
+              value: "None"
+            name: "Post-modification script"
+            complianceDetails:
+              successNotApplicable: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Set the string firewall_technique.firewall_conf_ref to the content of /var/rudder/tmp/firewall.ref was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "Firewall changes"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Reload service nftables  was repaired"
+                status: "successRepaired"
+              value: "None"
+            name: "Load configuration"
+            complianceDetails:
+              successRepaired: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Build file /etc/nftables.conf from string template was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "Firewall configuration"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "Ensure that service nftables is running  was correct"
+                status: "successAlreadyOK"
+              value: "None"
+            name: "Service start"
+            complianceDetails:
+              successAlreadyOK: 100.0
+          compliance: 100.0
+          name: "Firewall"
+          complianceDetails:
+            successRepaired: 14.28
+            successAlreadyOK: 71.44
+            successNotApplicable: 14.28
+          id: "5cf5944d-5a17-4713-b06a-fc0bd24219f0"
+          policyMode: "default"
+         -
+          components:
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The group test is already present and compliant with the policy"
+                status: "successAlreadyOK"
+              value: "test"
+            name: "Groups"
+            complianceDetails:
+              successAlreadyOK: 100.0
+           -
+            compliance: 100.0
+            values:
+             -
+              reports:
+               -
+                message: "The group test gid set to 90908 was correct"
+                status: "successAlreadyOK"
+              value: "test"
+            name: "Group enforce GID"
+            complianceDetails:
+              successAlreadyOK: 100.0
+          compliance: 100.0
+          name: "Groups"
+          complianceDetails:
+            successAlreadyOK: 100.0
+          id: "3bc5b07a-a658-4433-a767-c2cc1e9b3323"
+          policyMode: "default"
+         -
+          compliance: 0.0
+          name: "Package sources and settings (APT)"
+          id: "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9"
+          policyMode: "default"
+        compliance: 87.5
+        name: "Administrative management - Linux"
+        complianceDetails:
+          successRepaired: 6.25
+          successAlreadyOK: 75.0
+          successNotApplicable: 6.25
+          unexpectedUnknownComponent: 12.5
+        id: "b98839c6-6544-4705-a4e3-c893efae707e"
+        policyMode: "enforce"
+    message: |-
+      {
+        "mode" : "full-compliance",
+        "compliance" : 88.89,
+        "name" : "ub22-50-10-90",
+        "complianceDetails" : {
+          "successRepaired" : 11.11,
+          "successAlreadyOK" : 72.23,
+          "successNotApplicable" : 5.55,
+          "unexpectedUnknownComponent" : 11.11
+        },
+        "rules" : [ {
+          "directives" : [ {
+            "components" : [ {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Owner, group and permissions already correct for /home/devuser",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "/home/devuser"
+              } ],
+              "name" : "File permissions",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            } ],
+            "compliance" : 100.0,
+            "name" : "File permissions",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            },
+            "id" : "66a26eaa-3c7b-48fc-89f5-362effde5c2f",
+            "policyMode" : "default"
+          } ],
+          "compliance" : 100.0,
+          "name" : "test",
+          "complianceDetails" : {
+            "successAlreadyOK" : 100.0
+          },
+          "id" : "c87fc661-0ce7-46b3-bf2e-a09cb5e79b57",
+          "policyMode" : "enforce"
+        }, {
+          "directives" : [ {
+            "components" : [ {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Execute command as user root ls was repaired",
+                  "status" : "successRepaired"
+                } ],
+                "value" : "ls"
+              } ],
+              "name" : "Command execution as user",
+              "complianceDetails" : {
+                "successRepaired" : 100.0
+              }
+            } ],
+            "compliance" : 100.0,
+            "name" : "Directive Detect if there are users who didn't log in the last 3 months",
+            "complianceDetails" : {
+              "successRepaired" : 100.0
+            },
+            "id" : "73e9b87b-4323-4be7-a759-ef4324cdd7a4",
+            "policyMode" : "default"
+          } ],
+          "compliance" : 100.0,
+          "name" : "System base configuration - Linux",
+          "complianceDetails" : {
+            "successRepaired" : 100.0
+          },
+          "id" : "8579ee55-f294-43ba-afae-6a6efa6225f9",
+          "policyMode" : "enforce"
+        }, {
+          "directives" : [ {
+            "components" : [ {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "OpenSSH is starting on boot as required",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH start at boot",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The OpenSSH server listening addresses configuration is not set to be edited",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH listening addresses configuration",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The OpenSSH server configuration was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH configuration",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The OpenSSH server port configuration is not set to be edited",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH port configuration",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 0.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Could not restart the OpenSSH server",
+                  "status" : "unexpectedUnknownComponent"
+                }, {
+                  "message" : "The OpenSSH server service is running",
+                  "status" : "unexpectedUnknownComponent"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH process",
+              "complianceDetails" : {
+                "unexpectedUnknownComponent" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The OpenSSH server package installation was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "SSH installation",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            } ],
+            "compliance" : 71.43,
+            "name" : "SSH server (OpenSSH)",
+            "complianceDetails" : {
+              "successAlreadyOK" : 71.43,
+              "unexpectedUnknownComponent" : 28.57
+            },
+            "id" : "ddad06a2-0c2a-4e3f-9f81-091b47417a6a",
+            "policyMode" : "default"
+          }, {
+            "components" : [ {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Presence of package nftables in any version  was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Installation",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Ensure service nftables is enabled at boot  was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Service activation",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Post-hook command was not applicable",
+                  "status" : "successNotApplicable"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Post-modification script",
+              "complianceDetails" : {
+                "successNotApplicable" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Set the string firewall_technique.firewall_conf_ref to the content of /var/rudder/tmp/firewall.ref was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Firewall changes",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Reload service nftables  was repaired",
+                  "status" : "successRepaired"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Load configuration",
+              "complianceDetails" : {
+                "successRepaired" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Build file /etc/nftables.conf from string template was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Firewall configuration",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "Ensure that service nftables is running  was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "None"
+              } ],
+              "name" : "Service start",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            } ],
+            "compliance" : 100.0,
+            "name" : "Firewall",
+            "complianceDetails" : {
+              "successRepaired" : 14.28,
+              "successAlreadyOK" : 71.44,
+              "successNotApplicable" : 14.28
+            },
+            "id" : "5cf5944d-5a17-4713-b06a-fc0bd24219f0",
+            "policyMode" : "default"
+          }, {
+            "components" : [ {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The group test is already present and compliant with the policy",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "test"
+              } ],
+              "name" : "Groups",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            }, {
+              "compliance" : 100.0,
+              "values" : [ {
+                "reports" : [ {
+                  "message" : "The group test gid set to 90908 was correct",
+                  "status" : "successAlreadyOK"
+                } ],
+                "value" : "test"
+              } ],
+              "name" : "Group enforce GID",
+              "complianceDetails" : {
+                "successAlreadyOK" : 100.0
+              }
+            } ],
+            "compliance" : 100.0,
+            "name" : "Groups",
+            "complianceDetails" : {
+              "successAlreadyOK" : 100.0
+            },
+            "id" : "3bc5b07a-a658-4433-a767-c2cc1e9b3323",
+            "policyMode" : "default"
+          }, {
+            "compliance" : 0.0,
+            "name" : "Package sources and settings (APT)",
+            "id" : "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9",
+            "policyMode" : "default"
+          } ],
+          "compliance" : 87.5,
+          "name" : "Administrative management - Linux",
+          "complianceDetails" : {
+            "successRepaired" : 6.25,
+            "successAlreadyOK" : 75.0,
+            "successNotApplicable" : 6.25,
+            "unexpectedUnknownComponent" : 12.5
+          },
+          "id" : "b98839c6-6544-4705-a4e3-c893efae707e",
+          "policyMode" : "enforce"
+        } ],
+        "id" : "root",
+        "policyMode" : "default"
+      }
+    service: "cd.rudder.compliance"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "nodeIds" : [ "116d2a5f-c5d9-40ce-9eaf-48a2bb1f01cb", "root" ],
+      "system" : true,
+      "displayName" : "All Linux Nodes",
+      "query" : {
+        "select" : "nodeAndPolicyServer",
+        "composition" : "and",
+        "where" : [ {
+          "comparator" : "eq",
+          "attribute" : "agentName",
+          "value" : "cfengine",
+          "objectType" : "node"
+        } ]
+      },
+      "description" : "All Linux Nodes known by Rudder",
+      "dynamic" : true,
+      "groupClass" : [ "group_all_linux_nodes", "group_all_nodes_with_cfengine_agent" ],
+      "id" : "all-nodes-with-cfengine-agent",
+      "category" : "SystemGroups",
+      "enabled" : true,
+      "target" : "group:all-nodes-with-cfengine-agent"
+    }
+  service: "cd.rudder.groups"
+  result:
+    custom:
+      category: "SystemGroups"
+      cd_rudder:
+        group_id: "all-nodes-with-cfengine-agent"
+      description: "All Linux Nodes known by Rudder"
+      displayName: "All Linux Nodes"
+      dynamic: true
+      enabled: true
+      groupClass:
+       - "group_all_linux_nodes"
+       - "group_all_nodes_with_cfengine_agent"
+      nodeIds:
+       - "116d2a5f-c5d9-40ce-9eaf-48a2bb1f01cb"
+       - "root"
+      query:
+        composition: "and"
+        select: "nodeAndPolicyServer"
+        where:
+         -
+          comparator: "eq"
+          attribute: "agentName"
+          value: "cfengine"
+          objectType: "node"
+      system: true
+      target: "group:all-nodes-with-cfengine-agent"
+    message: |-
+      {
+        "nodeIds" : [ "116d2a5f-c5d9-40ce-9eaf-48a2bb1f01cb", "root" ],
+        "system" : true,
+        "displayName" : "All Linux Nodes",
+        "query" : {
+          "select" : "nodeAndPolicyServer",
+          "composition" : "and",
+          "where" : [ {
+            "comparator" : "eq",
+            "attribute" : "agentName",
+            "value" : "cfengine",
+            "objectType" : "node"
+          } ]
+        },
+        "description" : "All Linux Nodes known by Rudder",
+        "dynamic" : true,
+        "groupClass" : [ "group_all_linux_nodes", "group_all_nodes_with_cfengine_agent" ],
+        "id" : "all-nodes-with-cfengine-agent",
+        "category" : "SystemGroups",
+        "enabled" : true,
+        "target" : "group:all-nodes-with-cfengine-agent"
+      }
+    service: "cd.rudder.groups"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "name" : "Hardening pack for Rudder - section 9",
+      "id" : "rsc_01_section9",
+      "source" : "built-in",
+      "version" : "1.0"
+    }
+  service: "cd.rudder.techniques"
+  result:
+    custom:
+      cd_rudder:
+        source: "built-in"
+        technique_id: "rsc_01_section9"
+      name: "Hardening pack for Rudder - section 9"
+      version: "1.0"
+    message: |-
+      {
+        "name" : "Hardening pack for Rudder - section 9",
+        "id" : "rsc_01_section9",
+        "source" : "built-in",
+        "version" : "1.0"
+      }
+    service: "cd.rudder.techniques"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "longDescription" : "This Rule was created automatically when Rudder was installed. It can be used to target Directives to all nodes (including the Rudder root server itself), or deleted if you would rather create your own set of Rules (it will never be created again).",
+      "system" : false,
+      "directives" : [ "3bc5b07a-a658-4433-a767-c2cc1e9b3323", "5cf5944d-5a17-4713-b06a-fc0bd24219f0", "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9", "ddad06a2-0c2a-4e3f-9f81-091b47417a6a" ],
+      "displayName" : "Global configuration for all nodes",
+      "id" : "32377fd7-02fd-43d0-aab7-28460a91347b",
+      "shortDescription" : "Test Short Description",
+      "policyMode" : "enforce",
+      "targets" : [ {
+        "include" : {
+          "or" : [ "group:all-nodes-with-dsc-agent", "special:all_exceptPolicyServers", "group:fe5397f5-e041-41a3-95f9-fd5a9441e4ae" ]
+        }
+      } ],
+      "categoryId" : "rootRuleCategory",
+      "enabled" : true,
+      "status" : {
+        "value" : "In application"
+      },
+      "tags" : [ {
+        "Test" : "Test"
+      } ]
+    }
+  service: "cd.rudder.rules"
+  result:
+    custom:
+      categoryId: "rootRuleCategory"
+      cd_rudder:
+        rule_id: "32377fd7-02fd-43d0-aab7-28460a91347b"
+      directives:
+       - "3bc5b07a-a658-4433-a767-c2cc1e9b3323"
+       - "5cf5944d-5a17-4713-b06a-fc0bd24219f0"
+       - "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9"
+       - "ddad06a2-0c2a-4e3f-9f81-091b47417a6a"
+      displayName: "Global configuration for all nodes"
+      enabled: true
+      longDescription: "This Rule was created automatically when Rudder was installed. It can be used to target Directives to all nodes (including the Rudder root server itself), or deleted if you would rather create your own set of Rules (it will never be created again)."
+      policyMode: "enforce"
+      shortDescription: "Test Short Description"
+      status:
+        value: "In application"
+      system: false
+      tags:
+       -
+        Test: "Test"
+      targets:
+       -
+        include:
+          or:
+           - "group:all-nodes-with-dsc-agent"
+           - "special:all_exceptPolicyServers"
+           - "group:fe5397f5-e041-41a3-95f9-fd5a9441e4ae"
+    message: |-
+      {
+        "longDescription" : "This Rule was created automatically when Rudder was installed. It can be used to target Directives to all nodes (including the Rudder root server itself), or deleted if you would rather create your own set of Rules (it will never be created again).",
+        "system" : false,
+        "directives" : [ "3bc5b07a-a658-4433-a767-c2cc1e9b3323", "5cf5944d-5a17-4713-b06a-fc0bd24219f0", "8c95aa5c-0ce6-4e27-b92f-a953daa7c8a9", "ddad06a2-0c2a-4e3f-9f81-091b47417a6a" ],
+        "displayName" : "Global configuration for all nodes",
+        "id" : "32377fd7-02fd-43d0-aab7-28460a91347b",
+        "shortDescription" : "Test Short Description",
+        "policyMode" : "enforce",
+        "targets" : [ {
+          "include" : {
+            "or" : [ "group:all-nodes-with-dsc-agent", "special:all_exceptPolicyServers", "group:fe5397f5-e041-41a3-95f9-fd5a9441e4ae" ]
+          }
+        } ],
+        "categoryId" : "rootRuleCategory",
+        "enabled" : true,
+        "status" : {
+          "value" : "In application"
+        },
+        "tags" : [ {
+          "Test" : "Test"
+        } ]
+      }
+    service: "cd.rudder.rules"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "acceptanceDate" : "2024-12-24T09:05:04Z",
+      "os" : {
+        "kernelVersion" : "5.15.0-130-generic",
+        "name" : "Ubuntu",
+        "fullName" : "Ubuntu 22.04.5 LTS",
+        "type" : "Linux",
+        "version" : "22.04"
+      },
+      "timezone" : {
+        "offset" : "+0530",
+        "name" : "Asia/Kolkata"
+      },
+      "description" : "",
+      "lastRunDate" : "2025-01-21T08:40:05Z",
+      "policyMode" : "default",
+      "managementTechnologyDetails" : {
+        "cfengineUser" : "root",
+        "cfengineKeys" : [ "-----BEGIN CERTIFICATE-----\nMIIFSzCCAzOgAwIBAgIUEfEBCNS4Adbuc+tmb/NZTUW1gdUwDQYJKoZIhvcNAQEL\nBQAwFjEUMBIGCgmSJomT8ixkAQEMBHJvb3QwHhcNMjQxMjI0MDkwNDM4WhcNMzQx\nMjIyMDkwNDM4WjAWMRQwEgYKCZImiZPyLGQBAQwEcm9vdDCCAiIwDQYJKoZIhvcN\nAQEBBQADggIPADCCAgoCggIBAMjghrtDxO9jNpks31R2cn3wUHi2oEF/gqI1LJed\n59UdDXMBBocDAnKZhxFP+K02z9Jp9n1pJ23LcCXKCVGYnpFvxAqhtFXpgPJ9if16\noz9QwFEdqMTxtoRyXmh88m/bwhZIrlsiZSU3Pq2rpH98qh4JHllhsZ++tuowwKzL\nenn950C7RBuXDcC/M7ljJmrEBT/IiS8IRTML0GLXLMLo/O7k7nQodIeZZ/jS7H/R\nqeTfmEEKEKBuLD5C6xF2upI9gJlQczRGQ09gYVvl3sHWmSFGBh9ySR3oOuZsom/H\n6aKrMPnrHwRxCEw+mmmGW1zEMqYrkdlKt333jfQ18X7XWlmCRmq+v7q3mQZfJsU+\n6+Dr7IZB0Lt8NFZPx99tqAUbJwNX7UQLYtLz0kSn1HTXsZdY7p7zmgJ3Tvvk/Dgr\n90icnkDbzeOmFxeexlSZ1+HqJXMFgQ6dCvNVR6wz8j2I4lNswE4aW5OJcpfXX5v/\nG3j2tTL+1MviplzbyN2VOtqu+DpoK9+6S7W1pmbRIM7rBtv6y7AO/2BO9cBqdsKW\nH70GEEpYT+EM8rA/l11g/KIvD0oScHLNL+CvXNbYlNZfwl7aBltONqJhqzluBZPE\n1Zkn2tewYJFz2vIbbfhwqpkUjzGuEc34cvYyIICfkhilGGTzhwbhqT7NBmiL3ioI\nS/p/AgMBAAGjgZAwgY0wDAYDVR0TBAUwAwEB/zAdBgNVHQ4EFgQUkLtaG7gPaEX/\n9iqmRqbsD9Osx/AwUQYDVR0jBEowSIAUkLtaG7gPaEX/9iqmRqbsD9Osx/ChGqQY\nMBYxFDASBgoJkiaJk/IsZAEBDARyb290ghQR8QEI1LgB1u5z62Zv81lNRbWB1TAL\nBgNVHQ8EBAMCArwwDQYJKoZIhvcNAQELBQADggIBAAyIwqvsaaxZzO7lJzCd/kBd\nDWR8cJiCHX2+qB/3qiUokTBadb/FcsxTqbMSuozAVByRJrMi04jRvrtkCaaFfDSq\n/zQ12zFd62hEfkXlThIc4dg65+PDqHx5G5x7bX2wjkY2L+B13mYMEiHjWZf5XIUM\nJr4cEmbIEx3WZbQVjzemPcs1I6vlkI1A3VhzbI8r8RuReS9PlsMG4F/VkjrcDQsw\n8RHqQG3rITV+/QELfrsXStBJeywOUy/lWv24Y1ZsENjbgr9HeB/LNmLYbSkYxf7N\n2Cr98J0n8fAd8gfP7p+ET7xiDdjsrzBwj4KfZwVho6IK7WOPA3uMHrGHQi+ZCtuL\na/rMSt15aiK0C3B9QeRO1bWV4AHOfm4n0Ab+nSfx+aTMMkGqV88vYAlGa4ADBIhv\nYWRP5O7WtpjeAkKaa4HrHuHYZX1iQWtv4nHVEzAv1VDgbPAMfW+ImRiWe1aQ4cAB\n9cL6Qu9WH3LiqnqRZhd+DOc3S2r2lSQxskiEJyp5j8RrkMLQsIG5ZxL/hau9xMR/\nlpKd6QaY9GTPqEepuNWdZhUpP8dNGtY/YGy9xFJae4vFqIAS/tnr3R4/8D+vRPml\nGkMVNaiL77qBl7dHDLOoomy+jWa0YkiPvwu4sBKRoQEJewHyZhaH+fbj9VEMrbwJ\nv5r/bghEWsFPyhua0XwT\n-----END CERTIFICATE-----" ]
+      },
+      "hostname" : "ub22-50-10-90",
+      "policyServerId" : "root",
+      "architectureDescription" : "x86_64",
+      "environmentVariables" : {
+        "INFOMGR_BYPASS_NONSA" : "1",
+        "PATH" : "/opt/rudder/bin:/usr/gnu/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/sbin:/usr/sbin",
+        "INVOCATION_ID" : "fb93c5f4b3964524a8fb7390ff1be210",
+        "JOURNAL_STREAM" : "8:44355",
+        "VERBOSITY_OPTION" : "",
+        "BASEDIR" : "/opt/rudder/share/commands",
+        "DEBIAN_FRONTEND" : "noninteractive",
+        "SYSTEMD_EXEC_PID" : "5108",
+        "PWD" : "/var/rudder",
+        "RUDDER_BIN" : "/opt/rudder/bin/rudder"
+      },
+      "machine" : {
+        "serialNumber" : "VMware-42 01 b1 05 b4 2b d8 53-da c4 de 66 6c e2 e3 61",
+        "provider" : "vmware",
+        "id" : "63a9f0ea-7bb9-8050-796b-649e85481845",
+        "type" : "Virtual",
+        "manufacturer" : "VMware, Inc."
+      },
+      "ipAddresses" : [ "127.0.0.1", "192.168.250.1", "10.50.10.90" ],
+      "accounts" : [ "pollinate", "nobody", "usbmux", "dnsmasq", "man", "sys", "gnats", "rudder-relayd", "fwupd-refresh", "sync", "news", "tss", "lp", "backup", "systemd-resolve", "root", "syslog", "postgres", "lxd", "daemon", "_apt", "www-data", "systemd-network", "rudder-slapd", "sshd", "landscape", "mail", "proxy", "systemd-timesync", "irc", "bin", "devuser", "uuidd", "rudder", "tcpdump", "uucp", "games", "serviceuser", "list", "messagebus" ],
+      "id" : "root",
+      "managementTechnology" : [ {
+        "capabilities" : [ "acl", "cfengine", "curl", "http_reporting", "jq", "xml", "yaml" ],
+        "name" : "Rudder",
+        "nodeKind" : "root",
+        "version" : "8.2.3-ubuntu22.04"
+      } ],
+      "state" : "enabled",
+      "lastInventoryDate" : "2025-01-20T22:45:08Z",
+      "properties" : [ {
+        "name" : "Test",
+        "value" : "### Manage Test Properties"
+      }, {
+        "name" : "Test Json",
+        "value" : {
+          "test" : 123
+        }
+      } ],
+      "ram" : 4063232000,
+      "status" : "accepted"
+    }
+  service: "cd.rudder.nodes"
+  result:
+    custom:
+      acceptanceDate: "2024-12-24T09:05:04Z"
+      accounts:
+       - "pollinate"
+       - "nobody"
+       - "usbmux"
+       - "dnsmasq"
+       - "man"
+       - "sys"
+       - "gnats"
+       - "rudder-relayd"
+       - "fwupd-refresh"
+       - "sync"
+       - "news"
+       - "tss"
+       - "lp"
+       - "backup"
+       - "systemd-resolve"
+       - "root"
+       - "syslog"
+       - "postgres"
+       - "lxd"
+       - "daemon"
+       - "_apt"
+       - "www-data"
+       - "systemd-network"
+       - "rudder-slapd"
+       - "sshd"
+       - "landscape"
+       - "mail"
+       - "proxy"
+       - "systemd-timesync"
+       - "irc"
+       - "bin"
+       - "devuser"
+       - "uuidd"
+       - "rudder"
+       - "tcpdump"
+       - "uucp"
+       - "games"
+       - "serviceuser"
+       - "list"
+       - "messagebus"
+      architectureDescription: "x86_64"
+      cd_rudder:
+        node_id: "root"
+        node_name: "ub22-50-10-90"
+        policy_mode: "Enforce"
+        state: "enabled"
+        status: "accepted"
+      description: ""
+      environmentVariables:
+        BASEDIR: "/opt/rudder/share/commands"
+        DEBIAN_FRONTEND: "noninteractive"
+        INFOMGR_BYPASS_NONSA: "1"
+        INVOCATION_ID: "fb93c5f4b3964524a8fb7390ff1be210"
+        JOURNAL_STREAM: "8:44355"
+        PATH: "/opt/rudder/bin:/usr/gnu/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/sbin:/usr/sbin"
+        PWD: "/var/rudder"
+        RUDDER_BIN: "/opt/rudder/bin/rudder"
+        SYSTEMD_EXEC_PID: "5108"
+        VERBOSITY_OPTION: ""
+      ipAddresses:
+       - "127.0.0.1"
+       - "192.168.250.1"
+       - "10.50.10.90"
+      lastInventoryDate: "2025-01-20T22:45:08Z"
+      lastRunDate: "2025-01-21T08:40:05Z"
+      machine:
+        id: "63a9f0ea-7bb9-8050-796b-649e85481845"
+        manufacturer: "VMware, Inc."
+        provider: "vmware"
+        serialNumber: "VMware-42 01 b1 05 b4 2b d8 53-da c4 de 66 6c e2 e3 61"
+        type: "Virtual"
+      managementTechnology:
+       -
+        capabilities:
+         - "acl"
+         - "cfengine"
+         - "curl"
+         - "http_reporting"
+         - "jq"
+         - "xml"
+         - "yaml"
+        name: "Rudder"
+        nodeKind: "root"
+        version: "8.2.3-ubuntu22.04"
+      managementTechnologyDetails:
+        cfengineKeys:
+         - |-
+          -----BEGIN CERTIFICATE-----
+          MIIFSzCCAzOgAwIBAgIUEfEBCNS4Adbuc+tmb/NZTUW1gdUwDQYJKoZIhvcNAQEL
+          BQAwFjEUMBIGCgmSJomT8ixkAQEMBHJvb3QwHhcNMjQxMjI0MDkwNDM4WhcNMzQx
+          MjIyMDkwNDM4WjAWMRQwEgYKCZImiZPyLGQBAQwEcm9vdDCCAiIwDQYJKoZIhvcN
+          AQEBBQADggIPADCCAgoCggIBAMjghrtDxO9jNpks31R2cn3wUHi2oEF/gqI1LJed
+          59UdDXMBBocDAnKZhxFP+K02z9Jp9n1pJ23LcCXKCVGYnpFvxAqhtFXpgPJ9if16
+          oz9QwFEdqMTxtoRyXmh88m/bwhZIrlsiZSU3Pq2rpH98qh4JHllhsZ++tuowwKzL
+          enn950C7RBuXDcC/M7ljJmrEBT/IiS8IRTML0GLXLMLo/O7k7nQodIeZZ/jS7H/R
+          qeTfmEEKEKBuLD5C6xF2upI9gJlQczRGQ09gYVvl3sHWmSFGBh9ySR3oOuZsom/H
+          6aKrMPnrHwRxCEw+mmmGW1zEMqYrkdlKt333jfQ18X7XWlmCRmq+v7q3mQZfJsU+
+          6+Dr7IZB0Lt8NFZPx99tqAUbJwNX7UQLYtLz0kSn1HTXsZdY7p7zmgJ3Tvvk/Dgr
+          90icnkDbzeOmFxeexlSZ1+HqJXMFgQ6dCvNVR6wz8j2I4lNswE4aW5OJcpfXX5v/
+          G3j2tTL+1MviplzbyN2VOtqu+DpoK9+6S7W1pmbRIM7rBtv6y7AO/2BO9cBqdsKW
+          H70GEEpYT+EM8rA/l11g/KIvD0oScHLNL+CvXNbYlNZfwl7aBltONqJhqzluBZPE
+          1Zkn2tewYJFz2vIbbfhwqpkUjzGuEc34cvYyIICfkhilGGTzhwbhqT7NBmiL3ioI
+          S/p/AgMBAAGjgZAwgY0wDAYDVR0TBAUwAwEB/zAdBgNVHQ4EFgQUkLtaG7gPaEX/
+          9iqmRqbsD9Osx/AwUQYDVR0jBEowSIAUkLtaG7gPaEX/9iqmRqbsD9Osx/ChGqQY
+          MBYxFDASBgoJkiaJk/IsZAEBDARyb290ghQR8QEI1LgB1u5z62Zv81lNRbWB1TAL
+          BgNVHQ8EBAMCArwwDQYJKoZIhvcNAQELBQADggIBAAyIwqvsaaxZzO7lJzCd/kBd
+          DWR8cJiCHX2+qB/3qiUokTBadb/FcsxTqbMSuozAVByRJrMi04jRvrtkCaaFfDSq
+          /zQ12zFd62hEfkXlThIc4dg65+PDqHx5G5x7bX2wjkY2L+B13mYMEiHjWZf5XIUM
+          Jr4cEmbIEx3WZbQVjzemPcs1I6vlkI1A3VhzbI8r8RuReS9PlsMG4F/VkjrcDQsw
+          8RHqQG3rITV+/QELfrsXStBJeywOUy/lWv24Y1ZsENjbgr9HeB/LNmLYbSkYxf7N
+          2Cr98J0n8fAd8gfP7p+ET7xiDdjsrzBwj4KfZwVho6IK7WOPA3uMHrGHQi+ZCtuL
+          a/rMSt15aiK0C3B9QeRO1bWV4AHOfm4n0Ab+nSfx+aTMMkGqV88vYAlGa4ADBIhv
+          YWRP5O7WtpjeAkKaa4HrHuHYZX1iQWtv4nHVEzAv1VDgbPAMfW+ImRiWe1aQ4cAB
+          9cL6Qu9WH3LiqnqRZhd+DOc3S2r2lSQxskiEJyp5j8RrkMLQsIG5ZxL/hau9xMR/
+          lpKd6QaY9GTPqEepuNWdZhUpP8dNGtY/YGy9xFJae4vFqIAS/tnr3R4/8D+vRPml
+          GkMVNaiL77qBl7dHDLOoomy+jWa0YkiPvwu4sBKRoQEJewHyZhaH+fbj9VEMrbwJ
+          v5r/bghEWsFPyhua0XwT
+          -----END CERTIFICATE-----
+        cfengineUser: "root"
+      os:
+        fullName: "Ubuntu 22.04.5 LTS"
+        kernelVersion: "5.15.0-130-generic"
+        name: "Ubuntu"
+        type: "Linux"
+        version: "22.04"
+      policyMode: "default"
+      policyServerId: "root"
+      properties:
+       -
+        name: "Test"
+        value: "### Manage Test Properties"
+       -
+        name: "Test Json"
+        value:
+          test: 123
+      ram: 4063232000
+      status: "Info"
+      timezone:
+        name: "Asia/Kolkata"
+        offset: "+0530"
+    message: |-
+      {
+        "acceptanceDate" : "2024-12-24T09:05:04Z",
+        "os" : {
+          "kernelVersion" : "5.15.0-130-generic",
+          "name" : "Ubuntu",
+          "fullName" : "Ubuntu 22.04.5 LTS",
+          "type" : "Linux",
+          "version" : "22.04"
+        },
+        "timezone" : {
+          "offset" : "+0530",
+          "name" : "Asia/Kolkata"
+        },
+        "description" : "",
+        "lastRunDate" : "2025-01-21T08:40:05Z",
+        "policyMode" : "default",
+        "managementTechnologyDetails" : {
+          "cfengineUser" : "root",
+          "cfengineKeys" : [ "-----BEGIN CERTIFICATE-----\nMIIFSzCCAzOgAwIBAgIUEfEBCNS4Adbuc+tmb/NZTUW1gdUwDQYJKoZIhvcNAQEL\nBQAwFjEUMBIGCgmSJomT8ixkAQEMBHJvb3QwHhcNMjQxMjI0MDkwNDM4WhcNMzQx\nMjIyMDkwNDM4WjAWMRQwEgYKCZImiZPyLGQBAQwEcm9vdDCCAiIwDQYJKoZIhvcN\nAQEBBQADggIPADCCAgoCggIBAMjghrtDxO9jNpks31R2cn3wUHi2oEF/gqI1LJed\n59UdDXMBBocDAnKZhxFP+K02z9Jp9n1pJ23LcCXKCVGYnpFvxAqhtFXpgPJ9if16\noz9QwFEdqMTxtoRyXmh88m/bwhZIrlsiZSU3Pq2rpH98qh4JHllhsZ++tuowwKzL\nenn950C7RBuXDcC/M7ljJmrEBT/IiS8IRTML0GLXLMLo/O7k7nQodIeZZ/jS7H/R\nqeTfmEEKEKBuLD5C6xF2upI9gJlQczRGQ09gYVvl3sHWmSFGBh9ySR3oOuZsom/H\n6aKrMPnrHwRxCEw+mmmGW1zEMqYrkdlKt333jfQ18X7XWlmCRmq+v7q3mQZfJsU+\n6+Dr7IZB0Lt8NFZPx99tqAUbJwNX7UQLYtLz0kSn1HTXsZdY7p7zmgJ3Tvvk/Dgr\n90icnkDbzeOmFxeexlSZ1+HqJXMFgQ6dCvNVR6wz8j2I4lNswE4aW5OJcpfXX5v/\nG3j2tTL+1MviplzbyN2VOtqu+DpoK9+6S7W1pmbRIM7rBtv6y7AO/2BO9cBqdsKW\nH70GEEpYT+EM8rA/l11g/KIvD0oScHLNL+CvXNbYlNZfwl7aBltONqJhqzluBZPE\n1Zkn2tewYJFz2vIbbfhwqpkUjzGuEc34cvYyIICfkhilGGTzhwbhqT7NBmiL3ioI\nS/p/AgMBAAGjgZAwgY0wDAYDVR0TBAUwAwEB/zAdBgNVHQ4EFgQUkLtaG7gPaEX/\n9iqmRqbsD9Osx/AwUQYDVR0jBEowSIAUkLtaG7gPaEX/9iqmRqbsD9Osx/ChGqQY\nMBYxFDASBgoJkiaJk/IsZAEBDARyb290ghQR8QEI1LgB1u5z62Zv81lNRbWB1TAL\nBgNVHQ8EBAMCArwwDQYJKoZIhvcNAQELBQADggIBAAyIwqvsaaxZzO7lJzCd/kBd\nDWR8cJiCHX2+qB/3qiUokTBadb/FcsxTqbMSuozAVByRJrMi04jRvrtkCaaFfDSq\n/zQ12zFd62hEfkXlThIc4dg65+PDqHx5G5x7bX2wjkY2L+B13mYMEiHjWZf5XIUM\nJr4cEmbIEx3WZbQVjzemPcs1I6vlkI1A3VhzbI8r8RuReS9PlsMG4F/VkjrcDQsw\n8RHqQG3rITV+/QELfrsXStBJeywOUy/lWv24Y1ZsENjbgr9HeB/LNmLYbSkYxf7N\n2Cr98J0n8fAd8gfP7p+ET7xiDdjsrzBwj4KfZwVho6IK7WOPA3uMHrGHQi+ZCtuL\na/rMSt15aiK0C3B9QeRO1bWV4AHOfm4n0Ab+nSfx+aTMMkGqV88vYAlGa4ADBIhv\nYWRP5O7WtpjeAkKaa4HrHuHYZX1iQWtv4nHVEzAv1VDgbPAMfW+ImRiWe1aQ4cAB\n9cL6Qu9WH3LiqnqRZhd+DOc3S2r2lSQxskiEJyp5j8RrkMLQsIG5ZxL/hau9xMR/\nlpKd6QaY9GTPqEepuNWdZhUpP8dNGtY/YGy9xFJae4vFqIAS/tnr3R4/8D+vRPml\nGkMVNaiL77qBl7dHDLOoomy+jWa0YkiPvwu4sBKRoQEJewHyZhaH+fbj9VEMrbwJ\nv5r/bghEWsFPyhua0XwT\n-----END CERTIFICATE-----" ]
+        },
+        "hostname" : "ub22-50-10-90",
+        "policyServerId" : "root",
+        "architectureDescription" : "x86_64",
+        "environmentVariables" : {
+          "INFOMGR_BYPASS_NONSA" : "1",
+          "PATH" : "/opt/rudder/bin:/usr/gnu/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/sbin:/usr/sbin",
+          "INVOCATION_ID" : "fb93c5f4b3964524a8fb7390ff1be210",
+          "JOURNAL_STREAM" : "8:44355",
+          "VERBOSITY_OPTION" : "",
+          "BASEDIR" : "/opt/rudder/share/commands",
+          "DEBIAN_FRONTEND" : "noninteractive",
+          "SYSTEMD_EXEC_PID" : "5108",
+          "PWD" : "/var/rudder",
+          "RUDDER_BIN" : "/opt/rudder/bin/rudder"
+        },
+        "machine" : {
+          "serialNumber" : "VMware-42 01 b1 05 b4 2b d8 53-da c4 de 66 6c e2 e3 61",
+          "provider" : "vmware",
+          "id" : "63a9f0ea-7bb9-8050-796b-649e85481845",
+          "type" : "Virtual",
+          "manufacturer" : "VMware, Inc."
+        },
+        "ipAddresses" : [ "127.0.0.1", "192.168.250.1", "10.50.10.90" ],
+        "accounts" : [ "pollinate", "nobody", "usbmux", "dnsmasq", "man", "sys", "gnats", "rudder-relayd", "fwupd-refresh", "sync", "news", "tss", "lp", "backup", "systemd-resolve", "root", "syslog", "postgres", "lxd", "daemon", "_apt", "www-data", "systemd-network", "rudder-slapd", "sshd", "landscape", "mail", "proxy", "systemd-timesync", "irc", "bin", "devuser", "uuidd", "rudder", "tcpdump", "uucp", "games", "serviceuser", "list", "messagebus" ],
+        "id" : "root",
+        "managementTechnology" : [ {
+          "capabilities" : [ "acl", "cfengine", "curl", "http_reporting", "jq", "xml", "yaml" ],
+          "name" : "Rudder",
+          "nodeKind" : "root",
+          "version" : "8.2.3-ubuntu22.04"
+        } ],
+        "state" : "enabled",
+        "lastInventoryDate" : "2025-01-20T22:45:08Z",
+        "properties" : [ {
+          "name" : "Test",
+          "value" : "### Manage Test Properties"
+        }, {
+          "name" : "Test Json",
+          "value" : {
+            "test" : 123
+          }
+        } ],
+        "ram" : 4063232000,
+        "status" : "accepted"
+      }
+    service: "cd.rudder.nodes"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "acceptable" : true,
+      "displayName" : "update Directive Directive Detect if there are users who didn't log in the last 3 months",
+      "changes" : {
+        "directives" : [ {
+          "change" : {
+            "longDescription" : "",
+            "techniqueName" : "test_user",
+            "system" : false,
+            "displayName" : "Directive Detect if there are users who didn't log in the last 3 months",
+            "techniqueVersion" : "1.0",
+            "id" : "73e9b87b-4323-4be7-a759-ef4324cdd7a4",
+            "shortDescription" : {
+              "from" : "Test Description",
+              "to" : "Test Description edited"
+            },
+            "priority" : 5,
+            "type" : "DirectiveModifyChangeJson",
+            "parameters" : {
+              "from" : {
+                "section" : {
+                  "name" : "sections",
+                  "sections" : [ {
+                    "name" : "Technique parameters",
+                    "vars" : [ {
+                      "var" : {
+                        "name" : "D38ACECE-A3D9-448F-A88F-7B72F2C0C783",
+                        "value" : "devuser"
+                      }
+                    } ]
+                  } ]
+                }
+              },
+              "to" : {
+                "section" : {
+                  "name" : "sections",
+                  "sections" : [ {
+                    "name" : "Technique parameters",
+                    "vars" : [ {
+                      "var" : {
+                        "name" : "D38ACECE-A3D9-448F-A88F-7B72F2C0C783",
+                        "value" : "devuser"
+                      }
+                    } ]
+                  } ]
+                }
+              }
+            },
+            "enabled" : true
+          },
+          "action" : "modify"
+        } ]
+      },
+      "description" : "Change description of the directives for testing",
+      "id" : 1,
+      "created by" : "admin",
+      "status" : "Pending validation"
+    }
+  service: "cd.rudder.change_requests"
+  result:
+    custom:
+      acceptable: true
+      cd_rudder:
+        change_request_id: 1
+        change_request_status: "Pending validation"
+      changes:
+        directives:
+         -
+          change:
+            longDescription: ""
+            techniqueName: "test_user"
+            system: false
+            displayName: "Directive Detect if there are users who didn't log in the last 3 months"
+            techniqueVersion: "1.0"
+            id: "73e9b87b-4323-4be7-a759-ef4324cdd7a4"
+            shortDescription:
+              from: "Test Description"
+              to: "Test Description edited"
+            priority: 5
+            type: "DirectiveModifyChangeJson"
+            parameters:
+              from:
+                section:
+                  name: "sections"
+                  sections:
+                   -
+                    name: "Technique parameters"
+                    vars:
+                     -
+                      var:
+                        name: "D38ACECE-A3D9-448F-A88F-7B72F2C0C783"
+                        value: "devuser"
+              to:
+                section:
+                  name: "sections"
+                  sections:
+                   -
+                    name: "Technique parameters"
+                    vars:
+                     -
+                      var:
+                        name: "D38ACECE-A3D9-448F-A88F-7B72F2C0C783"
+                        value: "devuser"
+            enabled: true
+          action: "modify"
+      created by: "admin"
+      description: "Change description of the directives for testing"
+      displayName: "update Directive Directive Detect if there are users who didn't log in the last 3 months"
+    message: |-
+      {
+        "acceptable" : true,
+        "displayName" : "update Directive Directive Detect if there are users who didn't log in the last 3 months",
+        "changes" : {
+          "directives" : [ {
+            "change" : {
+              "longDescription" : "",
+              "techniqueName" : "test_user",
+              "system" : false,
+              "displayName" : "Directive Detect if there are users who didn't log in the last 3 months",
+              "techniqueVersion" : "1.0",
+              "id" : "73e9b87b-4323-4be7-a759-ef4324cdd7a4",
+              "shortDescription" : {
+                "from" : "Test Description",
+                "to" : "Test Description edited"
+              },
+              "priority" : 5,
+              "type" : "DirectiveModifyChangeJson",
+              "parameters" : {
+                "from" : {
+                  "section" : {
+                    "name" : "sections",
+                    "sections" : [ {
+                      "name" : "Technique parameters",
+                      "vars" : [ {
+                        "var" : {
+                          "name" : "D38ACECE-A3D9-448F-A88F-7B72F2C0C783",
+                          "value" : "devuser"
+                        }
+                      } ]
+                    } ]
+                  }
+                },
+                "to" : {
+                  "section" : {
+                    "name" : "sections",
+                    "sections" : [ {
+                      "name" : "Technique parameters",
+                      "vars" : [ {
+                        "var" : {
+                          "name" : "D38ACECE-A3D9-448F-A88F-7B72F2C0C783",
+                          "value" : "devuser"
+                        }
+                      } ]
+                    } ]
+                  }
+                }
+              },
+              "enabled" : true
+            },
+            "action" : "modify"
+          } ]
+        },
+        "description" : "Change description of the directives for testing",
+        "id" : 1,
+        "created by" : "admin",
+        "status" : "Pending validation"
+      }
+    service: "cd.rudder.change_requests"
+    tags:
+     - "source:LOGS_SOURCE"

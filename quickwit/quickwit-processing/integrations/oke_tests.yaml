@@ -1,0 +1,46 @@
+id: "oke"
+tests:
+  -
+    sample: |-
+      {
+        "oracle" : {
+          "compartmentid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "ingestedtime" : "2025-01-15T20:15:18.722Z",
+          "loggroupid" : "ocid1.loggroup.oc1.iad.amaaaaaaehwejaiaht4xndklpulceh344esjzb7mgggagfzxoe3plkn3wl3q",
+          "tenantid" : "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq",
+          "logid" : "ocid1.log.oc1.iad.amaaaaaaehwejaiattclycqwek5jxzh7dcrt453nxmu2wunyq6c3xvttszya"
+        },
+        "data" : {
+          "msg" : "Update 3 nodes status took 1.361817186s.",
+          "level" : "info",
+          "source" : "node_controller.go:271"
+        },
+        "service" : "oci",
+        "source" : "cloud-controller-manager",
+        "type" : "com.oraclecloud.kubernetes.cluster.controlplane",
+        "ddsource" : "oci.kubernetes",
+        "timestamp" : "2025-01-15T20:14:15.482Z"
+      }
+    result:
+      custom:
+        data:
+          level: "info"
+          source: "node_controller.go:271"
+        ddsource: "oci.kubernetes"
+        oci:
+          compartment_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+          log_group_id: "ocid1.loggroup.oc1.iad.amaaaaaaehwejaiaht4xndklpulceh344esjzb7mgggagfzxoe3plkn3wl3q"
+          log_id: "ocid1.log.oc1.iad.amaaaaaaehwejaiattclycqwek5jxzh7dcrt453nxmu2wunyq6c3xvttszya"
+          tenancy_ocid: "ocid1.tenancy.oc1..aaaaaaaakyknye4jnwyh6rbcugpp4kh6iqzi7ir7pmguufdn5h7n5mnwlcoq"
+        oracle:
+          ingestedtime: "2025-01-15T20:15:18.722Z"
+        service: "oci"
+        source: "cloud-controller-manager"
+        timestamp: "2025-01-15T20:14:15.482Z"
+        type: "com.oraclecloud.kubernetes.cluster.controlplane"
+      message: "Update 3 nodes status took 1.361817186s."
+      service: "oci"
+      status: "info"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1736972055482

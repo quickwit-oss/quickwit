@@ -1,0 +1,172 @@
+id: "envoy"
+tests:
+ -
+  sample: "[2019-03-06T09:31:27.354Z] \"GET /status/418 HTTP/1.1\" 418 - \"-\" 0 135 11 10 \"-\" \"curl/7.60.0\" \"d209e46f-9ed5-9b61-bbdd-43e22662702a\" \"httpbin:8000\" \"172.30.146.73:80\" outbound|8000||httpbin.default.svc.cluster.local - 172.21.13.94:8000 172.30.146.82:60290 -"
+  result:
+    custom:
+      date: 1551864687354
+      duration: 1.1E7
+      http:
+        _x_forwarded_for: "-"
+        authority: "httpbin:8000"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        request_id: "d209e46f-9ed5-9b61-bbdd-43e22662702a"
+        status_category: "warning"
+        status_code: 418
+        url: "/status/418"
+        url_details:
+          path: "/status/418"
+        useragent: "curl/7.60.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "60"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 0
+        bytes_written: 135
+      response:
+        flags: "- \"-\""
+        x_envoy_upstream_service_time: 10
+      upstream_host: "\"172.30.146.73:80\" outbound|8000||httpbin.default.svc.cluster.local - 172.21.13.94:8000 172.30.146.82:60290 -"
+    message: "[2019-03-06T09:31:27.354Z] \"GET /status/418 HTTP/1.1\" 418 - \"-\" 0 135 11 10 \"-\" \"curl/7.60.0\" \"d209e46f-9ed5-9b61-bbdd-43e22662702a\" \"httpbin:8000\" \"172.30.146.73:80\" outbound|8000||httpbin.default.svc.cluster.local - 172.21.13.94:8000 172.30.146.82:60290 -"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1551864687354
+ -
+  sample: "[2019-03-06T09:31:27.360Z] \"GET /status/418 HTTP/1.1\" 418 - \"-\" 0 135 5 2 \"-\" \"curl/7.60.0\" \"d209e46f-9ed5-9b61-bbdd-43e22662702a\" \"httpbin:8000\" \"127.0.0.1:80\" inbound|8000|http|httpbin.default.svc.cluster.local - 172.30.146.73:80 172.30.146.82:38618 outbound_.8000_._.httpbin.default.svc.cluster.local"
+  result:
+    custom:
+      date: 1551864687360
+      duration: 5000000.0
+      http:
+        _x_forwarded_for: "-"
+        authority: "httpbin:8000"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        request_id: "d209e46f-9ed5-9b61-bbdd-43e22662702a"
+        status_category: "warning"
+        status_code: 418
+        url: "/status/418"
+        url_details:
+          path: "/status/418"
+        useragent: "curl/7.60.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "60"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 0
+        bytes_written: 135
+      response:
+        flags: "- \"-\""
+        x_envoy_upstream_service_time: 2
+      upstream_host: "\"127.0.0.1:80\" inbound|8000|http|httpbin.default.svc.cluster.local - 172.30.146.73:80 172.30.146.82:38618 outbound_.8000_._.httpbin.default.svc.cluster.local"
+    message: "[2019-03-06T09:31:27.360Z] \"GET /status/418 HTTP/1.1\" 418 - \"-\" 0 135 5 2 \"-\" \"curl/7.60.0\" \"d209e46f-9ed5-9b61-bbdd-43e22662702a\" \"httpbin:8000\" \"127.0.0.1:80\" inbound|8000|http|httpbin.default.svc.cluster.local - 172.30.146.73:80 172.30.146.82:38618 outbound_.8000_._.httpbin.default.svc.cluster.local"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1551864687360
+ -
+  sample: "[2018-07-13T15:56:58.312Z] \"GET /v1/gifs/search?q=totalmete+s&api_key=FyzFCUcvrJXvG&limit=20&offset=0&rating=pg&lang=en&country_code=US HTTP/1.1\" 200 - 0 11187 107 107 \"173.252.99.154, 23.235.39.44, 23.235.46.35\" \"facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)\" \"820b432a-32c1-98d5-b5e2-310f824f940f\" \"api.giphy.com\" \"127.0.0.1:8000\""
+  result:
+    custom:
+      date: 1531497418312
+      duration: 1.07E8
+      http:
+        _x_forwarded_for: "173.252.99.154, 23.235.39.44, 23.235.46.35"
+        authority: "api.giphy.com"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        request_id: "820b432a-32c1-98d5-b5e2-310f824f940f"
+        status_category: "OK"
+        status_code: 200
+        url: "/v1/gifs/search?q=totalmete+s&api_key=FyzFCUcvrJXvG&limit=20&offset=0&rating=pg&lang=en&country_code=US"
+        url_details:
+          path: "/v1/gifs/search"
+          queryString:
+            api_key: "FyzFCUcvrJXvG"
+            country_code: "US"
+            lang: "en"
+            limit: "20"
+            offset: "0"
+            q: "totalmete+s"
+            rating: "pg"
+        useragent: "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+        useragent_details:
+          browser:
+            family: "FacebookBot"
+            major: "1"
+            minor: "1"
+          device:
+            brand: "Spider"
+            category: "Bot"
+            family: "Spider"
+            model: "Desktop"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 0
+        bytes_written: 11187
+      response:
+        flags: "-"
+        x_envoy_upstream_service_time: 107
+      upstream_host: "\"127.0.0.1:8000\""
+    message: "[2018-07-13T15:56:58.312Z] \"GET /v1/gifs/search?q=totalmete+s&api_key=FyzFCUcvrJXvG&limit=20&offset=0&rating=pg&lang=en&country_code=US HTTP/1.1\" 200 - 0 11187 107 107 \"173.252.99.154, 23.235.39.44, 23.235.46.35\" \"facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)\" \"820b432a-32c1-98d5-b5e2-310f824f940f\" \"api.giphy.com\" \"127.0.0.1:8000\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1531497418312
+ -
+  sample: "[2021-03-12T09:11:51.592Z] \"GET /server_info HTTP/1.1\" 200 - 0 27805 1 - \"64.145.79.247\" \"Datadog Agent/7.26.0\" \"d0000a1f-0000-4b42-0000-0000e13d78ca\" \"64.145.79.247:8001\" \"-\""
+  result:
+    custom:
+      date: 1615540311592
+      duration: 1000000.0
+      http:
+        _x_forwarded_for: "64.145.79.247"
+        authority: "64.145.79.247:8001"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        request_id: "d0000a1f-0000-4b42-0000-0000e13d78ca"
+        status_category: "OK"
+        status_code: 200
+        url: "/server_info"
+        url_details:
+          path: "/server_info"
+        useragent: "Datadog Agent/7.26.0"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      network:
+        bytes_read: 0
+        bytes_written: 27805
+      response:
+        flags: "-"
+      upstream_host: "\"-\""
+    message: "[2021-03-12T09:11:51.592Z] \"GET /server_info HTTP/1.1\" 200 - 0 27805 1 - \"64.145.79.247\" \"Datadog Agent/7.26.0\" \"d0000a1f-0000-4b42-0000-0000e13d78ca\" \"64.145.79.247:8001\" \"-\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1615540311592
+

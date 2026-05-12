@@ -1,0 +1,95 @@
+id: "istio"
+tests:
+ -
+  sample: |-
+    {
+      "instance" : "newlog.xxxxx.istio-system",
+      "level" : "warn",
+      "latency" : "968.030256ms",
+      "destination" : "productpage",
+      "responseSize" : 4415,
+      "time" : "2018-09-15T20:46:35.982761Z",
+      "source" : "istio-ingressgateway",
+      "user" : "unknown",
+      "responseCode" : 200
+    }
+  result:
+    custom:
+      duration: 9.68030256E8
+      http:
+        status_category: "OK"
+        status_code: 200
+      instance: "newlog.xxxxx.istio-system"
+      istio:
+        destination: "productpage"
+        source: "istio-ingressgateway"
+      latency: "968.030256ms"
+      level: "warn"
+      network:
+        bytes_written: 4415
+      time: "2018-09-15T20:46:35.982761Z"
+      usr:
+        name: "unknown"
+    message: |-
+      {
+        "instance" : "newlog.xxxxx.istio-system",
+        "level" : "warn",
+        "latency" : "968.030256ms",
+        "destination" : "productpage",
+        "responseSize" : 4415,
+        "time" : "2018-09-15T20:46:35.982761Z",
+        "source" : "istio-ingressgateway",
+        "user" : "unknown",
+        "responseCode" : 200
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1537044395982
+ -
+  sample: |-
+    {
+      "instance" : "newlog.xxxxx.istio-system",
+      "level" : "warn",
+      "latency" : "13.601485ms",
+      "destination" : "details",
+      "responseSize" : 178,
+      "time" : "2018-09-15T20:46:36.009801Z",
+      "source" : "productpage",
+      "user" : "unknown",
+      "responseCode" : 200
+    }
+  result:
+    custom:
+      duration: 1.3601485E7
+      http:
+        status_category: "OK"
+        status_code: 200
+      instance: "newlog.xxxxx.istio-system"
+      istio:
+        destination: "details"
+        source: "productpage"
+      latency: "13.601485ms"
+      level: "warn"
+      network:
+        bytes_written: 178
+      time: "2018-09-15T20:46:36.009801Z"
+      usr:
+        name: "unknown"
+    message: |-
+      {
+        "instance" : "newlog.xxxxx.istio-system",
+        "level" : "warn",
+        "latency" : "13.601485ms",
+        "destination" : "details",
+        "responseSize" : 178,
+        "time" : "2018-09-15T20:46:36.009801Z",
+        "source" : "productpage",
+        "user" : "unknown",
+        "responseCode" : 200
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1537044396009
+

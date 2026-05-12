@@ -1,0 +1,44 @@
+id: "cbdefense"
+tests:
+ -
+  sample: "2019-09-12 15:04:42\tLocal7.Debug\t192.168.230.40\t{\"eventTime\": 1539989469781, \"eventDescription\": \"[Global Alert Notification] [Confer has detected a threat against your company.] [https://defense.conferdeploy.net#device/1119958/incident/BLTMBGRP] [The application powershell.exe attempted to bypass policy settings.] [Incident id: BLTMBGRP] [Threat score: 2] [Group: default] [Email: template] [Name: laptop003-cylance] [Type and OS: WINDOWS Windows 10 x64] [Severity: Monitored]\\n\", \"url\": \"https://defense.conferdeploy.net/investigate?s[searchWindow]=ALL&s[c][DEVICE_ID][0]=1119958&s[c][INCIDENT_ID][0]=BLTMBGRP\", \"deviceInfo\": {\"deviceName\": \"laptop003-cylance\", \"targetPriorityCode\": 0, \"uemId\": null, \"internalIpAddress\": \"10.10.101.10\", \"deviceHostName\": null, \"groupName\": \"default\", \"externalIpAddress\": \"209.116.216.129\", \"deviceType\": \"WINDOWS\", \"deviceId\": 1119958, \"targetPriorityType\": \"MEDIUM\", \"email\": \"template\", \"deviceVersion\": \"Windows 10 x64\"}, \"source\": \"cbdefense1\", \"ruleName\": \"Global Alert Notification\", \"type\": \"THREAT\", \"threatInfo\": {\"threatCause\": null, \"summary\": \"The application powershell.exe attempted to bypass policy settings.\", \"score\": 2, \"time\": 1539989536351, \"indicators\": [{\"applicationName\": \"powershell.exe\", \"indicatorName\": \"CODE_DROP\", \"sha256Hash\": \"d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677\"}, {\"applicationName\": \"powershell.exe\", \"indicatorName\": \"BYPASS_POLICY\", \"sha256Hash\": \"d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677\"}], \"incidentId\": \"BLTMBGRP\"}}"
+  result:
+    custom:
+      deviceInfo:
+        deviceId: 1119958
+        deviceName: "laptop003-cylance"
+        deviceType: "WINDOWS"
+        deviceVersion: "Windows 10 x64"
+        externalIpAddress: "209.116.216.129"
+        groupName: "default"
+        internalIpAddress: "10.10.101.10"
+        targetPriorityCode: 0
+        targetPriorityType: "MEDIUM"
+      eventTime: 1539989469781
+      evt:
+        name: "THREAT"
+      ruleName: "Global Alert Notification"
+      source: "cbdefense1"
+      threatInfo:
+        incidentId: "BLTMBGRP"
+        indicators:
+         -
+          indicatorName: "CODE_DROP"
+          sha256Hash: "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"
+          applicationName: "powershell.exe"
+         -
+          indicatorName: "BYPASS_POLICY"
+          sha256Hash: "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"
+          applicationName: "powershell.exe"
+        score: 2
+        time: 1539989536351
+      title: "The application powershell.exe attempted to bypass policy settings."
+      url: "https://defense.conferdeploy.net/investigate?s[searchWindow]=ALL&s[c][DEVICE_ID][0]=1119958&s[c][INCIDENT_ID][0]=BLTMBGRP"
+      usr:
+        email: "template"
+    message: |
+      [Global Alert Notification] [Confer has detected a threat against your company.] [https://defense.conferdeploy.net#device/1119958/incident/BLTMBGRP] [The application powershell.exe attempted to bypass policy settings.] [Incident id: BLTMBGRP] [Threat score: 2] [Group: default] [Email: template] [Name: laptop003-cylance] [Type and OS: WINDOWS Windows 10 x64] [Severity: Monitored]
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1539989469781
+

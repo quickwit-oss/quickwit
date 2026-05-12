@@ -1,0 +1,115 @@
+id: gcp.spanner.instance
+metric_id: google-cloud-spanner
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google Spanner
+  enabled: true
+  filter:
+    query: source:gcp.spanner.instance
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: status-remapper
+      name: Define `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - data.severity
+        - severity
+    - type: service-remapper
+      name: Define `data.protoPayload.serviceName`, `protoPayload.serviceName` as the official service of the log
+      enabled: true
+      sources:
+        - data.protoPayload.serviceName
+        - protoPayload.serviceName
+    - type: attribute-remapper
+      name: Map `data.protoPayload.methodName`, `protoPayload.methodName` to `db.operation`
+      enabled: true
+      sources:
+        - data.protoPayload.methodName
+        - protoPayload.methodName
+      target: db.operation
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.requestMetadata.callerIp`, `protoPayload.requestMetadata.callerIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.protoPayload.requestMetadata.callerIp
+        - protoPayload.requestMetadata.callerIp
+      target: network.client.ip
+      preserveSource: true
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - data.protoPayload.requestMetadata.callerSuppliedUserAgent
+        - protoPayload.requestMetadata.callerSuppliedUserAgent
+      target: http.useragent_details
+      encoded: false
+    - type: grok-parser
+      name: Parsing
+      enabled: true
+      source: data.protoPayload.resourceName
+      samples:
+        - projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database
+      grok:
+        supportRules: |
+        matchRules: |
+          parse_spanner_resource projects/%{regex("[a-zA-Z-]+")}/instances/%{regex("[a-zA-Z-]+")}/databases/%{regex("[a-zA-Z-]+"):db.instance}.*
+    - type: grok-parser
+      name: Parsing
+      enabled: true
+      source: protoPayload.resourceName
+      samples:
+        - projects/datadog-sandbox/instances/spanner-test-testname/databases/test-database
+      grok:
+        supportRules: |
+        matchRules: |
+          parse_spanner_resource projects/%{regex("[a-zA-Z-]+")}/instances/%{regex("[a-zA-Z-]+")}/databases/%{regex("[a-zA-Z-]+"):db.instance}.*

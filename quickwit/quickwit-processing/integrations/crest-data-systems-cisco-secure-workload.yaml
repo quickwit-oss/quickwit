@@ -1,0 +1,343 @@
+id: crest-data-systems-cisco-secure-workload
+metric_id: crest-data-systems-cisco-secure-workload
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Agent Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.upgrade_srv_check_in
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Agent Upgrade Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.upgrade_status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: CPU Usage Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.agent_cpu_quota
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Current Software Version
+    path: cds.cisco_secure_workload.current_sw_version
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Current Version
+    path: cds.cisco_secure_workload.provisioned_network_policy_config.current_version
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - crest data systems cisco secure workload
+    name: Enforcement Memory Quota Limit
+    path: cds.cisco_secure_workload.agent_config.enforcement_max_rss_limit
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Enforcer Registration Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.enforcer_registration_status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Enforcer Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.enforcer_check_in_status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Flow Export Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.iface_flow_export_status
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - crest data systems cisco secure workload
+    name: Flow Visibility Memory Quota Limit
+    path: cds.cisco_secure_workload.max_rss_limit
+    source: log
+    type: double
+    unit:
+      family: bytes
+      name: byte
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Memory Usage Status
+    path: cds.cisco_secure_workload.agent_anomaly_types.agent_mem_usage
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Policy Config Status
+    path: cds.cisco_secure_workload.provisioned_network_policy_config.error_reason
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - crest data systems cisco secure workload
+    name: Policy Config Version
+    path: cds.cisco_secure_workload.desired_network_policy_config.version
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Cisco Secure Workload
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-cisco-secure-workload"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Workload Details
+      enabled: true
+      filter:
+        query: service:cd.cisco.secure.workload.cisco_secure_workload_workload_details
+      processors:
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.upgrade_srv_check_in` to
+            `cds.cisco_secure_workload.agent_anomaly_types.upgrade_srv_check_in`
+          enabled: true
+          sources:
+            - agent_anomaly_types.upgrade_srv_check_in
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.upgrade_srv_check_in
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.upgrade_status` to
+            `cds.cisco_secure_workload.agent_anomaly_types.upgrade_status`
+          enabled: true
+          sources:
+            - agent_anomaly_types.upgrade_status
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.upgrade_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.agent_cpu_quota` to
+            `cds.cisco_secure_workload.agent_anomaly_types.agent_cpu_quota`
+          enabled: true
+          sources:
+            - agent_anomaly_types.agent_cpu_quota
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.agent_cpu_quota
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.enforcer_registration_status` to
+            `cds.cisco_secure_workload.agent_anomaly_types.enforcer_registration_status`
+          enabled: true
+          sources:
+            - agent_anomaly_types.enforcer_registration_status
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.enforcer_registration_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.enforcer_check_in_status` to
+            `cds.cisco_secure_workload.agent_anomaly_types.enforcer_check_in_status`
+          enabled: true
+          sources:
+            - agent_anomaly_types.enforcer_check_in_status
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.enforcer_check_in_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.iface_flow_export_status` to
+            `cds.cisco_secure_workload.agent_anomaly_types.iface_flow_export_status`
+          enabled: true
+          sources:
+            - agent_anomaly_types.iface_flow_export_status
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.iface_flow_export_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_anomaly_types.agent_mem_usage` to
+            `cds.cisco_secure_workload.agent_anomaly_types.agent_mem_usage`
+          enabled: true
+          sources:
+            - agent_anomaly_types.agent_mem_usage
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_anomaly_types.agent_mem_usage
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `current_sw_version` to `cds.cisco_secure_workload.current_sw_version`
+          enabled: true
+          sources:
+            - current_sw_version
+          sourceType: attribute
+          target: cds.cisco_secure_workload.current_sw_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `max_rss_limit` to `cds.cisco_secure_workload.max_rss_limit`
+          enabled: true
+          sources:
+            - max_rss_limit
+          sourceType: attribute
+          target: cds.cisco_secure_workload.max_rss_limit
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Flow Search
+      enabled: true
+      filter:
+        query: "service:cd.cisco.secure.workload.cisco_secure_workload_query_for_flows"
+      processors:
+        - type: attribute-remapper
+          name: Map `src_address` to `consumer_address`
+          enabled: true
+          sources:
+            - src_address
+          sourceType: attribute
+          target: consumer_address
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst_address` to `provider_address`
+          enabled: true
+          sources:
+            - dst_address
+          sourceType: attribute
+          target: provider_address
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_hostname` to `consumer_hostname`
+          enabled: true
+          sources:
+            - src_hostname
+          sourceType: attribute
+          target: consumer_hostname
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst_hostname` to `provider_hostname`
+          enabled: true
+          sources:
+            - dst_hostname
+          sourceType: attribute
+          target: provider_hostname
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_port` to `consumer_port`
+          enabled: true
+          sources:
+            - src_port
+          sourceType: attribute
+          target: consumer_port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst_port` to `provider_port`
+          enabled: true
+          sources:
+            - dst_port
+          sourceType: attribute
+          target: provider_port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Agent Enforcement Network Policy Config
+      enabled: true
+      filter:
+        query: "service:cd.cisco.secure.workload.cisco_secure_workload_agent_enforcemen\
+          t_network_policy_config"
+      processors:
+        - type: attribute-remapper
+          name: Map `agent_uuid` to `uuid`
+          enabled: true
+          sources:
+            - agent_uuid
+          sourceType: attribute
+          target: uuid
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `agent_config.enforcement_max_rss_limit` to
+            `cds.cisco_secure_workload.agent_config.enforcement_max_rss_limit`
+          enabled: true
+          sources:
+            - agent_config.enforcement_max_rss_limit
+          sourceType: attribute
+          target: cds.cisco_secure_workload.agent_config.enforcement_max_rss_limit
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `desired_network_policy_config.version` to
+            `cds.cisco_secure_workload.desired_network_policy_config.version`
+          enabled: true
+          sources:
+            - desired_network_policy_config.version
+          sourceType: attribute
+          target: cds.cisco_secure_workload.desired_network_policy_config.version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `provisioned_network_policy_config.current_version` to
+            `cds.cisco_secure_workload.provisioned_network_policy_config.current_version`
+          enabled: true
+          sources:
+            - provisioned_network_policy_config.current_version
+          sourceType: attribute
+          target: cds.cisco_secure_workload.provisioned_network_policy_config.current_version
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `provisioned_network_policy_config.error_reason` to
+            `cds.cisco_secure_workload.provisioned_network_policy_config.error_reason`
+          enabled: true
+          sources:
+            - provisioned_network_policy_config.error_reason
+          sourceType: attribute
+          target: cds.cisco_secure_workload.provisioned_network_policy_config.error_reason
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

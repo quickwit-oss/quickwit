@@ -1,0 +1,211 @@
+id: crest-data-systems-armis
+metric_id: crest-data-systems-armis
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Armis
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-armis"
+  processors:
+    - type: pipeline
+      name: Device Applications
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_device_applications"
+      processors:
+        - type: grok-parser
+          name: Parsing `lastSeen` to `timestamp` (epoch)
+          enabled: true
+          source: lastSeen
+          samples:
+            - 2024-09-24T08:27:24.087565+00:00
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}
+        - type: string-builder-processor
+          name: Define `cd.armis.armis_device_applications.name` equal to
+            `cd.armis.armis_device_applications.%{application}`
+          enabled: true
+          template: "%{name}-%{version}"
+          target: application_id
+          replaceMissing: true
+    - type: pipeline
+      name: Vulnerabilities
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_vulnerabilities"
+      processors:
+        - type: grok-parser
+          name: Parsing `lastDetected` to `timestamp` (epoch)
+          enabled: true
+          source: lastDetected
+          samples:
+            - 2024-09-29T11:12:21.251751+00:00
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}
+        - type: attribute-remapper
+          name: Map `status` to `vulnerability_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: vulnerability_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `vulnerability_status` to `status`
+          enabled: true
+          source: vulnerability_status
+          target: status
+          lookupTable: |-
+            Open, info
+            Ticketed, info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: pipeline
+      name: Users
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_users"
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `armis_user_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: armis_user_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parsing `lastSeen` to `timestamp` (epoch)
+          enabled: true
+          source: lastSeen
+          samples:
+            - 2024-09-23T22:36:47.223584+00:00
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}
+    - type: pipeline
+      name: Alerts
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_alerts"
+      processors:
+        - type: attribute-remapper
+          name: Map `alertId` to `armis_alert_id`
+          enabled: true
+          sources:
+            - alertId
+          sourceType: attribute
+          target: armis_alert_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `alert_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: alert_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `alert_status` to `status`
+          enabled: true
+          source: alert_status
+          target: status
+          lookupTable: |-
+            Unhandled, info
+            Resolved, info
+            Suppressed, info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: grok-parser
+          name: Parsing `time` to `timestamp` (epoch)
+          enabled: true
+          source: time
+          samples:
+            - 2024-09-24T00:38:53.223584+00:00
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}
+    - type: pipeline
+      name: Devices
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_devices"
+      processors:
+        - type: attribute-remapper
+          name: Map `ipAddress` to `network.client.ip`
+          enabled: true
+          sources:
+            - ipAddress
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `id` to `armis_device_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: armis_device_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parsing `lastSeen` to `timestamp` (epoch)
+          enabled: true
+          source: lastSeen
+          samples:
+            - 2024-09-24T20:38:54.223584+00:00
+          grok:
+            supportRules: ""
+            matchRules: date_rule %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ"):timestamp}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: pipeline
+      name: Policies
+      enabled: true
+      filter:
+        query: "service:cd.armis.armis_policies"
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `policy_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: policy_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

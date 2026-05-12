@@ -1,0 +1,1527 @@
+id: crest_data_systems_zoho_crm
+tests:
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Company": "Hyptric",
+          "Email": "juile@hyptric.com",
+          "Rating": "Active",
+          "Website": "hyptric.com",
+          "Twitter": null,
+          "Salutation": null,
+          "First_Name": "Juile",
+          "Full_Name": "Juile johnsan",
+          "Lead_Status": "Not Qualified",
+          "Industry": "ERP",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Skype_ID": "juile.josnsan",
+          "Phone": "9632587410",
+          "Currency": "USD",
+          "Street": "301, WD",
+          "Zip_Code": "454335",
+          "id": "868995000000443087",
+          "Email_Opt_Out": false,
+          "Designation": "lead updated",
+          "Modified_Time": "2025-02-28T11:22:55+05:30",
+          "Created_Time": "2025-01-25T10:20:53+05:30",
+          "City": "SF",
+          "No_of_Employees": 9000,
+          "Mobile": "9874561231",
+          "Last_Name": "johnsan",
+          "State": "SF",
+          "Lead_Source": "Internal Seminar",
+          "Country": "USA",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Annual_Revenue": 98745,
+          "Secondary_Email": null
+      }
+    service: "cds.zoho.crm.leads"
+    result:
+        custom:
+            Annual_Revenue: 98745
+            City: "SF"
+            Company: "Hyptric"
+            Country: "USA"
+            Created_Time: "2025-01-25T10:20:53+05:30"
+            Currency: "USD"
+            Designation: "lead updated"
+            Email: "juile@hyptric.com"
+            Email_Opt_Out: false
+            First_Name: "Juile"
+            Full_Name: "Juile johnsan"
+            Industry: "ERP"
+            Last_Name: "johnsan"
+            Lead_Source: "Internal Seminar"
+            Lead_Status: "Not Qualified"
+            Mobile: "9874561231"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-28T11:22:55+05:30"
+            No_of_Employees: 9000
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Phone: "9632587410"
+            Rating: "Active"
+            Skype_ID: "juile.josnsan"
+            State: "SF"
+            Street: "301, WD"
+            Website: "hyptric.com"
+            Zip_Code: "454335"
+            cds:
+                zoho-crm:
+                    id: "868995000000443087"
+                    owner_name: "Jose "
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Company" : "Hyptric",
+              "Email" : "juile@hyptric.com",
+              "Rating" : "Active",
+              "Website" : "hyptric.com",
+              "First_Name" : "Juile",
+              "Full_Name" : "Juile johnsan",
+              "Lead_Status" : "Not Qualified",
+              "Industry" : "ERP",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Skype_ID" : "juile.josnsan",
+              "Phone" : "9632587410",
+              "Currency" : "USD",
+              "Street" : "301, WD",
+              "Zip_Code" : "454335",
+              "id" : "868995000000443087",
+              "Email_Opt_Out" : false,
+              "Designation" : "lead updated",
+              "Modified_Time" : "2025-02-28T11:22:55+05:30",
+              "Created_Time" : "2025-01-25T10:20:53+05:30",
+              "City" : "SF",
+              "No_of_Employees" : 9000,
+              "Mobile" : "9874561231",
+              "Last_Name" : "johnsan",
+              "State" : "SF",
+              "Lead_Source" : "Internal Seminar",
+              "Country" : "USA",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Annual_Revenue" : 98745
+            }
+        service: "cds.zoho.crm.leads"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740721975000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Modified_Time": "2025-02-26T17:00:53+05:30",
+          "Description": null,
+          "Campaign_Source": null,
+          "Created_Time": "2025-02-05T15:29:47+05:30",
+          "Amount": 45000,
+          "Probability": 0,
+          "Next_Step": null,
+          "Closing_Date": "2025-02-07",
+          "Contact_Name": {
+              "name": "Leota Dilliard (Sample)",
+              "id": "868995000000360185"
+          },
+          "Reason_For_Loss__s": "Price",
+          "Type": "Existing Business",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Deal_Name": "Commercial Press",
+          "Expected_Revenue": 0,
+          "Currency": "USD",
+          "Stage": "Closed Lost",
+          "Lead_Source": null,
+          "Account_Name": {
+              "name": "Commercial Press (Sample)",
+              "id": "868995000000360094"
+          },
+          "id": "868995000000360264",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": []
+      }
+    service: "cds.zoho.crm.deals"
+    result:
+        custom:
+            Account_Name:
+                id: "868995000000360094"
+            Amount: 45000
+            Closing_Date: "2025-02-07"
+            Contact_Name:
+                id: "868995000000360185"
+            Created_Time: "2025-02-05T15:29:47+05:30"
+            Currency: "USD"
+            Deal_Name: "Commercial Press"
+            Expected_Revenue: 0
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-26T17:00:53+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Probability: 0
+            Reason_For_Loss__s: "Price"
+            Stage: "Closed Lost"
+            cds:
+                zoho-crm:
+                    account_name: "Commercial Press (Sample)"
+                    business_type: "Existing Business"
+                    contact_name: "Leota Dilliard (Sample)"
+                    id: "868995000000360264"
+                    owner_name: "Jose "
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-26T17:00:53+05:30",
+              "Created_Time" : "2025-02-05T15:29:47+05:30",
+              "Amount" : 45000,
+              "Probability" : 0,
+              "Closing_Date" : "2025-02-07",
+              "Contact_Name" : {
+                "name" : "Leota Dilliard (Sample)",
+                "id" : "868995000000360185"
+              },
+              "Reason_For_Loss__s" : "Price",
+              "Type" : "Existing Business",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Deal_Name" : "Commercial Press",
+              "Expected_Revenue" : 0,
+              "Currency" : "USD",
+              "Stage" : "Closed Lost",
+              "Account_Name" : {
+                "name" : "Commercial Press (Sample)",
+                "id" : "868995000000360094"
+              },
+              "id" : "868995000000360264",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              }
+            }
+        service: "cds.zoho.crm.deals"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740569453000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Discount": 0,
+          "Description": null,
+          "Vendor_Name": {
+              "name": "Cisco",
+              "id": "868995000000376705"
+          },
+          "Product_Name": {
+              "name": "Product1",
+              "id": "868995000000376704"
+          },
+          "$se_module": "account",
+          "Shipping_State": null,
+          "Tax": 0,
+          "PO_Date": "2025-02-08",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Currency": "USD",
+          "Billing_Country": "USA",
+          "id": "868995000000376912",
+          "Carrier": "BlueDart",
+          "Status": "Delivered",
+          "Sales_Commission": 2,
+          "Grand_Total": 615,
+          "Modified_Time": "2025-03-04T17:25:19+05:30",
+          "PO_Number": "PO-2025-001",
+          "Due_Date": "2025-02-21",
+          "Billing_Street": null,
+          "Adjustment": 0,
+          "Created_Time": "2025-02-08T23:57:35+05:30",
+          "Terms_and_Conditions": null,
+          "Sub_Total": 615,
+          "Billing_Code": null,
+          "Tracking_Number": "ssss",
+          "Subject": "NextGen po",
+          "Contact_Name": {
+              "name": "Daniel Lee",
+              "id": "868995000000376210"
+          },
+          "Excise_Duty": 6874,
+          "Shipping_City": "as",
+          "Shipping_Country": null,
+          "Shipping_Code": null,
+          "Billing_City": "a",
+          "Requisition_No": "sssss",
+          "Billing_State": null,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Shipping_Street": null
+      }
+    service: "cds.zoho.crm.purchase_orders"
+    result:
+        custom:
+            Adjustment: 0
+            Billing_City: "a"
+            Billing_Country: "USA"
+            Carrier: "BlueDart"
+            Contact_Name:
+                id: "868995000000376210"
+            Created_Time: "2025-02-08T23:57:35+05:30"
+            Currency: "USD"
+            Discount: 0
+            Due_Date: "2025-02-21"
+            Excise_Duty: 6874
+            Grand_Total: 615
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-03-04T17:25:19+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            PO_Date: "2025-02-08"
+            PO_Number: "PO-2025-001"
+            Product_Name:
+                id: "868995000000376704"
+            Requisition_No: "sssss"
+            Sales_Commission: 2
+            Shipping_City: "as"
+            Status: "Delivered"
+            Sub_Total: 615
+            Subject: "NextGen po"
+            Tax: 0
+            Tracking_Number: "ssss"
+            Vendor_Name:
+                id: "868995000000376705"
+            cds:
+                zoho-crm:
+                    contact_name: "Daniel Lee"
+                    id: "868995000000376912"
+                    module_name: "account"
+                    owner_name: "Jose "
+                    product_name: "Product1"
+                    vendor_name: "Cisco"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Discount" : 0,
+              "Vendor_Name" : {
+                "name" : "Cisco",
+                "id" : "868995000000376705"
+              },
+              "Tax" : 0,
+              "PO_Date" : "2025-02-08",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Currency" : "USD",
+              "Billing_Country" : "USA",
+              "id" : "868995000000376912",
+              "Carrier" : "BlueDart",
+              "Status" : "Delivered",
+              "Sales_Commission" : 2,
+              "Grand_Total" : 615,
+              "Modified_Time" : "2025-03-04T17:25:19+05:30",
+              "PO_Number" : "PO-2025-001",
+              "Due_Date" : "2025-02-21",
+              "Adjustment" : 0,
+              "Created_Time" : "2025-02-08T23:57:35+05:30",
+              "Product_Name" : {
+                "name" : "Product1",
+                "id" : "868995000000376704"
+              },
+              "Sub_Total" : 615,
+              "Tracking_Number" : "ssss",
+              "Subject" : "NextGen po",
+              "Contact_Name" : {
+                "name" : "Daniel Lee",
+                "id" : "868995000000376210"
+              },
+              "Excise_Duty" : 6874,
+              "Shipping_City" : "as",
+              "$se_module" : "account",
+              "Billing_City" : "a",
+              "Requisition_No" : "sssss",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              }
+            }
+        service: "cds.zoho.crm.purchase_orders"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1741089319000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "MS S",
+              "id": "868995000000369001",
+              "email": "test@gmail.com"
+          },
+          "Email": null,
+          "Description": null,
+          "Internal_Comments": null,
+          "No_of_comments": 0,
+          "Reported_By": "abc",
+          "Case_Number": "868995000000506004",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Deal_Name": {
+              "name": "Hyptric deal",
+              "id": "868995000000443187"
+          },
+          "Phone": null,
+          "Account_Name": null,
+          "id": "868995000000506002",
+          "Solution": null,
+          "Status": "On Hold",
+          "Modified_Time": "2025-02-26T22:25:45+05:30",
+          "Created_Time": "2025-01-25T10:20:53+05:30",
+          "Priority": null,
+          "Comments": [],
+          "Product_Name": {
+              "name": "Network Gateway",
+              "id": "868995000000431029"
+          },
+          "Add_Comment": null,
+          "Case_Origin": "Phone",
+          "Case_Reason": null,
+          "Subject": "Not working",
+          "Type": "Problem",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Related_To": "abc"
+      }
+    service: "cds.zoho.crm.cases"
+    result:
+        custom:
+            Case_Number: "868995000000506004"
+            Case_Origin: "Phone"
+            Created_Time: "2025-01-25T10:20:53+05:30"
+            Deal_Name:
+                id: "868995000000443187"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-26T22:25:45+05:30"
+            No_of_comments: 0
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000369001"
+            Product_Name:
+                id: "868995000000431029"
+            Related_To: "abc"
+            Reported_By: "abc"
+            Status: "On Hold"
+            Subject: "Not working"
+            cds:
+                zoho-crm:
+                    case_type: "Problem"
+                    deal_name: "Hyptric deal"
+                    id: "868995000000506002"
+                    owner_name: "MS S"
+                    product_name: "Network Gateway"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Status" : "On Hold",
+              "Owner" : {
+                "name" : "MS S",
+                "id" : "868995000000369001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-26T22:25:45+05:30",
+              "Created_Time" : "2025-01-25T10:20:53+05:30",
+              "No_of_comments" : 0,
+              "Reported_By" : "abc",
+              "Case_Number" : "868995000000506004",
+              "Product_Name" : {
+                "name" : "Network Gateway",
+                "id" : "868995000000431029"
+              },
+              "Case_Origin" : "Phone",
+              "Subject" : "Not working",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Type" : "Problem",
+              "Deal_Name" : {
+                "name" : "Hyptric deal",
+                "id" : "868995000000443187"
+              },
+              "id" : "868995000000506002",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Related_To" : "abc"
+            }
+        service: "cds.zoho.crm.cases"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740588945000
+  - sample: |
+      {
+          "Status": "Deferred",
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Modified_Time": "2025-03-07T13:07:32+05:30",
+          "Created_Time": "2025-01-25T10:20:53+05:30",
+          "Description": null,
+          "Due_Date": "2025-03-28",
+          "Priority": "High",
+          "Closed_Time": null,
+          "Subject": "Follow up with leads",
+          "$se_module": "Accounts",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Recurring_Activity": null,
+          "What_Id": {
+              "name": "NextGen",
+              "id": "868995000000376293"
+          },
+          "id": "868995000000376551",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Who_Id": {
+              "name": "Laura Adams",
+              "id": "868995000000376303"
+          }
+      }
+    service: "cds.zoho.crm.tasks"
+    result:
+        custom:
+            Created_Time: "2025-01-25T10:20:53+05:30"
+            Due_Date: "2025-03-28"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-03-07T13:07:32+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Priority: "High"
+            Status: "Deferred"
+            Subject: "Follow up with leads"
+            What_Id:
+                id: "868995000000376293"
+            Who_Id:
+                id: "868995000000376303"
+            cds:
+                zoho-crm:
+                    id: "868995000000376551"
+                    module_name: "Accounts"
+                    owner_name: "Jose "
+                    what_id: "NextGen"
+                    who_id: "Laura Adams"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Status" : "Deferred",
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-03-07T13:07:32+05:30",
+              "Due_Date" : "2025-03-28",
+              "Created_Time" : "2025-01-25T10:20:53+05:30",
+              "Priority" : "High",
+              "Subject" : "Follow up with leads",
+              "$se_module" : "Accounts",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "What_Id" : {
+                "name" : "NextGen",
+                "id" : "868995000000376293"
+              },
+              "id" : "868995000000376551",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Who_Id" : {
+                "name" : "Laura Adams",
+                "id" : "868995000000376303"
+              }
+            }
+        service: "cds.zoho.crm.tasks"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1741333052000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Email": null,
+          "Description": null,
+          "Mailing_Zip": null,
+          "Other_Phone": null,
+          "Mailing_State": null,
+          "Twitter": null,
+          "Other_Zip": null,
+          "Mailing_Street": null,
+          "Other_State": null,
+          "Salutation": null,
+          "Other_Country": null,
+          "First_Name": "KH",
+          "Full_Name": "KH Rogers",
+          "Asst_Phone": null,
+          "Record_Image": null,
+          "Department": null,
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Skype_ID": null,
+          "Assistant": "abcxyz",
+          "Phone": null,
+          "Mailing_Country": null,
+          "Account_Name": {
+              "name": "ABC",
+              "id": "868995000000431001"
+          },
+          "id": "868995000000497037",
+          "Email_Opt_Out": false,
+          "Reporting_To": {
+              "name": "Steve Rogers",
+              "id": "868995000000431004"
+          },
+          "Modified_Time": "2025-02-26T16:52:02+05:30",
+          "Date_of_Birth": null,
+          "Mailing_City": null,
+          "Other_City": null,
+          "Created_Time": "2025-02-24T16:47:09+05:30",
+          "Title": null,
+          "Other_Street": null,
+          "Mobile": null,
+          "Home_Phone": null,
+          "Last_Name": "Rogers",
+          "Lead_Source": null,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Fax": null,
+          "Secondary_Email": null
+      }
+    service: "cds.zoho.crm.contacts"
+    result:
+        custom:
+            Account_Name:
+                id: "868995000000431001"
+            Assistant: "abcxyz"
+            Created_Time: "2025-02-24T16:47:09+05:30"
+            Email_Opt_Out: false
+            First_Name: "KH"
+            Full_Name: "KH Rogers"
+            Last_Name: "Rogers"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-26T16:52:02+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Reporting_To:
+                id: "868995000000431004"
+            cds:
+                zoho-crm:
+                    account_name: "ABC"
+                    id: "868995000000497037"
+                    owner_name: "Jose "
+                    reporting_to: "Steve Rogers"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-26T16:52:02+05:30",
+              "Created_Time" : "2025-02-24T16:47:09+05:30",
+              "First_Name" : "KH",
+              "Full_Name" : "KH Rogers",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Assistant" : "abcxyz",
+              "Last_Name" : "Rogers",
+              "Account_Name" : {
+                "name" : "ABC",
+                "id" : "868995000000431001"
+              },
+              "id" : "868995000000497037",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Email_Opt_Out" : false,
+              "Reporting_To" : {
+                "name" : "Steve Rogers",
+                "id" : "868995000000431004"
+              }
+            }
+        service: "cds.zoho.crm.contacts"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740568922000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Ownership": "Partnership",
+          "Description": null,
+          "Account_Type": "Distributor",
+          "Rating": "Active",
+          "SIC_Code": 512,
+          "Shipping_State": null,
+          "Website": null,
+          "Employees": 900,
+          "Industry": "ERP (Enterprise Resource Planning)",
+          "Record_Image": null,
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Account_Site": "anc",
+          "Phone": null,
+          "Currency": "USD",
+          "Billing_Country": null,
+          "Account_Name": "Hyptric",
+          "id": "868995000000443119",
+          "Account_Number": "987565412",
+          "Ticker_Symbol": "#",
+          "Modified_Time": "2025-02-26T16:59:51+05:30",
+          "Billing_Street": null,
+          "Created_Time": "2025-02-20T17:15:32+05:30",
+          "Billing_Code": null,
+          "Parent_Account": {
+              "name": "new",
+              "id": "868995000000438009"
+          },
+          "Shipping_City": null,
+          "Shipping_Country": null,
+          "Shipping_Code": null,
+          "Billing_City": null,
+          "Billing_State": null,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Fax": null,
+          "Annual_Revenue": 98745,
+          "Shipping_Street": null
+      }
+    service: "cds.zoho.crm.accounts"
+    result:
+        custom:
+            Account_Name: "Hyptric"
+            Account_Number: "987565412"
+            Account_Site: "anc"
+            Account_Type: "Distributor"
+            Annual_Revenue: 98745
+            Created_Time: "2025-02-20T17:15:32+05:30"
+            Currency: "USD"
+            Employees: 900
+            Industry: "ERP (Enterprise Resource Planning)"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-26T16:59:51+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Ownership: "Partnership"
+            Parent_Account:
+                id: "868995000000438009"
+            Rating: "Active"
+            SIC_Code: 512
+            Ticker_Symbol: "#"
+            cds:
+                zoho-crm:
+                    id: "868995000000443119"
+                    owner_name: "Jose "
+                    parent_account: "new"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Ownership" : "Partnership",
+              "Modified_Time" : "2025-02-26T16:59:51+05:30",
+              "Account_Type" : "Distributor",
+              "Created_Time" : "2025-02-20T17:15:32+05:30",
+              "Rating" : "Active",
+              "SIC_Code" : 512,
+              "Employees" : 900,
+              "Parent_Account" : {
+                "name" : "new",
+                "id" : "868995000000438009"
+              },
+              "Industry" : "ERP (Enterprise Resource Planning)",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Account_Site" : "anc",
+              "Currency" : "USD",
+              "Account_Name" : "Hyptric",
+              "id" : "868995000000443119",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Annual_Revenue" : 98745,
+              "Account_Number" : "987565412",
+              "Ticker_Symbol" : "#"
+            }
+        service: "cds.zoho.crm.accounts"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740569391000
+  - sample: |-
+      {
+          "All_day": false,
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Modified_Time": "2025-02-26T17:04:15+05:30",
+          "Description": null,
+          "Venue": null,
+          "Created_Time": "2025-02-26T17:04:15+05:30",
+          "Start_DateTime": "2026-02-25T18:00:00+05:30",
+          "Event_Title": "New Meeting",
+          "End_DateTime": "2026-02-25T19:00:00+05:30",
+          "$se_module": "Accounts",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Recurring_Activity": {
+              "RRULE": "FREQ=DAILY;INTERVAL=1;DTSTART=2025-02-26;UNTIL=-1"
+          },
+          "What_Id": {
+              "name": "ABC",
+              "id": "868995000000431001"
+          },
+          "id": "868995000000510130",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Who_Id": {
+              "name": "KH Rogers",
+              "id": "868995000000497037"
+          }
+      }
+    service: "cds.zoho.crm.meetings"
+    result:
+        custom:
+            All_day: false
+            Created_Time: "2025-02-26T17:04:15+05:30"
+            End_DateTime: "2026-02-25T19:00:00+05:30"
+            Event_Title: "New Meeting"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-26T17:04:15+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Recurring_Activity:
+                RRULE: "FREQ=DAILY;INTERVAL=1;DTSTART=2025-02-26;UNTIL=-1"
+            Start_DateTime: "2026-02-25T18:00:00+05:30"
+            What_Id:
+                id: "868995000000431001"
+            Who_Id:
+                id: "868995000000497037"
+            cds:
+                zoho-crm:
+                    id: "868995000000510130"
+                    module_name: "Accounts"
+                    owner_name: "Jose "
+                    what_id: "ABC"
+                    who_id: "KH Rogers"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "All_day" : false,
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-26T17:04:15+05:30",
+              "Created_Time" : "2025-02-26T17:04:15+05:30",
+              "Start_DateTime" : "2026-02-25T18:00:00+05:30",
+              "Event_Title" : "New Meeting",
+              "End_DateTime" : "2026-02-25T19:00:00+05:30",
+              "$se_module" : "Accounts",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Recurring_Activity" : {
+                "RRULE" : "FREQ=DAILY;INTERVAL=1;DTSTART=2025-02-26;UNTIL=-1"
+              },
+              "What_Id" : {
+                "name" : "ABC",
+                "id" : "868995000000431001"
+              },
+              "id" : "868995000000510130",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Who_Id" : {
+                "name" : "KH Rogers",
+                "id" : "868995000000497037"
+              }
+            }
+        service: "cds.zoho.crm.meetings"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740569655000
+  - sample: |-
+      {
+          "Call_Duration": "52:00",
+          "Outgoing_Call_Status": "Completed",
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Modified_Time": "2025-02-08T23:36:54+05:30",
+          "Description": null,
+          "Caller_ID": null,
+          "Voice_Recording__s": null,
+          "Created_Time": "2025-02-08T23:36:54+05:30",
+          "Call_Start_Time": "2025-02-04T23:35:00+05:30",
+          "Call_Agenda": null,
+          "Call_Type": "Outbound",
+          "$se_module": "Accounts",
+          "Call_Result": null,
+          "Scheduled_In_CRM": "False",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "What_Id": {
+              "name": "NextGen",
+              "id": "868995000000376293"
+          },
+          "Call_Purpose": null,
+          "id": "868995000000376399",
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Dialled_Number": null,
+          "Who_Id": {
+              "name": "Laura Adams",
+              "id": "868995000000376303"
+          }
+      }
+    service: "cds.zoho.crm.calls"
+    result:
+        custom:
+            Call_Duration: "52:00"
+            Call_Start_Time: "2025-02-04T23:35:00+05:30"
+            Call_Type: "Outbound"
+            Created_Time: "2025-02-08T23:36:54+05:30"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-08T23:36:54+05:30"
+            Outgoing_Call_Status: "Completed"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Scheduled_In_CRM: "False"
+            What_Id:
+                id: "868995000000376293"
+            Who_Id:
+                id: "868995000000376303"
+            cds:
+                zoho-crm:
+                    id: "868995000000376399"
+                    module_name: "Accounts"
+                    owner_name: "Jose "
+                    what_id: "NextGen"
+                    who_id: "Laura Adams"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Call_Duration" : "52:00",
+              "Outgoing_Call_Status" : "Completed",
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-08T23:36:54+05:30",
+              "Created_Time" : "2025-02-08T23:36:54+05:30",
+              "Call_Start_Time" : "2025-02-04T23:35:00+05:30",
+              "Call_Type" : "Outbound",
+              "$se_module" : "Accounts",
+              "Scheduled_In_CRM" : "False",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "What_Id" : {
+                "name" : "NextGen",
+                "id" : "868995000000376293"
+              },
+              "id" : "868995000000376399",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Who_Id" : {
+                "name" : "Laura Adams",
+                "id" : "868995000000376303"
+              }
+            }
+        service: "cds.zoho.crm.calls"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1739038014000
+  - sample: |-
+      {
+          "Product_Category": null,
+          "Qty_in_Demand": 0,
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Description": null,
+          "Vendor_Name": {
+              "name": "Cisco",
+              "id": "868995000000376705"
+          },
+          "Sales_Start_Date": null,
+          "Tax": [
+              {
+                  "id": "868995000000020807",
+                  "value": "Sales Tax - 0.0 %"
+              }
+          ],
+          "Product_Active": true,
+          "Record_Image": null,
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Product_Code": "HP-001",
+          "Manufacturer": null,
+          "id": "868995000000443217",
+          "Support_Expiry_Date": null,
+          "Modified_Time": "2025-02-20T17:32:35+05:30",
+          "Created_Time": "2025-02-20T17:32:35+05:30",
+          "Commission_Rate": null,
+          "Product_Name": "Hyptric suppport",
+          "Handler": {
+              "name": "abc",
+              "id": "9562189562314"
+          },
+          "Support_Start_Date": null,
+          "Usage_Unit": null,
+          "Qty_Ordered": 0,
+          "Qty_in_Stock": 0,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Sales_End_Date": null,
+          "Unit_Price": 30,
+          "Taxable": true,
+          "Reorder_Level": 0
+      }
+    service: "cds.zoho.crm.products"
+    result:
+        custom:
+            Created_Time: "2025-02-20T17:32:35+05:30"
+            Handler:
+                id: "9562189562314"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-20T17:32:35+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Product_Active: true
+            Product_Code: "HP-001"
+            Product_Name: "Hyptric suppport"
+            Qty_Ordered: 0
+            Qty_in_Demand: 0
+            Qty_in_Stock: 0
+            Reorder_Level: 0
+            Tax:
+              -
+                id: "868995000000020807"
+                value: "Sales Tax - 0.0 %"
+            Taxable: true
+            Unit_Price: 30
+            Vendor_Name:
+                id: "868995000000376705"
+            cds:
+                zoho-crm:
+                    handler: "abc"
+                    id: "868995000000443217"
+                    owner_name: "Jose "
+                    vendor_name: "Cisco"
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Qty_in_Demand" : 0,
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-20T17:32:35+05:30",
+              "Vendor_Name" : {
+                "name" : "Cisco",
+                "id" : "868995000000376705"
+              },
+              "Created_Time" : "2025-02-20T17:32:35+05:30",
+              "Product_Name" : "Hyptric suppport",
+              "Handler" : {
+                "name" : "abc",
+                "id" : "9562189562314"
+              },
+              "Tax" : [ {
+                "id" : "868995000000020807",
+                "value" : "Sales Tax - 0.0 %"
+              } ],
+              "Product_Active" : true,
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Product_Code" : "HP-001",
+              "Qty_Ordered" : 0,
+              "Qty_in_Stock" : 0,
+              "id" : "868995000000443217",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Unit_Price" : 30,
+              "Taxable" : true,
+              "Reorder_Level" : 0
+            }
+        service: "cds.zoho.crm.products"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1740052955000
+  - sample: |-
+      {
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Discount": 0,
+          "Description": null,
+          "Shipping_State": null,
+          "Tax": 0,
+          "Invoice_Date": "2025-02-08",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Currency": "USD",
+          "Billing_Country": null,
+          "Account_Name": {
+              "name": "NextGen",
+              "id": "868995000000376293"
+          },
+          "id": "868995000000376852",
+          "Sales_Order": null,
+          "Deal_Name__s": {
+              "name": "abc",
+              "id": "652314585623"
+          },
+          "Status": "Delivered",
+          "Sales_Commission": 100,
+          "Grand_Total": 4930,
+          "Modified_Time": "2025-02-08T23:56:09+05:30",
+          "Due_Date": null,
+          "Billing_Street": null,
+          "Adjustment": 0,
+          "Created_Time": "2025-02-08T23:56:09+05:30",
+          "Terms_and_Conditions": null,
+          "Sub_Total": 4930,
+          "Invoice_Number": "868995000000376854",
+          "Billing_Code": null,
+          "Subject": "NextGen",
+          "Excise_Duty": 50,
+          "Contact_Name": null,
+          "Shipping_City": null,
+          "Shipping_Country": null,
+          "Shipping_Code": null,
+          "Billing_City": null,
+          "Purchase_Order": null,
+          "Billing_State": null,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Shipping_Street": null
+      }
+    service: "cds.zoho.crm.invoices"
+    result:
+        custom:
+            Account_Name:
+                id: "868995000000376293"
+            Adjustment: 0
+            Created_Time: "2025-02-08T23:56:09+05:30"
+            Currency: "USD"
+            Deal_Name__s:
+                id: "652314585623"
+            Discount: 0
+            Excise_Duty: 50
+            Grand_Total: 4930
+            Invoice_Date: "2025-02-08"
+            Invoice_Number: "868995000000376854"
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-08T23:56:09+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Sales_Commission: 100
+            Status: "Delivered"
+            Sub_Total: 4930
+            Subject: "NextGen"
+            Tax: 0
+            cds:
+                zoho-crm:
+                    account_name: "NextGen"
+                    deal_name: "abc"
+                    id: "868995000000376852"
+                    owner_name: "Jose "
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Status" : "Delivered",
+              "Sales_Commission" : 100,
+              "Grand_Total" : 4930,
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-08T23:56:09+05:30",
+              "Discount" : 0,
+              "Adjustment" : 0,
+              "Created_Time" : "2025-02-08T23:56:09+05:30",
+              "Sub_Total" : 4930,
+              "Tax" : 0,
+              "Invoice_Number" : "868995000000376854",
+              "Invoice_Date" : "2025-02-08",
+              "Subject" : "NextGen",
+              "Excise_Duty" : 50,
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Currency" : "USD",
+              "Account_Name" : {
+                "name" : "NextGen",
+                "id" : "868995000000376293"
+              },
+              "id" : "868995000000376852",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Deal_Name__s" : {
+                "name" : "abc",
+                "id" : "652314585623"
+              }
+            }
+        service: "cds.zoho.crm.invoices"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1739039169000
+  - sample: |-
+      {
+          "Status": "Complete",
+          "Owner": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Modified_Time": "2025-02-08T23:41:17+05:30",
+          "Description": null,
+          "Campaign_Name": "Social Media Ads",
+          "Created_Time": "2025-02-08T23:41:17+05:30",
+          "End_Date": "2025-02-06",
+          "Type": "Telemarketing",
+          "Modified_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Num_sent": null,
+          "Expected_Revenue": 60000,
+          "Currency": "USD",
+          "Actual_Cost": 9005,
+          "id": "868995000000376490",
+          "Expected_Response": null,
+          "Created_By": {
+              "name": "Jose ",
+              "id": "868995000000345001",
+              "email": "test@gmail.com"
+          },
+          "Tag": [],
+          "Parent_Campaign": null,
+          "Start_Date": "2025-02-03",
+          "Budgeted_Cost": 9000
+      }
+    service: "cds.zoho.crm.campaigns"
+    result:
+        custom:
+            Actual_Cost: 9005
+            Budgeted_Cost: 9000
+            Campaign_Name: "Social Media Ads"
+            Created_Time: "2025-02-08T23:41:17+05:30"
+            Currency: "USD"
+            End_Date: "2025-02-06"
+            Expected_Revenue: 60000
+            Modified_By:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+            Modified_Time: "2025-02-08T23:41:17+05:30"
+            Owner:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+            Start_Date: "2025-02-03"
+            Status: "Complete"
+            cds:
+                zoho-crm:
+                    campaign_type: "Telemarketing"
+                    id: "868995000000376490"
+                    owner_name: "Jose "
+            usr:
+                email: "test@gmail.com"
+                id: "868995000000345001"
+                name: "Jose "
+        message: |-
+            {
+              "Status" : "Complete",
+              "Owner" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Modified_Time" : "2025-02-08T23:41:17+05:30",
+              "Campaign_Name" : "Social Media Ads",
+              "Created_Time" : "2025-02-08T23:41:17+05:30",
+              "End_Date" : "2025-02-06",
+              "Type" : "Telemarketing",
+              "Modified_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Expected_Revenue" : 60000,
+              "Currency" : "USD",
+              "Actual_Cost" : 9005,
+              "id" : "868995000000376490",
+              "Created_By" : {
+                "name" : "Jose ",
+                "id" : "868995000000345001",
+                "email" : "test@gmail.com"
+              },
+              "Start_Date" : "2025-02-03",
+              "Budgeted_Cost" : 9000
+            }
+        service: "cds.zoho.crm.campaigns"
+        tags:
+            - "source:LOGS_SOURCE"
+        timestamp: 1739038277000

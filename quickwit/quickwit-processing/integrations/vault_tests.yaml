@@ -1,0 +1,132 @@
+id: "vault"
+tests:
+ -
+  sample: "2019-12-18T20:26:12.000Z [INFO]  core: security barrier not initialized"
+  result:
+    custom:
+      level: "INFO"
+      timestamp: 1576700772000
+      vault:
+        service: "core"
+    message: "security barrier not initialized"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576700772000
+ -
+  sample: "2019-12-06T23:59:40.398Z [DEBUG] expiration: collecting leases"
+  result:
+    custom:
+      level: "DEBUG"
+      timestamp: 1575676780398
+      vault:
+        service: "expiration"
+    message: "collecting leases"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1575676780398
+ -
+  sample: "2019-12-06T23:59:40.425Z [WARN]  no `api_addr` value specified in config or in VAULT_API_ADDR; falling back to detection if possible, but this value should be manually set"
+  result:
+    custom:
+      level: "WARN"
+      timestamp: 1575676780425
+    message: "no `api_addr` value specified in config or in VAULT_API_ADDR; falling back to detection if possible, but this value should be manually set"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1575676780425
+ -
+  sample: |-
+    {
+      "request" : {
+        "client_token" : "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885",
+        "path" : "sys/policies/acl/admin",
+        "data" : {
+          "policy" : "hmac-sha256:212744709e5a643a5ff4125160c26983f8dab537f60d166c2fac5b95547abc33"
+        },
+        "namespace" : {
+          "id" : "root"
+        },
+        "id" : "9adb5544-637f-3d42-9459-3684f5d21996",
+        "remote_address" : "127.0.0.1",
+        "client_token_accessor" : "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52",
+        "operation" : "update"
+      },
+      "auth" : {
+        "token_policies" : [ "root" ],
+        "client_token" : "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885",
+        "accessor" : "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52",
+        "policies" : [ "root" ],
+        "display_name" : "root",
+        "token_type" : "service"
+      },
+      "time" : "2019-11-05T00:40:27.638711Z",
+      "type" : "request"
+    }
+  result:
+    custom:
+      auth:
+        accessor: "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52"
+        client_token: "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885"
+        display_name: "root"
+        policies:
+         - "root"
+        token_policies:
+         - "root"
+        token_type: "service"
+      http:
+        method: "update"
+        url_details:
+          path: "sys/policies/acl/admin"
+      network:
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+      request:
+        client_token: "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885"
+        client_token_accessor: "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52"
+        data:
+          policy: "hmac-sha256:212744709e5a643a5ff4125160c26983f8dab537f60d166c2fac5b95547abc33"
+        id: "9adb5544-637f-3d42-9459-3684f5d21996"
+        namespace:
+          id: "root"
+        operation: "update"
+        path: "sys/policies/acl/admin"
+        remote_address: "127.0.0.1"
+      time: "2019-11-05T00:40:27.638711Z"
+      type: "request"
+      usr:
+        id: "root"
+    message: |-
+      {
+        "request" : {
+          "client_token" : "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885",
+          "path" : "sys/policies/acl/admin",
+          "data" : {
+            "policy" : "hmac-sha256:212744709e5a643a5ff4125160c26983f8dab537f60d166c2fac5b95547abc33"
+          },
+          "namespace" : {
+            "id" : "root"
+          },
+          "id" : "9adb5544-637f-3d42-9459-3684f5d21996",
+          "remote_address" : "127.0.0.1",
+          "client_token_accessor" : "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52",
+          "operation" : "update"
+        },
+        "auth" : {
+          "token_policies" : [ "root" ],
+          "client_token" : "hmac-sha256:6291b17ab99eb5bf3fd44a41d3a0bf0213976f26c72d12676b33408459a89885",
+          "accessor" : "hmac-sha256:2630a7b8e996b0c451db4924f32cec8793d0eb69609f777d89a5c8188a742f52",
+          "policies" : [ "root" ],
+          "display_name" : "root",
+          "token_type" : "service"
+        },
+        "time" : "2019-11-05T00:40:27.638711Z",
+        "type" : "request"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

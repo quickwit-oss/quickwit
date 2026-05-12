@@ -1,0 +1,71 @@
+id: rethinkdb
+metric_id: rethinkdb
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Table
+    path: db.table
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Uptime
+    path: uptime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: second
+pipeline:
+  type: pipeline
+  name: RethinkDB
+  enabled: true
+  filter:
+    query: source:rethinkdb
+  processors:
+    - type: grok-parser
+      name: Parsing default formats
+      enabled: true
+      source: message
+      samples:
+        - '2020-02-21T09:49:24.463573900 0.054301s warn: Cache size is very low and may impact performance.'
+        - '2020-02-21T09:49:24.468250300 0.058977s notice: Server ready, "server0" c79e1284-c542-429d-babf-627447e86318'
+        - '2020-03-26T16:34:17.108525400 0.637269s notice: Connected to proxy proxy-1e80aed3-898c-49d0-8774-8fb95f773c42'
+        - '2020-03-26T16:34:17.668422400 80.346005s info: Table de8766a5-5147-4e64-b624-862028cb5572: Added replica on this server.'
+        - '2020-02-21T09:51:25.666005500 121.392750s notice: Connected to server "server1" 03bd7126-5d09-48ed-8074-d0a7101dc58c'
+      grok:
+        matchRules: |
+          default %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS"):timestamp} %{number:uptime}s %{word:level}: %{data:msg}
+        supportRules: ''
+    - type: grok-parser
+      name: Parsing special messages
+      enabled: true
+      source: msg
+      grok:
+        matchRules: |
+          server_ready Server ready, "%{notSpace:rethinkdb.server.name}" %{notSpace:rethinkdb.server.id}
+          server_connected Connected to server "%{notSpace:rethinkdb.server.name}" %{notSpace:rethinkdb.server.id}
+          proxy_connected Connected to proxy %{notSpace:rethinkdb.proxy.id}
+          table_default Table %{notSpace:db.table}: .*
+        supportRules: ''
+      samples:
+        - Server ready, "server0" c79e1284-c542-429d-babf-627447e86318
+        - Connected to proxy proxy-1e80aed3-898c-49d0-8774-8fb95f773c42
+        - 'Table de8766a5-5147-4e64-b624-862028cb5572: Added replica on this server.'
+        - Connected to server "server1" 03bd7126-5d09-48ed-8074-d0a7101dc58c
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

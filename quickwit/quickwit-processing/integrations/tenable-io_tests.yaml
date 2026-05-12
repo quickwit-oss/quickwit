@@ -1,0 +1,390 @@
+id: tenable-io
+tests:
+ -
+  sample: |-
+    {
+      "crud" : "c",
+      "actor" : {
+        "name" : "johndoe@tenable.com",
+        "id" : "68acaf69-baea-1111-a987-a49a61f0e5f8"
+      },
+      "action" : "session.create",
+      "received" : "2023-10-31T21:07:03.126Z",
+      "id" : "22ccc11034484fff8c9673b411111111",
+      "is_failure" : false,
+      "fields" : [ {
+        "value" : "session",
+        "key" : "X-Access-Type"
+      }, {
+        "value" : "73.32.206.162, 73.32.206.162, 10.200.20.47",
+        "key" : "X-Forwarded-For"
+      }, {
+        "value" : "-",
+        "key" : "X-Session-Uuid"
+      }, {
+        "value" : "f13c572a7254d3192a667afe3bbb2567:1111168df2b47c17e291",
+        "key" : "X-Request-Uuid"
+      } ],
+      "target" : {
+        "id" : "cabff33",
+        "type" : "Session"
+      }
+    }
+  service: "activity"
+  result:
+    custom:
+      crud: "c"
+      evt:
+        name: "session.create"
+      fields:
+       -
+        value: "session"
+        key: "X-Access-Type"
+       -
+        value: "73.32.206.162, 73.32.206.162, 10.200.20.47"
+        key: "X-Forwarded-For"
+       -
+        value: "-"
+        key: "X-Session-Uuid"
+       -
+        value: "f13c572a7254d3192a667afe3bbb2567:1111168df2b47c17e291"
+        key: "X-Request-Uuid"
+      id: "22ccc11034484fff8c9673b411111111"
+      is_failure: false
+      operation: "Create"
+      received: "2023-10-31T21:07:03.126Z"
+      target:
+        id: "cabff33"
+        type: "Session"
+      usr:
+        id: "68acaf69-baea-1111-a987-a49a61f0e5f8"
+        name: "johndoe@tenable.com"
+    message: |-
+      {
+        "crud" : "c",
+        "actor" : {
+          "name" : "johndoe@tenable.com",
+          "id" : "68acaf69-baea-1111-a987-a49a61f0e5f8"
+        },
+        "action" : "session.create",
+        "received" : "2023-10-31T21:07:03.126Z",
+        "id" : "22ccc11034484fff8c9673b411111111",
+        "is_failure" : false,
+        "fields" : [ {
+          "value" : "session",
+          "key" : "X-Access-Type"
+        }, {
+          "value" : "73.32.206.162, 73.32.206.162, 10.200.20.47",
+          "key" : "X-Forwarded-For"
+        }, {
+          "value" : "-",
+          "key" : "X-Session-Uuid"
+        }, {
+          "value" : "f13c572a7254d3192a667afe3bbb2567:1111168df2b47c17e291",
+          "key" : "X-Request-Uuid"
+        } ],
+        "target" : {
+          "id" : "cabff33",
+          "type" : "Session"
+        }
+      }
+    service: "activity"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1698786423126
+ -
+  sample: |-
+    {
+      "severity" : "medium",
+      "indexed" : "2024-12-02T12:31:55.198424Z",
+      "scan" : {
+        "schedule_uuid" : "template-2e28d004-1111-5164-1111-f7a12a1f11e3971ac0f491161f3a",
+        "started_at" : "2024-12-02T12:15:15.498Z",
+        "uuid" : "308395d4-72cb-4a8b-8987-2b79f8db1be6",
+        "target" : "10.10.10.10"
+      },
+      "last_found" : "2024-12-02T12:31:05.407Z",
+      "severity_modification_type" : "NONE",
+      "source" : "NESSUS",
+      "output" : "\nThe following certificate was found at the top of the certificate\nchain sent by the remote host, but is self-signed and was not\nfound in the list of known certificate authorities :\n\n|-Subject : CN=johndoe.abc.abc\n",
+      "first_found" : "2024-12-02T10:07:51.851Z",
+      "plugin" : {
+        "exploited_by_malware" : false,
+        "description" : "The X.509 certificate chain for this service is not signed by a recognized certificate authority.  If the remote host is a public host in production, this nullifies the use of SSL as anyone could establish a man-in-the-middle attack against the remote host. \n\nNote that this plugin does not check for certificate chains that end in a certificate that is not self-signed, but is signed by an unrecognized certificate authority.",
+        "unsupported_by_vendor" : false,
+        "cvss_temporal_score" : 3.7,
+        "type" : "remote",
+        "checks_for_default_account" : false,
+        "checks_for_malware" : false,
+        "cvss3_temporal_vector" : {
+          "report_confidence" : "Confirmed",
+          "raw" : "E:U/RL:O/RC:C",
+          "exploitability" : "Unproven",
+          "remediation_level" : "Official Fix"
+        },
+        "cvss_temporal_vector" : {
+          "report_confidence" : "Confirmed",
+          "raw" : "E:U/RL:OF/RC:C",
+          "exploitability" : "Unproven",
+          "remediation_level" : "Official Fix"
+        },
+        "exploit_available" : false,
+        "exploit_framework_canvas" : false,
+        "cvss_base_score" : 6.4,
+        "solution" : "Purchase or generate a proper SSL certificate for this service.",
+        "cvss_vector" : {
+          "availability_impact" : "None",
+          "integrity_impact" : "Partial",
+          "raw" : "AV:N/AC:L/Au:N/C:P/I:P/A:N",
+          "confidentiality_impact" : "Partial",
+          "access_vector" : "Network",
+          "access_complexity" : "Low",
+          "authentication" : "None required"
+        },
+        "exploit_framework_exploithub" : false,
+        "modification_date" : "2022-06-14T00:00:00Z",
+        "publication_date" : "2012-01-17T00:00:00Z",
+        "exploit_framework_core" : false,
+        "id" : 57582,
+        "cvss3_vector" : {
+          "availability_impact" : "None",
+          "integrity_impact" : "Low",
+          "raw" : "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+          "confidentiality_impact" : "Low",
+          "access_vector" : "Network",
+          "access_complexity" : "Low"
+        },
+        "has_workaround" : false,
+        "family_id" : 23,
+        "in_the_news" : false,
+        "has_patch" : false,
+        "exploit_framework_d2_elliot" : false,
+        "risk_factor" : "medium",
+        "synopsis" : "The SSL certificate chain for this service ends in an unrecognized self-signed certificate.",
+        "cvss3_temporal_score" : 4.6,
+        "version" : "1.6",
+        "exploited_by_nessus" : false,
+        "cvss3_base_score" : 6.5,
+        "exploit_framework_metasploit" : false,
+        "name" : "SSL Self-Signed Certificate",
+        "bid" : [ 57582 ],
+        "family" : "General"
+      },
+      "port" : {
+        "protocol" : "TCP",
+        "port" : 443,
+        "service" : "www"
+      },
+      "severity_id" : 2,
+      "state" : "OPEN",
+      "asset" : {
+        "last_scan_target" : "10.10.10.10",
+        "hostname" : "johndoe.abc.abc",
+        "network_id" : "00000000-0000-0000-0000-000000000000",
+        "ipv4" : "10.10.10.10",
+        "fqdn" : "johndoe.abc.abc",
+        "tracked" : true,
+        "uuid" : "33a50c5f-d224-447f-9680-fd690eb35a01"
+      },
+      "severity_default_id" : 2
+    }
+  service: "vulnerability"
+  result:
+    custom:
+      asset:
+        fqdn: "johndoe.abc.abc"
+        hostname: "johndoe.abc.abc"
+        last_scan_target: "10.10.10.10"
+        network_id: "00000000-0000-0000-0000-000000000000"
+        tracked: true
+        uuid: "33a50c5f-d224-447f-9680-fd690eb35a01"
+      first_found: "2024-12-02T10:07:51.851Z"
+      indexed: "2024-12-02T12:31:55.198424Z"
+      last_found: "2024-12-02T12:31:05.407Z"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: 443
+      output: |2
+
+        The following certificate was found at the top of the certificate
+        chain sent by the remote host, but is self-signed and was not
+        found in the list of known certificate authorities :
+
+        |-Subject : CN=johndoe.abc.abc
+      plugin:
+        bid:
+         - 57582
+        checks_for_default_account: false
+        checks_for_malware: false
+        cvss3_base_score: 6.5
+        cvss3_temporal_score: 4.6
+        cvss3_temporal_vector:
+          exploitability: "Unproven"
+          raw: "E:U/RL:O/RC:C"
+          remediation_level: "Official Fix"
+          report_confidence: "Confirmed"
+        cvss3_vector:
+          access_complexity: "Low"
+          access_vector: "Network"
+          availability_impact: "None"
+          confidentiality_impact: "Low"
+          integrity_impact: "Low"
+          raw: "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+        cvss_base_score: 6.4
+        cvss_temporal_score: 3.7
+        cvss_temporal_vector:
+          exploitability: "Unproven"
+          raw: "E:U/RL:OF/RC:C"
+          remediation_level: "Official Fix"
+          report_confidence: "Confirmed"
+        cvss_vector:
+          access_complexity: "Low"
+          access_vector: "Network"
+          authentication: "None required"
+          availability_impact: "None"
+          confidentiality_impact: "Partial"
+          integrity_impact: "Partial"
+          raw: "AV:N/AC:L/Au:N/C:P/I:P/A:N"
+        description: "The X.509 certificate chain for this service is not signed by a recognized certificate authority.  If the remote host is a public host in production, this nullifies the use of SSL as anyone could establish a man-in-the-middle attack against the remote host. \n\nNote that this plugin does not check for certificate chains that end in a certificate that is not self-signed, but is signed by an unrecognized certificate authority."
+        exploit_available: false
+        exploit_framework_canvas: false
+        exploit_framework_core: false
+        exploit_framework_d2_elliot: false
+        exploit_framework_exploithub: false
+        exploit_framework_metasploit: false
+        exploited_by_malware: false
+        exploited_by_nessus: false
+        family: "General"
+        family_id: 23
+        has_patch: false
+        has_workaround: false
+        id: 57582
+        in_the_news: false
+        modification_date: "2022-06-14T00:00:00Z"
+        name: "SSL Self-Signed Certificate"
+        publication_date: "2012-01-17T00:00:00Z"
+        risk_factor: "medium"
+        solution: "Purchase or generate a proper SSL certificate for this service."
+        synopsis: "The SSL certificate chain for this service ends in an unrecognized self-signed certificate."
+        type: "remote"
+        unsupported_by_vendor: false
+        version: "1.6"
+        vpr:
+          rating: "N/A"
+      port:
+        protocol: "TCP"
+        service: "www"
+      scan:
+        schedule_uuid: "template-2e28d004-1111-5164-1111-f7a12a1f11e3971ac0f491161f3a"
+        started_at: "2024-12-02T12:15:15.498Z"
+        target: "10.10.10.10"
+        uuid: "308395d4-72cb-4a8b-8987-2b79f8db1be6"
+      severity: "medium"
+      severity_default_id: 2
+      severity_id: 2
+      severity_modification_type: "NONE"
+      source: "NESSUS"
+      state: "OPEN"
+      status: "WARN"
+    message: |-
+      {
+        "severity" : "medium",
+        "indexed" : "2024-12-02T12:31:55.198424Z",
+        "scan" : {
+          "schedule_uuid" : "template-2e28d004-1111-5164-1111-f7a12a1f11e3971ac0f491161f3a",
+          "started_at" : "2024-12-02T12:15:15.498Z",
+          "uuid" : "308395d4-72cb-4a8b-8987-2b79f8db1be6",
+          "target" : "10.10.10.10"
+        },
+        "last_found" : "2024-12-02T12:31:05.407Z",
+        "severity_modification_type" : "NONE",
+        "source" : "NESSUS",
+        "output" : "\nThe following certificate was found at the top of the certificate\nchain sent by the remote host, but is self-signed and was not\nfound in the list of known certificate authorities :\n\n|-Subject : CN=johndoe.abc.abc\n",
+        "first_found" : "2024-12-02T10:07:51.851Z",
+        "plugin" : {
+          "exploited_by_malware" : false,
+          "description" : "The X.509 certificate chain for this service is not signed by a recognized certificate authority.  If the remote host is a public host in production, this nullifies the use of SSL as anyone could establish a man-in-the-middle attack against the remote host. \n\nNote that this plugin does not check for certificate chains that end in a certificate that is not self-signed, but is signed by an unrecognized certificate authority.",
+          "unsupported_by_vendor" : false,
+          "cvss_temporal_score" : 3.7,
+          "type" : "remote",
+          "checks_for_default_account" : false,
+          "checks_for_malware" : false,
+          "cvss3_temporal_vector" : {
+            "report_confidence" : "Confirmed",
+            "raw" : "E:U/RL:O/RC:C",
+            "exploitability" : "Unproven",
+            "remediation_level" : "Official Fix"
+          },
+          "cvss_temporal_vector" : {
+            "report_confidence" : "Confirmed",
+            "raw" : "E:U/RL:OF/RC:C",
+            "exploitability" : "Unproven",
+            "remediation_level" : "Official Fix"
+          },
+          "exploit_available" : false,
+          "exploit_framework_canvas" : false,
+          "cvss_base_score" : 6.4,
+          "solution" : "Purchase or generate a proper SSL certificate for this service.",
+          "cvss_vector" : {
+            "availability_impact" : "None",
+            "integrity_impact" : "Partial",
+            "raw" : "AV:N/AC:L/Au:N/C:P/I:P/A:N",
+            "confidentiality_impact" : "Partial",
+            "access_vector" : "Network",
+            "access_complexity" : "Low",
+            "authentication" : "None required"
+          },
+          "exploit_framework_exploithub" : false,
+          "modification_date" : "2022-06-14T00:00:00Z",
+          "publication_date" : "2012-01-17T00:00:00Z",
+          "exploit_framework_core" : false,
+          "id" : 57582,
+          "cvss3_vector" : {
+            "availability_impact" : "None",
+            "integrity_impact" : "Low",
+            "raw" : "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+            "confidentiality_impact" : "Low",
+            "access_vector" : "Network",
+            "access_complexity" : "Low"
+          },
+          "has_workaround" : false,
+          "family_id" : 23,
+          "in_the_news" : false,
+          "has_patch" : false,
+          "exploit_framework_d2_elliot" : false,
+          "risk_factor" : "medium",
+          "synopsis" : "The SSL certificate chain for this service ends in an unrecognized self-signed certificate.",
+          "cvss3_temporal_score" : 4.6,
+          "version" : "1.6",
+          "exploited_by_nessus" : false,
+          "cvss3_base_score" : 6.5,
+          "exploit_framework_metasploit" : false,
+          "name" : "SSL Self-Signed Certificate",
+          "bid" : [ 57582 ],
+          "family" : "General"
+        },
+        "port" : {
+          "protocol" : "TCP",
+          "port" : 443,
+          "service" : "www"
+        },
+        "severity_id" : 2,
+        "state" : "OPEN",
+        "asset" : {
+          "last_scan_target" : "10.10.10.10",
+          "hostname" : "johndoe.abc.abc",
+          "network_id" : "00000000-0000-0000-0000-000000000000",
+          "ipv4" : "10.10.10.10",
+          "fqdn" : "johndoe.abc.abc",
+          "tracked" : true,
+          "uuid" : "33a50c5f-d224-447f-9680-fd690eb35a01"
+        },
+        "severity_default_id" : 2
+      }
+    service: "vulnerability"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1733142665407

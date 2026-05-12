@@ -1,0 +1,61 @@
+id: falco
+metric_id: falco
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Falco
+  enabled: true
+  filter:
+    query: source:falco
+  processors:
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - name: Lookup on `priority` to `status`
+      enabled: true
+      source: priority
+      target: status
+      lookupTable: |-
+        Warning, warning
+        Notice, notice
+        Critical, critical
+        Informational, info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `output_fields.user.name` to `usr.name`
+      enabled: true
+      sources:
+        - output_fields.user.name
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `output_fields.evt.type` to `evt.name`
+      enabled: true
+      sources:
+        - output_fields.evt.type
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

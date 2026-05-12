@@ -1,0 +1,281 @@
+id: crest-data-systems-trulens-eval
+metric_id: crest-data-systems-trulens-eval
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Answer Relevance
+    path: cds.trulens_eval.answer-relevance
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Completion Tokens
+    path: cds.trulens_eval.completion_tokens
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Context Relevance
+    path: cds.trulens_eval.context-relevance
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Cost
+    path: cds.trulens_eval.cost
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Groundedness
+    path: cds.trulens_eval.groundedness
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Latency
+    path: cds.trulens_eval.latency
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Prompt Tokens
+    path: cds.trulens_eval.prompt_tokens
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Record Completion Tokens
+    path: cds.trulens_eval.record_completion_tokens
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Record Cost
+    path: cds.trulens_eval.record_cost
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Record Latency
+    path: cds.trulens_eval.record_latency
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Record Prompt Tokens
+    path: cds.trulens_eval.record_prompt_tokens
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Record Tokens
+    path: cds.trulens_eval.record_tokens
+    source: log
+    type: double
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Result
+    path: cds.trulens_eval.result
+    source: log
+    type: double
+  - facetType: list
+    groups:
+      - Crest data trulens eval
+    name: Status
+    path: cds.trulens_eval.status
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - Crest data trulens eval
+    name: Tokens
+    path: cds.trulens_eval.tokens
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: TruLens Eval by Crest Data
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-trulens-eval"
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `completion_tokens` to `cds.trulens_eval.completion_tokens`
+      enabled: true
+      sources:
+        - completion_tokens
+      sourceType: attribute
+      target: cds.trulens_eval.completion_tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `cost` to `cds.trulens_eval.cost`
+      enabled: true
+      sources:
+        - cost
+      sourceType: attribute
+      target: cds.trulens_eval.cost
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `latency` to `cds.trulens_eval.latency`
+      enabled: true
+      sources:
+        - latency
+      sourceType: attribute
+      target: cds.trulens_eval.latency
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `prompt_tokens` to `cds.trulens_eval.prompt_tokens`
+      enabled: true
+      sources:
+        - prompt_tokens
+      sourceType: attribute
+      target: cds.trulens_eval.prompt_tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `tokens` to `cds.trulens_eval.tokens`
+      enabled: true
+      sources:
+        - tokens
+      sourceType: attribute
+      target: cds.trulens_eval.tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Context-Relevance` to `cds.trulens_eval.context-relevance`
+      enabled: true
+      sources:
+        - Context-Relevance
+      sourceType: attribute
+      target: cds.trulens_eval.context-relevance
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - name: Lookup for `status` to `cds.trulens_eval.status`
+      enabled: true
+      source: status
+      target: cds.trulens_eval.status
+      lookupTable: |-
+        done,Ok
+        error, Error
+        none,Info
+        failed, Error
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `cds.trulens_eval.status` as the official status of the log
+      enabled: true
+      sources:
+        - cds.trulens_eval.status
+    - type: attribute-remapper
+      name: Map `Groundedness` to `cds.trulens_eval.groundedness`
+      enabled: true
+      sources:
+        - Groundedness
+      sourceType: attribute
+      target: cds.trulens_eval.groundedness
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `Answer-Relevance` to `cds.trulens_eval.answer-relevance`
+      enabled: true
+      sources:
+        - Answer-Relevance
+      sourceType: attribute
+      target: cds.trulens_eval.answer-relevance
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `result` to `cds.trulens_eval.result`
+      enabled: true
+      sources:
+        - result
+      sourceType: attribute
+      target: cds.trulens_eval.result
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record_cost` to `cds.trulens_eval.record_cost`
+      enabled: true
+      sources:
+        - record_cost
+      sourceType: attribute
+      target: cds.trulens_eval.record_cost
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record_latency` to `cds.trulens_eval.record_latency`
+      enabled: true
+      sources:
+        - record_latency
+      sourceType: attribute
+      target: cds.trulens_eval.record_latency
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record_tokens` to `cds.trulens_eval.record_tokens`
+      enabled: true
+      sources:
+        - record_tokens
+      sourceType: attribute
+      target: cds.trulens_eval.record_tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record_prompt_tokens` to `cds.trulens_eval.record_prompt_tokens`
+      enabled: true
+      sources:
+        - record_prompt_tokens
+      sourceType: attribute
+      target: cds.trulens_eval.record_prompt_tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `record_completion_tokens` to `cds.trulens_eval.record_completion_tokens`
+      enabled: true
+      sources:
+        - record_completion_tokens
+      sourceType: attribute
+      target: cds.trulens_eval.record_completion_tokens
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

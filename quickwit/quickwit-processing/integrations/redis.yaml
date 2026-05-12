@@ -1,0 +1,60 @@
+id: redis
+metric_id: redis
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Redis PID
+    path: pid
+    source: log
+pipeline:
+  type: pipeline
+  name: Redis
+  enabled: true
+  filter:
+    query: source:redis
+  processors:
+    - type: grok-parser
+      name: Parsing Redis logs
+      enabled: true
+      source: message
+      samples:
+        - '12115:M 08 Jan 17:55:41.572 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128.'
+        - '12115:M 08 Jan 17:45:41.572 # Server started, Redis version 3.0.6'
+        - 1:M 14 May 2019 19:11:40.164 * Background saving terminated with success
+      grok:
+        supportRules: |
+          _date (%{date("dd MMM HH:mm:ss.SSS"):date}|%{date("dd MMM yyyy HH:mm:ss.SSS"):date})
+          _pid %{integer:pid}
+          _severity %{notSpace:severity}
+          _role %{word:role}
+        matchRules: |
+          default_format %{_pid}:%{_role} %{_date} %{_severity} %{data:message}
+
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: category-processor
+      name: Categorise severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@severity: "."'
+          name: debug
+        - filter:
+            query: '@severity: "-"'
+          name: verbose
+        - filter:
+            query: '@severity: "*"'
+          name: notice
+        - filter:
+            query: '@severity: "#"'
+          name: warning
+      target: redis.severity
+    - type: status-remapper
+      name: Define `redis.severity` as the official status of the log
+      enabled: true
+      sources:
+        - redis.severity

@@ -1,0 +1,81 @@
+id: mesos
+metric_id: mesos
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Mesos
+  enabled: true
+  filter:
+    query: source:mesos
+  processors:
+    - type: grok-parser
+      name: Parsing Mesos logs
+      source: message
+      enabled: true
+      samples:
+        - I0301 09:55:21.503362    15 http.cpp:391] HTTP GET for /master/roles.json from 172.28.0.1:59406 with User-Agent='Datadog Agent/7.27.0'
+        - 'I0301 14:47:46.959683 89194 group.cpp:831] Syncing group operations: queue size (joins, cancels, datas) = (0, 0, 0)'
+      grok:
+        supportRules: |
+          _date %{date("MMdd HH:mm:ss.SSSSSS"):timestamp}
+          _start (?<level>.)%{_date}\s+%{integer:pid} %{notSpace:logger.name}:%{integer:line}\]
+        matchRules: |
+          mesos_http %{_start} HTTP %{word:http.method} for %{notSpace:http.url} from %{ipOrHost:network.client.ip}(:%{integer:network.client.port})?.*
+          mesos_default %{_start} %{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: url-parser
+      name: Parse http.url
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details

@@ -1,0 +1,58 @@
+id: "nfsstat"
+tests:
+ -
+  sample: "Sep 15 18:48:41 andrew-nfsstat-log kernel: [ 3762.965598] nfsd: fh_verify(20: 00060001 aa56281d c844aa94 bb77f4bd 39792991 00000000)"
+  result:
+    custom:
+      syslog:
+        appname: "nfsd"
+        hostname: "andrew-nfsstat-log"
+        time: 3762.965598
+      timestamp: 22272521000
+    message: "fh_verify(20: 00060001 aa56281d c844aa94 bb77f4bd 39792991 00000000)"
+    service: "nfsd"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22272521000
+ -
+  sample: "Sep 15 18:50:17 andrew-nfsstat-log kernel: [ 3859.354703] nfsd_dispatch: vers 4 proc 1"
+  result:
+    custom:
+      syslog:
+        appname: "nfsd_dispatch"
+        hostname: "andrew-nfsstat-log"
+        time: 3859.354703
+      timestamp: 22272617000
+    message: "vers 4 proc 1"
+    service: "nfsd_dispatch"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 22272617000
+ -
+  sample: "Oct  6 16:16:13 andrew-nfsiostat kernel:  NFSD: laundromat service - starting"
+  result:
+    custom:
+      syslog:
+        appname: "NFSD"
+        hostname: "andrew-nfsiostat"
+      timestamp: 24077773000
+    message: "laundromat service - starting"
+    service: "NFSD"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24077773000
+ -
+  sample: "Oct  6 16:18:16 andrew-nfsiostat agent[43967]: 2020-10-06 16:18:16 UTC | CORE | WARN | (pkg/collector/python/datadog_agent.go:119 in LogMessage) | nfsstat:5173c35fbc9f51af | (nfsstat.py:44) | No NFS mount points were found."
+  result:
+    custom:
+      syslog:
+        appname: "agent"
+        hostname: "andrew-nfsiostat"
+        time: 43967.0
+      timestamp: 24077896000
+    message: "2020-10-06 16:18:16 UTC | CORE | WARN | (pkg/collector/python/datadog_agent.go:119 in LogMessage) | nfsstat:5173c35fbc9f51af | (nfsstat.py:44) | No NFS mount points were found."
+    service: "agent"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24077896000
+

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use itertools::Itertools;
-use pomchi::DatadogLogMsg;
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
+use quickwit_processing::DatadogLogMsg;
 use quickwit_proto::cloudprem::*;
 use quickwit_proto::types::IndexId;
 use serde_json::Value;
@@ -1010,9 +1010,9 @@ async fn test_extra_fts_indexing_and_search() {
     ]))
     .unwrap();
 
-    // Verify PomChi produces ExtraFts with error object and title
+    // Verify quickwit-processing produces ExtraFts with error object and title
     let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
-    let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
+    let processed = quickwit_processing::ProcessedLog::from_datadog_log_msg(msg);
     assert!(!processed.extra_fts.is_empty());
     assert_eq!(
         processed.extra_fts.error.message.as_deref(),
@@ -1027,9 +1027,9 @@ async fn test_extra_fts_indexing_and_search() {
         Some("payment service crash")
     );
 
-    // Verify PomChi ignores error when it's a plain string (not an object)
+    // Verify quickwit-processing ignores error when it's a plain string (not an object)
     let msg_str_error: DatadogLogMsg = serde_json::from_value(docs[2].clone()).unwrap();
-    let processed_str = pomchi::ProcessedLog::from_datadog_log_msg(msg_str_error);
+    let processed_str = quickwit_processing::ProcessedLog::from_datadog_log_msg(msg_str_error);
     assert!(processed_str.extra_fts.error.is_empty());
     assert!(processed_str.extra_fts.title.is_none());
 

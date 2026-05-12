@@ -1,0 +1,708 @@
+id: ossec-security
+metric_id: ossec-security
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: OSSEC Security
+  enabled: true
+  filter:
+    query: "source:ossec-security"
+  processors:
+    - type: grok-parser
+      name: Parsing OSSEC alerts
+      enabled: true
+      source: message
+      samples:
+        - '<132>Jun  4 09:52:29 10.10.10.10 ossec:
+          {"crit":2,"id":1002,"component":"ub20->/var/log/syslog","classification":"
+          syslog,errors,","description":"Unknown problem somewhere in the
+          system.","message":"Jun  4 09:52:29 ub20 multipathd[740]: sda: failed
+          to get sgio uid: No such file or directory"}'
+        - '<132>Jun 11 14:59:35 ub20 ossec:
+          {"crit":5,"id":4101,"component":"ub20->/root/test.log","classification":"
+          firewall,firewall_drop,","description":"Firewall drop
+          event.","message":"2006-09-19 03:31:15 DROP UDP 10.10.10.10
+          10.10.10.10 1000 1000 310 - - - - - - -
+          RECEIVE","src_ip":"10.10.10.10","src_port":1000,"dst_ip":"10.10.10.10","dst_port":1000}'
+        - 'Jun 11 14:59:35 10.10.10.10 ossec:
+          {"crit":5,"id":4101,"component":"ub20->/root/test.log","classification":"
+          firewall,firewall_drop,","description":"Firewall drop
+          event.","message":"2006-09-19 03:31:15 DROP UDP 10.10.10.10
+          10.10.10.10 1000 1000 310 - - - - - - -
+          RECEIVE","src_ip":"10.10.10.10","src_port":1000,"dst_ip":"10.10.10.10","dst_port":1000}'
+      grok:
+        supportRules: ""
+        matchRules: 'ossec_alert_parsing_rule (<%{integer}>)?(%{date("MMM  d
+          HH:mm:ss","Asia/Kolkata"):timestamp}|%{date("MMM d
+          HH:mm:ss","Asia/Kolkata"):timestamp})
+          %{notSpace:syslog.hostname:nullIf("-")}
+          %{notSpace:syslog.appname:nullIf("-")}: %{data::json}'
+    - type: grok-parser
+      name: Parse group names from classification string
+      enabled: true
+      source: classification
+      samples:
+        - syslog,errors,
+        - pam,syslog,authentication_success,
+      grok:
+        supportRules: ""
+        matchRules: classification_parsing_rule %{data:group_list:array(",")}(,)?
+    - name: Assign `status` attribute from `crit` value
+      enabled: true
+      source: crit
+      target: status
+      lookupTable: |-
+        0,informational
+        1,informational
+        2,informational
+        3,informational
+        4,warning
+        5,warning
+        6,warning
+        7,warning
+        8,warning
+        9,error
+        10,error
+        11,error
+        12,error
+        13,critical
+        14,critical
+        15,critical
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: attribute-remapper
+      name: Map `crit` to `level`
+      enabled: true
+      sources:
+        - crit
+      sourceType: attribute
+      target: level
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `classification` to `group`
+      enabled: true
+      sources:
+        - classification
+      sourceType: attribute
+      target: group
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `id` to `rule_id`
+      enabled: true
+      sources:
+        - id
+      sourceType: attribute
+      target: rule_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `message` to `log`
+      enabled: true
+      sources:
+        - message
+      sourceType: attribute
+      target: log
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Define `service` from range of rule ids.
+      enabled: true
+      categories:
+        - filter:
+            query: "@rule_id:([4100 TO 4299] OR [40900 TO 40999])"
+          name: firewall
+        - filter:
+            query: "@rule_id:[18100 TO 18499]"
+          name: windows
+        - filter:
+            query: "@rule_id:[5500 TO 5599]"
+          name: pam
+        - filter:
+            query: "@rule_id:[5700 TO 5899]"
+          name: sshd
+        - filter:
+            query: "@rule_id:[31100 TO 31199]"
+          name: web_access
+        - filter:
+            query: "@rule_id:[11100 TO 11199]"
+          name: ftpd
+        - filter:
+            query: "@rule_id:([1000 TO 1999] OR [2100 TO 2299] OR [2500 TO 2699] OR 2301 OR
+              2701 OR [2800 TO 2803] OR [2830 TO 2834] OR [5100 TO 5299] OR
+              [5300 TO 5306] OR [5400 TO 5405] OR [5901 TO 5905] OR 7101 OR
+              [9200 TO 9201] OR 10100 OR [2900 TO 2903] OR [2930 TO 2934])"
+          name: syslog
+        - filter:
+            query: "@rule_id:[0 TO 999]"
+          name: system
+      target: service
+    - type: category-processor
+      name: Define `service` value to `other` for other rule_ids
+      enabled: true
+      categories:
+        - filter:
+            query: -@service:(syslog OR firewall OR windows OR pam OR sshd OR web_access OR
+              system OR ftpd)
+          name: other
+      target: service
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Processing of Firewall Logs
+      enabled: true
+      filter:
+        query: "@rule_id:([4100 TO 4299] OR [40900 TO 40999]) "
+      processors:
+        - type: grok-parser
+          name: Parse firewall logs
+          enabled: true
+          source: log
+          samples:
+            - 2006-09-20 10:38:21 DROP TCP 10.10.10.10 10.10.10.10 1000 1000 48
+              SA 4175551841 892874455 17520 - - - RECEIVE
+            - >
+              2006-09-19 03:31:15 DROP UDP 10.10.10.10 10.10.10.10 1000 1000 310
+              - - - - - - - RECEIVE
+            - 2006-09-19 03:27:05 CLOSE UDP 11.11.11.11 11.11.11.11 3682 88 - -
+              - - - - - - -
+            - 2006-09-19 03:37:57 OPEN TCP 11.11.11.11 11.11.11.11 3686 80 - - -
+              - - - - - -
+            - 2006-09-19 04:07:56 DROP UDP 12.12.12.12 12.12.12.12 2250 1900 250
+              - - - - - - - RECEIVE
+          grok:
+            supportRules: ""
+            matchRules: firewall_parsing_rule %{date("yyyy-MM-d HH:mm:ss"):} %{word:action}
+              %{word:protocol} %{ip:src_ip} %{ip:dst_ip} %{integer:src_port}
+              %{integer:dst_port} %{regex("[0-9-]*"):size:nullIf("-")}
+              %{regex("[A-Za-z0-9-]*"):tcpflags:nullIf("-")}
+              %{regex("[0-9-]*"):tcpsyn:nullIf("-")}
+              %{regex("[0-9-]*"):tcpack:nullIf("-")}
+              %{regex("[0-9-]*"):tcpwin:nullIf("-")}
+              %{notSpace:icmptype:nullIf("-")} %{notSpace:icmpcode:nullIf("-")}
+              %{notSpace:info:nullIf("-")} %{notSpace:path:nullIf("-")}
+        - type: attribute-remapper
+          name: Map `dst_ip` to `network.destination.ip`
+          enabled: true
+          sources:
+            - dst_ip
+          sourceType: attribute
+          target: network.destination.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `dst_port` to `network.destination.port`
+          enabled: true
+          sources:
+            - dst_port
+          sourceType: attribute
+          target: network.destination.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `src_port` to `network.client.port`
+          enabled: true
+          sources:
+            - src_port
+          sourceType: attribute
+          target: network.client.port
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Process of adduser Logs
+      enabled: true
+      filter:
+        query: "@rule_id:[5901 TO 5905] "
+      processors:
+        - type: grok-parser
+          name: Parse syslog's adduser logs
+          enabled: true
+          source: log
+          samples:
+            - "May 31 10:44:02 ub20 useradd[669813]: new user:
+              name=dummy_ossec_user, UID=1002, GID=1007,
+              home=/home/dummy_ossec_user, shell=/bin/sh, from=/dev/pts/0"
+            - "May 27 12:08:23 ub20 groupadd[6134]: new group: name=dd-agent,
+              GID=120"
+            - "Jun 27 11:57:30 ub20 chfn[1472124]: changed user
+              'test_12322' information"
+            - "Sep 15 16:37:13 ub20 userdel[12584]: account deleted -
+              account=test, uid=1014, by=0"
+            - "May 28 16:04:10 ub20 useradd[30245]: failed adding user 'test',
+              data deleted"
+          grok:
+            supportRules: |-
+              DATETIME (%{date("MMM  d HH:mm:ss"):}|%{date("MMM d HH:mm:ss"):})
+              SKIPHEADER %{regex("[^:]*"):}
+              TILL_SINGLE_QUOTES %{regex("[^']*"):}
+            matchRules: >-
+              user_parsing_rule %{DATETIME} %{SKIPHEADER}: (new user:|new
+              account added -|account deleted -) %{data:user:keyvalue("=","/")}
+
+
+              group_parsing_rule %{DATETIME} %{SKIPHEADER}: new group: %{data:group:keyvalue("=","/")}
+
+
+              add_user_failed_rule %{DATETIME} %{SKIPHEADER}: failed adding user '%{regex("[a-z0-9-_]*"):usr.name}', data deleted
+
+
+              user_info_changed_rule %{DATETIME} %{SKIPHEADER}: changed user '%{TILL_SINGLE_QUOTES:usr.name}' information
+        - type: attribute-remapper
+          name: Map `user.account`, `user.name` to `usr.name`
+          enabled: true
+          sources:
+            - user.account
+            - user.name
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `user.UID`, `user.uid` to `usr.id`
+          enabled: true
+          sources:
+            - user.UID
+            - user.uid
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Processing of FTPD Logs
+      enabled: true
+      filter:
+        query: "@rule_id:[11100 TO 11113] "
+      processors:
+        - type: grok-parser
+          name: Parsing of FTPD logs.
+          enabled: true
+          source: log
+          samples:
+            - "May 28 15:52:51 ub20 ftpd[27654]: User dummy timed out after 910
+              seconds at Sun May 28 15:52:51 2024"
+            - "May 28 15:50:36 ub20 ftpd[28370]: FTP LOGIN FROM 10.10.10.10,
+              dummy"
+            - "May 29 11:04:16 ub20 ftpd[417946]: connect from 10.10.10.10"
+            - >
+              May 28 15:14:02 ub20 ftpd[28616]: FTPD: EXPORT file local
+              %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup, remote
+              sample.html
+            - "May 28 15:50:36 ub20 ftpd[28370]: connection from 10.10.10.10 at
+              Sun May 28 15:50:36 2006"
+          grok:
+            supportRules: |-
+              DATETIME (%{date("MMM  d HH:mm:ss"):}|%{date("MMM d HH:mm:ss"):})
+              SKIPHEADER %{regex("[^:]*"):}
+            matchRules: >-
+              ftpd_file_transfer_rule %{DATETIME} %{SKIPHEADER}: %{notSpace}:
+              %{word:action} file local (%{data:local_file_path})?, remote(
+              %{data:remote_file_path:nullIf("")})?
+
+
+              user_timeout_rule %{DATETIME} %{SKIPHEADER}: User %{notSpace:usr.name} timed out after %{integer:timeout} seconds at %{data}
+
+
+              connection_attempt_rule %{DATETIME} %{SKIPHEADER}: (connection from|FTP LOGIN FROM|connect from) %{ipOrHost:src_ip}( at %{data}|, %{notSpace:usr.name})?
+    - type: pipeline
+      name: Processing of Syslog's Authentication Failed Logs
+      enabled: true
+      filter:
+        query: "@rule_id:(2501 OR 2502) "
+      processors:
+        - type: grok-parser
+          name: Parse syslog's authentication failed logs
+          enabled: true
+          source: log
+          samples:
+            - "May  2 12:14:01 ub20 sshd[1573405]: Disconnecting authenticating
+              user dummy 10.10.10.10 port 1000: Too many authentication failures
+              [preauth]"
+            - "May  2 12:14:01 ub20 sshd[1573405]: Disconnecting authenticating
+              user root 10.10.10.10 port 1000: Too many authentication failures
+              [preauth]"
+            - "May 29 18:43:12 ub20 sshd[254289]: PAM 2 more authentication
+              failures; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.10.10.10
+              user=dummy"
+          grok:
+            supportRules: |-
+              DATETIME (%{date("MMM  d HH:mm:ss"):}|%{date("MMM d HH:mm:ss"):})
+              SKIPHEADER %{regex("[^:]*"):}
+            matchRules: >-
+              multiple_authentication_fail_parse_rule %{DATETIME:}
+              %{SKIPHEADER:}: Disconnecting authenticating user
+              %{notSpace:usr.name} %{ip:src_ip} port
+              %{integer:network.client.port}\: Too many authentication
+              failures%{data}
+
+
+              authentication_fail_parse_rule %{DATETIME:} %{SKIPHEADER:}: PAM 2 more authentication failures; %{data::keyvalue("=","/")}
+        - type: attribute-remapper
+          name: Map `user` to `usr.name`
+          enabled: true
+          sources:
+            - user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `uid` to `usr.id`
+          enabled: true
+          sources:
+            - uid
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `rhost` to `network.client.ip`
+          enabled: true
+          sources:
+            - rhost
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Parsing of DPKG Logs
+      enabled: true
+      filter:
+        query: "@rule_id:[2900 TO 2903] "
+      processors:
+        - type: grok-parser
+          name: Parse DPKG logs
+          enabled: true
+          source: log
+          samples:
+            - 2024-05-27 12:08:24 status installed systemd:amd64
+              245.4-4ubuntu3.23
+            - 2008-04-01 16:10:43 remove nmap 4.11-1 4.11-1
+            - 2024-05-29 06:14:50 remove curl 4.0.3-0.3 4.0.3-0.3
+            - 2008-04-01 14:39:49 install screen <none> 4.0.3-0.3
+            - 2008-04-01 16:10:43 status half-installed nmap 4.11-1
+          grok:
+            supportRules: ""
+            matchRules: >-
+              dpkg_package_parse_rule_with_status %{date("yyyy-MM-dd HH:mm:ss")}
+              status %{notSpace:operation} %{data:package_name}
+
+
+              dpkg_package_parse_rule %{date("yyyy-MM-dd HH:mm:ss")} %{notSpace:operation} %{notSpace:package_name} %{notSpace}( %{notSpace})?
+    - type: pipeline
+      name: Process of Yum Logs
+      enabled: true
+      filter:
+        query: "@rule_id:[2930 TO 2945] "
+      processors:
+        - type: grok-parser
+          name: Parse Yum logs
+          enabled: true
+          source: log
+          samples:
+            - "Dec 17 07:05:06 ax yum: Installed: libX11-devel -
+              1.0.3-9.el5.i386"
+            - "Oct  8 07:17:27 ax yum[61038]: Erased:
+              file-roller-3.28.1-2.el7.x86_64"
+            - |
+              Aug 20 12:46:57 Installed: device-mapper-event.i386 1.02.24-1.el5
+            - "Aug 20 12:51:21 Erased: libhugetlbfs-lib"
+            - |
+              Aug 20 12:45:56 Updated: perl.i386 4:5.8.8-10.el5_2.3
+          grok:
+            supportRules: |-
+              DATETIME (%{date("MMM  d HH:mm:ss"):}|%{date("MMM dd HH:mm:ss"):})
+              SKIPHEADER %{regex("[^:]*"):}
+            matchRules: >-
+              yum_package_parsing_rule %{DATETIME} %{SKIPHEADER}:
+              %{word:operation}: %{data:package_name}
+
+
+              yum_package_parsing_rule_2 %{DATETIME} %{word:opertation}: %{data:package_name}
+    - type: pipeline
+      name: Parsing of Web Access Logs
+      enabled: true
+      filter:
+        query: "@rule_id:[31100 TO 31199] "
+      processors:
+        - type: grok-parser
+          name: Parsing of web access logs
+          enabled: true
+          source: log
+          samples:
+            - 10.10.10.10 - - [22/Jan/2019:03:56:22 +0330] "GET
+              /image/61821/productModel/150x150 HTTP/1.1" 400 6012
+              "https://www.xyz.com/m/product/33606/%D8%AA%D9%84%D9%88%DB%8C%D8%B2%DB%8C%D9%88%D9%86-%D8%A7%D9%84-%D8%A7%DB%8C-%D8%AF%DB%8C-%D8%B3%D8%A7%D9%85%D8%B3%D9%88%D9%86%DA%AF-%D9%85%D8%AF%D9%84-55NU8950-Ultra-HD-4K"
+              "Mozilla/5.0 (Android 7.1.1; Mobile; rv:64.0) Gecko/64.0
+              Firefox/64.0" "-"
+            - >
+              10.10.10.10 - - [22/Jan/2019:03:57:14 +0330] "GET
+              /filter/p10280%2Cv1%7C%D8%B7%D9%88%D8%B3%DB%8C%20%D9%86%D9%82%D8%B1%D9%87%20%D8%A7%DB%8C%2Cv1%7C%D8%B3%D9%81%DB%8C%D8%AF.?o=v1
+              HTTP/1.1" 302 0 "-" "Mozilla/5.0 (compatible; AhrefsBot/6.1;
+              +http://ahrefs.com/robot/)" "-"
+            - >
+              10.10.10.10 - - [22/Jan/2019:03:56:29 +0330] "GET
+              /image/45443/productModel/150x150 HTTP/1.1" 200 2891 "-"
+              "Mozilla/5.0 (compatible; bingbot/2.0;
+              +http://www.bing.com/bingbot.htm)" "-"
+            - 10.10.10.10 - - [22/Jan/2019:03:56:29 +0330] "GET
+              /image/45443/productModel/150x150 HTTP/1.1" 200 2891
+            - 10.10.10.10 - - [22/Jun/2007:09:02:39 -0300] "POST
+              /dcid/wp-trackback.php?p=9 HTTP/1.0" 401 464 "" "Mozilla/4.0
+              (compatible; MSIE 6.0; Windows NT 5.1; SV1)"
+          grok:
+            supportRules: |-
+              TILL_DOUBLE_QUOTE_PARSE_RULE %{regex("[^\"]*"):}
+              TILL_CLOSING_BRACKET_PARSE_RULE %{regex("[^]]*"):}
+            matchRules: web_access_parsing_rule %{ip:src_ip} %{notSpace} %{notSpace}
+              \[%{TILL_CLOSING_BRACKET_PARSE_RULE}\] "%{word:http.method}
+              %{notSpace:request} %{notSpace:http.request_id}"
+              %{integer:http.status_code} %{integer:size}(
+              "%{TILL_DOUBLE_QUOTE_PARSE_RULE:referer:nullIf("-")}")?(
+              "%{data:http.useragent}")?( %{quotedString:})?
+        - type: user-agent-parser
+          name: Define `http.useragent` as `http.useragent_details`
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+    - type: pipeline
+      name: Processing of System Logs
+      enabled: true
+      filter:
+        query: "@rule_id:(501 OR 503 OR 504 OR 591) "
+      processors:
+        - type: grok-parser
+          name: Parsing of OSSEC System logs
+          enabled: true
+          source: log
+          samples:
+            - "ossec: Agent started: 'dummy_agent->10.10.10.10'."
+            - "ossec: Agent disconnected: 'dummy_agent-10.10.10.10'."
+            - "ossec: File rotated (inode changed):
+              '/var/log/apache2/access.log'."
+            - "ossec: File size reduced (inode remained):
+              '/var/log/ntrace/ntrace.log'."
+          grok:
+            supportRules: ""
+            matchRules: >-
+              ossec_agent_parsing_rule ossec: Agent %{word:action}:
+              '%{notSpace:agent-name}-(>)?%{notSpace:agent-ip}'.
+
+              log_file_change_parsing_rule ossec: File %{regex("[A-Za-z ]*"):action} (%{regex("[^)]*"):})\): '%{notSpace:file}'.
+    - type: pipeline
+      name: Processing of Low Disk Space Logs
+      enabled: true
+      filter:
+        query: "@rule_id:531 "
+      processors:
+        - type: grok-parser
+          name: Parser of Low Disk Space logs
+          enabled: true
+          source: log
+          samples:
+            - "ossec: output: 'df -P':
+              /dev/loop1                              57088    57088         0     \
+              100% /snap/core18/2823"
+          grok:
+            supportRules: ""
+            matchRules: "low_disk_space_rule ossec: output: 'df -P':
+              %{notSpace:filesystem}\\s+%{integer:size}\\s+%{integer:used}\\s+%\
+              {integer:available}\\s+%{notSpace:usage}\\s+%{notSpace:mounted_on\
+              }"
+    - type: attribute-remapper
+      name: Map `src_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - src_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `acct` to `usr.name`
+      enabled: true
+      sources:
+        - acct
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Define `network.client.ip` as default geoip attribute for source
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Define `network.destination.ip` as default geoip attribute for destination
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing

@@ -1,0 +1,70 @@
+id: memcached
+metric_id: memcached
+backend_only: false
+facets:
+  - groups:
+      - Memcached
+    name: Direction
+    path: direction_category
+    source: log
+pipeline:
+  type: pipeline
+  name: Memcached
+  enabled: true
+  filter:
+    query: source:memcached
+  processors:
+    - type: grok-parser
+      name: Parsing Memcached logs
+      enabled: true
+      source: message
+      samples:
+        - <26 server listening (auto-negotiate)
+        - '32: Client using the ascii protocol'
+        - Can't listen for events on fd %d
+        - "slab class  39: chunk size 458992 perslab \t2"
+        - '> NOT FOUND my_key'
+      grok:
+        supportRules: |
+          _direction %{regex("<|>"):direction}
+          _socket %{number:socket_descriptor}
+          _error_message %{data:error.message}
+        matchRules: |
+          log_format1 %{_direction}?%{_socket}.*
+          log_format2 %{_socket}:.*
+          log_format3 %{_direction} %{_error_message}
+          log_format4 slab class *%{_socket}:.*
+          log_format5 %{_error_message}
+
+          #Extra samples:
+          #>26 server listening (auto-negotiate)
+          #slab class   2: chunk size	320 perslab  3276
+    - type: category-processor
+      name: Categorize level
+      enabled: true
+      categories:
+        - filter:
+            query: '@error.message:*'
+          name: warning
+        - filter:
+            query: -@error.message:*
+          name: info
+      target: level
+
+    - type: category-processor
+      name: Categorize direction
+      enabled: true
+      categories:
+        - filter:
+            query: '@direction:"<"'
+          name: in
+        - filter:
+            query: '@direction:">"'
+          name: out
+      target: direction_category
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+

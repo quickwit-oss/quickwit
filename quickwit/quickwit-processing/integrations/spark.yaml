@@ -1,0 +1,50 @@
+id: spark
+metric_id: spark
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Spark
+  enabled: true
+  filter:
+    query: source:spark
+  processors:
+    - type: grok-parser
+      name: Parsing spark Default formats
+      enabled: true
+      source: message
+      samples:
+        - 2020-07-09 03:01:22 INFO  JobScheduler:54 - Started JobScheduler
+        - 2020-07-09 03:01:13 INFO  Master:54 - Starting Spark master at spark://spark-master:7077
+        - 2020-07-09 03:22:24 INFO  Worker:54 - Executor app-20200709030119-0000/379 finished with state EXITED message Command exited with code 1 exitStatus 1
+        - 2020-07-09 03:01:38 WARN  TaskSchedulerImpl:66 - Initial job has not accepted any resources; check your cluster UI to ensure that workers are registered and have sufficient resources
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _line %{integer:line}
+
+        matchRules: |
+          spark_default %{_date} %{_status}\s+%{_logger_name}:%{_line}\W+%{data:msg}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

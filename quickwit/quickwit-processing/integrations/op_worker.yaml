@@ -1,0 +1,31 @@
+id: op_worker
+metric_id: observability-pipelines
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: Observability Pipeline Worker
+  enabled: true
+  filter:
+    query: "source:op_worker"
+  processors:
+    - type: status-remapper
+      name: Define `metadata.level` as the official status of the log
+      enabled: true
+      sources:
+        - metadata.level
+    - type: attribute-remapper
+      name: Map `hostname` to `host`
+      enabled: true
+      sources:
+        - hostname
+      sourceType: attribute
+      target: host
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

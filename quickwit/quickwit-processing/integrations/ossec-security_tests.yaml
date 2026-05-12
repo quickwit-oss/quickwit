@@ -1,0 +1,429 @@
+id: ossec-security
+tests:
+  -
+    sample: "<132>Jun 19 11:56:43 ub20 ossec: {\"crit\":2,\"id\":1002,\"component\":\"ub20->/var/log/syslog\",\"classification\":\" syslog,errors,\",\"description\":\"Unknown problem somewhere in the system.\",\"message\":\"Jun 19 11:56:42 ub20 multipathd[740]: sda: failed to get sysfs uid: Invalid argument\"}"
+    result:
+      custom:
+        component: "ub20->/var/log/syslog"
+        description: "Unknown problem somewhere in the system."
+        group: " syslog,errors,"
+        group_list:
+        - "syslog"
+        - "errors"
+        level: 2
+        log: "Jun 19 11:56:42 ub20 multipathd[740]: sda: failed to get sysfs uid: Invalid argument"
+        rule_id: 1002
+        service: "syslog"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 46160803000
+      message: "<132>Jun 19 11:56:43 ub20 ossec: {\"crit\":2,\"id\":1002,\"component\":\"ub20->/var/log/syslog\",\"classification\":\" syslog,errors,\",\"description\":\"Unknown problem somewhere in the system.\",\"message\":\"Jun 19 11:56:42 ub20 multipathd[740]: sda: failed to get sysfs uid: Invalid argument\"}"
+      service: "syslog"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 46160803000
+  -
+    sample: "<132>Jun  4 15:59:57 ub20 ossec: {\"crit\":2,\"id\":1002,\"component\":\"ub20->/var/log/syslog\",\"classification\":\" syslog,errors,\",\"description\":\"Unknown problem somewhere in the system.\",\"message\":\"Jun  4 15:59:56 ub20 multipathd[740]: sda: failed to get sgio uid: No such file or directory\"}"
+    result:
+      custom:
+        component: "ub20->/var/log/syslog"
+        description: "Unknown problem somewhere in the system."
+        group: " syslog,errors,"
+        group_list:
+        - "syslog"
+        - "errors"
+        level: 2
+        log: "Jun  4 15:59:56 ub20 multipathd[740]: sda: failed to get sgio uid: No such file or directory"
+        rule_id: 1002
+        service: "syslog"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 44879397000
+      message: "<132>Jun  4 15:59:57 ub20 ossec: {\"crit\":2,\"id\":1002,\"component\":\"ub20->/var/log/syslog\",\"classification\":\" syslog,errors,\",\"description\":\"Unknown problem somewhere in the system.\",\"message\":\"Jun  4 15:59:56 ub20 multipathd[740]: sda: failed to get sgio uid: No such file or directory\"}"
+      service: "syslog"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 44879397000
+  -
+    sample: "<132>Jun 12 18:26:19 ub20 ossec: {\"crit\":5,\"id\":4101,\"component\":\"ub20->/root/test.log\",\"classification\":\" firewall,firewall_drop,\",\"description\":\"Firewall drop event.\",\"message\":\"2024-06-14 22:11:08 DROP UDP 10.10.10.10 10.10.10.10 1000 1000 665 - - - - - - - RECEIVE\",\"src_ip\":\"10.10.10.10\",\"src_port\":1000,\"dst_ip\":\"10.10.10.10\",\"dst_port\":1000}"
+    result:
+      custom:
+        action: "DROP"
+        component: "ub20->/root/test.log"
+        description: "Firewall drop event."
+        group: " firewall,firewall_drop,"
+        group_list:
+        - "firewall"
+        - "firewall_drop"
+        level: 5
+        log: "2024-06-14 22:11:08 DROP UDP 10.10.10.10 10.10.10.10 1000 1000 665 - - - - - - - RECEIVE"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 1000
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: 1000
+        path: "RECEIVE"
+        protocol: "UDP"
+        rule_id: 4101
+        service: "firewall"
+        size: "665"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45579379000
+      message: "<132>Jun 12 18:26:19 ub20 ossec: {\"crit\":5,\"id\":4101,\"component\":\"ub20->/root/test.log\",\"classification\":\" firewall,firewall_drop,\",\"description\":\"Firewall drop event.\",\"message\":\"2024-06-14 22:11:08 DROP UDP 10.10.10.10 10.10.10.10 1000 1000 665 - - - - - - - RECEIVE\",\"src_ip\":\"10.10.10.10\",\"src_port\":1000,\"dst_ip\":\"10.10.10.10\",\"dst_port\":1000}"
+      service: "firewall"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45579379000
+  -
+    sample: "<132>Jun 11 18:22:02 ub20 ossec: {\"crit\":9,\"id\":5902,\"component\":\"ub20->/var/log/auth.log\",\"classification\":\" syslog,adduser\",\"description\":\"New user added to the system\",\"message\":\"Jun 11 15:48:37 ub20 useradd[1969265]: new user: name=test, UID=1009, GID=1010, home=/home/test, shell=/bin/sh, from=/dev/pts/0\"}"
+    result:
+      custom:
+        component: "ub20->/var/log/auth.log"
+        description: "New user added to the system"
+        group: " syslog,adduser"
+        group_list:
+        - "syslog"
+        - "adduser"
+        level: 9
+        log: "Jun 11 15:48:37 ub20 useradd[1969265]: new user: name=test, UID=1009, GID=1010, home=/home/test, shell=/bin/sh, from=/dev/pts/0"
+        rule_id: 5902
+        service: "syslog"
+        status: "error"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45492722000
+        user:
+          GID: 1010
+          from: "/dev/pts/0"
+          home: "/home/test"
+          shell: "/bin/sh"
+        usr:
+          id: 1009
+          name: "test"
+      message: "<132>Jun 11 18:22:02 ub20 ossec: {\"crit\":9,\"id\":5902,\"component\":\"ub20->/var/log/auth.log\",\"classification\":\" syslog,adduser\",\"description\":\"New user added to the system\",\"message\":\"Jun 11 15:48:37 ub20 useradd[1969265]: new user: name=test, UID=1009, GID=1010, home=/home/test, shell=/bin/sh, from=/dev/pts/0\"}"
+      service: "syslog"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45492722000
+  -
+    sample: "<132>Jun 13 12:49:02 ub20 ossec: {\"crit\":1,\"id\":11104,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,\",\"description\":\"User uploaded a file to server.\",\"message\":\"May 28 19:38:24 ub20 ftpd[24474]: FTPD: IMPORT file local /opt/test.txt, remote\"}"
+    result:
+      custom:
+        action: "IMPORT"
+        component: "ub20->/root/test.log"
+        description: "User uploaded a file to server."
+        group: " syslog,ftpd,"
+        group_list:
+        - "syslog"
+        - "ftpd"
+        level: 1
+        local_file_path: "/opt/test.txt"
+        log: "May 28 19:38:24 ub20 ftpd[24474]: FTPD: IMPORT file local /opt/test.txt, remote"
+        rule_id: 11104
+        service: "ftpd"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45645542000
+      message: "<132>Jun 13 12:49:02 ub20 ossec: {\"crit\":1,\"id\":11104,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,\",\"description\":\"User uploaded a file to server.\",\"message\":\"May 28 19:38:24 ub20 ftpd[24474]: FTPD: IMPORT file local /opt/test.txt, remote\"}"
+      service: "ftpd"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45645542000
+  -
+    sample: "<132>Jun 13 11:38:38 ub20 ossec: {\"crit\":10,\"id\":11109,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,authentication_failures,\",\"description\":\"Multiple FTP failed login attempts.\",\"message\":\"Jun  1 16:16:26 ub20 ftpd[39056]: repeated login failures from 10.10.10.10\",\"src_ip\":\"10.10.10.10\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "Multiple FTP failed login attempts."
+        group: " syslog,ftpd,authentication_failures,"
+        group_list:
+        - "syslog"
+        - "ftpd"
+        - "authentication_failures"
+        level: 10
+        log: "Jun  1 16:16:26 ub20 ftpd[39056]: repeated login failures from 10.10.10.10"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        rule_id: 11109
+        service: "ftpd"
+        status: "error"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45641318000
+      message: "<132>Jun 13 11:38:38 ub20 ossec: {\"crit\":10,\"id\":11109,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,authentication_failures,\",\"description\":\"Multiple FTP failed login attempts.\",\"message\":\"Jun  1 16:16:26 ub20 ftpd[39056]: repeated login failures from 10.10.10.10\",\"src_ip\":\"10.10.10.10\"}"
+      service: "ftpd"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45641318000
+  -
+    sample: "<132>Jun 13 11:48:52 ub20 ossec: {\"crit\":5,\"id\":11107,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,access_denied,\",\"description\":\"Connection blocked by Tcp Wrappers.\",\"message\":\"Jun  3 02:32:37 ub20 ftpd[418042]: refused connect from 10.10.10.10\",\"src_ip\":\"10.10.10.10\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "Connection blocked by Tcp Wrappers."
+        group: " syslog,ftpd,access_denied,"
+        group_list:
+        - "syslog"
+        - "ftpd"
+        - "access_denied"
+        level: 5
+        log: "Jun  3 02:32:37 ub20 ftpd[418042]: refused connect from 10.10.10.10"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        rule_id: 11107
+        service: "ftpd"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45641932000
+      message: "<132>Jun 13 11:48:52 ub20 ossec: {\"crit\":5,\"id\":11107,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,access_denied,\",\"description\":\"Connection blocked by Tcp Wrappers.\",\"message\":\"Jun  3 02:32:37 ub20 ftpd[418042]: refused connect from 10.10.10.10\",\"src_ip\":\"10.10.10.10\"}"
+      service: "ftpd"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45641932000
+  -
+    sample: "<132>Jun 13 10:37:10 ub20 ossec: {\"crit\":3,\"id\":11106,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,connection_attempt\",\"description\":\"Remote host connected to FTP server.\",\"message\":\"May 28 15:50:36 ub20 ftpd[28370]: connection from 10.10.10.10 at Sun May 28 15:50:36 2006\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "Remote host connected to FTP server."
+        group: " syslog,ftpd,connection_attempt"
+        group_list:
+        - "syslog"
+        - "ftpd"
+        - "connection_attempt"
+        level: 3
+        log: "May 28 15:50:36 ub20 ftpd[28370]: connection from 10.10.10.10 at Sun May 28 15:50:36 2006"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        rule_id: 11106
+        service: "ftpd"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45637630000
+      message: "<132>Jun 13 10:37:10 ub20 ossec: {\"crit\":3,\"id\":11106,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,ftpd,connection_attempt\",\"description\":\"Remote host connected to FTP server.\",\"message\":\"May 28 15:50:36 ub20 ftpd[28370]: connection from 10.10.10.10 at Sun May 28 15:50:36 2006\"}"
+      service: "ftpd"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45637630000
+  -
+    sample: "<132>Jun 17 17:17:40 ub20 ossec: {\"crit\":7,\"id\":2902,\"component\":\"ub20->/var/log/dpkg.log\",\"classification\":\" syslog,dpkg,config_changed,\",\"description\":\"New dpkg (Debian Package) installed.\",\"message\":\"2024-06-17 17:17:39 status installed netcat:all 1.206-1ubuntu1\"}"
+    result:
+      custom:
+        component: "ub20->/var/log/dpkg.log"
+        description: "New dpkg (Debian Package) installed."
+        group: " syslog,dpkg,config_changed,"
+        group_list:
+        - "syslog"
+        - "dpkg"
+        - "config_changed"
+        level: 7
+        log: "2024-06-17 17:17:39 status installed netcat:all 1.206-1ubuntu1"
+        operation: "installed"
+        package_name: "netcat:all 1.206-1ubuntu1"
+        rule_id: 2902
+        service: "syslog"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 46007260000
+      message: "<132>Jun 17 17:17:40 ub20 ossec: {\"crit\":7,\"id\":2902,\"component\":\"ub20->/var/log/dpkg.log\",\"classification\":\" syslog,dpkg,config_changed,\",\"description\":\"New dpkg (Debian Package) installed.\",\"message\":\"2024-06-17 17:17:39 status installed netcat:all 1.206-1ubuntu1\"}"
+      service: "syslog"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 46007260000
+  -
+    sample: "<132>Jun 13 17:48:50 ub20 ossec: {\"crit\":7,\"id\":2932,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,yum,config_changed,\",\"description\":\"New Yum package installed.\",\"message\":\"Dec  7 07:05:06 ax yum: Installed: libX11-devel - 1.0.3-9.el5.i386\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "New Yum package installed."
+        group: " syslog,yum,config_changed,"
+        group_list:
+        - "syslog"
+        - "yum"
+        - "config_changed"
+        level: 7
+        log: "Dec  7 07:05:06 ax yum: Installed: libX11-devel - 1.0.3-9.el5.i386"
+        operation: "Installed"
+        package_name: "libX11-devel - 1.0.3-9.el5.i386"
+        rule_id: 2932
+        service: "syslog"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45663530000
+      message: "<132>Jun 13 17:48:50 ub20 ossec: {\"crit\":7,\"id\":2932,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,yum,config_changed,\",\"description\":\"New Yum package installed.\",\"message\":\"Dec  7 07:05:06 ax yum: Installed: libX11-devel - 1.0.3-9.el5.i386\"}"
+      service: "syslog"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45663530000
+  -
+    sample: "<132>Jun 13 17:54:22 ub20 ossec: {\"crit\":7,\"id\":2933,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,yum,config_changed,\",\"description\":\"Yum package updated.\",\"message\":\"Dec 18 01:50:16 xyz yum: Updated: nspr - 4.7.3-2.el5.x86_64\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "Yum package updated."
+        group: " syslog,yum,config_changed,"
+        group_list:
+        - "syslog"
+        - "yum"
+        - "config_changed"
+        level: 7
+        log: "Dec 18 01:50:16 xyz yum: Updated: nspr - 4.7.3-2.el5.x86_64"
+        operation: "Updated"
+        package_name: "nspr - 4.7.3-2.el5.x86_64"
+        rule_id: 2933
+        service: "syslog"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45663862000
+      message: "<132>Jun 13 17:54:22 ub20 ossec: {\"crit\":7,\"id\":2933,\"component\":\"ub20->/root/test.log\",\"classification\":\" syslog,yum,config_changed,\",\"description\":\"Yum package updated.\",\"message\":\"Dec 18 01:50:16 xyz yum: Updated: nspr - 4.7.3-2.el5.x86_64\"}"
+      service: "syslog"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45663862000
+  -
+    sample: "<132>Jun 12 12:31:02 ub20 ossec: {\"crit\":3,\"id\":501,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,\",\"description\":\"New ossec agent connected.\",\"message\":\"ossec: Agent started: 'dummy->10.10.10.10'.\"}"
+    result:
+      custom:
+        action: "started"
+        agent-ip: "10.10.10.10"
+        agent-name: "dummy"
+        component: "ub20->/root/test.log"
+        description: "New ossec agent connected."
+        group: " ossec,"
+        group_list:
+        - "ossec"
+        level: 3
+        log: "ossec: Agent started: 'dummy->10.10.10.10'."
+        rule_id: 501
+        service: "system"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45558062000
+      message: "<132>Jun 12 12:31:02 ub20 ossec: {\"crit\":3,\"id\":501,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,\",\"description\":\"New ossec agent connected.\",\"message\":\"ossec: Agent started: 'dummy->10.10.10.10'.\"}"
+      service: "system"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45558062000
+  -
+    sample: "<132>Jun 19 00:00:35 ub20 ossec: {\"crit\":3,\"id\":591,\"component\":\"ub20->ossec-logcollector\",\"classification\":\" ossec,\",\"description\":\"Log file rotated.\",\"message\":\"ossec: File rotated (inode changed): '/var/log/apache2/error.log'.\"}"
+    result:
+      custom:
+        action: "rotated"
+        component: "ub20->ossec-logcollector"
+        description: "Log file rotated."
+        file: "/var/log/apache2/error.log"
+        group: " ossec,"
+        group_list:
+        - "ossec"
+        level: 3
+        log: "ossec: File rotated (inode changed): '/var/log/apache2/error.log'."
+        rule_id: 591
+        service: "system"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 46117835000
+      message: "<132>Jun 19 00:00:35 ub20 ossec: {\"crit\":3,\"id\":591,\"component\":\"ub20->ossec-logcollector\",\"classification\":\" ossec,\",\"description\":\"Log file rotated.\",\"message\":\"ossec: File rotated (inode changed): '/var/log/apache2/error.log'.\"}"
+      service: "system"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 46117835000
+  -
+    sample: "<132>Jun 18 14:43:12 ub20 ossec: {\"crit\":8,\"id\":592,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,attacks,\",\"description\":\"Log file size reduced.\",\"message\":\"ossec: File size reduced (inode remained): '/var/log/ntrace/ntrace.log'.\"}"
+    result:
+      custom:
+        component: "ub20->/root/test.log"
+        description: "Log file size reduced."
+        group: " ossec,attacks,"
+        group_list:
+        - "ossec"
+        - "attacks"
+        level: 8
+        log: "ossec: File size reduced (inode remained): '/var/log/ntrace/ntrace.log'."
+        rule_id: 592
+        service: "system"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 46084392000
+      message: "<132>Jun 18 14:43:12 ub20 ossec: {\"crit\":8,\"id\":592,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,attacks,\",\"description\":\"Log file size reduced.\",\"message\":\"ossec: File size reduced (inode remained): '/var/log/ntrace/ntrace.log'.\"}"
+      service: "system"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 46084392000
+  -
+    sample: "<132>Jun 12 12:45:45 ub20 ossec: {\"crit\":3,\"id\":504,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,\",\"description\":\"Ossec agent disconnected.\",\"message\":\"ossec: Agent disconnected: 'dummy_agent-10.10.10.10'.\"}"
+    result:
+      custom:
+        action: "disconnected"
+        agent-ip: "10.10.10.10"
+        agent-name: "dummy_agent"
+        component: "ub20->/root/test.log"
+        description: "Ossec agent disconnected."
+        group: " ossec,"
+        group_list:
+        - "ossec"
+        level: 3
+        log: "ossec: Agent disconnected: 'dummy_agent-10.10.10.10'."
+        rule_id: 504
+        service: "system"
+        status: "informational"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: 45558945000
+      message: "<132>Jun 12 12:45:45 ub20 ossec: {\"crit\":3,\"id\":504,\"component\":\"ub20->/root/test.log\",\"classification\":\" ossec,\",\"description\":\"Ossec agent disconnected.\",\"message\":\"ossec: Agent disconnected: 'dummy_agent-10.10.10.10'.\"}"
+      service: "system"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 45558945000

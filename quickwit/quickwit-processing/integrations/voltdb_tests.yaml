@@ -1,0 +1,48 @@
+id: "voltdb"
+tests:
+ -
+  sample: "2020-09-18 09:58:12,881   DEBUG [Periodic Priority Work] GC: GC for ParNew: 5 ms for 1 collections, 26947768 used; max is 2112618496"
+  result:
+    custom:
+      level: "DEBUG"
+      logger:
+        name: "GC"
+      timestamp: 1600423092881
+      voltdb:
+        task: "Periodic Priority Work"
+    message: "GC for ParNew: 5 ms for 1 collections, 26947768 used; max is 2112618496"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1600423092881
+ -
+  sample: "2020-11-19 13:11:59,000   INFO  [qtp2074658615-90] AUTH: Authenticated user doggo from 172.22.0.1. This message is rate limited to once every 60 seconds."
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "AUTH"
+      timestamp: 1605791519000
+      voltdb:
+        task: "qtp2074658615-90"
+    message: "Authenticated user doggo from 172.22.0.1. This message is rate limited to once every 60 seconds."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605791519000
+ -
+  sample: "2020-11-19 13:12:04,000   DEBUG [Periodic Work] HOST: RSS=337477632 Configured rss limit=4987866316 Configured SNMP rss limit=4364383027"
+  result:
+    custom:
+      level: "DEBUG"
+      logger:
+        name: "HOST"
+      timestamp: 1605791524000
+      voltdb:
+        task: "Periodic Work"
+    message: "RSS=337477632 Configured rss limit=4987866316 Configured SNMP rss limit=4364383027"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1605791524000
+

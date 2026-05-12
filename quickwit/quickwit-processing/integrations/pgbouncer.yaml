@@ -1,0 +1,136 @@
+id: pgbouncer
+metric_id: pgbouncer
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Database
+    name: User
+    path: db.user
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - faceType: range
+    groups:
+      - Database
+    name: Query rate
+    path: db.query.rate
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: Pgbouncer
+  enabled: true
+  filter:
+    query: source:pgbouncer
+  processors:
+    - type: grok-parser
+      name: Parsing Pgbouncer logs
+      enabled: true
+      source: message
+      samples:
+        - '2019-06-13 11:37:29.314 12 LOG process up: pgbouncer 1.8.1, libevent 2.0.21-stable (epoll), adns: c-ares 1.10.0, tls: OpenSSL 1.0.2g  1 Mar 2016'
+        - '2019-06-13 11:37:31.382 12 LOG C-0xa845e0: datadog_test/postgres@172.25.0.1:34884 login attempt: db=datadog_test user=postgres tls=no'
+        - '2019-06-13 12:54:30.775 13049 WARNING C-0x5562e9990540: (nodb)/(nouser)@127.0.0.1:42798 Pooler Error: No such database: postgres'
+        - '2019-06-13 11:38:29.250 12 LOG Stats: 0 xacts/s, 0 queries/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us wait time 52 us'
+        - 2019-06-13 13:04:01.893 47 ERROR fill_defaults fail
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SSS"):date}
+          _pid %{integer:logger.thread_id}
+          _hostname %{ip:network.destination.ip}:%{integer:network.destination.port}
+          _dbname db\s*=\s*%{notSpace:db.real_instance}
+          _dbuser user\s*=\s*%{notSpace:db.real_user}
+          _dbtls tls\s*=\s*%{word:db.tls}
+          # PGBouncer v1.11+ date format
+          _date_z %{date("yyyy-MM-dd HH:mm:ss.SSS z"):date}
+
+        matchRules: |
+          rule_stats %{_date}\s%{_pid}\s%{notSpace:level}\sStats:\s%{number:db.xact.rate}\sxacts\/s,\s%{number:db.query.rate}\squeries\/s,\sin\s%{number:db.write.rate}\sB\/s,\sout\s%{number:db.read.rate}\sB\/s,\sxact\s%{number:db.xact.us}\sus,\squery\s%{number:db.query.us}\sus wait time\s%{number:db.wait_time}\sus
+          rule_connection_login %{_date}\s%{_pid}\s%{notSpace:level}\s%{notSpace}:\s%{notSpace:db.instance}\/%{notSpace:db.user}\@%{_hostname}\s%{data:error.message}:\s%{_dbname}(\s%{_dbuser})?(\s%{_dbtls})?
+          rule_connection_default %{_date}\s%{_pid}\s%{notSpace:level}\s%{notSpace}:\s%{notSpace:db.instance}\/%{notSpace:db.user}\@%{_hostname}\s%{data:description}
+          rule_default %{_date}\s%{_pid}\s%{notSpace:level}\s%{data:description}
+
+          # PGBouncer 1.11+ rules
+          rule_stats_2 %{_date_z}\s\[%{_pid}\]\s%{notSpace:level}\sStats:\s%{number:db.xact.rate}\sxacts\/s,\s%{number:db.query.rate}\squeries\/s,\sin\s%{number:db.write.rate}\sB\/s,\sout\s%{number:db.read.rate}\sB\/s,\sxact\s%{number:db.xact.us}\sus,\squery\s%{number:db.query.us}\sus\swait time\s%{number:db.wait_time}\sus
+          rule_connection_login_2 %{_date_z}\s\[%{_pid}\]\s%{notSpace:level}\s%{notSpace}:\s%{notSpace:db.instance}\/%{notSpace:db.user}\@%{_hostname}\s%{data:error.message}:\s%{_dbname}(\s%{_dbuser})?(\s%{_dbtls})?
+          rule_connection_default_2 %{_date_z}\s\[%{_pid}\]\s%{notSpace:level}\s%{notSpace}:\s%{notSpace:db.instance}\/%{notSpace:db.user}\@%{_hostname}\s%{data:description}
+          rule_default_2 %{_date_z}\s\[%{_pid}\]\s%{notSpace:level}\s%{data:description}
+
+          # Extra samples:
+          # 2019-06-13 11:37:29.313 12 LOG listening on 0.0.0.0:6432
+
+          # 2019-06-13 11:37:31.382 12 LOG C-0xa845e0: (nodb)/(nouser)@172.25.0.1:34884 registered new auto-database: db = datadog_test
+
+          # 2019-06-13 11:37:31.382 12 LOG C-0xa845e0: datadog_test/postgres@172.25.0.1:34884 login attempt: db=datadog_test user=postgres tls=no
+
+          # 2019-06-13 12:54:30.775 13049 WARNING C-0x5562e9990540: (nodb)/(nouser)@127.0.0.1:42798 Pooler Error: No such database: postgres
+
+          # 2019-06-13 11:38:29.250 12 LOG Stats: 0 xacts/s, 0 queries/s, in 0 B/s, out 0 B/s, xact 0 us, query 0 us wait time 52 us
+
+          # 2019-06-13 13:04:01.893 47 ERROR fill_defaults fail
+
+          # PGBouncer 1.11+ samples:
+          # 2019-06-13 11:37:29.314 UTC [12] LOG process up: pgbouncer 1.8.1, libevent 2.0.21-stable (epoll), adns: c-ares 1.10.0, tls: OpenSSL 1.0.2g  1 Mar 2016
+
+          # 2019-06-13 11:37:31.382 UTC [12] LOG C-0xa845e0: datadog_test/postgres@172.25.0.1:34884 login attempt: db=datadog_test user=postgres tls=no
+
+          # 2019-06-13 12:54:30.775 UTC [13049] WARNING C-0x5562e9990540: (nodb)/(nouser)@127.0.0.1:42798 Pooler Error: No such database: postgres
+
+          # 2021-03-02 22:03:52.934 UTC [1] LOG stats: 51 xacts/s, 51 queries/s, in 14276 B/s, out 10695 B/s, xact 1209 us, query 1209 us, wait 8 us
+
+          # 2019-06-13 13:04:01.893 UTC [47] ERROR fill_defaults fail
+
+          # 2019-06-13 11:37:29.313 UTC [12] LOG listening on 0.0.0.0:6432
+
+          # 2019-06-13 11:37:31.382 UTC [12] LOG C-0xa845e0: (nodb)/(nouser)@172.25.0.1:34884 registered new auto-database: db = datadog_test
+    - type: attribute-remapper
+      name: Map `db.real_instance` to `db.instance`
+      enabled: true
+      sources:
+        - db.real_instance
+      target: db.instance
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `db.real_user` to `db.user`
+      enabled: true
+      sources:
+        - db.real_user
+      target: db.user
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Set the severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@level:"LOG"'
+          name: INFO
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

@@ -1,0 +1,1097 @@
+id: "crest_data_systems_square"
+tests:
+    - sample: |-
+          {
+            "event_id" : "891e3589-462f-4215-9b61-f6df2d4432b7",
+            "data" : {
+              "id" : "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY",
+              "type" : "invoice",
+              "object" : {
+                "invoice" : {
+                  "timezone" : "America/Los_Angeles",
+                  "custom_fields" : [ {
+                    "label" : "Event Reference Number",
+                    "placement" : "ABOVE_LINE_ITEMS",
+                    "value" : "Ref. #1234"
+                  }, {
+                    "label" : "Terms of Service",
+                    "placement" : "BELOW_LINE_ITEMS",
+                    "value" : "The terms of service are..."
+                  } ],
+                  "description" : "We appreciate your business!",
+                  "created_at" : "2020-06-18T17:45:13Z",
+                  "store_payment_method_enabled" : false,
+                  "accepted_payment_methods" : {
+                    "square_gift_card" : false,
+                    "cash_app_pay" : false,
+                    "buy_now_pay_later" : false,
+                    "card" : true,
+                    "bank_account" : false
+                  },
+                  "title" : "Event Planning Services",
+                  "version" : 3,
+                  "location_id" : "ES0RJRZYEC39A",
+                  "primary_recipient" : {
+                    "email_address" : "Amelia.Earhart@example.com",
+                    "phone_number" : "1-212-555-4240",
+                    "customer_id" : "JDKYHBWT1D4F8MFH63DBMEN8Y4",
+                    "given_name" : "Amelia",
+                    "family_name" : "Earhart"
+                  },
+                  "payment_requests" : [ {
+                    "uid" : "2da7964f-f3d2-4f43-81e8-5aa220bf3355",
+                    "request_type" : "BALANCE",
+                    "automatic_payment_source" : "NONE",
+                    "due_date" : "2030-01-24",
+                    "total_completed_amount_money" : {
+                      "amount" : 10000,
+                      "currency" : "USD"
+                    },
+                    "computed_amount_money" : {
+                      "amount" : 10000,
+                      "currency" : "USD"
+                    },
+                    "tipping_enabled" : false
+                  } ],
+                  "updated_at" : "2020-06-18T18:23:11Z",
+                  "sale_or_service_date" : "2030-01-24",
+                  "delivery_method" : "EMAIL",
+                  "id" : "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY",
+                  "order_id" : "CAISENgvlJ6jLWAzERDzjyHVybY",
+                  "invoice_number" : "inv-100",
+                  "status" : "PAID"
+                }
+              }
+            },
+            "created_at" : "2020-06-18T18:23:11Z",
+            "merchant_id" : "031FEV2Q6VMPK",
+            "type" : "invoice.payment_made",
+            "location_id" : "ES0RJRZYEC39A"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      invoice_settlement_duration_seconds: 2278.0
+              created_at: "2020-06-18T18:23:11Z"
+              data:
+                  id: "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY"
+                  object:
+                      invoice:
+                          accepted_payment_methods:
+                              bank_account: false
+                              buy_now_pay_later: false
+                              card: true
+                              cash_app_pay: false
+                              square_gift_card: false
+                          created_at: 1592502313000
+                          custom_fields:
+                              - label: "Event Reference Number"
+                                placement: "ABOVE_LINE_ITEMS"
+                                value: "Ref. #1234"
+                              - label: "Terms of Service"
+                                placement: "BELOW_LINE_ITEMS"
+                                value: "The terms of service are..."
+                          delivery_method: "EMAIL"
+                          description: "We appreciate your business!"
+                          id: "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY"
+                          invoice_number: "inv-100"
+                          location_id: "ES0RJRZYEC39A"
+                          order_id: "CAISENgvlJ6jLWAzERDzjyHVybY"
+                          payment_requests:
+                              - uid: "2da7964f-f3d2-4f43-81e8-5aa220bf3355"
+                                request_type: "BALANCE"
+                                automatic_payment_source: "NONE"
+                                due_date: "2030-01-24"
+                                total_completed_amount_money:
+                                    amount: 10000
+                                    currency: "USD"
+                                computed_amount_money:
+                                    amount: 10000
+                                    currency: "USD"
+                                tipping_enabled: false
+                          primary_recipient:
+                              customer_id: "JDKYHBWT1D4F8MFH63DBMEN8Y4"
+                              email_address: "Amelia.Earhart@example.com"
+                              family_name: "Earhart"
+                              given_name: "Amelia"
+                              phone_number: "1-212-555-4240"
+                          sale_or_service_date: "2030-01-24"
+                          status: "PAID"
+                          store_payment_method_enabled: false
+                          timezone: "America/Los_Angeles"
+                          title: "Event Planning Services"
+                          updated_at: 1592504591000
+                          version: 3
+                  type: "invoice"
+              event_id: "891e3589-462f-4215-9b61-f6df2d4432b7"
+              location_id: "ES0RJRZYEC39A"
+              merchant_id: "031FEV2Q6VMPK"
+              service: "cds.square.events.invoice"
+              type: "invoice.payment_made"
+          message: |-
+              {
+                "event_id" : "891e3589-462f-4215-9b61-f6df2d4432b7",
+                "data" : {
+                  "id" : "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY",
+                  "type" : "invoice",
+                  "object" : {
+                    "invoice" : {
+                      "timezone" : "America/Los_Angeles",
+                      "custom_fields" : [ {
+                        "label" : "Event Reference Number",
+                        "placement" : "ABOVE_LINE_ITEMS",
+                        "value" : "Ref. #1234"
+                      }, {
+                        "label" : "Terms of Service",
+                        "placement" : "BELOW_LINE_ITEMS",
+                        "value" : "The terms of service are..."
+                      } ],
+                      "description" : "We appreciate your business!",
+                      "created_at" : "2020-06-18T17:45:13Z",
+                      "store_payment_method_enabled" : false,
+                      "accepted_payment_methods" : {
+                        "square_gift_card" : false,
+                        "cash_app_pay" : false,
+                        "buy_now_pay_later" : false,
+                        "card" : true,
+                        "bank_account" : false
+                      },
+                      "title" : "Event Planning Services",
+                      "version" : 3,
+                      "location_id" : "ES0RJRZYEC39A",
+                      "primary_recipient" : {
+                        "email_address" : "Amelia.Earhart@example.com",
+                        "phone_number" : "1-212-555-4240",
+                        "customer_id" : "JDKYHBWT1D4F8MFH63DBMEN8Y4",
+                        "given_name" : "Amelia",
+                        "family_name" : "Earhart"
+                      },
+                      "payment_requests" : [ {
+                        "uid" : "2da7964f-f3d2-4f43-81e8-5aa220bf3355",
+                        "request_type" : "BALANCE",
+                        "automatic_payment_source" : "NONE",
+                        "due_date" : "2030-01-24",
+                        "total_completed_amount_money" : {
+                          "amount" : 10000,
+                          "currency" : "USD"
+                        },
+                        "computed_amount_money" : {
+                          "amount" : 10000,
+                          "currency" : "USD"
+                        },
+                        "tipping_enabled" : false
+                      } ],
+                      "updated_at" : "2020-06-18T18:23:11Z",
+                      "sale_or_service_date" : "2030-01-24",
+                      "delivery_method" : "EMAIL",
+                      "id" : "inv:0-ChCHu2mZEabLeeHahQnXDjZQECY",
+                      "order_id" : "CAISENgvlJ6jLWAzERDzjyHVybY",
+                      "invoice_number" : "inv-100",
+                      "status" : "PAID"
+                    }
+                  }
+                },
+                "created_at" : "2020-06-18T18:23:11Z",
+                "merchant_id" : "031FEV2Q6VMPK",
+                "type" : "invoice.payment_made",
+                "location_id" : "ES0RJRZYEC39A"
+              }
+          service: "cds.square.events.invoice"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1592504591000
+
+    - sample: |-
+          {
+            "event_id" : "b3adf364-4937-436e-a833-49c72b4baee8",
+            "data" : {
+              "id" : "eA3vssLHKJrv9H0IdJCM3gNqfdcZY",
+              "type" : "order_fulfillment_updated",
+              "object" : {
+                "order_fulfillment_updated" : {
+                  "updated_at" : "2020-04-16T23:16:30.789Z",
+                  "fulfillment_update" : [ {
+                    "fulfillment_uid" : "VWJ1N9leLqjSDLvF2hvYjD",
+                    "old_state" : "PROPOSED",
+                    "new_state" : "COMPLETED"
+                  } ],
+                  "created_at" : "2020-04-16T23:14:26.129Z",
+                  "state" : "OPEN",
+                  "order_id" : "eA3vssLHKJrv9H0IdJCM3gNqfdcZY",
+                  "version" : 6,
+                  "location_id" : "FPYCBCHYMXFK1"
+                }
+              }
+            },
+            "created_at" : "2020-04-16T23:16:30.789Z",
+            "merchant_id" : "5S9MXCS9Y99KK",
+            "type" : "order.fulfillment.updated"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      order_fulfillment_time_seconds: 124.66
+              created_at: "2020-04-16T23:16:30.789Z"
+              data:
+                  id: "eA3vssLHKJrv9H0IdJCM3gNqfdcZY"
+                  object:
+                      order_fulfillment_updated:
+                          created_at: 1587078866129
+                          fulfillment_update:
+                              - fulfillment_uid: "VWJ1N9leLqjSDLvF2hvYjD"
+                                old_state: "PROPOSED"
+                                new_state: "COMPLETED"
+                          location_id: "FPYCBCHYMXFK1"
+                          order_id: "eA3vssLHKJrv9H0IdJCM3gNqfdcZY"
+                          state: "OPEN"
+                          updated_at: 1587078990789
+                          version: 6
+                  type: "order_fulfillment_updated"
+              event_id: "b3adf364-4937-436e-a833-49c72b4baee8"
+              merchant_id: "5S9MXCS9Y99KK"
+              service: "cds.square.events.order"
+              type: "order.fulfillment.updated"
+          message: |-
+              {
+                "event_id" : "b3adf364-4937-436e-a833-49c72b4baee8",
+                "data" : {
+                  "id" : "eA3vssLHKJrv9H0IdJCM3gNqfdcZY",
+                  "type" : "order_fulfillment_updated",
+                  "object" : {
+                    "order_fulfillment_updated" : {
+                      "updated_at" : "2020-04-16T23:16:30.789Z",
+                      "fulfillment_update" : [ {
+                        "fulfillment_uid" : "VWJ1N9leLqjSDLvF2hvYjD",
+                        "old_state" : "PROPOSED",
+                        "new_state" : "COMPLETED"
+                      } ],
+                      "created_at" : "2020-04-16T23:14:26.129Z",
+                      "state" : "OPEN",
+                      "order_id" : "eA3vssLHKJrv9H0IdJCM3gNqfdcZY",
+                      "version" : 6,
+                      "location_id" : "FPYCBCHYMXFK1"
+                    }
+                  }
+                },
+                "created_at" : "2020-04-16T23:16:30.789Z",
+                "merchant_id" : "5S9MXCS9Y99KK",
+                "type" : "order.fulfillment.updated"
+              }
+          service: "cds.square.events.order"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1587078990789
+
+    - sample: |-
+          {
+            "event_id" : "e12b5591-e0b6-4967-810a-307c7efcb1a7",
+            "data" : {
+              "id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+              "type" : "customer",
+              "object" : {
+                "customer" : {
+                  "birthday" : "1962-03-04",
+                  "preferences" : {
+                    "email_unsubscribed" : false
+                  },
+                  "address" : {
+                    "address_line_1" : "1018 40th Street",
+                    "locality" : "Oakland",
+                    "administrative_district_level_1" : "CA",
+                    "postal_code" : "94608"
+                  },
+                  "created_at" : "2022-11-09T21:23:25.519Z",
+                  "given_name" : "Jenkins",
+                  "version" : 0,
+                  "email_address" : "jenkins+smorly@squareup.com",
+                  "updated_at" : "2022-11-09T21:23:25Z",
+                  "creation_source" : "DIRECTORY",
+                  "group_ids" : [ "JGJCW9S0G68NE.APPOINTMENTS" ],
+                  "phone_number" : "+12126668929",
+                  "id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+                  "family_name" : "Smorly"
+                }
+              }
+            },
+            "created_at" : "2022-11-09T21:23:25Z",
+            "merchant_id" : "G7MMEBVW021Q4",
+            "type" : "customer.created"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      customer:
+                          birthyear: 1962
+              created_at: "2022-11-09T21:23:25Z"
+              data:
+                  id: "QPTXM8PQNX3Q726ZYHPMNP46XC"
+                  object:
+                      customer:
+                          address:
+                              address_line_1: "1018 40th Street"
+                              administrative_district_level_1: "CA"
+                              locality: "Oakland"
+                              postal_code: "94608"
+                          birthday: "1962-03-04"
+                          created_at: "2022-11-09T21:23:25.519Z"
+                          creation_source: "DIRECTORY"
+                          email_address: "jenkins+smorly@squareup.com"
+                          family_name: "Smorly"
+                          given_name: "Jenkins"
+                          group_ids:
+                              - "JGJCW9S0G68NE.APPOINTMENTS"
+                          id: "QPTXM8PQNX3Q726ZYHPMNP46XC"
+                          phone_number: "+12126668929"
+                          preferences:
+                              email_unsubscribed: false
+                          updated_at: "2022-11-09T21:23:25Z"
+                          version: 0
+                  type: "customer"
+              event_id: "e12b5591-e0b6-4967-810a-307c7efcb1a7"
+              merchant_id: "G7MMEBVW021Q4"
+              service: "cds.square.events.customer"
+              type: "customer.created"
+          message: |-
+              {
+                "event_id" : "e12b5591-e0b6-4967-810a-307c7efcb1a7",
+                "data" : {
+                  "id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+                  "type" : "customer",
+                  "object" : {
+                    "customer" : {
+                      "birthday" : "1962-03-04",
+                      "preferences" : {
+                        "email_unsubscribed" : false
+                      },
+                      "address" : {
+                        "address_line_1" : "1018 40th Street",
+                        "locality" : "Oakland",
+                        "administrative_district_level_1" : "CA",
+                        "postal_code" : "94608"
+                      },
+                      "created_at" : "2022-11-09T21:23:25.519Z",
+                      "given_name" : "Jenkins",
+                      "version" : 0,
+                      "email_address" : "jenkins+smorly@squareup.com",
+                      "updated_at" : "2022-11-09T21:23:25Z",
+                      "creation_source" : "DIRECTORY",
+                      "group_ids" : [ "JGJCW9S0G68NE.APPOINTMENTS" ],
+                      "phone_number" : "+12126668929",
+                      "id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+                      "family_name" : "Smorly"
+                    }
+                  }
+                },
+                "created_at" : "2022-11-09T21:23:25Z",
+                "merchant_id" : "G7MMEBVW021Q4",
+                "type" : "customer.created"
+              }
+          service: "cds.square.events.customer"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1668029005000
+
+    - sample: |-
+          {
+            "event_id" : "6a8f5f28-54a1-4eb0-a98a-3111513fd4fc",
+            "data" : {
+              "id" : "hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+              "type" : "payment",
+              "object" : {
+                "payment" : {
+                  "card_details" : {
+                    "avs_status" : "AVS_ACCEPTED",
+                    "entry_method" : "KEYED",
+                    "cvv_status" : "CVV_ACCEPTED",
+                    "card_payment_timeline" : {
+                      "captured_at" : "2020-11-22T21:19:00.832Z",
+                      "authorized_at" : "2020-11-22T21:16:51.198Z"
+                    },
+                    "card" : {
+                      "last_4" : "9029",
+                      "bin" : "540988",
+                      "card_brand" : "MASTERCARD",
+                      "fingerprint" : "sq-1-Tvruf3vPQxlvI6n0IcKYfBukrcv6IqWr8UyBdViWXU2yzGn5VMJvrsHMKpINMhPmVg",
+                      "exp_month" : 11,
+                      "prepaid_type" : "NOT_PREPAID",
+                      "exp_year" : 2022,
+                      "card_type" : "CREDIT"
+                    },
+                    "status" : "CAPTURED",
+                    "statement_description" : "SQ *DEFAULT TEST ACCOUNT"
+                  },
+                  "delay_action" : "CANCEL",
+                  "created_at" : "2020-11-22T21:16:51.086Z",
+                  "amount_money" : {
+                    "amount" : 100,
+                    "currency" : "USD"
+                  },
+                  "source_type" : "CARD",
+                  "location_id" : "S8GWD5R9QB376",
+                  "delayed_until" : "2020-11-29T21:16:51.086Z",
+                  "receipt_number" : "hYy9",
+                  "receipt_url" : "https://squareup.com/receipt/preview/hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+                  "updated_at" : "2020-11-22T21:19:00.831Z",
+                  "version_token" : "bhC3b8qKJvNDdxqKzXaeDsAjS1oMFuAKxGgT32HbE6S6o",
+                  "id" : "hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+                  "total_money" : {
+                    "amount" : 100,
+                    "currency" : "USD"
+                  },
+                  "delay_duration" : "PT168H",
+                  "order_id" : "03O3USaPaAaFnI6kkwB1JxGgBsUZY",
+                  "approved_money" : {
+                    "amount" : 100,
+                    "currency" : "USD"
+                  },
+                  "status" : "COMPLETED",
+                  "risk_evaluation" : {
+                    "risk_level" : "NORMAL",
+                    "created_at" : "2020-11-22T21:16:51.198Z"
+                  }
+                }
+              }
+            },
+            "created_at" : "2020-02-06T21:27:34.308Z",
+            "merchant_id" : "6SSW7HV8K2ST5",
+            "type" : "payment.updated"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      payment:
+                          amount_money:
+                              amount: 100
+                              currency: "USD"
+                          location_id: "S8GWD5R9QB376"
+                          source_type: "CARD"
+                          status: "COMPLETED"
+                      payment_processing_time_seconds: 129.745
+              created_at: "2020-02-06T21:27:34.308Z"
+              data:
+                  id: "hYy9pRFVxpDsO1FB05SunFWUe9JZY"
+                  object:
+                      payment:
+                          approved_money:
+                              amount: 100
+                              currency: "USD"
+                          card_details:
+                              avs_status: "AVS_ACCEPTED"
+                              card:
+                                  bin: "540988"
+                                  card_brand: "MASTERCARD"
+                                  card_type: "CREDIT"
+                                  exp_month: 11
+                                  exp_year: 2022
+                                  fingerprint: "sq-1-Tvruf3vPQxlvI6n0IcKYfBukrcv6IqWr8UyBdViWXU2yzGn5VMJvrsHMKpINMhPmVg"
+                                  last_4: "9029"
+                                  prepaid_type: "NOT_PREPAID"
+                              card_payment_timeline:
+                                  authorized_at: "2020-11-22T21:16:51.198Z"
+                                  captured_at: "2020-11-22T21:19:00.832Z"
+                              cvv_status: "CVV_ACCEPTED"
+                              entry_method: "KEYED"
+                              statement_description: "SQ *DEFAULT TEST ACCOUNT"
+                              status: "CAPTURED"
+                          created_at: 1606079811086
+                          delay_action: "CANCEL"
+                          delay_duration: "PT168H"
+                          delayed_until: "2020-11-29T21:16:51.086Z"
+                          id: "hYy9pRFVxpDsO1FB05SunFWUe9JZY"
+                          order_id: "03O3USaPaAaFnI6kkwB1JxGgBsUZY"
+                          receipt_number: "hYy9"
+                          receipt_url: "https://squareup.com/receipt/preview/hYy9pRFVxpDsO1FB05SunFWUe9JZY"
+                          risk_evaluation:
+                              created_at: "2020-11-22T21:16:51.198Z"
+                              risk_level: "NORMAL"
+                          total_money:
+                              amount: 100
+                              currency: "USD"
+                          updated_at: 1606079940831
+                          version_token: "bhC3b8qKJvNDdxqKzXaeDsAjS1oMFuAKxGgT32HbE6S6o"
+                  type: "payment"
+              event_id: "6a8f5f28-54a1-4eb0-a98a-3111513fd4fc"
+              merchant_id: "6SSW7HV8K2ST5"
+              service: "cds.square.events.payment"
+              type: "payment.updated"
+          message: |-
+              {
+                "event_id" : "6a8f5f28-54a1-4eb0-a98a-3111513fd4fc",
+                "data" : {
+                  "id" : "hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+                  "type" : "payment",
+                  "object" : {
+                    "payment" : {
+                      "card_details" : {
+                        "avs_status" : "AVS_ACCEPTED",
+                        "entry_method" : "KEYED",
+                        "cvv_status" : "CVV_ACCEPTED",
+                        "card_payment_timeline" : {
+                          "captured_at" : "2020-11-22T21:19:00.832Z",
+                          "authorized_at" : "2020-11-22T21:16:51.198Z"
+                        },
+                        "card" : {
+                          "last_4" : "9029",
+                          "bin" : "540988",
+                          "card_brand" : "MASTERCARD",
+                          "fingerprint" : "sq-1-Tvruf3vPQxlvI6n0IcKYfBukrcv6IqWr8UyBdViWXU2yzGn5VMJvrsHMKpINMhPmVg",
+                          "exp_month" : 11,
+                          "prepaid_type" : "NOT_PREPAID",
+                          "exp_year" : 2022,
+                          "card_type" : "CREDIT"
+                        },
+                        "status" : "CAPTURED",
+                        "statement_description" : "SQ *DEFAULT TEST ACCOUNT"
+                      },
+                      "delay_action" : "CANCEL",
+                      "created_at" : "2020-11-22T21:16:51.086Z",
+                      "amount_money" : {
+                        "amount" : 100,
+                        "currency" : "USD"
+                      },
+                      "source_type" : "CARD",
+                      "location_id" : "S8GWD5R9QB376",
+                      "delayed_until" : "2020-11-29T21:16:51.086Z",
+                      "receipt_number" : "hYy9",
+                      "receipt_url" : "https://squareup.com/receipt/preview/hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+                      "updated_at" : "2020-11-22T21:19:00.831Z",
+                      "version_token" : "bhC3b8qKJvNDdxqKzXaeDsAjS1oMFuAKxGgT32HbE6S6o",
+                      "id" : "hYy9pRFVxpDsO1FB05SunFWUe9JZY",
+                      "total_money" : {
+                        "amount" : 100,
+                        "currency" : "USD"
+                      },
+                      "delay_duration" : "PT168H",
+                      "order_id" : "03O3USaPaAaFnI6kkwB1JxGgBsUZY",
+                      "approved_money" : {
+                        "amount" : 100,
+                        "currency" : "USD"
+                      },
+                      "status" : "COMPLETED",
+                      "risk_evaluation" : {
+                        "risk_level" : "NORMAL",
+                        "created_at" : "2020-11-22T21:16:51.198Z"
+                      }
+                    }
+                  }
+                },
+                "created_at" : "2020-02-06T21:27:34.308Z",
+                "merchant_id" : "6SSW7HV8K2ST5",
+                "type" : "payment.updated"
+              }
+          service: "cds.square.events.payment"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1581024454308
+
+    - sample: |-
+          {
+            "event_id" : "875f2038-6015-492e-9f29-d040b3809e49",
+            "data" : {
+              "id" : "gftc:00113070ba5745f0b2377c1b9570cb03",
+              "type" : "gift_card",
+              "object" : {
+                "linked_customer_id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+                "gift_card" : {
+                  "balance_money" : {
+                    "amount" : 1500,
+                    "currency" : "USD"
+                  },
+                  "gan" : "7783320007480908",
+                  "customer_ids" : [ "QPTXM8PQNX3Q726ZYHPMNP46XC" ],
+                  "created_at" : "2020-12-17T01:41:35.157Z",
+                  "gan_source" : "SQUARE",
+                  "id" : "gftc:00113070ba5745f0b2377c1b9570cb03",
+                  "state" : "ACTIVE",
+                  "type" : "DIGITAL"
+                }
+              }
+            },
+            "created_at" : "2020-12-17T03:41:35.157Z",
+            "merchant_id" : "C337NFWQT2A6W",
+            "type" : "gift_card.customer_linked"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      gift_card:
+                          balance_money:
+                              amount: 1500
+                              currency: "USD"
+                          gan_source: "SQUARE"
+                          linked_customer_id: "QPTXM8PQNX3Q726ZYHPMNP46XC"
+                          state: "ACTIVE"
+              created_at: "2020-12-17T03:41:35.157Z"
+              data:
+                  id: "gftc:00113070ba5745f0b2377c1b9570cb03"
+                  object:
+                      gift_card:
+                          created_at: "2020-12-17T01:41:35.157Z"
+                          customer_ids:
+                              - "QPTXM8PQNX3Q726ZYHPMNP46XC"
+                          gan: "7783320007480908"
+                          id: "gftc:00113070ba5745f0b2377c1b9570cb03"
+                          type: "DIGITAL"
+                  type: "gift_card"
+              event_id: "875f2038-6015-492e-9f29-d040b3809e49"
+              merchant_id: "C337NFWQT2A6W"
+              service: "cds.square.events.gift_card"
+              type: "gift_card.customer_linked"
+          message: |-
+              {
+                "event_id" : "875f2038-6015-492e-9f29-d040b3809e49",
+                "data" : {
+                  "id" : "gftc:00113070ba5745f0b2377c1b9570cb03",
+                  "type" : "gift_card",
+                  "object" : {
+                    "linked_customer_id" : "QPTXM8PQNX3Q726ZYHPMNP46XC",
+                    "gift_card" : {
+                      "balance_money" : {
+                        "amount" : 1500,
+                        "currency" : "USD"
+                      },
+                      "gan" : "7783320007480908",
+                      "customer_ids" : [ "QPTXM8PQNX3Q726ZYHPMNP46XC" ],
+                      "created_at" : "2020-12-17T01:41:35.157Z",
+                      "gan_source" : "SQUARE",
+                      "id" : "gftc:00113070ba5745f0b2377c1b9570cb03",
+                      "state" : "ACTIVE",
+                      "type" : "DIGITAL"
+                    }
+                  }
+                },
+                "created_at" : "2020-12-17T03:41:35.157Z",
+                "merchant_id" : "C337NFWQT2A6W",
+                "type" : "gift_card.customer_linked"
+              }
+          service: "cds.square.events.gift_card"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1608176495157
+
+    - sample: |-
+          {
+            "event_id" : "bc316346-6691-4243-88ed-6d651a0d0c47",
+            "data" : {
+              "id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P",
+              "type" : "refund",
+              "object" : {
+                "refund" : {
+                  "updated_at" : "2020-02-06T22:14:16.381Z",
+                  "payment_id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY",
+                  "created_at" : "2020-02-06T21:27:41.836Z",
+                  "processing_fee" : [ {
+                    "effective_at" : "2020-02-06T23:27:31.000Z",
+                    "amount_money" : {
+                      "amount" : -59,
+                      "currency" : "USD"
+                    },
+                    "type" : "INITIAL"
+                  } ],
+                  "amount_money" : {
+                    "amount" : 1000,
+                    "currency" : "USD"
+                  },
+                  "id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P",
+                  "order_id" : "haOyDuHiqtAXMk0d8pDKXpL7Jg4F",
+                  "version" : 10,
+                  "location_id" : "NAQ1FHV6ZJ8YV",
+                  "status" : "COMPLETED"
+                }
+              }
+            },
+            "created_at" : "2020-02-06T22:14:16.421Z",
+            "merchant_id" : "6SSW7HV8K2ST5",
+            "type" : "refund.updated"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      refund:
+                          amount_money:
+                              amount: 1000
+                              currency: "USD"
+                          location_id: "NAQ1FHV6ZJ8YV"
+                      refund_processing_time_seconds: 2794.545
+              created_at: "2020-02-06T22:14:16.421Z"
+              data:
+                  id: "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P"
+                  object:
+                      refund:
+                          created_at: 1581024461836
+                          id: "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P"
+                          order_id: "haOyDuHiqtAXMk0d8pDKXpL7Jg4F"
+                          payment_id: "KkAkhdMsgzn59SM8A89WgKwekxLZY"
+                          processing_fee:
+                              - effective_at: "2020-02-06T23:27:31.000Z"
+                                amount_money:
+                                    amount: -59
+                                    currency: "USD"
+                                type: "INITIAL"
+                          status: "COMPLETED"
+                          updated_at: 1581027256381
+                          version: 10
+                  type: "refund"
+              event_id: "bc316346-6691-4243-88ed-6d651a0d0c47"
+              merchant_id: "6SSW7HV8K2ST5"
+              service: "cds.square.events.refund"
+              type: "refund.updated"
+          message: |-
+              {
+                "event_id" : "bc316346-6691-4243-88ed-6d651a0d0c47",
+                "data" : {
+                  "id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P",
+                  "type" : "refund",
+                  "object" : {
+                    "refund" : {
+                      "updated_at" : "2020-02-06T22:14:16.381Z",
+                      "payment_id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY",
+                      "created_at" : "2020-02-06T21:27:41.836Z",
+                      "processing_fee" : [ {
+                        "effective_at" : "2020-02-06T23:27:31.000Z",
+                        "amount_money" : {
+                          "amount" : -59,
+                          "currency" : "USD"
+                        },
+                        "type" : "INITIAL"
+                      } ],
+                      "amount_money" : {
+                        "amount" : 1000,
+                        "currency" : "USD"
+                      },
+                      "id" : "KkAkhdMsgzn59SM8A89WgKwekxLZY_ptNBVqHYxt5gAdfcobBe4u1AZsXhoz06KTtuq9Ls24P",
+                      "order_id" : "haOyDuHiqtAXMk0d8pDKXpL7Jg4F",
+                      "version" : 10,
+                      "location_id" : "NAQ1FHV6ZJ8YV",
+                      "status" : "COMPLETED"
+                    }
+                  }
+                },
+                "created_at" : "2020-02-06T22:14:16.421Z",
+                "merchant_id" : "6SSW7HV8K2ST5",
+                "type" : "refund.updated"
+              }
+          service: "cds.square.events.refund"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1581027256421
+
+    - sample: |-
+          {
+            "event_id" : "e89ff114-1972-4be0-9481-a621f2385fff",
+            "data" : {
+              "id" : "ORSEVtZAJxb37RA1EiGw",
+              "type" : "dispute",
+              "object" : {
+                "dispute" : {
+                  "reason" : "AMOUNT_DIFFERS",
+                  "reported_at" : "2020-02-19T00:00:00.000Z",
+                  "disputed_payment" : {
+                    "payment_id" : "fbmsaEOpoARDKxiSGH1fqPuqoqFZY"
+                  },
+                  "created_at" : "2020-02-19T21:24:53.258Z",
+                  "amount_money" : {
+                    "amount" : 8801,
+                    "currency" : "USD"
+                  },
+                  "version" : 6,
+                  "location_id" : "VJDQQP3CG14EY",
+                  "brand_dispute_id" : "r9rKGSBBQbywBNnWWIiGFg",
+                  "updated_at" : "2020-02-19T21:34:41.851Z",
+                  "card_brand" : "VISA",
+                  "due_at" : "2020-03-04T00:00:00.000Z",
+                  "id" : "ORSEVtZAJxb37RA1EiGw",
+                  "state" : "WON"
+                }
+              }
+            },
+            "created_at" : "2020-02-19T21:34:41.851Z",
+            "merchant_id" : "0HPGX5JYE6EE1",
+            "type" : "dispute.state.updated",
+            "location_id" : "VJDQQP3CG14EY"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      dispute:
+                          amount_money:
+                              amount: 8801
+                              currency: "USD"
+                          id: "ORSEVtZAJxb37RA1EiGw"
+                          state: "WON"
+                      dispute_settlement_duration_seconds: 588.593
+              created_at: "2020-02-19T21:34:41.851Z"
+              data:
+                  id: "ORSEVtZAJxb37RA1EiGw"
+                  object:
+                      dispute:
+                          brand_dispute_id: "r9rKGSBBQbywBNnWWIiGFg"
+                          card_brand: "VISA"
+                          created_at: 1582147493258
+                          disputed_payment:
+                              payment_id: "fbmsaEOpoARDKxiSGH1fqPuqoqFZY"
+                          due_at: "2020-03-04T00:00:00.000Z"
+                          location_id: "VJDQQP3CG14EY"
+                          reason: "AMOUNT_DIFFERS"
+                          reported_at: "2020-02-19T00:00:00.000Z"
+                          updated_at: 1582148081851
+                          version: 6
+                  type: "dispute"
+              event_id: "e89ff114-1972-4be0-9481-a621f2385fff"
+              location_id: "VJDQQP3CG14EY"
+              merchant_id: "0HPGX5JYE6EE1"
+              service: "cds.square.events.dispute"
+              type: "dispute.state.updated"
+          message: |-
+              {
+                "event_id" : "e89ff114-1972-4be0-9481-a621f2385fff",
+                "data" : {
+                  "id" : "ORSEVtZAJxb37RA1EiGw",
+                  "type" : "dispute",
+                  "object" : {
+                    "dispute" : {
+                      "reason" : "AMOUNT_DIFFERS",
+                      "reported_at" : "2020-02-19T00:00:00.000Z",
+                      "disputed_payment" : {
+                        "payment_id" : "fbmsaEOpoARDKxiSGH1fqPuqoqFZY"
+                      },
+                      "created_at" : "2020-02-19T21:24:53.258Z",
+                      "amount_money" : {
+                        "amount" : 8801,
+                        "currency" : "USD"
+                      },
+                      "version" : 6,
+                      "location_id" : "VJDQQP3CG14EY",
+                      "brand_dispute_id" : "r9rKGSBBQbywBNnWWIiGFg",
+                      "updated_at" : "2020-02-19T21:34:41.851Z",
+                      "card_brand" : "VISA",
+                      "due_at" : "2020-03-04T00:00:00.000Z",
+                      "id" : "ORSEVtZAJxb37RA1EiGw",
+                      "state" : "WON"
+                    }
+                  }
+                },
+                "created_at" : "2020-02-19T21:34:41.851Z",
+                "merchant_id" : "0HPGX5JYE6EE1",
+                "type" : "dispute.state.updated",
+                "location_id" : "VJDQQP3CG14EY"
+              }
+          service: "cds.square.events.dispute"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1582148081851
+
+    - sample: |-
+          {
+            "event_id" : "7116e4a4-7622-42b0-b16c-c164d7ec7302",
+            "data" : {
+              "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+              "type" : "payout",
+              "object" : {
+                "payout" : {
+                  "updated_at" : "1970-01-01T00:20:28.481Z",
+                  "destination" : {
+                    "id" : "bact:c164d7ec7302",
+                    "type" : "BANK_ACCOUNT"
+                  },
+                  "created_at" : "2021-07-12T20:37:51Z",
+                  "amount_money" : {
+                    "amount" : 457,
+                    "currency_code" : "EUR"
+                  },
+                  "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                  "type" : "BATCH",
+                  "arrival_date" : "2021-07-13",
+                  "version" : 1,
+                  "location_id" : "LRJNZCB190DTQ",
+                  "status" : "SENT"
+                }
+              }
+            },
+            "created_at" : "1970-01-01T00:20:28.481Z",
+            "merchant_id" : "MLEWJTMNJN37Z",
+            "type" : "payout.sent",
+            "location_id" : "LRJNZCB190DTQ"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      payout:
+                          amount_money:
+                              amount: 457
+                              currency_code: "EUR"
+              created_at: "1970-01-01T00:20:28.481Z"
+              data:
+                  id: "po_070431e4-e351-11eb-a8bb-02420a140009"
+                  object:
+                      payout:
+                          arrival_date: "2021-07-13"
+                          created_at: "2021-07-12T20:37:51Z"
+                          destination:
+                              id: "bact:c164d7ec7302"
+                              type: "BANK_ACCOUNT"
+                          id: "po_070431e4-e351-11eb-a8bb-02420a140009"
+                          location_id: "LRJNZCB190DTQ"
+                          status: "SENT"
+                          type: "BATCH"
+                          updated_at: "1970-01-01T00:20:28.481Z"
+                          version: 1
+                  type: "payout"
+              event_id: "7116e4a4-7622-42b0-b16c-c164d7ec7302"
+              location_id: "LRJNZCB190DTQ"
+              merchant_id: "MLEWJTMNJN37Z"
+              service: "cds.square.events.payout"
+              type: "payout.sent"
+          message: |-
+              {
+                "event_id" : "7116e4a4-7622-42b0-b16c-c164d7ec7302",
+                "data" : {
+                  "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                  "type" : "payout",
+                  "object" : {
+                    "payout" : {
+                      "updated_at" : "1970-01-01T00:20:28.481Z",
+                      "destination" : {
+                        "id" : "bact:c164d7ec7302",
+                        "type" : "BANK_ACCOUNT"
+                      },
+                      "created_at" : "2021-07-12T20:37:51Z",
+                      "amount_money" : {
+                        "amount" : 457,
+                        "currency_code" : "EUR"
+                      },
+                      "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                      "type" : "BATCH",
+                      "arrival_date" : "2021-07-13",
+                      "version" : 1,
+                      "location_id" : "LRJNZCB190DTQ",
+                      "status" : "SENT"
+                    }
+                  }
+                },
+                "created_at" : "1970-01-01T00:20:28.481Z",
+                "merchant_id" : "MLEWJTMNJN37Z",
+                "type" : "payout.sent",
+                "location_id" : "LRJNZCB190DTQ"
+              }
+          service: "cds.square.events.payout"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1228481
+
+    - sample: |-
+          {
+            "event_id" : "7116e4a4-7622-42b0-b16c-c164d7ec7302",
+            "data" : {
+              "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+              "type" : "payout",
+              "object" : {
+                "payout" : {
+                  "updated_at" : "1970-01-01T00:20:28.481Z",
+                  "destination" : {
+                    "id" : "bact:c164d7ec7302",
+                    "type" : "BANK_ACCOUNT"
+                  },
+                  "created_at" : "2021-07-12T20:37:51Z",
+                  "amount_money" : {
+                    "amount" : 457,
+                    "currency_code" : "EUR"
+                  },
+                  "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                  "type" : "BATCH",
+                  "arrival_date" : "2021-07-13",
+                  "version" : 2,
+                  "location_id" : "LRJNZCB190DTQ",
+                  "status" : "PAID"
+                }
+              }
+            },
+            "created_at" : "1970-01-01T00:20:28.481Z",
+            "merchant_id" : "MLEWJTMNJN37Z",
+            "type" : "payout.paid",
+            "location_id" : "LRJNZCB190DTQ"
+          }
+      service: "cds.square.events"
+      result:
+          custom:
+              cds:
+                  square:
+                      payout:
+                          amount_money:
+                              amount: 457
+                              currency_code: "EUR"
+                      payout_settlement_duration_seconds: -1.626121042519E9
+              created_at: "1970-01-01T00:20:28.481Z"
+              data:
+                  id: "po_070431e4-e351-11eb-a8bb-02420a140009"
+                  object:
+                      payout:
+                          arrival_date: "2021-07-13"
+                          created_at: 1626122271000
+                          destination:
+                              id: "bact:c164d7ec7302"
+                              type: "BANK_ACCOUNT"
+                          id: "po_070431e4-e351-11eb-a8bb-02420a140009"
+                          location_id: "LRJNZCB190DTQ"
+                          status: "PAID"
+                          type: "BATCH"
+                          updated_at: 1228481
+                          version: 2
+                  type: "payout"
+              event_id: "7116e4a4-7622-42b0-b16c-c164d7ec7302"
+              location_id: "LRJNZCB190DTQ"
+              merchant_id: "MLEWJTMNJN37Z"
+              service: "cds.square.events.payout"
+              type: "payout.paid"
+          message: |-
+              {
+                "event_id" : "7116e4a4-7622-42b0-b16c-c164d7ec7302",
+                "data" : {
+                  "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                  "type" : "payout",
+                  "object" : {
+                    "payout" : {
+                      "updated_at" : "1970-01-01T00:20:28.481Z",
+                      "destination" : {
+                        "id" : "bact:c164d7ec7302",
+                        "type" : "BANK_ACCOUNT"
+                      },
+                      "created_at" : "2021-07-12T20:37:51Z",
+                      "amount_money" : {
+                        "amount" : 457,
+                        "currency_code" : "EUR"
+                      },
+                      "id" : "po_070431e4-e351-11eb-a8bb-02420a140009",
+                      "type" : "BATCH",
+                      "arrival_date" : "2021-07-13",
+                      "version" : 2,
+                      "location_id" : "LRJNZCB190DTQ",
+                      "status" : "PAID"
+                    }
+                  }
+                },
+                "created_at" : "1970-01-01T00:20:28.481Z",
+                "merchant_id" : "MLEWJTMNJN37Z",
+                "type" : "payout.paid",
+                "location_id" : "LRJNZCB190DTQ"
+              }
+          service: "cds.square.events.payout"
+          tags:
+              - "source:LOGS_SOURCE"
+          timestamp: 1228481

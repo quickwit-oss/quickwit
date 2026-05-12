@@ -1,0 +1,322 @@
+id: jmeter
+metric_id: jmeter
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - JMeter
+    name: Sampler name
+    path: sampler.sample_label
+    source: log
+  - groups:
+      - JMeter
+    name: Response code
+    path: sampler.response_code
+    source: log
+  - groups:
+      - JMeter
+    name: URL Path
+    path: sampler.url_details.path
+    source: log
+  - groups:
+      - JMeter
+    name: Host
+    path: sampler.url_details.host
+    source: log
+pipeline:
+  type: pipeline
+  name: JMeter
+  enabled: true
+  filter:
+    query: source:jmeter
+  processors:
+    # threads section
+    - type: attribute-remapper
+      name: Map `all_threads` to `threads.all_threads`
+      enabled: true
+      sources:
+        - all_threads
+      target: threads.all_threads
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread_name` to `threads.thread_name`
+      enabled: true
+      sources:
+        - thread_name
+      target: threads.thread_name
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `thread_group` to `threads.thread_group`
+      enabled: true
+      sources:
+        - thread_group
+      target: threads.thread_group
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `group_threads` to `threads.group_threads`
+      enabled: true
+      sources:
+        - group_threads
+      target: threads.group_threads
+      preserveSource: false
+      overrideOnConflict: true
+
+    # network section
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sent_bytes` to `network.bytes_written`
+      enabled: true
+      sources:
+        - sent_bytes
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `bytes` to `network.bytes_received`
+      enabled: true
+      sources:
+        - bytes
+      target: network.bytes_received
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `body_size` to `network.body_size`
+      enabled: true
+      sources:
+        - body_size
+      target: network.body_size
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `headers_size` to `network.headers_size`
+      enabled: true
+      sources:
+        - headers_size
+      target: network.headers_size
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `connect_time` to `network.connect_time`
+      enabled: true
+      sources:
+        - connect_time
+      target: network.connect_time
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `idle_time` to `network.idle_time`
+      enabled: true
+      sources:
+        - idle_time
+      target: network.idle_time
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `latency` to `network.latency`
+      enabled: true
+      sources:
+        - latency
+      target: network.latency
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `load_time` to `network.load_time`
+      enabled: true
+      sources:
+        - load_time
+      target: network.load_time
+      preserveSource: false
+      overrideOnConflict: true
+
+    # http section
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `http_method` to `http.method`
+      enabled: true
+      sources:
+        - http_method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: true
+
+    # sampler section
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sample_label` to `sampler.sample_label`
+      enabled: true
+      sources:
+        - sample_label
+      target: sampler.sample_label
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sample_count` to `sampler.sample_count`
+      enabled: true
+      sources:
+        - sample_count
+      target: sampler.sample_count
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `error_count` to `sampler.error_count`
+      enabled: true
+      sources:
+        - error_count
+      target: sampler.error_count
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `content_type` to `sampler.content_type`
+      enabled: true
+      sources:
+        - content_type
+      target: sampler.content_type
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data_encoding` to `sampler.data_encoding`
+      enabled: true
+      sources:
+        - data_encoding
+      target: sampler.data_encoding
+      preserveSource: false
+      overrideOnConflict: true
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data_type` to `sampler.data_type`
+      enabled: true
+      sources:
+        - data_type
+      target: sampler.data_type
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `http_method` to `http.method`
+      enabled: true
+      sources:
+        - http_method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `headers_size` to `sampler.headers_size`
+      enabled: true
+      sources:
+        - headers_size
+      target: sampler.headers_size
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sample_end_time` to `sampler.sample_end_time`
+      enabled: true
+      sources:
+        - sample_end_time
+      target: sampler.sample_end_time
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `sample_start_time` to `sampler.sample_start_time`
+      enabled: true
+      sources:
+        - sample_start_time
+      target: sampler.sample_start_time
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `url` to `sampler.url`
+      enabled: true
+      sources:
+        - url
+      target: sampler.url
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: url-parser
+      name: Remap url to sampler.url_details
+      enabled: true
+      sources:
+        - sampler.url
+      target: sampler.url_details
+    - type: attribute-remapper
+      name: Map `response_code` to `sampler.response_code`
+      enabled: true
+      sources:
+        - response_code
+      target: sampler.response_code
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+      targetType: attribute
+    - type: category-processor
+      name: Categorise response_code code
+      enabled: true
+      categories:
+        - filter:
+            query: '@sampler.response_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@sampler.response_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@sampler.response_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@sampler.response_code:[500 TO 599]'
+          name: error
+      target: sampler.status_category
+    - type: status-remapper
+      name: Define `sampler.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - sampler.status_category

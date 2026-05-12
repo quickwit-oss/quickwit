@@ -1,0 +1,72 @@
+id: postfix
+metric_id: postfix
+backend_only: false
+facets:
+  - groups:
+      - Postfix
+    name: Client ID
+    path: postfix.client_id
+    source: log
+  - groups:
+      - Postfix
+    name: Queue Status
+    path: postfix.queue.state
+    source: log
+  - groups:
+      - Postfix
+    name: Email Recipient
+    path: properties.to
+    source: log
+  - groups:
+      - Postfix
+    name: Email Status
+    path: properties.status
+    source: log
+  - groups:
+      - System
+    name: User
+    path: system.user
+    source: log
+pipeline:
+  type: pipeline
+  name: Postfix
+  enabled: true
+  filter:
+    query: source:postfix
+  processors:
+    - type: grok-parser
+      name: Parsing Postfix logs
+      enabled: true
+      source: message
+      samples:
+        - 'Jul  2 12:24:48 username postfix/qmgr[12345]: 1234567890A: from=user@example.com, size=1234, nrcpt=1 (queue active)'
+        - 'Jul 12 12:24:48 username postfix/smtp[12345]: 1234567890A: to=user@example.com, relay=198.51.100.0[198.51.100.0]:25, delay=5.3, delays=5.1/0.02/0.02/0.2, dsn=1.2.3, status=sent (250 1.2.3 <20140702012658.1234567890A@hostname.example.com> Queued mail for delivery)'
+        - 'Jul 12 12:24:48 username postfix/smtpd[12345]: connect from unknown[127.0.0.1]'
+        - 'Jul  2 12:24:48 username postfix/smtpd[12345]: 1234567890A: client=unknown[198.51.100.0]'
+        - 'Jul  2 12:24:48 username postfix/cleanup[12345]: 1234567890A: message-id=<20140702012658.1234567890A@hostname.example.com/>'
+      grok:
+        supportRules: |
+          _prefix (?:%{date("MMM dd HH:mm:ss"):date}|%{date("MMM  d HH:mm:ss"):date}|%{date("MMM d HH:mm:ss"):date}) %{notSpace:system.user} %{notSpace:system.process}\[%{integer: pid}\]:
+        matchRules: |
+          queue %{_prefix}\s+%{notSpace:postfix.client_id}: %{data:properties:keyvalue}(\(queue|Queued) %{data:postfix.queue.state}(\))?
+          connect_from_rule %{_prefix}\s+connect from %{notSpace:postfix.hostname}\[%{notSpace:network.client.ip}\]
+          fallback %{_prefix}\s+%{notSpace:postfix.client_id}: %{data::keyvalue}
+
+          # Extra samples:
+          # Jul  2 12:24:48 username postfix/qmgr[12345]: 1234567890A: removed
+
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date
+    - type: attribute-remapper
+      name: Map `properties.size` to `network.bytes_written`
+      enabled: true
+      sources:
+        - properties.size
+      target: network.bytes_written
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

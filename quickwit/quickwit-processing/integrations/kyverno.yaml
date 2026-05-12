@@ -1,0 +1,76 @@
+id: kyverno
+metric_id: kyverno
+backend_only: false
+facets:
+  - groups:
+      - Error
+    name: Error Message
+    path: error.message
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+pipeline:
+  type: pipeline
+  name: kyverno
+  enabled: true
+  filter:
+    query: source:kyverno
+  processors:
+    - type: grok-parser
+      name: Parsing kyverno logs
+      enabled: true
+      source: message
+      samples:
+        - '2024-07-17T21:49:24Z	ERROR	webhook-controller	webhook/controller.go:269	failed to get lease	{"error": "lease.coordination.k8s.io \"kyverno-health\" not found"}'
+        - '2024-07-17T21:49:24Z	INFO	webhook-controller.worker	controller/run.go:71	starting worker	{"id": 1}'
+        - '2024-07-17T21:50:09Z	INFO	ttl-controller-manager	controller/run.go:58	starting ...	{"gvr": "admissionregistration.k8s.io/v1, Resource=validatingwebhookconfigurations"}'
+        - '2024-07-17T21:49:24Z	INFO	klog	cache/reflector.go:351	Caches populated for *v1.Lease from k8s.io/client-go@v0.29.2/tools/cache/reflector.go:229'
+        - '2024-07-17T21:49:10Z	INFO	setup.flag	internal/flag.go:260		{"webhookTimeout": "10"}'
+      grok:
+        matchRules: |
+          Kyverno %{_date}\s+%{_level}\s+%{_logger}\s+%{_caller}\s+%{_msg}\t%{data::json}
+          Kyverno_with_json %{_date}\s+%{_level}\s+%{_logger}\s+%{_caller}\s+%{_msg}
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _msg %{data:msg}
+          _level %{word:level}
+          _logger %{notSpace:logger}
+          _caller %{notSpace:caller}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: attribute-remapper
+      name: Map `logger` to `logger.name`
+      enabled: true
+      sources:
+        - logger
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `error` to `error.message`
+      enabled: true
+      sources:
+        - error
+      target: error.message
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

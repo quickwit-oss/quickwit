@@ -1,0 +1,67 @@
+id: "contrastsecurity"
+tests:
+ -
+  sample: "[INFO] [talledLocalContainer] 261119 13.03.21,597 {} {} {} INFO (VulnerabilityProcessorQueryService.java:135) [VULNERABILITIES] Saved vulnerability instance property VulnerabilityInstanceProperty(id=19, vulnerabilityInstanceId=0, hash=1805407380, vulnerabilityHash=1805407380, name=/WebGoat/SqlInjection.lesson.lesson, value={\"html\":\"class\\u003d\"assignment-success\"\\u003e\\u003ci class\\u003d\"fa fa-2 fa-check hidden\" aria-hidden\\u003d\"true\"\\u003e\\u003c/i\\u003e\\u003c/div\\u003e\\n \\u003cform class\\u003d\"attack-form\" accept-charset\\u003d\"UNKNOWN\" method\\u003d\"POST\" name\\u003d\"form\" action\\u003d\"/WebGoat/SqlInjection/attack5a\" enctype\\u003d\"application/json;charset\\u003dUTF-8\"\\u003e\\n \\u003ctable\\u003e\\n \\u003ctr\\u003e\\n \\u003ctd\\u003eAccount Name:\\u003c/td\\u003e\\n \",\"startIdx\":100,\"endIdx\":257}, type=EVIDENCE)"
+  result:
+    custom:
+      filename: "VulnerabilityProcessorQueryService.java"
+      hash: 1805407380
+      id: 19
+      level: "INFO"
+      lineno: 135.0
+      logger:
+        name: "talledLocalContainer"
+      timestamp: 1574773401597
+      type: "EVIDENCE"
+      vulnerabilityHash: 1805407380
+      vulnerabilityInstanceId: 0
+    message: "[INFO] [talledLocalContainer] 261119 13.03.21,597 {} {} {} INFO (VulnerabilityProcessorQueryService.java:135) [VULNERABILITIES] Saved vulnerability instance property VulnerabilityInstanceProperty(id=19, vulnerabilityInstanceId=0, hash=1805407380, vulnerabilityHash=1805407380, name=/WebGoat/SqlInjection.lesson.lesson, value={\"html\":\"class\\u003d\"assignment-success\"\\u003e\\u003ci class\\u003d\"fa fa-2 fa-check hidden\" aria-hidden\\u003d\"true\"\\u003e\\u003c/i\\u003e\\u003c/div\\u003e\\n \\u003cform class\\u003d\"attack-form\" accept-charset\\u003d\"UNKNOWN\" method\\u003d\"POST\" name\\u003d\"form\" action\\u003d\"/WebGoat/SqlInjection/attack5a\" enctype\\u003d\"application/json;charset\\u003dUTF-8\"\\u003e\\n \\u003ctable\\u003e\\n \\u003ctr\\u003e\\n \\u003ctd\\u003eAccount Name:\\u003c/td\\u003e\\n \",\"startIdx\":100,\"endIdx\":257}, type=EVIDENCE)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574773401597
+ -
+  sample: "2019-11-11 03:17:58,857 [Contrast Server Activity Updater wire] DEBUG - << \"HTTP/1.1 304 Not Modified[\\r][\\n]\""
+  result:
+    custom:
+      http:
+        status_category: "notice"
+        status_code: 304.0
+        version: 1.1
+      level: "DEBUG"
+      timestamp: 1573442278857
+    message: "2019-11-11 03:17:58,857 [Contrast Server Activity Updater wire] DEBUG - << \"HTTP/1.1 304 Not Modified[\\r][\\n]\""
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1573442278857
+ -
+  sample: "Dec 16 2019 15:09:49.652-0500 10.10.16.162 CEF:0|Contrast Security|Contrast Agent Java|3.6.10.12442|SECURITY|The parameter userid had a value that successfully exploited sql-injection - \"1\" OR 1\\=1|WARN|pri=sql-injection src=127.0.0.1 spt=8080 request=/WebGoat/SqlInjection/attack5b requestMethod=POST app=WebGoat outcome=EXPLOITED"
+  result:
+    custom:
+      app: "WebGoat"
+      contrastsecurity:
+        agent: "Contrast Agent Java"
+        agent_version: "3.6.10.12442"
+      evt:
+        action: "sql-injection"
+        outcome: "EXPLOITED"
+      http:
+        method: "POST"
+      level: "WARN"
+      network:
+        client:
+          ip: "10.10.16.162"
+        source:
+          ip: "127.0.0.1"
+          port: 8080
+      request: "/WebGoat/SqlInjection/attack5b"
+      timestamp: 1576526989652
+      title: "The parameter userid had a value that successfully exploited sql-injection - \"1\" OR 1\\=1"
+    message: "Dec 16 2019 15:09:49.652-0500 10.10.16.162 CEF:0|Contrast Security|Contrast Agent Java|3.6.10.12442|SECURITY|The parameter userid had a value that successfully exploited sql-injection - \"1\" OR 1\\=1|WARN|pri=sql-injection src=127.0.0.1 spt=8080 request=/WebGoat/SqlInjection/attack5b requestMethod=POST app=WebGoat outcome=EXPLOITED"
+    service: "WebGoat"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576526989652
+

@@ -1,0 +1,178 @@
+id: "torchserve"
+tests:
+ -
+  sample: "2023-06-22T09:07:42,741 - /172.22.0.1:58654 \"POST /predictions/linear_regression_1_1 HTTP/1.1\" 200 10"
+  result:
+    custom:
+      http:
+        method: "POST"
+        status_code: 200
+        url: "/predictions/linear_regression_1_1"
+        version: "1.1"
+      level: "info"
+      network:
+        bytes_written: 10
+        client:
+          geoip: {}
+          ip: "172.22.0.1"
+          port: "58654"
+      timestamp: 1687424862741
+    message: "/172.22.0.1:58654 \"POST /predictions/linear_regression_1_1 HTTP/1.1\" 200 10"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687424862741
+ -
+  sample: "2023-06-22T11:45:28,868 [INFO ] W-9003-linear_regression_2_2_1-stdout MODEL_LOG - Backend received inference at: 1687434328"
+  result:
+    custom:
+      inference:
+        time: 1687434328
+      level: "INFO"
+      logger:
+        thread_name: "W-9003-linear_regression_2_2_1-stdout"
+      model:
+        name: "linear_regression_2_2_1"
+      output: "stdout"
+      timestamp: 1687434328868
+      worker:
+        id: 9003
+    message: "Backend received inference at: 1687434328"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687434328868
+ -
+  sample: "2023-06-22T12:29:13,817 [INFO ] W-9003-linear_regression_2_2_1 ACCESS_LOG - /172.22.0.1:65308 \"POST /predictions/linear_regression_2_2 HTTP/1.1\" 200 12"
+  result:
+    custom:
+      http:
+        method: "POST"
+        status_code: 200
+        url: "/predictions/linear_regression_2_2"
+        version: "1.1"
+      level: "info"
+      logger:
+        thread_name: "W-9003-linear_regression_2_2_1"
+      model:
+        name: "linear_regression_2_2_1"
+      network:
+        bytes_written: 12
+        client:
+          geoip: {}
+          ip: "172.22.0.1"
+          port: "65308"
+      timestamp: 1687436953817
+      worker:
+        id: 9003
+    message: "/172.22.0.1:65308 \"POST /predictions/linear_regression_2_2 HTTP/1.1\" 200 12"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687436953817
+ -
+  sample: "2023-06-22T11:45:28,857 [DEBUG] W-9001-linear_regression_1_2_2 org.pytorch.serve.wlm.WorkerThread - sent a reply, jobdone: true"
+  result:
+    custom:
+      file:
+        name: "org.pytorch.serve.wlm.WorkerThread"
+      job:
+        done: true
+      level: "DEBUG"
+      logger:
+        thread_name: "W-9001-linear_regression_1_2_2"
+      model:
+        name: "linear_regression_1_2_2"
+      timestamp: 1687434328857
+      worker:
+        id: 9001
+    message: "sent a reply, jobdone: true"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687434328857
+ -
+  sample: "2023-06-22T11:45:28,863 [INFO ] W-9003-linear_regression_2_2_1 org.pytorch.serve.wlm.WorkerThread - Flushing req.cmd PREDICT to backend at: 1687434328863"
+  result:
+    custom:
+      command:
+        name: "PREDICT"
+        timestamp: 1687434328863
+      file:
+        name: "org.pytorch.serve.wlm.WorkerThread"
+      level: "INFO"
+      logger:
+        thread_name: "W-9003-linear_regression_2_2_1"
+      model:
+        name: "linear_regression_2_2_1"
+      timestamp: 1687434328863
+      worker:
+        id: 9003
+    message: "Flushing req.cmd PREDICT to backend at: 1687434328863"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687434328863
+ -
+  sample: "2023-06-22T09:10:51,755 [INFO ] W-9005-linear_regression_3_2_1 org.pytorch.serve.wlm.WorkerThread - Backend response time: 6"
+  result:
+    custom:
+      backend:
+        response_time: 6
+      file:
+        name: "org.pytorch.serve.wlm.WorkerThread"
+      level: "INFO"
+      logger:
+        thread_name: "W-9005-linear_regression_3_2_1"
+      model:
+        name: "linear_regression_3_2_1"
+      timestamp: 1687425051755
+      worker:
+        id: 9005
+    message: "Backend response time: 6"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687425051755
+ -
+  sample: "2023-06-22T09:10:51,746 [DEBUG] W-9005-linear_regression_3_2_1 org.pytorch.serve.job.Job - Waiting time ns: 329042, Backend time ns: 12583833"
+  result:
+    custom:
+      file:
+        name: "org.pytorch.serve.job.Job"
+      job:
+        backend_time: 12583833
+        waiting_time: 329042
+      level: "DEBUG"
+      logger:
+        thread_name: "W-9005-linear_regression_3_2_1"
+      model:
+        name: "linear_regression_3_2_1"
+      timestamp: 1687425051746
+      worker:
+        id: 9005
+    message: "Waiting time ns: 329042, Backend time ns: 12583833"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687425051746
+ -
+  sample: "2023-06-22T09:10:51,746 [DEBUG] W-9005-linear_regression_3_2_1 org.pytorch.serve.job.Job - test"
+  result:
+    custom:
+      file:
+        name: "org.pytorch.serve.job.Job"
+      level: "DEBUG"
+      logger:
+        thread_name: "W-9005-linear_regression_3_2_1"
+      model:
+        name: "linear_regression_3_2_1"
+      timestamp: 1687425051746
+      worker:
+        id: 9005
+    message: "test"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687425051746
+

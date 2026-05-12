@@ -1,0 +1,87 @@
+id: sanity
+metric_id: sanity
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+pipeline:
+  type: pipeline
+  name: Sanity
+  enabled: true
+  filter:
+    query: source:sanity
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: pipeline
+      name: Processing for Activity Logs
+      enabled: true
+      filter:
+        query: service:activity-logs
+      processors:
+        - type: attribute-remapper
+          name: Map `action` to `evt.name`
+          enabled: true
+          sources:
+            - action
+          sourceType: attribute
+          target: evt.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actorId` to `usr.id`
+          enabled: true
+          sources:
+            - actorId
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actorName` to `usr.name`
+          enabled: true
+          sources:
+            - actorName
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actorEmail` to `usr.email`
+          enabled: true
+          sources:
+            - actorEmail
+          sourceType: attribute
+          target: usr.email
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

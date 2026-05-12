@@ -1,5 +1,5 @@
 # Known routing limitations: messages that WILL match a filter after
-# preprocessing (pomchi/src/processed_log.rs) but NOT at routing time.
+# preprocessing (quickwit-processing/src/processed_log.rs) but NOT at routing time.
 #
 # Gaps not covered by the routing accessor:
 #   - message→message chain where inner "message" is a JSON string

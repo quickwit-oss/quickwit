@@ -1,0 +1,273 @@
+id: "onelogin"
+tests:
+ -
+  sample: |-
+    {
+      "user_name" : "Abilash Ravikumar",
+      "created_at" : "2022-03-16T23:20:16.985Z",
+      "event_type_id" : 149,
+      "role_name" : "KING",
+      "account_id" : 196990,
+      "event_type" : {
+        "name" : "USER_AUTO_ADDED_TO_ROLE",
+        "description" : "%user% automatically added to %role% role",
+        "id" : 149
+      },
+      "user_id" : 150191485,
+      "actor_user_name" : "Mapping",
+      "role_id" : 491429,
+      "id" : 26514883122,
+      "ipaddr" : "185.64.148.0",
+      "user_agent" : "test_value",
+      "actor_system" : "Mapping"
+    }
+  result:
+    custom:
+      account_id: "196990"
+      actor_system: "Mapping"
+      actor_user_name: "Mapping"
+      created_at: "2022-03-16T23:20:16.985Z"
+      evt:
+        description: "%user% automatically added to %role% role"
+        id: "149"
+        name: "USER_AUTO_ADDED_TO_ROLE"
+      http:
+        useragent: "test_value"
+      id: 26514883122
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      role_id: 491429
+      role_name: "KING"
+      usr:
+        id: "150191485"
+        name: "Abilash Ravikumar"
+    message: |-
+      {
+        "user_name" : "Abilash Ravikumar",
+        "created_at" : "2022-03-16T23:20:16.985Z",
+        "event_type_id" : 149,
+        "role_name" : "KING",
+        "account_id" : 196990,
+        "event_type" : {
+          "name" : "USER_AUTO_ADDED_TO_ROLE",
+          "description" : "%user% automatically added to %role% role",
+          "id" : 149
+        },
+        "user_id" : 150191485,
+        "actor_user_name" : "Mapping",
+        "role_id" : 491429,
+        "id" : 26514883122,
+        "ipaddr" : "185.64.148.0",
+        "user_agent" : "test_value",
+        "actor_system" : "Mapping"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1647472816985
+ -
+  sample: |-
+    {
+      "notes" : "Authentication method: Login App.\nTransitions: password -> password\nCorrelation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f",
+      "policy_id" : 289767,
+      "user_name" : "Abilash Ravikumar",
+      "created_at" : "2021-11-11T20:35:27.053Z",
+      "policy_name" : "Default policy",
+      "event_type_id" : 5,
+      "client_id" : "12345",
+      "actor_user_id" : 150191485,
+      "account_id" : 196990,
+      "resource_type_id" : 404,
+      "event_type" : {
+        "name" : "USER_ASSUMED_USER",
+        "description" : "%actor_user% assumed %user%",
+        "id" : 5
+      },
+      "user_id" : 150191485,
+      "role_id" : 233,
+      "group_id" : 1,
+      "actor_user_name" : "Abilash Ravikumar",
+      "id" : 23830157317,
+      "ipaddr" : "185.64.148.0"
+    }
+  result:
+    custom:
+      account_id: "196990"
+      actor_user_id: "150191485"
+      actor_user_name: "Abilash Ravikumar"
+      client_id: "12345"
+      correlation_id: "97ee58fe-d72a-4cdf-8280-35f58898a79f"
+      created_at: "2021-11-11T20:35:27.053Z"
+      evt:
+        category: "authentication"
+        description: "%actor_user% assumed %user%"
+        id: "5"
+        name: "USER_ASSUMED_USER"
+        outcome: "success"
+      group_id: 1
+      id: 23830157317
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      notes: |-
+        Authentication method: Login App.
+        Transitions: password -> password
+        Correlation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f
+      policy_id: "289767"
+      policy_name: "Default policy"
+      resource_type_id: 404
+      role_id: 233
+      usr:
+        id: "150191485"
+        name: "Abilash Ravikumar"
+    message: |-
+      {
+        "notes" : "Authentication method: Login App.\nTransitions: password -> password\nCorrelation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f",
+        "policy_id" : 289767,
+        "user_name" : "Abilash Ravikumar",
+        "created_at" : "2021-11-11T20:35:27.053Z",
+        "policy_name" : "Default policy",
+        "event_type_id" : 5,
+        "client_id" : "12345",
+        "actor_user_id" : 150191485,
+        "account_id" : 196990,
+        "resource_type_id" : 404,
+        "event_type" : {
+          "name" : "USER_ASSUMED_USER",
+          "description" : "%actor_user% assumed %user%",
+          "id" : 5
+        },
+        "user_id" : 150191485,
+        "role_id" : 233,
+        "group_id" : 1,
+        "actor_user_name" : "Abilash Ravikumar",
+        "id" : 23830157317,
+        "ipaddr" : "185.64.148.0"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1636662927053
+ -
+  sample: |-
+    {
+      "notes" : "Authentication method: Login App.\nTransitions: password -> password\nCorrelation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f",
+      "policy_id" : 289767,
+      "user_name" : "Abilash Ravikumar",
+      "created_at" : "2021-11-11T20:35:27.053Z",
+      "policy_name" : "Default policy",
+      "event_type_id" : 5,
+      "client_id" : "12345",
+      "actor_user_id" : 150191485,
+      "account_id" : 196990,
+      "resource_type_id" : 404,
+      "user_id" : 150191485,
+      "role_id" : 233,
+      "group_id" : 1,
+      "actor_user_name" : "Abilash Ravikumar",
+      "id" : 23830157317,
+      "ipaddr" : "185.64.148.0"
+    }
+  result:
+    custom:
+      account_id: "196990"
+      actor_user_id: "150191485"
+      actor_user_name: "Abilash Ravikumar"
+      client_id: "12345"
+      correlation_id: "97ee58fe-d72a-4cdf-8280-35f58898a79f"
+      created_at: "2021-11-11T20:35:27.053Z"
+      evt:
+        category: "authentication"
+        description: "%user% logged into onelogin"
+        id: "5"
+        name: "USER_LOGGED_INTO_ONELOGIN"
+        outcome: "success"
+      group_id: 1
+      id: 23830157317
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+      notes: |-
+        Authentication method: Login App.
+        Transitions: password -> password
+        Correlation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f
+      policy_id: "289767"
+      policy_name: "Default policy"
+      resource_type_id: 404
+      role_id: 233
+      usr:
+        id: "150191485"
+        name: "Abilash Ravikumar"
+    message: |-
+      {
+        "notes" : "Authentication method: Login App.\nTransitions: password -> password\nCorrelation_id: 97ee58fe-d72a-4cdf-8280-35f58898a79f",
+        "policy_id" : 289767,
+        "user_name" : "Abilash Ravikumar",
+        "created_at" : "2021-11-11T20:35:27.053Z",
+        "policy_name" : "Default policy",
+        "event_type_id" : 5,
+        "client_id" : "12345",
+        "actor_user_id" : 150191485,
+        "account_id" : 196990,
+        "resource_type_id" : 404,
+        "user_id" : 150191485,
+        "role_id" : 233,
+        "group_id" : 1,
+        "actor_user_name" : "Abilash Ravikumar",
+        "id" : 23830157317,
+        "ipaddr" : "185.64.148.0"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1636662927053
+

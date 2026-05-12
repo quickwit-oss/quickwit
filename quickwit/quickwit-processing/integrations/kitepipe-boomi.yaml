@@ -1,0 +1,383 @@
+id: kitepipe-boomi
+# See app_id in your integration's manifest.json file to learn more:
+# https://docs.datadoghq.com/developers/integrations/check_references/#manifest-file
+metric_id: kitepipe-atomwatch
+# If for some reason id must be different than app_id, add the app_id in this field instead.
+# If id and app_id already match, this field can be left blank.
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - description: Subtype of a Boomi canvas shape showing in a process execution log
+      entry.
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Shape Subtype
+    path: kitepipe.atomwatch.shape.subtype
+    source: log
+    type: string
+  - description: Boomi node ID as shown in the Cluster Status page of the Boomi Console.
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Node ID
+    path: kitepipe.atomwatch.nodeid
+    source: log
+    type: string
+  - description: Outbound Document Count from Process Reporting
+    facetType: range
+    groups:
+      - Kitepipe
+    name: Outbound Document Count
+    path: kitepipe.atomwatch.outbounddocumentcount
+    source: log
+    type: integer
+  - description: Process Name from Process Reporting
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Boomi Process Name
+    path: kitepipe.atomwatch.boomiprocessname
+    source: log
+    type: string
+  - description: Label on a Boomi canvas shape showing in a process execution log
+      entry.
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Shape Label
+    path: kitepipe.atomwatch.shape.label
+    source: log
+    type: string
+  - description: Java method showing in a Boomi runtime log line.
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Java Method
+    path: kitepipe.atomwatch.java.method
+    source: log
+    type: string
+  - description: Inbound Document Count from Process Reporting
+    facetType: range
+    groups:
+      - Kitepipe
+    name: Inbound Document Count
+    path: kitepipe.atomwatch.inbounddocumentcount
+    source: log
+    type: integer
+  - description: Atom Name from Atom Management
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Atom Name
+    path: kitepipe.atomwatch.atomname
+    source: log
+    type: string
+  - description: Execution Status from Process Reporting
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Execution Status
+    path: kitepipe.atomwatch.executionstatus
+    source: log
+    type: string
+  - description: Type of a Boomi canvas shape showing in a process execution log entry.
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Shape Type
+    path: kitepipe.atomwatch.shape.type
+    source: log
+    type: string
+  - description: Inbound Error Document Count from Process Reporting
+    facetType: range
+    groups:
+      - Kitepipe
+    name: Inbound Error Document Count
+    path: kitepipe.atomwatch.inbounderrordocumentcount
+    source: log
+    type: integer
+  - description: Runtime Status from Atom Management
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Runtime Status
+    path: kitepipe.atomwatch.runtimestatus
+    source: log
+    type: string
+  - description: JVM Low Memory reported by JMX
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Low Mem
+    path: kitepipe.atomwatch.runtimelowmemory
+    source: log
+    type: string
+  - description: Node is Head as reported by JMX
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Is Head
+    path: kitepipe.atomwatch.runtimenodeishead
+    source: log
+    type: string
+  - description: Runtime is Restarting as reported by JMX
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Restarting
+    path: kitepipe.atomwatch.runtimerestarting
+    source: log
+    type: string
+  - description: JVM Out of Memory as reported by JMX
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Out of Mem
+    path: kitepipe.atomwatch.runtimeoutofmemory
+    source: log
+    type: string
+  - description: Node Decommissioning Stage as reported by JMX
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Decomm. Stage
+    path: kitepipe.atomwatch.runtimedecommissionstage
+    source: log
+    type: string
+  - description: JVM Uptime as reported by JMX
+    facetType: range
+    groups:
+      - Kitepipe
+    name: JVM Uptime
+    path: kitepipe.atomwatch.jvmuptimemillis
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: millisecond
+  - description: Name of Process as reported by Process Runner JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: ProcRunner Name
+    path: kitepipe.atomwatch.procrunnerprocname
+    source: log
+    type: string
+  - description: Execution ID as reported by Process Runner JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: ProcRunner Exec ID
+    path: kitepipe.atomwatch.procrunnerexecutionid
+    source: log
+    type: string
+  - description: Execution Source as reported by Process Runner JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: ProcRunner Source
+    path: kitepipe.atomwatch.procrunnersource
+    source: log
+    type: string
+  - description: Execution ID as reported by Execution Manager JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Managed Exec ID
+    path: kitepipe.atomwatch.managedexecexecutionid
+    source: log
+    type: string
+  - description: Execution Source as reported by Execution Manager JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Managed Exec Source
+    path: kitepipe.atomwatch.managedexecsource
+    source: log
+    type: string
+  - description: Process Name as reported by Execution Manager JVM
+    facetType: list
+    groups:
+      - Kitepipe
+    name: Managed Execution Name
+    path: kitepipe.atomwatch.managedexecname
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Boomi Logs
+  enabled: true
+  filter:
+    query: source:kitepipe-boomi
+  processors:
+    - type: pipeline
+      name: Boomi Execution Record
+      enabled: true
+      filter:
+        query: service:BoomiExecutionRecord
+      processors:
+        - type: date-remapper
+          name: Define `executionTime` as the official date of the log
+          enabled: true
+          sources:
+            - executionTime
+    - type: pipeline
+      name: Boomi Container Log
+      enabled: true
+      filter:
+        query: service:BoomiContainerLog
+      processors:
+        - type: grok-parser
+          name: Container Log Parser
+          enabled: true
+          source: message
+          samples:
+            - Oct 27, 2024 11:12:03 PM UTC INFO    [com.boomi.util.LogUtil
+              doLog] Node is using valid java
+          grok:
+            supportRules: ""
+            matchRules: rule %{date("MMM d, yyyy h:mm:ss a z"):logentrydate}
+              %{word:logstatus}\s+%{regex(".*"):message}
+        - type: date-remapper
+          name: Define `logentrydate` as the official date of the log
+          enabled: true
+          sources:
+            - logentrydate
+        - type: category-processor
+          name: Category Processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@logstatus:SEVERE"
+              name: Error
+            - name: OK
+              filter:
+                query: "@logstatus:FINE"
+            - name: Info
+              filter:
+                query: "@logstatus:INFO"
+            - name: Warning
+              filter:
+                query: "@logstatus:WARNING"
+          target: status_category
+        - type: status-remapper
+          name: Define `status_category` as the official status of the log
+          enabled: true
+          sources:
+            - status_category
+    - type: pipeline
+      name: Boomi HTTP Log
+      enabled: true
+      filter:
+        query: service:BoomiHTTP
+      processors:
+        - type: grok-parser
+          name: Parse Boomi HTTP
+          enabled: true
+          source: message
+          samples:
+            - 10.254.254.111 - testuser@myaccount-ABC123 [01/Aug/2016:00:23:17
+              +0000] "POST /ws/rest/v1/myapi/customers HTTP/1.1" 200 33562 "-"
+              "Mozilla/4.0 (compatible; MSIE 6.0; MS Web Services Client
+              Protocol 4.0.30319.18063)" "4339bfdc-968e-4438-81ef-6124e2a0d404"
+              "execution-fdee86b6-e5ea-4055-bdd7-f8e4ce1563e2-2016.08.01" 7906
+            - 10.1.1.131 -  -  [27/Nov/2024:21:01:52 +0000] "GET /_admin/status
+              HTTP/1.1" 200 0 "-" "ELB-HealthChecker/2.0" "-" "-" 0
+          grok:
+            supportRules: |
+              _auth %{notSpace:http.auth:nullIf("-")}
+              _bytes_written %{integer:network.bytes_written}
+              _client_ip %{ipOrHost:network.client.ip}
+              _version HTTP/%{regex("\\d+\\.\\d+"):http.version}
+              _url %{notSpace:http.url}
+              _ident %{notSpace:http.ident:nullIf("-")}
+              _user_agent %{regex("[^\\\"]*"):http.useragent}
+              _referer %{notSpace:http.referer}
+              _process_id %{notSpace:process_id}
+              _execution_id %{notSpace:execution_id}
+              _response_time_ms %{integer:response_time_ms}
+              _status_code %{integer:http.status_code}
+              _method %{word:http.method}
+              _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+            matchRules: access.common %{_client_ip}
+              %{_ident}  ?%{_auth}  ?\[%{_date_access}\] "(?>%{_method}
+              |)%{_url}(?> %{_version}|)" %{_status_code}
+              (?>%{_bytes_written}|-) "%{_referer}" "%{_user_agent}"
+              "%{_process_id}" "%{_execution_id}" %{_response_time_ms}
+        - type: user-agent-parser
+          name: User-Agent Parser
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+        - type: url-parser
+          name: URL Parser
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+          normalizeEndingSlashes: false
+        - type: date-remapper
+          name: Define `date_access` as the official date of the log
+          enabled: true
+          sources:
+            - date_access
+        - type: category-processor
+          name: Category Processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@http.status_code:[200 TO 299]"
+              name: OK
+            - filter:
+                query: "@http.status_code:[300 TO 399]"
+              name: Notice
+            - filter:
+                query: "@http.status_code:[400 TO 499]"
+              name: Warning
+            - filter:
+                query: "@http.status_code:[500 TO 599]"
+              name: Error
+          target: http.status_category
+        - type: status-remapper
+          name: Define `http.status_category` as the official status of the log
+          enabled: true
+          sources:
+            - http.status_category

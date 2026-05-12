@@ -1,0 +1,800 @@
+id: "okta"
+tests:
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "request" : {
+        "ipChain" : [ {
+          "ip" : "38.140.108.235",
+          "geographicalContext" : {
+            "country" : "United States",
+            "city" : "San Francisco",
+            "postalCode" : "94109",
+            "state" : "California",
+            "geolocation" : {
+              "lon" : -122.4203,
+              "lat" : 37.7958
+            }
+          },
+          "version" : "V4"
+        } ]
+      },
+      "authenticationContext" : {
+        "externalSessionId" : "102U5BaZjQhRMStHkbICTaM9Q",
+        "authenticationStep" : 0
+      },
+      "eventType" : "policy.evaluate_sign_on",
+      "published" : "2019-07-08T18:55:50.510Z",
+      "version" : "0",
+      "uuid" : "0108913d-a1b2-11e9-8a63-df81fa655adf",
+      "target" : [ {
+        "alternateId" : "unknown",
+        "displayName" : "Default Policy",
+        "id" : "00p3covgjOEx2FU7q356",
+        "type" : "PolicyEntity",
+        "detailEntry" : {
+          "policyType" : "OktaSignOn"
+        }
+      }, {
+        "alternateId" : "00p3covgjOEx2FU7q356",
+        "displayName" : "Standard Sign In Policy for Contractors",
+        "id" : "0prdglyt1cBnVM5YM356",
+        "type" : "PolicyRule"
+      } ],
+      "actor" : {
+        "alternateId" : "it-accounts@instacart.com",
+        "displayName" : "IT Accounts",
+        "id" : "00ueha66lRXkNyxmA356",
+        "type" : "User"
+      },
+      "debugContext" : {
+        "debugData" : {
+          "deviceFingerprint" : "47bdde90895f422ef565d41d3f277c3c",
+          "requestId" : "XSORtgW1clwt74pmYgYSVgAAAJM",
+          "requestUri" : "/app/snowflake/exk51zugrjS17P5nv356/sso/saml",
+          "url" : "/app/snowflake/exk51zugrjS17P5nv356/sso/saml?a=1&b=2"
+        }
+      },
+      "displayMessage" : "Evaluation of sign-on policy",
+      "account_name" : "IC_Main",
+      "client" : {
+        "zone" : "null",
+        "ipAddress" : "38.140.108.235",
+        "userAgent" : {
+          "os" : "Mac OS X",
+          "browser" : "CHROME",
+          "rawUserAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+        },
+        "geographicalContext" : {
+          "country" : "United States",
+          "city" : "San Francisco",
+          "postalCode" : "94109",
+          "state" : "California",
+          "geolocation" : {
+            "lon" : -122.4203,
+            "lat" : 37.7958
+          }
+        },
+        "device" : "Computer"
+      },
+      "transaction" : {
+        "id" : "XSORtgW1clwt74pmYgYSVgAAAJM",
+        "type" : "WEB"
+      },
+      "outcome" : {
+        "result" : "CHALLENGE",
+        "reason" : "Sign-on policy evaluation resulted in CHALLENGE"
+      }
+    }
+  result:
+    custom:
+      account_name: "IC_Main"
+      activity_id_name: "Other[99]"
+      actor:
+        alternateId: "it-accounts@instacart.com"
+        displayName: "IT Accounts"
+        id: "00ueha66lRXkNyxmA356"
+        type: "User"
+      authenticationContext:
+        authenticationStep: 0
+        externalSessionId: "102U5BaZjQhRMStHkbICTaM9Q"
+      client:
+        device: "Computer"
+        geographicalContext:
+          city: "San Francisco"
+          country: "United States"
+          geolocation:
+            lat: 37.7958
+            lon: -122.4203
+          postalCode: "94109"
+          state: "California"
+        ipAddress: "38.140.108.235"
+        userAgent:
+          browser: "CHROME"
+          os: "Mac OS X"
+          rawUserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+        zone: "null"
+      debugContext:
+        debugData:
+          deviceFingerprint: "47bdde90895f422ef565d41d3f277c3c"
+          requestId: "XSORtgW1clwt74pmYgYSVgAAAJM"
+          requestUri: "/app/snowflake/exk51zugrjS17P5nv356/sso/saml"
+          url: "/app/snowflake/exk51zugrjS17P5nv356/sso/saml?a=1&b=2"
+      eventType: "policy.evaluate_sign_on"
+      evt:
+        name: "policy.evaluate_sign_on"
+        outcome: "CHALLENGE"
+      http:
+        request_id: "XSORtgW1clwt74pmYgYSVgAAAJM"
+        url: "/app/snowflake/exk51zugrjS17P5nv356/sso/saml?a=1&b=2"
+        url_details:
+          path: "/app/snowflake/exk51zugrjS17P5nv356/sso/saml"
+          queryString:
+            a: "1"
+            b: "2"
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "75"
+            minor: "0"
+            patch: "3770"
+            patch_minor: "100"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "12"
+            patch: "6"
+      network:
+        client:
+          geoip:
+            city:
+              name: "San Francisco"
+            country:
+              name: "United States"
+            subdivision:
+              name: "California"
+          ip: "38.140.108.235"
+      ocsf:
+        activity_id: 99
+        activity_name: "policy.evaluate_sign_on"
+        actor:
+          user:
+            email_addr: "it-accounts@instacart.com"
+            name: "IT Accounts"
+            uid: "00ueha66lRXkNyxmA356"
+        api:
+          operation: "policy.evaluate_sign_on"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        http_request:
+          uid: "XSORtgW1clwt74pmYgYSVgAAAJM"
+          url:
+            path: "/app/snowflake/exk51zugrjS17P5nv356/sso/saml?a=1&b=2"
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36"
+        metadata:
+          event_code: "policy.evaluate_sign_on"
+          product:
+            name: "Okta System Log"
+            vendor_name: "Okta"
+            version: "0"
+          uid: "0108913d-a1b2-11e9-8a63-df81fa655adf"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "38.140.108.235"
+          location:
+            city: "San Francisco"
+            lat: 37.7958
+            postal_code: "94109"
+        status: "CHALLENGE"
+        status_id: 99
+        time: 1562612150510
+        type_uid: 600399
+      outcome:
+        reason: "Sign-on policy evaluation resulted in CHALLENGE"
+        result: "CHALLENGE"
+      published: "2019-07-08T18:55:50.510Z"
+      request:
+        ipChain:
+         -
+          ip: "38.140.108.235"
+          geographicalContext:
+            country: "United States"
+            city: "San Francisco"
+            postalCode: "94109"
+            state: "California"
+            geolocation:
+              lon: -122.4203
+              lat: 37.7958
+          version: "V4"
+      severity: "INFO"
+      target:
+       -
+        alternateId: "unknown"
+        displayName: "Default Policy"
+        id: "00p3covgjOEx2FU7q356"
+        type: "PolicyEntity"
+        detailEntry:
+          policyType: "OktaSignOn"
+       -
+        alternateId: "00p3covgjOEx2FU7q356"
+        displayName: "Standard Sign In Policy for Contractors"
+        id: "0prdglyt1cBnVM5YM356"
+        type: "PolicyRule"
+      target_app: "snowflake"
+      title: "Evaluation of sign-on policy"
+      transaction:
+        id: "XSORtgW1clwt74pmYgYSVgAAAJM"
+        type: "WEB"
+      usr:
+        email: "it-accounts@instacart.com"
+        id: "00ueha66lRXkNyxmA356"
+        name: "IT Accounts"
+        type: "User"
+      uuid: "0108913d-a1b2-11e9-8a63-df81fa655adf"
+      version: "0"
+    message: "Evaluation of sign-on policy"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1562612150510
+ -
+  sample: |-
+    {
+      "severity" : "INFO",
+      "authenticationContext" : {
+        "externalSessionId" : "1013FfF-DKQSvCI4RVXChzX-w",
+        "authenticationStep" : 0
+      },
+      "published" : "2021-12-21T00:16:19.0000",
+      "eventType" : "user.session.start",
+      "version" : "0",
+      "uuid" : "f790999f-fe87-467a-9880-6982a583986c",
+      "actor" : {
+        "alternateId" : "admin@example.com",
+        "displayName" : "John Doe",
+        "id" : "00u1qw1mqitPHM8AJ0g7",
+        "type" : "User"
+      },
+      "debugContext" : {
+        "debugData" : {
+          "requestUri" : "/login/do-login"
+        }
+      },
+      "displayMessage" : "User login to Okta",
+      "client" : {
+        "zone" : "OFF_NETWORK",
+        "ipAddress" : "12.97.85.90",
+        "userAgent" : {
+          "os" : "Unknown",
+          "browser" : "UNKNOWN",
+          "rawUserAgent" : "UNKNOWN-DOWNLOAD"
+        },
+        "device" : "Unknown"
+      },
+      "legacyEventType" : "core.user_auth.login_success",
+      "outcome" : {
+        "result" : "SUCCESS"
+      },
+      "transaction" : {
+        "id" : "V04Oy4ubUOc5UuG6s9DyNQAABtc",
+        "type" : "WEB"
+      }
+    }
+  result:
+    custom:
+      activity_id_name: "Logon[1]"
+      actor:
+        alternateId: "admin@example.com"
+        displayName: "John Doe"
+        id: "00u1qw1mqitPHM8AJ0g7"
+        type: "User"
+      authenticationContext:
+        authenticationStep: 0
+        externalSessionId: "1013FfF-DKQSvCI4RVXChzX-w"
+      client:
+        device: "Unknown"
+        ipAddress: "12.97.85.90"
+        userAgent:
+          browser: "UNKNOWN"
+          os: "Unknown"
+          rawUserAgent: "UNKNOWN-DOWNLOAD"
+        zone: "OFF_NETWORK"
+      debugContext:
+        debugData:
+          requestUri: "/login/do-login"
+      eventType: "user.session.start"
+      evt:
+        category: "authentication"
+        name: "user.session.start"
+        outcome: "SUCCESS"
+      http:
+        useragent: "UNKNOWN-DOWNLOAD"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      legacyEventType: "core.user_auth.login_success"
+      network:
+        client:
+          geoip: {}
+          ip: "12.97.85.90"
+      ocsf:
+        activity_id: 1
+        activity_name: "Logon"
+        actor:
+          user:
+            email_addr: "admin@example.com"
+            name: "John Doe"
+            uid: "00u1qw1mqitPHM8AJ0g7"
+        category_name: "Identity & Access Management"
+        category_uid: 3
+        class_name: "Authentication"
+        class_uid: 3002
+        http_request:
+          user_agent: "UNKNOWN-DOWNLOAD"
+        metadata:
+          event_code: "user.session.start"
+          product:
+            name: "Okta System Log"
+            vendor_name: "Okta"
+            version: "0"
+          uid: "f790999f-fe87-467a-9880-6982a583986c"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        src_endpoint:
+          ip: "12.97.85.90"
+        status: "Success"
+        status_id: 1
+        type_uid: 300201
+        user:
+          email_addr: "admin@example.com"
+          name: "John Doe"
+          type: "User"
+          uid: "00u1qw1mqitPHM8AJ0g7"
+      outcome:
+        result: "SUCCESS"
+      published: "2021-12-21T00:16:19.0000"
+      severity: "INFO"
+      title: "User login to Okta"
+      transaction:
+        id: "V04Oy4ubUOc5UuG6s9DyNQAABtc"
+        type: "WEB"
+      usr:
+        email: "admin@example.com"
+        id: "00u1qw1mqitPHM8AJ0g7"
+        name: "John Doe"
+        type: "User"
+      uuid: "f790999f-fe87-467a-9880-6982a583986c"
+      version: "0"
+    message: "User login to Okta"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1640045779000
+ -
+  sample: |-
+    {
+      "severity" : "WARN",
+      "request" : {
+        "ipChain" : [ {
+          "ip" : "10.0.0.1",
+          "geographicalContext" : {
+            "country" : "United States",
+            "city" : "New York",
+            "postalCode" : 10013,
+            "state" : "New York",
+            "geolocation" : {
+              "lon" : -74.01,
+              "lat" : 40.3157
+            }
+          },
+          "version" : "V4"
+        } ]
+      },
+      "authenticationContext" : {
+        "authenticationStep" : 0
+      },
+      "eventType" : "security.threat.detected",
+      "published" : "2024-08-13T15:58:20.353Z",
+      "securityContext" : {
+        "asNumber" : 394089,
+        "isp" : "google",
+        "isProxy" : false,
+        "asOrg" : "ASN 0000"
+      },
+      "uuid" : "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a",
+      "version" : 0,
+      "actor" : {
+        "alternateId" : "unknown",
+        "displayName" : "10.0.0.1",
+        "id" : "10.0.0.1",
+        "type" : "IP address"
+      },
+      "debugContext" : {
+        "debugData" : {
+          "dtHash" : "11111111111111",
+          "requestUri" : "/app/office365/1111111111/sso/wsfed/active",
+          "threatSuspected" : "true",
+          "threatDetections" : "{\"Login Failures\":\"HIGH\"}",
+          "url" : "/app/office365/1111111111/sso/wsfed/active"
+        }
+      },
+      "displayMessage" : "Request from suspicious actor",
+      "client" : {
+        "ipAddress" : "10.0.0.1",
+        "userAgent" : {
+          "os" : "unknown",
+          "browser" : "unknown",
+          "rawUserAgent" : "unknown"
+        },
+        "device" : "Computer",
+        "geographicalContext" : {
+          "country" : "United States",
+          "city" : "New York",
+          "postalCode" : "10013",
+          "state" : "New York",
+          "geolocation" : {
+            "lon" : -74.01,
+            "lat" : 40.3157
+          }
+        }
+      },
+      "legacyEventType" : "security.threat.detected",
+      "outcome" : {
+        "result" : "DENY",
+        "reason" : "Login Failures"
+      },
+      "transaction" : {
+        "id" : "ab609228fe84ce59cdcbfa690bgce016",
+        "type" : "WEB"
+      }
+    }
+  result:
+    custom:
+      activity_id_name: "Create[1]"
+      actor:
+        alternateId: "unknown"
+        displayName: "10.0.0.1"
+        id: "10.0.0.1"
+        type: "IP address"
+      authenticationContext:
+        authenticationStep: 0
+      client:
+        device: "Computer"
+        geographicalContext:
+          city: "New York"
+          country: "United States"
+          geolocation:
+            lat: 40.3157
+            lon: -74.01
+          postalCode: "10013"
+          state: "New York"
+        ipAddress: "10.0.0.1"
+        userAgent:
+          browser: "unknown"
+          os: "unknown"
+          rawUserAgent: "unknown"
+      debugContext:
+        debugData:
+          dtHash: "11111111111111"
+          requestUri: "/app/office365/1111111111/sso/wsfed/active"
+          threatDetections: "{\"Login Failures\":\"HIGH\"}"
+          threatSuspected: "true"
+          url: "/app/office365/1111111111/sso/wsfed/active"
+      eventType: "security.threat.detected"
+      evt:
+        name: "security.threat.detected"
+        outcome: "DENY"
+      http:
+        url: "/app/office365/1111111111/sso/wsfed/active"
+        url_details:
+          path: "/app/office365/1111111111/sso/wsfed/active"
+        useragent: "unknown"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      legacyEventType: "security.threat.detected"
+      network:
+        client:
+          geoip:
+            city:
+              name: "New York"
+            country:
+              name: "United States"
+            subdivision:
+              name: "New York"
+          ip: "10.0.0.1"
+      ocsf:
+        action: "DENY"
+        activity_id: 1
+        activity_name: "Create"
+        category_name: "Finding"
+        category_uid: 2
+        class_name: "Detection Finding"
+        class_uid: 2004
+        disposition: "DENY"
+        finding_info:
+          title: "Login Failures"
+          uid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+        metadata:
+          event_code: "security.threat.detected"
+          product:
+            name: "Okta System Log"
+            vendor_name: "Okta"
+            version: "0"
+          profiles:
+           - "security_control"
+           - "datetime"
+          uid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        status: "DENY"
+        status_id: 99
+        time: 1723564700353
+        type_uid: 200401
+      outcome:
+        reason: "Login Failures"
+        result: "DENY"
+      published: "2024-08-13T15:58:20.353Z"
+      request:
+        ipChain:
+         -
+          ip: "10.0.0.1"
+          geographicalContext:
+            country: "United States"
+            city: "New York"
+            postalCode: 10013
+            state: "New York"
+            geolocation:
+              lon: -74.01
+              lat: 40.3157
+          version: "V4"
+      securityContext:
+        asNumber: 394089
+        asOrg: "ASN 0000"
+        isProxy: false
+        isp: "google"
+      severity: "WARN"
+      target_app: "office365"
+      title: "Request from suspicious actor"
+      transaction:
+        id: "ab609228fe84ce59cdcbfa690bgce016"
+        type: "WEB"
+      usr:
+        email: "unknown"
+        id: "10.0.0.1"
+        name: "10.0.0.1"
+        type: "IP address"
+      uuid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+      version: 0
+    message: "Request from suspicious actor"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1723564700353
+ -
+  sample: |-
+    {
+      "severity" : "WARN",
+      "request" : {
+        "ipChain" : [ {
+          "ip" : "10.0.0.1",
+          "geographicalContext" : {
+            "country" : "United States",
+            "city" : "New York",
+            "postalCode" : 10013,
+            "state" : "New York",
+            "geolocation" : {
+              "lon" : -74.01,
+              "lat" : 40.3157
+            }
+          },
+          "version" : "V4"
+        } ]
+      },
+      "authenticationContext" : {
+        "authenticationStep" : 0
+      },
+      "eventType" : "security.threat.detected",
+      "published" : "2024-08-13T15:58:20.353Z",
+      "securityContext" : {
+        "asNumber" : 394089,
+        "isp" : "google",
+        "isProxy" : false,
+        "asOrg" : "ASN 0000"
+      },
+      "uuid" : "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a",
+      "version" : 0,
+      "actor" : {
+        "alternateId" : "unknown",
+        "displayName" : "10.0.0.1",
+        "id" : "10.0.0.1",
+        "type" : "IP address"
+      },
+      "debugContext" : {
+        "debugData" : {
+          "dtHash" : "11111111111111",
+          "requestUri" : "/app/office365/1111111111/sso/wsfed/active",
+          "threatSuspected" : "true",
+          "threatDetections" : "{\"Login Failures\":\"HIGH\"}",
+          "url" : "/app/office365/1111111111/sso/wsfed/active"
+        }
+      },
+      "displayMessage" : "Request from suspicious actor",
+      "client" : {
+        "ipAddress" : "10.0.0.1",
+        "userAgent" : {
+          "os" : "unknown",
+          "browser" : "unknown",
+          "rawUserAgent" : "unknown"
+        },
+        "device" : "Computer",
+        "geographicalContext" : {
+          "country" : "United States",
+          "city" : "New York",
+          "postalCode" : "10013",
+          "state" : "New York",
+          "geolocation" : {
+            "lon" : -74.01,
+            "lat" : 40.3157
+          }
+        }
+      },
+      "legacyEventType" : "security.threat.detected",
+      "outcome" : {
+        "result" : "DENY",
+        "reason" : "Login Failures"
+      },
+      "transaction" : {
+        "id" : "ab609228fe84ce59cdcbfa690bgce016",
+        "type" : "WEB"
+      }
+    }
+  result:
+    custom:
+      activity_id_name: "Create[1]"
+      actor:
+        alternateId: "unknown"
+        displayName: "10.0.0.1"
+        id: "10.0.0.1"
+        type: "IP address"
+      authenticationContext:
+        authenticationStep: 0
+      client:
+        device: "Computer"
+        geographicalContext:
+          city: "New York"
+          country: "United States"
+          geolocation:
+            lat: 40.3157
+            lon: -74.01
+          postalCode: "10013"
+          state: "New York"
+        ipAddress: "10.0.0.1"
+        userAgent:
+          browser: "unknown"
+          os: "unknown"
+          rawUserAgent: "unknown"
+      debugContext:
+        debugData:
+          dtHash: "11111111111111"
+          requestUri: "/app/office365/1111111111/sso/wsfed/active"
+          threatDetections: "{\"Login Failures\":\"HIGH\"}"
+          threatSuspected: "true"
+          url: "/app/office365/1111111111/sso/wsfed/active"
+      eventType: "security.threat.detected"
+      evt:
+        name: "security.threat.detected"
+        outcome: "DENY"
+      http:
+        url: "/app/office365/1111111111/sso/wsfed/active"
+        url_details:
+          path: "/app/office365/1111111111/sso/wsfed/active"
+        useragent: "unknown"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      legacyEventType: "security.threat.detected"
+      network:
+        client:
+          geoip:
+            city:
+              name: "New York"
+            country:
+              name: "United States"
+            subdivision:
+              name: "New York"
+          ip: "10.0.0.1"
+      ocsf:
+        action: "DENY"
+        activity_id: 1
+        activity_name: "Create"
+        category_name: "Finding"
+        category_uid: 2
+        class_name: "Detection Finding"
+        class_uid: 2004
+        disposition: "DENY"
+        finding_info:
+          title: "Login Failures"
+          uid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+        metadata:
+          event_code: "security.threat.detected"
+          product:
+            name: "Okta System Log"
+            vendor_name: "Okta"
+            version: "0"
+          profiles:
+           - "security_control"
+           - "datetime"
+          uid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+          version: "1.3.0"
+        severity: "Informational"
+        severity_id: 1
+        status: "DENY"
+        status_id: 99
+        time: 1723564700353
+        type_uid: 200401
+      outcome:
+        reason: "Login Failures"
+        result: "DENY"
+      published: "2024-08-13T15:58:20.353Z"
+      request:
+        ipChain:
+         -
+          ip: "10.0.0.1"
+          geographicalContext:
+            country: "United States"
+            city: "New York"
+            postalCode: 10013
+            state: "New York"
+            geolocation:
+              lon: -74.01
+              lat: 40.3157
+          version: "V4"
+      securityContext:
+        asNumber: 394089
+        asOrg: "ASN 0000"
+        isProxy: false
+        isp: "google"
+      severity: "WARN"
+      target_app: "office365"
+      title: "Request from suspicious actor"
+      transaction:
+        id: "ab609228fe84ce59cdcbfa690bgce016"
+        type: "WEB"
+      usr:
+        email: "unknown"
+        id: "10.0.0.1"
+        name: "10.0.0.1"
+        type: "IP address"
+      uuid: "dc9fd3c0-598c-11ef-8478-2b7584bf8d5a"
+      version: 0
+    message: "Request from suspicious actor"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1723564700353
+

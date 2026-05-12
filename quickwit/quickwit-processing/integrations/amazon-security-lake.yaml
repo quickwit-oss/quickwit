@@ -1,0 +1,250 @@
+id: amazon-security-lake
+metric_id: amazon-security-lake
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Product Name
+    path: metadata.product.name
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Identity Session MFA
+    path: identity.session.mfa
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Connection Direction
+    path: connection_info.direction
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Activity Name
+    path: activity_name
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Destination Endpoint Instance UID
+    path: dst_endpoint.instance_uid
+    source: log
+  - groups:
+      - Amazon Security Lake
+    name: Source Endpoint Instance UID
+    path: src_endpoint.interface_uid
+    source: log
+  - groups:
+      - AWS
+    name: AWS User Type
+    path: userIdentity.type
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User ARN
+    path: userIdentity.arn
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Amazon Security Lake
+  enabled: true
+  filter:
+    query: source:amazon-security-lake
+  processors:
+    - type: date-remapper
+      name: Define `time` as the official date of the log
+      enabled: true
+      sources:
+        - time
+    - type: attribute-remapper
+      name: Map `type_name` to `message`
+      enabled: true
+      sources:
+        - type_name
+      target: message
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `category_name` to `evt.category`
+      enabled: true
+      sources:
+        - category_name
+      target: evt.category
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `src_endpoint.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - src_endpoint.ip
+      target: network.client.ip
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `identity.user.type` to `userIdentity.type`
+      enabled: true
+      sources:
+        - identity.user.type
+      target: userIdentity.type
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `identity.user.uuid` to `userIdentity.arn`
+      enabled: true
+      sources:
+        - identity.user.uuid
+      target: userIdentity.arn
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `aws_account` to `account`
+      enabled: true
+      sources:
+        - aws_account
+      target: account
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dst_endpoint.ip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - dst_endpoint.ip
+      target: network.destination.ip
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `api.operation` to `evt.name`
+      enabled: true
+      sources:
+        - api.operation
+      target: evt.name
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `api.service.name` to `eventSource`
+      enabled: true
+      sources:
+        - api.service.name
+      target: eventSource
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for destination ip
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip

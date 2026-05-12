@@ -1,0 +1,262 @@
+id: "crest-data-systems-whylabs"
+tests:
+ -
+  sample: |-
+    {
+      "creationTime" : 1739349852244,
+      "name" : "TEST_SH_EMBEDDING",
+      "timePeriod" : "P1D",
+      "active" : true,
+      "id" : "model-6",
+      "modelType" : "EMBEDDINGS",
+      "modelCategory" : "MODEL",
+      "orgId" : "org-JDcdd6",
+      "tags" : [ {
+        "value" : "8",
+        "key" : "SH_TAG"
+      } ]
+    }
+  service: "cds.whylabs.models"
+  result:
+    custom:
+      active: true
+      batch:
+        batch_str: "       1 days        "
+        d: 1
+        d_str: "days"
+        date_str: "      1 days"
+        time_str: "      "
+      cds:
+        whylabs:
+          model_category: "MODEL"
+          model_type: "EMBEDDINGS"
+          organization_id: "org-JDcdd6"
+          resource_id: "model-6"
+          resource_name: "TEST_SH_EMBEDDING"
+      creationTime: 1739349852244
+      tags:
+       -
+        value: "8"
+        key: "SH_TAG"
+      timePeriod: "P1D"
+    message: |-
+      {
+        "creationTime" : 1739349852244,
+        "name" : "TEST_SH_EMBEDDING",
+        "timePeriod" : "P1D",
+        "active" : true,
+        "id" : "model-6",
+        "modelType" : "EMBEDDINGS",
+        "modelCategory" : "MODEL",
+        "orgId" : "org-JDcdd6",
+        "tags" : [ {
+          "value" : "8",
+          "key" : "SH_TAG"
+        } ]
+      }
+    service: "cds.whylabs.models"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "model_category" : "DATA",
+      "discreteness" : "continuous",
+      "dataType" : "fractional",
+      "organization_id" : "org-JDcdd6",
+      "classifier" : "input",
+      "column" : "collection_recovery_fee",
+      "model_type" : "DATA_OTHER",
+      "resource_id" : "model-1",
+      "resource_name" : "My Model"
+    }
+  service: "cds.whylabs.entity_schema"
+  result:
+    custom:
+      cds:
+        whylabs:
+          model_category: "DATA"
+          model_type: "DATA_OTHER"
+          organization_id: "org-JDcdd6"
+          resource_id: "model-1"
+          resource_name: "My Model"
+      classifier: "input"
+      column: "collection_recovery_fee"
+      dataType: "fractional"
+      discreteness: "continuous"
+    message: |-
+      {
+        "model_category" : "DATA",
+        "discreteness" : "continuous",
+        "dataType" : "fractional",
+        "organization_id" : "org-JDcdd6",
+        "classifier" : "input",
+        "column" : "collection_recovery_fee",
+        "model_type" : "DATA_OTHER",
+        "resource_id" : "model-1",
+        "resource_name" : "My Model"
+      }
+    service: "cds.whylabs.entity_schema"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "upperThreshold" : 0.0406967283227524,
+      "failedAnalysis" : false,
+      "userMarkedUnhelpful" : false,
+      "column" : "mo_sin_old_il_acct",
+      "metricValue" : 0.0245700245700246,
+      "model_type" : "DATA_OTHER",
+      "isAnomaly" : false,
+      "orgId" : "org-JDcdd6",
+      "analyzerId" : "missing-values-ratio-analyzer-sb25cg",
+      "datasetTimestamp" : 1738195200000,
+      "metric" : "count_null_ratio",
+      "analyzerType" : "stddev",
+      "model_category" : "DATA",
+      "creationTimestamp" : 1738283042454,
+      "failureType" : "null",
+      "datasetId" : "model-1",
+      "analysisId" : "b25f181c-18ae-3729-b420-05399cc19de6",
+      "monitorIds" : [ "missing-values-ratio-monitor-sb25cg" ],
+      "resource_name" : "My Model",
+      "lowerThreshold" : 7.29204926585604E-4,
+      "targetLevel" : "column"
+    }
+  service: "cds.whylabs.anomalies_feed"
+  result:
+    custom:
+      analysisId: "b25f181c-18ae-3729-b420-05399cc19de6"
+      analyzerId: "missing-values-ratio-analyzer-sb25cg"
+      analyzerType: "stddev"
+      cds:
+        whylabs:
+          model_category: "DATA"
+          model_type: "DATA_OTHER"
+          organization_id: "org-JDcdd6"
+          resource_id: "model-1"
+          resource_name: "My Model"
+      column: "mo_sin_old_il_acct"
+      creationTimestamp: 1738283042454
+      failedAnalysis: false
+      failureType: "null"
+      isAnomaly: false
+      lowerThreshold: 7.29204926585604E-4
+      metric: "count_null_ratio"
+      metricValue: 0.0245700245700246
+      monitorIds:
+       - "missing-values-ratio-monitor-sb25cg"
+      targetLevel: "column"
+      timestamp: 1738195200000
+      upperThreshold: 0.0406967283227524
+      userMarkedUnhelpful: false
+    message: |-
+      {
+        "upperThreshold" : 0.0406967283227524,
+        "failedAnalysis" : false,
+        "userMarkedUnhelpful" : false,
+        "column" : "mo_sin_old_il_acct",
+        "metricValue" : 0.0245700245700246,
+        "model_type" : "DATA_OTHER",
+        "isAnomaly" : false,
+        "orgId" : "org-JDcdd6",
+        "analyzerId" : "missing-values-ratio-analyzer-sb25cg",
+        "datasetTimestamp" : 1738195200000,
+        "metric" : "count_null_ratio",
+        "analyzerType" : "stddev",
+        "model_category" : "DATA",
+        "creationTimestamp" : 1738283042454,
+        "failureType" : "null",
+        "datasetId" : "model-1",
+        "analysisId" : "b25f181c-18ae-3729-b420-05399cc19de6",
+        "monitorIds" : [ "missing-values-ratio-monitor-sb25cg" ],
+        "resource_name" : "My Model",
+        "lowerThreshold" : 7.29204926585604E-4,
+        "targetLevel" : "column"
+      }
+    service: "cds.whylabs.anomalies_feed"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1738195200000
+ -
+  sample: |-
+    {
+      "model_category" : "MODEL",
+      "organization_id" : "org-JDcdd6",
+      "model_type" : "REGRESSION",
+      "resource_id" : "model-3",
+      "resource_name" : "My regression model",
+      "segments" : [ {
+        "tags" : [ {
+          "value" : "dry",
+          "key" : "meta_climate"
+        } ]
+      }, {
+        "tags" : [ {
+          "value" : "mild temperate",
+          "key" : "meta_climate"
+        } ]
+      }, {
+        "tags" : [ {
+          "value" : "tropical",
+          "key" : "meta_climate"
+        } ]
+      } ]
+    }
+  service: "cds.whylabs.segments"
+  result:
+    custom:
+      cds:
+        whylabs:
+          model_category: "MODEL"
+          model_type: "REGRESSION"
+          organization_id: "org-JDcdd6"
+          resource_id: "model-3"
+          resource_name: "My regression model"
+      segments:
+       -
+        tags:
+         -
+          value: "dry"
+          key: "meta_climate"
+       -
+        tags:
+         -
+          value: "mild temperate"
+          key: "meta_climate"
+       -
+        tags:
+         -
+          value: "tropical"
+          key: "meta_climate"
+    message: |-
+      {
+        "model_category" : "MODEL",
+        "organization_id" : "org-JDcdd6",
+        "model_type" : "REGRESSION",
+        "resource_id" : "model-3",
+        "resource_name" : "My regression model",
+        "segments" : [ {
+          "tags" : [ {
+            "value" : "dry",
+            "key" : "meta_climate"
+          } ]
+        }, {
+          "tags" : [ {
+            "value" : "mild temperate",
+            "key" : "meta_climate"
+          } ]
+        }, {
+          "tags" : [ {
+            "value" : "tropical",
+            "key" : "meta_climate"
+          } ]
+        } ]
+      }
+    service: "cds.whylabs.segments"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

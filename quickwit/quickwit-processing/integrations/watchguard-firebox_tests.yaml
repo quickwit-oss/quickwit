@@ -1,0 +1,1012 @@
+id: watchguard-firebox
+tests:
+  - 
+    sample: "<140>Apr  2 11:36:21 WatchGuard-Firebox TEST (2025-04-02T06:06:21) test: msg_id=\"3000-0148\" Deny External Firebox 390 udp 20 16 10.10.10.10 10.10.10.10 5041 5041 flags=\"SR\" duration=\"0\" sent_pkts=\"0\" rcvd_pkts=\"0\" sent_bytes=\"0\" rcvd_bytes=\"0\"  (Unhandled External Packet-00)"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        disposition: "Deny"
+        duration: "0"
+        event_type: "firewall"
+        flags: "SR"
+        ip_header_len: "20"
+        ip_pkt_len: "390"
+        msg_id: "3000-0148"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "5041"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "5041"
+        policy: "Unhandled External Packet-00"
+        protocol: "udp"
+        rcvd_bytes: "0"
+        rcvd_pkts: "0"
+        sent_bytes: "0"
+        sent_pkts: "0"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 140
+        timestamp: 1743573981000
+        traffic_type: "normal_traffic"
+        ttl: "16"
+      message: "Deny External Firebox 390 udp 20 16 10.10.10.10 10.10.10.10 5041 5041 flags=\"SR\" duration=\"0\" sent_pkts=\"0\" rcvd_pkts=\"0\" sent_bytes=\"0\" rcvd_bytes=\"0\"  (Unhandled External Packet-00)"
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1743573981000
+  - 
+    sample: "<142>Apr  2 11:36:20 WatchGuard-Firebox TEST (2025-04-02T06:06:20) test: msg_id=\"3000-0151\" Allow Firebox Firebox tcp 10.10.10.10 10.10.10.10 52260 80 flags=\"SDdF\" duration=\"63\" sent_pkts=\"8\" rcvd_pkts=\"6\" sent_bytes=\"692\" rcvd_bytes=\"1081\"  (Any From Firebox-00)"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        disposition: "Allow"
+        duration: "63"
+        event_type: "firewall"
+        flags: "SDdF"
+        msg_id: "3000-0151"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "52260"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "80"
+        policy: "Any From Firebox-00"
+        protocol: "tcp"
+        rcvd_bytes: "1081"
+        rcvd_pkts: "6"
+        sent_bytes: "692"
+        sent_pkts: "8"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1743573980000
+      message: "Allow Firebox Firebox tcp 10.10.10.10 10.10.10.10 52260 80 flags=\"SDdF\" duration=\"63\" sent_pkts=\"8\" rcvd_pkts=\"6\" sent_bytes=\"692\" rcvd_bytes=\"1081\"  (Any From Firebox-00)"
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1743573980000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0152\" IPv4 source route attack from 10.10.10.10 detected."
+    result:
+      custom:
+        attack_type: "IPv4 source route"
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0152"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "IPv4 source route attack from 10.10.10.10 detected."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0161\" DDOS from client 10.10.10.10 detected."
+    result:
+      custom:
+        attack_type: "DDOS"
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0161"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "DDOS from client 10.10.10.10 detected."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0160\" DDOS against server 10.0.1.34 detected."
+    result:
+      custom:
+        attack_type: "DDOS"
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0160"
+        network:
+          destination:
+            geoip: {}
+            ip: "10.0.1.34"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "DDOS against server 10.0.1.34 detected."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0167\" Policy Name: HTTP-00 Source IP Address: 10.10.10.10 Source Port: 10 Destination IP Address: 10.10.10.10 Destination Port: 10"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0167"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "10"
+        policy_name: "HTTP-00"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Policy Name: HTTP-00 Source IP Address: 10.10.10.10 Source Port: 10 Destination IP Address: 10.10.10.10 Destination Port: 10"
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0168\" Blocked site: Traffic detected from 10.10.10.10 to 10.10.10.10."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0168"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Blocked site: Traffic detected from 10.10.10.10 to 10.10.10.10."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-0065\" User Test@Firebox-DB used 21 MB of the bandwidth quota (100 MB) and used 1 minute of the time quota (3 minutes)."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-0065"
+        quota_info: "21 MB of the bandwidth quota (100 MB) and used 1 minute of the time quota (3 minutes)."
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "Test@Firebox-DB"
+      message: "User Test@Firebox-DB used 21 MB of the bandwidth quota (100 MB) and used 1 minute of the time quota (3 minutes)."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3001-1001\" Temporarily blocking host 10.10.10.10 (reason = autoblock by policy)"
+    result:
+      custom:
+        blocked_host: "10.10.10.10"
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3001-1001"
+        reason: "autoblock by policy"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Temporarily blocking host 10.10.10.10 (reason = autoblock by policy)"
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3001-1002\" The Temporary Blocked Sites list is full (capacity=1000). The oldest entry 10.10.10.10 was removed."
+    result:
+      custom:
+        blocked_host: "10.10.10.10"
+        capacity: 1000
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3001-1002"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "The Temporary Blocked Sites list is full (capacity=1000). The oldest entry 10.10.10.10 was removed."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-00C9\" TCP probe packets timeout, Load Balance Server 10.10.10.10 port 10 is offline."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        msg_id: "3000-00C9"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "10"
+        server_status: "offline"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "TCP probe packets timeout, Load Balance Server 10.10.10.10 port 10 is offline."
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3000-012E\" Cannot relearn system MAC address, possible loop or MAC spoofing, ip=10.10.10.10, mac=00:00:aa:a0:00:0d, interface=5"
+    result:
+      custom:
+        device_mac: "00:00:aa:a0:00:0d"
+        device_serial_number: "TEST"
+        event_type: "firewall"
+        interface: "5"
+        msg_id: "3000-012E"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Cannot relearn system MAC address, possible loop or MAC spoofing, ip=10.10.10.10, mac=00:00:aa:a0:00:0d, interface=5"
+      service: "firewall"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3100-0047\" [eth0 (External)] Deactivating external interface"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "networking"
+        if_name: "External"
+        msg_id: "3100-0047"
+        network_interface: "eth0"
+        status: "Deactivating external interface"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "[eth0 (External)] Deactivating external interface"
+      service: "networking"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1600-0004\" Subnet 10.10.10.10/24 for address pool on interface vlan10 overlaps subnet 10.10.10.10/16 on interface eth1. Edit the configuration so that DHCP server functions properly"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "networking"
+        msg_id: "1600-0004"
+        network_interface_1: "vlan10"
+        network_interface_2: "eth1."
+        network_subnet_1: "10.10.10.10/24"
+        network_subnet_2: "10.10.10.10/16"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Subnet 10.10.10.10/24 for address pool on interface vlan10 overlaps subnet 10.10.10.10/16 on interface eth1. Edit the configuration so that DHCP server functions properly"
+      service: "networking"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5A00-0002\" Resolved domain test.org to 10.10.10.10"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        domain: "test.org"
+        event_type: "networking"
+        msg_id: "5A00-0002"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Resolved domain test.org to 10.10.10.10"
+      service: "networking"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5A00-0007\" Could not resolve server: test.org"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        domain: "test.org"
+        event_type: "networking"
+        msg_id: "5A00-0007"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Could not resolve server: test.org"
+      service: "networking"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5A00-0008\" Could not connect to members.dyndns.org / 10.10.10.10, connection refused"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        domain: "members.dyndns.org"
+        event_type: "networking"
+        msg_id: "5A00-0008"
+        reason: "connection refused"
+        server_ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Could not connect to members.dyndns.org / 10.10.10.10, connection refused"
+      service: "networking"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5501-0014\" Generate system diagnostic file to USB drive failed"
+    result:
+      custom:
+        device: "USB drive"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "5501-0014"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Generate system diagnostic file to USB drive failed"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5501-001A\" System upgrade failed: 'LIVESECURITY' feature expired"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "5501-001A"
+        reason: "'LIVESECURITY' feature expired"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "System upgrade failed: 'LIVESECURITY' feature expired"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"5501-001B\" System backup to USB drive failed due to write file to USB drive error"
+    result:
+      custom:
+        device: "USB drive"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "5501-001B"
+        reason: "write file to USB drive error"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "System backup to USB drive failed due to write file to USB drive error"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0101-0001\" Management user admin@Firebox-DB from 10.10.10.10 modified Blocked Sites Exceptions"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        domain: "Firebox-DB"
+        event_type: "management"
+        msg_id: "0101-0001"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        operation: "modified"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "admin"
+      message: "Management user admin@Firebox-DB from 10.10.10.10 modified Blocked Sites Exceptions"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0003\" Authentication server 10.10.10.10:10 is not responding"
+    result:
+      custom:
+        auth_server_ip: "10.10.10.10"
+        auth_server_port: "10"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "1100-0003"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Authentication server 10.10.10.10:10 is not responding"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0004\" Authentication of firewall user [test@Firebox-DB] from 10.10.10.10 was accepted"
+    result:
+      custom:
+        auth_server: "Firebox-DB"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "1100-0004"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        user_type: "firewall"
+        usr:
+          name: "test"
+      message: "Authentication of firewall user [test@Firebox-DB] from 10.10.10.10 was accepted"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0007\" User test is locked out briefly after 3 login failures"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "management"
+        failure_count: 3
+        lockout_type: "briefly"
+        msg_id: "1100-0007"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "test"
+      message: "User test is locked out briefly after 3 login failures"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0006\" User test is unlocked automatically"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "1100-0006"
+        reason: "automatically"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "test"
+      message: "User test is unlocked automatically"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0008\" Authentication of BOVPN TLS client [test] from 10.10.10.10 was rejected, pre-shared key is incorrect"
+    result:
+      custom:
+        client_name: "test"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "1100-0008"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        reason: "pre-shared key is incorrect"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Authentication of BOVPN TLS client [test] from 10.10.10.10 was rejected, pre-shared key is incorrect"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1100-0014\" SSO agent failover from 10.10.10.10 to 10.10.10.10 failed. Reason: incompatible SSO agent version"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "1100-0014"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+        reason: "incompatible SSO agent versio"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "SSO agent failover from 10.10.10.10 to 10.10.10.10 failed. Reason: incompatible SSO agent version"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"3E00-0002\" Management user admin from 10.10.10.10 logged in"
+    result:
+      custom:
+        auth_server: "admin"
+        device_serial_number: "TEST"
+        event_type: "management"
+        msg_id: "3E00-0002"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        user_type: "Management"
+        usr:
+          name: "user"
+      message: "Management user admin from 10.10.10.10 logged in"
+      service: "management"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"020B-0001\" BOVPN tunnel 'tunnel.2' local 10.10.10.10/255.255.255.255 remote 10.10.10.10/255.255.255.255 under gateway 'gateway.1' is down"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        gateway: "gateway.1"
+        local: "10.10.10.10/255.255.255.255"
+        msg_id: "020B-0001"
+        remote: "10.10.10.10/255.255.255.255"
+        status: "down"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        tunnel: "tunnel.2"
+        tunnel_type: "BOVPN"
+      message: "BOVPN tunnel 'tunnel.2' local 10.10.10.10/255.255.255.255 remote 10.10.10.10/255.255.255.255 under gateway 'gateway.1' is down"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"2500-0000\" Mobile VPN with SSL user test logged in. Virtual IP address is 10.10.10.10. Real IP address is 10.10.10.10."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        msg_id: "2500-0000"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "test"
+        virtual_ip: "10.10.10.10"
+        vpn_user_type: "Mobile VPN with SSL user"
+      message: "Mobile VPN with SSL user test logged in. Virtual IP address is 10.10.10.10. Real IP address is 10.10.10.10."
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0200-0002\" Could not read DSA certificate with [n] ID"
+    result:
+      custom:
+        certificate_type: "DSA"
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        id: "[n]"
+        msg_id: "0200-0002"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Could not read DSA certificate with [n] ID"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0202-0001\" Virtual IP address from 'abcd' address pool is not available for Mobile VPN with IPSec user 'Bob'"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        msg_id: "0202-0001"
+        pool_name: "abcd"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        usr:
+          name: "Bob"
+      message: "Virtual IP address from 'abcd' address pool is not available for Mobile VPN with IPSec user 'Bob'"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0203-0002\" IKE phase-1 negotiation from 10.10.10.10:500 to 10.10.10.10:500 failed. GatewayEndpoint='gateway.1' Reason=Received 'Aggressive mode' exchange type. Expecting main mode."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        gateway_endpoint: "gateway.1"
+        local_ip: "10.10.10.10"
+        local_port: "500"
+        msg_id: "0203-0002"
+        peer_ip: "10.10.10.10"
+        peer_port: "500"
+        reason: "Received 'Aggressive mode' exchange type. Expecting main mode."
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "IKE phase-1 negotiation from 10.10.10.10:500 to 10.10.10.10:500 failed. GatewayEndpoint='gateway.1' Reason=Received 'Aggressive mode' exchange type. Expecting main mode."
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0205-0002\" IKE phase-2 negotiation from 10.10.10.10:500 to 10.10.10.10:500 failed. Tunnel='tunnel.1' Reason=Received proposal without PFS, Expecting PFS enabled"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        local_ip: "10.10.10.10"
+        local_port: "500"
+        msg_id: "0205-0002"
+        peer_ip: "10.10.10.10"
+        peer_port: "500"
+        reason: "Received proposal without PFS, Expecting PFS enabled"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        tunnel: "tunnel.1"
+      message: "IKE phase-2 negotiation from 10.10.10.10:500 to 10.10.10.10:500 failed. Tunnel='tunnel.1' Reason=Received proposal without PFS, Expecting PFS enabled"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0203-0016\" Rejected MUVPN IPSec user from 2.2.2.2 because maximum allowed user connections has been reached. Maximum:50"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        max_value: 50
+        msg_id: "0203-0016"
+        peer_ip: "2.2.2.2"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Rejected MUVPN IPSec user from 2.2.2.2 because maximum allowed user connections has been reached. Maximum:50"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0205-0011\" Dropped a simultaneous phase-2 negotiation from the peer 10.10.10.10:500"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        msg_id: "0205-0011"
+        peer_ip: "10.10.10.10"
+        peer_por: "500"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Dropped a simultaneous phase-2 negotiation from the peer 10.10.10.10:500"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0208-0001\" BOVPN phase-1 mainmode completed successfully as initiator for 'gateway.1' gateway endpoint. localgw:10.10.10.10:500 remotegw:10.10.10.10:500 SA ID:0x9d5e7809"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        gateway: "gateway.1"
+        msg_id: "0208-0001"
+        negotiation_mode: "mainmode"
+        negotiation_role: "initiator"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "500"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "500"
+        sa_id: "0x9d5e7809"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+        tunnel_type: "BOVPN"
+      message: "BOVPN phase-1 mainmode completed successfully as initiator for 'gateway.1' gateway endpoint. localgw:10.10.10.10:500 remotegw:10.10.10.10:500 SA ID:0x9d5e7809"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0206-0001\" Received XAuth failed notification from 10.10.10.10:4500. Group:'ToFirebox_mu'"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        gateway: "ToFirebox_mu"
+        msg_id: "0206-0001"
+        peer_ip: "10.10.10.10"
+        peer_port: "4500"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Received XAuth failed notification from 10.10.10.10:4500. Group:'ToFirebox_mu'"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0206-0002\" Rejected phase-1 authentication method PSK from 10.10.10.10:4500, expecting client XAUTH enabled."
+    result:
+      custom:
+        auth_method: "PSK"
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        msg_id: "0206-0002"
+        peer_ip: "10.10.10.10"
+        peer_port: "4500"
+        reason: "expecting client XAUTH enabled."
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Rejected phase-1 authentication method PSK from 10.10.10.10:4500, expecting client XAUTH enabled."
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"0206-0004\" XAuth negotiation from 10.10.10.10:4500 failed due to a mismatched XAuthMode."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        msg_id: "0206-0004"
+        peer_ip: "10.10.10.10"
+        peer_port: "4500"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "XAuth negotiation from 10.10.10.10:4500 failed due to a mismatched XAuthMode."
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"021A-0001\" Dropped IKEv2 IKE_SA_INIT message from 10.10.10.10:500. Reason=message has invalid initiator SPI (all zeros)"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        exchange_type: "IKE_SA_INIT"
+        msg_id: "021A-0001"
+        peer_ip: "10.10.10.10"
+        peer_port: "500"
+        reason: "message has invalid initiator SPI (all zeros)"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Dropped IKEv2 IKE_SA_INIT message from 10.10.10.10:500. Reason=message has invalid initiator SPI (all zeros)"
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"021A-0006\" IKEv2 IKE_SA_INIT exchange from 10.10.10.10:500 to 10.10.10.10:500 failed. Reason=Matching gateway endpoint not found."
+    result:
+      custom:
+        device_serial_number: "TEST"
+        event_type: "vpn"
+        exchange_type: "IKE_SA_INIT"
+        local_ip: "10.10.10.10"
+        local_port: "500"
+        msg_id: "021A-0006"
+        peer_ip: "10.10.10.10"
+        peer_port: "500"
+        reason: "Matching gateway endpoint not found."
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "IKEv2 IKE_SA_INIT exchange from 10.10.10.10:500 to 10.10.10.10:500 failed. Reason=Matching gateway endpoint not found."
+      service: "vpn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:26:37) test: msg_id=\"1AFF-0008\" Deny 1-Trusted 0-External tcp 10.10.10.10 10.10.10.10 50019 80 msg=\"ProxyDeny: HTTP header block oversize\" proxy_act=\"HTTPClient.1\" line=\"Date: Fri, 30 May 2014 16:50:51 GMT\\x0d\\x0a\" (HTTPproxy-00)"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        disposition: "Deny"
+        event_type: "proxy-policy"
+        line: "Date: Fri, 30 May 2014 16:50:51 GMT\\x0d\\x0a"
+        msg: "ProxyDeny: HTTP header block oversize"
+        msg_id: "1AFF-0008"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "50019"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "80"
+        policy: "HTTPproxy-00"
+        protocol: "tcp"
+        proxy_act: "HTTPClient.1"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        timestamp: 1744104397000
+      message: "Deny 1-Trusted 0-External tcp 10.10.10.10 10.10.10.10 50019 80 msg=\"ProxyDeny: HTTP header block oversize\" proxy_act=\"HTTPClient.1\" line=\"Date: Fri, 30 May 2014 16:50:51 GMT\\x0d\\x0a\" (HTTPproxy-00)"
+      service: "proxy-policy"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744104397000
+  - 
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:41:45) test: msg_id=\"1CFF-0015\" Deny 0-External 1-Trusted tcp 10.10.10.10 10.10.10.10 20 58661 msg=\"ProxyDrop: FTP APT detected\" proxy_act=\"FTP-Client.3\" ctl_src=\"10.10.10.10:5120\" ctl_dst=\"10.10.10.10:47553\" md5=\"03e7ef270a157090e2f68079603b10fc\" task_uuid=\"d21914d5a2bc4b618fae72da3b1c137e\" threat_level=\"low\" file=\"apt.txt\" (FTP-proxy-00)"
+    result:
+      custom:
+        ctl_dst: "10.10.10.10:47553"
+        ctl_src: "10.10.10.10:5120"
+        device_serial_number: "TEST"
+        disposition: "Deny"
+        event_type: "proxy-policy"
+        file_name: "apt.txt"
+        md5: "03e7ef270a157090e2f68079603b10fc"
+        msg: "ProxyDrop: FTP APT detected"
+        msg_id: "1CFF-0015"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "20"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "58661"
+        policy: "FTP-proxy-00"
+        protocol: "tcp"
+        proxy_act: "FTP-Client.3"
+        severity: "notice"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        task_uuid: "d21914d5a2bc4b618fae72da3b1c137e"
+        threat_level: "low"
+        timestamp: 1744105305000
+      message: "Deny 0-External 1-Trusted tcp 10.10.10.10 10.10.10.10 20 58661 msg=\"ProxyDrop: FTP APT detected\" proxy_act=\"FTP-Client.3\" ctl_src=\"10.10.10.10:5120\" ctl_dst=\"10.10.10.10:47553\" md5=\"03e7ef270a157090e2f68079603b10fc\" task_uuid=\"d21914d5a2bc4b618fae72da3b1c137e\" threat_level=\"low\" file=\"apt.txt\" (FTP-proxy-00)"
+      service: "proxy-policy"
+      status: "notice"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744105305000
+  -
+    sample: "<142>Apr  2 18:47:10 WatchGuard-Firebox TEST (2025-04-08T09:41:45) test: msg_id=\"3000-0150\" Deny 1-Trusted 0-External 1440 tcp 20 61 10.10.10.10 10.10.10.10 55810 80 offset 5 A 447868619 win 54 signature_name=\"EXPLOIT Apple QuickTime FLIC Animation file buffer overflow -1- 2\" signature_cat=\"Misc\" signature_id=\"1112464\" severity=\"4\" sig_vers=\"18.124\" msg=\"IPS detected\" (HTTP-00)"
+    result:
+      custom:
+        device_serial_number: "TEST"
+        disposition: "Deny"
+        event_type: "firewall"
+        flags: "A"
+        ip_header_len: "20"
+        ip_pkt_len: "1440"
+        msg: "IPS detected"
+        msg_id: "3000-0150"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "55810"
+          destination:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "80"
+        policy: "HTTP-00"
+        protocol: "tcp"
+        severity: "error"
+        sig_vers: "18.124"
+        signature_cat: "Misc"
+        signature_id: "1112464"
+        signature_name: "EXPLOIT Apple QuickTime FLIC Animation file buffer overflow -1- 2"
+        syslog:
+          hostname: "WatchGuard-Firebox"
+          prival: 142
+        tcp_offset: "5"
+        tcp_seq: "447868619"
+        tcp_win: "54"
+        timestamp: 1744105305000
+        traffic_type: "ips_traffic"
+        ttl: "61"
+      message: "Deny 1-Trusted 0-External 1440 tcp 20 61 10.10.10.10 10.10.10.10 55810 80 offset 5 A 447868619 win 54 signature_name=\"EXPLOIT Apple QuickTime FLIC Animation file buffer overflow -1- 2\" signature_cat=\"Misc\" signature_id=\"1112464\" severity=\"4\" sig_vers=\"18.124\" msg=\"IPS detected\" (HTTP-00)"
+      service: "firewall"
+      status: "error"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1744105305000

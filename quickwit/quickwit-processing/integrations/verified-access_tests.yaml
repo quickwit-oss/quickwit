@@ -1,0 +1,322 @@
+id: "verified-access"
+tests:
+ -
+  sample: |-
+    {
+      "http_response" : {
+        "code" : 502
+      },
+      "metadata" : {
+        "uid" : "Root=1-6419d690-028cb2e0658b56d700d73891",
+        "product" : {
+          "name" : "Verified Access",
+          "vendor_name" : "AWS",
+          "version" : "0.1"
+        },
+        "logged_time" : 1679415189110,
+        "version" : ""
+      },
+      "type_name" : "AccessLogs: Access Granted",
+      "category_name" : "Application Activity",
+      "status_code" : "100",
+      "activity" : "Access Granted",
+      "network" : {
+        "ip" : {
+          "attributes" : [ {
+            "ip" : "78.196.146.227",
+            "source" : [ "@src_endpoint.ip", "@device.ip" ]
+          }, {
+            "ip" : "18.210.143.151",
+            "source" : [ "@proxy.ip", "@aws.awslogs.logStream" ]
+          }, {
+            "ip" : "111.0.0.0",
+            "source" : [ "@http_request.user_agent" ]
+          } ],
+          "list" : [ "78.196.146.227", "18.210.143.151", "111.0.0.0" ]
+        }
+      },
+      "duration" : "5.15",
+      "status_id" : "1",
+      "identity" : {
+        "idp" : {
+          "uid" : "vatp-0d97b45cfa2b5cf5e",
+          "name" : "idc"
+        },
+        "authorizations" : [ {
+          "decision" : "Allow",
+          "policy" : {
+            "name" : "inline"
+          }
+        } ],
+        "user" : {
+          "uid" : "f4187468-c051-70ce-f084-c0c36baf716d",
+          "email_addr" : "raphael.allier@datadoghq.com",
+          "name" : "raphael.allier@datadoghq.com"
+        }
+      },
+      "host" : "verified-access-test",
+      "activity_id" : "1",
+      "id" : "37452210214884230959398638984219559484857327503917645828",
+      "class_name" : "Access Logs",
+      "status_details" : "Access Granted",
+      "timestamp" : 1679415189110,
+      "severity" : "Informational",
+      "category_uid" : "8",
+      "ref_time" : "2023-03-21T16:08:53.259730Z",
+      "src_endpoint" : {
+        "port" : 56740,
+        "ip" : "78.196.146.227"
+      },
+      "end_time" : "1679414933259",
+      "proxy" : {
+        "uid" : "vai-08e7bdd7cd81917d8",
+        "port" : 443,
+        "ip" : "18.210.143.151",
+        "svc_name" : "Verified Access"
+      },
+      "start_time" : "1679414928109",
+      "service" : "verified-access",
+      "class_uid" : "208001",
+      "http_request" : {
+        "http_method" : "GET",
+        "version" : "HTTP/2.0",
+        "url" : {
+          "path" : "/",
+          "hostname" : "raphael.sandbox.klishch.dev",
+          "scheme" : "h2",
+          "port" : 443,
+          "text" : "https://raphael.sandbox.klishch.dev:443/"
+        },
+        "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
+      },
+      "time" : "1679414933259",
+      "severity_id" : "1",
+      "aws" : {
+        "awslogs" : {
+          "owner" : "601427279990",
+          "logGroup" : "verified-access-test",
+          "logStream" : "vai-08e7bdd7cd81917d8-vagr-00a2f1061fe5b215e-vae-04afd32e7b2ba636c-access-log-18.210.143.151"
+        },
+        "invoked_function_arn" : "arn:aws:lambda:us-east-1:601427279990:function:DatadogForwarderAWSIntegrations",
+        "function_version" : "$LATEST"
+      },
+      "device" : {
+        "type_id" : 0,
+        "ip" : "78.196.146.227",
+        "type" : "Unknown"
+      },
+      "type_uid" : "20800101",
+      "status" : "Success"
+    }
+  result:
+    custom:
+      activity_id: "1"
+      aws:
+        awslogs:
+          logGroup: "verified-access-test"
+          logStream: "vai-08e7bdd7cd81917d8-vagr-00a2f1061fe5b215e-vae-04afd32e7b2ba636c-access-log-18.210.143.151"
+          owner: "601427279990"
+        function_version: "$LATEST"
+        invoked_function_arn: "arn:aws:lambda:us-east-1:601427279990:function:DatadogForwarderAWSIntegrations"
+      category_name: "Application Activity"
+      category_uid: "8"
+      class_name: "Access Logs"
+      class_uid: "208001"
+      device:
+        ip: "78.196.146.227"
+        type: "Unknown"
+        type_id: 0
+      duration: "5.15"
+      end_time: "1679414933259"
+      evt:
+        category: "authentication"
+        name: "Access Granted"
+        outcome: "SUCCESS"
+      host: "verified-access-test"
+      http:
+        url: "/"
+      http_request:
+        http_method: "GET"
+        url:
+          hostname: "raphael.sandbox.klishch.dev"
+          port: 443
+          scheme: "h2"
+          text: "https://raphael.sandbox.klishch.dev:443/"
+        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
+        version: "HTTP/2.0"
+      http_response:
+        code: 502
+      id: "37452210214884230959398638984219559484857327503917645828"
+      identity:
+        authorizations:
+         -
+          decision: "Allow"
+          policy:
+            name: "inline"
+        idp:
+          name: "idc"
+          uid: "vatp-0d97b45cfa2b5cf5e"
+      metadata:
+        logged_time: 1679415189110
+        product:
+          name: "Verified Access"
+          vendor_name: "AWS"
+          version: "0.1"
+        uid: "Root=1-6419d690-028cb2e0658b56d700d73891"
+        version: ""
+      network:
+        client:
+          ip: "78.196.146.227"
+        ip:
+          attributes:
+           -
+            ip: "78.196.146.227"
+            source:
+             - "@src_endpoint.ip"
+             - "@device.ip"
+           -
+            ip: "18.210.143.151"
+            source:
+             - "@proxy.ip"
+             - "@aws.awslogs.logStream"
+           -
+            ip: "111.0.0.0"
+            source:
+             - "@http_request.user_agent"
+          list:
+           - "78.196.146.227"
+           - "18.210.143.151"
+           - "111.0.0.0"
+      proxy:
+        ip: "18.210.143.151"
+        port: 443
+        svc_name: "Verified Access"
+        uid: "vai-08e7bdd7cd81917d8"
+      ref_time: "2023-03-21T16:08:53.259730Z"
+      service: "verified-access"
+      severity: "Informational"
+      severity_id: "1"
+      src_endpoint:
+        port: 56740
+      start_time: "1679414928109"
+      status_code: "100"
+      status_details: "Access Granted"
+      status_id: "1"
+      time: "1679414933259"
+      timestamp: 1679415189110
+      type_name: "AccessLogs: Access Granted"
+      type_uid: "20800101"
+      usr:
+        email: "raphael.allier@datadoghq.com"
+        id: "f4187468-c051-70ce-f084-c0c36baf716d"
+        name: "raphael.allier@datadoghq.com"
+    message: |-
+      {
+        "http_response" : {
+          "code" : 502
+        },
+        "metadata" : {
+          "uid" : "Root=1-6419d690-028cb2e0658b56d700d73891",
+          "product" : {
+            "name" : "Verified Access",
+            "vendor_name" : "AWS",
+            "version" : "0.1"
+          },
+          "logged_time" : 1679415189110,
+          "version" : ""
+        },
+        "type_name" : "AccessLogs: Access Granted",
+        "category_name" : "Application Activity",
+        "status_code" : "100",
+        "activity" : "Access Granted",
+        "network" : {
+          "ip" : {
+            "attributes" : [ {
+              "ip" : "78.196.146.227",
+              "source" : [ "@src_endpoint.ip", "@device.ip" ]
+            }, {
+              "ip" : "18.210.143.151",
+              "source" : [ "@proxy.ip", "@aws.awslogs.logStream" ]
+            }, {
+              "ip" : "111.0.0.0",
+              "source" : [ "@http_request.user_agent" ]
+            } ],
+            "list" : [ "78.196.146.227", "18.210.143.151", "111.0.0.0" ]
+          }
+        },
+        "duration" : "5.15",
+        "status_id" : "1",
+        "identity" : {
+          "idp" : {
+            "uid" : "vatp-0d97b45cfa2b5cf5e",
+            "name" : "idc"
+          },
+          "authorizations" : [ {
+            "decision" : "Allow",
+            "policy" : {
+              "name" : "inline"
+            }
+          } ],
+          "user" : {
+            "uid" : "f4187468-c051-70ce-f084-c0c36baf716d",
+            "email_addr" : "raphael.allier@datadoghq.com",
+            "name" : "raphael.allier@datadoghq.com"
+          }
+        },
+        "host" : "verified-access-test",
+        "activity_id" : "1",
+        "id" : "37452210214884230959398638984219559484857327503917645828",
+        "class_name" : "Access Logs",
+        "status_details" : "Access Granted",
+        "timestamp" : 1679415189110,
+        "severity" : "Informational",
+        "category_uid" : "8",
+        "ref_time" : "2023-03-21T16:08:53.259730Z",
+        "src_endpoint" : {
+          "port" : 56740,
+          "ip" : "78.196.146.227"
+        },
+        "end_time" : "1679414933259",
+        "proxy" : {
+          "uid" : "vai-08e7bdd7cd81917d8",
+          "port" : 443,
+          "ip" : "18.210.143.151",
+          "svc_name" : "Verified Access"
+        },
+        "start_time" : "1679414928109",
+        "service" : "verified-access",
+        "class_uid" : "208001",
+        "http_request" : {
+          "http_method" : "GET",
+          "version" : "HTTP/2.0",
+          "url" : {
+            "path" : "/",
+            "hostname" : "raphael.sandbox.klishch.dev",
+            "scheme" : "h2",
+            "port" : 443,
+            "text" : "https://raphael.sandbox.klishch.dev:443/"
+          },
+          "user_agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
+        },
+        "time" : "1679414933259",
+        "severity_id" : "1",
+        "aws" : {
+          "awslogs" : {
+            "owner" : "601427279990",
+            "logGroup" : "verified-access-test",
+            "logStream" : "vai-08e7bdd7cd81917d8-vagr-00a2f1061fe5b215e-vae-04afd32e7b2ba636c-access-log-18.210.143.151"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:us-east-1:601427279990:function:DatadogForwarderAWSIntegrations",
+          "function_version" : "$LATEST"
+        },
+        "device" : {
+          "type_id" : 0,
+          "ip" : "78.196.146.227",
+          "type" : "Unknown"
+        },
+        "type_uid" : "20800101",
+        "status" : "Success"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

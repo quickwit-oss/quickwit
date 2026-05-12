@@ -1,0 +1,181 @@
+id: nginx-ingress-controller
+metric_id: nginx-ingress-controller
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Nginx Ingress Controller
+  enabled: true
+  filter:
+    query: source:nginx-ingress-controller
+  processors:
+    - type: grok-parser
+      name: Parsing Nginx Ingress Controller logs
+      enabled: true
+      source: message
+      samples:
+        - 172.17.0.1 - [172.17.0.1] - - [07/Dec/2018:18:31:33 +0000] "GET /datadoghq/company?test=var1%20Pl HTTP/1.1" 200 261 "-" "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef
+        - 172.17.0.1 - - [07/Dec/2018:18:31:33 +0000] "GET /datadoghq/company?test=var1%20Pl HTTP/1.1" 200 261 "-" "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0" 1904 0.011 [proxyname-8080] 172.17.0.1:9000 298 0.012 200 abcdefg12345abcdef
+        - 103.94.12.0 - [106.92.12.0] - - [22/Aug/2019:20:18:37 +0000] "GET /datadoghq/datadog-6c32ec1925 HTTP/1.0" 301 124 "-" "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.96 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" 903 0.002 [dev-test-main-nginx-ingress-http] [] 105.94.191.12:80 124 0.004 301 abcdefg12345abcdef
+        - I1221 13:00:58.488494       7 controller.go:202] Initial sync, sleeping for 1 second.
+        - 172.16.99.64 - - [19/Mar/2020:16:02:20 +0000] "GET /datadoghq/company?test=var1%20Pl HTTP/1.1" 503 605 "-" "Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0" 4033 0.000 [proxyname-8080] [] - - - - abcdefg12345abcdef
+      grok:
+        supportRules: |
+          _request_id %{notSpace:http.request_id}
+          _upstream_status %{number:http.upstream_status_code}
+          _upstream_time %{number:http.upstream_duration}
+          _bytes_read %{number:network.bytes_read}
+          _upstream_port %{number:network.destination.port}
+          _upstream_ip %{ipOrHost:network.destination.ip}
+          _proxy_name %{notSpace:proxy.name}
+          _alternate_proxy_name %{notSpace:proxy.alternate_name}
+          _duration %{number:duration:scale(1000000000)}
+          _request_size %{number:network.request_size}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _date_access %{date("dd/MMM/yyyy:HH:mm:ss Z"):date_access}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+
+        matchRules: |
+          access.common %{_client_ip}(?: - \[%{notSpace}\])? - %{_ident} \[%{_date_access}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-) "%{_referer}" "%{_user_agent}" %{_request_size} %{_duration} \[%{_proxy_name}\](?: \[%{_alternate_proxy_name}?\])? (?:%{_upstream_ip}:%{_upstream_port}|-)(?:, %{notSpace})?(?:, %{notSpace})? (?:%{_bytes_read}|-)(?:, %{number}|, -)?(?:, %{number}|, -)? (?:%{_upstream_time}|-)(?:, %{number}|, -)?(?:, %{number}|, -)? (?:%{_upstream_status}|-)(?:, %{number}|, -)?(?:, %{number}|, -)?(?: %{_request_id})?.*
+
+          error.format %{date("yyyy/MM/dd HH:mm:ss"):date_access} \[%{word:level}\] %{data:error.message}(, %{data::keyvalue(": ",",")})?
+
+          controller_format %{regex("\\w"):level}%{date("MMdd HH:mm:ss.SSSSSS"):date_access}\s+%{number} %{notSpace:logger.name}:%{number:lineno}\] .*
+
+    - type: attribute-remapper
+      name: Map `client` to `network.client.ip`
+      enabled: true
+      sources:
+        - client
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing Nginx ingress controller error log requests
+      enabled: true
+      source: request
+      grok:
+        supportRules: |
+          _method %{word:http.method}
+          _url %{notSpace:http.url}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+        matchRules: |
+          request_parsing (?>%{_method} |)%{_url}(?> %{_version}|)
+      samples:
+        - HEAD http://174.138.82.103:80/sql/sql-admin/ HTTP/1.1
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level

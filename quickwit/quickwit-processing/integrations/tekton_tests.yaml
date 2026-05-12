@@ -1,0 +1,70 @@
+id: "tekton"
+tests:
+ -
+   sample: |-
+     {
+       "severity" : "info",
+       "duration" : 0.002798625,
+       "caller" : "controller/controller.go:550",
+       "logger" : "tekton-pipelines-controller",
+       "commit" : "876b81e",
+       "message" : "Reconcile succeeded",
+       "timestamp" : "2024-02-28T08:15:18.164Z",
+       "knative" : {
+         "dev/kind" : "tekton.dev",
+         "dev/traceid" : "f9171cbc-d40e-4bb8-912a-8781b387cd97",
+         "dev/controller" : "github.com.tektoncd.pipeline.pkg.reconciler.taskrun.Reconciler",
+         "dev/key" : "tekton-pipelines/hello-task-run"
+       }
+     }
+   result:
+     custom:
+       caller: "controller/controller.go:550"
+       commit: "876b81e"
+       duration: 0.002798625
+       knative:
+         dev/controller: "github.com.tektoncd.pipeline.pkg.reconciler.taskrun.Reconciler"
+         dev/key: "tekton-pipelines/hello-task-run"
+         dev/kind: "tekton.dev"
+       logger: "tekton-pipelines-controller"
+       severity: "info"
+       timestamp: "2024-02-28T08:15:18.164Z"
+     message: "Reconcile succeeded"
+     status: "info"
+     tags:
+       - "source:LOGS_SOURCE"
+     timestamp: 1709108118164
+     trace_id: "f9171cbc-d40e-4bb8-912a-8781b387cd97"
+ -
+   sample: |-
+     {
+       "severity" : "info",
+       "caller" : "taskrun/taskrun.go:144",
+       "logger" : "tekton-pipelines-controller",
+       "commit" : "876b81e",
+       "message" : "taskrun done : hello-task-run \n",
+       "timestamp" : "2024-02-28T08:15:18.161Z",
+       "knative" : {
+         "dev/kind" : "tekton.dev.TaskRun",
+         "dev/traceid" : "f9171cbc-d40e-4bb8-912a-8781b387cd97",
+         "dev/controller" : "github.com.tektoncd.pipeline.pkg.reconciler.taskrun.Reconciler",
+         "dev/key" : "tekton-pipelines/hello-task-run"
+       }
+     }
+   result:
+     custom:
+       caller: "taskrun/taskrun.go:144"
+       commit: "876b81e"
+       knative:
+         dev/controller: "github.com.tektoncd.pipeline.pkg.reconciler.taskrun.Reconciler"
+         dev/key: "tekton-pipelines/hello-task-run"
+         dev/kind: "tekton.dev.TaskRun"
+       logger: "tekton-pipelines-controller"
+       severity: "info"
+       timestamp: "2024-02-28T08:15:18.161Z"
+     message: "taskrun done : hello-task-run \n"
+     status: "info"
+     tags:
+       - "source:LOGS_SOURCE"
+     timestamp: 1709108118161
+     trace_id: "f9171cbc-d40e-4bb8-912a-8781b387cd97"

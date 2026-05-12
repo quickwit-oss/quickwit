@@ -1,0 +1,648 @@
+id: crest_data_systems_fortigate
+metric_id: crest-data-systems-fortigate
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Device ID
+    path: devid
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Local IP
+    path: locip
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Session ID
+    path: sessionid
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Traffic Service
+    path: traffic_service
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: UTM Service
+    path: utm_service
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: VPN Tunnel
+    path: vpntunnel
+    source: log
+  - groups:
+      - PAN Firewall
+    name: Sub Type
+    path: subtype
+    source: log
+  - groups:
+      - Event
+    name: Type
+    path: type
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Basic Service Set ID
+    path: bssid
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Device Name
+    path: fortigate_devname
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Attack ID
+    path: attackid
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Level
+    path: level
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Remote IP
+    path: remip
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Mode
+    path: mode
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: App Category
+    path: appcat
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: FortiGate Stage
+    path: fortigate_stage
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Service
+    path: service
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Message
+    path: msg
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Virtual Domain
+    path: vd
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Attack Name
+    path: attackname
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Source Interface
+    path: srcintf
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Action
+    path: action
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Host Name
+    path: syslog.hostname
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Protocol
+    path: protocol
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Signal
+    path: signal
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Destination Interface
+    path: dstintf
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Source MAC
+    path: srcmac
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Security
+    path: security
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Severity
+    path: fortigate_severity
+    source: log
+  - groups:
+      - Crest Data Systems Fortigate
+    name: Status
+    path: fortigate_status
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: CPU
+    path: cpu
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: Memory
+    path: mem
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: Receive Byte
+    path: rcvdbyte
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: Sent Byte
+    path: sentbyte
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: Setup Rate
+    path: setuprate
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - Crest Data Systems Fortigate
+    name: Total Session
+    path: totalsession
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Fortigate by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_fortigate
+  processors:
+    - type: grok-parser
+      name: Parsing attributes for fortigate logs
+      enabled: true
+      source: message
+      samples:
+        - >
+          date=2023-06-09 time=13:53:22 level='critical' vd='root'
+          logid=0000000015 devid='fgvm02tm22028029'
+          fortigate_devname='fgvm02tm22028029' severity='critical'
+          network.client.ip=103.48.198.141 network.destination.ip=172.16.200.55
+          srcintf='port7' dstintf='dmz1' service='crest_data_systems_fortigate'
+          tz='+0530' type='event' subtype='wireless' action='fake-ap-on-air'
+          apstatus='0' manuf='Fortinet, Inc.' bssid='90:6c:ac:89:e1:fa'
+          security='WPA2 Personal' radioband='802.11n' channel=1
+          sndetected='N/A' signal=-93 onwire='no' srcmac=8C-C6-81-3B-74-FB
+          eventtime=1681966796846227594 logdesc='Threat feed updated'
+          msg='progress IPsec phase 1' status='success' desc='threat-feed'
+        - date=2023-06-09 time=13:53:22 level='information' vd='vdom1'
+          logid=0001000014 devid='fgvm02tm22028030'
+          fortigate_devname='fgvm02tm22028029' severity='critical'
+          network.client.ip=103.48.198.141 network.destination.ip=103.48.198.141
+          srcintf='port3' dstintf='dmz1' service='crest_data_systems_fortigate'
+          tz='+0530' type='utm' subtype='webfilter' profile='test-webfilter'
+          reqtype='direct' sentbyte=84 rcvdbyte=0 msg='URL belongs to a denied
+          category in policy' crlevel='critical' craction=4096 crscore=50
+          direction='outgoing' url='/' action='dropped'
+          syslog.hostname='morrishittu.ddns.net' usr.name='user1.test'
+          eventtype='ftgd_blk' policyid=50 identidx=0 sessionid=815428740
+          status='detected' proto=6 utm_service='http'
+          attackname='Adobe.Flash.newfunction.Handling.Code.Execution'
+          network.client.port=33782 network.destination.port=5041 attackid=17570
+          sensor='all_default' count=1
+          ref='http://www.fortinet.com/ids/VID17570' incidentserialno=116664577
+      grok:
+        supportRules: ""
+        matchRules: rule %{data::keyvalue("=", "/:")}
+    - type: string-builder-processor
+      name: Define `fortigate_service` equal to `cds.fortigate.%{type}`
+      enabled: true
+      template: cds.fortigate.%{type}
+      target: fortigate_service
+      replaceMissing: false
+    - type: service-remapper
+      name: Define `fortigate_service` as the official service of the log
+      enabled: true
+      sources:
+        - fortigate_service
+    - type: attribute-remapper
+      name: Map `srcip` to `network.client.ip`
+      enabled: true
+      sources:
+        - srcip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `srcport` to `network.client.port`
+      enabled: true
+      sources:
+        - srcport
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - dstip
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dstport` to `network.destination.port`
+      enabled: true
+      sources:
+        - dstport
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `user` to `usr.name`
+      enabled: true
+      sources:
+        - user
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `hostname` to `syslog.hostname`
+      enabled: true
+      sources:
+        - hostname
+      sourceType: attribute
+      target: syslog.hostname
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `stage` to `fortigate_stage`
+      enabled: true
+      sources:
+        - stage
+      sourceType: attribute
+      target: fortigate_stage
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `status` to `fortigate_status`
+      enabled: true
+      sources:
+        - status
+      sourceType: attribute
+      target: fortigate_status
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `severity` to `fortigate_severity`
+      enabled: true
+      sources:
+        - severity
+      sourceType: attribute
+      target: fortigate_severity
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `devname` to `fortigate_devname`
+      enabled: true
+      sources:
+        - devname
+      sourceType: attribute
+      target: fortigate_devname
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: geo-ip-parser
+      name: Extracting  geolocation information from client.ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Extracting geolocation information from destination.ip
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - name: Map protocol based on proto field
+      enabled: true
+      source: proto
+      target: protocol
+      lookupTable: |-
+        0,ip
+        1,icmp
+        2,igmp
+        3,ggp
+        4,ipencap
+        5,st2
+        6,tcp
+        7,cbt
+        8,egp
+        9,igp
+        10,bbn-rcc
+        11,nvp
+        12,pup
+        13,argus
+        14,emcon
+        15,xnet
+        16,chaos
+        17,udp
+        18,mux
+        19,dcn
+        20,hmp
+        21,prm
+        22,xns-idp
+        23,trunk-1
+        24,trunk-2
+        25,leaf-1
+        26,leaf-2
+        27,rdp
+        28,irtp
+        29,iso-tp4
+        30,netblt
+        31,mfe-nsp
+        32,merit-inp
+        33,sep
+        34,3pc
+        35,idpr
+        36,xtp
+        37,ddp
+        38,idpr-cmtp
+        39,tp++
+        40,il
+        41,ipv6
+        42,sdrp
+        43,ipv6-route
+        44,ipv6-frag
+        45,idrp
+        46,rsvp
+        47,gre
+        48,mhrp
+        49,bna
+        50,esp
+        51,ah
+        52,i-nlsp
+        53,swipe
+        54,narp
+        55,mobile
+        56,tlsp
+        57,skip
+        58,ipv6-icmp
+        59,ipv6-nonxt
+        60,ipv6-opts
+        62,cftp
+        64,sat-expak
+        65,kryptolan
+        66,rvd
+        67,ippc
+        69,sat-mon
+        70,visa
+        71,ipcv
+        72,cpnx
+        73,cphb
+        74,wsn
+        75,pvp
+        76,br-sat-mon
+        77,sun-nd
+        78,wb-mon
+        79,wb-expak
+        80,iso-ip
+        81,vmtp
+        82,secure-vmtp
+        83,vines
+        84,ttp
+        85,nsfnet-igp
+        86,dgp
+        87,tcf
+        88,eigrp
+        89,ospf
+        90,sprite-rpc
+        91,larp
+        92,mtp
+        93,ax.25
+        94,ipip
+        95,micp
+        96,scc-sp
+        97,etherip
+        98,encap
+        100,gmtp
+        101,ifmp
+        102,pnni
+        103,pim
+        104,aris
+        105,scps
+        106,qnx
+        107,a/n
+        108,ipcomp
+        109,snp
+        110,compaq-peer
+        111,ipx-in-ip
+        112,vrrp
+        113,pgm
+        115,l2tp
+        116,ddx
+        117,iatp
+        118,st
+        119,srp
+        120,uti
+        121,smp
+        122,sm
+        123,ptp
+        124,isis
+        125,fire
+        126,crtp
+        127,crdup
+        128,sscopmce
+        129,iplt
+        130,sps
+        131,pipe
+        132,sctp
+        133,fc
+        135,mobility-header
+        136,udplite
+        137,mpls-in-ip
+        138,manet
+        139,hip
+        140,shim6
+        141,wesp
+        142,rohc
+      type: lookup-processor
+    - type: pipeline
+      name: Traffic
+      enabled: true
+      filter:
+        query: "@type:traffic"
+      processors:
+        - type: attribute-remapper
+          name: Map `service` to `traffic_service`
+          enabled: true
+          sources:
+            - service
+          sourceType: attribute
+          target: traffic_service
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: UTM
+      enabled: true
+      filter:
+        query: "@type:utm"
+      processors:
+        - type: attribute-remapper
+          name: Map `service` to `utm_service`
+          enabled: true
+          sources:
+            - service
+          sourceType: attribute
+          target: utm_service
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

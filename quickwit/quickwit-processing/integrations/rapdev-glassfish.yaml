@@ -1,0 +1,94 @@
+id: rapdev-glassfish
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+  - groups:
+      - Glassfish
+    name: Glassfish Level Number
+    path: glassfish.level_number
+    source: log
+  - groups:
+      - Glassfish
+    name: Glassfish Version
+    path: glassfish.version
+    source: log
+  - groups:
+      - Glassfish
+    name: Glassfish Logger Name
+    path: glassfish.logger_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Glassfish by RapDev
+  enabled: true
+  filter:
+    query: source:rapdev-glassfish
+  processors:
+    - type: grok-parser
+      name: Parse Glassfish Logs
+      enabled: true
+      source: message
+      samples:
+        - "[2023-11-07T12:56:49.795034Z] [GF 7.0.9] [SEVERE] [] [jakarta.enterprise.resource.webcontainer.faces.context] [tid: _ThreadID=53 _ThreadName=admin-listener(1)] [levelValue: 1000] [[\n  jakarta.faces.application.ViewExpiredException: viewId:/login.jsf - View /login.jsf could not be restored.\njakarta.faces.application.ViewExpiredException: viewId:/login.jsf - View /login.jsf could not be restored.\n\tat com.sun.faces.lifecycle.RestoreViewPhase.execute(RestoreViewPhase.java:164)\n\tat com.sun.faces.lifecycle.Phase.doPhase(Phase.java:72)\n\tat com.sun.faces.lifecycle.RestoreViewPhase.doPhase(RestoreViewPhase.java:95)\n\tat com.sun.faces.lifecycle.LifecycleImpl.execute(LifecycleImpl.java:159)\n\tat jakarta.faces.webapp.FacesServlet.executeLifecyle(FacesServlet.java:691)\n\tat jakarta.faces.webapp.FacesServlet.service(FacesServlet.java:449)\n\tat org.apache.catalina.core.StandardWrapper.service(StandardWrapper.java:1368)\n\tat org.apache.catalina.core.ApplicationDispatcher.doInvoke(ApplicationDispatcher.java:779)\n\tat org.apache.catalina.core.ApplicationDispatcher.invoke(ApplicationDispatcher.java:643)\n\tat org.apache.catalina.core.ApplicationDispatcher.processRequest(ApplicationDispatcher.java:479)\n\tat org.apache.catalina.core.ApplicationDispatcher.doDispatch(ApplicationDispatcher.java:450)\n\tat org.apache.catalina.core.ApplicationDispatcher.dispatch(ApplicationDispatcher.java:332)\n\tat org.apache.catalina.core.ApplicationDispatcher.forward(ApplicationDispatcher.java:282)\n\tat org.glassfish.admingui.common.security.AdminConsoleAuthModule.validateRequest(AdminConsoleAuthModule.java:198)\n\tat org.glassfish.epicyro.config.module.context.GFServerAuthContext.validateRequest(GFServerAuthContext.java:39)\n\tat com.sun.web.security.RealmAdapter.validate(RealmAdapter.java:1391)\n\tat com.sun.web.security.RealmAdapter.invokeAuthenticateDelegate(RealmAdapter.java:510)\n\tat org.apache.catalina.authenticator.AuthenticatorBase.invoke(AuthenticatorBase.java:424)\n\tat org.apache.catalina.core.StandardPipeline.doInvoke(StandardPipeline.java:529)\n\tat org.apache.catalina.core.StandardPipeline.doChainInvoke(StandardPipeline.java:507)\n\tat com.sun.enterprise.web.WebPipeline.invoke(WebPipeline.java:69)\n\tat org.apache.catalina.core.StandardHostValve.invoke(StandardHostValve.java:121)\n\tat org.apache.catalina.connector.CoyoteAdapter.doService(CoyoteAdapter.java:295)\n\tat org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:188)\n\tat com.sun.enterprise.v3.services.impl.ContainerMapper$HttpHandlerCallable.call(ContainerMapper.java:425)\n\tat com.sun.enterprise.v3.services.impl.ContainerMapper.service(ContainerMapper.java:144)\n\tat org.glassfish.grizzly.http.server.HttpHandler.runService(HttpHandler.java:174)\n\tat org.glassfish.grizzly.http.server.HttpHandler.doHandle(HttpHandler.java:153)\n\tat org.glassfish.grizzly.http.server.HttpServerFilter.handleRead(HttpServerFilter.java:196)\n\tat org.glassfish.grizzly.filterchain.ExecutorResolver$9.execute(ExecutorResolver.java:88)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeFilter(DefaultFilterChain.java:246)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeChainPart(DefaultFilterChain.java:178)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.execute(DefaultFilterChain.java:118)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.process(DefaultFilterChain.java:96)\n\tat org.glassfish.grizzly.ProcessorExecutor.execute(ProcessorExecutor.java:51)\n\tat org.glassfish.grizzly.portunif.PUFilter.handleRead(PUFilter.java:193)\n\tat org.glassfish.grizzly.filterchain.ExecutorResolver$9.execute(ExecutorResolver.java:88)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeFilter(DefaultFilterChain.java:246)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeChainPart(DefaultFilterChain.java:178)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.execute(DefaultFilterChain.java:118)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.process(DefaultFilterChain.java:96)\n\tat\
+          \ org.glassfish.grizzly.ProcessorExecutor.execute(ProcessorExecutor.java:51)\n\tat org.glassfish.grizzly.portunif.PUFilter.handleRead(PUFilter.java:193)\n\tat org.glassfish.grizzly.filterchain.ExecutorResolver$9.execute(ExecutorResolver.java:88)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeFilter(DefaultFilterChain.java:246)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.executeChainPart(DefaultFilterChain.java:178)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.execute(DefaultFilterChain.java:118)\n\tat org.glassfish.grizzly.filterchain.DefaultFilterChain.process(DefaultFilterChain.java:96)\n\tat org.glassfish.grizzly.ProcessorExecutor.execute(ProcessorExecutor.java:51)\n\tat org.glassfish.grizzly.nio.transport.TCPNIOTransport.fireIOEvent(TCPNIOTransport.java:510)\n\tat org.glassfish.grizzly.strategies.AbstractIOStrategy.fireIOEvent(AbstractIOStrategy.java:82)\n\tat org.glassfish.grizzly.strategies.WorkerThreadIOStrategy.run0(WorkerThreadIOStrategy.java:83)\n\ta"
+        - "[2023-11-07T13:12:40.621917Z] [GF 7.0.9] [SEVERE] [AS-WEB-UTIL-00016] [org.glassfish.web.loader.ReferenceCleaner] [tid: _ThreadID=478 _ThreadName=RunLevelControllerThread-1699362759398] [levelValue: 1000] [[\n  The web application [] created a ThreadLocal with key of [class java.lang.ThreadLocal (toString: java.lang.ThreadLocal@9826890)] and a value of [class org.glassfish.admingui.theme.AdminguiThemeContext (toString: org.glassfish.admingui.theme.AdminguiThemeContext@257396bb)] but failed to remove it when the web application was stopped. Threads are going to be renewed over time to try and avoid a probable memory leak.]]"
+        - "[2023-11-07T13:13:21.072074Z] [GF 7.0.9] [INFO] [faces.config.listener.version] [jakarta.enterprise.resource.webcontainer.faces.config] [tid: _ThreadID=86 _ThreadName=Thread-10] [levelValue: 800] [[\n  Initializing Mojarra 4.0.4 for context '']]"
+        - "[2023-11-27T15:14:40.289247Z] [] [INFO] [NCLS-GFLAUNCHER-00005] [jakarta.enterprise.launcher] [tid: _ThreadID=1 _ThreadName=main] [levelValue: 800] [[\n  JVM invocation command line:\n/usr/lib/jvm/java-11-amazon-corretto.x86_64/bin/java\n-cp\n/home/ec2-user/glassfish7/glassfish/modules/glassfish.jar\n-DWALL_CLOCK_START=2023-11-27T15:14:39.505258Z\n-XX:+UnlockDiagnosticVMOptions\n-XX:NewRatio=2\n-Xmx512m\n--add-opens=java.base/java.io=ALL-UNNAMED\n--add-opens=java.base/java.lang=ALL-UNNAMED\n--add-opens=java.base/java.util=ALL-UNNAMED\n--add-opens=java.base/sun.net.www.protocol.jrt=ALL-UNNAMED\n--add-opens=java.naming/javax.naming.spi=ALL-UNNAMED\n--add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED\n--add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED\n--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED\n--add-exports=java.base/jdk.internal.vm.annotation=ALL-UNNAMED\n--add-opens=java.base/jdk.internal.vm.annotation=ALL-UNNAMED\n-javaagent:/home/ec2-user/glassfish7/glassfish/lib/monitor/flashlight-agent.jar\n-Djava.awt.headless=true\n-Djdk.corba.allowOutputStreamSubclass=true\n-Djdk.tls.rejectClientInitiatedRenegotiation=true\n-Djavax.xml.accessExternalSchema=all\n-Djava.security.policy=/home/ec2-user/glassfish7/glassfish/domains/domain1/config/server.policy\n-Djava.security.auth.login.config=/home/ec2-user/glassfish7/glassfish/domains/domain1/config/login.conf\n-Dcom.sun.enterprise.security.httpsOutboundKeyAlias=s1as\n-Djavax.net.ssl.keyStore=/home/ec2-user/glassfish7/glassfish/domains/domain1/config/keystore.jks\n-Djavax.net.ssl.trustStore=/home/ec2-user/glassfish7/glassfish/domains/domain1/config/cacerts.jks\n-Djdbc.drivers=org.apache.derby.jdbc.ClientDriver\n-DANTLR_USE_DIRECT_CLASS_LOADING=true\n-Dcom.sun.enterprise.config.config_environment_factory_class=com.sun.enterprise.config.serverbeans.AppserverConfigEnvironmentFactory\n-Dorg.glassfish.additionalOSGiBundlesToStart=org.apache.felix.shell,org.apache.felix.gogo.runtime,org.apache.felix.gogo.shell,org.apache.felix.gogo.command,org.apache.felix.shell.remote,org.apache.felix.fileinstall\n-Dosgi.shell.telnet.port=6666\n-Dosgi.shell.telnet.maxconn=1\n-Dosgi.shell.telnet.ip=127.0.0.1\n-Dgosh.args=--nointeractive\n-Dfelix.fileinstall.dir=/home/ec2-user/glassfish7/glassfish/modules/autostart/\n-Dfelix.fileinstall.poll=5000\n-Dfelix.fileinstall.log.level=2\n-Dfelix.fileinstall.bundles.new.start=true\n-Dfelix.fileinstall.bundles.startTransient=true\n-Dfelix.fileinstall.disableConfigSave=false\n-Dorg.glassfish.gmbal.no.multipleUpperBoundsException=true\n-Dcom.ctc.wstx.returnNullForDefaultNamespace=true\n-Djdk.attach.allowAttachSelf=true\n-Dcom.sun.aas.instanceRoot=/home/ec2-user/glassfish7/glassfish/domains/domain1\n-Dcom.sun.aas.installRoot=/home/ec2-user/glassfish7/glassfish\n-Djava.library.path=/home/ec2-user/glassfish7/glassfish/lib:/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib\ncom.sun.enterprise.glassfish.bootstrap.ASMain\n-upgrade\nfalse\n-domaindir\n/home/ec2-user/glassfish7/glassfish/domains/domain1\n-read-stdin\ntrue\n-asadmin-args\n--host,,,localhost,,,--port,,,4848,,,--secure=false,,,--terse=false,,,--echo=false,,,--interactive=true,,,start-domain,,,--verbose=false,,,--watchdog=false,,,--debug=false,,,--domaindir,,,/home/ec2-user/glassfish7/glassfish/domains,,,domain1\n-domainname\ndomain1\n-instancename\nserver\n-type\nDAS\n-verbose\nfalse\n-asadmin-classpath\n/home/ec2-user/glassfish7/glassfish/lib/client/appserver-cli.jar\n-debug\nfalse\n-asadmin-classname\ncom.sun.enterprise.admin.cli.AdminMain]]"
+        - "[2023-11-07T13:36:03.048594Z] [GF 7.0.9] [WARNING] [] [] [tid: _ThreadID=129 _ThreadName=pool-20-thread-1] [levelValue: 900] [[\n  Unprocessed event : UnprocessedChangeEvent{PropertyName=enabled, OldValue = false, NewValue = true, Source = GlassFishConfigBean.com.sun.enterprise.config.serverbeans.SecureAdmin}, reason = secure.admin.change.requires.restart, when = 1699364162992]]"
+      grok:
+        supportRules: "_timestamp \\[%{date(\"yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ\"):timestamp}\\]\n_version \\[(GF %{notSpace:glassfish.version})?\\]\n_level \\[%{word:level}\\]\n_logger \\[((%{notSpace:log.identifier})?\\] \\[(%{notSpace:glassfish.logger_name})?\\] \\[tid: %{data:logger:keyvalue(\"=\", \"()\")})?\\]\n_level_num \\[(levelValue: %{number:glassfish.level_number})?\\]\n_message %{data:message}"
+        matchRules: odl %{_timestamp} %{_version} %{_level} %{_logger} %{_level_num} %{_message}
+    - type: attribute-remapper
+      name: Map `logger._ThreadID` to `logger.thread_id`
+      enabled: true
+      sources:
+        - logger._ThreadID
+      sourceType: attribute
+      target: logger.thread_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `logger._ThreadName` to `logger.thread_name`
+      enabled: true
+      sources:
+        - logger._ThreadName
+      sourceType: attribute
+      target: logger.thread_name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `logger_name` to `logger.name`
+      enabled: true
+      sources:
+        - logger_name
+      sourceType: attribute
+      target: logger.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

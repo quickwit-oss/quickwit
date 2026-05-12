@@ -1,0 +1,120 @@
+id: cisco-aci
+tests:
+  - sample: >-
+      {
+        "cisco_aci": {
+          "ack": "no",
+          "alert": "no",
+          "cause": "threshold-crossed",
+          "changeSet": "crcLast:1",
+          "childAction": "",
+          "code": "F381328",
+          "created": "2025-03-12T13:46:10.489+00:00",
+          "delegated": "no",
+          "descr": "TCA: CRC Align Errors current value(eqptIngrErrPkts5min:crcLast) value 1% raised above threshold 0% and value is recovering ",
+          "dn": "topology/pod-1/node-101/sys/aggr-[po3]/fault-F381328",
+          "domain": "infra",
+          "highestSeverity": "warning",
+          "lastTransition": "2025-03-12T15:57:27.496+00:00",
+          "lc": "raised",
+          "occur": "115",
+          "origSeverity": "warning",
+          "prevSeverity": "cleared",
+          "rule": "tca-eqpt-ingr-err-pkts5min-crc-last",
+          "severity": "warning",
+          "status": "",
+          "subject": "counter",
+          "title": "",
+          "type": "operational",
+          "faultCategory": "faultInst"
+        }
+      }
+    result:
+      custom:
+        cisco_aci:
+          ack: "no"
+          alert: "no"
+          cause: "threshold-crossed"
+          changeSet: "crcLast:1"
+          childAction: ""
+          code: "F381328"
+          created: "2025-03-12T13:46:10.489+00:00"
+          delegated: "no"
+          dn: "topology/pod-1/node-101/sys/aggr-[po3]/fault-F381328"
+          domain: "infra"
+          faultCategory: "faultInst"
+          highestSeverity: "warning"
+          lastTransition: "2025-03-12T15:57:27.496+00:00"
+          lc: "raised"
+          occur: "115"
+          origSeverity: "warning"
+          prevSeverity: "cleared"
+          rule: "tca-eqpt-ingr-err-pkts5min-crc-last"
+          severity: "warning"
+          status: ""
+          subject: "counter"
+          title: ""
+          type: "operational"
+        log_status: "warning"
+      message: "TCA: CRC Align Errors current value(eqptIngrErrPkts5min:crcLast) value 1% raised above threshold 0% and value is recovering "
+      status: "warn"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1741795047496
+  - sample: >-
+      {
+        "cisco_aci": {
+          "ack": "no",
+          "affected": "topology/pod-1/node-1/local/svc-extXMLApi-id-255/uni/userext/tacacsext/tacacsplusprovider-10.19.24.1",
+          "cause": "inoperable",
+          "changeSet": "operState (Old: unknown, New: inoperable)",
+          "childAction": "",
+          "code": "F0023",
+          "created": "2025-03-09T14:23:39.345+00:00",
+          "descr": "Fault delegate: Tacacs+ Provider 10.19.24.1 unreachable",
+          "dn": "uni/userext/tacacsext/tacacsplusprovider-10.19.24.1/fd-[topology/pod-1/node-1/local/svc-extXMLApi-id-255/uni/userext/tacacsext/tacacsplusprovider-10.19.24.1]-fault-F0023",
+          "domain": "security",
+          "highestSeverity": "minor",
+          "lastTransition": "2025-03-12T00:12:36.980+00:00",
+          "lc": "raised",
+          "occur": "1",
+          "origSeverity": "minor",
+          "prevSeverity": "minor",
+          "rule": "aaa-tacacs-plus-provider-tacacs-plus-provider-inoperable",
+          "severity": "minor",
+          "status": "",
+          "subject": "security-provider",
+          "type": "operational",
+          "faultCategory": "faultDelegate"
+        }
+      }
+    result:
+      custom:
+        cisco_aci:
+          ack: "no"
+          affected: "topology/pod-1/node-1/local/svc-extXMLApi-id-255/uni/userext/tacacsext/tacacsplusprovider-10.19.24.1"
+          cause: "inoperable"
+          changeSet: "operState (Old: unknown, New: inoperable)"
+          childAction: ""
+          code: "F0023"
+          created: "2025-03-09T14:23:39.345+00:00"
+          dn: "uni/userext/tacacsext/tacacsplusprovider-10.19.24.1/fd-[topology/pod-1/node-1/local/svc-extXMLApi-id-255/uni/userext/tacacsext/tacacsplusprovider-10.19.24.1]-fault-F0023"
+          domain: "security"
+          faultCategory: "faultDelegate"
+          highestSeverity: "minor"
+          lastTransition: "2025-03-12T00:12:36.980+00:00"
+          lc: "raised"
+          occur: "1"
+          origSeverity: "minor"
+          prevSeverity: "minor"
+          rule: "aaa-tacacs-plus-provider-tacacs-plus-provider-inoperable"
+          severity: "minor"
+          status: ""
+          subject: "security-provider"
+          type: "operational"
+        log_status: "warning"
+      message: "Fault delegate: Tacacs+ Provider 10.19.24.1 unreachable"
+      status: "warn"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1741738356980

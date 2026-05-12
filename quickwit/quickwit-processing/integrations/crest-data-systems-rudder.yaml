@@ -1,0 +1,342 @@
+id: "crest-data-systems-rudder"
+metric_id: "crest-data-systems-rudder"
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Change Request ID
+    path: cd_rudder.change_request_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Change Request Status
+    path: cd_rudder.change_request_status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Directive ID
+    path: cd_rudder.directive_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Group ID
+    path: cd_rudder.group_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Node ID
+    path: cd_rudder.node_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Node Name
+    path: cd_rudder.node_name
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Node State
+    path: cd_rudder.state
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Node Status
+    path: cd_rudder.status
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Policy Mode
+    path: cd_rudder.policy_mode
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Rule ID
+    path: cd_rudder.rule_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Rule Status
+    path: status.value
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Score Breakdown
+    path: cd_rudder.score_breakdown
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Source
+    path: cd_rudder.source
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - Crest data systems rudder
+    name: Technique ID
+    path: cd_rudder.technique_id
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Rudder
+  enabled: true
+  filter:
+    query: source:crest-data-systems-rudder
+  processors:
+    - type: pipeline
+      name: Directives
+      enabled: true
+      filter:
+        query: service:cd.rudder.directives
+      processors:
+        - name: Lookup `policyMode` to `cd_rudder.policy_mode`
+          enabled: true
+          source: policyMode
+          target: cd_rudder.policy_mode
+          lookupTable: |-
+            default,Enforce
+            audit,Audit
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.directive_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.directive_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Compliance
+      enabled: true
+      filter:
+        query: service:cd.rudder.compliance
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.node_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.node_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `policyMode` to `cd_rudder.policy_mode`
+          enabled: true
+          source: policyMode
+          target: cd_rudder.policy_mode
+          lookupTable: |-
+            default,Enforce
+            audit,Audit
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `name` to `cd_rudder.node_name`
+          enabled: true
+          sources:
+            - name
+          sourceType: attribute
+          target: cd_rudder.node_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: category-processor
+          name: Category for `compliance` to `cd_rudder.score_breakdown`
+          enabled: true
+          categories:
+            - filter:
+                query: "@compliance:>=95"
+              name: A
+            - filter:
+                query: "@compliance:(>=80 <95)"
+              name: B
+            - filter:
+                query: "@compliance:(>=50 <80)"
+              name: C
+            - filter:
+                query: "@compliance:(>=20 <50)"
+              name: D
+            - filter:
+                query: "@compliance:(>=5 <20)"
+              name: E
+            - filter:
+                query: "@compliance:<5"
+              name: F
+          target: cd_rudder.score_breakdown
+    - type: pipeline
+      name: Groups
+      enabled: true
+      filter:
+        query: service:cd.rudder.groups
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.group_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.group_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Techniques
+      enabled: true
+      filter:
+        query: service:cd.rudder.techniques
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.technique_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.technique_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `source` to `cd_rudder.source`
+          enabled: true
+          sources:
+            - source
+          sourceType: attribute
+          target: cd_rudder.source
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Rules
+      enabled: true
+      filter:
+        query: service:cd.rudder.rules
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.rule_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.rule_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Nodes
+      enabled: true
+      filter:
+        query: service:cd.rudder.nodes
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.node_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.node_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `hostname` to `cd_rudder.node_name`
+          enabled: true
+          sources:
+            - hostname
+          sourceType: attribute
+          target: cd_rudder.node_name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `cd_rudder.status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cd_rudder.status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `policyMode` to `cd_rudder.policy_mode`
+          enabled: true
+          source: policyMode
+          target: cd_rudder.policy_mode
+          lookupTable: |-
+            default,Enforce
+            audit,Audit
+          type: lookup-processor
+        - type: attribute-remapper
+          name: Map `state` to `cd_rudder.state`
+          enabled: true
+          sources:
+            - state
+          sourceType: attribute
+          target: cd_rudder.state
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup `cd_rudder.status` to `status`
+          enabled: true
+          source: cd_rudder.status
+          target: status
+          lookupTable: |-
+            pending,Info
+            accepted,Info
+            deleted,Info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+    - type: pipeline
+      name: Change Request
+      enabled: true
+      filter:
+        query: service:cd.rudder.change_requests
+      processors:
+        - type: attribute-remapper
+          name: Map `id` to `cd_rudder.change_request_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: cd_rudder.change_request_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `cd_rudder.change_request_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: cd_rudder.change_request_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

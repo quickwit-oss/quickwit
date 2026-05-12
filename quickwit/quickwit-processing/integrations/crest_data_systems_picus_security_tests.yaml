@@ -1,0 +1,856 @@
+id: "crest_data_systems_picus_security"
+tests:
+  - sample: |-
+      {
+        "agents" : [ {
+          "platform_architecture" : "",
+          "name" : "Browser Agent",
+          "platform_name" : "",
+          "created_at" : 1611131624037,
+          "id" : 197,
+          "type" : "Browser",
+          "version" : "0.0.0.0",
+          "status" : "alive"
+        }, {
+          "platform_architecture" : "64-bit",
+          "name" : "My agent",
+          "platform_name" : "Windows 10",
+          "created_at" : 1633518567926,
+          "id" : 793,
+          "type" : "Windows",
+          "version" : "4.0.2.2",
+          "status" : "dead"
+        }, {
+          "platform_architecture" : "",
+          "name" : "example@gmail.com",
+          "platform_name" : "",
+          "created_at" : 1644399111732,
+          "id" : 1261,
+          "type" : "QuickEmail",
+          "version" : "0.0.0.0",
+          "status" : "alive"
+        } ]
+      }
+    service: "cds.picus_security.picus_agents"
+    result:
+      custom:
+        agents:
+        -
+          platform_architecture: ""
+          name: "Browser Agent"
+          platform_name: ""
+          created_at: 1611131624037
+          id: 197
+          type: "Browser"
+          version: "0.0.0.0"
+          status: "alive"
+        -
+          platform_architecture: "64-bit"
+          name: "My agent"
+          platform_name: "Windows 10"
+          created_at: 1633518567926
+          id: 793
+          type: "Windows"
+          version: "4.0.2.2"
+          status: "dead"
+        -
+          platform_architecture: ""
+          name: "example@gmail.com"
+          platform_name: ""
+          created_at: 1644399111732
+          id: 1261
+          type: "QuickEmail"
+          version: "0.0.0.0"
+          status: "alive"
+      message: |-
+        {
+          "agents" : [ {
+            "platform_architecture" : "",
+            "name" : "Browser Agent",
+            "platform_name" : "",
+            "created_at" : 1611131624037,
+            "id" : 197,
+            "type" : "Browser",
+            "version" : "0.0.0.0",
+            "status" : "alive"
+          }, {
+            "platform_architecture" : "64-bit",
+            "name" : "My agent",
+            "platform_name" : "Windows 10",
+            "created_at" : 1633518567926,
+            "id" : 793,
+            "type" : "Windows",
+            "version" : "4.0.2.2",
+            "status" : "dead"
+          }, {
+            "platform_architecture" : "",
+            "name" : "example@gmail.com",
+            "platform_name" : "",
+            "created_at" : 1644399111732,
+            "id" : 1261,
+            "type" : "QuickEmail",
+            "version" : "0.0.0.0",
+            "status" : "alive"
+          } ]
+        }
+      service: "cds.picus_security.picus_agents"
+      tags:
+      - "source:LOGS_SOURCE"
+  -
+    sample: |-
+      {
+        "integration_agents" : [ {
+          "installed" : true,
+          "updated_at" : 1655152142976,
+          "name" : "Picus Agent",
+          "created_at" : 1643367463546,
+          "id" : 1,
+          "token_expired" : false,
+          "status" : "Alive"
+        }, {
+          "installed" : false,
+          "updated_at" : 1653995219617,
+          "name" : "Picus Agent 2",
+          "created_at" : 1653995219617,
+          "id" : 2,
+          "token_expired" : true,
+          "status" : "Dead"
+        } ]
+      }
+    service: "cds.picus_security.integration_agents"
+    result:
+      custom:
+        integration_agents:
+        -
+          installed: true
+          updated_at: 1655152142976
+          name: "Picus Agent"
+          created_at: 1643367463546
+          id: 1
+          token_expired: false
+          status: "Alive"
+        -
+          installed: false
+          updated_at: 1653995219617
+          name: "Picus Agent 2"
+          created_at: 1653995219617
+          id: 2
+          token_expired: true
+          status: "Dead"
+      message: |-
+        {
+          "integration_agents" : [ {
+            "installed" : true,
+            "updated_at" : 1655152142976,
+            "name" : "Picus Agent",
+            "created_at" : 1643367463546,
+            "id" : 1,
+            "token_expired" : false,
+            "status" : "Alive"
+          }, {
+            "installed" : false,
+            "updated_at" : 1653995219617,
+            "name" : "Picus Agent 2",
+            "created_at" : 1653995219617,
+            "id" : 2,
+            "token_expired" : true,
+            "status" : "Dead"
+          } ]
+        }
+      service: "cds.picus_security.integration_agents"
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "integrations" : [ {
+          "updated_at" : 1652191182767,
+          "integration_agent" : "Picus Agent 2",
+          "name" : "Splunk",
+          "description" : "Splunk is the world’s first Data-to-Everything Platform.",
+          "created_at" : 1646136456713,
+          "id" : 1,
+          "health_status" : {
+            "healthy" : true
+          },
+          "type" : "SIEM",
+          "integration_agent_id" : 1
+        }, {
+          "updated_at" : 1653995321307,
+          "integration_agent" : "Picus Agent",
+          "name" : "VMware Carbon Black EDR",
+          "description" : "Consolidates multiple endpoint security capabilities, helping users operate faster and more effectively.",
+          "created_at" : 1649422318325,
+          "id" : 8,
+          "health_status" : {
+            "healthy" : false,
+            "error" : {
+              "step" : "Connection",
+              "type" : "VMware Carbon Black EDR Authentication Check Step Error",
+              "message" : "http request error - Connection Error: Post \"https://1.1.1.1:1156/_search\": dial tcp 1.1.1.1:1156: connect: no route to host - Status Code: 0"
+            }
+          },
+          "type" : "EDR",
+          "integration_agent_id" : 1
+        } ]
+      }
+    service: "cds.picus_security.integrations"
+    result:
+      custom:
+        integrations:
+        -
+          updated_at: 1652191182767
+          integration_agent: "Picus Agent 2"
+          name: "Splunk"
+          description: "Splunk is the world’s first Data-to-Everything Platform."
+          created_at: 1646136456713
+          id: 1
+          health_status:
+            healthy: true
+          type: "SIEM"
+          integration_agent_id: 1
+        -
+          updated_at: 1653995321307
+          integration_agent: "Picus Agent"
+          name: "VMware Carbon Black EDR"
+          description: "Consolidates multiple endpoint security capabilities, helping users operate faster and more effectively."
+          created_at: 1649422318325
+          id: 8
+          health_status:
+            healthy: false
+            error:
+              step: "Connection"
+              type: "VMware Carbon Black EDR Authentication Check Step Error"
+              message: "http request error - Connection Error: Post \"https://1.1.1.1:1156/_search\": dial tcp 1.1.1.1:1156: connect: no route to host - Status Code: 0"
+          type: "EDR"
+          integration_agent_id: 1
+      message: |-
+        {
+          "integrations" : [ {
+            "updated_at" : 1652191182767,
+            "integration_agent" : "Picus Agent 2",
+            "name" : "Splunk",
+            "description" : "Splunk is the world’s first Data-to-Everything Platform.",
+            "created_at" : 1646136456713,
+            "id" : 1,
+            "health_status" : {
+              "healthy" : true
+            },
+            "type" : "SIEM",
+            "integration_agent_id" : 1
+          }, {
+            "updated_at" : 1653995321307,
+            "integration_agent" : "Picus Agent",
+            "name" : "VMware Carbon Black EDR",
+            "description" : "Consolidates multiple endpoint security capabilities, helping users operate faster and more effectively.",
+            "created_at" : 1649422318325,
+            "id" : 8,
+            "health_status" : {
+              "healthy" : false,
+              "error" : {
+                "step" : "Connection",
+                "type" : "VMware Carbon Black EDR Authentication Check Step Error",
+                "message" : "http request error - Connection Error: Post \"https://1.1.1.1:1156/_search\": dial tcp 1.1.1.1:1156: connect: no route to host - Status Code: 0"
+              }
+            },
+            "type" : "EDR",
+            "integration_agent_id" : 1
+          } ]
+        }
+      service: "cds.picus_security.integrations"
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "devices" : [ {
+          "score" : 0,
+          "device_name" : "McAfee vNSP",
+          "not_blocked_action_count" : 31,
+          "blocked_action_count" : 0,
+          "total_action_count" : 31,
+          "id" : 25
+        }, {
+          "score" : 0,
+          "device_name" : "Forcepoint NGFW",
+          "not_blocked_action_count" : 33,
+          "blocked_action_count" : 0,
+          "total_action_count" : 33,
+          "id" : 19
+        }, {
+          "score" : 0,
+          "device_name" : "Fortigate AV",
+          "not_blocked_action_count" : 33,
+          "blocked_action_count" : 0,
+          "total_action_count" : 33,
+          "id" : 20
+        }, {
+          "score" : 0,
+          "device_name" : "Fortigate IPS",
+          "not_blocked_action_count" : 2,
+          "blocked_action_count" : 0,
+          "total_action_count" : 2,
+          "id" : 21
+        }, {
+          "score" : 0,
+          "device_name" : "Check Point NGFW",
+          "not_blocked_action_count" : 28,
+          "blocked_action_count" : 0,
+          "total_action_count" : 28,
+          "id" : 16
+        }, {
+          "score" : 0,
+          "device_name" : "Imperva SecureSphere",
+          "not_blocked_action_count" : 0,
+          "blocked_action_count" : 0,
+          "total_action_count" : 0,
+          "id" : 24
+        }, {
+          "score" : 0,
+          "device_name" : "Citrix Web App Firewall",
+          "not_blocked_action_count" : 0,
+          "blocked_action_count" : 0,
+          "total_action_count" : 0,
+          "id" : 17
+        }, {
+          "score" : 0,
+          "device_name" : "F5 BIG-IP",
+          "not_blocked_action_count" : 0,
+          "blocked_action_count" : 0,
+          "total_action_count" : 0,
+          "id" : 18
+        }, {
+          "score" : 0,
+          "device_name" : "Fortigate WAF",
+          "not_blocked_action_count" : 0,
+          "blocked_action_count" : 0,
+          "total_action_count" : 0,
+          "id" : 22
+        }, {
+          "score" : 0,
+          "device_name" : "FortiWeb",
+          "not_blocked_action_count" : 0,
+          "blocked_action_count" : 0,
+          "total_action_count" : 0,
+          "id" : 23
+        } ]
+      }
+    service: "cds.picus_security.mitigation_devices"
+    result:
+      custom:
+        devices:
+        -
+          score: 0
+          device_name: "McAfee vNSP"
+          not_blocked_action_count: 31
+          blocked_action_count: 0
+          total_action_count: 31
+          id: 25
+        -
+          score: 0
+          device_name: "Forcepoint NGFW"
+          not_blocked_action_count: 33
+          blocked_action_count: 0
+          total_action_count: 33
+          id: 19
+        -
+          score: 0
+          device_name: "Fortigate AV"
+          not_blocked_action_count: 33
+          blocked_action_count: 0
+          total_action_count: 33
+          id: 20
+        -
+          score: 0
+          device_name: "Fortigate IPS"
+          not_blocked_action_count: 2
+          blocked_action_count: 0
+          total_action_count: 2
+          id: 21
+        -
+          score: 0
+          device_name: "Check Point NGFW"
+          not_blocked_action_count: 28
+          blocked_action_count: 0
+          total_action_count: 28
+          id: 16
+        -
+          score: 0
+          device_name: "Imperva SecureSphere"
+          not_blocked_action_count: 0
+          blocked_action_count: 0
+          total_action_count: 0
+          id: 24
+        -
+          score: 0
+          device_name: "Citrix Web App Firewall"
+          not_blocked_action_count: 0
+          blocked_action_count: 0
+          total_action_count: 0
+          id: 17
+        -
+          score: 0
+          device_name: "F5 BIG-IP"
+          not_blocked_action_count: 0
+          blocked_action_count: 0
+          total_action_count: 0
+          id: 18
+        -
+          score: 0
+          device_name: "Fortigate WAF"
+          not_blocked_action_count: 0
+          blocked_action_count: 0
+          total_action_count: 0
+          id: 22
+        -
+          score: 0
+          device_name: "FortiWeb"
+          not_blocked_action_count: 0
+          blocked_action_count: 0
+          total_action_count: 0
+          id: 23
+      message: |-
+        {
+          "devices" : [ {
+            "score" : 0,
+            "device_name" : "McAfee vNSP",
+            "not_blocked_action_count" : 31,
+            "blocked_action_count" : 0,
+            "total_action_count" : 31,
+            "id" : 25
+          }, {
+            "score" : 0,
+            "device_name" : "Forcepoint NGFW",
+            "not_blocked_action_count" : 33,
+            "blocked_action_count" : 0,
+            "total_action_count" : 33,
+            "id" : 19
+          }, {
+            "score" : 0,
+            "device_name" : "Fortigate AV",
+            "not_blocked_action_count" : 33,
+            "blocked_action_count" : 0,
+            "total_action_count" : 33,
+            "id" : 20
+          }, {
+            "score" : 0,
+            "device_name" : "Fortigate IPS",
+            "not_blocked_action_count" : 2,
+            "blocked_action_count" : 0,
+            "total_action_count" : 2,
+            "id" : 21
+          }, {
+            "score" : 0,
+            "device_name" : "Check Point NGFW",
+            "not_blocked_action_count" : 28,
+            "blocked_action_count" : 0,
+            "total_action_count" : 28,
+            "id" : 16
+          }, {
+            "score" : 0,
+            "device_name" : "Imperva SecureSphere",
+            "not_blocked_action_count" : 0,
+            "blocked_action_count" : 0,
+            "total_action_count" : 0,
+            "id" : 24
+          }, {
+            "score" : 0,
+            "device_name" : "Citrix Web App Firewall",
+            "not_blocked_action_count" : 0,
+            "blocked_action_count" : 0,
+            "total_action_count" : 0,
+            "id" : 17
+          }, {
+            "score" : 0,
+            "device_name" : "F5 BIG-IP",
+            "not_blocked_action_count" : 0,
+            "blocked_action_count" : 0,
+            "total_action_count" : 0,
+            "id" : 18
+          }, {
+            "score" : 0,
+            "device_name" : "Fortigate WAF",
+            "not_blocked_action_count" : 0,
+            "blocked_action_count" : 0,
+            "total_action_count" : 0,
+            "id" : 22
+          }, {
+            "score" : 0,
+            "device_name" : "FortiWeb",
+            "not_blocked_action_count" : 0,
+            "blocked_action_count" : 0,
+            "total_action_count" : 0,
+            "id" : 23
+          } ]
+        }
+      service: "cds.picus_security.mitigation_devices"
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "simulations" : [ {
+          "last_prevention_security_score" : 60,
+          "agent" : {
+            "name" : "My Agent",
+            "id" : 1556,
+            "type" : "Windows",
+            "version" : "4.1.1.0",
+            "status" : "dead"
+          },
+          "template_name" : "Template",
+          "has_detection_analysis" : false,
+          "simulation_name" : "Simulation",
+          "simulation_id" : 1,
+          "template_id" : 1,
+          "completion_ratio" : 100,
+          "status_details" : {
+            "detection" : {
+              "completed_threat_count" : 2,
+              "total_threat_count" : 2
+            },
+            "prevention" : {
+              "completed_threat_count" : 2,
+              "total_threat_count" : 2
+            }
+          },
+          "has_last_run_detection_analysis" : false,
+          "status" : "COMPLETED"
+        }, {
+          "last_prevention_security_score" : 70,
+          "agent" : {
+            "name" : "My Agent",
+            "id" : 1556,
+            "type" : "Windows",
+            "version" : "4.1.1.0",
+            "status" : "alive"
+          },
+          "last_detection_security_score" : 100,
+          "has_detection_analysis" : true,
+          "updated_at" : 1705670514353,
+          "simulation_name" : "Simulation",
+          "simulation_id" : 1,
+          "detection_analysis" : {
+            "integrations" : [ {
+              "id" : 135,
+              "product_name" : "Splunk"
+            } ]
+          },
+          "has_last_run_detection_analysis" : true,
+          "status" : "COMPLETED"
+        } ]
+      }
+    service: "cds.picus_security.simulations"
+    result:
+      custom:
+        simulations:
+        -
+          last_prevention_security_score: 60
+          agent:
+            name: "My Agent"
+            id: 1556
+            type: "Windows"
+            version: "4.1.1.0"
+            status: "dead"
+          template_name: "Template"
+          has_detection_analysis: false
+          simulation_name: "Simulation"
+          simulation_id: 1
+          template_id: 1
+          completion_ratio: 100
+          status_details:
+            detection:
+              completed_threat_count: 2
+              total_threat_count: 2
+            prevention:
+              completed_threat_count: 2
+              total_threat_count: 2
+          has_last_run_detection_analysis: false
+          status: "COMPLETED"
+        -
+          last_prevention_security_score: 70
+          agent:
+            name: "My Agent"
+            id: 1556
+            type: "Windows"
+            version: "4.1.1.0"
+            status: "alive"
+          last_detection_security_score: 100
+          has_detection_analysis: true
+          updated_at: 1705670514353
+          simulation_name: "Simulation"
+          simulation_id: 1
+          detection_analysis:
+            integrations:
+            -
+              id: 135
+              product_name: "Splunk"
+          has_last_run_detection_analysis: true
+          status: "COMPLETED"
+      message: |-
+        {
+          "simulations" : [ {
+            "last_prevention_security_score" : 60,
+            "agent" : {
+              "name" : "My Agent",
+              "id" : 1556,
+              "type" : "Windows",
+              "version" : "4.1.1.0",
+              "status" : "dead"
+            },
+            "template_name" : "Template",
+            "has_detection_analysis" : false,
+            "simulation_name" : "Simulation",
+            "simulation_id" : 1,
+            "template_id" : 1,
+            "completion_ratio" : 100,
+            "status_details" : {
+              "detection" : {
+                "completed_threat_count" : 2,
+                "total_threat_count" : 2
+              },
+              "prevention" : {
+                "completed_threat_count" : 2,
+                "total_threat_count" : 2
+              }
+            },
+            "has_last_run_detection_analysis" : false,
+            "status" : "COMPLETED"
+          }, {
+            "last_prevention_security_score" : 70,
+            "agent" : {
+              "name" : "My Agent",
+              "id" : 1556,
+              "type" : "Windows",
+              "version" : "4.1.1.0",
+              "status" : "alive"
+            },
+            "last_detection_security_score" : 100,
+            "has_detection_analysis" : true,
+            "updated_at" : 1705670514353,
+            "simulation_name" : "Simulation",
+            "simulation_id" : 1,
+            "detection_analysis" : {
+              "integrations" : [ {
+                "id" : 135,
+                "product_name" : "Splunk"
+              } ]
+            },
+            "has_last_run_detection_analysis" : true,
+            "status" : "COMPLETED"
+          } ]
+        }
+      service: "cds.picus_security.simulations"
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: |-
+      {
+        "threats" : [ {
+          "severity" : "string",
+          "display_id" : 58,
+          "created_at" : 1597420,
+          "description" : "This is a threat",
+          "is_predefined" : true,
+          "mitre_attack" : [ {
+            "tactic" : "string"
+          } ],
+          "unified_kill_chains" : [ {
+            "stage" : "string",
+            "phases" : [ "phase", "phase" ]
+          } ],
+          "attack_categories" : [ {
+            "name" : "Malware",
+            "id" : 1
+          } ],
+          "tags" : [ "tag", "tag" ],
+          "affected_os" : "Linux",
+          "updated_at" : 45698,
+          "flows" : [ {
+            "objective_name" : "objective_name",
+            "actions" : [ {
+              "has_detection_analysis" : true,
+              "action_id" : 3,
+              "action_name" : "name",
+              "action_display_id" : 2,
+              "detection_analysis" : {
+                "alert_result" : "alert_result",
+                "log_result" : "log_result",
+                "has_alert_analysis" : true,
+                "integrations" : [ {
+                  "integration_id" : 45,
+                  "alert_result" : "alert_result",
+                  "log_result" : "log_result",
+                  "has_alert_analysis" : false,
+                  "product_name" : "product_name",
+                  "has_log_analysis" : false
+                } ],
+                "has_log_analysis" : true
+              },
+              "prevention" : "prevention_result",
+              "node_id" : 52
+            } ],
+            "prevention" : "prevention_result",
+            "objective_id" : 456
+          } ],
+          "release_date" : 45698,
+          "attack_modules" : [ {
+            "name" : "Exploit",
+            "id" : 1
+          } ],
+          "name" : "name",
+          "id" : 58
+        } ]
+      }
+    service: "cds.picus_security.threats"
+    result:
+      custom:
+        threats:
+        -
+          severity: "string"
+          display_id: 58
+          created_at: 1597420
+          description: "This is a threat"
+          is_predefined: true
+          mitre_attack:
+          -
+            tactic: "string"
+          unified_kill_chains:
+          -
+            stage: "string"
+            phases:
+            - "phase"
+            - "phase"
+          attack_categories:
+          -
+            name: "Malware"
+            id: 1
+          tags:
+          - "tag"
+          - "tag"
+          affected_os: "Linux"
+          updated_at: 45698
+          flows:
+          -
+            objective_name: "objective_name"
+            actions:
+            -
+              has_detection_analysis: true
+              action_id: 3
+              action_name: "name"
+              action_display_id: 2
+              detection_analysis:
+                alert_result: "alert_result"
+                log_result: "log_result"
+                has_alert_analysis: true
+                integrations:
+                -
+                  integration_id: 45
+                  alert_result: "alert_result"
+                  log_result: "log_result"
+                  has_alert_analysis: false
+                  product_name: "product_name"
+                  has_log_analysis: false
+                has_log_analysis: true
+              prevention: "prevention_result"
+              node_id: 52
+            prevention: "prevention_result"
+            objective_id: 456
+          release_date: 45698
+          attack_modules:
+          -
+            name: "Exploit"
+            id: 1
+          name: "name"
+          id: 58
+      message: |-
+        {
+          "threats" : [ {
+            "severity" : "string",
+            "display_id" : 58,
+            "created_at" : 1597420,
+            "description" : "This is a threat",
+            "is_predefined" : true,
+            "mitre_attack" : [ {
+              "tactic" : "string"
+            } ],
+            "unified_kill_chains" : [ {
+              "stage" : "string",
+              "phases" : [ "phase", "phase" ]
+            } ],
+            "attack_categories" : [ {
+              "name" : "Malware",
+              "id" : 1
+            } ],
+            "tags" : [ "tag", "tag" ],
+            "affected_os" : "Linux",
+            "updated_at" : 45698,
+            "flows" : [ {
+              "objective_name" : "objective_name",
+              "actions" : [ {
+                "has_detection_analysis" : true,
+                "action_id" : 3,
+                "action_name" : "name",
+                "action_display_id" : 2,
+                "detection_analysis" : {
+                  "alert_result" : "alert_result",
+                  "log_result" : "log_result",
+                  "has_alert_analysis" : true,
+                  "integrations" : [ {
+                    "integration_id" : 45,
+                    "alert_result" : "alert_result",
+                    "log_result" : "log_result",
+                    "has_alert_analysis" : false,
+                    "product_name" : "product_name",
+                    "has_log_analysis" : false
+                  } ],
+                  "has_log_analysis" : true
+                },
+                "prevention" : "prevention_result",
+                "node_id" : 52
+              } ],
+              "prevention" : "prevention_result",
+              "objective_id" : 456
+            } ],
+            "release_date" : 45698,
+            "attack_modules" : [ {
+              "name" : "Exploit",
+              "id" : 1
+            } ],
+            "name" : "name",
+            "id" : 58
+          } ]
+        }
+      service: "cds.picus_security.threats"
+      tags:
+      - "source:LOGS_SOURCE"
+  - sample: "<6>2025-02-17T06:46:46Z app.picussecurity.com PICUS[1]: {\"common\":{\"unique_id\":\"609249cb-72b1-4c1e-9f97-760142b2a614\",\"time\":\"2025-02-17T06:46:46.731407694Z\",\"type\":\"User Management\",\"action\":\"SuccessfulLogin\",\"user_id\":67513,\"user_email\":\"kopen.j@example.com\",\"user_first_name\":\"Dummy\",\"user_last_name\":\"A\",\"account_id\":51912,\"ip\":\"68.168.31.232\",\"done_with_api\":false,\"platform_licences\":null},\"data\":{\"IpSSO\":\"\"}}"
+    service: "cds.picus_security.activity"
+    result:
+      custom:
+        cds:
+          picus_security:
+            account_id: 51912
+            action: "SuccessfulLogin"
+            done_with_api: false
+            syslog_severity: 6.0
+            type: "User Management"
+            user_email: "kopen.j@example.com"
+            user_first_name: "Dummy"
+            user_id: 67513
+            user_last_name: "A"
+        common:
+          time: "2025-02-17T06:46:46.731407694Z"
+          unique_id: "609249cb-72b1-4c1e-9f97-760142b2a614"
+        data:
+          IpSSO: ""
+        date: 1739774806000
+        hostname: "app.picussecurity.com"
+        network:
+          client:
+            geoip: {}
+            ip: "68.168.31.232"
+        program:
+          id: 1.0
+          name: "PICUS"
+      message: "<6>2025-02-17T06:46:46Z app.picussecurity.com PICUS[1]: {\"common\":{\"unique_id\":\"609249cb-72b1-4c1e-9f97-760142b2a614\",\"time\":\"2025-02-17T06:46:46.731407694Z\",\"type\":\"User Management\",\"action\":\"SuccessfulLogin\",\"user_id\":67513,\"user_email\":\"kopen.j@example.com\",\"user_first_name\":\"Dummy\",\"user_last_name\":\"A\",\"account_id\":51912,\"ip\":\"68.168.31.232\",\"done_with_api\":false,\"platform_licences\":null},\"data\":{\"IpSSO\":\"\"}}"
+      service: "cds.picus_security.activity"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"

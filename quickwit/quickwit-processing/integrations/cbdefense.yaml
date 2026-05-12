@@ -1,0 +1,90 @@
+id: cbdefense
+metric_id: carbonblack
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - Carbon Black
+    name: Threat Score
+    path: threatInfo.score
+    source: log
+  - groups:
+      - Carbon Black
+    name: CBDefense Rule
+    path: ruleName
+    source: log
+pipeline:
+  type: pipeline
+  name: Carbon Black Defense
+  enabled: true
+  filter:
+    query: source:cbdefense
+  processors:
+    - type: grok-parser
+      name: Parsing CBDefense logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+        matchRules: |
+          cbdefence_json %{date("yyyy-MM-dd HH:mm:ss")}\s*%{notSpace}\s*%{ip}\s*%{data::json}
+
+          #2019-09-12 15:04:42	Local7.Debug	192.168.230.40	{"eventTime": 1539989469781, "eventDescription": "[Global Alert Notification] [Confer has detected a threat against your company.] [https://defense.conferdeploy.net#device/1119958/incident/BLTMBGRP] [The application powershell.exe attempted to bypass policy settings.] [Incident id: BLTMBGRP] [Threat score: 2] [Group: default] [Email: template] [Name: laptop003-cylance] [Type and OS: WINDOWS Windows 10 x64] [Severity: Monitored]\n", "url": "https://defense.conferdeploy.net/investigate?s[searchWindow]=ALL&s[c][DEVICE_ID][0]=1119958&s[c][INCIDENT_ID][0]=BLTMBGRP", "deviceInfo": {"deviceName": "laptop003-cylance", "targetPriorityCode": 0, "uemId": null, "internalIpAddress": "10.10.101.10", "deviceHostName": null, "groupName": "default", "externalIpAddress": "209.116.216.129", "deviceType": "WINDOWS", "deviceId": 1119958, "targetPriorityType": "MEDIUM", "email": "template", "deviceVersion": "Windows 10 x64"}, "source": "cbdefense1", "ruleName": "Global Alert Notification", "type": "THREAT", "threatInfo": {"threatCause": null, "summary": "The application powershell.exe attempted to bypass policy settings.", "score": 2, "time": 1539989536351, "indicators": [{"applicationName": "powershell.exe", "indicatorName": "CODE_DROP", "sha256Hash": "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"}, {"applicationName": "powershell.exe", "indicatorName": "BYPASS_POLICY", "sha256Hash": "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"}], "incidentId": "BLTMBGRP"}}
+          #Data before JSON represents data for the log shipper and not for the event itself
+      samples:
+        - |
+          2019-09-12 15:04:42	Local7.Debug	192.168.230.40	{"eventTime": 1539989469781, "eventDescription": "[Global Alert Notification] [Confer has detected a threat against your company.] [https://defense.conferdeploy.net#device/1119958/incident/BLTMBGRP] [The application powershell.exe attempted to bypass policy settings.] [Incident id: BLTMBGRP] [Threat score: 2] [Group: default] [Email: template] [Name: laptop003-cylance] [Type and OS: WINDOWS Windows 10 x64] [Severity: Monitored]\n", "url": "https://defense.conferdeploy.net/investigate?s[searchWindow]=ALL&s[c][DEVICE_ID][0]=1119958&s[c][INCIDENT_ID][0]=BLTMBGRP", "deviceInfo": {"deviceName": "laptop003-cylance", "targetPriorityCode": 0, "uemId": null, "internalIpAddress": "10.10.101.10", "deviceHostName": null, "groupName": "default", "externalIpAddress": "209.116.216.129", "deviceType": "WINDOWS", "deviceId": 1119958, "targetPriorityType": "MEDIUM", "email": "template", "deviceVersion": "Windows 10 x64"}, "source": "cbdefense1", "ruleName": "Global Alert Notification", "type": "THREAT", "threatInfo": {"threatCause": null, "summary": "The application powershell.exe attempted to bypass policy settings.", "score": 2, "time": 1539989536351, "indicators": [{"applicationName": "powershell.exe", "indicatorName": "CODE_DROP", "sha256Hash": "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"}, {"applicationName": "powershell.exe", "indicatorName": "BYPASS_POLICY", "sha256Hash": "d3f8fade829d2b7bd596c4504a6dae5c034e789b6a3defbe013bda7d14466677"}], "incidentId": "BLTMBGRP"}}
+    - type: date-remapper
+      name: Define `eventTime` as the official date of the log
+      enabled: true
+      sources:
+        - eventTime
+
+    - type: message-remapper
+      name: Define `eventDescription` as the official message of the log
+      enabled: true
+      sources:
+        - eventDescription
+
+    - type: attribute-remapper
+      name: Map `threatInfo.summary`, `threatHunterInfo.summary` to `title`
+      enabled: true
+      sources:
+        - threatInfo.summary
+        - threatHunterInfo.summary
+      target: title
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `type` to `evt.name`
+      enabled: true
+      sources:
+        - type
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `deviceInfo.email` to `usr.email`
+      enabled: true
+      sources:
+        - deviceInfo.email
+      target: usr.email
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

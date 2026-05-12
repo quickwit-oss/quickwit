@@ -1,0 +1,43 @@
+id: gearman
+metric_id: gearman
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Gearman
+  enabled: true
+  filter:
+    query: source:gearman
+  processors:
+    - type: grok-parser
+      name: Parsing Gearman logs
+      enabled: true
+      source: message
+      samples:
+        - '   INFO 2020-09-17 08:42:47.694222 [  main ] Initializing Gear on port 4730 with SSL: false'
+        - '   ERROR 2020-09-17 09:37:50.000000 [  main ] Timeout occurred when calling bind() for 0.0.0.0:4730 -> libgearman-server/gearmand.cc:688'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):date}
+        matchRules: |
+          gearmand_rule %{word:level} %{_date} \[\s+%{notSpace:thread.name}\s+\] %{data:message}
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: date-remapper
+      name: Define `date` as the official date of the log
+      enabled: true
+      sources:
+        - date

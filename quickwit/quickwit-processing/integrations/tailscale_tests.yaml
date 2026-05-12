@@ -1,0 +1,402 @@
+id: "tailscale"
+tests:
+ -
+  sample: |-
+    {
+      "actor" : {
+        "displayName" : "Alice Architect",
+        "loginName" : "alice@example.com",
+        "id" : "123456CNTRL",
+        "type" : "USER"
+      },
+      "eventGroupID" : "12345",
+      "new" : "2023-01-14T20:13:30.134350003Z",
+      "old" : "0001-01-01T00:00:00Z",
+      "origin" : "NODE",
+      "eventTime" : "2022-07-20T20:13:30.136022207Z",
+      "action" : "UPDATE",
+      "deferredAt" : "0001-01-01T00:00:00Z",
+      "target" : {
+        "name" : "node1.yak-bebop.ts.net",
+        "property" : "KEY_EXPIRY_TIME",
+        "id" : "654321CNTRL",
+        "type" : "NODE"
+      }
+    }
+  result:
+    custom:
+      deferredAt: "0001-01-01T00:00:00Z"
+      eventGroupID: "12345"
+      eventTime: "2022-07-20T20:13:30.136022207Z"
+      evt:
+        name: "UPDATE"
+      new: "2023-01-14T20:13:30.134350003Z"
+      old: "0001-01-01T00:00:00Z"
+      origin: "NODE"
+      target:
+        id: "654321CNTRL"
+        name: "node1.yak-bebop.ts.net"
+        property: "KEY_EXPIRY_TIME"
+        type: "NODE"
+      usr:
+        email: "alice@example.com"
+        id: "123456CNTRL"
+        name: "Alice Architect"
+        type: "USER"
+    message: |-
+      {
+        "actor" : {
+          "displayName" : "Alice Architect",
+          "loginName" : "alice@example.com",
+          "id" : "123456CNTRL",
+          "type" : "USER"
+        },
+        "eventGroupID" : "12345",
+        "new" : "2023-01-14T20:13:30.134350003Z",
+        "old" : "0001-01-01T00:00:00Z",
+        "origin" : "NODE",
+        "eventTime" : "2022-07-20T20:13:30.136022207Z",
+        "action" : "UPDATE",
+        "deferredAt" : "0001-01-01T00:00:00Z",
+        "target" : {
+          "name" : "node1.yak-bebop.ts.net",
+          "property" : "KEY_EXPIRY_TIME",
+          "id" : "654321CNTRL",
+          "type" : "NODE"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actor" : {
+        "displayName" : "Alice Architect",
+        "loginName" : "alice@example.com",
+        "id" : "123456CNTRL",
+        "type" : "USER"
+      },
+      "eventGroupID" : "23456",
+      "new" : {
+        "expires" : "2022-10-18 18:40:58.653877012 +0000 UTC",
+        "capabilities" : [ "CONTROL_API_SCOPE_ALL_READ", "CONTROL_API_SCOPE_ALL" ]
+      },
+      "origin" : "ADMIN_UI",
+      "eventTime" : "2022-07-20T18:40:58.838529518Z",
+      "action" : "CREATE",
+      "deferredAt" : "0001-01-01T00:00:00Z",
+      "target" : {
+        "name" : "Control API key",
+        "id" : "789123CNTRL",
+        "type" : "API_KEY"
+      }
+    }
+  result:
+    custom:
+      deferredAt: "0001-01-01T00:00:00Z"
+      eventGroupID: "23456"
+      eventTime: "2022-07-20T18:40:58.838529518Z"
+      evt:
+        name: "CREATE"
+      new:
+        capabilities:
+         - "CONTROL_API_SCOPE_ALL_READ"
+         - "CONTROL_API_SCOPE_ALL"
+        expires: "2022-10-18 18:40:58.653877012 +0000 UTC"
+      origin: "ADMIN_UI"
+      target:
+        id: "789123CNTRL"
+        name: "Control API key"
+        type: "API_KEY"
+      usr:
+        email: "alice@example.com"
+        id: "123456CNTRL"
+        name: "Alice Architect"
+        type: "USER"
+    message: |-
+      {
+        "actor" : {
+          "displayName" : "Alice Architect",
+          "loginName" : "alice@example.com",
+          "id" : "123456CNTRL",
+          "type" : "USER"
+        },
+        "eventGroupID" : "23456",
+        "new" : {
+          "expires" : "2022-10-18 18:40:58.653877012 +0000 UTC",
+          "capabilities" : [ "CONTROL_API_SCOPE_ALL_READ", "CONTROL_API_SCOPE_ALL" ]
+        },
+        "origin" : "ADMIN_UI",
+        "eventTime" : "2022-07-20T18:40:58.838529518Z",
+        "action" : "CREATE",
+        "deferredAt" : "0001-01-01T00:00:00Z",
+        "target" : {
+          "name" : "Control API key",
+          "id" : "789123CNTRL",
+          "type" : "API_KEY"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actor" : {
+        "displayName" : "Bob Builder",
+        "loginName" : "bob@example.com",
+        "id" : "987654CNTRL",
+        "type" : "USER"
+      },
+      "eventGroupID" : "34567",
+      "new" : [ "...", "...", "10.0.0.0/24", "10.0.1.0/24" ],
+      "old" : [ "...", "..." ],
+      "origin" : "ADMIN_UI",
+      "eventTime" : "2022-07-20T22:35:19.590021877Z",
+      "action" : "UPDATE",
+      "deferredAt" : "0001-01-01T00:00:00Z",
+      "target" : {
+        "name" : "bob-workstation.yak-bebop.ts.net",
+        "property" : "ALLOWED_IPS",
+        "id" : "876543CNTRL",
+        "type" : "NODE"
+      }
+    }
+  result:
+    custom:
+      deferredAt: "0001-01-01T00:00:00Z"
+      eventGroupID: "34567"
+      eventTime: "2022-07-20T22:35:19.590021877Z"
+      evt:
+        name: "UPDATE"
+      new:
+       - "..."
+       - "..."
+       - "10.0.0.0/24"
+       - "10.0.1.0/24"
+      old:
+       - "..."
+       - "..."
+      origin: "ADMIN_UI"
+      target:
+        id: "876543CNTRL"
+        name: "bob-workstation.yak-bebop.ts.net"
+        property: "ALLOWED_IPS"
+        type: "NODE"
+      usr:
+        email: "bob@example.com"
+        id: "987654CNTRL"
+        name: "Bob Builder"
+        type: "USER"
+    message: |-
+      {
+        "actor" : {
+          "displayName" : "Bob Builder",
+          "loginName" : "bob@example.com",
+          "id" : "987654CNTRL",
+          "type" : "USER"
+        },
+        "eventGroupID" : "34567",
+        "new" : [ "...", "...", "10.0.0.0/24", "10.0.1.0/24" ],
+        "old" : [ "...", "..." ],
+        "origin" : "ADMIN_UI",
+        "eventTime" : "2022-07-20T22:35:19.590021877Z",
+        "action" : "UPDATE",
+        "deferredAt" : "0001-01-01T00:00:00Z",
+        "target" : {
+          "name" : "bob-workstation.yak-bebop.ts.net",
+          "property" : "ALLOWED_IPS",
+          "id" : "876543CNTRL",
+          "type" : "NODE"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "logged" : "2022-10-28T22:40:00.290605382Z",
+      "start" : "2022-10-28T22:39:51.890385065Z",
+      "physicalTraffic" : [ {
+        "rxBytes" : 384,
+        "dst" : "192.555.66.77:41641",
+        "txBytes" : 384,
+        "src" : "100.111.44.55:0",
+        "rxPkts" : 4,
+        "txPkts" : 4
+      }, {
+        "rxBytes" : 848,
+        "dst" : "192.168.0.101:41641",
+        "txBytes" : 1136,
+        "src" : "100.44.55.66:0",
+        "rxPkts" : 3,
+        "txPkts" : 6
+      }, {
+        "rxBytes" : 512,
+        "dst" : "143.110.111.222:41641",
+        "txBytes" : 752,
+        "src" : "100.99.888.77:0",
+        "rxPkts" : 2,
+        "txPkts" : 4
+      } ],
+      "end" : "2022-10-28T22:39:56.886545512Z",
+      "nodeId" : "aBcdef1CNTRL",
+      "virtualTraffic" : [ {
+        "rxBytes" : 112,
+        "dst" : "100.111.44.55:63281",
+        "txBytes" : 108,
+        "src" : "100.111.22.33:21291",
+        "proto" : 6,
+        "rxPkts" : 2,
+        "txPkts" : 2
+      }, {
+        "rxBytes" : 728,
+        "dst" : "100.44.55.66:2049",
+        "txBytes" : 900,
+        "src" : "100.111.22.33:864",
+        "proto" : 6,
+        "rxPkts" : 3,
+        "txPkts" : 6
+      }, {
+        "rxBytes" : 432,
+        "dst" : "100.99.888.77:2049",
+        "txBytes" : 596,
+        "src" : "100.111.22.33:723",
+        "proto" : 6,
+        "rxPkts" : 2,
+        "txPkts" : 4
+      }, {
+        "rxBytes" : 112,
+        "dst" : "100.111.44.55:63280",
+        "txBytes" : 108,
+        "src" : "100.111.22.33:21291",
+        "proto" : 6,
+        "rxPkts" : 2,
+        "txPkts" : 2
+      } ]
+    }
+  result:
+    custom:
+      end: "2022-10-28T22:39:56.886545512Z"
+      host: "aBcdef1CNTRL"
+      logged: "2022-10-28T22:40:00.290605382Z"
+      physicalTraffic:
+       -
+        rxBytes: 384
+        dst: "192.555.66.77:41641"
+        txBytes: 384
+        src: "100.111.44.55:0"
+        rxPkts: 4
+        txPkts: 4
+       -
+        rxBytes: 848
+        dst: "192.168.0.101:41641"
+        txBytes: 1136
+        src: "100.44.55.66:0"
+        rxPkts: 3
+        txPkts: 6
+       -
+        rxBytes: 512
+        dst: "143.110.111.222:41641"
+        txBytes: 752
+        src: "100.99.888.77:0"
+        rxPkts: 2
+        txPkts: 4
+      start: "2022-10-28T22:39:51.890385065Z"
+      virtualTraffic:
+       -
+        rxBytes: 112
+        dst: "100.111.44.55:63281"
+        txBytes: 108
+        src: "100.111.22.33:21291"
+        proto: 6
+        rxPkts: 2
+        txPkts: 2
+       -
+        rxBytes: 728
+        dst: "100.44.55.66:2049"
+        txBytes: 900
+        src: "100.111.22.33:864"
+        proto: 6
+        rxPkts: 3
+        txPkts: 6
+       -
+        rxBytes: 432
+        dst: "100.99.888.77:2049"
+        txBytes: 596
+        src: "100.111.22.33:723"
+        proto: 6
+        rxPkts: 2
+        txPkts: 4
+       -
+        rxBytes: 112
+        dst: "100.111.44.55:63280"
+        txBytes: 108
+        src: "100.111.22.33:21291"
+        proto: 6
+        rxPkts: 2
+        txPkts: 2
+    message: |-
+      {
+        "logged" : "2022-10-28T22:40:00.290605382Z",
+        "start" : "2022-10-28T22:39:51.890385065Z",
+        "physicalTraffic" : [ {
+          "rxBytes" : 384,
+          "dst" : "192.555.66.77:41641",
+          "txBytes" : 384,
+          "src" : "100.111.44.55:0",
+          "rxPkts" : 4,
+          "txPkts" : 4
+        }, {
+          "rxBytes" : 848,
+          "dst" : "192.168.0.101:41641",
+          "txBytes" : 1136,
+          "src" : "100.44.55.66:0",
+          "rxPkts" : 3,
+          "txPkts" : 6
+        }, {
+          "rxBytes" : 512,
+          "dst" : "143.110.111.222:41641",
+          "txBytes" : 752,
+          "src" : "100.99.888.77:0",
+          "rxPkts" : 2,
+          "txPkts" : 4
+        } ],
+        "end" : "2022-10-28T22:39:56.886545512Z",
+        "nodeId" : "aBcdef1CNTRL",
+        "virtualTraffic" : [ {
+          "rxBytes" : 112,
+          "dst" : "100.111.44.55:63281",
+          "txBytes" : 108,
+          "src" : "100.111.22.33:21291",
+          "proto" : 6,
+          "rxPkts" : 2,
+          "txPkts" : 2
+        }, {
+          "rxBytes" : 728,
+          "dst" : "100.44.55.66:2049",
+          "txBytes" : 900,
+          "src" : "100.111.22.33:864",
+          "proto" : 6,
+          "rxPkts" : 3,
+          "txPkts" : 6
+        }, {
+          "rxBytes" : 432,
+          "dst" : "100.99.888.77:2049",
+          "txBytes" : 596,
+          "src" : "100.111.22.33:723",
+          "proto" : 6,
+          "rxPkts" : 2,
+          "txPkts" : 4
+        }, {
+          "rxBytes" : 112,
+          "dst" : "100.111.44.55:63280",
+          "txBytes" : 108,
+          "src" : "100.111.22.33:21291",
+          "proto" : 6,
+          "rxPkts" : 2,
+          "txPkts" : 2
+        } ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

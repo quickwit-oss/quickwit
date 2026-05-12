@@ -1,0 +1,58 @@
+id: "pulsar"
+tests:
+ -
+  sample: "2022-01-25T23:47:26,294+0000 [main] INFO  org.apache.pulsar.broker.web.WebService - HTTP Service started at http://0.0.0.0:8080"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "org.apache.pulsar.broker.web.WebService"
+        thread_name: "main"
+      timestamp: 1643154446294
+    message: "HTTP Service started at http://0.0.0.0:8080"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1643154446294
+ -
+  sample: "2022-01-25T23:48:49,508+0000 [prometheus-stats-64-1] INFO  org.eclipse.jetty.server.RequestLog - 192.168.240.1 - - [25/Jan/2022:23:48:49 +0000] \"GET /metrics/ HTTP/1.1\" 200 70856 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36\" 13"
+  result:
+    custom:
+      date_access: 1643154529000
+      http:
+        method: "GET"
+        referer: "-"
+        status_code: 200
+        url: "/metrics/"
+        url_details:
+          path: "/metrics/"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "97"
+            minor: "0"
+            patch: "4692"
+            patch_minor: "71"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+        version: "1.1"
+      level: "INFO"
+      logger:
+        name: "org.eclipse.jetty.server.RequestLog"
+        thread_name: "prometheus-stats-64-1"
+      network:
+        bytes_written: 70856
+        client:
+          ip: "192.168.240.1"
+      timestamp: 1643154529508
+    message: "2022-01-25T23:48:49,508+0000 [prometheus-stats-64-1] INFO  org.eclipse.jetty.server.RequestLog - 192.168.240.1 - - [25/Jan/2022:23:48:49 +0000] \"GET /metrics/ HTTP/1.1\" 200 70856 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36\" 13"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1643154529000
+

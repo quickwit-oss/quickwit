@@ -1,0 +1,418 @@
+id: forcepoint-secure-web-gateway
+metric_id: forcepoint-secure-web-gateway
+backend_only: false
+facets:
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Forcepoint Secure Web Gateway
+  enabled: true
+  filter:
+    query: source:forcepoint-secure-web-gateway
+  processors:
+    - type: grok-parser
+      name: Parse syslog header
+      enabled: true
+      source: syslogheader
+      samples:
+        - <110>1 2024-12-26T06:12:35.817831Z api.hostserver.com NILVALUE
+          NILVALUE swgweb
+        - <110>1 2024-12-26T04:37:26.795000Z api.hostserver.com NILVALUE
+          NILVALUE swgwebdlp
+      grok:
+        supportRules: ""
+        matchRules: syslog_header_rule <%{integer:syslog.priority}>%{integer}
+          %{notSpace} %{hostname:syslog.hostname} %{notSpace} %{notSpace}
+          %{notSpace:syslog.msgid}%{data}
+    - type: grok-parser
+      name: Parse `indexedtime` to epoch time
+      enabled: true
+      source: indexedtime
+      samples:
+        - 2025-01-10 10:58:17
+      grok:
+        supportRules: ""
+        matchRules: time_format_parsing_rule %{date("yyyy-M-d H:m:s"):indexedtime}
+    - type: date-remapper
+      name: Define `indexedtime` as the official date of the log
+      enabled: true
+      sources:
+        - indexedtime
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `requestport` to `network.client.port`
+      enabled: true
+      sources:
+        - requestport
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `requestmethod` to `http.method`
+      enabled: true
+      sources:
+        - requestmethod
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destinationip` to `network.destination.ip`
+      enabled: true
+      sources:
+        - destinationip
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `ipaddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - ipaddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `requestdomain` to `dns.question.name`
+      enabled: true
+      sources:
+        - requestdomain
+      sourceType: attribute
+      target: dns.question.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `email` to `usr.email`
+      enabled: true
+      sources:
+        - email
+      sourceType: attribute
+      target: usr.email
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `firstname` to `usr.name`
+      enabled: true
+      sources:
+        - firstname
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `useragent` to `http.useragent`
+      enabled: true
+      sources:
+        - useragent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `url` to `http.url`
+      enabled: true
+      sources:
+        - url
+      sourceType: attribute
+      target: http.url
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Define `network.client.ip` as default geoip attribute for source
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Define `network.destination.ip` as default geoip attribute for destination
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: url-parser
+      name: Parse URL
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+      normalizeEndingSlashes: false
+    - type: user-agent-parser
+      name: Extract details from `http.useragent`
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: grok-parser
+      name: Extract customlocation list
+      enabled: true
+      source: customlocation
+      samples:
+        - '["Guest","Guest2"]'
+      grok:
+        supportRules: ""
+        matchRules: custom_location_rule %{data:customlocation:array(",")}
+    - type: grok-parser
+      name: Extract usergroup list
+      enabled: true
+      source: usergroup
+      samples:
+        - "['355160', 'All Users']"
+      grok:
+        supportRules: ""
+        matchRules: usergroup_rule %{data:usergroup:array(", ")}
+    - type: grok-parser
+      name: Extract webcategories list
+      enabled: true
+      source: webcategories
+      samples:
+        - '["WR:Streaming Media","WR:test"]'
+      grok:
+        supportRules: ""
+        matchRules: webcategories_rule %{data:webcategories:array(",")}
+    - type: grok-parser
+      name: Extract activity list
+      enabled: true
+      source: activity
+      samples:
+        - '["Uploaded","Cloudstorage","Denied"]'
+      grok:
+        supportRules: ""
+        matchRules: activity_rule %{data:activity:array(",")}
+    - type: grok-parser
+      name: Extract bgcategories list
+      enabled: true
+      source: bgcategories
+      samples:
+        - '["BG:Business Applications","BG:Cloud Data Services","BG:File
+          Sharing","BG:Internet Services","BG:Software"]'
+      grok:
+        supportRules: ""
+        matchRules: bgcategories_rule %{data:bgcategories:array(",")}
+    - type: grok-parser
+      name: Extract customcategories list
+      enabled: true
+      source: customcategories
+      samples:
+        - '["custom_category1","custom_category2"]'
+      grok:
+        supportRules: ""
+        matchRules: customcategories_rule %{data:customcategories:array(",")}
+    - type: grok-parser
+      name: Extract dlppattern list
+      enabled: true
+      source: dlppattern
+      samples:
+        - '["Source Code"]'
+      grok:
+        supportRules: ""
+        matchRules: dlppattern_rule %{data:dlppattern:array(",")}
+    - type: grok-parser
+      name: Extract filename list
+      enabled: true
+      source: filename
+      samples:
+        - '["file1","file2"]'
+      grok:
+        supportRules: ""
+        matchRules: filename_rule %{data:filename:array(",")}
+    - type: grok-parser
+      name: Extract keyword list
+      enabled: true
+      source: keyword
+      samples:
+        - '["keyword1","keyword2"]'
+      grok:
+        supportRules: ""
+        matchRules: keyword_rule %{data:keyword:array(",")}
+    - type: grok-parser
+      name: Extract threatindicator list
+      enabled: true
+      source: threatindicator
+      samples:
+        - '["threatindicator1","threatindicator2"]'
+      grok:
+        supportRules: ""
+        matchRules: threatindicator_rule %{data:threatindicator:array(",")}
+    - type: grok-parser
+      name: Extract webcategoryclass list
+      enabled: true
+      source: webcategoryclass
+      samples:
+        - '["Business/Government/Services"]'
+      grok:
+        supportRules: ""
+        matchRules: webcategoryclass_rule %{data:webcategoryclass:array(",")}

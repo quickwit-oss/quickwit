@@ -1,0 +1,329 @@
+id: ringcentral
+tests:
+  - sample: |-
+      {
+        "enrichment_details": {
+          "accountId": "000000000"
+        },
+        "log": {
+          "reason": "Hang Up",
+          "extension": {
+            "uri": "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678",
+            "id": 12345678
+          },
+          "reasonDescription": "The caller hung up before the call was answered.",
+          "lastModifiedTime": "2024-07-23T11:48:10.032Z",
+          "sessionId": "1234567890",
+          "internalType": "International",
+          "transport": "VoIP",
+          "type": "Voice",
+          "uri": "https://platform.ringcentral.com/restapi/v1.0/account/000000000/call-log/aKH2vDGxBbeYjUA?view=Detailed",
+          "billing": {
+            "costIncluded": 0,
+            "costPurchased": 0
+          },
+          "duration": 16,
+          "result": "Hang Up",
+          "telephonySessionId": "s-a7280be05beffz190df6b11d4z296c790000",
+          "legs": [
+            {
+              "reason": "Hang Up",
+              "extension": {
+                "id": 12345678,
+                "uri": "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678"
+              },
+              "reasonDescription": "The caller hung up before the call was answered.",
+              "legType": "SipToPstnUnmetered",
+              "internalType": "International",
+              "transport": "VoIP",
+              "type": "Voice",
+              "master": true,
+              "duration": 16,
+              "result": "Hang Up",
+              "telephonySessionId": "s-a7280be05beffz190df6b11d4z296c790000",
+              "action": "VoIP Call",
+              "startTime": "2024-07-23T12:19:34.664Z",
+              "from": {
+                "phoneNumber": "+00000000000",
+                "name": "xxxxxxxxxxx",
+                "extensionId": "12345678",
+                "device": {
+                  "id": "1234567890",
+                  "uri": "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/000000000"
+                }
+              },
+              "to": {
+                "phoneNumber": "+0000000000"
+              },
+              "partyId": "p-a7280be05beffz190df6b11d4z296c790000-2",
+              "durationMs": 1687,
+              "direction": "Outbound"
+            }
+          ],
+          "action": "VoIP Call",
+          "startTime": "2024-08-22T17:21:34.668Z",
+          "from": {
+            "phoneNumber": "+000000000",
+            "name": "xxxxxxx",
+            "extensionId": "12345678",
+            "device": {
+              "id": "0000000000",
+              "uri": "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/00000000"
+            }
+          },
+          "id": "000000000",
+          "to": {
+            "phoneNumber": "+0000000000"
+          },
+          "partyId": "p-a7280be05beffz190df6b11d4z296c790000-2",
+          "durationMs": 1607,
+          "direction": "Outbound"
+        }
+      }
+    service: "voice"
+    result:
+      custom:
+        enrichment_details:
+          accountId: "000000000"
+        extensionId: 12345678
+        log:
+          action: "VoIP Call"
+          billing:
+            costIncluded: 0
+            costPurchased: 0
+          direction: "Outbound"
+          duration: 16
+          durationMs: 1607
+          extension:
+            uri: "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678"
+          from:
+            device:
+              id: "0000000000"
+              uri: "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/00000000"
+            extensionId: "12345678"
+            name: "xxxxxxx"
+            phoneNumber: "+000000000"
+          id: "000000000"
+          internalType: "International"
+          lastModifiedTime: "2024-07-23T11:48:10.032Z"
+          legs:
+          -
+            reason: "Hang Up"
+            extension:
+              id: 12345678
+              uri: "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678"
+            reasonDescription: "The caller hung up before the call was answered."
+            legType: "SipToPstnUnmetered"
+            internalType: "International"
+            transport: "VoIP"
+            type: "Voice"
+            master: true
+            duration: 16
+            result: "Hang Up"
+            telephonySessionId: "s-a7280be05beffz190df6b11d4z296c790000"
+            action: "VoIP Call"
+            startTime: "2024-07-23T12:19:34.664Z"
+            from:
+              phoneNumber: "+00000000000"
+              name: "xxxxxxxxxxx"
+              extensionId: "12345678"
+              device:
+                id: "1234567890"
+                uri: "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/000000000"
+            to:
+              phoneNumber: "+0000000000"
+            partyId: "p-a7280be05beffz190df6b11d4z296c790000-2"
+            durationMs: 1687
+            direction: "Outbound"
+          partyId: "p-a7280be05beffz190df6b11d4z296c790000-2"
+          reason: "Hang Up"
+          reasonDescription: "The caller hung up before the call was answered."
+          result: "Hang Up"
+          sessionId: "1234567890"
+          startTime: "2024-08-22T17:21:34.668Z"
+          telephonySessionId: "s-a7280be05beffz190df6b11d4z296c790000"
+          to:
+            phoneNumber: "+0000000000"
+          transport: "VoIP"
+          type: "Voice"
+          uri: "https://platform.ringcentral.com/restapi/v1.0/account/000000000/call-log/aKH2vDGxBbeYjUA?view=Detailed"
+      message: |-
+        {
+          "enrichment_details" : {
+            "accountId" : "000000000"
+          },
+          "log" : {
+            "reason" : "Hang Up",
+            "extension" : {
+              "id" : 12345678,
+              "uri" : "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678"
+            },
+            "reasonDescription" : "The caller hung up before the call was answered.",
+            "lastModifiedTime" : "2024-07-23T11:48:10.032Z",
+            "sessionId" : "1234567890",
+            "internalType" : "International",
+            "transport" : "VoIP",
+            "type" : "Voice",
+            "uri" : "https://platform.ringcentral.com/restapi/v1.0/account/000000000/call-log/aKH2vDGxBbeYjUA?view=Detailed",
+            "billing" : {
+              "costIncluded" : 0,
+              "costPurchased" : 0
+            },
+            "duration" : 16,
+            "result" : "Hang Up",
+            "telephonySessionId" : "s-a7280be05beffz190df6b11d4z296c790000",
+            "legs" : [ {
+              "reason" : "Hang Up",
+              "extension" : {
+                "id" : 12345678,
+                "uri" : "https://platform.ringcentral.com/restapi/v1.0/account/000000000/extension/12345678"
+              },
+              "reasonDescription" : "The caller hung up before the call was answered.",
+              "legType" : "SipToPstnUnmetered",
+              "internalType" : "International",
+              "transport" : "VoIP",
+              "type" : "Voice",
+              "master" : true,
+              "duration" : 16,
+              "result" : "Hang Up",
+              "telephonySessionId" : "s-a7280be05beffz190df6b11d4z296c790000",
+              "action" : "VoIP Call",
+              "startTime" : "2024-07-23T12:19:34.664Z",
+              "from" : {
+                "phoneNumber" : "+00000000000",
+                "name" : "xxxxxxxxxxx",
+                "extensionId" : "12345678",
+                "device" : {
+                  "id" : "1234567890",
+                  "uri" : "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/000000000"
+                }
+              },
+              "to" : {
+                "phoneNumber" : "+0000000000"
+              },
+              "partyId" : "p-a7280be05beffz190df6b11d4z296c790000-2",
+              "durationMs" : 1687,
+              "direction" : "Outbound"
+            } ],
+            "action" : "VoIP Call",
+            "startTime" : "2024-08-22T17:21:34.668Z",
+            "from" : {
+              "phoneNumber" : "+000000000",
+              "name" : "xxxxxxx",
+              "extensionId" : "12345678",
+              "device" : {
+                "id" : "0000000000",
+                "uri" : "https://platform.ringcentral.com/restapi/v1.0/account/000000000/device/00000000"
+              }
+            },
+            "id" : "000000000",
+            "to" : {
+              "phoneNumber" : "+0000000000"
+            },
+            "partyId" : "p-a7280be05beffz190df6b11d4z296c790000-2",
+            "durationMs" : 1607,
+            "direction" : "Outbound"
+          }
+        }
+      service: "voice"
+      tags:
+      - "source:LOGS_SOURCE"
+      - "direction:outbound"
+      - "accountid:000000000"
+      timestamp: 1724347294668
+  -
+    sample: |-
+      {
+        "accountId" : "000000000",
+        "clientIp" : "218.57.154.108",
+        "initiator" : {
+          "role" : "Standard (International)",
+          "extensionNumber" : "000",
+          "name" : "xxxxxx",
+          "extensionId" : "12345678"
+        },
+        "eventTime" : "2024-08-06T10:50:19.442Z",
+        "actionId" : "CHANGE_USER_ROLE",
+        "details" : {
+          "parameters" : [ {
+            "value" : "Super Admin",
+            "key" : "oldRoleName"
+          }, {
+            "value" : "Standard (International)",
+            "key" : "newRoleName"
+          } ]
+        },
+        "id" : "4b52af9-beee-7779d1e802c7",
+        "eventType" : "UPDATE",
+        "target" : {
+          "extensionNumber" : "000",
+          "name" : "xxxxxx",
+          "objectId" : "12345678",
+          "objectType" : "Extension"
+        }
+      }
+    service: "audit"
+    result:
+      custom:
+        accountId: "000000000"
+        actionId: "CHANGE_USER_ROLE"
+        details:
+          parameters:
+            -
+              value: "Super Admin"
+              key: "oldRoleName"
+            -
+              value: "Standard (International)"
+              key: "newRoleName"
+        eventTime: "2024-08-06T10:50:19.442Z"
+        eventType: "UPDATE"
+        extensionId: "12345678"
+        id: "4b52af9-beee-7779d1e802c7"
+        initiator:
+          extensionNumber: "000"
+          role: "Standard (International)"
+        network:
+          client:
+            geoip: {}
+            ip: "218.57.154.108"
+        target:
+          extensionNumber: "000"
+          name: "xxxxxx"
+          objectId: "12345678"
+          objectType: "Extension"
+        usr:
+          name: "xxxxxx"
+      message: |-
+        {
+          "accountId" : "000000000",
+          "clientIp" : "218.57.154.108",
+          "initiator" : {
+            "role" : "Standard (International)",
+            "extensionNumber" : "000",
+            "name" : "xxxxxx",
+            "extensionId" : "12345678"
+          },
+          "eventTime" : "2024-08-06T10:50:19.442Z",
+          "actionId" : "CHANGE_USER_ROLE",
+          "details" : {
+            "parameters" : [ {
+              "value" : "Super Admin",
+              "key" : "oldRoleName"
+            }, {
+              "value" : "Standard (International)",
+              "key" : "newRoleName"
+            } ]
+          },
+          "id" : "4b52af9-beee-7779d1e802c7",
+          "eventType" : "UPDATE",
+          "target" : {
+            "extensionNumber" : "000",
+            "name" : "xxxxxx",
+            "objectId" : "12345678",
+            "objectType" : "Extension"
+          }
+        }
+      service: "audit"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1722941419442

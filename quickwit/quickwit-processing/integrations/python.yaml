@@ -1,0 +1,163 @@
+id: python
+metric_id: python
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: python
+  enabled: true
+  filter:
+    query: source:python
+  processors:
+    - type: grok-parser
+      name: Parsing python default format
+      enabled: true
+      source: message
+      samples:
+        - 2017-12-19T14:37:58,995 INFO  [process.name] [20081] this is my python log
+        - '2019-01-07 15:20:15,972 DEBUG [flask.app] [app.py:100] [dd.trace_id=5688176451479556031 dd.span_id=4663104081780224235] - Hook: teardown_appcontext'
+        - 2020-03-20 14:15:07,124 INFO [root] [app.py:78] [dd.service=excelsior dd.env=prod dd.version=abc123 dd.trace_id=9659687005038611690 dd.span_id=6632586210846541907] - This is a test of info logs
+        - 2021-07-09 8:58:31,137 WARNING [root] [views.py:42] [dd.service=datadoggo dd.env=prod dd.version=abc546 dd.trace_id=2296056412404370861 dd.span_id=16818077145337196836] - New post view.
+        - '2017-12-26T10:44:59,311 ERROR [dd.dogweb.lib.static_asset] [20081] rid=b0RV4J Error reading statics_version file.Traceback (most recent call last): File "/home/pythonrepo/lib/asset.py", line 16, in version    with open("/etc/statics_version.txt", "r") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/statics_version.txt'
+      grok:
+        supportRules: |
+          _datadog_prefix (%{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}|%{date("yyyy-MM-dd H:mm:ss,SSS"):timestamp}) %{word:levelname}\s+\[%{notSpace:process.name}\]\s+\[%{notSpace:filename}:%{number:lineno}\]\s+\[%{data::keyvalue}dd.trace_id=%{word:dd.trace_id} dd.span_id=%{word:dd.span_id}\] -
+          _python_prefix %{date("yyyy-MM-dd'T'HH:mm:ss','SSS"):timestamp}\s+%{word:levelname}\s+\[%{notSpace:process.name}\]\s+\[%{integer:process.id}\]
+          _message_with_keyvalue %{regex("(?<message>.*)")::keyvalue}
+        matchRules: |
+          traceback_format (%{_python_prefix}|%{_datadog_prefix})\s+%{_message_with_keyvalue}Traceback \(most recent call last\):(?s)\s*%{data:error.stack}
+          python_format (%{_python_prefix}|%{_datadog_prefix})\s+%{_message_with_keyvalue}
+          python_fallback %{date("yyyy-MM-dd'T'HH:mm:ss','SSS"):timestamp}\s+%{word:levelname}\s+%{_message_with_keyvalue}((\n|\t)%{data:error.stack})?
+          #Samples
+          #2017-12-19T14:37:58,995 INFO  [process.name] [20081] this is my python log
+          # Datadog format
+          #2019-01-07 15:20:15,972 DEBUG [flask.app] [app.py:100] [dd.trace_id=5688176451479556031 dd.span_id=4663104081780224235] - Hook: teardown_appcontext
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `levelname` as the official status of the log
+      enabled: true
+      sources:
+        - levelname
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: attribute-remapper
+      name: Map `traceback` to `error.stack`
+      enabled: true
+      sources:
+        - traceback
+      target: error.stack
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `name` to `logger.name`
+      enabled: true
+      sources:
+        - name
+      target: logger.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `threadName` to `logger.thread_name`
+      enabled: true
+      sources:
+        - threadName
+      target: logger.thread_name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `exc_info` to `error.stack`
+      enabled: true
+      sources:
+        - exc_info
+      target: error.stack
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: grok-parser
+      name: Parsing python traceback
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          parsing_traceback File "%{notSpace:filename}", line %{integer:lineno}.*\s+%{regex("[a-zA-Z]*Error[a-zA-Z]*"):error.kind}: %{data:error.message}
+      samples:
+        - 'File "/home/pythonrepo/lib/asset.py", line 16, in version    with open("/etc/statics_version.txt", "r") as statics_version_file: IOError: [Errno 2] No such file or directory: /etc/statics_version.txt'
+    - type: attribute-remapper
+      name: Map `extra.dd.span_id`, `record.extra.dd.span_id` to `dd.span_id`
+      enabled: true
+      sources:
+        - extra.dd.span_id
+        - record.extra.dd.span_id
+      target: dd.span_id
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+    - type: trace-id-remapper
+      name: Define `dd.trace_id`, `extra.dd.trace_id`, `record.extra.dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+        - extra.dd.trace_id
+        - record.extra.dd.trace_id
+    - type: attribute-remapper
+      name: Map attribute `dd.env`, `extra.dd.env`, `record.extra.dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+        - extra.dd.env
+        - record.extra.dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version`, `extra.dd.version`, `record.extra.dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+        - extra.dd.version
+        - record.extra.dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service`, `extra.dd.service`, `record.extra.dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service
+        - extra.dd.service
+        - record.extra.dd.service

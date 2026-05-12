@@ -1,0 +1,54 @@
+id: clickhouse
+metric_id: clickhouse
+backend_only: false
+facets:
+  - groups:
+      - ClickHouse
+    name: ClickHouse Service Name
+    path: clickhouse.service
+    source: log
+  - groups:
+      - ClickHouse
+    name: ClickHouse Application Name
+    path: clickhouse.application.id
+    source: log
+pipeline:
+  type: pipeline
+  name: ClickHouse
+  enabled: true
+  filter:
+    query: source:clickhouse
+  processors:
+    - type: grok-parser
+      name: Parsing ClickHouse logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _date %{date("yyyy.MM.dd HH:mm:ss.SSSSSS"):timestamp}
+          _pid %{integer:pid}
+          _level %{word:level}
+          _service_common %{notSpace:clickhouse.service}
+          _service_verbose %{regex(".+?"):clickhouse.service}
+          _app \(%{regex("[^)]+"):clickhouse.application.id}\)
+          _uuid %{regex("[^}]*")}
+        matchRules: |
+          clickhouse %{_date} \[ %{_pid} \] \{%{_uuid}\} <%{_level}> (%{_service_common}( %{_app})?|%{_service_verbose}): %{data:message}
+      samples:
+        - '2019.11.06 05:19:07.473780 [ 7 ] {} <Trace> default.tableau (ReplicatedMergeTreeQueue): Loaded queue'
+        - '2019.11.06 05:19:07.489819 [ 32 ] {a05c4495-ebdb-4f1d-894a-523a8d3a1d5f} <Debug> executeQuery: (from 127.0.0.1:43218) INSERT INTO tableau VALUES'
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

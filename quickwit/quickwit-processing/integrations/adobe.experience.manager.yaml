@@ -1,0 +1,182 @@
+id: adobe.experience.manager
+backend_only: true # adobe.experience.manager is not defined outside of logs-backend
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Adobe Experience Manager
+  enabled: true
+  filter:
+    query: source:adobe.experience.manager
+  processors:
+    - type: grok-parser
+      name: Parsing AEM logs
+      enabled: true
+      source: message
+      samples:
+        - 2018-10-22 02:01:04.921 INFO [ch.hirslanden.aem.interfaces.baby.service.impl.BabyPictureServiceImpl] Path /content/corporate/de/babies/2018/8/b21436858 with activation status false
+        - 22.10.2018 15:49:26.748 *INFO* [loggerContext] BundleEvent Started
+        - '[Fri Sep 15 17:26:36 2017] [D] [pid 5052 (tid 4732)] Found a website for flush.application-2.org'
+        - 31/Mar/2009:11:32:57 +0200 [379] -> GET /path/x HTTP/1.1
+        - 2198ms 31/Mar/2009:11:15:20 +0200 200 GET /my/test/url application/x-javascript
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp}
+          _error_date %{date("dd.MM.yyyy HH:mm:ss.SSS"):timestamp}
+          _stdout_date %{date("EEE MMM dd HH:mm:ss yyyy"):timestamp}
+          _request_date %{date("dd/MMM/yyyy:HH:mm:ss Z"):timestamp}
+          _thread_name %{notSpace:logger.thread_name}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+          _version HTTP\/%{number:http.version}
+          _status_code %{number:http.status_code}
+          _method %{word:http.method}
+          _url %{notSpace:http.url}
+          _bytes_written %{number:network.bytes_written}
+          _duration %{number:duration:scale(1000000)}ms
+          _useragent %{data:http.useragent}
+        matchRules: |
+          path_format %{_date}\s+%{_status}\s+\[%{_logger_name}\] (Path %{notSpace:http.url} with activation status %{word:activation_status}|Status resource Path %{notSpace:http.url} does not exist)
+
+          fallback_rule %{_date}\s+%{_status}\s+\[%{_logger_name}\] %{data:property:keyvalue}((\n|\t)%{data:error.stack})?
+
+          error_log %{_error_date} \*%{_status}\* (?>\[%{_thread_name}\] )?%{_logger_name} (?>(\>\>|\<\<) %{_version} %{_status_code})?.*
+
+          stdout_log \[%{_stdout_date}\] \[%{_status}\] \[pid %{number:pid} %{data}\] "%{_method} %{_url}" %{_status_code} %{_bytes_written} %{_duration}.*
+
+          stdout_fallback \[%{_stdout_date}\] \[%{_status}\] \[pid %{number:pid} %{data}\] %{data::keyvalue("=","/")}
+
+          request_log %{_request_date} \[%{number:pid}\] %{notSpace:data_in_out} (%{_method} %{_url} %{_version}|%{_status_code} %{_url} %{_duration})
+
+          request_log_duration %{_duration} %{_request_date} %{_status_code} %{_method} %{_url} %{_useragent}
+
+          #Extra samples
+
+          #Error
+          #22.10.2018 15:49:26.748 *INFO* [loggerContext] my.logger.name << HTTP/1.1 200 OK
+
+          #Stdout
+          #[Fri Sep 15 17:26:36 2017] [I] [pid 5052 (tid 4732)] "GET /my/test/url" 200 13 132ms [website/-]
+
+          #Requests
+          #31/Mar/2009:11:32:57 +0200 [379] <- 200 text/html 33ms
+
+          #Path, Error, Stdout, Requests: in Log Samples
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: grok-parser
+      name: Parsing AEM Stack traces
+      enabled: true
+      source: error.stack
+      grok:
+        supportRules: |
+        matchRules: |
+          error_rule %{notSpace:error.kind}: %{data:error.message}(\n|\t).*
+      samples:
+        - |
+          com.helloworld.cms.base.CustomerException: The customer with id=12345abfd is unknown.
+          	at jdk.internal.reflect.GeneratedConstructorAccessor310.newInstance(Unknown Source)
+

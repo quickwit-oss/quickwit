@@ -1,0 +1,81 @@
+id: "salesforce.commerce.cloud"
+tests:
+ -
+  sample: |-
+    {
+      "log_stream_name" : "jobs-blade1-2.mon.demandware.net-0-appserver",
+      "service" : "salesforce.commerce.cloud",
+      "message" : "[2022-02-08 18:37:13.242 GMT] Job [sfcc-exchange-central-config-values] - Execution of job finished with status [OK]. ThreadID: SystemJobThread|1015341564|sfcc-exchange-central-config-values[131]"
+    }
+  result:
+    custom:
+      job:
+        name: "sfcc-exchange-central-config-values"
+      log_stream:
+        appserver: "blade1-2.mon.demandware.net"
+        appserver_index: 0.0
+        type: "jobs"
+      log_stream_name: "jobs-blade1-2.mon.demandware.net-0-appserver"
+      service: "salesforce.commerce.cloud"
+      timestamp: 1644345433242
+    message: "Execution of job finished with status [OK]. ThreadID: SystemJobThread|1015341564|sfcc-exchange-central-config-values[131]"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1644345433242
+ -
+  sample: |-
+    {
+      "log_stream_name" : "custom-myservice-blade1-2.mon.demandware.net-0-appserver",
+      "service" : "salesforce.commerce.cloud",
+      "message" : "[2022-02-08 19:35:03.532 GMT] WARN SystemJobThread|267347399|sfcc-index-order-change-log-events|SearchSvcProcessIndexChangeLog com.demandware.component.search3.index.delta.impl.IndexChangeLogMgrImpl Sites-Site JOB 0565d82115 b5c8235e9feacf715638324437 2968883126197219328 - Unable to process ORDER index change log as change log is not enabled"
+    }
+  result:
+    custom:
+      log_stream:
+        appserver: "blade1-2.mon.demandware.net"
+        appserver_index: 0.0
+        file_prefix: "myservice"
+        type: "custom"
+      log_stream_name: "custom-myservice-blade1-2.mon.demandware.net-0-appserver"
+      service: "salesforce.commerce.cloud"
+      status: "WARN"
+      timestamp: 1644348903532
+    message: "SystemJobThread|267347399|sfcc-index-order-change-log-events|SearchSvcProcessIndexChangeLog com.demandware.component.search3.index.delta.impl.IndexChangeLogMgrImpl Sites-Site JOB 0565d82115 b5c8235e9feacf715638324437 2968883126197219328 - Unable to process ORDER index change log as change log is not enabled"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1644348903532
+ -
+  sample: |-
+    {
+      "log_stream_name" : "service-svc_name-blade1-2.mon.demandware.net-0-appserver",
+      "service" : "salesforce.commerce.cloud",
+      "message" : "[2021-10-21 19:12:09.612 GMT] ERROR PipelineCallServlet|879132348|Sites-US-Site|Cart-cartAddedConfirmationModal|PipelineCall|OAXjdnABEN org.apache.jsp.isml2jsp.cartridges.app_005fua_005fcore.default_.checkout.cart.cartAddedConfirmationModal_002d1_002ddc7ffc4b664ffb24d6fe32673e15b32e8051a628_jsp Sites-US-Site STOREFRONT OAXjdnABEN MoaiQ3Cl-mEBAAB_-0-00 5639891495883625472 - Error in template script."
+    }
+  result:
+    custom:
+      activity:
+        name: "Cart-cartAddedConfirmationModal"
+        session_id: "OAXjdnABEN"
+        site: "Sites-US-Site"
+        type: "PipelineCall"
+      log_stream:
+        appserver: "blade1-2.mon.demandware.net"
+        appserver_index: 0.0
+        file_prefix: "svc_name"
+        type: "service"
+      log_stream_name: "service-svc_name-blade1-2.mon.demandware.net-0-appserver"
+      logger:
+        name: "org.apache.jsp.isml2jsp.cartridges.app_005fua_005fcore.default_.checkout.cart.cartAddedConfirmationModal_002d1_002ddc7ffc4b664ffb24d6fe32673e15b32e8051a628_jsp"
+      service: "salesforce.commerce.cloud"
+      status: "ERROR"
+      thread:
+        id: 8.79132348E8
+        name: "PipelineCallServlet"
+      timestamp: 1634843529612
+    message: "Sites-US-Site STOREFRONT OAXjdnABEN MoaiQ3Cl-mEBAAB_-0-00 5639891495883625472 - Error in template script."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1634843529612
+

@@ -1,0 +1,61 @@
+id: keda
+metric_id: keda
+backend_only: false
+installation_sources:
+  - keda
+  - keda-admission-webhooks
+  - keda-metrics-apiserver
+facets:
+pipeline:
+  type: pipeline
+  name: Keda
+  enabled: true
+  filter:
+    query: source:(keda OR keda-admission-webhooks OR keda-metrics-apiserver)
+  processors:
+    - type: grok-parser
+      name:  Keda Parser
+      enabled: true
+      source: message
+      samples:
+        - 'I1216 14:53:06.261024       1 main.go:112] "msg"="Connecting Metrics Service gRPC client to the server" "address"="keda-operator.keda.svc.cluster.local:9666" "logger"="keda_metrics_adapter"'
+        - 'I1216 14:53:06.680302       1 tlsconfig.go:243] "Starting DynamicServingCertificateController"'
+        - '2024-12-23T14:21:51Z	ERROR	scale_handler	error resolving auth params	{"type": "ScaledJob", "namespace": "default", "name": "csv-processor", "triggerIndex": 0, "error": "connection to redis failed: dial tcp 10.244.0.6:6379: connect: no route to host"}'
+        - '2024-12-23T14:21:38Z	INFO	KubeAPIWarningLogger	unknown field "status.authenticationsTypes"'
+        - '2024-12-16T14:53:12Z	INFO	controller-runtime.builder	Registering a validating webhook	{"GVK": "keda.sh/v1alpha1, Kind=ScaledObject", "path": "/validate-keda-sh-v1alpha1-scaledobject"}'
+      grok:
+        matchRules: |
+          keda_metrics_adapter3 %{_level_adapter}%{_date_adapter}\s+%{_pid}\s+%{_logger_adapter}]\s+"msg"=%{doubleQuotedString:msg} %{data::keyvalue}
+          keda_metrics_adapter2 %{_level_adapter}%{_date_adapter}\s+%{_pid}\s+%{_logger_adapter}]\s+%{doubleQuotedString:msg} %{data:component.name:keyvalue}
+          keda_metrics_adapter1 %{_level_adapter}%{_date_adapter}\s+%{_pid}\s+%{_logger_adapter}]\s+%{_msg}
+          keda_operator2 %{_date_operator}\s+%{_level_operator}\s+%{_logger_op}\s+%{_msg}\t%{data::json}
+          keda_operator1 %{_date_operator}\s+%{_level_operator}\s+%{_logger_op}\s+%{_msg}
+        supportRules: |
+          _date_adapter %{date("MMDD HH:mm:ss.SSSSSS"):timestamp}
+          _date_operator %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _level_adapter %{regex("[A-Z]"):level}
+          _level_operator %{word:level}
+          _logger_adapter %{regex("[^:]+"):logger.file}:%{number:logger.line}
+          _pid %{integer:process.id}
+          _logger_op %{notSpace:logger.name}
+          _msg %{regex("[^\\t]*"):msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

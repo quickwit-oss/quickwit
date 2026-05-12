@@ -1,0 +1,41 @@
+id: statsd
+metric_id: statsd
+backend_only: false
+pipeline:
+  type: pipeline
+  name: Statsd
+  enabled: true
+  filter:
+    query: source:statsd
+  processors:
+    - type: grok-parser
+      name: Parsing Statsd logs
+      enabled: true
+      source: message
+      samples:
+        # More info on statsd logs at https://github.com/statsd/statsd/blob/master/lib/logger.js
+        # stdout Logs
+        - '9 Oct 13:06:36 - DEBUG: debug message'
+        - 8 Oct 16:55:56 - server is up INFO
+      grok:
+        supportRules: |
+          _date_eu (%{date("d MMM HH:mm:ss"):timestamp}|%{date("dd MMM HH:mm:ss"):timestamp})
+          _date_us (%{date("MMM d HH:mm:ss"):timestamp}|%{date("MMM dd HH:mm:ss"):timestamp})
+          _status %{word:status}
+        matchRules: |
+          Statsd_default (%{_date_eu}|%{_date_us})\s+-\s+(%{_status}:\s+)?%{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

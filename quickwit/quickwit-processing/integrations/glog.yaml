@@ -1,0 +1,59 @@
+id: glog
+backend_only: true # glog integration is a generic integration to parse logs in glog format. It's not really linked to any integration outside of logs-backend
+installation_sources:
+  - admission-webhook
+  - api-server
+  - cert-manager-acmesolver
+  - cert-manager-cainjector
+  - cert-manager-controller
+  - cert-manager-webhook
+  - cluster-proportional-autoscaler-amd64
+  - goldilocks
+  - hyperkube
+  - ip-masq-agent
+  - k8s-prometheus-adapter-amd64
+  - kube-apiserver
+  - kube-controller-manager
+  - kube-proxy
+  - kube-state-metrics
+  - metacontroller
+  - metrics-server-amd64
+  - prometheus-operator
+  - vpa-admission-controller
+  - vpa-recommender
+  - vpa-updater
+facets:
+pipeline:
+  type: pipeline
+  name: glog pipeline
+  enabled: true
+  filter:
+    query: source:(admission-webhook OR api-server OR cert-manager-acmesolver OR cert-manager-cainjector OR cert-manager-controller OR cert-manager-webhook OR cluster-proportional-autoscaler-amd64 OR goldilocks OR hyperkube OR ip-masq-agent OR k8s-prometheus-adapter-amd64 OR kube-apiserver OR kube-controller-manager OR kube-proxy OR kube-state-metrics OR metacontroller OR metrics-server-amd64 OR prometheus-operator OR vpa-admission-controller OR vpa-recommender OR vpa-updater)
+  processors:
+    - type: grok-parser
+      name: Parsing glog format logs
+      enabled: true
+      source: message
+      samples:
+        - I0402 08:06:51.571361       1 static_autoscaler.go:366] Calculating unneeded nodes
+        - 'I0402 08:06:51.571361       1 k8sclient.go:251] Replicas are not as expected : updating replicas from 37 to 36'
+        - 'E0402 08:06:51.571361       1 authentication.go:65] Unable to authenticate the request due to an error: x509: certificate has expired or is not yet valid'
+      grok:
+        supportRules: |
+        matchRules: |
+          glog_rule %{regex("[IWEF]"):level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp}\s+%{number:logger.thread_id} %{notSpace:logger.name}:%{number:lineno}\] %{data:msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

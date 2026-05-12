@@ -1,0 +1,201 @@
+id: doppler
+tests:
+  - sample: >-
+      {
+        "ddsource": "doppler",
+        "createdAt": "2024-07-02T14:24:51.920Z",
+        "link": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=wpmULcSfO9sNxKdVUeaO0HK2",
+        "type": "services.datadog.connect",
+        "title": "Activity Log: wpmULcSfO9sNxKdVUeaO0HK2",
+        "text" : "Connected Datadog service",
+        "user": {
+          "name": "Nic Manoogian",
+          "profile_image_url": "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro",
+          "email": "nic.manoogian@doppler.com",
+          "username": "nic"
+        },
+        "workplace": {
+          "name": "Rocketship Co",
+          "id": "30bd9e7d881446ce1bf8"
+        },
+        "slug": "wpmULcSfO9sNxKdVUeaO0HK2"
+      }
+    result:
+      custom:
+        createdAt: "2024-07-02T14:24:51.920Z"
+        ddsource: "doppler"
+        link: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=wpmULcSfO9sNxKdVUeaO0HK2"
+        slug: "wpmULcSfO9sNxKdVUeaO0HK2"
+        title: "Activity Log: wpmULcSfO9sNxKdVUeaO0HK2"
+        type: "services.datadog.connect"
+        usr:
+          name: "Nic Manoogian"
+          profileImageUrl: "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro"
+          email: "nic.manoogian@doppler.com"
+          username: "nic"
+        workplace:
+          id: "30bd9e7d881446ce1bf8"
+          name: "Rocketship Co"
+      message: "Connected Datadog service"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719930291920
+  - sample: >-
+      {
+        "ddsource": "doppler",
+        "createdAt": "2024-07-02T14:25:02.812Z",
+        "metadata": {
+          "projectUrl": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments",
+          "projectName": "payments",
+          "projectId": "payments"
+        },
+        "link": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=fOypzrlnQ6H3OMLq6RV12ZMO",
+        "type": "enclave.project.create",
+        "title": "Activity Log: fOypzrlnQ6H3OMLq6RV12ZMO",
+        "text": "Created <a href=\"https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments\" rel=\"noopener\" class=\"text-purple-500 hover:underline\">payments</a> project",
+        "user": {
+          "name": "Nic Manoogian",
+          "profile_image_url": "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro",
+          "email": "nic.manoogian@doppler.com",
+          "username": "nic"
+        },
+        "workplace": {
+          "name": "Rocketship Co",
+          "id": "30bd9e7d881446ce1bf8"
+        },
+        "slug": "fOypzrlnQ6H3OMLq6RV12ZMO"
+      }
+    result:
+      custom:
+        createdAt: "2024-07-02T14:25:02.812Z"
+        ddsource: "doppler"
+        link: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=fOypzrlnQ6H3OMLq6RV12ZMO"
+        metadata:
+          projectId: "payments"
+          projectName: "payments"
+          projectUrl: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments"
+        slug: "fOypzrlnQ6H3OMLq6RV12ZMO"
+        title: "Activity Log: fOypzrlnQ6H3OMLq6RV12ZMO"
+        type: "enclave.project.create"
+        usr:
+          name: "Nic Manoogian"
+          profileImageUrl: "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro"
+          email: "nic.manoogian@doppler.com"
+          username: "nic"
+        workplace:
+          id: "30bd9e7d881446ce1bf8"
+          name: "Rocketship Co"
+      message: 'Created <a href="https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments" rel="noopener" class="text-purple-500 hover:underline">payments</a> project'
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719930302812
+  - sample: >-
+      {
+        "ddsource": "doppler",
+        "createdAt": "2024-07-02T14:25:14.172Z",
+        "metadata": {
+          "configName": "dev",
+          "configUrl": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev",
+          "projectUrl": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments",
+          "diffUrl": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev/logs?id=H0wdEmtL0hJtzpPjoL7d6GXx",
+          "diff": {
+            "added": [
+              "STRIPE_API_KEY"
+            ]
+          },
+          "projectName": "payments",
+          "projectId": "payments"
+        },
+        "link": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=Z3XK3tynBCd3u7bzBKJS6ntN",
+        "type": "enclave.project.config.secrets.update",
+        "title": "Activity Log: Z3XK3tynBCd3u7bzBKJS6ntN",
+        "text" : "Modified secrets in <a href=\"https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev\" rel=\"noopener\" class=\"text-purple-500 hover:underline\">dev</a> of <a href=\"https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments\" rel=\"noopener\" class=\"text-purple-500 hover:underline\">payments</a> project with <a href=\"https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev/logs?id=H0wdEmtL0hJtzpPjoL7d6GXx\" rel=\"noopener\" class=\"text-purple-500 hover:underline\">1 added</a>:<br>• STRIPE_API_KEY",
+        "user": {
+          "name": "Nic Manoogian",
+          "profile_image_url": "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro",
+          "email": "nic.manoogian@doppler.com",
+          "username": "nic"
+        },
+        "workplace": {
+          "name": "Rocketship Co",
+          "id": "30bd9e7d881446ce1bf8"
+        },
+        "slug": "Z3XK3tynBCd3u7bzBKJS6ntN"
+      }
+    result:
+      custom:
+        createdAt: "2024-07-02T14:25:14.172Z"
+        ddsource: "doppler"
+        link: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=Z3XK3tynBCd3u7bzBKJS6ntN"
+        metadata:
+          configName: "dev"
+          configUrl: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev"
+          diff:
+            added:
+              - "STRIPE_API_KEY"
+          diffUrl: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev/logs?id=H0wdEmtL0hJtzpPjoL7d6GXx"
+          projectId: "payments"
+          projectName: "payments"
+          projectUrl: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments"
+        slug: "Z3XK3tynBCd3u7bzBKJS6ntN"
+        title: "Activity Log: Z3XK3tynBCd3u7bzBKJS6ntN"
+        type: "enclave.project.config.secrets.update"
+        usr:
+          name: "Nic Manoogian"
+          profileImageUrl: "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro"
+          email: "nic.manoogian@doppler.com"
+          username: "nic"
+        workplace:
+          id: "30bd9e7d881446ce1bf8"
+          name: "Rocketship Co"
+      message: 'Modified secrets in <a href="https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev" rel="noopener" class="text-purple-500 hover:underline">dev</a> of <a href="https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments" rel="noopener" class="text-purple-500 hover:underline">payments</a> project with <a href="https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/projects/payments/configs/dev/logs?id=H0wdEmtL0hJtzpPjoL7d6GXx" rel="noopener" class="text-purple-500 hover:underline">1 added</a>:<br>• STRIPE_API_KEY'
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719930314172
+  - sample: >-
+      {
+        "ddsource": "doppler",
+        "createdAt": "2024-07-02T14:25:51.870Z",
+        "metadata": {
+          "oldWorkplaceRole": "collaborator",
+          "newWorkplaceRole": "admin"
+        },
+        "link": "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=fcClWl8kGawkw9I7fm4MlCYs",
+        "type": "team.seat.update",
+        "title": "Activity Log: fcClWl8kGawkw9I7fm4MlCYs",
+        "text" : "Changed <a href=\"mailto:nic.manoogian+test1@dev.doppler.com\" rel=\"noopener\" data-side=\"bottom\" title=\"nic.manoogian+test1@dev.doppler.com\" class=\"text-purple-500 hover:underline\">Nic Manoogian 1</a> access from <strong>collaborator</strong> to <strong>admin</strong>",
+        "user": {
+          "name": "Nic Manoogian",
+          "profile_image_url": "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro",
+          "email": "nic.manoogian@doppler.com",
+          "username": "nic"
+        },
+        "workplace": {
+          "name": "Rocketship Co",
+          "id": "30bd9e7d881446ce1bf8"
+        },
+        "slug": "fcClWl8kGawkw9I7fm4MlCYs"
+      }
+    result:
+      custom:
+        createdAt: "2024-07-02T14:25:51.870Z"
+        ddsource: "doppler"
+        link: "https://dashboard.doppler.com/workplace/30bd9e7d881446ce1bf8/logs?id=fcClWl8kGawkw9I7fm4MlCYs"
+        metadata:
+          newWorkplaceRole: "admin"
+          oldWorkplaceRole: "collaborator"
+        slug: "fcClWl8kGawkw9I7fm4MlCYs"
+        title: "Activity Log: fcClWl8kGawkw9I7fm4MlCYs"
+        type: "team.seat.update"
+        usr:
+          email: "nic.manoogian@doppler.com"
+          profileImageUrl: "https://www.gravatar.com/avatar/7f447a6cfe4f594f91c149b9c9ca872d?s=500&d=retro"
+          name: "Nic Manoogian"
+          username: "nic"
+        workplace:
+          id: "30bd9e7d881446ce1bf8"
+          name: "Rocketship Co"
+      message: 'Changed <a href="mailto:nic.manoogian+test1@dev.doppler.com" rel="noopener" data-side="bottom" title="nic.manoogian+test1@dev.doppler.com" class="text-purple-500 hover:underline">Nic Manoogian 1</a> access from <strong>collaborator</strong> to <strong>admin</strong>'
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1719930351870

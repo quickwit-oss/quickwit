@@ -1,0 +1,266 @@
+id: crest_data_systems_ibm_security_verify
+metric_id: crest-data-systems-ibm-security-verify
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - description: ""
+    facetType: list
+    groups:
+      - Crest Data Systems IBM Security Verify
+    name: ISV Event  Type
+    path: cds.ibm_security_verify.event_type
+    source: log
+    type: string
+  - description: ""
+    facetType: range
+    groups:
+      - Crest Data Systems IBM Security Verify
+    name: ISV Risk Score
+    path: cds.ibm_security_verify.risk_score
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: Crest Data Systems IBM Security Verify
+  enabled: true
+  filter:
+    query: source:crest_data_systems_ibm_security_verify
+  processors:
+    - type: pipeline
+      name: Event logs Pipeline
+      enabled: true
+      filter:
+        query: service:cds.ibm_security_verify.events
+      processors:
+        - type: attribute-remapper
+          name: Map `_source.event_type`, `event_type` to
+            `cds.ibm_security_verify.event_type`
+          enabled: true
+          sources:
+            - _source.event_type
+            - event_type
+          sourceType: attribute
+          target: cds.ibm_security_verify.event_type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Define `service` from `event_type`
+          enabled: true
+          template: cds.ibm_security_verify.%{cds.ibm_security_verify.event_type}
+          target: service
+          replaceMissing: false
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: date-remapper
+          name: Define `time` as the official date of the log
+          enabled: true
+          sources:
+            - time
+        - type: attribute-remapper
+          name: Map `data.origin`, `_source.data.origin` to `network.client.ip`
+          enabled: true
+          sources:
+            - data.origin
+            - _source.data.origin
+          sourceType: attribute
+          target: network.client.ip
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: GeoIp Parser for `network.client.ip`
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: attribute-remapper
+          name: Map `data.devicetype`, `_source.data.devicetype` to `http.useragent`
+          enabled: true
+          sources:
+            - data.devicetype
+            - _source.data.devicetype
+          sourceType: attribute
+          target: http.useragent
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: user-agent-parser
+          name: Parse User-Agent
+          enabled: true
+          sources:
+            - http.useragent
+          target: http.useragent_details
+          encoded: false
+          combineVersionDetails: false
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Major Version
+          enabled: true
+          template: "%{http.useragent_details.os.major}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Minor Version
+          enabled: true
+          template:
+            "%{http.useragent_details.os.version}.%{http.useragent_details.os.min\
+            or}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Create Full Version for `http.useragent_details.os` - Add Patch Version
+          enabled: true
+          template:
+            "%{http.useragent_details.os.version}.%{http.useragent_details.os.pat\
+            ch}"
+          target: http.useragent_details.os.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Major
+            Version
+          enabled: true
+          template: "%{http.useragent_details.browser.major}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Minor
+            Version
+          enabled: true
+          template:
+            "%{http.useragent_details.browser.version}.%{http.useragent_details.b\
+            rowser.minor}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name:
+            Create Full Version for `http.useragent_details.browser` - Add Patch
+            Version
+          enabled: true
+          template:
+            "%{http.useragent_details.browser.version}.%{http.useragent_details.b\
+            rowser.patch}"
+          target: http.useragent_details.browser.version
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `data.userid` to `usr.id`
+          enabled: true
+          sources:
+            - data.userid
+          sourceType: attribute
+          target: usr.id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `data.username` to `usr.name`
+          enabled: true
+          sources:
+            - data.username
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Adaptive Risk Pipeline
+      enabled: true
+      filter:
+        query: service:cds.ibm_security_verify.adaptive_risk
+      processors:
+        - type: attribute-remapper
+          name: Map `data.risk_score` to `cds.ibm_security_verify.risk_score`
+          enabled: true
+          sources:
+            - data.risk_score
+          sourceType: attribute
+          target: cds.ibm_security_verify.risk_score
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Threat Pipeline
+      enabled: true
+      filter:
+        query: service:cds.ibm_security_verify.threat
+      processors:
+        - type: status-remapper
+          name: Define `data.severity` as the official status of the log
+          enabled: true
+          sources:
+            - data.severity

@@ -1,0 +1,250 @@
+id: "gcp.dataflow.step"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2019-04-08T15:46:05.289Z",
+      "data" : {
+        "logName" : "projects/qa-3-fdh-product-1/logs/dataflow.googleapis.com%2Fkubelet",
+        "resource" : {
+          "type" : "dataflow_step",
+          "labels" : {
+            "job_name" : "platform-audit-job-v1",
+            "project_id" : "qa-3-fdh-product-1",
+            "job_id" : "2019-01-29_20_09_32-742057299746817077",
+            "region" : "us-east1",
+            "step_id" : ""
+          }
+        },
+        "jsonPayload" : {
+          "line" : "kubelet_node_status.go:280",
+          "thread" : "1002",
+          "message" : "Setting node annotation to enable volume controller attach/detach"
+        },
+        "receiveTimestamp" : "2019-04-08T15:46:04.247718973Z",
+        "insertId" : "s=74dcd6a4a71549bea80646d8836f5f3f;i=3d73;b=60d26182b6454642a5575e1c00ac49d2;m=1721735a50;t=58606bb8f0906;x=12add36c94089728",
+        "labels" : {
+          "compute" : {
+            "googleapis" : {
+              "com/resource_type" : "instance",
+              "com/resource_name" : "platform-audit-job-v1-01292009-xgju-harness-kwrf",
+              "com/resource_id" : "9006002485776390828"
+            }
+          },
+          "dataflow" : {
+            "googleapis" : {
+              "com/job_name" : "platform-audit-job-v1",
+              "com/region" : "us-east1",
+              "com/job_id" : "2019-01-29_20_09_32-742057299746817077"
+            }
+          }
+        },
+        "timestamp" : "2019-04-08T15:45:58.192348Z"
+      },
+      "publish_time" : "2019-04-08T15:46:05.289Z",
+      "messageId" : "483794169043463",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T15:45:58.192348Z"
+          }
+        }
+      },
+      "message_id" : "483794169043463",
+      "subscription" : "projects/qa-3-fdh-product-1/subscriptions/datadog-export-subscription"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T15:45:58.192348Z"
+      data:
+        insertId: "s=74dcd6a4a71549bea80646d8836f5f3f;i=3d73;b=60d26182b6454642a5575e1c00ac49d2;m=1721735a50;t=58606bb8f0906;x=12add36c94089728"
+        jsonPayload:
+          line: "kubelet_node_status.go:280"
+          thread: "1002"
+        labels:
+          compute:
+            googleapis:
+              com/resource_id: "9006002485776390828"
+              com/resource_name: "platform-audit-job-v1-01292009-xgju-harness-kwrf"
+              com/resource_type: "instance"
+          dataflow:
+            googleapis:
+              com/job_id: "2019-01-29_20_09_32-742057299746817077"
+              com/job_name: "platform-audit-job-v1"
+              com/region: "us-east1"
+        logName: "projects/qa-3-fdh-product-1/logs/dataflow.googleapis.com%2Fkubelet"
+        receiveTimestamp: "2019-04-08T15:46:04.247718973Z"
+        resource:
+          labels:
+            region: "us-east1"
+            step_id: ""
+          type: "dataflow_step"
+        timestamp: "2019-04-08T15:45:58.192348Z"
+      job_id: "2019-01-29_20_09_32-742057299746817077"
+      job_name: "platform-audit-job-v1"
+      messageId: "483794169043463"
+      message_id: "483794169043463"
+      project_id: "qa-3-fdh-product-1"
+      publishTime: "2019-04-08T15:46:05.289Z"
+      publish_time: "2019-04-08T15:46:05.289Z"
+      subscription: "projects/qa-3-fdh-product-1/subscriptions/datadog-export-subscription"
+    message: "Setting node annotation to enable volume controller attach/detach"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554738358192
+ -
+  sample: |-
+    {
+      "publishTime" : "2022-06-15T19:24:33.535Z",
+      "data" : {
+        "severity" : "DEBUG",
+        "logName" : "projects/datadog-sandbox/logs/dataflow.googleapis.com%2Fjob-message",
+        "resource" : {
+          "type" : "dataflow_step",
+          "labels" : {
+            "job_name" : "wordcount v2",
+            "project_id" : "958371799887",
+            "job_id" : "2022-06-15_12_24_27-10749937941969470687",
+            "step_id" : "",
+            "region" : "us-central1"
+          }
+        },
+        "textPayload" : "Fusing consumer WriteCounts/WriteFiles/RewindowIntoGlobal/Window.Assign into MapElements/Map",
+        "receiveTimestamp" : "2022-06-15T19:24:33.049049382Z",
+        "labels" : {
+          "dataflow" : {
+            "googleapis" : {
+              "com/job_name" : "wordcount v2",
+              "com/region" : "us-central1",
+              "com/job_id" : "2022-06-15_12_24_27-10749937941969470687",
+              "com/log_type" : "system"
+            }
+          }
+        },
+        "timestamp" : "2022-06-15T19:24:32.350097579Z",
+        "insertId" : "1qzzym9cc9e"
+      },
+      "publish_time" : "2022-06-15T19:24:33.535Z",
+      "messageId" : "4675628318665359",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2022-06-15T19:24:33.049049382Z"
+          }
+        }
+      },
+      "message_id" : "4675628318665359",
+      "subscription" : "projects/datadog-sandbox/subscriptions/audrey-export-dataflow-logs"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2022-06-15T19:24:33.049049382Z"
+      data:
+        insertId: "1qzzym9cc9e"
+        labels:
+          dataflow:
+            googleapis:
+              com/job_id: "2022-06-15_12_24_27-10749937941969470687"
+              com/job_name: "wordcount v2"
+              com/log_type: "system"
+              com/region: "us-central1"
+        logName: "projects/datadog-sandbox/logs/dataflow.googleapis.com%2Fjob-message"
+        receiveTimestamp: "2022-06-15T19:24:33.049049382Z"
+        resource:
+          labels:
+            region: "us-central1"
+            step_id: ""
+          type: "dataflow_step"
+        severity: "DEBUG"
+        timestamp: "2022-06-15T19:24:32.350097579Z"
+      job_id: "2022-06-15_12_24_27-10749937941969470687"
+      job_name: "wordcount v2"
+      messageId: "4675628318665359"
+      message_id: "4675628318665359"
+      project_id: "958371799887"
+      publishTime: "2022-06-15T19:24:33.535Z"
+      publish_time: "2022-06-15T19:24:33.535Z"
+      subscription: "projects/datadog-sandbox/subscriptions/audrey-export-dataflow-logs"
+    message: "Fusing consumer WriteCounts/WriteFiles/RewindowIntoGlobal/Window.Assign into MapElements/Map"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1655321072350
+ -
+  sample: |-
+    {
+      "logName" : "projects/qa-3-fdh-product-1/logs/dataflow.googleapis.com%2Fkubelet",
+      "resource" : {
+        "type" : "dataflow_step",
+        "labels" : {
+          "job_name" : "platform-audit-job-v1",
+          "project_id" : "qa-3-fdh-product-1",
+          "job_id" : "2019-01-29_20_09_32-742057299746817077",
+          "region" : "us-east1",
+          "step_id" : ""
+        }
+      },
+      "jsonPayload" : {
+        "line" : "kubelet_node_status.go:280",
+        "thread" : "1002",
+        "message" : "Setting node annotation to enable volume controller attach/detach"
+      },
+      "receiveTimestamp" : "2019-04-08T15:46:04.247718973Z",
+      "insertId" : "s=74dcd6a4a71549bea80646d8836f5f3f;i=3d73;b=60d26182b6454642a5575e1c00ac49d2;m=1721735a50;t=58606bb8f0906;x=12add36c94089728",
+      "labels" : {
+        "compute" : {
+          "googleapis" : {
+            "com/resource_type" : "instance",
+            "com/resource_name" : "platform-audit-job-v1-01292009-xgju-harness-kwrf",
+            "com/resource_id" : "9006002485776390828"
+          }
+        },
+        "dataflow" : {
+          "googleapis" : {
+            "com/job_name" : "platform-audit-job-v1",
+            "com/region" : "us-east1",
+            "com/job_id" : "2019-01-29_20_09_32-742057299746817077"
+          }
+        }
+      },
+      "timestamp" : "2019-04-08T15:45:58.192348Z"
+    }
+  result:
+    custom:
+      insertId: "s=74dcd6a4a71549bea80646d8836f5f3f;i=3d73;b=60d26182b6454642a5575e1c00ac49d2;m=1721735a50;t=58606bb8f0906;x=12add36c94089728"
+      job_id: "2019-01-29_20_09_32-742057299746817077"
+      job_name: "platform-audit-job-v1"
+      jsonPayload:
+        line: "kubelet_node_status.go:280"
+        thread: "1002"
+      labels:
+        compute:
+          googleapis:
+            com/resource_id: "9006002485776390828"
+            com/resource_name: "platform-audit-job-v1-01292009-xgju-harness-kwrf"
+            com/resource_type: "instance"
+        dataflow:
+          googleapis:
+            com/job_id: "2019-01-29_20_09_32-742057299746817077"
+            com/job_name: "platform-audit-job-v1"
+            com/region: "us-east1"
+      logName: "projects/qa-3-fdh-product-1/logs/dataflow.googleapis.com%2Fkubelet"
+      project_id: "qa-3-fdh-product-1"
+      receiveTimestamp: "2019-04-08T15:46:04.247718973Z"
+      resource:
+        labels:
+          region: "us-east1"
+          step_id: ""
+        type: "dataflow_step"
+      timestamp: "2019-04-08T15:45:58.192348Z"
+    message: "Setting node annotation to enable volume controller attach/detach"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554738358192
+

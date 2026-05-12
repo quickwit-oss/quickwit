@@ -1,0 +1,2018 @@
+id: "crest-data-systems-cofense-triage"
+tests:
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "cluster" : {
+          "data" : {
+            "id" : "1",
+            "type" : "clusters"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/cluster",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/cluster"
+          }
+        },
+        "headers" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/headers",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/headers"
+          }
+        },
+        "attachments" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/attachments",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/attachments"
+          }
+        },
+        "comments" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/comments",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/comments"
+          }
+        },
+        "domains" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/domains",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/domains"
+          }
+        },
+        "reporter" : {
+          "data" : {
+            "id" : "1",
+            "type" : "reporters"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/reporter",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/reporter"
+          }
+        },
+        "hostnames" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/hostnames",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/hostnames"
+          }
+        },
+        "rules" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/rules",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/rules"
+          }
+        },
+        "attachment_payloads" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/attachment_payloads",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/attachment_payloads"
+          }
+        },
+        "urls" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/urls",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/urls"
+          }
+        },
+        "threat_indicators" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/threat_indicators",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/threat_indicators"
+          }
+        },
+        "cofense_intelligence_indicators" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/cofense_intelligence_indicators",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/cofense_intelligence_indicators"
+          }
+        },
+        "processed_by" : {
+          "data" : {
+            "id" : "1",
+            "type" : "processed_bies"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/processed_by",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/processed_by"
+          }
+        },
+        "assignee" : {
+          "data" : {
+            "id" : "1",
+            "type" : "assignees"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/assignee",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/assignee"
+          }
+        },
+        "category" : {
+          "data" : {
+            "id" : "1",
+            "type" : "categories"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reports/1/category",
+            "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/category"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/reports/1"
+      },
+      "attributes" : {
+        "sha256" : "67dff22960e6839d06168a31f83891d2df8cf57b21e3ae7faf6be60ba2e2d00c",
+        "reported_at" : "2024-09-30T07:25:00.835Z",
+        "subject" : "Eveniet voluptatem dolor rerum",
+        "aisf_error_response_message" : "Timeout Error",
+        "rules_count" : 3,
+        "created_at" : "2024-09-30T07:25:00.837Z",
+        "urls_count" : 8,
+        "categorization_tags" : [ "one", "two" ],
+        "aisf_score_threshold" : 5,
+        "urls" : [ {
+          "raw" : "http://www.cofense.com",
+          "id" : 150296
+        } ],
+        "updated_at" : "2024-10-01T10:04:51.238Z",
+        "match_priority" : 3,
+        "from_address" : "zack.bins@example.net",
+        "raw_headers" : "Sit: asperiores\r\nAssumenda: dignissimos\r\nDolor: quae\r\nIn: pariatur",
+        "aisf_scored_at" : "2024-09-30T07:25:00.836Z",
+        "aisf_rule_score" : 7.2,
+        "risk_score" : 83,
+        "html_body" : "<html><body><p>Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas.</p></body></html>",
+        "text_body" : "Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas.",
+        "aisf_error" : "True",
+        "tags" : [ "one", "two" ],
+        "aisf_is_spam" : "True",
+        "attachment_details" : [ {
+          "payload_id" : 5,
+          "filename" : "Cofense_Annual_Taco_Report.pdf",
+          "sha256" : "631c9b717ae3aa267ec57d77bf4b31509a21f568a0b8cc7bd1e5ab99ac5588f6",
+          "size_in_bytes" : 743234,
+          "id" : 3,
+          "md5" : "832d89e566e979b556fab964a3ed8422"
+        } ],
+        "aisf_bayes_last_submitted_as" : "spam",
+        "received_at" : "2024-09-29T04:45:10.434Z",
+        "comments_count" : 0,
+        "aisf_bayes_score" : 3,
+        "aisf_learned_at" : "2024-09-30T07:25:00.836Z",
+        "location" : "Inbox",
+        "rule_details" : [ {
+          "source_rule_type" : "community_created",
+          "name" : "CX_FMR_freemail",
+          "id" : 2071,
+          "priority" : 1
+        } ],
+        "attachments_count" : 0,
+        "aisf_forgot_at" : "2024-10-01T10:04:51.236Z",
+        "md5" : "7cc5557439eb39e19f69f1f1a9c57487",
+        "aisf_errored_at" : "2024-10-01T10:04:51.237Z"
+      },
+      "id" : "1",
+      "type" : "reports"
+    }
+  service: "cds.cofense_triage.reports"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            aisf_bayes_last_submitted_as: "spam"
+            aisf_bayes_score: 3
+            aisf_error: "True"
+            aisf_error_response_message: "Timeout Error"
+            aisf_errored_at: "2024-10-01T10:04:51.237Z"
+            aisf_forgot_at: "2024-10-01T10:04:51.236Z"
+            aisf_is_spam: "True"
+            aisf_learned_at: "2024-09-30T07:25:00.836Z"
+            aisf_rule_score: 7.2
+            aisf_score_threshold: 5
+            aisf_scored_at: "2024-09-30T07:25:00.836Z"
+            attachment_details:
+             -
+              payload_id: 5
+              filename: "Cofense_Annual_Taco_Report.pdf"
+              sha256: "631c9b717ae3aa267ec57d77bf4b31509a21f568a0b8cc7bd1e5ab99ac5588f6"
+              size_in_bytes: 743234
+              id: 3
+              md5: "832d89e566e979b556fab964a3ed8422"
+            attachments_count: 0
+            categorization_tags:
+             - "one"
+             - "two"
+            comments_count: 0
+            created_at: "2024-09-30T07:25:00.837Z"
+            from_address: "zack.bins@example.net"
+            html_body: "<html><body><p>Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas.</p></body></html>"
+            location: "Inbox"
+            match_priority: 3
+            md5: "7cc5557439eb39e19f69f1f1a9c57487"
+            raw_headers: "Sit: asperiores\r\nAssumenda: dignissimos\r\nDolor: quae\r\nIn: pariatur"
+            received_at: "2024-09-29T04:45:10.434Z"
+            reported_at: "2024-09-30T07:25:00.835Z"
+            risk_score: 83
+            rule_details:
+             -
+              source_rule_type: "community_created"
+              name: "CX_FMR_freemail"
+              id: 2071
+              priority: 1
+            rules_count: 3
+            sha256: "67dff22960e6839d06168a31f83891d2df8cf57b21e3ae7faf6be60ba2e2d00c"
+            subject: "Eveniet voluptatem dolor rerum"
+            tags:
+             - "one"
+             - "two"
+            text_body: "Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas."
+            updated_at: "2024-10-01T10:04:51.238Z"
+            urls:
+             -
+              raw: "http://www.cofense.com"
+              id: 150296
+            urls_count: 8
+          category_id: "1"
+          cluster_id: "1"
+          relationships:
+            assignee:
+              data:
+                id: "1"
+                type: "assignees"
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/assignee"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/assignee"
+            attachment_payloads:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/attachment_payloads"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/attachment_payloads"
+            attachments:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/attachments"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/attachments"
+            category:
+              data:
+                type: "categories"
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/category"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/category"
+            cluster:
+              data:
+                type: "clusters"
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/cluster"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/cluster"
+            cofense_intelligence_indicators:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/cofense_intelligence_indicators"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/cofense_intelligence_indicators"
+            comments:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/comments"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/comments"
+            domains:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/domains"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/domains"
+            headers:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/headers"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/headers"
+            hostnames:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/hostnames"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/hostnames"
+            processed_by:
+              data:
+                id: "1"
+                type: "processed_bies"
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/processed_by"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/processed_by"
+            reporter:
+              data:
+                type: "reporters"
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/reporter"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/reporter"
+            rules:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/rules"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/rules"
+            threat_indicators:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/threat_indicators"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/threat_indicators"
+            urls:
+              links:
+                related: "https://triage.example.com/api/public/v2/reports/1/urls"
+                self: "https://triage.example.com/api/public/v2/reports/1/relationships/urls"
+          report_id: "1"
+          reporter_id: "1"
+      links:
+        self: "https://triage.example.com/api/public/v2/reports/1"
+      type: "reports"
+    message: |-
+      {
+        "relationships" : {
+          "cluster" : {
+            "data" : {
+              "id" : "1",
+              "type" : "clusters"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/cluster",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/cluster"
+            }
+          },
+          "headers" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/headers",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/headers"
+            }
+          },
+          "attachments" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/attachments",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/attachments"
+            }
+          },
+          "comments" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/comments",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/comments"
+            }
+          },
+          "domains" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/domains",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/domains"
+            }
+          },
+          "reporter" : {
+            "data" : {
+              "id" : "1",
+              "type" : "reporters"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/reporter",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/reporter"
+            }
+          },
+          "hostnames" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/hostnames",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/hostnames"
+            }
+          },
+          "rules" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/rules",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/rules"
+            }
+          },
+          "attachment_payloads" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/attachment_payloads",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/attachment_payloads"
+            }
+          },
+          "urls" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/urls",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/urls"
+            }
+          },
+          "threat_indicators" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/threat_indicators",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/threat_indicators"
+            }
+          },
+          "cofense_intelligence_indicators" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/cofense_intelligence_indicators",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/cofense_intelligence_indicators"
+            }
+          },
+          "processed_by" : {
+            "data" : {
+              "id" : "1",
+              "type" : "processed_bies"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/processed_by",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/processed_by"
+            }
+          },
+          "assignee" : {
+            "data" : {
+              "id" : "1",
+              "type" : "assignees"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/assignee",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/assignee"
+            }
+          },
+          "category" : {
+            "data" : {
+              "id" : "1",
+              "type" : "categories"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reports/1/category",
+              "self" : "https://triage.example.com/api/public/v2/reports/1/relationships/category"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/reports/1"
+        },
+        "attributes" : {
+          "sha256" : "67dff22960e6839d06168a31f83891d2df8cf57b21e3ae7faf6be60ba2e2d00c",
+          "reported_at" : "2024-09-30T07:25:00.835Z",
+          "subject" : "Eveniet voluptatem dolor rerum",
+          "aisf_error_response_message" : "Timeout Error",
+          "rules_count" : 3,
+          "created_at" : "2024-09-30T07:25:00.837Z",
+          "urls_count" : 8,
+          "categorization_tags" : [ "one", "two" ],
+          "aisf_score_threshold" : 5,
+          "urls" : [ {
+            "raw" : "http://www.cofense.com",
+            "id" : 150296
+          } ],
+          "updated_at" : "2024-10-01T10:04:51.238Z",
+          "match_priority" : 3,
+          "from_address" : "zack.bins@example.net",
+          "raw_headers" : "Sit: asperiores\r\nAssumenda: dignissimos\r\nDolor: quae\r\nIn: pariatur",
+          "aisf_scored_at" : "2024-09-30T07:25:00.836Z",
+          "aisf_rule_score" : 7.2,
+          "risk_score" : 83,
+          "html_body" : "<html><body><p>Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas.</p></body></html>",
+          "text_body" : "Earum debitis quisquam. Earum accusamus consequatur. Ex molestiae voluptas.",
+          "aisf_error" : "True",
+          "tags" : [ "one", "two" ],
+          "aisf_is_spam" : "True",
+          "attachment_details" : [ {
+            "payload_id" : 5,
+            "filename" : "Cofense_Annual_Taco_Report.pdf",
+            "sha256" : "631c9b717ae3aa267ec57d77bf4b31509a21f568a0b8cc7bd1e5ab99ac5588f6",
+            "size_in_bytes" : 743234,
+            "id" : 3,
+            "md5" : "832d89e566e979b556fab964a3ed8422"
+          } ],
+          "aisf_bayes_last_submitted_as" : "spam",
+          "received_at" : "2024-09-29T04:45:10.434Z",
+          "comments_count" : 0,
+          "aisf_bayes_score" : 3,
+          "aisf_learned_at" : "2024-09-30T07:25:00.836Z",
+          "location" : "Inbox",
+          "rule_details" : [ {
+            "source_rule_type" : "community_created",
+            "name" : "CX_FMR_freemail",
+            "id" : 2071,
+            "priority" : 1
+          } ],
+          "attachments_count" : 0,
+          "aisf_forgot_at" : "2024-10-01T10:04:51.236Z",
+          "md5" : "7cc5557439eb39e19f69f1f1a9c57487",
+          "aisf_errored_at" : "2024-10-01T10:04:51.237Z"
+        },
+        "id" : "1",
+        "type" : "reports"
+      }
+    service: "cds.cofense_triage.reports"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/hostnames/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/reports"
+          }
+        },
+        "urls" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/hostnames/1/urls",
+            "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/urls"
+          }
+        },
+        "domain" : {
+          "data" : {
+            "id" : "1",
+            "type" : "domains"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/hostnames/1/domain",
+            "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/domain"
+          }
+        },
+        "clusters" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/hostnames/1/clusters",
+            "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/clusters"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/hostnames/1"
+      },
+      "attributes" : {
+        "hostname" : "www.example.com",
+        "updated_at" : "2024-10-01T10:04:49.156Z",
+        "risk_score" : 22,
+        "created_at" : "2024-09-30T07:24:58.755Z"
+      },
+      "id" : "1",
+      "type" : "hostnames"
+    }
+  service: "cds.cofense_triage.hostnames"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            created_at: "2024-09-30T07:24:58.755Z"
+            hostname: "www.example.com"
+            risk_score: 22
+            updated_at: "2024-10-01T10:04:49.156Z"
+          domain_id: "1"
+          hostname_id: "1"
+          relationships:
+            clusters:
+              links:
+                related: "https://triage.example.com/api/public/v2/hostnames/1/clusters"
+                self: "https://triage.example.com/api/public/v2/hostnames/1/relationships/clusters"
+            domain:
+              data:
+                type: "domains"
+              links:
+                related: "https://triage.example.com/api/public/v2/hostnames/1/domain"
+                self: "https://triage.example.com/api/public/v2/hostnames/1/relationships/domain"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/hostnames/1/reports"
+                self: "https://triage.example.com/api/public/v2/hostnames/1/relationships/reports"
+            urls:
+              links:
+                related: "https://triage.example.com/api/public/v2/hostnames/1/urls"
+                self: "https://triage.example.com/api/public/v2/hostnames/1/relationships/urls"
+      links:
+        self: "https://triage.example.com/api/public/v2/hostnames/1"
+      type: "hostnames"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/hostnames/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/reports"
+            }
+          },
+          "urls" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/hostnames/1/urls",
+              "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/urls"
+            }
+          },
+          "domain" : {
+            "data" : {
+              "id" : "1",
+              "type" : "domains"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/hostnames/1/domain",
+              "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/domain"
+            }
+          },
+          "clusters" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/hostnames/1/clusters",
+              "self" : "https://triage.example.com/api/public/v2/hostnames/1/relationships/clusters"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/hostnames/1"
+        },
+        "attributes" : {
+          "hostname" : "www.example.com",
+          "updated_at" : "2024-10-01T10:04:49.156Z",
+          "risk_score" : 22,
+          "created_at" : "2024-09-30T07:24:58.755Z"
+        },
+        "id" : "1",
+        "type" : "hostnames"
+      }
+    service: "cds.cofense_triage.hostnames"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reporters/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/reporters/1/relationships/reports"
+          }
+        },
+        "clusters" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/reporters/1/clusters",
+            "self" : "https://triage.example.com/api/public/v2/reporters/1/relationships/clusters"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/reporters/1"
+      },
+      "attributes" : {
+        "last_reported_at" : "2024-09-28T02:05:20.493Z",
+        "reputation_score" : 15,
+        "updated_at" : "2024-10-01T10:04:51.694Z",
+        "reports_count" : 7,
+        "created_at" : "2024-09-30T07:25:01.294Z",
+        "vip" : false,
+        "email" : "darren@example.com"
+      },
+      "id" : "1",
+      "type" : "reporters"
+    }
+  service: "cds.cofense_triage.reporters"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            created_at: "2024-09-30T07:25:01.294Z"
+            email: "darren@example.com"
+            last_reported_at: "2024-09-28T02:05:20.493Z"
+            reports_count: 7
+            reputation_score: 15
+            updated_at: "2024-10-01T10:04:51.694Z"
+            vip: false
+          relationships:
+            clusters:
+              links:
+                related: "https://triage.example.com/api/public/v2/reporters/1/clusters"
+                self: "https://triage.example.com/api/public/v2/reporters/1/relationships/clusters"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/reporters/1/reports"
+                self: "https://triage.example.com/api/public/v2/reporters/1/relationships/reports"
+          reporter_id: "1"
+      links:
+        self: "https://triage.example.com/api/public/v2/reporters/1"
+      type: "reporters"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reporters/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/reporters/1/relationships/reports"
+            }
+          },
+          "clusters" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/reporters/1/clusters",
+              "self" : "https://triage.example.com/api/public/v2/reporters/1/relationships/clusters"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/reporters/1"
+        },
+        "attributes" : {
+          "last_reported_at" : "2024-09-28T02:05:20.493Z",
+          "reputation_score" : 15,
+          "updated_at" : "2024-10-01T10:04:51.694Z",
+          "reports_count" : 7,
+          "created_at" : "2024-09-30T07:25:01.294Z",
+          "vip" : false,
+          "email" : "darren@example.com"
+        },
+        "id" : "1",
+        "type" : "reporters"
+      }
+    service: "cds.cofense_triage.reporters"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/urls/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/reports"
+          }
+        },
+        "hostname" : {
+          "data" : {
+            "id" : "1",
+            "type" : "hostnames"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/urls/1/hostname",
+            "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/hostname"
+          }
+        },
+        "domain" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/urls/1/domain",
+            "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/domain"
+          }
+        },
+        "clusters" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/urls/1/clusters",
+            "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/clusters"
+          }
+        },
+        "integration_submissions" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/urls/1/integration_submissions",
+            "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/integration_submissions"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/urls/1"
+      },
+      "attributes" : {
+        "updated_at" : "2024-10-01T10:04:52.692Z",
+        "risk_score" : 42,
+        "created_at" : "2024-09-30T07:25:02.291Z",
+        "url" : "https://www.example.com/page"
+      },
+      "id" : "1",
+      "type" : "urls"
+    }
+  service: "cds.cofense_triage.urls"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            created_at: "2024-09-30T07:25:02.291Z"
+            risk_score: 42
+            updated_at: "2024-10-01T10:04:52.692Z"
+            url: "https://www.example.com/page"
+          hostname_id: "1"
+          relationships:
+            clusters:
+              links:
+                related: "https://triage.example.com/api/public/v2/urls/1/clusters"
+                self: "https://triage.example.com/api/public/v2/urls/1/relationships/clusters"
+            domain:
+              links:
+                related: "https://triage.example.com/api/public/v2/urls/1/domain"
+                self: "https://triage.example.com/api/public/v2/urls/1/relationships/domain"
+            hostname:
+              data:
+                type: "hostnames"
+              links:
+                related: "https://triage.example.com/api/public/v2/urls/1/hostname"
+                self: "https://triage.example.com/api/public/v2/urls/1/relationships/hostname"
+            integration_submissions:
+              links:
+                related: "https://triage.example.com/api/public/v2/urls/1/integration_submissions"
+                self: "https://triage.example.com/api/public/v2/urls/1/relationships/integration_submissions"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/urls/1/reports"
+                self: "https://triage.example.com/api/public/v2/urls/1/relationships/reports"
+          url_id: "1"
+      links:
+        self: "https://triage.example.com/api/public/v2/urls/1"
+      type: "urls"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/urls/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/reports"
+            }
+          },
+          "hostname" : {
+            "data" : {
+              "id" : "1",
+              "type" : "hostnames"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/urls/1/hostname",
+              "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/hostname"
+            }
+          },
+          "domain" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/urls/1/domain",
+              "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/domain"
+            }
+          },
+          "clusters" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/urls/1/clusters",
+              "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/clusters"
+            }
+          },
+          "integration_submissions" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/urls/1/integration_submissions",
+              "self" : "https://triage.example.com/api/public/v2/urls/1/relationships/integration_submissions"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/urls/1"
+        },
+        "attributes" : {
+          "updated_at" : "2024-10-01T10:04:52.692Z",
+          "risk_score" : 42,
+          "created_at" : "2024-09-30T07:25:02.291Z",
+          "url" : "https://www.example.com/page"
+        },
+        "id" : "1",
+        "type" : "urls"
+      }
+    service: "cds.cofense_triage.urls"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "owner" : {
+          "data" : {
+            "id" : "1",
+            "type" : "operators"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/owner",
+            "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/owner"
+          }
+        },
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/reports"
+          }
+        },
+        "comments" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/comments",
+            "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/comments"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/threat_indicators/1"
+      },
+      "attributes" : {
+        "threat_level" : "Malicious",
+        "threat_source" : "Triage-UI",
+        "updated_at" : "2024-10-01T10:04:52.196Z",
+        "threat_value" : "zoe.watts@example.org",
+        "threat_type" : "Sender",
+        "created_at" : "2024-09-30T07:25:01.796Z"
+      },
+      "id" : "1",
+      "type" : "threat_indicators"
+    }
+  service: "cds.cofense_triage.threat_indicators"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            created_at: "2024-09-30T07:25:01.796Z"
+            threat_level: "Malicious"
+            threat_source: "Triage-UI"
+            threat_type: "Sender"
+            threat_value: "zoe.watts@example.org"
+            updated_at: "2024-10-01T10:04:52.196Z"
+          id: "1"
+          relationships:
+            comments:
+              links:
+                related: "https://triage.example.com/api/public/v2/threat_indicators/1/comments"
+                self: "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/comments"
+            owner:
+              data:
+                id: "1"
+                type: "operators"
+              links:
+                related: "https://triage.example.com/api/public/v2/threat_indicators/1/owner"
+                self: "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/owner"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/threat_indicators/1/reports"
+                self: "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/reports"
+      links:
+        self: "https://triage.example.com/api/public/v2/threat_indicators/1"
+      type: "threat_indicators"
+    message: |-
+      {
+        "relationships" : {
+          "owner" : {
+            "data" : {
+              "id" : "1",
+              "type" : "operators"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/owner",
+              "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/owner"
+            }
+          },
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/reports"
+            }
+          },
+          "comments" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/threat_indicators/1/comments",
+              "self" : "https://triage.example.com/api/public/v2/threat_indicators/1/relationships/comments"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/threat_indicators/1"
+        },
+        "attributes" : {
+          "threat_level" : "Malicious",
+          "threat_source" : "Triage-UI",
+          "updated_at" : "2024-10-01T10:04:52.196Z",
+          "threat_value" : "zoe.watts@example.org",
+          "threat_type" : "Sender",
+          "created_at" : "2024-09-30T07:25:01.796Z"
+        },
+        "id" : "1",
+        "type" : "threat_indicators"
+      }
+    service: "cds.cofense_triage.threat_indicators"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "owner" : {
+          "data" : {
+            "id" : "1",
+            "type" : "owners"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/owner",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/owner"
+          }
+        },
+        "reporter_response" : {
+          "data" : {
+            "id" : "1",
+            "type" : "outbound_templates"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/reporter_response",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/reporter_response"
+          }
+        },
+        "team_notifications" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/team_notifications",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/team_notifications"
+          }
+        },
+        "category" : {
+          "data" : {
+            "id" : "1",
+            "type" : "categories"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/category",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/category"
+          }
+        },
+        "triggers" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/triggers",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/triggers"
+          }
+        },
+        "vip_response" : {
+          "data" : {
+            "id" : "1",
+            "type" : "outbound_templates"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/playbooks/1/vip_response",
+            "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/vip_response"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/playbooks/1"
+      },
+      "attributes" : {
+        "remove_existing_report_tags" : false,
+        "delete_report" : true,
+        "description" : "Spam playbook for common spam we see from reporters.",
+        "active" : true,
+        "report_tags" : [ "one", "two" ],
+        "created_at" : "2024-09-30T07:25:00.334Z",
+        "cluster_tags" : [ "one", "two" ],
+        "add_rule_tags_to_report_tags" : false,
+        "remove_existing_cluster_tags" : true,
+        "button_color" : "#000000",
+        "updated_at" : "2024-10-01T10:04:50.734Z",
+        "trigger_only" : false,
+        "name" : "Spam"
+      },
+      "id" : "1",
+      "type" : "playbooks"
+    }
+  service: "cds.cofense_triage.playbooks"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            active: true
+            add_rule_tags_to_report_tags: false
+            button_color: "#000000"
+            cluster_tags:
+             - "one"
+             - "two"
+            created_at: "2024-09-30T07:25:00.334Z"
+            delete_report: true
+            description: "Spam playbook for common spam we see from reporters."
+            name: "Spam"
+            remove_existing_cluster_tags: true
+            remove_existing_report_tags: false
+            report_tags:
+             - "one"
+             - "two"
+            trigger_only: false
+            updated_at: "2024-10-01T10:04:50.734Z"
+          id: "1"
+          relationships:
+            category:
+              data:
+                id: "1"
+                type: "categories"
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/category"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/category"
+            owner:
+              data:
+                id: "1"
+                type: "owners"
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/owner"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/owner"
+            reporter_response:
+              data:
+                id: "1"
+                type: "outbound_templates"
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/reporter_response"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/reporter_response"
+            team_notifications:
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/team_notifications"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/team_notifications"
+            triggers:
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/triggers"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/triggers"
+            vip_response:
+              data:
+                id: "1"
+                type: "outbound_templates"
+              links:
+                related: "https://triage.example.com/api/public/v2/playbooks/1/vip_response"
+                self: "https://triage.example.com/api/public/v2/playbooks/1/relationships/vip_response"
+      links:
+        self: "https://triage.example.com/api/public/v2/playbooks/1"
+      type: "playbooks"
+    message: |-
+      {
+        "relationships" : {
+          "owner" : {
+            "data" : {
+              "id" : "1",
+              "type" : "owners"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/owner",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/owner"
+            }
+          },
+          "reporter_response" : {
+            "data" : {
+              "id" : "1",
+              "type" : "outbound_templates"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/reporter_response",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/reporter_response"
+            }
+          },
+          "team_notifications" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/team_notifications",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/team_notifications"
+            }
+          },
+          "category" : {
+            "data" : {
+              "id" : "1",
+              "type" : "categories"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/category",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/category"
+            }
+          },
+          "triggers" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/triggers",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/triggers"
+            }
+          },
+          "vip_response" : {
+            "data" : {
+              "id" : "1",
+              "type" : "outbound_templates"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/playbooks/1/vip_response",
+              "self" : "https://triage.example.com/api/public/v2/playbooks/1/relationships/vip_response"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/playbooks/1"
+        },
+        "attributes" : {
+          "remove_existing_report_tags" : false,
+          "delete_report" : true,
+          "description" : "Spam playbook for common spam we see from reporters.",
+          "active" : true,
+          "report_tags" : [ "one", "two" ],
+          "created_at" : "2024-09-30T07:25:00.334Z",
+          "cluster_tags" : [ "one", "two" ],
+          "add_rule_tags_to_report_tags" : false,
+          "remove_existing_cluster_tags" : true,
+          "button_color" : "#000000",
+          "updated_at" : "2024-10-01T10:04:50.734Z",
+          "trigger_only" : false,
+          "name" : "Spam"
+        },
+        "id" : "1",
+        "type" : "playbooks"
+      }
+    service: "cds.cofense_triage.playbooks"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "integration_submissions" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/integrations/1/integration_submissions",
+            "self" : "https://triage.example.com/api/public/v2/integrations/1/relationships/integration_submissions"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/integrations/1"
+      },
+      "attributes" : {
+        "accepts_attachment_file" : true,
+        "accepts_url" : true,
+        "accepts_attachment_hash" : true,
+        "updated_at" : "2024-10-01T10:04:49.633Z",
+        "accepts_url_host" : true,
+        "name" : "VirusTotal",
+        "created_at" : "2024-09-30T07:24:59.232Z"
+      },
+      "id" : "1",
+      "type" : "integrations"
+    }
+  service: "cds.cofense_triage.integrations"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            accepts_attachment_file: true
+            accepts_attachment_hash: true
+            accepts_url: true
+            accepts_url_host: true
+            created_at: "2024-09-30T07:24:59.232Z"
+            name: "VirusTotal"
+            updated_at: "2024-10-01T10:04:49.633Z"
+          id: "1"
+          relationships:
+            integration_submissions:
+              links:
+                related: "https://triage.example.com/api/public/v2/integrations/1/integration_submissions"
+                self: "https://triage.example.com/api/public/v2/integrations/1/relationships/integration_submissions"
+      links:
+        self: "https://triage.example.com/api/public/v2/integrations/1"
+      type: "integrations"
+    message: |-
+      {
+        "relationships" : {
+          "integration_submissions" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/integrations/1/integration_submissions",
+              "self" : "https://triage.example.com/api/public/v2/integrations/1/relationships/integration_submissions"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/integrations/1"
+        },
+        "attributes" : {
+          "accepts_attachment_file" : true,
+          "accepts_url" : true,
+          "accepts_attachment_hash" : true,
+          "updated_at" : "2024-10-01T10:04:49.633Z",
+          "accepts_url_host" : true,
+          "name" : "VirusTotal",
+          "created_at" : "2024-09-30T07:24:59.232Z"
+        },
+        "id" : "1",
+        "type" : "integrations"
+      }
+    service: "cds.cofense_triage.integrations"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/headers/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/headers/1/relationships/reports"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/headers/1"
+      },
+      "attributes" : {
+        "updated_at" : "2024-10-01T10:04:49.025Z",
+        "created_at" : "2024-09-30T07:24:58.625Z",
+        "value" : "user@example.com",
+        "key" : "From"
+      },
+      "id" : "1",
+      "type" : "headers"
+    }
+  service: "cds.cofense_triage.headers"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            created_at: "2024-09-30T07:24:58.625Z"
+            key: "From"
+            updated_at: "2024-10-01T10:04:49.025Z"
+            value: "user@example.com"
+          id: "1"
+          relationships:
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/headers/1/reports"
+                self: "https://triage.example.com/api/public/v2/headers/1/relationships/reports"
+      links:
+        self: "https://triage.example.com/api/public/v2/headers/1"
+      type: "headers"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/headers/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/headers/1/relationships/reports"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/headers/1"
+        },
+        "attributes" : {
+          "updated_at" : "2024-10-01T10:04:49.025Z",
+          "created_at" : "2024-09-30T07:24:58.625Z",
+          "value" : "user@example.com",
+          "key" : "From"
+        },
+        "id" : "1",
+        "type" : "headers"
+      }
+    service: "cds.cofense_triage.headers"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "owner" : {
+          "data" : {
+            "id" : "1",
+            "type" : "operators"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/comments/1/owner",
+            "self" : "https://triage.example.com/api/public/v2/comments/1/relationships/owner"
+          }
+        },
+        "commentable" : {
+          "data" : {
+            "id" : "1",
+            "type" : "threat_indicators"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/comments/1/commentable",
+            "self" : "https://triage.example.com/api/public/v2/comments/1/relationships/commentable"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/comments/1"
+      },
+      "attributes" : {
+        "updated_at" : "2024-10-01T10:04:48.378Z",
+        "activity_type" : "not_applicable",
+        "created_at" : "2024-09-30T07:24:57.977Z",
+        "body_format" : "text",
+        "message_type" : "operator",
+        "body" : "Is this malicious or just delicious?",
+        "tags" : [ "one", "two" ]
+      },
+      "id" : "1",
+      "type" : "comments"
+    }
+  service: "cds.cofense_triage.comments"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            activity_type: "not_applicable"
+            body: "Is this malicious or just delicious?"
+            body_format: "text"
+            created_at: "2024-09-30T07:24:57.977Z"
+            message_type: "operator"
+            tags:
+             - "one"
+             - "two"
+            updated_at: "2024-10-01T10:04:48.378Z"
+          id: "1"
+          relationships:
+            commentable:
+              data:
+                id: "1"
+                type: "threat_indicators"
+              links:
+                related: "https://triage.example.com/api/public/v2/comments/1/commentable"
+                self: "https://triage.example.com/api/public/v2/comments/1/relationships/commentable"
+            owner:
+              data:
+                id: "1"
+                type: "operators"
+              links:
+                related: "https://triage.example.com/api/public/v2/comments/1/owner"
+                self: "https://triage.example.com/api/public/v2/comments/1/relationships/owner"
+      links:
+        self: "https://triage.example.com/api/public/v2/comments/1"
+      type: "comments"
+    message: |-
+      {
+        "relationships" : {
+          "owner" : {
+            "data" : {
+              "id" : "1",
+              "type" : "operators"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/comments/1/owner",
+              "self" : "https://triage.example.com/api/public/v2/comments/1/relationships/owner"
+            }
+          },
+          "commentable" : {
+            "data" : {
+              "id" : "1",
+              "type" : "threat_indicators"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/comments/1/commentable",
+              "self" : "https://triage.example.com/api/public/v2/comments/1/relationships/commentable"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/comments/1"
+        },
+        "attributes" : {
+          "updated_at" : "2024-10-01T10:04:48.378Z",
+          "activity_type" : "not_applicable",
+          "created_at" : "2024-09-30T07:24:57.977Z",
+          "body_format" : "text",
+          "message_type" : "operator",
+          "body" : "Is this malicious or just delicious?",
+          "tags" : [ "one", "two" ]
+        },
+        "id" : "1",
+        "type" : "comments"
+      }
+    service: "cds.cofense_triage.comments"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/reports"
+          }
+        },
+        "reporters" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/reporters",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/reporters"
+          }
+        },
+        "urls" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/urls",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/urls"
+          }
+        },
+        "domains" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/domains",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/domains"
+          }
+        },
+        "hostnames" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/hostnames",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/hostnames"
+          }
+        },
+        "rules" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/rules",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/rules"
+          }
+        },
+        "attachment_payloads" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/clusters/1/attachment_payloads",
+            "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/attachment_payloads"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/clusters/1"
+      },
+      "attributes" : {
+        "last_reported_at" : "2024-09-30T07:24:57.676Z",
+        "risk_score" : 43,
+        "average_reporter_reputation" : "35.7",
+        "last_received_at" : "2024-09-29T04:45:07.276Z",
+        "last_from_address" : "nevada@example.com",
+        "rules_count" : 4,
+        "created_at" : "2024-09-30T07:24:57.677Z",
+        "unprocessed_reports_count" : 5,
+        "total_reports_count" : 14,
+        "urls_count" : 2,
+        "first_reported_at" : "2024-09-24T18:05:45.675Z",
+        "tags" : [ "one", "two" ],
+        "last_subject" : "Et aliquam sit quasi",
+        "processed_reports_count" : 9,
+        "oldest_unprocessed_reported_at" : "2024-09-26T23:25:26.476Z",
+        "updated_at" : "2024-10-01T10:04:48.078Z",
+        "host_source" : "community.example.com;cdn.example.net",
+        "vip_reporters_count" : 3,
+        "match_priority" : 3,
+        "attachments_count" : 1
+      },
+      "id" : "1",
+      "type" : "clusters"
+    }
+  service: "cds.cofense_triage.clusters"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            attachments_count: 1
+            average_reporter_reputation: "35.7"
+            created_at: "2024-09-30T07:24:57.677Z"
+            first_reported_at: "2024-09-24T18:05:45.675Z"
+            host_source: "community.example.com;cdn.example.net"
+            last_from_address: "nevada@example.com"
+            last_received_at: "2024-09-29T04:45:07.276Z"
+            last_reported_at: "2024-09-30T07:24:57.676Z"
+            last_subject: "Et aliquam sit quasi"
+            match_priority: 3
+            oldest_unprocessed_reported_at: "2024-09-26T23:25:26.476Z"
+            processed_reports_count: 9
+            risk_score: 43
+            rules_count: 4
+            tags:
+             - "one"
+             - "two"
+            total_reports_count: 14
+            unprocessed_reports_count: 5
+            updated_at: "2024-10-01T10:04:48.078Z"
+            urls_count: 2
+            vip_reporters_count: 3
+          cluster_id: "1"
+          relationships:
+            attachment_payloads:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/attachment_payloads"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/attachment_payloads"
+            domains:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/domains"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/domains"
+            hostnames:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/hostnames"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/hostnames"
+            reporters:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/reporters"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/reporters"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/reports"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/reports"
+            rules:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/rules"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/rules"
+            urls:
+              links:
+                related: "https://triage.example.com/api/public/v2/clusters/1/urls"
+                self: "https://triage.example.com/api/public/v2/clusters/1/relationships/urls"
+      links:
+        self: "https://triage.example.com/api/public/v2/clusters/1"
+      type: "clusters"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/reports"
+            }
+          },
+          "reporters" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/reporters",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/reporters"
+            }
+          },
+          "urls" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/urls",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/urls"
+            }
+          },
+          "domains" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/domains",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/domains"
+            }
+          },
+          "hostnames" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/hostnames",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/hostnames"
+            }
+          },
+          "rules" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/rules",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/rules"
+            }
+          },
+          "attachment_payloads" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/clusters/1/attachment_payloads",
+              "self" : "https://triage.example.com/api/public/v2/clusters/1/relationships/attachment_payloads"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/clusters/1"
+        },
+        "attributes" : {
+          "last_reported_at" : "2024-09-30T07:24:57.676Z",
+          "risk_score" : 43,
+          "average_reporter_reputation" : "35.7",
+          "last_received_at" : "2024-09-29T04:45:07.276Z",
+          "last_from_address" : "nevada@example.com",
+          "rules_count" : 4,
+          "created_at" : "2024-09-30T07:24:57.677Z",
+          "unprocessed_reports_count" : 5,
+          "total_reports_count" : 14,
+          "urls_count" : 2,
+          "first_reported_at" : "2024-09-24T18:05:45.675Z",
+          "tags" : [ "one", "two" ],
+          "last_subject" : "Et aliquam sit quasi",
+          "processed_reports_count" : 9,
+          "oldest_unprocessed_reported_at" : "2024-09-26T23:25:26.476Z",
+          "updated_at" : "2024-10-01T10:04:48.078Z",
+          "host_source" : "community.example.com;cdn.example.net",
+          "vip_reporters_count" : 3,
+          "match_priority" : 3,
+          "attachments_count" : 1
+        },
+        "id" : "1",
+        "type" : "clusters"
+      }
+    service: "cds.cofense_triage.clusters"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/categories/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/categories/1/relationships/reports"
+          }
+        },
+        "playbooks" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/categories/1/playbooks",
+            "self" : "https://triage.example.com/api/public/v2/categories/1/relationships/playbooks"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/categories/1"
+      },
+      "attributes" : {
+        "score" : 5,
+        "malicious" : true,
+        "archived" : false,
+        "color" : "#c6911f",
+        "updated_at" : "2024-10-01T10:04:47.582Z",
+        "name" : "Crimeware",
+        "created_at" : "2024-09-30T07:24:57.182Z"
+      },
+      "id" : "1",
+      "type" : "categories"
+    }
+  service: "cds.cofense_triage.categories"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attributes:
+            archived: false
+            color: "#c6911f"
+            created_at: "2024-09-30T07:24:57.182Z"
+            malicious: true
+            name: "Crimeware"
+            score: 5
+            updated_at: "2024-10-01T10:04:47.582Z"
+          category_id: "1"
+          relationships:
+            playbooks:
+              links:
+                related: "https://triage.example.com/api/public/v2/categories/1/playbooks"
+                self: "https://triage.example.com/api/public/v2/categories/1/relationships/playbooks"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/categories/1/reports"
+                self: "https://triage.example.com/api/public/v2/categories/1/relationships/reports"
+      links:
+        self: "https://triage.example.com/api/public/v2/categories/1"
+      type: "categories"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/categories/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/categories/1/relationships/reports"
+            }
+          },
+          "playbooks" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/categories/1/playbooks",
+              "self" : "https://triage.example.com/api/public/v2/categories/1/relationships/playbooks"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/categories/1"
+        },
+        "attributes" : {
+          "score" : 5,
+          "malicious" : true,
+          "archived" : false,
+          "color" : "#c6911f",
+          "updated_at" : "2024-10-01T10:04:47.582Z",
+          "name" : "Crimeware",
+          "created_at" : "2024-09-30T07:24:57.182Z"
+        },
+        "id" : "1",
+        "type" : "categories"
+      }
+    service: "cds.cofense_triage.categories"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "parent" : {
+          "data" : {
+            "id" : "1",
+            "type" : "attachments"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachments/1/parent",
+            "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/parent"
+          }
+        },
+        "attachment_payload" : {
+          "data" : {
+            "id" : "1",
+            "type" : "attachment_payloads"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachments/1/attachment_payload",
+            "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/attachment_payload"
+          }
+        },
+        "report" : {
+          "data" : {
+            "id" : "1",
+            "type" : "reports"
+          },
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachments/1/report",
+            "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/report"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/attachments/1"
+      },
+      "attributes" : {
+        "filename" : "taco_menu.pdf",
+        "size" : 640751,
+        "updated_at" : "2024-10-01T10:04:46.977Z",
+        "created_at" : "2024-09-30T07:24:56.576Z",
+        "is_child" : false
+      },
+      "id" : "1",
+      "type" : "attachments"
+    }
+  service: "cds.cofense_triage.attachments"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attachment_id: "1"
+          attachment_payload_id: "1"
+          attributes:
+            created_at: "2024-09-30T07:24:56.576Z"
+            filename: "taco_menu.pdf"
+            is_child: false
+            size: 640751
+            updated_at: "2024-10-01T10:04:46.977Z"
+          relationships:
+            attachment_payload:
+              data:
+                type: "attachment_payloads"
+              links:
+                related: "https://triage.example.com/api/public/v2/attachments/1/attachment_payload"
+                self: "https://triage.example.com/api/public/v2/attachments/1/relationships/attachment_payload"
+            parent:
+              data:
+                id: "1"
+                type: "attachments"
+              links:
+                related: "https://triage.example.com/api/public/v2/attachments/1/parent"
+                self: "https://triage.example.com/api/public/v2/attachments/1/relationships/parent"
+            report:
+              data:
+                type: "reports"
+              links:
+                related: "https://triage.example.com/api/public/v2/attachments/1/report"
+                self: "https://triage.example.com/api/public/v2/attachments/1/relationships/report"
+          report_id: "1"
+      links:
+        self: "https://triage.example.com/api/public/v2/attachments/1"
+      type: "attachments"
+    message: |-
+      {
+        "relationships" : {
+          "parent" : {
+            "data" : {
+              "id" : "1",
+              "type" : "attachments"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachments/1/parent",
+              "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/parent"
+            }
+          },
+          "attachment_payload" : {
+            "data" : {
+              "id" : "1",
+              "type" : "attachment_payloads"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachments/1/attachment_payload",
+              "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/attachment_payload"
+            }
+          },
+          "report" : {
+            "data" : {
+              "id" : "1",
+              "type" : "reports"
+            },
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachments/1/report",
+              "self" : "https://triage.example.com/api/public/v2/attachments/1/relationships/report"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/attachments/1"
+        },
+        "attributes" : {
+          "filename" : "taco_menu.pdf",
+          "size" : 640751,
+          "updated_at" : "2024-10-01T10:04:46.977Z",
+          "created_at" : "2024-09-30T07:24:56.576Z",
+          "is_child" : false
+        },
+        "id" : "1",
+        "type" : "attachments"
+      }
+    service: "cds.cofense_triage.attachments"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "relationships" : {
+        "reports" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/reports",
+            "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/reports"
+          }
+        },
+        "attachments" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/attachments",
+            "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/attachments"
+          }
+        },
+        "clusters" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/clusters",
+            "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/clusters"
+          }
+        },
+        "integration_submissions" : {
+          "links" : {
+            "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/integration_submissions",
+            "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/integration_submissions"
+          }
+        }
+      },
+      "links" : {
+        "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1"
+      },
+      "attributes" : {
+        "sha256" : "2ff6872fc8469b944a80568c7d58b2d89d6d08a28c0241a456e74470da93c147",
+        "updated_at" : "2024-10-01T10:04:47.334Z",
+        "mime_type" : "application/pdf; charset=binary",
+        "risk_score" : 7,
+        "created_at" : "2024-09-30T07:24:56.934Z",
+        "md5" : "37f44ae666ceee27a472a4c7085bc93f"
+      },
+      "id" : "1",
+      "type" : "attachment_payloads"
+    }
+  service: "cds.cofense_triage.attachment_payloads"
+  result:
+    custom:
+      cds:
+        cofense_triage:
+          attachment_payload_id: "1"
+          attributes:
+            created_at: "2024-09-30T07:24:56.934Z"
+            md5: "37f44ae666ceee27a472a4c7085bc93f"
+            mime_type: "application/pdf; charset=binary"
+            risk_score: 7
+            sha256: "2ff6872fc8469b944a80568c7d58b2d89d6d08a28c0241a456e74470da93c147"
+            updated_at: "2024-10-01T10:04:47.334Z"
+          relationships:
+            attachments:
+              links:
+                related: "https://triage.example.com/api/public/v2/attachment_payloads/1/attachments"
+                self: "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/attachments"
+            clusters:
+              links:
+                related: "https://triage.example.com/api/public/v2/attachment_payloads/1/clusters"
+                self: "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/clusters"
+            integration_submissions:
+              links:
+                related: "https://triage.example.com/api/public/v2/attachment_payloads/1/integration_submissions"
+                self: "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/integration_submissions"
+            reports:
+              links:
+                related: "https://triage.example.com/api/public/v2/attachment_payloads/1/reports"
+                self: "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/reports"
+      links:
+        self: "https://triage.example.com/api/public/v2/attachment_payloads/1"
+      type: "attachment_payloads"
+    message: |-
+      {
+        "relationships" : {
+          "reports" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/reports",
+              "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/reports"
+            }
+          },
+          "attachments" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/attachments",
+              "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/attachments"
+            }
+          },
+          "clusters" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/clusters",
+              "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/clusters"
+            }
+          },
+          "integration_submissions" : {
+            "links" : {
+              "related" : "https://triage.example.com/api/public/v2/attachment_payloads/1/integration_submissions",
+              "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1/relationships/integration_submissions"
+            }
+          }
+        },
+        "links" : {
+          "self" : "https://triage.example.com/api/public/v2/attachment_payloads/1"
+        },
+        "attributes" : {
+          "sha256" : "2ff6872fc8469b944a80568c7d58b2d89d6d08a28c0241a456e74470da93c147",
+          "updated_at" : "2024-10-01T10:04:47.334Z",
+          "mime_type" : "application/pdf; charset=binary",
+          "risk_score" : 7,
+          "created_at" : "2024-09-30T07:24:56.934Z",
+          "md5" : "37f44ae666ceee27a472a4c7085bc93f"
+        },
+        "id" : "1",
+        "type" : "attachment_payloads"
+      }
+    service: "cds.cofense_triage.attachment_payloads"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

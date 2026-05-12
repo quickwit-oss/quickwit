@@ -1,0 +1,201 @@
+id: openvpn
+tests:
+  - sample: "<14>Feb 24 05:11:20 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24
+      05:11:20 10.10.10.10:50540 [openvpn] Peer Connection Initiated with
+      [AF_INET]10.10.10.10:50546 (via [AF_INET]198.51.100.20%ens32)'"
+    result: 
+      custom:
+        date: 1740373880000
+        log_type: "Peer Connection Initiated"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "50540"
+        server_ip: "198.51.100.20"
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] [OVPN 2] OUT: '2025-02-24 05:11:20 10.10.10.10:50540 [openvpn] Peer Connection Initiated with [AF_INET]10.10.10.10:50546 (via [AF_INET]198.51.100.20%ens32)'"
+        timestamp: 36220280000
+        usr:
+          name: "openvpn"
+      message: "<14>Feb 24 05:11:20 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24 05:11:20 10.10.10.10:50540 [openvpn] Peer Connection Initiated with [AF_INET]10.10.10.10:50546 (via [AF_INET]198.51.100.20%ens32)'"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36220280000
+  - sample: "<14>Feb 24 05:11:20 openvpnas2 openvpnas: [-] AUTH SUCCESS {'status':
+      0, 'user': 'openvpn', 'reason': 'local auth succeeded', 'auth method':
+      'local', 'proplist': {'prop_autogenerate': 'true', 'conn_group': 'test1',
+      'prop_superuser': 'true', 'prop_autologin': 'false', 'prop_deny': 'false',
+      'type': 'user_compile', 'pvt_password_digest': '[redacted]',
+      'user_auth_type': 'local', 'pvt_google_auth_secret': '[redacted]',
+      'pvt_google_auth_secret_locked': 'false'}, 'common_name': 'openvpn',
+      'serial': '5735787958742102040', 'serial_list': []}
+      cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+    result:
+      custom:
+        auth_method: "local"
+        client_connect_version: "3.4.0-3121"
+        common_name: "openvpn"
+        conn_group: "test1"
+        log_type: "AUTH SUCCESS"
+        os: "win"
+        prop_autogenerate: "true"
+        prop_autologin: "false"
+        prop_deny: "false"
+        prop_superuser: "true"
+        pvt_google_auth_secret: "[redacted]"
+        pvt_google_auth_secret_locked: "false"
+        pvt_password_digest: "[redacted]"
+        reason: "local auth succeeded"
+        serial: "5735787958742102040"
+        status: 0
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] AUTH SUCCESS {'status': 0, 'user': 'openvpn', 'reason': 'local auth succeeded', 'auth method': 'local', 'proplist': {'prop_autogenerate': 'true', 'conn_group': 'test1', 'prop_superuser': 'true', 'prop_autologin': 'false', 'prop_deny': 'false', 'type': 'user_compile', 'pvt_password_digest': '[redacted]', 'user_auth_type': 'local', 'pvt_google_auth_secret': '[redacted]', 'pvt_google_auth_secret_locked': 'false'}, 'common_name': 'openvpn', 'serial': '5735787958742102040', 'serial_list': []} cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+        timestamp: 36220280000
+        type: "user_compile"
+        user_auth_type: "local"
+        usr:
+          name: "openvpn"
+      message: "<14>Feb 24 05:11:20 openvpnas2 openvpnas: [-] AUTH SUCCESS {'status': 0, 'user': 'openvpn', 'reason': 'local auth succeeded', 'auth method': 'local', 'proplist': {'prop_autogenerate': 'true', 'conn_group': 'test1', 'prop_superuser': 'true', 'prop_autologin': 'false', 'prop_deny': 'false', 'type': 'user_compile', 'pvt_password_digest': '[redacted]', 'user_auth_type': 'local', 'pvt_google_auth_secret': '[redacted]', 'pvt_google_auth_secret_locked': 'false'}, 'common_name': 'openvpn', 'serial': '5735787958742102040', 'serial_list': []} cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36220280000
+  - sample: "<14>Feb 24 05:11:13 openvpnas2 openvpnas: [-] VPN Auth Failed: 'local
+      auth failed: password verification failed' [None]"
+    result:
+      custom:
+        log_type: "VPN Auth Failed"
+        reason: "local auth failed: password verification failed"
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] VPN Auth Failed: 'local auth failed: password verification failed' [None]"
+        timestamp: 36220273000
+      message: "<14>Feb 24 05:11:13 openvpnas2 openvpnas: [-] VPN Auth Failed: 'local auth failed: password verification failed' [None]"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36220273000
+  - sample: "<14>Feb 24 05:12:14 openvpnas2 openvpnas: [-] [WEB] OUT: \"2025-02-24T05:12:14+0000 [stdout#info] Web login authentication failed: {'status': 1, 'user': 'openvpn', 'reason': 'local auth failed: password verification failed', 'auth method': 'local'}\""
+    result:
+      custom:
+        auth_method: "local"
+        authentication_info: "{'status': 1, 'user': 'openvpn', 'reason': 'local auth failed: password verification failed', 'auth method': 'local'}"
+        log_type: "Web login authentication failed"
+        reason: "local auth failed: password verification failed"
+        status: 1
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] [WEB] OUT: \"2025-02-24T05:12:14+0000 [stdout#info] Web login authentication failed: {'status': 1, 'user': 'openvpn', 'reason': 'local auth failed: password verification failed', 'auth method': 'local'}\""
+        timestamp: 36220334000
+        usr:
+          name: "openvpn"
+      message: "<14>Feb 24 05:12:14 openvpnas2 openvpnas: [-] [WEB] OUT: \"2025-02-24T05:12:14+0000 [stdout#info] Web login authentication failed: {'status': 1, 'user': 'openvpn', 'reason': 'local auth failed: password verification failed', 'auth method': 'local'}\""
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36220334000
+  - sample: "<14>Feb 24 04:50:22 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24
+      04:50:22 openvpn/10.10.10.10:51820 MULTI: primary virtual IP for
+      openvpn/10.10.10.10:51820: 10.10.10.10'"
+    result:
+      custom:
+        client_mode: "MULTI"
+        date: 1740372622000
+        log_type: "Assigning virtual IP"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "51820"
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] [OVPN 2] OUT: '2025-02-24 04:50:22 openvpn/10.10.10.10:51820 MULTI: primary virtual IP for openvpn/10.10.10.10:51820: 10.10.10.10'"
+        timestamp: 36219022000
+        usr:
+          name: "openvpn"
+        virtual_ip: "10.10.10.10"
+      message: "<14>Feb 24 04:50:22 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24 04:50:22 openvpn/10.10.10.10:51820 MULTI: primary virtual IP for openvpn/10.10.10.10:51820: 10.10.10.10'"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36219022000
+  - sample: "<14>Feb 24 08:43:52 openvpnas2 openvpnas: [-] AUTH ERROR: DENY: user in
+      deny list. user=test5"
+    result:
+      custom:
+        log_type: "AUTH ERROR"
+        reason: "DENY: user in deny list."
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] AUTH ERROR: DENY: user in deny list. user=test5"
+        timestamp: 36233032000
+        usr:
+          name: "test5"
+      message: "<14>Feb 24 08:43:52 openvpnas2 openvpnas: [-] AUTH ERROR: DENY: user in deny list. user=test5"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36233032000
+  - sample: "<14>Feb 24 08:41:52 openvpnas2 openvpnas: [-] AUTH ERROR: local auth
+      failed: no stored password digest found in authcred attributes. user=test"
+    result:
+      custom:
+        log_type: "AUTH ERROR"
+        reason: "local auth failed: no stored password digest found in authcred attributes."
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] AUTH ERROR: local auth failed: no stored password digest found in authcred attributes. user=test"
+        timestamp: 36232912000
+        usr:
+          name: "test"
+      message: "<14>Feb 24 08:41:52 openvpnas2 openvpnas: [-] AUTH ERROR: local auth failed: no stored password digest found in authcred attributes. user=test"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36232912000
+  - sample: "<14>Feb 24 05:11:19 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24
+      05:11:19 172.20.4.202:58075 SIGTERM[soft,delayed-exit] received,
+      client-instance exiting'"
+    result:
+      custom:
+        date: 1740373879000
+        log_type: "client-instance exiting"
+        network:
+          client:
+            geoip: {}
+            ip: "172.20.4.202"
+            port: "58075"
+        signal_details: "SIGTERM[soft,delayed-exit]"
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] [OVPN 2] OUT: '2025-02-24 05:11:19 172.20.4.202:58075 SIGTERM[soft,delayed-exit] received, client-instance exiting'"
+        termination_signal: "soft,delayed-exit"
+        timestamp: 36220279000
+      message: "<14>Feb 24 05:11:19 openvpnas2 openvpnas: [-] [OVPN 2] OUT: '2025-02-24 05:11:19 172.20.4.202:58075 SIGTERM[soft,delayed-exit] received, client-instance exiting'"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 36220279000
+  - sample: "<14>Mar 11 12:59:46 openvpnas2 openvpnas: [-] [WEB] OUT: '2025-03-11T12:59:46+0000 [stdout#info] Web login authentication failed: {\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10: socket connection error while opening: [Errno 113] No route to host (facility=\\'initialize [10.10.10.10]\\')\", \\'auth method\\': \\'ldap\\'}'"
+    result:
+      custom:
+        auth_method: "ldap"
+        authentication_info: "{\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10: socket connection error while opening: [Errno 113] No route to host (facility=\\'initialize [10.10.10.10]\\')\", \\'auth method\\': \\'ldap\\'}"
+        log_type: "Web login authentication failed"
+        reason: "Cannot connect to LDAP server ldap://10.10.10.10: socket connection error while opening: [Errno 113] No route to host (facility=\\'initialize [10.10.10.10]\\')"
+        status: 2
+        syslog:
+          hostname: "openvpnas2"
+          process_name: "openvpnas"
+        syslog_message: "[-] [WEB] OUT: '2025-03-11T12:59:46+0000 [stdout#info] Web login authentication failed: {\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10: socket connection error while opening: [Errno 113] No route to host (facility=\\'initialize [10.10.10.10]\\')\", \\'auth method\\': \\'ldap\\'}'"
+        timestamp: 37544386000
+        usr:
+          name: "abc"
+      message: "<14>Mar 11 12:59:46 openvpnas2 openvpnas: [-] [WEB] OUT: '2025-03-11T12:59:46+0000 [stdout#info] Web login authentication failed: {\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10: socket connection error while opening: [Errno 113] No route to host (facility=\\'initialize [10.10.10.10]\\')\", \\'auth method\\': \\'ldap\\'}'"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 37544386000

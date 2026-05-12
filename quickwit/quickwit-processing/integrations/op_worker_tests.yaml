@@ -1,0 +1,182 @@
+id: op_worker
+tests:
+  - sample: |-
+      {
+        "component_id": "destination-0",
+        "component_kind": "sink",
+        "component_type": "splunk_hec_logs",
+        "ddsource": "op_worker",
+        "error": "Failed to make HTTP(S) request: error trying to connect: tcp connect error: Connection refused (os error 61)",
+        "hostname": "COMP-D74TH6F20F",
+        "metadata": {
+          "kind": "event",
+          "level": "ERROR",
+          "module_path": "vector::topology::builder",
+          "target": "vector::topology::builder"
+        },
+        "msg": "Healthcheck failed.",
+        "op_worker": {
+          "capture_status": "inactive",
+          "id": "9754ef4a-f441-4a8e-a664-a7e1b72b4edc",
+          "pipeline_id": "56cfec8e-5b4e-11ef-8af6-da7ad0900002",
+          "rc_version": 10,
+          "status": "running",
+          "version": "2.2.0~dev-0a0aae0"
+        },
+        "pid": 32944,
+        "source_type": "internal_logs",
+        "timestamp": "2024-08-21T21:33:26.903702Z"
+      }
+    result:
+      custom:
+        component_id: "destination-0"
+        component_kind: "sink"
+        component_type: "splunk_hec_logs"
+        ddsource: "op_worker"
+        error: "Failed to make HTTP(S) request: error trying to connect: tcp connect error: Connection refused (os error 61)"
+        host: "COMP-D74TH6F20F"
+        metadata:
+          kind: "event"
+          level: "ERROR"
+          module_path: "vector::topology::builder"
+          target: "vector::topology::builder"
+        msg: "Healthcheck failed."
+        op_worker:
+          capture_status: "inactive"
+          id: "9754ef4a-f441-4a8e-a664-a7e1b72b4edc"
+          pipeline_id: "56cfec8e-5b4e-11ef-8af6-da7ad0900002"
+          rc_version: 10
+          status: "running"
+          version: "2.2.0~dev-0a0aae0"
+        pid: 32944
+        source_type: "internal_logs"
+        timestamp: "2024-08-21T21:33:26.903702Z"
+      message: |-
+        {
+          "msg" : "Healthcheck failed.",
+          "component_type" : "splunk_hec_logs",
+          "component_id" : "destination-0",
+          "hostname" : "COMP-D74TH6F20F",
+          "metadata" : {
+            "level" : "ERROR",
+            "kind" : "event",
+            "module_path" : "vector::topology::builder",
+            "target" : "vector::topology::builder"
+          },
+          "pid" : 32944,
+          "source_type" : "internal_logs",
+          "error" : "Failed to make HTTP(S) request: error trying to connect: tcp connect error: Connection refused (os error 61)",
+          "ddsource" : "op_worker",
+          "op_worker" : {
+            "pipeline_id" : "56cfec8e-5b4e-11ef-8af6-da7ad0900002",
+            "capture_status" : "inactive",
+            "rc_version" : 10,
+            "id" : "9754ef4a-f441-4a8e-a664-a7e1b72b4edc",
+            "version" : "2.2.0~dev-0a0aae0",
+            "status" : "running"
+          },
+          "component_kind" : "sink",
+          "timestamp" : "2024-08-21T21:33:26.903702Z"
+        }
+      status: "error"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1724276006903
+  - sample: |-
+      {
+        "ddsource": "op_worker",
+        "host": "COMP-D74TH6F20F",
+        "message": "Heartbeat.",
+        "metadata": {
+          "kind": "event",
+          "level": "INFO",
+          "module_path": "observability_pipelines_worker::cli::run",
+          "target": "observability_pipelines_worker::cli::run"
+        },
+        "op_worker": {
+          "capture_status": "inactive",
+          "id": "9754ef4a-f441-4a8e-a664-a7e1b72b4edc",
+          "pipeline_id": "56cfec8e-5b4e-11ef-8af6-da7ad0900002",
+          "rc_version": 10,
+          "status": "running",
+          "version": "2.2.0~dev-0a0aae0"
+        },
+        "pid": 32944,
+        "source_type": "internal_logs",
+        "tick": 6,
+        "timestamp": "2024-08-21T21:38:24.977875Z"
+      }
+    result:
+      custom:
+        ddsource: "op_worker"
+        host: "COMP-D74TH6F20F"
+        metadata:
+          kind: "event"
+          level: "INFO"
+          module_path: "observability_pipelines_worker::cli::run"
+          target: "observability_pipelines_worker::cli::run"
+        op_worker:
+          capture_status: "inactive"
+          id: "9754ef4a-f441-4a8e-a664-a7e1b72b4edc"
+          pipeline_id: "56cfec8e-5b4e-11ef-8af6-da7ad0900002"
+          rc_version: 10
+          status: "running"
+          version: "2.2.0~dev-0a0aae0"
+        pid: 32944
+        source_type: "internal_logs"
+        tick: 6
+        timestamp: "2024-08-21T21:38:24.977875Z"
+      message: "Heartbeat."
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1724276304977
+  - sample: |-
+      {
+        "ddsource": "op_worker",
+        "host": "COMP-D74TH6F20F",
+        "message": "Vector has reloaded.",
+        "metadata": {
+          "kind": "event",
+          "level": "INFO",
+          "module_path": "vector::internal_events::process",
+          "target": "vector"
+        },
+        "op_worker": {
+          "capture_status": "inactive",
+          "id": "9754ef4a-f441-4a8e-a664-a7e1b72b4edc",
+          "pipeline_id": "56cfec8e-5b4e-11ef-8af6-da7ad0900002",
+          "rc_version": 10,
+          "status": "running",
+          "version": "2.2.0~dev-0a0aae0"
+        },
+        "path": "[File(\"/var/lib/observability-pipelines-worker/configuration-EOu46g.yaml\", Some(Yaml))]",
+        "pid": 32944,
+        "source_type": "internal_logs",
+        "timestamp": "2024-08-21T21:33:26.903401Z"
+      }
+    result:
+      custom:
+        ddsource: "op_worker"
+        host: "COMP-D74TH6F20F"
+        metadata:
+          kind: "event"
+          level: "INFO"
+          module_path: "vector::internal_events::process"
+          target: "vector"
+        op_worker:
+          capture_status: "inactive"
+          id: "9754ef4a-f441-4a8e-a664-a7e1b72b4edc"
+          pipeline_id: "56cfec8e-5b4e-11ef-8af6-da7ad0900002"
+          rc_version: 10
+          status: "running"
+          version: "2.2.0~dev-0a0aae0"
+        path: "[File(\"/var/lib/observability-pipelines-worker/configuration-EOu46g.yaml\", Some(Yaml))]"
+        pid: 32944
+        source_type: "internal_logs"
+        timestamp: "2024-08-21T21:33:26.903401Z"
+      message: "Vector has reloaded."
+      status: "info"
+      tags:
+       - "source:LOGS_SOURCE"
+      timestamp: 1724276006903

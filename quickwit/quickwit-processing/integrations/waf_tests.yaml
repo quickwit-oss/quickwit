@@ -1,0 +1,165 @@
+id: "waf"
+tests:
+ -
+  sample: |-
+    {
+      "webaclId" : "385cb038-3a6f-4f2f-ac64-09ab912af590",
+      "terminatingRuleId" : "Default_Action",
+      "terminatingRuleType" : "REGULAR",
+      "action" : "ALLOW",
+      "ruleGroupList" : [ {
+        "nonTerminatingMatchingRules" : [ {
+          "action" : "COUNT"
+        }, {
+          "ruleId" : "4659 b169 - 2083 - 4 a91 - bbd4 - 08851 a9aaf74"
+        } ],
+        "ruleGroupId" : "41f4eb08-4e1b-2985-92b5-e8abf434fad3"
+      } ],
+      "rateBasedRuleList" : [ {
+        "rateBasedRuleId" : "7c968ef6-32ec-4fee-96cc-51198e412e7f",
+        "maxRateAllowed" : 2000,
+        "limitKey" : "IP"
+      }, {
+        "rateBasedRuleId" : "462b169-2083-4a93-bbd4-08851a9aaf30",
+        "maxRateAllowed" : 2000,
+        "limitKey" : "IP"
+      } ],
+      "httpRequest" : {
+        "args" : "usernam=abc",
+        "country" : "US",
+        "headers" : [ {
+          "name" : "Host",
+          "value" : "127.0.0.1:1989"
+        }, {
+          "name" : "User-Agent",
+          "value" : "curl/7.51.2"
+        }, {
+          "name" : "Accept",
+          "value" : "*/*"
+        } ],
+        "httpVersion" : "HTTP/1.1",
+        "requestId" : "cloud front Request id",
+        "clientIp" : "192.10.23.23",
+        "httpMethod" : "GET",
+        "uri" : "REDACTED"
+      },
+      "httpSourceName" : "CF",
+      "httpSourceId" : "i-123",
+      "nonTerminatingMatchingRules" : [ {
+        "action" : "COUNT"
+      }, {
+        "ruleId" : "4659 b181 - 2011 - 4 a91 - bbd4 - 08851 a9aaf52"
+      } ],
+      "formatVersion" : 1,
+      "timestamp" : 1533689070589
+    }
+  result:
+    custom:
+      formatVersion: 1
+      http:
+        method: "GET"
+        request_id: "cloud front Request id"
+        url_details:
+          path: "REDACTED"
+      httpRequest:
+        args: "usernam=abc"
+        country: "US"
+        headers:
+         -
+          name: "Host"
+          value: "127.0.0.1:1989"
+         -
+          name: "User-Agent"
+          value: "curl/7.51.2"
+         -
+          name: "Accept"
+          value: "*/*"
+        httpVersion: "HTTP/1.1"
+      httpSourceId: "i-123"
+      httpSourceName: "CF"
+      network:
+        client:
+          ip: "192.10.23.23"
+      nonTerminatingMatchingRules:
+       -
+        action: "COUNT"
+       -
+        ruleId: "4659 b181 - 2011 - 4 a91 - bbd4 - 08851 a9aaf52"
+      rateBasedRuleList:
+       -
+        rateBasedRuleId: "7c968ef6-32ec-4fee-96cc-51198e412e7f"
+        maxRateAllowed: 2000
+        limitKey: "IP"
+       -
+        rateBasedRuleId: "462b169-2083-4a93-bbd4-08851a9aaf30"
+        maxRateAllowed: 2000
+        limitKey: "IP"
+      ruleGroupList:
+       -
+        nonTerminatingMatchingRules:
+         -
+          action: "COUNT"
+         -
+          ruleId: "4659 b169 - 2083 - 4 a91 - bbd4 - 08851 a9aaf74"
+        ruleGroupId: "41f4eb08-4e1b-2985-92b5-e8abf434fad3"
+      system:
+        action: "ALLOW"
+      terminatingRuleId: "Default_Action"
+      terminatingRuleType: "REGULAR"
+      timestamp: 1533689070589
+      webaclId: "385cb038-3a6f-4f2f-ac64-09ab912af590"
+    message: |-
+      {
+        "webaclId" : "385cb038-3a6f-4f2f-ac64-09ab912af590",
+        "terminatingRuleId" : "Default_Action",
+        "terminatingRuleType" : "REGULAR",
+        "action" : "ALLOW",
+        "ruleGroupList" : [ {
+          "nonTerminatingMatchingRules" : [ {
+            "action" : "COUNT"
+          }, {
+            "ruleId" : "4659 b169 - 2083 - 4 a91 - bbd4 - 08851 a9aaf74"
+          } ],
+          "ruleGroupId" : "41f4eb08-4e1b-2985-92b5-e8abf434fad3"
+        } ],
+        "rateBasedRuleList" : [ {
+          "rateBasedRuleId" : "7c968ef6-32ec-4fee-96cc-51198e412e7f",
+          "maxRateAllowed" : 2000,
+          "limitKey" : "IP"
+        }, {
+          "rateBasedRuleId" : "462b169-2083-4a93-bbd4-08851a9aaf30",
+          "maxRateAllowed" : 2000,
+          "limitKey" : "IP"
+        } ],
+        "httpRequest" : {
+          "args" : "usernam=abc",
+          "country" : "US",
+          "headers" : [ {
+            "name" : "Host",
+            "value" : "127.0.0.1:1989"
+          }, {
+            "name" : "User-Agent",
+            "value" : "curl/7.51.2"
+          }, {
+            "name" : "Accept",
+            "value" : "*/*"
+          } ],
+          "httpVersion" : "HTTP/1.1",
+          "requestId" : "cloud front Request id",
+          "clientIp" : "192.10.23.23",
+          "httpMethod" : "GET",
+          "uri" : "REDACTED"
+        },
+        "httpSourceName" : "CF",
+        "httpSourceId" : "i-123",
+        "nonTerminatingMatchingRules" : [ {
+          "action" : "COUNT"
+        }, {
+          "ruleId" : "4659 b181 - 2011 - 4 a91 - bbd4 - 08851 a9aaf52"
+        } ],
+        "formatVersion" : 1,
+        "timestamp" : 1533689070589
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

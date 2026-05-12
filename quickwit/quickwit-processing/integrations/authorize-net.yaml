@@ -1,0 +1,78 @@
+id: authorize-net
+metric_id: authorize-net
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - facetType: range
+    groups:
+      - Authorize-net
+    name: Settle Amount
+    path: authorize-net.settleAmount
+    source: log
+    type: double
+pipeline:
+  type: pipeline
+  name: authorize.net
+  enabled: true
+  filter:
+    query: "source:authorize-net"
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `enrichment_details.settlementTimeUTC` as the official date of the log
+      enabled: true
+      sources:
+        - enrichment_details.settlementTimeUTC
+    - name: Lookup for `log.transactionStatus` to `status`
+      enabled: true
+      source: log.transactionStatus
+      target: status
+      lookupTable: |-
+        authorizedPendingCapture, info
+        capturedPendingSettlement, info
+        communicationError, error
+        refundSettledSuccessfully, info
+        refundPendingSettlement, info
+        approvedReview, info
+        declined, error
+        couldNotVoid, error
+        expired, warning
+        generalError, error
+        failedReview, error
+        settledSuccessfully, info
+        settlementError, error
+        underReview, info
+        voided, warning
+        FDSPendingReview, warning
+        FDSAuthorizedPendingReview, warning
+        returnedItem, info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: string-builder-processor
+      name: Define `usr.name` equal to %{log.firstName} %{log.lastName}
+      enabled: true
+      template: "%{log.firstName} %{log.lastName}"
+      target: usr.name
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `log.settleAmount` to `authorize-net.settleAmount`
+      enabled: true
+      sources:
+        - log.settleAmount
+      sourceType: attribute
+      target: authorize-net.settleAmount
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

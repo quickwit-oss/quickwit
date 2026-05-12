@@ -1,0 +1,46 @@
+id: hivemq
+metric_id: hivemq
+backend_only: false
+facets:
+  - groups:
+      - HiveMQ
+    name: HiveMQ Node Name
+    path: hivemq.node
+    source: log
+pipeline:
+  type: pipeline
+  name: HiveMQ
+  enabled: true
+  filter:
+    query: source:hivemq
+  processors:
+    - type: grok-parser
+      name: Parsing HiveMQ logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-04-25 02:30:38,955 INFO  - Starting HiveMQ extension system.
+        - '2020-04-25 02:30:41,148 INFO  - fwWng: no members discovered after 2001 ms: creating cluster as first member'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _level %{word:level}
+          _node %{word:hivemq.node}
+          _message %{regex("[\\S\\s]*"):message}
+        matchRules: |
+          hivemq %{_date} %{_level} +- ?(%{_node}: ?)?%{_message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

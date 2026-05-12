@@ -1,0 +1,108 @@
+id: mobile
+backend_only: true
+facets:
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Mobile
+    name: Connectivity
+    path: Network.client.connectivity
+    source: log
+  - groups:
+      - Web Access
+    name: Session ID
+    path: session_id
+    source: log
+  - groups:
+      - RUM
+    name: View Id
+    path: view.id
+    source: log
+  - groups:
+      - RUM
+    name: Application Id
+    path: application_id
+    source: log
+  - groups:
+      - RUM
+    name: User Action Id
+    path: user_action.id
+    source: log
+pipeline:
+  type: pipeline
+  name: Mobile logs
+  enabled: true
+  filter:
+    query: source:mobile
+  processors:
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: geo-ip-parser
+      name: ''
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip

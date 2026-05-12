@@ -1,0 +1,127 @@
+id: mapreduce
+metric_id: mapreduce
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ApplicationID
+    path: mapreduce.application.app_id
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce Application State
+    path: mapreduce.application.state
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ContainerID
+    path: mapreduce.application.container_id
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ApplicationAttemptID
+    path: mapreduce.attempt.attempt_id
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ApplicationAttempt State
+    path: mapreduce.attempt.state
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce TaskID
+    path: mapreduce.task.task_id
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce Task State
+    path: mapreduce.task.state
+    source: log
+pipeline:
+  type: pipeline
+  name: mapreduce
+  enabled: true
+  filter:
+    query: source:mapreduce
+  processors:
+    - type: grok-parser
+      name: Parsing mapreduce default formats
+      enabled: true
+      source: message
+      samples:
+        - '2020-08-19 15:21:01,647 INFO [main] org.apache.hadoop.mapred.MapTask: Processing split: hdfs://namenode:9000/user/root/input/hadoop-env.cmd:0+3999'
+        - '2020-08-19 18:20:39,315 WARN [main] org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter: Could not delete hdfs://namenode:9000/user/root/grep-temp-312857601/_temporary/1/_temporary/attempt_1597861183743_0001_m_000012_0'
+        - '2020-08-19 15:52:20,171 INFO [main] org.apache.hadoop.mapred.MapTask: (EQUATOR) 0 kvi 26214396(104857584)'
+        - '2020-08-19 15:53:06,319 INFO [Thread-106 #3] org.apache.hadoop.mapreduce.v2.app.launcher.ContainerLauncherImpl: KILLING attempt_1597851676689_0007_r_000000_0'
+        - '2020-08-19 20:17:48,161 INFO [AsyncDispatcher event handler] org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl: attempt_1597861183743_0008_r_000000_0 TaskAttempt Transitioned from SUCCESS_FINISHING_CONTAINER to SUCCEEDED'
+
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:level}
+          _logger_component \[%{data:logger.component}\]
+          _logger_name %{notSpace:logger.name}
+
+        matchRules: |
+          mapreduce_default %{_date} %{_status}\s+%{_logger_component} %{_logger_name}:\s+%{data:msg}
+          yarn_default %{_date} %{_status}\s+%{_logger_name}:\W+%{data:msg}
+
+    - type: grok-parser
+      name: Parse container, task, app, and attempt ids
+      enabled: true
+      source: msg
+      grok:
+        supportRules: |
+          _container_id %{regex("container_\\d{13}_\\d{4}_\\d{2}_\\d{6}"):mapreduce.application.container_id}
+          _app_id %{regex("application_\\d{13}_\\d{4}"):mapreduce.application.app_id}
+          _attempt_id %{regex("attempt_\\d{13}_\\d{4}_[rm]_\\d{6}_\\d"):mapreduce.attempt.attempt_id}
+          _task_id %{regex("task_\\d{13}_\\d{4}_[rm]_\\d{6}"):mapreduce.task.task_id}
+        matchRules: |
+          app_ids_with_container_first %{data}%{_container_id}%{data}(%{_app_id}|%{_attempt_id}|%{_task_id})%{data}
+          app_ids_with_container_second %{data}(%{_app_id}|%{_attempt_id}|%{_task_id})%{data}%{_container_id}%{data}
+          app_ids_solo %{data}(%{_app_id}|%{_attempt_id}|%{_task_id})%{data}
+      samples:
+        - Could not delete hdfs://namenode:9000/user/root/grep-temp-312857601/_temporary/1/_temporary/attempt_1597861183743_0001_m_000012_0
+        - KILLING attempt_1597851676689_0007_r_000000_0
+        - attempt_1597861183743_0008_r_000000_0 TaskAttempt Transitioned from SUCCESS_FINISHING_CONTAINER to SUCCEEDED
+    - type: grok-parser
+      name: Parse state per activity type
+      enabled: true
+      source: msg
+      samples:
+        - attempt_1597851676689_0009_m_000025_0 TaskAttempt Transitioned from ASSIGNED to RUNNING
+        - task_1597861183743_0004_r_000000 Task Transitioned from SCHEDULED to RUNNING
+      grok:
+        supportRules: |
+          _container_id %{regex("container_\\d{13}_\\d{4}_\\d{2}_\\d{6}")}
+          _app_id %{regex("application_\\d{13}_\\d{4}")}
+          _attempt_id %{regex("attempt_\\d{13}_\\d{4}_[rm]_\\d{6}_\\d")}
+          _task_id %{regex("task_\\d{13}_\\d{4}_[rm]_\\d{6}")}
+
+          _attempt_state %{word:mapreduce.attempt.state}
+          _task_state %{word:mapreduce.task.state}
+
+        matchRules: |
+          attempt_state_change %{_attempt_id} TaskAttempt Transitioned from %{word} to %{_attempt_state}
+          task_state_change %{_task_id} Task Transitioned from %{word} to %{_task_state}
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

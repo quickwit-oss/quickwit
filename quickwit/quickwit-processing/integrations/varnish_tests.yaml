@@ -1,0 +1,102 @@
+id: "varnish"
+tests:
+ -
+  sample: "127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] \"GET /apache_pb.gif HTTP/1.0\" 200 2326"
+  result:
+    custom:
+      date_access: 1468407336000
+      http:
+        auth: "frank"
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "1.0"
+      network:
+        bytes_written: 2326
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - frank [13/Jul/2016:10:55:36 +0000] \"GET /apache_pb.gif HTTP/1.0\" 200 2326"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1468407336000
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+  result:
+    custom:
+      date_access: 1483719397000
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_category: "OK"
+        status_code: 200
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\""
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+ -
+  sample: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+  result:
+    custom:
+      date_access: 1483719397000
+      http:
+        method: "GET"
+        referer: "http://www.perdu.com/"
+        status_category: "OK"
+        status_code: 200
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+        version: "1.1"
+      network:
+        bytes_written: 612
+        client:
+          ip: "172.17.0.1"
+    message: "172.17.0.1 - - [06/Jan/2017:16:16:37 +0000] \"GET /datadoghq/company?test=var1%20Pl HTTP/1.1\" 200 612 \"http://www.perdu.com/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36\" \"-\" those are random characters"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1483719397000
+

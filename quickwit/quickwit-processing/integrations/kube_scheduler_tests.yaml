@@ -1,0 +1,48 @@
+id: "kube_scheduler"
+tests:
+ -
+  sample: "W0424 11:47:41.605188       1 authorization.go:47] Authorization is disabled"
+  result:
+    custom:
+      level: "W"
+      lineno: 47.0
+      logger:
+        name: "authorization.go"
+        thread_id: 1.0
+      timestamp: 41341661605
+    message: "Authorization is disabled"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 41341661605
+ -
+  sample: "I0424 11:47:41.605254       1 deprecated_insecure_serving.go:49] Serving healthz insecurely on 127.0.0.1:10251"
+  result:
+    custom:
+      level: "I"
+      lineno: 49.0
+      logger:
+        name: "deprecated_insecure_serving.go"
+        thread_id: 1.0
+      timestamp: 41341661605
+    message: "Serving healthz insecurely on 127.0.0.1:10251"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 41341661605
+ -
+  sample: "E0424 11:47:46.923664       1 reflector.go:134] k8s.io/client-go/informers/factory.go:132: Failed to list *v1.PersistentVolumeClaim: persistentvolumeclaims is forbidden: User \"system:kube-scheduler\" cannot list resource \"persistentvolumeclaims\" in API group \"\" at the cluster scope"
+  result:
+    custom:
+      level: "E"
+      lineno: 134.0
+      logger:
+        name: "reflector.go"
+        thread_id: 1.0
+      timestamp: 41341666923
+    message: "k8s.io/client-go/informers/factory.go:132: Failed to list *v1.PersistentVolumeClaim: persistentvolumeclaims is forbidden: User \"system:kube-scheduler\" cannot list resource \"persistentvolumeclaims\" in API group \"\" at the cluster scope"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 41341666923
+

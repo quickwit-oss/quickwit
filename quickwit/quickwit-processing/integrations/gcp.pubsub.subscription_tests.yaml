@@ -1,0 +1,451 @@
+id: "gcp.pubsub.subscription"
+tests:
+ -
+  sample: |-
+    {
+      "publishTime" : "2019-04-08T15:11:15.474Z",
+      "data" : {
+        "logName" : "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "pubsub_subscription",
+          "labels" : {
+            "subscription_id" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+            "project_id" : "qa-2-fdh-product-1"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerNetwork" : "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__",
+            "requestAttributes" : {
+              "time" : "2019-04-08T15:11:14.224343812Z"
+            },
+            "callerSuppliedUserAgent" : "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)",
+            "callerIp" : "35.231.118.81"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest",
+            "subscription" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "testemail@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+            "permission" : "pubsub.subscriptions.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "topic" : "projects/qa-2-fdh-product-1/topics/user-data-export"
+          },
+          "methodName" : "google.pubsub.v1.Subscriber.GetSubscription",
+          "resourceName" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+          "serviceName" : "pubsub.googleapis.com"
+        },
+        "receiveTimestamp" : "2019-04-08T15:11:14.510790963Z",
+        "insertId" : "1fw1b9ocjcx",
+        "timestamp" : "2019-04-08T15:11:14.213150339Z"
+      },
+      "publish_time" : "2019-04-08T15:11:15.474Z",
+      "messageId" : "483780025581239",
+      "attributes" : {
+        "logging" : {
+          "googleapis" : {
+            "com/timestamp" : "2019-04-08T15:11:14.213150339Z"
+          }
+        }
+      },
+      "message_id" : "483780025581239",
+      "subscription" : "projects/qa-2-fdh-product-1/subscriptions/datadog-export-subscription"
+    }
+  result:
+    custom:
+      attributes:
+        logging:
+          googleapis:
+            com/timestamp: "2019-04-08T15:11:14.213150339Z"
+      data:
+        insertId: "1fw1b9ocjcx"
+        logName: "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+        protoPayload:
+          '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+          authenticationInfo:
+            principalEmail: "testemail@datadoghq.com"
+          authorizationInfo:
+           -
+            resource: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+            permission: "pubsub.subscriptions.get"
+            granted: true
+          methodName: "google.pubsub.v1.Subscriber.GetSubscription"
+          request:
+            '@type': "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest"
+            subscription: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          requestMetadata:
+            callerIp: "35.231.118.81"
+            callerNetwork: "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__"
+            callerSuppliedUserAgent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+            requestAttributes:
+              time: "2019-04-08T15:11:14.224343812Z"
+          resourceName: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          response:
+            '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+            topic: "projects/qa-2-fdh-product-1/topics/user-data-export"
+          serviceName: "pubsub.googleapis.com"
+        receiveTimestamp: "2019-04-08T15:11:14.510790963Z"
+        resource:
+          labels:
+            project_id: "qa-2-fdh-product-1"
+            subscription_id: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          type: "pubsub_subscription"
+        timestamp: "2019-04-08T15:11:14.213150339Z"
+      evt:
+        name: "google.pubsub.v1.Subscriber.GetSubscription"
+      http:
+        url_details:
+          host: "compute.googleapis.com"
+          path: "/projects/qa-2-fdh-product-1/global/networks/__unknown__"
+        useragent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+            major: "4"
+            minor: "4"
+            patch: "111"
+      messageId: "483780025581239"
+      message_id: "483780025581239"
+      network:
+        client:
+          geoip: {}
+          ip: "35.231.118.81"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "qa-2-fdh-product-1"
+            email_addr: "testemail@datadoghq.com"
+            name: "testemail"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.pubsub.v1.subscriber.getsubscription"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest"
+              subscription: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              topic: "projects/qa-2-fdh-product-1/topics/user-data-export"
+          service:
+            name: "pubsub.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "qa-2-fdh-product-1"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+        metadata:
+          event_code: "google.pubsub.v1.subscriber.getsubscription"
+          log_name: "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1fw1b9ocjcx"
+          version: "1.3.0"
+        src_endpoint:
+          ip: "35.231.118.81"
+        status: "Success"
+        status_id: 1
+        time: 1554736274213
+        time_dt: "2019-04-08T15:11:14.213150339Z"
+        type_uid: 600302
+      publishTime: "2019-04-08T15:11:15.474Z"
+      publish_time: "2019-04-08T15:11:15.474Z"
+      subscription: "projects/qa-2-fdh-product-1/subscriptions/datadog-export-subscription"
+      usr:
+        email: "testemail@datadoghq.com"
+        id: "testemail@datadoghq.com"
+    message: |-
+      {
+        "publishTime" : "2019-04-08T15:11:15.474Z",
+        "data" : {
+          "logName" : "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+          "resource" : {
+            "type" : "pubsub_subscription",
+            "labels" : {
+              "subscription_id" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+              "project_id" : "qa-2-fdh-product-1"
+            }
+          },
+          "protoPayload" : {
+            "requestMetadata" : {
+              "callerNetwork" : "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__",
+              "requestAttributes" : {
+                "time" : "2019-04-08T15:11:14.224343812Z"
+              },
+              "callerSuppliedUserAgent" : "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)",
+              "callerIp" : "35.231.118.81"
+            },
+            "request" : {
+              "@type" : "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest",
+              "subscription" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+            },
+            "authenticationInfo" : {
+              "principalEmail" : "testemail@datadoghq.com"
+            },
+            "authorizationInfo" : [ {
+              "resource" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+              "permission" : "pubsub.subscriptions.get",
+              "granted" : true
+            } ],
+            "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+            "response" : {
+              "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+              "topic" : "projects/qa-2-fdh-product-1/topics/user-data-export"
+            },
+            "methodName" : "google.pubsub.v1.Subscriber.GetSubscription",
+            "resourceName" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+            "serviceName" : "pubsub.googleapis.com"
+          },
+          "receiveTimestamp" : "2019-04-08T15:11:14.510790963Z",
+          "insertId" : "1fw1b9ocjcx",
+          "timestamp" : "2019-04-08T15:11:14.213150339Z"
+        },
+        "publish_time" : "2019-04-08T15:11:15.474Z",
+        "messageId" : "483780025581239",
+        "attributes" : {
+          "logging" : {
+            "googleapis" : {
+              "com/timestamp" : "2019-04-08T15:11:14.213150339Z"
+            }
+          }
+        },
+        "message_id" : "483780025581239",
+        "subscription" : "projects/qa-2-fdh-product-1/subscriptions/datadog-export-subscription"
+      }
+    service: "pubsub.googleapis.com"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554736274213
+ -
+  sample: |-
+    {
+      "logName" : "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+      "resource" : {
+        "type" : "pubsub_subscription",
+        "labels" : {
+          "subscription_id" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+          "project_id" : "qa-2-fdh-product-1"
+        }
+      },
+      "protoPayload" : {
+        "requestMetadata" : {
+          "callerNetwork" : "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__",
+          "requestAttributes" : {
+            "time" : "2019-04-08T15:11:14.224343812Z"
+          },
+          "callerSuppliedUserAgent" : "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)",
+          "callerIp" : "35.231.118.81"
+        },
+        "request" : {
+          "@type" : "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest",
+          "subscription" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+        },
+        "authenticationInfo" : {
+          "principalEmail" : "testemail@datadoghq.com"
+        },
+        "authorizationInfo" : [ {
+          "resource" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+          "permission" : "pubsub.subscriptions.get",
+          "granted" : true
+        } ],
+        "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+        "response" : {
+          "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+          "topic" : "projects/qa-2-fdh-product-1/topics/user-data-export"
+        },
+        "methodName" : "google.pubsub.v1.Subscriber.GetSubscription",
+        "resourceName" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+        "serviceName" : "pubsub.googleapis.com"
+      },
+      "receiveTimestamp" : "2019-04-08T15:11:14.510790963Z",
+      "insertId" : "1fw1b9ocjcx",
+      "timestamp" : "2019-04-08T15:11:14.213150339Z"
+    }
+  result:
+    custom:
+      evt:
+        name: "google.pubsub.v1.Subscriber.GetSubscription"
+      http:
+        url_details:
+          host: "compute.googleapis.com"
+          path: "/projects/qa-2-fdh-product-1/global/networks/__unknown__"
+        useragent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+            major: "4"
+            minor: "4"
+            patch: "111"
+      insertId: "1fw1b9ocjcx"
+      logName: "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+      network:
+        client:
+          geoip: {}
+          ip: "35.231.118.81"
+      ocsf:
+        activity_id: 2
+        activity_name: "Read"
+        actor:
+          user:
+            account:
+              uid: "qa-2-fdh-product-1"
+            email_addr: "testemail@datadoghq.com"
+            name: "testemail"
+            type: "User"
+            type_id: 1
+        api:
+          operation: "google.pubsub.v1.subscriber.getsubscription"
+          request:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest"
+              subscription: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+            uid: "Unknown"
+          response:
+            data:
+              '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+              topic: "projects/qa-2-fdh-product-1/topics/user-data-export"
+          service:
+            name: "pubsub.googleapis.com"
+        category_name: "Application Activity"
+        category_uid: 6
+        class_name: "API Activity"
+        class_uid: 6003
+        cloud:
+          account:
+            uid: "qa-2-fdh-product-1"
+          provider: "Google Cloud"
+        http_request:
+          user_agent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+        metadata:
+          event_code: "google.pubsub.v1.subscriber.getsubscription"
+          log_name: "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access"
+          product:
+            name: "Google Cloud Audit logs"
+            vendor_name: "Google Cloud"
+          profiles:
+           - "cloud"
+           - "datetime"
+          uid: "1fw1b9ocjcx"
+          version: "1.3.0"
+        src_endpoint:
+          ip: "35.231.118.81"
+        status: "Success"
+        status_id: 1
+        time: 1554736274213
+        time_dt: "2019-04-08T15:11:14.213150339Z"
+        type_uid: 600302
+      protoPayload:
+        '@type': "type.googleapis.com/google.cloud.audit.AuditLog"
+        authenticationInfo:
+          principalEmail: "testemail@datadoghq.com"
+        authorizationInfo:
+         -
+          resource: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          permission: "pubsub.subscriptions.get"
+          granted: true
+        methodName: "google.pubsub.v1.Subscriber.GetSubscription"
+        request:
+          '@type': "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest"
+          subscription: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+        requestMetadata:
+          callerIp: "35.231.118.81"
+          callerNetwork: "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__"
+          callerSuppliedUserAgent: "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)"
+          requestAttributes:
+            time: "2019-04-08T15:11:14.224343812Z"
+        resourceName: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+        response:
+          '@type': "type.googleapis.com/google.pubsub.v1.Subscription"
+          topic: "projects/qa-2-fdh-product-1/topics/user-data-export"
+        serviceName: "pubsub.googleapis.com"
+      receiveTimestamp: "2019-04-08T15:11:14.510790963Z"
+      resource:
+        labels:
+          project_id: "qa-2-fdh-product-1"
+          subscription_id: "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+        type: "pubsub_subscription"
+      timestamp: "2019-04-08T15:11:14.213150339Z"
+      usr:
+        email: "testemail@datadoghq.com"
+        id: "testemail@datadoghq.com"
+    message: |-
+      {
+        "logName" : "projects/qa-2-fdh-product-1/logs/cloudaudit.googleapis.com%2Fdata_access",
+        "resource" : {
+          "type" : "pubsub_subscription",
+          "labels" : {
+            "subscription_id" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+            "project_id" : "qa-2-fdh-product-1"
+          }
+        },
+        "protoPayload" : {
+          "requestMetadata" : {
+            "callerNetwork" : "//compute.googleapis.com/projects/qa-2-fdh-product-1/global/networks/__unknown__",
+            "requestAttributes" : {
+              "time" : "2019-04-08T15:11:14.224343812Z"
+            },
+            "callerSuppliedUserAgent" : "windmill_main google-api-cpp-client/0.3-googleclient Linux/4.4.111+,gzip(gfe)",
+            "callerIp" : "35.231.118.81"
+          },
+          "request" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.GetSubscriptionRequest",
+            "subscription" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923"
+          },
+          "authenticationInfo" : {
+            "principalEmail" : "testemail@datadoghq.com"
+          },
+          "authorizationInfo" : [ {
+            "resource" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+            "permission" : "pubsub.subscriptions.get",
+            "granted" : true
+          } ],
+          "@type" : "type.googleapis.com/google.cloud.audit.AuditLog",
+          "response" : {
+            "@type" : "type.googleapis.com/google.pubsub.v1.Subscription",
+            "topic" : "projects/qa-2-fdh-product-1/topics/user-data-export"
+          },
+          "methodName" : "google.pubsub.v1.Subscriber.GetSubscription",
+          "resourceName" : "projects/qa-2-fdh-product-1/subscriptions/user-data-export.subscription-17262967185179924923",
+          "serviceName" : "pubsub.googleapis.com"
+        },
+        "receiveTimestamp" : "2019-04-08T15:11:14.510790963Z",
+        "insertId" : "1fw1b9ocjcx",
+        "timestamp" : "2019-04-08T15:11:14.213150339Z"
+      }
+    service: "pubsub.googleapis.com"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1554736274213
+

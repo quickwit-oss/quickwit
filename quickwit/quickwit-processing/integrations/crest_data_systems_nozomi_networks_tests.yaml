@@ -1,0 +1,4032 @@
+id: crest_data_systems_nozomi_networks
+tests:
+  - sample: |-
+      {
+        "relationships" : {
+          "variables" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/variables"
+            }
+          },
+          "sessions" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sessions"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/comments"
+            }
+          },
+          "asset_cpes" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_cpes"
+            }
+          },
+          "node_point_statuses" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/node_point_statuses"
+            }
+          },
+          "asset_enrichment" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_enrichment"
+            }
+          },
+          "network_domain" : {
+            "data" : {
+              "id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d",
+              "type" : "network_domains"
+            },
+            "links" : {
+              "related" : "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+            }
+          },
+          "asset_risk_level" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_risk_level"
+            }
+          },
+          "alerts" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/alerts"
+            }
+          },
+          "site" : {
+            "data" : {
+              "id" : "1a702a62-8093-41db-aa0e-b138e7c43ebe",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+            }
+          },
+          "sensors" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sensors"
+            }
+          },
+          "nodes" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/nodes"
+            }
+          },
+          "vulnerabilities" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/vulnerabilities"
+            }
+          },
+          "taggings" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/taggings"
+            }
+          },
+          "links" : {
+            "meta" : {
+              "presence" : true
+            },
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/links"
+            }
+          },
+          "asset_softwares" : {
+            "links" : {
+              "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_softwares"
+            }
+          }
+        },
+        "attributes" : {
+          "type:info" : {
+            "source" : "asset-kb"
+          },
+          "edge_id" : "02c29870-c621-5407-81f2-01de69077789",
+          "type" : "controller",
+          "end_of_support_date:info" : {
+            "source" : "none"
+          },
+          "lifecycle" : "end_of_sale",
+          "capture_device" : "demo",
+          "end_of_sale_date:info" : {
+            "source" : "none"
+          },
+          "product_name:info" : {
+            "granularity" : "complete",
+            "confidence" : "good",
+            "source" : "asset-kb"
+          },
+          "_asset_kb_id" : "cc93f1fa-92c4-4a1d-a8a1-49a622c460dd",
+          "protocols" : [ "iec104", "sel-telnet", "telnet" ],
+          "nozomi_risk" : 13.0,
+          "vendor:info" : {
+            "granularity" : "complete",
+            "confidence" : "good",
+            "source" : "asset-kb"
+          },
+          "os_or_firmware" : "Firmware: R419-V0",
+          "firmware_version:info" : {
+            "protocol" : "sel-telnet",
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "passive"
+          },
+          "device_id" : "00:30:a7:a8:e7:4b",
+          "level" : "1",
+          "ip" : [ "192.168.231.75" ],
+          "is_ai_enriched" : true,
+          "zones" : [ "ProdNet-B" ],
+          "product_name" : "SEL-3530 RTAC Real-time Automation Controller",
+          "mac_address_level" : {
+            "00:30:a7:a8:e7:4b" : "confirmed"
+          },
+          "remediations_signatures" : [ "stop_using_telnet" ],
+          "is_sp_enriched" : false,
+          "name" : "NOZOMI-SEL-3530",
+          "arc_version" : "",
+          "lifecycle:info" : {
+            "granularity" : "complete",
+            "confidence" : "good",
+            "source" : "asset-kb"
+          },
+          "nodes_uids" : [ "c332c722-d80c-464b-90ac-427c16f89fb0" ],
+          "technology_category" : "OT",
+          "roles" : [ "producer" ],
+          "created_at" : 1725960057305,
+          "firmware_version" : "R419-V0",
+          "end_of_support_date" : 1744359737000,
+          "has_remediations" : true,
+          "is_arc_enriched" : false,
+          "end_of_sale_date" : 1744359737000,
+          "appliance_hosts" : [ "Demo Sensor standard 36ed8237" ],
+          "vendor" : "Schweitzer Engineering Laboratories",
+          "mac_address" : [ "00:30:a7:a8:e7:4b" ],
+          "serial_number:info" : {
+            "source" : "none"
+          },
+          "activity_times" : {
+            "1744360200000" : 1
+          },
+          "os" : "",
+          "risk_configuration" : {
+            "type_weight" : 0.5,
+            "risk_mitigation_factor" : 0.0,
+            "asset_criticality" : 25,
+            "unsafe_protocols_list" : [ "ftp", "http", "imap", "llmnr", "ntlm", "nfs", "pop3", "rdp", "smb", "snmp", "smtp", "sip", "telnet" ],
+            "high_risk_alerts_weight" : 0.5,
+            "critical_vulnerabilities_weight" : 0.5,
+            "alerts_risk_weight" : 0.5,
+            "device_risk_weight" : 0.5,
+            "open_vulnerabilities_weight" : 0.5,
+            "open_alerts_weight" : 0.5,
+            "unsafe_countries_list" : [ "china", "russia", "north korea", "ukraine", "vietnam", "indonesia" ],
+            "vulnerabilities_risk_weight" : 0.5,
+            "technology_category_weight" : 0.5,
+            "ai_risk_weight" : 1,
+            "unsafe_protocols_weight" : 0.5,
+            "connection_type_weight" : 0.5,
+            "asset_criticality_weight" : 0.5,
+            "internet_exposure_weight" : 0.5,
+            "exploitable_vulnerabilities_epss_score" : 0.2,
+            "network_activity_weight" : 0.5,
+            "unsafe_countries_weight" : 0.5,
+            "asset_criticality_factor" : 0.0,
+            "suboptimal_management_weight" : 0.5,
+            "open_vulnerabilities_likelihood" : 0.7,
+            "lifecycle_weight" : 0.5,
+            "communication_risk_weight" : 0.5,
+            "high_risk_alert_level" : 7,
+            "exploitable_vulnerabilities_weight" : 0.5,
+            "compensating_control_weight" : 0.2,
+            "compensating_control" : 0,
+            "high_risk_vulnerabilities_level" : 7
+          },
+          "serial_number" : "",
+          "os_or_firmware:info" : {
+            "protocol" : "sel-telnet",
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "passive"
+          },
+          "record_created_at" : 1744362346386,
+          "mac_vendor" : [ "Schweitzer Engineering Laboratories" ],
+          "is_ti_enriched" : true,
+          "last_activity_time" : 1744359737000,
+          "nodes" : [ "192.168.231.75" ],
+          "os:info" : {
+            "source" : "none"
+          },
+          "risk" : 13.0,
+          "time" : 1744362346371,
+          "properties" : {
+            "192" : {
+              "168" : {
+                "231" : {
+                  "75" : {
+                    "sel-telnet/configuration" : "11221201",
+                    "sel-telnet/part_number" : "751A61ABACA73810630",
+                    "_type" : {
+                      "asset-kb" : "controller",
+                      "passive" : "OT_device"
+                    },
+                    "_vendor" : {
+                      "asset-kb" : "Schweitzer Engineering Laboratories",
+                      "passive" : "SEL Inc."
+                    },
+                    "sel-telnet/boot_firmware" : "BOOTLDR-R501-V0-Z000000-D20140224",
+                    "_product_name" : {
+                      "asset-kb" : "SEL-3530 RTAC Real-time Automation Controller",
+                      "passive" : "SEL-3530"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "links" : {
+          "self" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632",
+          "collection" : "/api/v1/assets"
+        },
+        "id" : "c2f29f2d-1e74-481f-8438-b82d4497e632",
+        "type" : "assets"
+      }
+    service: "cds.nozomi_networks.assets"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          _asset_kb_id: "cc93f1fa-92c4-4a1d-a8a1-49a622c460dd"
+          activity_times:
+            "1744360200000": 1
+          appliance_hosts:
+            - "Demo Sensor standard 36ed8237"
+          arc_version: ""
+          capture_device: "demo"
+          created_at: 1725960057305
+          device_id: "00:30:a7:a8:e7:4b"
+          edge_id: "02c29870-c621-5407-81f2-01de69077789"
+          end_of_sale_date: 1744359737000
+          end_of_sale_date:info:
+            source: "none"
+          end_of_support_date: 1744359737000
+          end_of_support_date:info:
+            source: "none"
+          firmware_version: "R419-V0"
+          firmware_version:info:
+            confidence: "high"
+            granularity: "complete"
+            protocol: "sel-telnet"
+            source: "passive"
+          has_remediations: true
+          ip:
+            - "192.168.231.75"
+          is_ai_enriched: true
+          is_arc_enriched: false
+          is_sp_enriched: false
+          is_ti_enriched: true
+          last_activity_time: 1744359737000
+          level: "1"
+          lifecycle: "end_of_sale"
+          lifecycle:info:
+            confidence: "good"
+            granularity: "complete"
+            source: "asset-kb"
+          mac_address:
+            - "00:30:a7:a8:e7:4b"
+          mac_address_level:
+            "00:30:a7:a8:e7:4b": "confirmed"
+          mac_vendor:
+            - "Schweitzer Engineering Laboratories"
+          nodes:
+            - "192.168.231.75"
+          nodes_uids:
+            - "c332c722-d80c-464b-90ac-427c16f89fb0"
+          os: ""
+          os:info:
+            source: "none"
+          os_or_firmware: "Firmware: R419-V0"
+          os_or_firmware:info:
+            confidence: "high"
+            granularity: "complete"
+            protocol: "sel-telnet"
+            source: "passive"
+          product_name: "SEL-3530 RTAC Real-time Automation Controller"
+          product_name:info:
+            confidence: "good"
+            granularity: "complete"
+            source: "asset-kb"
+          properties:
+            "192":
+              "168":
+                "231":
+                  "75":
+                    _product_name:
+                      asset-kb: "SEL-3530 RTAC Real-time Automation Controller"
+                      passive: "SEL-3530"
+                    _type:
+                      asset-kb: "controller"
+                      passive: "OT_device"
+                    _vendor:
+                      asset-kb: "Schweitzer Engineering Laboratories"
+                      passive: "SEL Inc."
+                    sel-telnet/boot_firmware: "BOOTLDR-R501-V0-Z000000-D20140224"
+                    sel-telnet/configuration: "11221201"
+                    sel-telnet/part_number: "751A61ABACA73810630"
+          protocols:
+            - "iec104"
+            - "sel-telnet"
+            - "telnet"
+          record_created_at: 1744362346386
+          remediations_signatures:
+            - "stop_using_telnet"
+          risk: 13.0
+          risk_configuration:
+            ai_risk_weight: 1
+            alerts_risk_weight: 0.5
+            asset_criticality: 25
+            asset_criticality_factor: 0.0
+            asset_criticality_weight: 0.5
+            communication_risk_weight: 0.5
+            compensating_control: 0
+            compensating_control_weight: 0.2
+            connection_type_weight: 0.5
+            critical_vulnerabilities_weight: 0.5
+            device_risk_weight: 0.5
+            exploitable_vulnerabilities_epss_score: 0.2
+            exploitable_vulnerabilities_weight: 0.5
+            high_risk_alert_level: 7
+            high_risk_alerts_weight: 0.5
+            high_risk_vulnerabilities_level: 7
+            internet_exposure_weight: 0.5
+            lifecycle_weight: 0.5
+            network_activity_weight: 0.5
+            open_alerts_weight: 0.5
+            open_vulnerabilities_likelihood: 0.7
+            open_vulnerabilities_weight: 0.5
+            risk_mitigation_factor: 0.0
+            suboptimal_management_weight: 0.5
+            technology_category_weight: 0.5
+            type_weight: 0.5
+            unsafe_countries_list:
+              - "china"
+              - "russia"
+              - "north korea"
+              - "ukraine"
+              - "vietnam"
+              - "indonesia"
+            unsafe_countries_weight: 0.5
+            unsafe_protocols_list:
+              - "ftp"
+              - "http"
+              - "imap"
+              - "llmnr"
+              - "ntlm"
+              - "nfs"
+              - "pop3"
+              - "rdp"
+              - "smb"
+              - "snmp"
+              - "smtp"
+              - "sip"
+              - "telnet"
+            unsafe_protocols_weight: 0.5
+            vulnerabilities_risk_weight: 0.5
+          roles:
+            - "producer"
+          serial_number: ""
+          serial_number:info:
+            source: "none"
+          technology_category: "OT"
+          time: 1744362346371
+          type: "controller"
+          type:info:
+            source: "asset-kb"
+          vendor: "Schweitzer Engineering Laboratories"
+          vendor:info:
+            confidence: "good"
+            granularity: "complete"
+            source: "asset-kb"
+          zones:
+            - "ProdNet-B"
+        cds:
+          nozomi_networks:
+            asset:
+              id: "c2f29f2d-1e74-481f-8438-b82d4497e632"
+              name: "NOZOMI-SEL-3530"
+            days_exceeded_eos: 0.114178241
+            days_exceeded_eosale: 0.114178241
+            days_until_eos: -0.114178241
+            days_until_eosale: -0.114178241
+            nozomi_risk: 13.0
+            timestamp: 1744369602000
+        links:
+          collection: "/api/v1/assets"
+          self: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632"
+        relationships:
+          alerts:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/alerts"
+          asset_cpes:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_cpes"
+            meta:
+              presence: true
+          asset_enrichment:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_enrichment"
+          asset_risk_level:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_risk_level"
+          asset_softwares:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_softwares"
+          comments:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/comments"
+            meta:
+              count: 0
+          links:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/links"
+            meta:
+              presence: true
+          network_domain:
+            data:
+              id: "42e79587-f88c-4d2e-b918-ccf2aa10175d"
+              type: "network_domains"
+            links:
+              related: "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+          node_point_statuses:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/node_point_statuses"
+          nodes:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/nodes"
+            meta:
+              presence: true
+          sensors:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sensors"
+            meta:
+              presence: true
+          sessions:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sessions"
+            meta:
+              presence: true
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+          taggings:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/taggings"
+          variables:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/variables"
+            meta:
+              presence: true
+          vulnerabilities:
+            links:
+              related: "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/vulnerabilities"
+            meta:
+              presence: true
+        type: "assets"
+      message: |-
+        {
+          "relationships" : {
+            "variables" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/variables"
+              }
+            },
+            "sessions" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sessions"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/comments"
+              }
+            },
+            "asset_cpes" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_cpes"
+              }
+            },
+            "node_point_statuses" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/node_point_statuses"
+              }
+            },
+            "asset_enrichment" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_enrichment"
+              }
+            },
+            "network_domain" : {
+              "data" : {
+                "id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d",
+                "type" : "network_domains"
+              },
+              "links" : {
+                "related" : "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+              }
+            },
+            "asset_risk_level" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_risk_level"
+              }
+            },
+            "alerts" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/alerts"
+              }
+            },
+            "site" : {
+              "data" : {
+                "id" : "1a702a62-8093-41db-aa0e-b138e7c43ebe",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+              }
+            },
+            "sensors" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/sensors"
+              }
+            },
+            "nodes" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/nodes"
+              }
+            },
+            "vulnerabilities" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/vulnerabilities"
+              }
+            },
+            "taggings" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/taggings"
+              }
+            },
+            "links" : {
+              "meta" : {
+                "presence" : true
+              },
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/links"
+              }
+            },
+            "asset_softwares" : {
+              "links" : {
+                "related" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632/asset_softwares"
+              }
+            }
+          },
+          "attributes" : {
+            "type:info" : {
+              "source" : "asset-kb"
+            },
+            "edge_id" : "02c29870-c621-5407-81f2-01de69077789",
+            "type" : "controller",
+            "end_of_support_date:info" : {
+              "source" : "none"
+            },
+            "lifecycle" : "end_of_sale",
+            "capture_device" : "demo",
+            "end_of_sale_date:info" : {
+              "source" : "none"
+            },
+            "product_name:info" : {
+              "granularity" : "complete",
+              "confidence" : "good",
+              "source" : "asset-kb"
+            },
+            "_asset_kb_id" : "cc93f1fa-92c4-4a1d-a8a1-49a622c460dd",
+            "protocols" : [ "iec104", "sel-telnet", "telnet" ],
+            "nozomi_risk" : 13.0,
+            "vendor:info" : {
+              "granularity" : "complete",
+              "confidence" : "good",
+              "source" : "asset-kb"
+            },
+            "os_or_firmware" : "Firmware: R419-V0",
+            "firmware_version:info" : {
+              "protocol" : "sel-telnet",
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "passive"
+            },
+            "device_id" : "00:30:a7:a8:e7:4b",
+            "level" : "1",
+            "ip" : [ "192.168.231.75" ],
+            "is_ai_enriched" : true,
+            "zones" : [ "ProdNet-B" ],
+            "product_name" : "SEL-3530 RTAC Real-time Automation Controller",
+            "mac_address_level" : {
+              "00:30:a7:a8:e7:4b" : "confirmed"
+            },
+            "remediations_signatures" : [ "stop_using_telnet" ],
+            "is_sp_enriched" : false,
+            "name" : "NOZOMI-SEL-3530",
+            "arc_version" : "",
+            "lifecycle:info" : {
+              "granularity" : "complete",
+              "confidence" : "good",
+              "source" : "asset-kb"
+            },
+            "nodes_uids" : [ "c332c722-d80c-464b-90ac-427c16f89fb0" ],
+            "technology_category" : "OT",
+            "roles" : [ "producer" ],
+            "created_at" : 1725960057305,
+            "firmware_version" : "R419-V0",
+            "end_of_support_date" : 1744359737000,
+            "has_remediations" : true,
+            "is_arc_enriched" : false,
+            "end_of_sale_date" : 1744359737000,
+            "appliance_hosts" : [ "Demo Sensor standard 36ed8237" ],
+            "vendor" : "Schweitzer Engineering Laboratories",
+            "mac_address" : [ "00:30:a7:a8:e7:4b" ],
+            "serial_number:info" : {
+              "source" : "none"
+            },
+            "activity_times" : {
+              "1744360200000" : 1
+            },
+            "os" : "",
+            "risk_configuration" : {
+              "type_weight" : 0.5,
+              "risk_mitigation_factor" : 0.0,
+              "asset_criticality" : 25,
+              "unsafe_protocols_list" : [ "ftp", "http", "imap", "llmnr", "ntlm", "nfs", "pop3", "rdp", "smb", "snmp", "smtp", "sip", "telnet" ],
+              "high_risk_alerts_weight" : 0.5,
+              "critical_vulnerabilities_weight" : 0.5,
+              "alerts_risk_weight" : 0.5,
+              "device_risk_weight" : 0.5,
+              "open_vulnerabilities_weight" : 0.5,
+              "open_alerts_weight" : 0.5,
+              "unsafe_countries_list" : [ "china", "russia", "north korea", "ukraine", "vietnam", "indonesia" ],
+              "vulnerabilities_risk_weight" : 0.5,
+              "technology_category_weight" : 0.5,
+              "ai_risk_weight" : 1,
+              "unsafe_protocols_weight" : 0.5,
+              "connection_type_weight" : 0.5,
+              "asset_criticality_weight" : 0.5,
+              "internet_exposure_weight" : 0.5,
+              "exploitable_vulnerabilities_epss_score" : 0.2,
+              "network_activity_weight" : 0.5,
+              "unsafe_countries_weight" : 0.5,
+              "asset_criticality_factor" : 0.0,
+              "suboptimal_management_weight" : 0.5,
+              "open_vulnerabilities_likelihood" : 0.7,
+              "lifecycle_weight" : 0.5,
+              "communication_risk_weight" : 0.5,
+              "high_risk_alert_level" : 7,
+              "exploitable_vulnerabilities_weight" : 0.5,
+              "compensating_control_weight" : 0.2,
+              "compensating_control" : 0,
+              "high_risk_vulnerabilities_level" : 7
+            },
+            "serial_number" : "",
+            "os_or_firmware:info" : {
+              "protocol" : "sel-telnet",
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "passive"
+            },
+            "record_created_at" : 1744362346386,
+            "mac_vendor" : [ "Schweitzer Engineering Laboratories" ],
+            "is_ti_enriched" : true,
+            "last_activity_time" : 1744359737000,
+            "nodes" : [ "192.168.231.75" ],
+            "os:info" : {
+              "source" : "none"
+            },
+            "risk" : 13.0,
+            "time" : 1744362346371,
+            "properties" : {
+              "192" : {
+                "168" : {
+                  "231" : {
+                    "75" : {
+                      "sel-telnet/configuration" : "11221201",
+                      "sel-telnet/part_number" : "751A61ABACA73810630",
+                      "_type" : {
+                        "asset-kb" : "controller",
+                        "passive" : "OT_device"
+                      },
+                      "_vendor" : {
+                        "asset-kb" : "Schweitzer Engineering Laboratories",
+                        "passive" : "SEL Inc."
+                      },
+                      "sel-telnet/boot_firmware" : "BOOTLDR-R501-V0-Z000000-D20140224",
+                      "_product_name" : {
+                        "asset-kb" : "SEL-3530 RTAC Real-time Automation Controller",
+                        "passive" : "SEL-3530"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "links" : {
+            "self" : "/api/v1/assets/c2f29f2d-1e74-481f-8438-b82d4497e632",
+            "collection" : "/api/v1/assets"
+          },
+          "id" : "c2f29f2d-1e74-481f-8438-b82d4497e632",
+          "type" : "assets"
+        }
+      service: "cds.nozomi_networks.assets"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:1a702a62-8093-41db-aa0e-b138e7c43ebe"
+      timestamp: 1744369602000
+
+  - sample: |-
+      {
+        "relationships" : {
+          "alerts" : {
+            "meta" : {
+              "count" : 7
+            },
+            "links" : {
+              "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/alerts"
+            }
+          },
+          "site" : {
+            "data" : {
+              "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+            }
+          },
+          "timeline_events" : {
+            "links" : {
+              "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/timeline_events"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/comments"
+            }
+          },
+          "from_asset" : {
+            "data" : {
+              "id" : "1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3"
+            }
+          },
+          "to_asset" : {
+            "data" : {
+              "id" : "ae8123e5-d112-46f5-ae37-75f339172bc5",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/ae8123e5-d112-46f5-ae37-75f339172bc5"
+            }
+          },
+          "sensor" : {
+            "data" : {
+              "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+              "type" : "sensors"
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+            }
+          },
+          "alert_close_options" : {
+            "links" : {
+              "related" : "/api/v1/admin/alert_close_options"
+            }
+          }
+        },
+        "attributes" : {
+          "incident_keys" : [ "SuspiciousActivity_192.168.1.33-192.168.2.26" ],
+          "sec_profile_visible" : true,
+          "src_roles" : "other",
+          "bpf_filter" : "",
+          "type_name" : "Suspicious Activity",
+          "zone_src" : "Production_B",
+          "ack" : false,
+          "ip_src" : "192.168.2.26",
+          "description" : "Suspicious activity between 192.168.2.26 and 192.168.1.33 has been detected.\nSuspicious transfer of malware named 'MULTI_RANSOMWARE_WannaCry' was detected through a STIX indicator in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation\nSuspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaCry_Ransomware' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation\nSuspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaDecryptor' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation",
+          "edge_id" : "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+          "assertion_source" : "",
+          "dst_roles" : "producer",
+          "capture_device" : "",
+          "protocol" : "smb",
+          "appliance_host" : "Sandbox-TAE-Guardian1",
+          "is_incident" : true,
+          "mac_src" : "78:4f:43:67:89:dd",
+          "id_src" : "192.168.2.26",
+          "types_src" : [ "computer" ],
+          "levels_dst" : [ "2" ],
+          "severity" : 10,
+          "created_time" : 1741874640857,
+          "grouped_visible" : true,
+          "zone_dst" : "Production_B",
+          "type_id" : "INCIDENT:SUSPICIOUS-ACTIVITY",
+          "counter" : 1,
+          "closed_time" : 0,
+          "record_created_at" : 1741874804059,
+          "ip_dst" : "192.168.1.33",
+          "label_dst" : "PAC33R",
+          "threat_name" : "MULTI_RANSOMWARE_WannaCry",
+          "is_security" : true,
+          "name" : "Threat MULTI_RANSOMWARE_WannaCry found",
+          "mac_dst" : "00:ff:9e:e0:87:77",
+          "types_dst" : [ "controller" ],
+          "risk" : 9.0,
+          "time" : 1741874640857,
+          "id_dst" : "192.168.1.33",
+          "ti_source" : "",
+          "transport_protocol" : "unknown",
+          "levels_src" : [ "2" ],
+          "_can" : {
+            "trace_requests" : true,
+            "security_control_panel" : {
+              "tuning" : false
+            },
+            "close_learn_alerts" : false
+          },
+          "properties" : {
+            "is_outdated" : true,
+            "mitre_attack_enterprise" : {
+              "techniques" : [ {
+                "name" : "Data Encrypted for Impact",
+                "count" : 1.0,
+                "id" : "T1486",
+                "tactic" : "Impact"
+              } ]
+            },
+            "is_dst_public" : false,
+            "incident_key_confidence:SuspiciousActivity_192" : {
+              "168" : {
+                "1" : {
+                  "33-192" : {
+                    "168" : {
+                      "2" : {
+                        "26" : 1.0
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "remediation_target" : "192.168.1.33",
+            "raised_by" : "n2os_ids",
+            "n2os_version" : "25.0.0-03042016_D5AB7",
+            "is_src_public" : false,
+            "mitre_attack_for_ics" : {
+              "software" : [ "WannaCry Ransomware", "MULTI_RANSOMWARE_WannaCry", "(Lazarus Group) WannaCry", "WannaCry" ],
+              "techniques" : [ {
+                "name" : "Loss of Productivity and Revenue",
+                "count" : 5.0,
+                "id" : "T0828",
+                "tactic" : "Impact"
+              } ],
+              "destination" : {
+                "types" : [ "Field Controller/RTU/PLC/IED" ],
+                "levels" : [ "2" ]
+              },
+              "source" : {
+                "types" : [ "Engineering Workstation" ],
+                "levels" : [ "2" ]
+              }
+            },
+            "victims" : [ "192.168.1.33" ],
+            "bad_actor" : "192.168.2.26"
+          },
+          "status" : "open"
+        },
+        "links" : {
+          "self" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+          "collection" : "/api/v1/alerts"
+        },
+        "id" : "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+        "type" : "alerts"
+      }
+    service: "cds.nozomi_networks.alerts"
+    result:
+      custom:
+        attributes:
+          _can:
+            close_learn_alerts: false
+            security_control_panel:
+              tuning: false
+            trace_requests: true
+          ack: false
+          appliance_host: "Sandbox-TAE-Guardian1"
+          assertion_source: ""
+          bpf_filter: ""
+          capture_device: ""
+          closed_time: 0
+          counter: 1
+          created_time: 1741874640857
+          description: |-
+            Suspicious activity between 192.168.2.26 and 192.168.1.33 has been detected.
+            Suspicious transfer of malware named 'MULTI_RANSOMWARE_WannaCry' was detected through a STIX indicator in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\192.168.1.33\NOZOMI_LOCALSHARE\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\Nozomiers' after a 'write' operation
+            Suspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaCry_Ransomware' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\192.168.1.33\NOZOMI_LOCALSHARE\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\Nozomiers' after a 'write' operation
+            Suspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaDecryptor' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\192.168.1.33\NOZOMI_LOCALSHARE\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\Nozomiers' after a 'write' operation
+          dst_roles: "producer"
+          edge_id: "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98"
+          grouped_visible: true
+          id_dst: "192.168.1.33"
+          id_src: "192.168.2.26"
+          incident_keys:
+            - "SuspiciousActivity_192.168.1.33-192.168.2.26"
+          ip_dst: "192.168.1.33"
+          ip_src: "192.168.2.26"
+          is_incident: true
+          is_security: true
+          label_dst: "PAC33R"
+          levels_dst:
+            - "2"
+          levels_src:
+            - "2"
+          mac_dst: "00:ff:9e:e0:87:77"
+          mac_src: "78:4f:43:67:89:dd"
+          properties:
+            bad_actor: "192.168.2.26"
+            incident_key_confidence:SuspiciousActivity_192:
+              "168":
+                "1":
+                  "33-192":
+                    "168":
+                      "2":
+                        "26": 1.0
+            is_dst_public: false
+            is_outdated: true
+            is_src_public: false
+            mitre_attack_enterprise:
+              techniques:
+                - name: "Data Encrypted for Impact"
+                  count: 1.0
+                  id: "T1486"
+                  tactic: "Impact"
+            mitre_attack_for_ics:
+              destination:
+                levels:
+                  - "2"
+                types:
+                  - "Field Controller/RTU/PLC/IED"
+              software:
+                - "WannaCry Ransomware"
+                - "MULTI_RANSOMWARE_WannaCry"
+                - "(Lazarus Group) WannaCry"
+                - "WannaCry"
+              source:
+                levels:
+                  - "2"
+                types:
+                  - "Engineering Workstation"
+              techniques:
+                - name: "Loss of Productivity and Revenue"
+                  count: 5.0
+                  id: "T0828"
+                  tactic: "Impact"
+            n2os_version: "25.0.0-03042016_D5AB7"
+            raised_by: "n2os_ids"
+            remediation_target: "192.168.1.33"
+            victims:
+              - "192.168.1.33"
+          protocol: "smb"
+          record_created_at: 1741874804059
+          sec_profile_visible: true
+          severity: 10
+          src_roles: "other"
+          status: "open"
+          threat_name: "MULTI_RANSOMWARE_WannaCry"
+          ti_source: ""
+          time: 1741874640857
+          transport_protocol: "unknown"
+          type_id: "INCIDENT:SUSPICIOUS-ACTIVITY"
+          type_name: "Suspicious Activity"
+          types_dst:
+            - "controller"
+          types_src:
+            - "computer"
+          zone_dst: "Production_B"
+          zone_src: "Production_B"
+        cds:
+          nozomi_networks:
+            alert:
+              name: "Threat MULTI_RANSOMWARE_WannaCry found"
+            nozomi_risk: 9.0
+        id: "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98"
+        links:
+          collection: "/api/v1/alerts"
+          self: "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98"
+        relationships:
+          alert_close_options:
+            links:
+              related: "/api/v1/admin/alert_close_options"
+          alerts:
+            links:
+              related: "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/alerts"
+            meta:
+              count: 7
+          comments:
+            links:
+              related: "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/comments"
+            meta:
+              count: 0
+          from_asset:
+            data:
+              id: "1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3"
+          sensor:
+            data:
+              id: "c2d65991-45b1-4016-a006-d953cd372cec"
+              type: "sensors"
+            links:
+              related: "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+          timeline_events:
+            links:
+              related: "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/timeline_events"
+          to_asset:
+            data:
+              id: "ae8123e5-d112-46f5-ae37-75f339172bc5"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/ae8123e5-d112-46f5-ae37-75f339172bc5"
+        type: "alerts"
+      message: |-
+        {
+          "relationships" : {
+            "alerts" : {
+              "meta" : {
+                "count" : 7
+              },
+              "links" : {
+                "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/alerts"
+              }
+            },
+            "site" : {
+              "data" : {
+                "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+              }
+            },
+            "timeline_events" : {
+              "links" : {
+                "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/timeline_events"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98/comments"
+              }
+            },
+            "from_asset" : {
+              "data" : {
+                "id" : "1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/1cc6cc8e-f772-4214-9e23-7e97c1f1b1c3"
+              }
+            },
+            "to_asset" : {
+              "data" : {
+                "id" : "ae8123e5-d112-46f5-ae37-75f339172bc5",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/ae8123e5-d112-46f5-ae37-75f339172bc5"
+              }
+            },
+            "sensor" : {
+              "data" : {
+                "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+                "type" : "sensors"
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+              }
+            },
+            "alert_close_options" : {
+              "links" : {
+                "related" : "/api/v1/admin/alert_close_options"
+              }
+            }
+          },
+          "attributes" : {
+            "incident_keys" : [ "SuspiciousActivity_192.168.1.33-192.168.2.26" ],
+            "sec_profile_visible" : true,
+            "src_roles" : "other",
+            "bpf_filter" : "",
+            "type_name" : "Suspicious Activity",
+            "zone_src" : "Production_B",
+            "ack" : false,
+            "ip_src" : "192.168.2.26",
+            "description" : "Suspicious activity between 192.168.2.26 and 192.168.1.33 has been detected.\nSuspicious transfer of malware named 'MULTI_RANSOMWARE_WannaCry' was detected through a STIX indicator in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation\nSuspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaCry_Ransomware' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation\nSuspicious transfer of malware named 'ENTERPRISE_RANSOMWARE_LazarusGroup_WannaCry_WannaDecryptor' was detected through a YARA rule in a file with hash '(MD5: 84c82835a5d21bbcf75a61706d8ab549)' from resource '\\\\192.168.1.33\\NOZOMI_LOCALSHARE\\ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa.exe' by user 'NAS_NOZOMI\\Nozomiers' after a 'write' operation",
+            "edge_id" : "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+            "assertion_source" : "",
+            "dst_roles" : "producer",
+            "capture_device" : "",
+            "protocol" : "smb",
+            "appliance_host" : "Sandbox-TAE-Guardian1",
+            "is_incident" : true,
+            "mac_src" : "78:4f:43:67:89:dd",
+            "id_src" : "192.168.2.26",
+            "types_src" : [ "computer" ],
+            "levels_dst" : [ "2" ],
+            "severity" : 10,
+            "created_time" : 1741874640857,
+            "grouped_visible" : true,
+            "zone_dst" : "Production_B",
+            "type_id" : "INCIDENT:SUSPICIOUS-ACTIVITY",
+            "counter" : 1,
+            "closed_time" : 0,
+            "record_created_at" : 1741874804059,
+            "ip_dst" : "192.168.1.33",
+            "label_dst" : "PAC33R",
+            "threat_name" : "MULTI_RANSOMWARE_WannaCry",
+            "is_security" : true,
+            "name" : "Threat MULTI_RANSOMWARE_WannaCry found",
+            "mac_dst" : "00:ff:9e:e0:87:77",
+            "types_dst" : [ "controller" ],
+            "risk" : 9.0,
+            "time" : 1741874640857,
+            "id_dst" : "192.168.1.33",
+            "ti_source" : "",
+            "transport_protocol" : "unknown",
+            "levels_src" : [ "2" ],
+            "_can" : {
+              "trace_requests" : true,
+              "security_control_panel" : {
+                "tuning" : false
+              },
+              "close_learn_alerts" : false
+            },
+            "properties" : {
+              "is_outdated" : true,
+              "mitre_attack_enterprise" : {
+                "techniques" : [ {
+                  "name" : "Data Encrypted for Impact",
+                  "count" : 1.0,
+                  "id" : "T1486",
+                  "tactic" : "Impact"
+                } ]
+              },
+              "is_dst_public" : false,
+              "incident_key_confidence:SuspiciousActivity_192" : {
+                "168" : {
+                  "1" : {
+                    "33-192" : {
+                      "168" : {
+                        "2" : {
+                          "26" : 1.0
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "remediation_target" : "192.168.1.33",
+              "raised_by" : "n2os_ids",
+              "n2os_version" : "25.0.0-03042016_D5AB7",
+              "is_src_public" : false,
+              "mitre_attack_for_ics" : {
+                "software" : [ "WannaCry Ransomware", "MULTI_RANSOMWARE_WannaCry", "(Lazarus Group) WannaCry", "WannaCry" ],
+                "techniques" : [ {
+                  "name" : "Loss of Productivity and Revenue",
+                  "count" : 5.0,
+                  "id" : "T0828",
+                  "tactic" : "Impact"
+                } ],
+                "destination" : {
+                  "types" : [ "Field Controller/RTU/PLC/IED" ],
+                  "levels" : [ "2" ]
+                },
+                "source" : {
+                  "types" : [ "Engineering Workstation" ],
+                  "levels" : [ "2" ]
+                }
+              },
+              "victims" : [ "192.168.1.33" ],
+              "bad_actor" : "192.168.2.26"
+            },
+            "status" : "open"
+          },
+          "links" : {
+            "self" : "/api/v1/alerts/6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+            "collection" : "/api/v1/alerts"
+          },
+          "id" : "6ab68c3a-0b8b-4b8a-b3d0-7958bb9cba98",
+          "type" : "alerts"
+        }
+      service: "cds.nozomi_networks.alerts"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-site-id:faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+      timestamp: 1741874640857
+
+  - sample: |-
+      {
+        "attributes" : {
+          "controller" : "api/passwords",
+          "entity_type" : "users",
+          "browser" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+          "name" : "User password updated",
+          "action" : "update",
+          "ip_address" : "163.116.213.95",
+          "time" : 1743527012922,
+          "event" : "User password updated",
+          "record_created_at" : 1743527012924,
+          "username" : "samir.hadfa@crestdata.ai"
+        },
+        "links" : {
+          "self" : "/api/v1/admin/audit_items/27bc0d36-24c3-42a0-88ac-b27b2fb1b8af",
+          "collection" : "/api/v1/admin/audit_items"
+        },
+        "id" : "27bc0d36-24c3-42a0-88ac-b27b2fb1b8af",
+        "type" : "audit_items"
+      }
+    service: "cds.nozomi_networks.audit_items"
+    result:
+      custom:
+        attributes:
+          action: "update"
+          browser: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+          controller: "api/passwords"
+          entity_type: "users"
+          event: "User password updated"
+          record_created_at: 1743527012924
+          time: 1743527012922
+        cds:
+          nozomi_networks:
+            audit_item:
+              name: "User password updated"
+            username: "samir.hadfa@crestdata.ai"
+        http:
+          useragent_details:
+            browser:
+              family: "Chrome"
+              major: "134"
+              minor: "0"
+              patch: "0"
+              patch_minor: "0"
+              version: "134.0.0"
+            device:
+              category: "Desktop"
+              family: "Other"
+            os:
+              family: "Windows"
+              major: "10"
+              version: "10"
+        id: "27bc0d36-24c3-42a0-88ac-b27b2fb1b8af"
+        links:
+          collection: "/api/v1/admin/audit_items"
+          self: "/api/v1/admin/audit_items/27bc0d36-24c3-42a0-88ac-b27b2fb1b8af"
+        network:
+          client:
+            geoip: {}
+            ip: "163.116.213.95"
+        type: "audit_items"
+      message: |-
+        {
+          "attributes" : {
+            "controller" : "api/passwords",
+            "entity_type" : "users",
+            "browser" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "name" : "User password updated",
+            "action" : "update",
+            "ip_address" : "163.116.213.95",
+            "time" : 1743527012922,
+            "event" : "User password updated",
+            "record_created_at" : 1743527012924,
+            "username" : "samir.hadfa@crestdata.ai"
+          },
+          "links" : {
+            "self" : "/api/v1/admin/audit_items/27bc0d36-24c3-42a0-88ac-b27b2fb1b8af",
+            "collection" : "/api/v1/admin/audit_items"
+          },
+          "id" : "27bc0d36-24c3-42a0-88ac-b27b2fb1b8af",
+          "type" : "audit_items"
+        }
+      service: "cds.nozomi_networks.audit_items"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1743527012924
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+            }
+          },
+          "sensor" : {
+            "data" : {
+              "id" : "1c08da2c-e7e9-4030-b956-cada6e0a9a96",
+              "type" : "sensors"
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/1c08da2c-e7e9-4030-b956-cada6e0a9a96"
+            }
+          }
+        },
+        "attributes" : {
+          "sensor_id" : "1c08da2c-e7e9-4030-b956-cada6e0a9a96",
+          "sensor_host" : "Sandbox-TAE-Guardian3",
+          "sensor_appliance_type" : "guardian",
+          "edge_id" : "935c1c43-7804-41e8-a132-1fbd8529f9e4",
+          "time" : 1741868841845,
+          "record_created_at" : 1741869377517,
+          "info" : {
+            "description" : "Recommended changes. The following items should be changed to support the updates included in version 22.5.0.\n\nAlert rules:\nNothing to change here\n\nAssertions:\nNothing to change here\n\nQueries:\nNothing to change here\n\nAlert rules:\nNothing to change here\n\nReports:\nNothing to change here\n\nSee the N2OS release notes for further explanations."
+          }
+        },
+        "links" : {
+          "self" : "/api/v1/health_logs/f8c3fe6d-6926-4cbe-b51d-08f38a72c593",
+          "collection" : "/api/v1/health_logs"
+        },
+        "id" : "f8c3fe6d-6926-4cbe-b51d-08f38a72c593",
+        "type" : "health_logs"
+      }
+    service: "cds.nozomi_networks.health_logs"
+    result:
+      custom:
+        attributes:
+          edge_id: "935c1c43-7804-41e8-a132-1fbd8529f9e4"
+          info:
+            description: |-
+              Recommended changes. The following items should be changed to support the updates included in version 22.5.0.
+
+              Alert rules:
+              Nothing to change here
+
+              Assertions:
+              Nothing to change here
+
+              Queries:
+              Nothing to change here
+
+              Alert rules:
+              Nothing to change here
+
+              Reports:
+              Nothing to change here
+
+              See the N2OS release notes for further explanations.
+          record_created_at: 1741869377517
+          sensor_appliance_type: "guardian"
+          sensor_host: "Sandbox-TAE-Guardian3"
+          sensor_id: "1c08da2c-e7e9-4030-b956-cada6e0a9a96"
+          time: 1741868841845
+        id: "f8c3fe6d-6926-4cbe-b51d-08f38a72c593"
+        links:
+          collection: "/api/v1/health_logs"
+          self: "/api/v1/health_logs/f8c3fe6d-6926-4cbe-b51d-08f38a72c593"
+        relationships:
+          sensor:
+            data:
+              id: "1c08da2c-e7e9-4030-b956-cada6e0a9a96"
+              type: "sensors"
+            links:
+              related: "/api/v1/sensors/1c08da2c-e7e9-4030-b956-cada6e0a9a96"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+        type: "health_logs"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+              }
+            },
+            "sensor" : {
+              "data" : {
+                "id" : "1c08da2c-e7e9-4030-b956-cada6e0a9a96",
+                "type" : "sensors"
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/1c08da2c-e7e9-4030-b956-cada6e0a9a96"
+              }
+            }
+          },
+          "attributes" : {
+            "sensor_id" : "1c08da2c-e7e9-4030-b956-cada6e0a9a96",
+            "sensor_host" : "Sandbox-TAE-Guardian3",
+            "sensor_appliance_type" : "guardian",
+            "edge_id" : "935c1c43-7804-41e8-a132-1fbd8529f9e4",
+            "time" : 1741868841845,
+            "record_created_at" : 1741869377517,
+            "info" : {
+              "description" : "Recommended changes. The following items should be changed to support the updates included in version 22.5.0.\n\nAlert rules:\nNothing to change here\n\nAssertions:\nNothing to change here\n\nQueries:\nNothing to change here\n\nAlert rules:\nNothing to change here\n\nReports:\nNothing to change here\n\nSee the N2OS release notes for further explanations."
+            }
+          },
+          "links" : {
+            "self" : "/api/v1/health_logs/f8c3fe6d-6926-4cbe-b51d-08f38a72c593",
+            "collection" : "/api/v1/health_logs"
+          },
+          "id" : "f8c3fe6d-6926-4cbe-b51d-08f38a72c593",
+          "type" : "health_logs"
+        }
+      service: "cds.nozomi_networks.health_logs"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-site-id:faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+      timestamp: 1741869377517
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "1a702a62-8093-41db-aa0e-b138e7c43ebe",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            }
+          },
+          "from_asset" : {
+            "data" : {
+              "id" : "d732471d-5b02-4004-8992-e10b32c8344a",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/d732471d-5b02-4004-8992-e10b32c8344a"
+            }
+          },
+          "to_asset" : {
+            "data" : {
+              "id" : "5ca0f147-5600-4c9e-a1eb-8f8e47b3036a",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/5ca0f147-5600-4c9e-a1eb-8f8e47b3036a"
+            }
+          },
+          "sensor" : {
+            "data" : {
+              "id" : "62679092-e691-4dbd-83e5-d0edd5d2d67e",
+              "type" : "sensors"
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/62679092-e691-4dbd-83e5-d0edd5d2d67e"
+            }
+          },
+          "network_domain" : {
+            "data" : {
+              "id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d",
+              "type" : "network_domains"
+            },
+            "links" : {
+              "related" : "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+            }
+          }
+        },
+        "attributes" : {
+          "to_zone" : "ProdNet-B",
+          "tcp_retransmission" : {
+            "last_15m_bytes" : "0",
+            "last_30m_bytes" : "0",
+            "last_5m_bytes" : "0",
+            "bytes" : "0",
+            "percent" : 0,
+            "packets" : "0"
+          },
+          "bpf_filter" : "ip host 192.168.1.12 and ip host 192.168.16.76 and (tcp port 2404)",
+          "transferred" : {
+            "last_15m_bytes" : "10056",
+            "last_30m_bytes" : "10056",
+            "last_1w_bytes" : "0",
+            "last_5m_bytes" : "10056",
+            "biggest_packet_bytes" : "114",
+            "bytes" : "10056",
+            "last_1h_bytes" : "0",
+            "smallest_packet_bytes" : "60",
+            "avg_packet_bytes" : 76.18181818181819,
+            "last_1d_bytes" : "0",
+            "packets" : "132"
+          },
+          "is_from_public" : false,
+          "edge_id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d/192.168.1.12-192.168.16.76-iec104",
+          "last_trace_request_time" : "0",
+          "tcp_handshaked_connections" : {
+            "last_5m" : "0",
+            "last_30m" : "0",
+            "total" : "0",
+            "last_15m" : "0"
+          },
+          "function_codes" : [ {
+            "is_fully_learned" : true,
+            "name" : "1",
+            "is_learned" : true
+          }, {
+            "is_fully_learned" : true,
+            "name" : "9",
+            "is_learned" : true
+          }, {
+            "is_fully_learned" : true,
+            "name" : "30",
+            "is_learned" : true
+          }, {
+            "is_fully_learned" : true,
+            "name" : "37",
+            "is_learned" : true
+          } ],
+          "protocol" : "iec104",
+          "appliance_hosts" : "07be87ed7ac5",
+          "last_handshake_time" : "0",
+          "from" : "192.168.1.12",
+          "_to_ip" : "192.168.16.76",
+          "throughput_speed" : 0,
+          "is_fully_learned" : true,
+          "transport_protocols" : [ "tcp" ],
+          "_ports" : [ {
+            "tcp" : "56420"
+          }, {
+            "tcp" : "2404"
+          } ],
+          "tcp_connection_attempts" : {
+            "last_5m" : "0",
+            "last_30m" : "0",
+            "total" : "0",
+            "last_15m" : "0"
+          },
+          "record_created_at" : 1744362407773,
+          "alerts" : "0",
+          "from_zone" : "ProdNet-B",
+          "is_broadcast" : false,
+          "last_activity_time" : 1744359738000,
+          "is_to_public" : false,
+          "first_activity_time" : 1725960057271,
+          "has_confirmed_data" : true,
+          "to" : "192.168.16.76",
+          "_can" : {
+            "link_events" : true,
+            "trace_requests" : true,
+            "captured_urls" : false
+          },
+          "is_learned" : true,
+          "_from_ip" : "192.168.1.12"
+        },
+        "links" : {
+          "self" : "/api/v1/links/fe61d34c-2595-49d1-afdb-08ed4551a62c",
+          "collection" : "/api/v1/links"
+        },
+        "id" : "fe61d34c-2595-49d1-afdb-08ed4551a62c",
+        "type" : "links"
+      }
+    service: "cds.nozomi_networks.links"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          _can:
+            captured_urls: false
+            link_events: true
+            trace_requests: true
+          _from_ip: "192.168.1.12"
+          _ports:
+            - tcp: "56420"
+            - tcp: "2404"
+          _to_ip: "192.168.16.76"
+          alerts: "0"
+          appliance_hosts: "07be87ed7ac5"
+          bpf_filter: "ip host 192.168.1.12 and ip host 192.168.16.76 and (tcp port 2404)"
+          edge_id: "42e79587-f88c-4d2e-b918-ccf2aa10175d/192.168.1.12-192.168.16.76-iec104"
+          first_activity_time: 1725960057271
+          from: "192.168.1.12"
+          from_zone: "ProdNet-B"
+          function_codes:
+            - is_fully_learned: true
+              name: "1"
+              is_learned: true
+            - is_fully_learned: true
+              name: "9"
+              is_learned: true
+            - is_fully_learned: true
+              name: "30"
+              is_learned: true
+            - is_fully_learned: true
+              name: "37"
+              is_learned: true
+          has_confirmed_data: true
+          is_broadcast: false
+          is_from_public: false
+          is_fully_learned: true
+          is_learned: true
+          is_to_public: false
+          last_activity_time: 1744359738000
+          last_handshake_time: "0"
+          last_trace_request_time: "0"
+          protocol: "iec104"
+          record_created_at: 1744362407773
+          tcp_connection_attempts:
+            last_15m: "0"
+            last_30m: "0"
+            last_5m: "0"
+            total: "0"
+          tcp_handshaked_connections:
+            last_15m: "0"
+            last_30m: "0"
+            last_5m: "0"
+            total: "0"
+          tcp_retransmission:
+            bytes: "0"
+            last_15m_bytes: "0"
+            last_30m_bytes: "0"
+            last_5m_bytes: "0"
+            packets: "0"
+            percent: 0
+          throughput_speed: 0
+          to: "192.168.16.76"
+          to_zone: "ProdNet-B"
+          transferred:
+            avg_packet_bytes: 76.18181818181819
+            biggest_packet_bytes: "114"
+            bytes: "10056"
+            last_15m_bytes: "10056"
+            last_1d_bytes: "0"
+            last_1h_bytes: "0"
+            last_1w_bytes: "0"
+            last_30m_bytes: "10056"
+            last_5m_bytes: "10056"
+            packets: "132"
+            smallest_packet_bytes: "60"
+          transport_protocols:
+            - "tcp"
+        cds:
+          nozomi_networks:
+            timestamp: 1744369602000
+        id: "fe61d34c-2595-49d1-afdb-08ed4551a62c"
+        links:
+          collection: "/api/v1/links"
+          self: "/api/v1/links/fe61d34c-2595-49d1-afdb-08ed4551a62c"
+        relationships:
+          comments:
+            meta:
+              count: 0
+          from_asset:
+            data:
+              id: "d732471d-5b02-4004-8992-e10b32c8344a"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/d732471d-5b02-4004-8992-e10b32c8344a"
+          network_domain:
+            data:
+              id: "42e79587-f88c-4d2e-b918-ccf2aa10175d"
+              type: "network_domains"
+            links:
+              related: "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+          sensor:
+            data:
+              id: "62679092-e691-4dbd-83e5-d0edd5d2d67e"
+              type: "sensors"
+            links:
+              related: "/api/v1/sensors/62679092-e691-4dbd-83e5-d0edd5d2d67e"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+          to_asset:
+            data:
+              id: "5ca0f147-5600-4c9e-a1eb-8f8e47b3036a"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/5ca0f147-5600-4c9e-a1eb-8f8e47b3036a"
+        type: "links"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "1a702a62-8093-41db-aa0e-b138e7c43ebe",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/1a702a62-8093-41db-aa0e-b138e7c43ebe"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              }
+            },
+            "from_asset" : {
+              "data" : {
+                "id" : "d732471d-5b02-4004-8992-e10b32c8344a",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/d732471d-5b02-4004-8992-e10b32c8344a"
+              }
+            },
+            "to_asset" : {
+              "data" : {
+                "id" : "5ca0f147-5600-4c9e-a1eb-8f8e47b3036a",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/5ca0f147-5600-4c9e-a1eb-8f8e47b3036a"
+              }
+            },
+            "sensor" : {
+              "data" : {
+                "id" : "62679092-e691-4dbd-83e5-d0edd5d2d67e",
+                "type" : "sensors"
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/62679092-e691-4dbd-83e5-d0edd5d2d67e"
+              }
+            },
+            "network_domain" : {
+              "data" : {
+                "id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d",
+                "type" : "network_domains"
+              },
+              "links" : {
+                "related" : "/api/v1/network_domains/42e79587-f88c-4d2e-b918-ccf2aa10175d"
+              }
+            }
+          },
+          "attributes" : {
+            "to_zone" : "ProdNet-B",
+            "tcp_retransmission" : {
+              "last_15m_bytes" : "0",
+              "last_30m_bytes" : "0",
+              "last_5m_bytes" : "0",
+              "bytes" : "0",
+              "percent" : 0,
+              "packets" : "0"
+            },
+            "bpf_filter" : "ip host 192.168.1.12 and ip host 192.168.16.76 and (tcp port 2404)",
+            "transferred" : {
+              "last_15m_bytes" : "10056",
+              "last_30m_bytes" : "10056",
+              "last_1w_bytes" : "0",
+              "last_5m_bytes" : "10056",
+              "biggest_packet_bytes" : "114",
+              "bytes" : "10056",
+              "last_1h_bytes" : "0",
+              "smallest_packet_bytes" : "60",
+              "avg_packet_bytes" : 76.18181818181819,
+              "last_1d_bytes" : "0",
+              "packets" : "132"
+            },
+            "is_from_public" : false,
+            "edge_id" : "42e79587-f88c-4d2e-b918-ccf2aa10175d/192.168.1.12-192.168.16.76-iec104",
+            "last_trace_request_time" : "0",
+            "tcp_handshaked_connections" : {
+              "last_5m" : "0",
+              "last_30m" : "0",
+              "total" : "0",
+              "last_15m" : "0"
+            },
+            "function_codes" : [ {
+              "is_fully_learned" : true,
+              "name" : "1",
+              "is_learned" : true
+            }, {
+              "is_fully_learned" : true,
+              "name" : "9",
+              "is_learned" : true
+            }, {
+              "is_fully_learned" : true,
+              "name" : "30",
+              "is_learned" : true
+            }, {
+              "is_fully_learned" : true,
+              "name" : "37",
+              "is_learned" : true
+            } ],
+            "protocol" : "iec104",
+            "appliance_hosts" : "07be87ed7ac5",
+            "last_handshake_time" : "0",
+            "from" : "192.168.1.12",
+            "_to_ip" : "192.168.16.76",
+            "throughput_speed" : 0,
+            "is_fully_learned" : true,
+            "transport_protocols" : [ "tcp" ],
+            "_ports" : [ {
+              "tcp" : "56420"
+            }, {
+              "tcp" : "2404"
+            } ],
+            "tcp_connection_attempts" : {
+              "last_5m" : "0",
+              "last_30m" : "0",
+              "total" : "0",
+              "last_15m" : "0"
+            },
+            "record_created_at" : 1744362407773,
+            "alerts" : "0",
+            "from_zone" : "ProdNet-B",
+            "is_broadcast" : false,
+            "last_activity_time" : 1744359738000,
+            "is_to_public" : false,
+            "first_activity_time" : 1725960057271,
+            "has_confirmed_data" : true,
+            "to" : "192.168.16.76",
+            "_can" : {
+              "link_events" : true,
+              "trace_requests" : true,
+              "captured_urls" : false
+            },
+            "is_learned" : true,
+            "_from_ip" : "192.168.1.12"
+          },
+          "links" : {
+            "self" : "/api/v1/links/fe61d34c-2595-49d1-afdb-08ed4551a62c",
+            "collection" : "/api/v1/links"
+          },
+          "id" : "fe61d34c-2595-49d1-afdb-08ed4551a62c",
+          "type" : "links"
+        }
+      service: "cds.nozomi_networks.links"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:1a702a62-8093-41db-aa0e-b138e7c43ebe"
+      timestamp: 1744369602000
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093/comments"
+            }
+          },
+          "network_domain" : {
+            "data" : {
+              "id" : "45a54c5c-049b-4ce4-8320-2b218b0e20c7",
+              "type" : "network_domains"
+            },
+            "links" : {
+              "related" : "/api/v1/network_domains/45a54c5c-049b-4ce4-8320-2b218b0e20c7"
+            }
+          },
+          "sensor" : {
+            "data" : {
+              "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+              "type" : "sensors"
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+            }
+          },
+          "asset" : {
+            "data" : {
+              "id" : "58cb91f2-28e3-41c2-bab6-df5ea2024d6f",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f"
+            }
+          }
+        },
+        "attributes" : {
+          "bpf_filter" : "ip host 10.102.164.17",
+          "type:info" : {
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "asset-kb"
+          },
+          "edge_id" : "45a54c5c-049b-4ce4-8320-2b218b0e20c7/10.102.164.17",
+          "asset_id" : "3712c225-5b80-430e-8a87-502ca6a49b15",
+          "type" : "robot",
+          "end_of_support_date:info" : {
+            "source" : "none"
+          },
+          "capture_device" : "base.pcap",
+          "end_of_sale_date:info" : {
+            "source" : "none"
+          },
+          "product_name:info" : {
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "asset-kb"
+          },
+          "_asset_kb_id" : "96ff97c8-1c4b-4d25-8ff7-55a135b2c8f9",
+          "zone" : "Substation",
+          "protocols" : [ "http" ],
+          "vendor:info" : {
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "asset-kb"
+          },
+          "firmware_version:info" : {
+            "protocol" : "http",
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "passive"
+          },
+          "device_id" : "d0d5507f-e08c-40b3-a11f-2912665568e6",
+          "level" : "1",
+          "ip" : "10.102.164.17",
+          "is_disabled" : false,
+          "is_ai_enriched" : true,
+          "received" : {
+            "last_15m_bytes" : "6717",
+            "last_30m_bytes" : "13434",
+            "last_1w_bytes" : "0",
+            "last_5m_bytes" : "2239",
+            "bytes" : "19074500",
+            "last_1h_bytes" : "0",
+            "last_1d_bytes" : "0",
+            "packets" : "246032"
+          },
+          "sent" : {
+            "last_15m_bytes" : "140397",
+            "last_30m_bytes" : "280794",
+            "last_1w_bytes" : "0",
+            "last_5m_bytes" : "46799",
+            "bytes" : "391040078",
+            "last_1h_bytes" : "0",
+            "last_1d_bytes" : "0",
+            "packets" : "437543"
+          },
+          "product_name" : "R-1000iA/80F Robot",
+          "is_broadcast" : false,
+          "mac_address:info" : {
+            "protocol" : "http",
+            "likelihood" : 0.0,
+            "granularity" : "complete",
+            "confidence" : "high",
+            "likelihood_level" : "unconfirmed",
+            "source" : "passive",
+            "protocol_source" : ""
+          },
+          "_private_status" : "no",
+          "is_sp_enriched" : false,
+          "name" : "10.102.164.17",
+          "arc_version" : "",
+          "is_learned" : true,
+          "lifecycle:info" : {
+            "source" : "none"
+          },
+          "tcp_retransmission" : {
+            "last_15m_bytes" : "0",
+            "last_30m_bytes" : "0",
+            "last_5m_bytes" : "0",
+            "bytes" : "6773",
+            "percent" : 0.001651489696618392,
+            "packets" : "9"
+          },
+          "is_compromised" : false,
+          "_is_licensed" : true,
+          "roles" : [ "web_server" ],
+          "created_at" : 1724888822747,
+          "firmware_version" : "V8.10102",
+          "vlan_id:info" : {
+            "source" : "none"
+          },
+          "uid" : "8b225167-b4ff-49f9-b761-cc35fa09ffb8",
+          "is_arc_enriched" : false,
+          "label:info" : {
+            "source" : "none"
+          },
+          "appliance_hosts" : [ "Lab-Guardian1" ],
+          "vendor" : "FANUC",
+          "mac_address" : "00:e0:e4:17:ad:6c",
+          "links_count" : "1",
+          "serial_number:info" : {
+            "protocol" : "http",
+            "granularity" : "complete",
+            "confidence" : "high",
+            "source" : "passive"
+          },
+          "is_fully_learned" : true,
+          "is_confirmed" : true,
+          "serial_number" : "128026",
+          "record_created_at" : 1741874910387,
+          "mac_vendor" : "FANUC",
+          "is_ti_enriched" : true,
+          "last_activity_time" : 1744360807223,
+          "first_activity_time" : 1724888822747,
+          "os:info" : {
+            "source" : "none"
+          },
+          "is_public" : false,
+          "properties" : {
+            "_type" : {
+              "asset-kb" : "robot"
+            },
+            "_notified_va_info" : {
+              "asset-kb" : "5e6e6001254b4756"
+            },
+            "_vendor" : {
+              "asset-kb" : "FANUC",
+              "passive" : "Fanuc"
+            },
+            "_product_name" : {
+              "asset-kb" : "R-1000iA/80F Robot",
+              "passive" : "R-1000iA/80F"
+            }
+          }
+        },
+        "links" : {
+          "self" : "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093",
+          "collection" : "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f/nodes"
+        },
+        "id" : "b0bf5bf1-f753-4f68-90bd-4d134b974093",
+        "type" : "nodes"
+      }
+    service: "cds.nozomi_networks.nodes"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          _asset_kb_id: "96ff97c8-1c4b-4d25-8ff7-55a135b2c8f9"
+          _is_licensed: true
+          _private_status: "no"
+          appliance_hosts:
+            - "Lab-Guardian1"
+          arc_version: ""
+          asset_id: "3712c225-5b80-430e-8a87-502ca6a49b15"
+          bpf_filter: "ip host 10.102.164.17"
+          capture_device: "base.pcap"
+          created_at: 1724888822747
+          device_id: "d0d5507f-e08c-40b3-a11f-2912665568e6"
+          edge_id: "45a54c5c-049b-4ce4-8320-2b218b0e20c7/10.102.164.17"
+          end_of_sale_date:info:
+            source: "none"
+          end_of_support_date:info:
+            source: "none"
+          firmware_version: "V8.10102"
+          firmware_version:info:
+            confidence: "high"
+            granularity: "complete"
+            protocol: "http"
+            source: "passive"
+          first_activity_time: 1724888822747
+          ip: "10.102.164.17"
+          is_ai_enriched: true
+          is_arc_enriched: false
+          is_broadcast: false
+          is_compromised: false
+          is_confirmed: true
+          is_disabled: false
+          is_fully_learned: true
+          is_learned: true
+          is_public: false
+          is_sp_enriched: false
+          is_ti_enriched: true
+          label:info:
+            source: "none"
+          last_activity_time: 1744360807223
+          level: "1"
+          lifecycle:info:
+            source: "none"
+          links_count: "1"
+          mac_address: "00:e0:e4:17:ad:6c"
+          mac_address:info:
+            confidence: "high"
+            granularity: "complete"
+            likelihood: 0.0
+            likelihood_level: "unconfirmed"
+            protocol: "http"
+            protocol_source: ""
+            source: "passive"
+          mac_vendor: "FANUC"
+          os:info:
+            source: "none"
+          product_name: "R-1000iA/80F Robot"
+          product_name:info:
+            confidence: "high"
+            granularity: "complete"
+            source: "asset-kb"
+          properties:
+            _notified_va_info:
+              asset-kb: "5e6e6001254b4756"
+            _product_name:
+              asset-kb: "R-1000iA/80F Robot"
+              passive: "R-1000iA/80F"
+            _type:
+              asset-kb: "robot"
+            _vendor:
+              asset-kb: "FANUC"
+              passive: "Fanuc"
+          protocols:
+            - "http"
+          received:
+            bytes: "19074500"
+            last_15m_bytes: "6717"
+            last_1d_bytes: "0"
+            last_1h_bytes: "0"
+            last_1w_bytes: "0"
+            last_30m_bytes: "13434"
+            last_5m_bytes: "2239"
+            packets: "246032"
+          record_created_at: 1741874910387
+          roles:
+            - "web_server"
+          sent:
+            bytes: "391040078"
+            last_15m_bytes: "140397"
+            last_1d_bytes: "0"
+            last_1h_bytes: "0"
+            last_1w_bytes: "0"
+            last_30m_bytes: "280794"
+            last_5m_bytes: "46799"
+            packets: "437543"
+          serial_number: "128026"
+          serial_number:info:
+            confidence: "high"
+            granularity: "complete"
+            protocol: "http"
+            source: "passive"
+          tcp_retransmission:
+            bytes: "6773"
+            last_15m_bytes: "0"
+            last_30m_bytes: "0"
+            last_5m_bytes: "0"
+            packets: "9"
+            percent: 0.001651489696618392
+          type: "robot"
+          type:info:
+            confidence: "high"
+            granularity: "complete"
+            source: "asset-kb"
+          uid: "8b225167-b4ff-49f9-b761-cc35fa09ffb8"
+          vendor: "FANUC"
+          vendor:info:
+            confidence: "high"
+            granularity: "complete"
+            source: "asset-kb"
+          vlan_id:info:
+            source: "none"
+          zone: "Substation"
+        cds:
+          nozomi_networks:
+            asset:
+              id: "58cb91f2-28e3-41c2-bab6-df5ea2024d6f"
+              type: "assets"
+            node:
+              name: "10.102.164.17"
+            timestamp: 1744369602000
+        id: "b0bf5bf1-f753-4f68-90bd-4d134b974093"
+        links:
+          collection: "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f/nodes"
+          self: "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093"
+        relationships:
+          asset:
+            links:
+              related: "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f"
+          comments:
+            links:
+              related: "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093/comments"
+            meta:
+              count: 0
+          network_domain:
+            data:
+              id: "45a54c5c-049b-4ce4-8320-2b218b0e20c7"
+              type: "network_domains"
+            links:
+              related: "/api/v1/network_domains/45a54c5c-049b-4ce4-8320-2b218b0e20c7"
+          sensor:
+            data:
+              id: "c2d65991-45b1-4016-a006-d953cd372cec"
+              type: "sensors"
+            links:
+              related: "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+        type: "nodes"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093/comments"
+              }
+            },
+            "network_domain" : {
+              "data" : {
+                "id" : "45a54c5c-049b-4ce4-8320-2b218b0e20c7",
+                "type" : "network_domains"
+              },
+              "links" : {
+                "related" : "/api/v1/network_domains/45a54c5c-049b-4ce4-8320-2b218b0e20c7"
+              }
+            },
+            "sensor" : {
+              "data" : {
+                "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+                "type" : "sensors"
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+              }
+            },
+            "asset" : {
+              "data" : {
+                "id" : "58cb91f2-28e3-41c2-bab6-df5ea2024d6f",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f"
+              }
+            }
+          },
+          "attributes" : {
+            "bpf_filter" : "ip host 10.102.164.17",
+            "type:info" : {
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "asset-kb"
+            },
+            "edge_id" : "45a54c5c-049b-4ce4-8320-2b218b0e20c7/10.102.164.17",
+            "asset_id" : "3712c225-5b80-430e-8a87-502ca6a49b15",
+            "type" : "robot",
+            "end_of_support_date:info" : {
+              "source" : "none"
+            },
+            "capture_device" : "base.pcap",
+            "end_of_sale_date:info" : {
+              "source" : "none"
+            },
+            "product_name:info" : {
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "asset-kb"
+            },
+            "_asset_kb_id" : "96ff97c8-1c4b-4d25-8ff7-55a135b2c8f9",
+            "zone" : "Substation",
+            "protocols" : [ "http" ],
+            "vendor:info" : {
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "asset-kb"
+            },
+            "firmware_version:info" : {
+              "protocol" : "http",
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "passive"
+            },
+            "device_id" : "d0d5507f-e08c-40b3-a11f-2912665568e6",
+            "level" : "1",
+            "ip" : "10.102.164.17",
+            "is_disabled" : false,
+            "is_ai_enriched" : true,
+            "received" : {
+              "last_15m_bytes" : "6717",
+              "last_30m_bytes" : "13434",
+              "last_1w_bytes" : "0",
+              "last_5m_bytes" : "2239",
+              "bytes" : "19074500",
+              "last_1h_bytes" : "0",
+              "last_1d_bytes" : "0",
+              "packets" : "246032"
+            },
+            "sent" : {
+              "last_15m_bytes" : "140397",
+              "last_30m_bytes" : "280794",
+              "last_1w_bytes" : "0",
+              "last_5m_bytes" : "46799",
+              "bytes" : "391040078",
+              "last_1h_bytes" : "0",
+              "last_1d_bytes" : "0",
+              "packets" : "437543"
+            },
+            "product_name" : "R-1000iA/80F Robot",
+            "is_broadcast" : false,
+            "mac_address:info" : {
+              "protocol" : "http",
+              "likelihood" : 0.0,
+              "granularity" : "complete",
+              "confidence" : "high",
+              "likelihood_level" : "unconfirmed",
+              "source" : "passive",
+              "protocol_source" : ""
+            },
+            "_private_status" : "no",
+            "is_sp_enriched" : false,
+            "name" : "10.102.164.17",
+            "arc_version" : "",
+            "is_learned" : true,
+            "lifecycle:info" : {
+              "source" : "none"
+            },
+            "tcp_retransmission" : {
+              "last_15m_bytes" : "0",
+              "last_30m_bytes" : "0",
+              "last_5m_bytes" : "0",
+              "bytes" : "6773",
+              "percent" : 0.001651489696618392,
+              "packets" : "9"
+            },
+            "is_compromised" : false,
+            "_is_licensed" : true,
+            "roles" : [ "web_server" ],
+            "created_at" : 1724888822747,
+            "firmware_version" : "V8.10102",
+            "vlan_id:info" : {
+              "source" : "none"
+            },
+            "uid" : "8b225167-b4ff-49f9-b761-cc35fa09ffb8",
+            "is_arc_enriched" : false,
+            "label:info" : {
+              "source" : "none"
+            },
+            "appliance_hosts" : [ "Lab-Guardian1" ],
+            "vendor" : "FANUC",
+            "mac_address" : "00:e0:e4:17:ad:6c",
+            "links_count" : "1",
+            "serial_number:info" : {
+              "protocol" : "http",
+              "granularity" : "complete",
+              "confidence" : "high",
+              "source" : "passive"
+            },
+            "is_fully_learned" : true,
+            "is_confirmed" : true,
+            "serial_number" : "128026",
+            "record_created_at" : 1741874910387,
+            "mac_vendor" : "FANUC",
+            "is_ti_enriched" : true,
+            "last_activity_time" : 1744360807223,
+            "first_activity_time" : 1724888822747,
+            "os:info" : {
+              "source" : "none"
+            },
+            "is_public" : false,
+            "properties" : {
+              "_type" : {
+                "asset-kb" : "robot"
+              },
+              "_notified_va_info" : {
+                "asset-kb" : "5e6e6001254b4756"
+              },
+              "_vendor" : {
+                "asset-kb" : "FANUC",
+                "passive" : "Fanuc"
+              },
+              "_product_name" : {
+                "asset-kb" : "R-1000iA/80F Robot",
+                "passive" : "R-1000iA/80F"
+              }
+            }
+          },
+          "links" : {
+            "self" : "/api/v1/nodes/b0bf5bf1-f753-4f68-90bd-4d134b974093",
+            "collection" : "/api/v1/assets/58cb91f2-28e3-41c2-bab6-df5ea2024d6f/nodes"
+          },
+          "id" : "b0bf5bf1-f753-4f68-90bd-4d134b974093",
+          "type" : "nodes"
+        }
+      service: "cds.nozomi_networks.nodes"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+      timestamp: 1744369602000
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/comments"
+            }
+          },
+          "assets" : {
+            "links" : {
+              "related" : "/api/v1/assets"
+            }
+          },
+          "time_series" : {
+            "links" : {
+              "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/time_series"
+            }
+          },
+          "health_logs" : {
+            "links" : {
+              "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/health_logs"
+            }
+          },
+          "sensor_protection_rules" : {
+            "links" : {
+              "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/sensor_protection_rules"
+            }
+          },
+          "organization" : {
+            "data" : {
+              "id" : "be8f5d64-d698-49ce-a957-f7d0b923c74d",
+              "type" : "organizations"
+            },
+            "links" : {
+              "related" : "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+            }
+          },
+          "protection_rules" : {
+            "links" : {
+              "related" : "/api/v1/admin/protection_rules"
+            }
+          },
+          "taggings" : {
+            "links" : {
+              "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/taggings"
+            }
+          },
+          "network_domain" : {
+            "data" : {
+              "id" : "ecf72168-d3d5-44ee-ba49-822522c27eb8",
+              "type" : "network_domains"
+            },
+            "links" : {
+              "related" : "/api/v1/network_domains/ecf72168-d3d5-44ee-ba49-822522c27eb8"
+            }
+          }
+        },
+        "attributes" : {
+          "country" : "US",
+          "location_source" : "geoip",
+          "total_mbps" : "0.0",
+          "public_ip" : "34.226.221.9",
+          "data" : {
+            "free_perc" : 41,
+            "total" : "12G",
+            "used" : "7.4G",
+            "free" : "5.0G",
+            "status" : "ok",
+            "used_perc" : "59"
+          },
+          "software" : "N2OS 25.0.0-03042016_D5AB7",
+          "allowed" : true,
+          "geoip_long" : "-77.4903",
+          "alerts_count" : 2476,
+          "has_sp_code" : true,
+          "disk_usage_perc" : 59,
+          "host" : "Sandbox-TAE-CMC-AllInOne",
+          "model" : "V-SERIES",
+          "license_base" : {
+            "can_be_set" : true,
+            "status" : "ok"
+          },
+          "fips_enabled" : false,
+          "n2os_version" : "25.0.0-03042016_D5AB7",
+          "nozomi_risk" : 20.84313725490196,
+          "longitude" : "-77.4903",
+          "has_reached_limits" : false,
+          "license_threat_intelligence" : {
+            "licensee" : "Unregistered",
+            "extra" : {
+              "expire_date" : "0"
+            },
+            "is_disabled" : false,
+            "can_be_set" : true,
+            "type" : "threat_intelligence",
+            "is_from_vantage" : false,
+            "is_from_vantage_as_lp" : false,
+            "status" : "UNLICENSED"
+          },
+          "geoip_country" : "US",
+          "last_sync" : 1744362909616,
+          "produces_assets" : false,
+          "ip" : "10.0.0.25",
+          "license_asset_intelligence" : {
+            "licensee" : "Unregistered",
+            "extra" : {
+              "expire_date" : "0"
+            },
+            "is_disabled" : false,
+            "can_be_set" : true,
+            "type" : "asset_intelligence",
+            "is_from_vantage" : false,
+            "is_from_vantage_as_lp" : false,
+            "status" : "UNLICENSED"
+          },
+          "alerts_count_last_5m" : 0,
+          "network_interfaces" : "xn0",
+          "geoip_lat" : "39.0469",
+          "time_utc_offset" : "+00:00",
+          "ntp_offset" : "n/a",
+          "mem_free" : 13099,
+          "license_smart_polling" : {
+            "licensee" : "Unregistered",
+            "extra" : {
+              "expire_date" : "0"
+            },
+            "is_disabled" : false,
+            "can_be_set" : true,
+            "type" : "smart_polling",
+            "is_from_vantage" : false,
+            "is_from_vantage_as_lp" : false,
+            "status" : "UNLICENSED"
+          },
+          "_can" : {
+            "data_reset" : true
+          },
+          "appliance_type" : "cmc",
+          "status" : "active",
+          "mem_used" : 3247,
+          "has_low_ram" : false,
+          "is_under_high_load" : false,
+          "diag" : {
+            "disks" : {
+              "zpool" : [ [ "data_pool", "ONLINE", "0", "0", "0" ], [ "gpt/datadisk", "ONLINE", "0", "0", "0" ] ]
+            },
+            "bios_version" : "0xE8000"
+          },
+          "total_mem" : 16346,
+          "latitude" : "39.0469",
+          "description" : "",
+          "learning" : {
+            "ids_nodes_learning_status" : {
+              "not_learned" : "0",
+              "learned" : "592",
+              "partially_learned" : "0"
+            },
+            "ids_process_learning_status" : {
+              "start_time" : "1741870170853",
+              "new_vars" : false,
+              "pn_ratio" : "4",
+              "dynamic_flow" : true,
+              "new_values" : false
+            },
+            "ids_links_learning_status" : {
+              "not_learned" : "0",
+              "learned" : "519",
+              "partially_learned" : "0"
+            },
+            "ids_network_learning_status" : {
+              "start_time" : "1741870170853",
+              "dynamic_mode" : false,
+              "window" : "",
+              "adaptive_mode" : true,
+              "module_enabled" : false,
+              "status" : false
+            }
+          },
+          "variables_count" : "1632",
+          "security_profile" : "medium",
+          "has_migration_errors" : false,
+          "links_count" : "519",
+          "attached_to_vantage" : true,
+          "appliance_mode" : "all_in_one",
+          "geoip_ip" : "10.0.0.25",
+          "nodes_count" : "592",
+          "mem_used_perc" : 19,
+          "serial_number" : "ec23dfde-172a-99e2-595c-883c1d676353",
+          "uptime" : {
+            "hours" : 14,
+            "seconds" : 57.54020428657532,
+            "minutes" : 52,
+            "days" : 27
+          },
+          "site" : "",
+          "cpu_perc" : 0,
+          "risk" : 20.843137,
+          "time" : 1744362908644,
+          "has_sp_license" : true
+        },
+        "links" : {
+          "self" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289",
+          "collection" : "/api/v1/sensors"
+        },
+        "id" : "e4cf1d36-bb35-4d1d-b4ea-750f30d0b289",
+        "type" : "sensors"
+      }
+    service: "cds.nozomi_networks.sensors"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          _can:
+            data_reset: true
+          alerts_count: 2476
+          alerts_count_last_5m: 0
+          allowed: true
+          appliance_mode: "all_in_one"
+          appliance_type: "cmc"
+          attached_to_vantage: true
+          country: "US"
+          cpu_perc: 0
+          data:
+            free: "5.0G"
+            free_perc: 41
+            status: "ok"
+            total: "12G"
+            used: "7.4G"
+            used_perc: "59"
+          description: ""
+          diag:
+            bios_version: "0xE8000"
+            disks:
+              zpool:
+                - - "data_pool"
+                  - "ONLINE"
+                  - "0"
+                  - "0"
+                  - "0"
+                - - "gpt/datadisk"
+                  - "ONLINE"
+                  - "0"
+                  - "0"
+                  - "0"
+          disk_usage_perc: 59
+          fips_enabled: false
+          geoip_country: "US"
+          geoip_lat: "39.0469"
+          geoip_long: "-77.4903"
+          has_low_ram: false
+          has_migration_errors: false
+          has_reached_limits: false
+          has_sp_code: true
+          has_sp_license: true
+          host: "Sandbox-TAE-CMC-AllInOne"
+          is_under_high_load: false
+          last_sync: 1744362909616
+          latitude: "39.0469"
+          learning:
+            ids_links_learning_status:
+              learned: "519"
+              not_learned: "0"
+              partially_learned: "0"
+            ids_network_learning_status:
+              adaptive_mode: true
+              dynamic_mode: false
+              module_enabled: false
+              start_time: "1741870170853"
+              status: false
+              window: ""
+            ids_nodes_learning_status:
+              learned: "592"
+              not_learned: "0"
+              partially_learned: "0"
+            ids_process_learning_status:
+              dynamic_flow: true
+              new_values: false
+              new_vars: false
+              pn_ratio: "4"
+              start_time: "1741870170853"
+          license_asset_intelligence:
+            can_be_set: true
+            extra:
+              expire_date: "0"
+            is_disabled: false
+            is_from_vantage: false
+            is_from_vantage_as_lp: false
+            licensee: "Unregistered"
+            status: "UNLICENSED"
+            type: "asset_intelligence"
+          license_base:
+            can_be_set: true
+            status: "ok"
+          license_smart_polling:
+            can_be_set: true
+            extra:
+              expire_date: "0"
+            is_disabled: false
+            is_from_vantage: false
+            is_from_vantage_as_lp: false
+            licensee: "Unregistered"
+            status: "UNLICENSED"
+            type: "smart_polling"
+          license_threat_intelligence:
+            can_be_set: true
+            extra:
+              expire_date: "0"
+            is_disabled: false
+            is_from_vantage: false
+            is_from_vantage_as_lp: false
+            licensee: "Unregistered"
+            status: "UNLICENSED"
+            type: "threat_intelligence"
+          links_count: "519"
+          location_source: "geoip"
+          longitude: "-77.4903"
+          mem_free: 13099
+          mem_used: 3247
+          mem_used_perc: 19
+          model: "V-SERIES"
+          n2os_version: "25.0.0-03042016_D5AB7"
+          network_interfaces: "xn0"
+          nodes_count: "592"
+          ntp_offset: "n/a"
+          produces_assets: false
+          risk: 20.843137
+          security_profile: "medium"
+          serial_number: "ec23dfde-172a-99e2-595c-883c1d676353"
+          site: ""
+          software: "N2OS 25.0.0-03042016_D5AB7"
+          status: "active"
+          time: 1744362908644
+          time_utc_offset: "+00:00"
+          total_mbps: "0.0"
+          total_mem: 16346
+          uptime:
+            days: 27
+            hours: 14
+            minutes: 52
+            seconds: 57.54020428657532
+          variables_count: "1632"
+        cds:
+          nozomi_networks:
+            nozomi_risk: 20.84313725490196
+            timestamp: 1744369602000
+        id: "e4cf1d36-bb35-4d1d-b4ea-750f30d0b289"
+        links:
+          collection: "/api/v1/sensors"
+          self: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289"
+        network:
+          client:
+            geoip: {}
+            ip: "34.226.221.9"
+        relationships:
+          assets:
+            links:
+              related: "/api/v1/assets"
+          comments:
+            links:
+              related: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/comments"
+            meta:
+              count: 0
+          health_logs:
+            links:
+              related: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/health_logs"
+          network_domain:
+            data:
+              id: "ecf72168-d3d5-44ee-ba49-822522c27eb8"
+              type: "network_domains"
+            links:
+              related: "/api/v1/network_domains/ecf72168-d3d5-44ee-ba49-822522c27eb8"
+          organization:
+            data:
+              id: "be8f5d64-d698-49ce-a957-f7d0b923c74d"
+              type: "organizations"
+            links:
+              related: "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+          protection_rules:
+            links:
+              related: "/api/v1/admin/protection_rules"
+          sensor_protection_rules:
+            links:
+              related: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/sensor_protection_rules"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+          taggings:
+            links:
+              related: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/taggings"
+          time_series:
+            links:
+              related: "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/time_series"
+        type: "sensors"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/comments"
+              }
+            },
+            "assets" : {
+              "links" : {
+                "related" : "/api/v1/assets"
+              }
+            },
+            "time_series" : {
+              "links" : {
+                "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/time_series"
+              }
+            },
+            "health_logs" : {
+              "links" : {
+                "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/health_logs"
+              }
+            },
+            "sensor_protection_rules" : {
+              "links" : {
+                "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/sensor_protection_rules"
+              }
+            },
+            "organization" : {
+              "data" : {
+                "id" : "be8f5d64-d698-49ce-a957-f7d0b923c74d",
+                "type" : "organizations"
+              },
+              "links" : {
+                "related" : "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+              }
+            },
+            "protection_rules" : {
+              "links" : {
+                "related" : "/api/v1/admin/protection_rules"
+              }
+            },
+            "taggings" : {
+              "links" : {
+                "related" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289/taggings"
+              }
+            },
+            "network_domain" : {
+              "data" : {
+                "id" : "ecf72168-d3d5-44ee-ba49-822522c27eb8",
+                "type" : "network_domains"
+              },
+              "links" : {
+                "related" : "/api/v1/network_domains/ecf72168-d3d5-44ee-ba49-822522c27eb8"
+              }
+            }
+          },
+          "attributes" : {
+            "country" : "US",
+            "location_source" : "geoip",
+            "total_mbps" : "0.0",
+            "public_ip" : "34.226.221.9",
+            "data" : {
+              "free_perc" : 41,
+              "total" : "12G",
+              "used" : "7.4G",
+              "free" : "5.0G",
+              "status" : "ok",
+              "used_perc" : "59"
+            },
+            "software" : "N2OS 25.0.0-03042016_D5AB7",
+            "allowed" : true,
+            "geoip_long" : "-77.4903",
+            "alerts_count" : 2476,
+            "has_sp_code" : true,
+            "disk_usage_perc" : 59,
+            "host" : "Sandbox-TAE-CMC-AllInOne",
+            "model" : "V-SERIES",
+            "license_base" : {
+              "can_be_set" : true,
+              "status" : "ok"
+            },
+            "fips_enabled" : false,
+            "n2os_version" : "25.0.0-03042016_D5AB7",
+            "nozomi_risk" : 20.84313725490196,
+            "longitude" : "-77.4903",
+            "has_reached_limits" : false,
+            "license_threat_intelligence" : {
+              "licensee" : "Unregistered",
+              "extra" : {
+                "expire_date" : "0"
+              },
+              "is_disabled" : false,
+              "can_be_set" : true,
+              "type" : "threat_intelligence",
+              "is_from_vantage" : false,
+              "is_from_vantage_as_lp" : false,
+              "status" : "UNLICENSED"
+            },
+            "geoip_country" : "US",
+            "last_sync" : 1744362909616,
+            "produces_assets" : false,
+            "ip" : "10.0.0.25",
+            "license_asset_intelligence" : {
+              "licensee" : "Unregistered",
+              "extra" : {
+                "expire_date" : "0"
+              },
+              "is_disabled" : false,
+              "can_be_set" : true,
+              "type" : "asset_intelligence",
+              "is_from_vantage" : false,
+              "is_from_vantage_as_lp" : false,
+              "status" : "UNLICENSED"
+            },
+            "alerts_count_last_5m" : 0,
+            "network_interfaces" : "xn0",
+            "geoip_lat" : "39.0469",
+            "time_utc_offset" : "+00:00",
+            "ntp_offset" : "n/a",
+            "mem_free" : 13099,
+            "license_smart_polling" : {
+              "licensee" : "Unregistered",
+              "extra" : {
+                "expire_date" : "0"
+              },
+              "is_disabled" : false,
+              "can_be_set" : true,
+              "type" : "smart_polling",
+              "is_from_vantage" : false,
+              "is_from_vantage_as_lp" : false,
+              "status" : "UNLICENSED"
+            },
+            "_can" : {
+              "data_reset" : true
+            },
+            "appliance_type" : "cmc",
+            "status" : "active",
+            "mem_used" : 3247,
+            "has_low_ram" : false,
+            "is_under_high_load" : false,
+            "diag" : {
+              "disks" : {
+                "zpool" : [ [ "data_pool", "ONLINE", "0", "0", "0" ], [ "gpt/datadisk", "ONLINE", "0", "0", "0" ] ]
+              },
+              "bios_version" : "0xE8000"
+            },
+            "total_mem" : 16346,
+            "latitude" : "39.0469",
+            "description" : "",
+            "learning" : {
+              "ids_nodes_learning_status" : {
+                "not_learned" : "0",
+                "learned" : "592",
+                "partially_learned" : "0"
+              },
+              "ids_process_learning_status" : {
+                "start_time" : "1741870170853",
+                "new_vars" : false,
+                "pn_ratio" : "4",
+                "dynamic_flow" : true,
+                "new_values" : false
+              },
+              "ids_links_learning_status" : {
+                "not_learned" : "0",
+                "learned" : "519",
+                "partially_learned" : "0"
+              },
+              "ids_network_learning_status" : {
+                "start_time" : "1741870170853",
+                "dynamic_mode" : false,
+                "window" : "",
+                "adaptive_mode" : true,
+                "module_enabled" : false,
+                "status" : false
+              }
+            },
+            "variables_count" : "1632",
+            "security_profile" : "medium",
+            "has_migration_errors" : false,
+            "links_count" : "519",
+            "attached_to_vantage" : true,
+            "appliance_mode" : "all_in_one",
+            "geoip_ip" : "10.0.0.25",
+            "nodes_count" : "592",
+            "mem_used_perc" : 19,
+            "serial_number" : "ec23dfde-172a-99e2-595c-883c1d676353",
+            "uptime" : {
+              "hours" : 14,
+              "seconds" : 57.54020428657532,
+              "minutes" : 52,
+              "days" : 27
+            },
+            "site" : "",
+            "cpu_perc" : 0,
+            "risk" : 20.843137,
+            "time" : 1744362908644,
+            "has_sp_license" : true
+          },
+          "links" : {
+            "self" : "/api/v1/sensors/e4cf1d36-bb35-4d1d-b4ea-750f30d0b289",
+            "collection" : "/api/v1/sensors"
+          },
+          "id" : "e4cf1d36-bb35-4d1d-b4ea-750f30d0b289",
+          "type" : "sensors"
+        }
+      service: "cds.nozomi_networks.sensors"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+      timestamp: 1744369602000
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            }
+          },
+          "from_asset" : {
+            "data" : {
+              "id" : "6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d"
+            }
+          },
+          "to_asset" : {
+            "data" : {
+              "id" : "2cf28827-a81f-4a3e-bd36-aa22f507a618",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/2cf28827-a81f-4a3e-bd36-aa22f507a618"
+            }
+          },
+          "sensor" : {
+            "data" : {
+              "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+              "type" : "sensors"
+            },
+            "links" : {
+              "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+            }
+          }
+        },
+        "attributes" : {
+          "to_zone" : "Production_B",
+          "bpf_filter" : "ip host 172.16.4.89 and ip host 192.168.20.204 and tcp port 49391 and tcp port 102",
+          "transferred" : {
+            "last_15m_bytes" : "1307",
+            "last_30m_bytes" : "1307",
+            "last_5m_bytes" : "0",
+            "biggest_packet_bytes" : "282",
+            "bytes" : "1307",
+            "smallest_packet_bytes" : "54",
+            "avg_packet_bytes" : 81.6875,
+            "packets" : "16"
+          },
+          "is_from_public" : false,
+          "direction_is_known" : true,
+          "edge_id" : "c2d65991-45b1-4016-a006-d953cd372cec/192.168.20.204;102;172.16.4.89;49391;tcp;8-20250327",
+          "to_port" : "102",
+          "from_zone" : "Production_B",
+          "is_broadcast" : false,
+          "protocol" : "cotp",
+          "last_activity_time" : 1743073806982,
+          "is_to_public" : false,
+          "first_activity_time" : "1743073506237",
+          "from" : "172.16.4.89",
+          "to" : "192.168.20.204",
+          "from_port" : "49391",
+          "transport_protocol" : "tcp",
+          "key" : "192.168.20.204;102;172.16.4.89;49391;tcp;8",
+          "_to_ip" : "192.168.20.204",
+          "throughput_speed" : 0,
+          "status" : "CLOSED",
+          "_from_ip" : "172.16.4.89"
+        },
+        "links" : {
+          "self" : "/api/v1/sessions/e6ef9765-0448-4187-84bb-3e19c5b585ff",
+          "collection" : "/api/v1/sessions"
+        },
+        "id" : "e6ef9765-0448-4187-84bb-3e19c5b585ff",
+        "type" : "sessions"
+      }
+    service: "cds.nozomi_networks.sessions"
+    result:
+      custom:
+        attributes:
+          _from_ip: "172.16.4.89"
+          _to_ip: "192.168.20.204"
+          bpf_filter: "ip host 172.16.4.89 and ip host 192.168.20.204 and tcp port 49391 and tcp port 102"
+          direction_is_known: true
+          edge_id: "c2d65991-45b1-4016-a006-d953cd372cec/192.168.20.204;102;172.16.4.89;49391;tcp;8-20250327"
+          first_activity_time: "1743073506237"
+          from_port: "49391"
+          from_zone: "Production_B"
+          is_broadcast: false
+          is_from_public: false
+          is_to_public: false
+          key: "192.168.20.204;102;172.16.4.89;49391;tcp;8"
+          last_activity_time: 1743073806982
+          protocol: "cotp"
+          status: "CLOSED"
+          throughput_speed: 0
+          to_port: "102"
+          to_zone: "Production_B"
+          transferred:
+            biggest_packet_bytes: "282"
+            bytes: "1307"
+            last_15m_bytes: "1307"
+            last_30m_bytes: "1307"
+            last_5m_bytes: "0"
+            packets: "16"
+            smallest_packet_bytes: "54"
+          transport_protocol: "tcp"
+        cds:
+          nozomi_networks:
+            sessions:
+              destination: "192.168.20.204"
+              source: "172.16.4.89"
+              transferred:
+                avg_packet_bytes: 81.6875
+        id: "e6ef9765-0448-4187-84bb-3e19c5b585ff"
+        links:
+          collection: "/api/v1/sessions"
+          self: "/api/v1/sessions/e6ef9765-0448-4187-84bb-3e19c5b585ff"
+        relationships:
+          comments:
+            meta:
+              count: 0
+          from_asset:
+            data:
+              id: "6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d"
+          sensor:
+            data:
+              id: "c2d65991-45b1-4016-a006-d953cd372cec"
+              type: "sensors"
+            links:
+              related: "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+          to_asset:
+            data:
+              id: "2cf28827-a81f-4a3e-bd36-aa22f507a618"
+              type: "assets"
+            links:
+              related: "/api/v1/assets/2cf28827-a81f-4a3e-bd36-aa22f507a618"
+        type: "sessions"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              }
+            },
+            "from_asset" : {
+              "data" : {
+                "id" : "6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/6573ad91-bf71-4f7b-a9f5-346f1fd6ed1d"
+              }
+            },
+            "to_asset" : {
+              "data" : {
+                "id" : "2cf28827-a81f-4a3e-bd36-aa22f507a618",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/2cf28827-a81f-4a3e-bd36-aa22f507a618"
+              }
+            },
+            "sensor" : {
+              "data" : {
+                "id" : "c2d65991-45b1-4016-a006-d953cd372cec",
+                "type" : "sensors"
+              },
+              "links" : {
+                "related" : "/api/v1/sensors/c2d65991-45b1-4016-a006-d953cd372cec"
+              }
+            }
+          },
+          "attributes" : {
+            "to_zone" : "Production_B",
+            "bpf_filter" : "ip host 172.16.4.89 and ip host 192.168.20.204 and tcp port 49391 and tcp port 102",
+            "transferred" : {
+              "last_15m_bytes" : "1307",
+              "last_30m_bytes" : "1307",
+              "last_5m_bytes" : "0",
+              "biggest_packet_bytes" : "282",
+              "bytes" : "1307",
+              "smallest_packet_bytes" : "54",
+              "avg_packet_bytes" : 81.6875,
+              "packets" : "16"
+            },
+            "is_from_public" : false,
+            "direction_is_known" : true,
+            "edge_id" : "c2d65991-45b1-4016-a006-d953cd372cec/192.168.20.204;102;172.16.4.89;49391;tcp;8-20250327",
+            "to_port" : "102",
+            "from_zone" : "Production_B",
+            "is_broadcast" : false,
+            "protocol" : "cotp",
+            "last_activity_time" : 1743073806982,
+            "is_to_public" : false,
+            "first_activity_time" : "1743073506237",
+            "from" : "172.16.4.89",
+            "to" : "192.168.20.204",
+            "from_port" : "49391",
+            "transport_protocol" : "tcp",
+            "key" : "192.168.20.204;102;172.16.4.89;49391;tcp;8",
+            "_to_ip" : "192.168.20.204",
+            "throughput_speed" : 0,
+            "status" : "CLOSED",
+            "_from_ip" : "172.16.4.89"
+          },
+          "links" : {
+            "self" : "/api/v1/sessions/e6ef9765-0448-4187-84bb-3e19c5b585ff",
+            "collection" : "/api/v1/sessions"
+          },
+          "id" : "e6ef9765-0448-4187-84bb-3e19c5b585ff",
+          "type" : "sessions"
+        }
+      service: "cds.nozomi_networks.sessions"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-site-id:faa35a02-5ceb-49ee-b8b5-8f5531ca3fc7"
+      timestamp: 1743073806982
+
+  - sample: |-
+      {
+        "relationships" : {
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/comments"
+            }
+          },
+          "sensors" : {
+            "links" : {
+              "related" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/sensors"
+            }
+          },
+          "organization" : {
+            "data" : {
+              "id" : "be8f5d64-d698-49ce-a957-f7d0b923c74d",
+              "type" : "organizations"
+            },
+            "links" : {
+              "related" : "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+            }
+          }
+        },
+        "attributes" : {
+          "country" : "US",
+          "location_source" : "geoip",
+          "last_sync" : 1744362948175,
+          "latitude" : "37.773972",
+          "name" : "Demo Site standard 57cf8e88",
+          "risk" : 0.0,
+          "nozomi_risk" : 0.0,
+          "sensors_count" : 1,
+          "longitude" : "-122.431297"
+        },
+        "links" : {
+          "self" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e",
+          "collection" : "/api/v1/sites"
+        },
+        "id" : "3b66e82e-9308-4d80-904f-ba0811e8f57e",
+        "type" : "sites"
+      }
+    service: "cds.nozomi_networks.sites"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          country: "US"
+          last_sync: 1744362948175
+          location_source: "geoip"
+          risk: 0.0
+          sensors_count: 1
+        cds:
+          nozomi_networks:
+            nozomi_risk: 0.0
+            site:
+              latitude: "37.773972"
+              longitude: "-122.431297"
+              name: "Demo Site standard 57cf8e88"
+            timestamp: 1744369602000
+        links:
+          collection: "/api/v1/sites"
+          self: "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e"
+        relationships:
+          comments:
+            links:
+              related: "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/comments"
+            meta:
+              count: 0
+          organization:
+            data:
+              id: "be8f5d64-d698-49ce-a957-f7d0b923c74d"
+              type: "organizations"
+            links:
+              related: "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+          sensors:
+            links:
+              related: "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/sensors"
+        type: "sites"
+      message: |-
+        {
+          "relationships" : {
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/comments"
+              }
+            },
+            "sensors" : {
+              "links" : {
+                "related" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e/sensors"
+              }
+            },
+            "organization" : {
+              "data" : {
+                "id" : "be8f5d64-d698-49ce-a957-f7d0b923c74d",
+                "type" : "organizations"
+              },
+              "links" : {
+                "related" : "/api/v1/admin/organizations/be8f5d64-d698-49ce-a957-f7d0b923c74d"
+              }
+            }
+          },
+          "attributes" : {
+            "country" : "US",
+            "location_source" : "geoip",
+            "last_sync" : 1744362948175,
+            "latitude" : "37.773972",
+            "name" : "Demo Site standard 57cf8e88",
+            "risk" : 0.0,
+            "nozomi_risk" : 0.0,
+            "sensors_count" : 1,
+            "longitude" : "-122.431297"
+          },
+          "links" : {
+            "self" : "/api/v1/sites/3b66e82e-9308-4d80-904f-ba0811e8f57e",
+            "collection" : "/api/v1/sites"
+          },
+          "id" : "3b66e82e-9308-4d80-904f-ba0811e8f57e",
+          "type" : "sites"
+        }
+      service: "cds.nozomi_networks.sites"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:3b66e82e-9308-4d80-904f-ba0811e8f57e"
+      timestamp: 1744369602000
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "42ca1df2-826a-4c3a-93b0-92149c131e1c",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/42ca1df2-826a-4c3a-93b0-92149c131e1c"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/comments"
+            }
+          },
+          "time_series" : {
+            "links" : {
+              "related" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/time_series"
+            }
+          },
+          "network_domain" : {
+            "data" : {
+              "id" : "9ff8eb2b-ba28-4185-9a34-942ae875a012",
+              "type" : "network_domains"
+            },
+            "links" : {
+              "related" : "/api/v1/network_domains/9ff8eb2b-ba28-4185-9a34-942ae875a012"
+            }
+          },
+          "asset" : {
+            "data" : {
+              "id" : "7e3e2837-7565-4db5-886a-70fc9c66bfa8",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8"
+            }
+          }
+        },
+        "attributes" : {
+          "last_function_code" : "9",
+          "last_valid_quality_time" : "1725960137919",
+          "flow_hiccups_percent" : "0",
+          "latest_bit_change" : "",
+          "scale" : "1.000000",
+          "edge_id" : "9ff8eb2b-ba28-4185-9a34-942ae875a012/192.168.111.11/23298/ioa-2-2",
+          "is_numeric" : true,
+          "last_range_change_time" : "1725960063058",
+          "type" : "analog",
+          "last_client" : "192.168.1.12",
+          "changes_count" : "32",
+          "protocol" : "iec104",
+          "flow_status" : "LEARNING",
+          "bit_value" : "00111111011001011110000000000000",
+          "host" : "192.168.111.11",
+          "flow_anomalies" : "0",
+          "value" : 0.89794921875,
+          "last_function_code_info" : "M_ME_NA_1: Measured value, normalized value",
+          "var_key" : "192.168.111.11/23298/ioa-2-2",
+          "last_cause" : "read:cyclic",
+          "offset" : "0.000000",
+          "last_value" : 0.89794921875,
+          "host_label" : "NOZOMI-SEL-3530",
+          "label" : "ioa-2-2 at 23298",
+          "record_created_at" : 1744363272741,
+          "request_count" : "42",
+          "flow_anomaly_in_progress" : false,
+          "min_value" : "0.893951",
+          "last_update_time" : "1725960137919",
+          "unit" : "n/a",
+          "last_activity_time" : 1744359737000,
+          "first_activity_time" : "1725960057288",
+          "name" : "ioa-2-2",
+          "namespace" : "23298",
+          "last_value_is_valid" : true,
+          "history_status" : true,
+          "max_value" : "0.905945",
+          "flow_stats" : {
+            "avg" : 0,
+            "var" : 0
+          }
+        },
+        "links" : {
+          "self" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6",
+          "collection" : "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8/variables"
+        },
+        "id" : "bd25cc8c-d6ff-44a2-ab96-124d681959f6",
+        "type" : "variables"
+      }
+    service: "cds.nozomi_networks.variables"
+    result:
+      custom:
+        attributes:
+          bit_value: "00111111011001011110000000000000"
+          changes_count: "32"
+          edge_id: "9ff8eb2b-ba28-4185-9a34-942ae875a012/192.168.111.11/23298/ioa-2-2"
+          first_activity_time: "1725960057288"
+          flow_anomalies: "0"
+          flow_anomaly_in_progress: false
+          flow_hiccups_percent: "0"
+          flow_stats:
+            avg: 0
+            var: 0
+          flow_status: "LEARNING"
+          history_status: true
+          host: "192.168.111.11"
+          host_label: "NOZOMI-SEL-3530"
+          is_numeric: true
+          label: "ioa-2-2 at 23298"
+          last_activity_time: 1744359737000
+          last_cause: "read:cyclic"
+          last_client: "192.168.1.12"
+          last_function_code: "9"
+          last_function_code_info: "M_ME_NA_1: Measured value, normalized value"
+          last_range_change_time: "1725960063058"
+          last_update_time: "1725960137919"
+          last_valid_quality_time: "1725960137919"
+          last_value_is_valid: true
+          latest_bit_change: ""
+          max_value: "0.905945"
+          min_value: "0.893951"
+          namespace: "23298"
+          offset: "0.000000"
+          protocol: "iec104"
+          record_created_at: 1744363272741
+          request_count: "42"
+          scale: "1.000000"
+          type: "analog"
+          unit: "n/a"
+          value: 0.89794921875
+          var_key: "192.168.111.11/23298/ioa-2-2"
+        cds:
+          nozomi_networks:
+            asset:
+              id: "7e3e2837-7565-4db5-886a-70fc9c66bfa8"
+              type: "assets"
+            variable:
+              last_value: 0.89794921875
+              name: "ioa-2-2"
+        id: "bd25cc8c-d6ff-44a2-ab96-124d681959f6"
+        links:
+          collection: "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8/variables"
+          self: "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6"
+        relationships:
+          asset:
+            links:
+              related: "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8"
+          comments:
+            links:
+              related: "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/comments"
+            meta:
+              count: 0
+          network_domain:
+            data:
+              id: "9ff8eb2b-ba28-4185-9a34-942ae875a012"
+              type: "network_domains"
+            links:
+              related: "/api/v1/network_domains/9ff8eb2b-ba28-4185-9a34-942ae875a012"
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/42ca1df2-826a-4c3a-93b0-92149c131e1c"
+          time_series:
+            links:
+              related: "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/time_series"
+        type: "variables"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "42ca1df2-826a-4c3a-93b0-92149c131e1c",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/42ca1df2-826a-4c3a-93b0-92149c131e1c"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/comments"
+              }
+            },
+            "time_series" : {
+              "links" : {
+                "related" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6/time_series"
+              }
+            },
+            "network_domain" : {
+              "data" : {
+                "id" : "9ff8eb2b-ba28-4185-9a34-942ae875a012",
+                "type" : "network_domains"
+              },
+              "links" : {
+                "related" : "/api/v1/network_domains/9ff8eb2b-ba28-4185-9a34-942ae875a012"
+              }
+            },
+            "asset" : {
+              "data" : {
+                "id" : "7e3e2837-7565-4db5-886a-70fc9c66bfa8",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8"
+              }
+            }
+          },
+          "attributes" : {
+            "last_function_code" : "9",
+            "last_valid_quality_time" : "1725960137919",
+            "flow_hiccups_percent" : "0",
+            "latest_bit_change" : "",
+            "scale" : "1.000000",
+            "edge_id" : "9ff8eb2b-ba28-4185-9a34-942ae875a012/192.168.111.11/23298/ioa-2-2",
+            "is_numeric" : true,
+            "last_range_change_time" : "1725960063058",
+            "type" : "analog",
+            "last_client" : "192.168.1.12",
+            "changes_count" : "32",
+            "protocol" : "iec104",
+            "flow_status" : "LEARNING",
+            "bit_value" : "00111111011001011110000000000000",
+            "host" : "192.168.111.11",
+            "flow_anomalies" : "0",
+            "value" : 0.89794921875,
+            "last_function_code_info" : "M_ME_NA_1: Measured value, normalized value",
+            "var_key" : "192.168.111.11/23298/ioa-2-2",
+            "last_cause" : "read:cyclic",
+            "offset" : "0.000000",
+            "last_value" : 0.89794921875,
+            "host_label" : "NOZOMI-SEL-3530",
+            "label" : "ioa-2-2 at 23298",
+            "record_created_at" : 1744363272741,
+            "request_count" : "42",
+            "flow_anomaly_in_progress" : false,
+            "min_value" : "0.893951",
+            "last_update_time" : "1725960137919",
+            "unit" : "n/a",
+            "last_activity_time" : 1744359737000,
+            "first_activity_time" : "1725960057288",
+            "name" : "ioa-2-2",
+            "namespace" : "23298",
+            "last_value_is_valid" : true,
+            "history_status" : true,
+            "max_value" : "0.905945",
+            "flow_stats" : {
+              "avg" : 0,
+              "var" : 0
+            }
+          },
+          "links" : {
+            "self" : "/api/v1/variables/bd25cc8c-d6ff-44a2-ab96-124d681959f6",
+            "collection" : "/api/v1/assets/7e3e2837-7565-4db5-886a-70fc9c66bfa8/variables"
+          },
+          "id" : "bd25cc8c-d6ff-44a2-ab96-124d681959f6",
+          "type" : "variables"
+        }
+      service: "cds.nozomi_networks.variables"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-site-id:42ca1df2-826a-4c3a-93b0-92149c131e1c"
+      timestamp: 1725960137919
+
+  - sample: |-
+      {
+        "relationships" : {
+          "site" : {
+            "data" : {
+              "id" : "8c6a8cf9-9eec-48b8-9eed-4a59481a4361",
+              "type" : "sites"
+            },
+            "links" : {
+              "related" : "/api/v1/sites/8c6a8cf9-9eec-48b8-9eed-4a59481a4361"
+            }
+          },
+          "comments" : {
+            "meta" : {
+              "count" : 0
+            },
+            "links" : {
+              "related" : "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c/comments"
+            }
+          },
+          "vulnerability_fix_suggestion" : {
+            "data" : {
+              "id" : "07c89f6b-8e78-4347-a536-79f73aff6c2d",
+              "type" : "vulnerabilityfixsuggestions"
+            }
+          },
+          "asset" : {
+            "data" : {
+              "id" : "5948df6d-b1cc-4a0a-b603-4185e265d25a",
+              "type" : "assets"
+            },
+            "links" : {
+              "related" : "/api/v1/assets/5948df6d-b1cc-4a0a-b603-4185e265d25a"
+            }
+          }
+        },
+        "attributes" : {
+          "summary" : "Use after free in Performance Manager in Google Chrome prior to 94.0.4606.54 allowed a remote attacker who had compromised the renderer process to potentially exploit heap corruption via a crafted HTML page.",
+          "creation_time" : 1633731307793,
+          "epss_score" : 0.00452,
+          "references" : [ {
+            "name" : "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html",
+            "source" : "chrome-cve-admin@google.com",
+            "url" : "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html",
+            "reference_type" : "Vendor Advisory"
+          }, {
+            "name" : "https://crbug.com/1231933",
+            "source" : "chrome-cve-admin@google.com",
+            "url" : "https://crbug.com/1231933",
+            "reference_type" : "Vendor Advisory"
+          }, {
+            "name" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/",
+            "source" : "chrome-cve-admin@google.com",
+            "url" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/",
+            "reference_type" : "Vendor Advisory"
+          }, {
+            "name" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/",
+            "source" : "chrome-cve-admin@google.com",
+            "url" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/",
+            "reference_type" : "Vendor Advisory"
+          }, {
+            "name" : "https://www.debian.org/security/2022/dsa-5046",
+            "source" : "chrome-cve-admin@google.com",
+            "url" : "https://www.debian.org/security/2022/dsa-5046",
+            "reference_type" : "Vendor Advisory"
+          } ],
+          "probability" : "Possible",
+          "is_kev" : false,
+          "resolution_status" : "",
+          "closed_time" : 0,
+          "score" : "8.8",
+          "update_time" : 1699342625193,
+          "cve" : "CVE-2021-37962",
+          "likelihood" : "0.5",
+          "time" : 1742922956114,
+          "category" : "Use After Free",
+          "matching_cpes" : [ "cpe:/a:google:chrome:91.0.4472.124:-:-" ],
+          "status" : "open"
+        },
+        "links" : {
+          "self" : "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c",
+          "collection" : "/api/v1/vulnerabilities"
+        },
+        "id" : "6fcb7adb-58fa-4233-94ae-50e11dee928c",
+        "type" : "vulnerabilities"
+      }
+    service: "cds.nozomi_networks.vulnerabilities"
+    tags:
+      - "nozomi-networks-batch:2025-04-11_11:06:42"
+    result:
+      custom:
+        attributes:
+          category: "Use After Free"
+          closed_time: 0
+          creation_time: 1633731307793
+          cve: "CVE-2021-37962"
+          epss_score: 0.00452
+          is_kev: false
+          likelihood: "0.5"
+          matching_cpes:
+            - "cpe:/a:google:chrome:91.0.4472.124:-:-"
+          probability: "Possible"
+          references:
+            - name: "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html"
+              source: "chrome-cve-admin@google.com"
+              url: "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html"
+              reference_type: "Vendor Advisory"
+            - name: "https://crbug.com/1231933"
+              source: "chrome-cve-admin@google.com"
+              url: "https://crbug.com/1231933"
+              reference_type: "Vendor Advisory"
+            - name: "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/"
+              source: "chrome-cve-admin@google.com"
+              url: "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/"
+              reference_type: "Vendor Advisory"
+            - name: "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/"
+              source: "chrome-cve-admin@google.com"
+              url: "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/"
+              reference_type: "Vendor Advisory"
+            - name: "https://www.debian.org/security/2022/dsa-5046"
+              source: "chrome-cve-admin@google.com"
+              url: "https://www.debian.org/security/2022/dsa-5046"
+              reference_type: "Vendor Advisory"
+          resolution_status: ""
+          status: "open"
+          summary: "Use after free in Performance Manager in Google Chrome prior to 94.0.4606.54 allowed a remote attacker who had compromised the renderer process to potentially exploit heap corruption via a crafted HTML page."
+          time: 1742922956114
+          update_time: 1699342625193
+        cds:
+          nozomi_networks:
+            asset:
+              id: "5948df6d-b1cc-4a0a-b603-4185e265d25a"
+              type: "assets"
+            timestamp: 1744369602000
+            vulnerabilities_score: 8.8
+        id: "6fcb7adb-58fa-4233-94ae-50e11dee928c"
+        links:
+          collection: "/api/v1/vulnerabilities"
+          self: "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c"
+        relationships:
+          asset:
+            links:
+              related: "/api/v1/assets/5948df6d-b1cc-4a0a-b603-4185e265d25a"
+          comments:
+            links:
+              related: "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c/comments"
+            meta:
+              count: 0
+          site:
+            data:
+              type: "sites"
+            links:
+              related: "/api/v1/sites/8c6a8cf9-9eec-48b8-9eed-4a59481a4361"
+          vulnerability_fix_suggestion:
+            data:
+              id: "07c89f6b-8e78-4347-a536-79f73aff6c2d"
+              type: "vulnerabilityfixsuggestions"
+        type: "vulnerabilities"
+      message: |-
+        {
+          "relationships" : {
+            "site" : {
+              "data" : {
+                "id" : "8c6a8cf9-9eec-48b8-9eed-4a59481a4361",
+                "type" : "sites"
+              },
+              "links" : {
+                "related" : "/api/v1/sites/8c6a8cf9-9eec-48b8-9eed-4a59481a4361"
+              }
+            },
+            "comments" : {
+              "meta" : {
+                "count" : 0
+              },
+              "links" : {
+                "related" : "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c/comments"
+              }
+            },
+            "vulnerability_fix_suggestion" : {
+              "data" : {
+                "id" : "07c89f6b-8e78-4347-a536-79f73aff6c2d",
+                "type" : "vulnerabilityfixsuggestions"
+              }
+            },
+            "asset" : {
+              "data" : {
+                "id" : "5948df6d-b1cc-4a0a-b603-4185e265d25a",
+                "type" : "assets"
+              },
+              "links" : {
+                "related" : "/api/v1/assets/5948df6d-b1cc-4a0a-b603-4185e265d25a"
+              }
+            }
+          },
+          "attributes" : {
+            "summary" : "Use after free in Performance Manager in Google Chrome prior to 94.0.4606.54 allowed a remote attacker who had compromised the renderer process to potentially exploit heap corruption via a crafted HTML page.",
+            "creation_time" : 1633731307793,
+            "epss_score" : 0.00452,
+            "references" : [ {
+              "name" : "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html",
+              "source" : "chrome-cve-admin@google.com",
+              "url" : "https://chromereleases.googleblog.com/2021/09/stable-channel-update-for-desktop_21.html",
+              "reference_type" : "Vendor Advisory"
+            }, {
+              "name" : "https://crbug.com/1231933",
+              "source" : "chrome-cve-admin@google.com",
+              "url" : "https://crbug.com/1231933",
+              "reference_type" : "Vendor Advisory"
+            }, {
+              "name" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/",
+              "source" : "chrome-cve-admin@google.com",
+              "url" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/4DDW7HAHTS3SDVXBQUY4SURELO5D4X7R/",
+              "reference_type" : "Vendor Advisory"
+            }, {
+              "name" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/",
+              "source" : "chrome-cve-admin@google.com",
+              "url" : "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/PM7MOYYHJSWLIFZ4TPJTD7MSA3HSSLV2/",
+              "reference_type" : "Vendor Advisory"
+            }, {
+              "name" : "https://www.debian.org/security/2022/dsa-5046",
+              "source" : "chrome-cve-admin@google.com",
+              "url" : "https://www.debian.org/security/2022/dsa-5046",
+              "reference_type" : "Vendor Advisory"
+            } ],
+            "probability" : "Possible",
+            "is_kev" : false,
+            "resolution_status" : "",
+            "closed_time" : 0,
+            "score" : "8.8",
+            "update_time" : 1699342625193,
+            "cve" : "CVE-2021-37962",
+            "likelihood" : "0.5",
+            "time" : 1742922956114,
+            "category" : "Use After Free",
+            "matching_cpes" : [ "cpe:/a:google:chrome:91.0.4472.124:-:-" ],
+            "status" : "open"
+          },
+          "links" : {
+            "self" : "/api/v1/vulnerabilities/6fcb7adb-58fa-4233-94ae-50e11dee928c",
+            "collection" : "/api/v1/vulnerabilities"
+          },
+          "id" : "6fcb7adb-58fa-4233-94ae-50e11dee928c",
+          "type" : "vulnerabilities"
+        }
+      service: "cds.nozomi_networks.vulnerabilities"
+      tags:
+        - "source:LOGS_SOURCE"
+        - "nozomi-networks-batch:2025-04-11_11:06:42"
+        - "nozomi-site-id:8c6a8cf9-9eec-48b8-9eed-4a59481a4361"
+      timestamp: 1744369602000

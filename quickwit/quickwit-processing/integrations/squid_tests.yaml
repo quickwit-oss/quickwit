@@ -1,0 +1,520 @@
+id: "squid"
+tests:
+ -
+  sample: "1570784654.576    111 127.0.0.1 TCP_MISS/301 491 GET http://www.datadog.com - HIER_DIRECT/99.86.88.89 - [http_request_headers] [http_response_headers]"
+  result:
+    custom:
+      duration: 1.11E8
+      http:
+        headers:
+          request: "http_request_headers"
+          response: "http_response_headers"
+        method: "GET"
+        status_category: "Notice"
+        status_code: 301
+        url: "http://www.datadog.com"
+        url_details:
+          host: "www.datadog.com"
+          path: ""
+          scheme: "http"
+      network:
+        bytes_written: 491.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "99.86.88.89"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS"
+      timestamp: 1.570784654576E12
+    message: "1570784654.576    111 127.0.0.1 TCP_MISS/301 491 GET http://www.datadog.com - HIER_DIRECT/99.86.88.89 - [http_request_headers] [http_response_headers]"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784654576
+ -
+  sample: "1570784663.985    120 127.0.0.1 TCP_MISS/301 491 GET http://datadog.com/test/?queryParam1=1&queryParam2=queryParam2 - HIER_DIRECT/99.86.88.128 -"
+  result:
+    custom:
+      duration: 1.2E8
+      http:
+        method: "GET"
+        status_category: "Notice"
+        status_code: 301
+        url: "http://datadog.com/test/?queryParam1=1&queryParam2=queryParam2"
+        url_details:
+          host: "datadog.com"
+          path: "/test/"
+          queryString:
+            queryParam1: "1"
+            queryParam2: "queryParam2"
+          scheme: "http"
+      network:
+        bytes_written: 491.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "99.86.88.128"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS"
+      timestamp: 1.570784663985E12
+    message: "1570784663.985    120 127.0.0.1 TCP_MISS/301 491 GET http://datadog.com/test/?queryParam1=1&queryParam2=queryParam2 - HIER_DIRECT/99.86.88.128 -"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784663985
+ -
+  sample: "1570784659.019    114 127.0.0.1 TCP_MISS/503 4114 GET http://www.data/ - HIER_NONE/- text/html"
+  result:
+    custom:
+      duration: 1.14E8
+      http:
+        method: "GET"
+        resource:
+          content_type: "text/html"
+        status_category: "Error"
+        status_code: 503
+        url: "http://www.data/"
+        url_details:
+          host: "www.data"
+          path: "/"
+          scheme: "http"
+      network:
+        bytes_written: 4114.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_NONE"
+        status: "MISS"
+      timestamp: 1.570784659019E12
+    message: "1570784659.019    114 127.0.0.1 TCP_MISS/503 4114 GET http://www.data/ - HIER_NONE/- text/html"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784659019
+ -
+  sample: "1570784681.846  12140 127.0.0.1 TCP_MISS_ABORTED/000 0 GET http://8.8.8.8/ - HIER_DIRECT/8.8.8.8 -"
+  result:
+    custom:
+      duration: 1.214E10
+      http:
+        method: "GET"
+        url: "http://8.8.8.8/"
+        url_details:
+          host: "8.8.8.8"
+          path: "/"
+          scheme: "http"
+      network:
+        bytes_written: 0.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "8.8.8.8"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS_ABORTED"
+      timestamp: 1.570784681846E12
+    message: "1570784681.846  12140 127.0.0.1 TCP_MISS_ABORTED/000 0 GET http://8.8.8.8/ - HIER_DIRECT/8.8.8.8 -"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784681846
+ -
+  sample: "1570784685.245     62 127.0.0.1 TCP_MISS/403 1380 GET http://99.86.88.128 - HIER_DIRECT/99.86.88.128 text/html"
+  result:
+    custom:
+      duration: 6.2E7
+      http:
+        method: "GET"
+        resource:
+          content_type: "text/html"
+        status_category: "Warning"
+        status_code: 403
+        url: "http://99.86.88.128"
+        url_details:
+          host: "99.86.88.128"
+          path: ""
+          scheme: "http"
+      network:
+        bytes_written: 1380.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "99.86.88.128"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS"
+      timestamp: 1.570784685245E12
+    message: "1570784685.245     62 127.0.0.1 TCP_MISS/403 1380 GET http://99.86.88.128 - HIER_DIRECT/99.86.88.128 text/html"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784685245
+ -
+  sample: "1570784722.610    196 127.0.0.1 TCP_MISS/200 12712 GET http://www.google.com/ - HIER_DIRECT/172.217.20.68 text/html"
+  result:
+    custom:
+      duration: 1.96E8
+      http:
+        method: "GET"
+        resource:
+          content_type: "text/html"
+        status_category: "Success"
+        status_code: 200
+        url: "http://www.google.com/"
+        url_details:
+          host: "www.google.com"
+          path: "/"
+          scheme: "http"
+      network:
+        bytes_written: 12712.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "172.217.20.68"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS"
+      timestamp: 1.57078472261E12
+    message: "1570784722.610    196 127.0.0.1 TCP_MISS/200 12712 GET http://www.google.com/ - HIER_DIRECT/172.217.20.68 text/html"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570784722610
+ -
+  sample: "1570787584.006    400 127.0.0.1 TCP_TUNNEL/200 15851 CONNECT www.google.com:443 - HIER_DIRECT/172.217.20.68 -"
+  result:
+    custom:
+      duration: 4.0E8
+      http:
+        method: "CONNECT"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "www.google.com"
+          port: 443
+      network:
+        bytes_written: 15851.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "172.217.20.68"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "TUNNEL"
+      timestamp: 1.570787584006E12
+    message: "1570787584.006    400 127.0.0.1 TCP_TUNNEL/200 15851 CONNECT www.google.com:443 - HIER_DIRECT/172.217.20.68 -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570787584006
+ -
+  sample: "1570796039.630    217 127.0.0.1 TCP_TUNNEL/200 4094 CONNECT 8.8.8.8:443/ - HIER_DIRECT/8.8.8.8 -"
+  result:
+    custom:
+      duration: 2.17E8
+      http:
+        method: "CONNECT"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "8.8.8.8"
+          path: "/"
+          port: 443
+      network:
+        bytes_written: 4094.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "8.8.8.8"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "TUNNEL"
+      timestamp: 1.57079603963E12
+    message: "1570796039.630    217 127.0.0.1 TCP_TUNNEL/200 4094 CONNECT 8.8.8.8:443/ - HIER_DIRECT/8.8.8.8 -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570796039630
+ -
+  sample: "1570788669.732     95 127.0.0.1 TCP_MISS/502 4006 GET http://www.google.com:443/ - HIER_DIRECT/172.217.20.68 text/html"
+  result:
+    custom:
+      duration: 9.5E7
+      http:
+        method: "GET"
+        resource:
+          content_type: "text/html"
+        status_category: "Error"
+        status_code: 502
+        url: "http://www.google.com:443/"
+        url_details:
+          host: "www.google.com"
+          path: "/"
+          port: 443
+          scheme: "http"
+      network:
+        bytes_written: 4006.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        destination:
+          geoip: {}
+          ip: "172.217.20.68"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "MISS"
+      timestamp: 1.570788669732E12
+    message: "1570788669.732     95 127.0.0.1 TCP_MISS/502 4006 GET http://www.google.com:443/ - HIER_DIRECT/172.217.20.68 text/html"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570788669732
+ -
+  sample: "1570797241.241      0 127.0.0.1 TCP_DENIED/403 3903 GET http://http:8/ - HIER_NONE/- text/html"
+  result:
+    custom:
+      duration: 0.0
+      http:
+        method: "GET"
+        resource:
+          content_type: "text/html"
+        status_category: "Warning"
+        status_code: 403
+        url: "http://http:8/"
+        url_details:
+          host: "http"
+          path: "/"
+          port: 8
+          scheme: "http"
+      network:
+        bytes_written: 3903.0
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_NONE"
+        status: "DENIED"
+      timestamp: 1.570797241241E12
+    message: "1570797241.241      0 127.0.0.1 TCP_DENIED/403 3903 GET http://http:8/ - HIER_NONE/- text/html"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570797241241
+ -
+  sample: "2019/10/11 09:14:49 kid1| Accepting HTTP Socket connections at local=[::]:3128 remote=[::] FD 11 flags=9"
+  result:
+    custom:
+      squid:
+        instance_name: "kid1"
+        properties:
+          flags: 9
+          local: "[::]:3128"
+          remote: "[::]"
+      timestamp: 1570785289000
+    message: "2019/10/11 09:14:49 kid1| Accepting HTTP Socket connections at local=[::]:3128 remote=[::] FD 11 flags=9"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570785289000
+ -
+  sample: "2019/10/14 17:42:41 kid1| Logfile: opening log daemon:/var/log/squid/access.log"
+  result:
+    custom:
+      squid:
+        instance_name: "kid1"
+      timestamp: 1571074961000
+    message: "2019/10/14 17:42:41 kid1| Logfile: opening log daemon:/var/log/squid/access.log"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1571074961000
+ -
+  sample: "2019/10/11 09:14:49| pinger: Initialising ICMP pinger ..."
+  result:
+    custom:
+      timestamp: 1570785289000
+    message: "2019/10/11 09:14:49| pinger: Initialising ICMP pinger ..."
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570785289000
+ - 
+  sample: "10.10.10.10 - testuser1 [25/Sep/2024:11:25:20 +0530] \"CONNECT ssl.gstatic.com:443 HTTP/1.1\" 200 3139 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36\" TCP_TUNNEL:HIER_DIRECT"
+  result:
+    custom:
+      http:
+        method: "CONNECT"
+        status_category: "Success"
+        status_code: 200.0
+        url_details:
+          host: "ssl.gstatic.com"
+          port: 443
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "129"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+        version: "HTTP/1.1"
+      network:
+        bytes_written: 3139.0
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "TUNNEL"
+        user_identity: "testuser1"
+      timestamp: 1727243720000
+      usr:
+        name: "testuser1"
+    message: "10.10.10.10 - testuser1 [25/Sep/2024:11:25:20 +0530] \"CONNECT ssl.gstatic.com:443 HTTP/1.1\" 200 3139 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36\" TCP_TUNNEL:HIER_DIRECT"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727243720000
+ - 
+  sample: "10.10.10.10 - testuser1 [25/Sep/2024:15:20:11 +0530] \"GET http://proxy.squid.local:3128/squid-internal-mgr/counters HTTP/1.1\" 407 4724 TCP_DENIED:HIER_NONE'"
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_category: "Warning"
+        status_code: 407.0
+        url: "http://proxy.squid.local:3128/squid-internal-mgr/counters"
+        url_details:
+          host: "proxy.squid.local"
+          path: "/squid-internal-mgr/counters"
+          port: 3128
+          scheme: "http"
+        version: "HTTP/1.1"
+      network:
+        bytes_written: 4724.0
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_NONE"
+        status: "DENIED"
+        user_identity: "testuser1"
+      timestamp: 1727257811000
+      usr:
+        name: "testuser1"
+    message: "10.10.10.10 - testuser1 [25/Sep/2024:15:20:11 +0530] \"GET http://proxy.squid.local:3128/squid-internal-mgr/counters HTTP/1.1\" 407 4724 TCP_DENIED:HIER_NONE'"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727257811000
+ - 
+  sample: "10.10.10.10 - testuser1 [25/Sep/2024:15:20:17 +0530] \"CONNECT ssl.gstatic.com:443 HTTP/1.1\" 200 0 NONE_NONE:HIER_DIRECT"
+  result:
+    custom:
+      http:
+        method: "CONNECT"
+        status_category: "Success"
+        status_code: 200.0
+        url_details:
+          host: "ssl.gstatic.com"
+          port: 443
+        version: "HTTP/1.1"
+      network:
+        bytes_written: 0.0
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        protocol: "NONE"
+      squid:
+        peer_status: "HIER_DIRECT"
+        status: "NONE"
+        user_identity: "testuser1"
+      timestamp: 1727257817000
+      usr:
+        name: "testuser1"
+    message: "10.10.10.10 - testuser1 [25/Sep/2024:15:20:17 +0530] \"CONNECT ssl.gstatic.com:443 HTTP/1.1\" 200 0 NONE_NONE:HIER_DIRECT"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1727257817000
+ - 
+  sample: "1726124251      0 10.10.10.10 TCP_DENIED/403 3920 CONNECT ts01-gyr-maverick.cloudsink.net:443 - HIER_NONE/- text/html"
+  result:
+    custom:
+      duration: 0.0
+      http:
+        method: "CONNECT"
+        resource:
+          content_type: "text/html"
+        status_category: "Warning"
+        status_code: 403
+        url_details:
+          host: "ts01-gyr-maverick.cloudsink.net"
+          port: 443
+      network:
+        bytes_written: 3920.0
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        protocol: "TCP"
+      squid:
+        peer_status: "HIER_NONE"
+        status: "DENIED"
+      timestamp: 1.726124251E12
+    message: "1726124251      0 10.10.10.10 TCP_DENIED/403 3920 CONNECT ts01-gyr-maverick.cloudsink.net:443 - HIER_NONE/- text/html"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726124251000
+ - 
+  sample: "1726124255.221      0 10.10.10.10 NONE_NONE/000 0 - error:transaction-end-before-headers - HIER_NONE/- -"
+  result:
+    custom:
+      duration: 0.0
+      error:
+        message: "transaction-end-before-headers"
+      network:
+        bytes_written: 0.0
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        protocol: "NONE"
+      squid:
+        peer_status: "HIER_NONE"
+        status: "NONE"
+      timestamp: 1.726124255221E12
+    message: "1726124255.221      0 10.10.10.10 NONE_NONE/000 0 - error:transaction-end-before-headers - HIER_NONE/- -"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1726124255221

@@ -1,0 +1,117 @@
+id: milvus
+tests:
+ -
+  sample: "[2024/11/27 14:07:51.849 +00:00] [INFO] [datacoord/handler.go:341] [\"channel seek position set from channel checkpoint meta\"] [channel=by-dev-rootcoord-dml_2_453764875273209568v0] [posTs=454221223538458625] [posTime=2024/11/27 14:07:39.421 +00:00]"
+  result:
+    custom:
+      component: "datacoord"
+      date: 1732716471849
+      file: "handler.go"
+      level: "INFO"
+      lineno: 341
+      message:
+        details:
+         - "channel=by-dev-rootcoord-dml_2_453764875273209568v0"
+         - "posTs=454221223538458625"
+         - "posTime=2024/11/27 14:07:39.421 +00:00"
+    message: "channel seek position set from channel checkpoint meta"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1732716471849
+ -
+  sample: "[2024/11/27 14:07:01.849 +00:00] [INFO] [datacoord/services.go:833] [\"datacoord append channelInfo in GetRecoveryInfo\"] [traceID=ed216b196edf0589f281c4ad800f6565] [collectionID=453764875273209568] [partitionIDs=\"[]\"] [channel=by-dev-rootcoord-dml_2_453764875273209568v0] [\"# of unflushed segments\"=0] [\"# of flushed segments\"=1] [\"# of dropped segments\"=0] [\"# of indexed segments\"=0] [\"# of l0 segments\"=0]"
+  result:
+    custom:
+      component: "datacoord"
+      date: 1732716421849
+      file: "services.go"
+      level: "INFO"
+      lineno: 833
+      message:
+        details:
+         - "traceID=ed216b196edf0589f281c4ad800f6565"
+         - "collectionID=453764875273209568"
+         - "partitionIDs=\"[]\""
+         - "channel=by-dev-rootcoord-dml_2_453764875273209568v0"
+         - "\"# of unflushed segments\"=0"
+         - "\"# of flushed segments\"=1"
+         - "\"# of dropped segments\"=0"
+         - "\"# of indexed segments\"=0"
+         - "\"# of l0 segments\"=0"
+    message: "datacoord append channelInfo in GetRecoveryInfo"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1732716421849
+ -
+  sample: "[2024/11/27 14:06:51.852 +00:00] [INFO] [datacoord/services.go:818] [\"get recovery info request received\"] [traceID=54cda8d3229d00982db785351a12ea7a] [collectionID=453764875273212700] [partitionIDs=\"[]\"]"
+  result:
+    custom:
+      component: "datacoord"
+      date: 1732716411852
+      file: "services.go"
+      level: "INFO"
+      lineno: 818
+      message:
+        details:
+         - "traceID=54cda8d3229d00982db785351a12ea7a"
+         - "collectionID=453764875273212700"
+         - "partitionIDs=\"[]\""
+    message: "get recovery info request received"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1732716411852
+ -
+  sample: "[2024/11/18 15:15:45.120 +00:00] [INFO] [roles/roles.go:282] [setupPrometheusHTTPServer]"
+  result:
+    custom:
+      component: "roles"
+      date: 1731942945120
+      file: "roles.go"
+      level: "INFO"
+      lineno: 282
+    message: "setupPrometheusHTTPServer"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731942945120
+ -
+  sample: "I20241118 15:15:45.622637    26 thread_pool.h:178] [KNOWHERE][InitGlobalBuildThreadPool][milvus] Init global build thread pool with size 7"
+  result:
+    custom:
+      date: 1731942945622
+      file: "thread_pool.h"
+      level: "I"
+      lineno: 178
+      message:
+        details:
+         - "KNOWHERE"
+         - "InitGlobalBuildThreadPool"
+         - "milvus"
+      pid: 26
+    message: "Init global build thread pool with size 7"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731942945622
+ -
+  sample: "I20241118 15:15:45.626205    33 MmapChunkManager.cpp:302] [SERVER][MmapChunkManager][milvus] Init MappChunkManager with: Path /var/lib/milvus/data/mmap/mmap_chunk_manager, MaxDiskSize 121418772 MB, FixedFileSize 1 MB."
+  result:
+    custom:
+      date: 1731942945626
+      file: "MmapChunkManager.cpp"
+      level: "I"
+      lineno: 302
+      message:
+        details:
+         - "SERVER"
+         - "MmapChunkManager"
+         - "milvus"
+      pid: 33
+    message: "Init MappChunkManager with: Path /var/lib/milvus/data/mmap/mmap_chunk_manager, MaxDiskSize 121418772 MB, FixedFileSize 1 MB."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1731942945626

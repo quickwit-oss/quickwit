@@ -1,0 +1,217 @@
+id: checkpoint-harmony-email-and-collaboration
+metric_id: checkpoint-harmony-email-and-collaboration
+backend_only: false
+facets:
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Check Point Harmony Email & Collaboration
+  enabled: true
+  filter:
+    query: source:checkpoint-harmony-email-and-collaboration
+  processors:
+    - type: category-processor
+      name: Category processor for creating `service` from SaaS Application
+      enabled: true
+      categories:
+        - filter:
+            query: "@event.security_event.entity_payload.saas:o*365_emails"
+          name: office365_emails
+        - filter:
+            query: "@event.security_event.entity_payload.saas:g*mail"
+          name: google_mail
+        - filter:
+            query: "@event.security_event.entity_payload.saas:o*365_onedrive"
+          name: office365_onedrive
+        - filter:
+            query: "@event.security_event.entity_payload.saas:o*365_sharepoint"
+          name: office365_sharepoint
+        - filter:
+            query: "@event.security_event.entity_payload.saas:dropbox*"
+          name: dropbox
+        - filter:
+            query: "@event.security_event.entity_payload.saas:box*"
+          name: box
+        - filter:
+            query: "@event.security_event.entity_payload.saas:g*drive"
+          name: google_drive
+        - filter:
+            query: "@event.security_event.entity_payload.saas:sharefile*"
+          name: sharefile
+        - filter:
+            query: "@event.security_event.entity_payload.saas:slack*"
+          name: slack
+        - filter:
+            query: "@event.security_event.entity_payload.saas:ms_teams"
+          name: ms_teams
+      target: service
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `event.security_event.entity_info.entity_created` as the official
+        date of the log
+      enabled: true
+      sources:
+        - event.security_event.entity_info.entity_created
+    - type: message-remapper
+      name: Define `event.security_event.entity_payload.description_text` as the
+        official message of the log
+      enabled: true
+      sources:
+        - event.security_event.entity_payload.description_text
+    - type: attribute-remapper
+      name: Map `event.entity.entity_payload.sender_client_ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - event.entity.entity_payload.sender_client_ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Extracting geolocation information from the client IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - name: Lookup on `event.security_event.entity_payload.matched_security_tool` to
+        `matched_security_tool_name`
+      enabled: true
+      source: event.security_event.entity_payload.matched_security_tool
+      target: matched_security_tool_name
+      lookupTable: |-
+        avanan_ap_scan,Smart-Phish
+        cp_threat_extraction_info,Checkpoint Threat
+        avanan_dlp,SmartDLP
+        shadow_it_emails_scan,Shadow IT Emails
+        avanan_url,URL Reputation
+        checkpoint2,Check Point Sandblast
+        ms_defender_scan,Microsoft 365 Defender
+        clicktime_protection_scan,Click-Time Protection
+      type: lookup-processor
+    - name: Lookup on `service` to `saas_name`
+      enabled: true
+      source: service
+      target: saas_name
+      lookupTable: |-
+        office365_emails,Office 365 Mail
+        google_mail,Gmail
+        office365_onedrive,Office 365 OneDrive
+        office365_sharepoint,Office 365 Sharepoint
+        ms_teams,Microsoft Teams
+        dropbox,Dropbox
+        google_drive,Google Drive
+        box,Box
+        slack,Slack
+        sharefile,Citrix ShareFile
+      type: lookup-processor
+    - name: Lookup on `event.security_event.entity_payload.confidence_level` to
+        `confidence_level`
+      enabled: true
+      source: event.security_event.entity_payload.confidence_level
+      target: confidence_level
+      lookupTable: |-
+        1,Low
+        2,Medium-Low
+        3,Medium
+        4,Medium-High
+        5,High
+      defaultLookup: N/A
+      type: lookup-processor
+    - name: Lookup on `event.security_event.entity_payload.severity` to `severity`
+      enabled: true
+      source: event.security_event.entity_payload.severity
+      target: severity
+      lookupTable: |-
+        1,Very Low
+        2,Low
+        3,Medium
+        4,High
+        5,Critical
+      type: lookup-processor
+    - name: Lookup on `severity` to `status`
+      enabled: true
+      source: severity
+      target: status
+      lookupTable: |-
+        Very Low,info
+        Low,notice
+        Medium,warning
+        High,critical
+        Critical,alert
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: url-parser
+      name: Extracts information from `event.entity.entity_payload.download_url`
+      enabled: true
+      sources:
+        - event.entity.entity_payload.download_url
+      target: download_url_details
+      normalizeEndingSlashes: false
+    - type: pipeline
+      name: "Processing for superman anomaly events"
+      enabled: true
+      filter:
+        query: "@event.security_event.entity_payload.event_metadata.metadata_json.anoma\
+          ly_type:superman_anomaly"
+      processors:
+        - type: grok-parser
+          name: Extract user email from superman anomaly events
+          enabled: true
+          source: message
+          samples:
+            - "test.user@example.com performed geo-suspicious events: logged
+              in from India (10.10.10.10) and after 49 seconds logged in from
+              India (10.10.10.20)"
+          grok:
+            supportRules: ""
+            matchRules: extract_user_email %{regex(".*(?= performed)"):usr.email} performed
+              %{data}

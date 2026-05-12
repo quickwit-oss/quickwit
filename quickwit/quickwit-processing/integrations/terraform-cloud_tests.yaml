@@ -1,0 +1,208 @@
+id: "terraform-cloud"
+tests:
+  - sample: |-
+      {
+        "auth" : {
+          "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+          "organization_id" : "org-QUG5NUaF2iJHLcUw",
+          "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+          "organization_name" : "Datadog-Dev",
+          "type" : "Client"
+        },
+        "resource" : {
+          "meta" : {
+            "adds_requested" : [ "ws-Fa3neMGfTafoAZTv" ],
+            "newly_added" : [ "ws-Fa3neMGfTafoAZTv" ]
+          },
+          "action" : "varset_add_workspace",
+          "id" : "varset-yaKgN2kZWe7bWAJ7",
+          "type" : "varset"
+        },
+        "id" : "55144f9d-3651-45e4-930d-641c13b26712",
+        "type" : "Resource",
+        "version" : "0",
+        "timestamp" : "2024-04-15T14:33:24.000Z"
+      }
+    result:
+      custom:
+        auth:
+          organization_id: "org-QUG5NUaF2iJHLcUw"
+          organization_name: "Datadog-Dev"
+          type: "Client"
+        evt:
+          category: "varset"
+          name: "varset_add_workspace"
+        id: "55144f9d-3651-45e4-930d-641c13b26712"
+        resource:
+          id: "varset-yaKgN2kZWe7bWAJ7"
+          meta:
+            adds_requested:
+              - "ws-Fa3neMGfTafoAZTv"
+            newly_added:
+              - "ws-Fa3neMGfTafoAZTv"
+        timestamp: "2024-04-15T14:33:24.000Z"
+        type: "Resource"
+        usr:
+          id: "user-Q652LH2o18Zt5Nqs"
+          name: "api-org-Datadog-Dev-POkuy2xIsr"
+        version: "0"
+      message: |-
+        {
+          "auth" : {
+            "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+            "organization_id" : "org-QUG5NUaF2iJHLcUw",
+            "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+            "organization_name" : "Datadog-Dev",
+            "type" : "Client"
+          },
+          "resource" : {
+            "meta" : {
+              "adds_requested" : [ "ws-Fa3neMGfTafoAZTv" ],
+              "newly_added" : [ "ws-Fa3neMGfTafoAZTv" ]
+            },
+            "action" : "varset_add_workspace",
+            "id" : "varset-yaKgN2kZWe7bWAJ7",
+            "type" : "varset"
+          },
+          "id" : "55144f9d-3651-45e4-930d-641c13b26712",
+          "type" : "Resource",
+          "version" : "0",
+          "timestamp" : "2024-04-15T14:33:24.000Z"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1713191604000
+  - sample: |-
+      {
+        "auth" : {
+          "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+          "organization_id" : "org-QUG5NUaF2iJHLcUw",
+          "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+          "organization_name" : "Datadog-Dev",
+          "type" : "Client"
+        },
+        "resource" : {
+          "meta" : {
+            "workspace_id" : "ws-9pkuEeYZmVdJo9iM"
+          },
+          "action" : "add_workspace",
+          "id" : "polset-PDFtuFUgc5mQ2qf2",
+          "type" : "policy_set"
+        },
+        "id" : "a00b363d-01ed-48f8-951d-e98dc0546695",
+        "type" : "Resource",
+        "version" : "0",
+        "timestamp" : "2024-04-15T14:20:28.000Z"
+      }
+    result:
+      custom:
+        auth:
+          organization_id: "org-QUG5NUaF2iJHLcUw"
+          organization_name: "Datadog-Dev"
+          type: "Client"
+        evt:
+          category: "policy_set"
+          name: "add_workspace"
+        id: "a00b363d-01ed-48f8-951d-e98dc0546695"
+        resource:
+          id: "polset-PDFtuFUgc5mQ2qf2"
+          meta:
+            workspace_id: "ws-9pkuEeYZmVdJo9iM"
+        timestamp: "2024-04-15T14:20:28.000Z"
+        type: "Resource"
+        usr:
+          id: "user-Q652LH2o18Zt5Nqs"
+          name: "api-org-Datadog-Dev-POkuy2xIsr"
+        version: "0"
+      message: |-
+        {
+          "auth" : {
+            "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+            "organization_id" : "org-QUG5NUaF2iJHLcUw",
+            "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+            "organization_name" : "Datadog-Dev",
+            "type" : "Client"
+          },
+          "resource" : {
+            "meta" : {
+              "workspace_id" : "ws-9pkuEeYZmVdJo9iM"
+            },
+            "action" : "add_workspace",
+            "id" : "polset-PDFtuFUgc5mQ2qf2",
+            "type" : "policy_set"
+          },
+          "id" : "a00b363d-01ed-48f8-951d-e98dc0546695",
+          "type" : "Resource",
+          "version" : "0",
+          "timestamp" : "2024-04-15T14:20:28.000Z"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1713190828000
+  - sample: |-
+      {
+        "auth" : {
+          "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+          "organization_id" : "org-QUG5NUaF2iJHLcUw",
+          "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+          "organization_name" : "Datadog-Dev",
+          "type" : "Client"
+        },
+        "resource" : {
+          "meta" : {
+            "workspace_id" : "ws-gf9BvVzCUDz3Znvu"
+          },
+          "action" : "add_workspace",
+          "id" : "polset-PDFtuFUgc5mQ2qf2",
+          "type" : "policy_set"
+        },
+        "id" : "b1dd42d1-3b42-496e-8a67-ba2763f7e22f",
+        "type" : "Resource",
+        "version" : "0",
+        "timestamp" : "2024-04-15T14:20:19.000Z"
+      }
+    result:
+      custom:
+        auth:
+          organization_id: "org-QUG5NUaF2iJHLcUw"
+          organization_name: "Datadog-Dev"
+          type: "Client"
+        evt:
+          category: "policy_set"
+          name: "add_workspace"
+        id: "b1dd42d1-3b42-496e-8a67-ba2763f7e22f"
+        resource:
+          id: "polset-PDFtuFUgc5mQ2qf2"
+          meta:
+            workspace_id: "ws-gf9BvVzCUDz3Znvu"
+        timestamp: "2024-04-15T14:20:19.000Z"
+        type: "Resource"
+        usr:
+          id: "user-Q652LH2o18Zt5Nqs"
+          name: "api-org-Datadog-Dev-POkuy2xIsr"
+        version: "0"
+      message: |-
+        {
+          "auth" : {
+            "accessor_id" : "user-Q652LH2o18Zt5Nqs",
+            "organization_id" : "org-QUG5NUaF2iJHLcUw",
+            "description" : "api-org-Datadog-Dev-POkuy2xIsr",
+            "organization_name" : "Datadog-Dev",
+            "type" : "Client"
+          },
+          "resource" : {
+            "meta" : {
+              "workspace_id" : "ws-gf9BvVzCUDz3Znvu"
+            },
+            "action" : "add_workspace",
+            "id" : "polset-PDFtuFUgc5mQ2qf2",
+            "type" : "policy_set"
+          },
+          "id" : "b1dd42d1-3b42-496e-8a67-ba2763f7e22f",
+          "type" : "Resource",
+          "version" : "0",
+          "timestamp" : "2024-04-15T14:20:19.000Z"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1713190819000

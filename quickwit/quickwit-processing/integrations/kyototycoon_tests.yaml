@@ -1,0 +1,82 @@
+id: "kyototycoon"
+tests:
+ -
+  sample: "2020-10-16T11:38:48.063390Z: [SYSTEM]: ================ [START]: pid=1"
+  result:
+    custom:
+      level: "SYSTEM"
+      timestamp: 1602848328063
+    message: "================ [START]: pid=1"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602848328063
+ -
+  sample: "2020-10-16T11:38:48.066234Z: [SYSTEM]: server socket opened: expr=:1978 timeout=30.0"
+  result:
+    custom:
+      level: "SYSTEM"
+      timestamp: 1602848328066
+    message: "server socket opened: expr=:1978 timeout=30.0"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602848328066
+ -
+  sample: "2020-10-16T11:38:56.803553Z: [INFO]: (172.23.0.1:57458): GET /rpc/report HTTP/1.1: 200"
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "/rpc/report"
+        url_details:
+          path: "/rpc/report"
+        version: "1.1"
+      level: "INFO"
+      network:
+        client:
+          ip: "172.23.0.1"
+          port: 57458
+      timestamp: 1602848336803
+    message: "2020-10-16T11:38:56.803553Z: [INFO]: (172.23.0.1:57458): GET /rpc/report HTTP/1.1: 200"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602848336803
+ -
+  sample: "2020-10-16T11:45:15.115938Z: [INFO]: (172.23.0.1:57666): GET /not-found HTTP/1.1: 404"
+  result:
+    custom:
+      http:
+        method: "GET"
+        status_category: "warning"
+        status_code: 404
+        url: "/not-found"
+        url_details:
+          path: "/not-found"
+        version: "1.1"
+      level: "INFO"
+      network:
+        client:
+          ip: "172.23.0.1"
+          port: 57666
+      timestamp: 1602848715115
+    message: "2020-10-16T11:45:15.115938Z: [INFO]: (172.23.0.1:57666): GET /not-found HTTP/1.1: 404"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602848715115
+ -
+  sample: "2020-10-16T11:38:47.141737Z: [SYSTEM]: server stopped"
+  result:
+    custom:
+      level: "SYSTEM"
+      timestamp: 1602848327141
+    message: "server stopped"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1602848327141
+

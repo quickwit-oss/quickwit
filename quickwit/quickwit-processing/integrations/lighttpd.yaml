@@ -1,0 +1,136 @@
+id: lighttpd
+metric_id: lighttpd
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Lighttpd
+  enabled: true
+  filter:
+    query: source:lighttpd
+  processors:
+    - type: grok-parser
+      name: Parsing Lighttpd access and error logs
+      enabled: true
+      source: message
+      samples:
+        - 172.26.0.1 localhost:9449 - [18/Sep/2020:14:25:39 +0000] "GET /server-status HTTP/1.1" 200 5695 "-" "Datadog Agent/7.23.0"
+        - '2020-09-18 14:25:35: (response.c.450) URI-authority   :  localhost:9449'
+      grok:
+        supportRules: |
+          _auth %{notSpace:http.auth:nullIf("-")}
+          _bytes_written %{integer:network.bytes_written}
+          _client_ip %{ipOrHost:network.client.ip}
+          _version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _url %{notSpace:http.url}
+          _ident %{notSpace:http.ident:nullIf("-")}
+          _user_agent %{regex("[^\\\"]*"):http.useragent}
+          _referer %{notSpace:http.referer}
+          _status_code %{integer:http.status_code}
+          _method %{word:http.method}
+          _timestamp %{date("dd/MMM/yyyy:HH:mm:ss Z"):timestamp}
+          _x_forwarded_for %{regex("[^\\\"]*"):http._x_forwarded_for:nullIf("-")}
+        matchRules: |
+          access.common %{_client_ip} %{_ident} %{_auth} \[%{_timestamp}\] "(?>%{_method} |)%{_url}(?> %{_version}|)" %{_status_code} (?>%{_bytes_written}|-)
+          access.combined %{access.common} (%{number:duration:scale(1000000000)} )?"%{_referer}" "%{_user_agent}"( "%{_x_forwarded_for}")?.*
+          error %{date("yyyy-MM-dd HH:mm:ss"):_timestamp}: \(%{regex("[^\\\"“]*.c"):lighttpd.file_name}.%{number:lighttpd.line_number}\) %{data:message}
+    - type: attribute-remapper
+      name: Map `client` to `network.client.ip`
+      enabled: true
+      sources:
+        - client
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

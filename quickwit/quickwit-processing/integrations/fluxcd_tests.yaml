@@ -1,0 +1,71 @@
+id: "fluxcd"
+tests:
+ -
+  sample: |-
+    {
+      "msg" : "HelmChart/monitoring/monitoring-loki-stack with SourceRef 'HelmRepository/monitoring/grafana-charts' is in-sync",
+      "controller" : "helmrelease",
+      "level" : "info",
+      "namespace" : "monitoring",
+      "name" : "loki-stack",
+      "controllerGroup" : "helm.toolkit.fluxcd.io",
+      "reconcileID" : "3a8d111e-0116-4057-ad1c-45e8f4ccd424",
+      "HelmRelease" : {
+        "name" : "loki-stack",
+        "namespace" : "monitoring"
+      },
+      "controllerKind" : "HelmRelease",
+      "ts" : "2024-01-17T11:08:37.330Z"
+    }
+  result:
+    custom:
+      HelmRelease:
+        name: "loki-stack"
+        namespace: "monitoring"
+      controller: "helmrelease"
+      controllerGroup: "helm.toolkit.fluxcd.io"
+      controllerKind: "HelmRelease"
+      level: "info"
+      name: "loki-stack"
+      namespace: "monitoring"
+      reconcileID: "3a8d111e-0116-4057-ad1c-45e8f4ccd424"
+      ts: "2024-01-17T11:08:37.330Z"
+    message: "HelmChart/monitoring/monitoring-loki-stack with SourceRef 'HelmRepository/monitoring/grafana-charts' is in-sync"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1705489717330
+ -
+  sample: |-
+    {
+      "msg" : "discarding event, no alerts found for the involved object",
+      "level" : "info",
+      "logger" : "event-server",
+      "eventInvolvedObject" : {
+        "uid" : "fc757cd8-d17e-4b1f-a883-3f54e484f80b",
+        "apiVersion" : "kustomize.toolkit.fluxcd.io/v1",
+        "kind" : "Kustomization",
+        "resourceVersion" : "1153667",
+        "namespace" : "flux-system",
+        "name" : "flux-system"
+      },
+      "ts" : "2024-01-17T10:56:32.536Z"
+    }
+  result:
+    custom:
+      eventInvolvedObject:
+        apiVersion: "kustomize.toolkit.fluxcd.io/v1"
+        kind: "Kustomization"
+        name: "flux-system"
+        namespace: "flux-system"
+        resourceVersion: "1153667"
+        uid: "fc757cd8-d17e-4b1f-a883-3f54e484f80b"
+      level: "info"
+      logger: "event-server"
+      ts: "2024-01-17T10:56:32.536Z"
+    message: "discarding event, no alerts found for the involved object"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1705488992536
+

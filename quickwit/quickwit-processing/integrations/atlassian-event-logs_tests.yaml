@@ -1,0 +1,115 @@
+id: "atlassian-event-logs"
+tests:
+ -
+  sample: |-
+    {
+      "attributes" : {
+        "actor" : {
+          "name" : "first last",
+          "links" : {
+            "alt" : "https://admin.atlassian.com/o/org_id/users/63922617f48fbd9b62da26fe",
+            "self" : "https://api.atlassian.com/users/63922617f48fbd9b62da26fe/manage/profile"
+          },
+          "id" : "63922617f48fbd9b62da26fe",
+          "email" : "first.last@datadoghq.com"
+        },
+        "container" : [ {
+          "attributes" : {
+            "name" : "dd-test-siem-ints"
+          },
+          "links" : {
+            "alt" : "https://admin.atlassian.com/o/org_id",
+            "self" : "https://api.atlassian.com/admin/v1/orgs/org_id"
+          },
+          "id" : "org_id",
+          "type" : "orgs"
+        } ],
+        "context" : [ {
+          "attributes" : {
+            "createdAt" : "2024-06-21T21:04:46.011947624Z",
+            "accountType" : "app",
+            "name" : "API_KEY",
+            "tokenName" : "API_KEY",
+            "expiresAt" : "2024-08-31T04:00:00Z",
+            "email" : "API_KEY"
+          },
+          "links" : {
+            "alt" : "https://admin.atlassian.com/o/org_id/users/712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2",
+            "self" : "https://api.atlassian.com/users/712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2/manage/profile"
+          },
+          "id" : "712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2",
+          "type" : "users"
+        } ],
+        "action" : "api_token_created",
+        "location" : {
+          "city" : "New York",
+          "ip" : "30.122.226.210",
+          "regionName" : "New York",
+          "countryName" : "United States"
+        },
+        "time" : "2024-06-21T21:04:46.052Z"
+      },
+      "links" : {
+        "self" : "https://api.atlassian.com/admin/v1/orgs/org_id/events/4eb9850e-945c-4e32-bb11-9f2677ebdb26"
+      },
+      "id" : "4eb9850e-945c-4e32-bb11-9f2677ebdb26",
+      "type" : "events",
+      "message" : {
+        "format" : "simple",
+        "content" : "Created admin API key"
+      }
+    }
+  result:
+    custom:
+      attributes:
+        actor:
+          links:
+            alt: "https://admin.atlassian.com/o/org_id/users/63922617f48fbd9b62da26fe"
+            self: "https://api.atlassian.com/users/63922617f48fbd9b62da26fe/manage/profile"
+        container:
+         -
+          attributes:
+            name: "dd-test-siem-ints"
+          links:
+            alt: "https://admin.atlassian.com/o/org_id"
+            self: "https://api.atlassian.com/admin/v1/orgs/org_id"
+          id: "org_id"
+          type: "orgs"
+        context:
+         -
+          attributes:
+            createdAt: "2024-06-21T21:04:46.011947624Z"
+            accountType: "app"
+            name: "API_KEY"
+            tokenName: "API_KEY"
+            expiresAt: "2024-08-31T04:00:00Z"
+            email: "API_KEY"
+          links:
+            alt: "https://admin.atlassian.com/o/org_id/users/712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2"
+            self: "https://api.atlassian.com/users/712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2/manage/profile"
+          id: "712020:49b67d64-3d30-4fe2-89dc-e1b8894b29d2"
+          type: "users"
+        location:
+          city: "New York"
+          countryName: "United States"
+          regionName: "New York"
+        time: "2024-06-21T21:04:46.052Z"
+      evt:
+        name: "api_token_created"
+      format: "simple"
+      id: "4eb9850e-945c-4e32-bb11-9f2677ebdb26"
+      links:
+        self: "https://api.atlassian.com/admin/v1/orgs/org_id/events/4eb9850e-945c-4e32-bb11-9f2677ebdb26"
+      network:
+        client:
+          geoip: {}
+          ip: "30.122.226.210"
+      type: "events"
+      usr:
+        email: "first.last@datadoghq.com"
+        id: "63922617f48fbd9b62da26fe"
+        name: "first last"
+    message: "Created admin API key"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1719003886052

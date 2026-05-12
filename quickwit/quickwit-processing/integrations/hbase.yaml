@@ -1,0 +1,110 @@
+id: hbase
+metric_id: hbase-master
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Class
+    path: logger.class
+    source: log
+pipeline:
+  type: pipeline
+  name: Hbase
+  enabled: true
+  filter:
+    query: source:hbase
+  processors:
+    - type: grok-parser
+      name: Parsing Hbase logs
+      enabled: true
+      source: message
+      samples:
+        # Default Logs
+        - '2020-09-08 13:17:14,127 INFO org.apache.hadoop.hdfs.server.namenode.NameNode: registered UNIX signal handlers for [TERM, HUP, INT]'
+        - '2020-09-08 13:17:11,994 INFO  [main] zookeeper.ZooKeeper: Client environment:java.vendor=Oracle Corporation'
+        - |
+          2020-09-08 13:17:14,894 FATAL [bad55d2f2640:60000.activeMasterManager] master.HMaster: Unhandled exception. Starting shutdown.
+          java.net.ConnectException: Call From bad55d2f2640/172.26.0.4 to hadoop:8020 failed on connection exception: java.net.ConnectException: Connection refused; For more details see:  http://wiki.apache.org/hadoop/ConnectionRefused
+          at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+          at sun.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:62)
+          at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+          at java.lang.reflect.Constructor.newInstance(Constructor.java:423)
+          at org.apache.hadoop.net.NetUtils.wrapWithMessage(NetUtils.java:791)
+          at org.apache.hadoop.net.NetUtils.wrapException(NetUtils.java:731)
+          at org.apache.hadoop.ipc.Client.call(Client.java:1506)
+          at org.apache.hadoop.ipc.Client.call(Client.java:1439)
+          at org.apache.hadoop.ipc.ProtobufRpcEngine$Invoker.invoke(ProtobufRpcEngine.java:230)
+          at com.sun.proxy.$Proxy18.setSafeMode(Unknown Source)
+          at org.apache.hadoop.hdfs.protocolPB.ClientNamenodeProtocolTranslatorPB.setSafeMode(ClientNamenodeProtocolTranslatorPB.java:666)
+          at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+          at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+          at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+          at java.lang.reflect.Method.invoke(Method.java:498)
+          at org.apache.hadoop.io.retry.RetryInvocationHandler.invokeMethod(RetryInvocationHandler.java:256)
+          at org.apache.hadoop.io.retry.RetryInvocationHandler.invoke(RetryInvocationHandler.java:104)
+          at com.sun.proxy.$Proxy19.setSafeMode(Unknown Source)
+          at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+          at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+          at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+          at java.lang.reflect.Method.invoke(Method.java:498)
+          at org.apache.hadoop.hbase.fs.HFileSystem$1.invoke(HFileSystem.java:283)
+          at com.sun.proxy.$Proxy20.setSafeMode(Unknown Source)
+          at org.apache.hadoop.hdfs.DFSClient.setSafeMode(DFSClient.java:2640)
+          at org.apache.hadoop.hdfs.DistributedFileSystem.setSafeMode(DistributedFileSystem.java:1170)
+          at org.apache.hadoop.hdfs.DistributedFileSystem.setSafeMode(DistributedFileSystem.java:1154)
+          at org.apache.hadoop.hbase.util.FSUtils.isInSafeMode(FSUtils.java:533)
+          at org.apache.hadoop.hbase.util.FSUtils.waitOnSafeMode(FSUtils.java:979)
+          at org.apache.hadoop.hbase.master.MasterFileSystem.checkRootDir(MasterFileSystem.java:457)
+          at org.apache.hadoop.hbase.master.MasterFileSystem.createInitialFileSystemLayout(MasterFileSystem.java:169)
+          at org.apache.hadoop.hbase.master.MasterFileSystem.<init>(MasterFileSystem.java:144)
+          at org.apache.hadoop.hbase.master.HMaster.finishActiveMasterInitialization(HMaster.java:704)
+          at org.apache.hadoop.hbase.master.HMaster.access$500(HMaster.java:194)
+          at org.apache.hadoop.hbase.master.HMaster$1.run(HMaster.java:1834)
+          at java.lang.Thread.run(Thread.java:748)
+          Caused by: java.net.ConnectException: Connection refused
+          at sun.nio.ch.SocketChannelImpl.checkConnect(Native Method)
+          at sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:717)
+          at org.apache.hadoop.net.SocketIOWithTimeout.connect(SocketIOWithTimeout.java:206)
+          at org.apache.hadoop.net.NetUtils.connect(NetUtils.java:530)
+          at org.apache.hadoop.net.NetUtils.connect(NetUtils.java:494)
+          at org.apache.hadoop.ipc.Client$Connection.setupConnection(Client.java:648)
+          at org.apache.hadoop.ipc.Client$Connection.setupIOstreams(Client.java:744)
+          at org.apache.hadoop.ipc.Client$Connection.access$3000(Client.java:396)
+          at org.apache.hadoop.ipc.Client.getConnection(Client.java:1555)
+          at org.apache.hadoop.ipc.Client.call(Client.java:1478)
+          ... 29 more
+
+        # Slow logs
+        - '2011-09-08 10:01:25,824 WARN org.apache.hadoop.ipc.HBaseServer: (operationTooSlow): {"tables":{"riley2":{"puts":[{"totalColumns":11,"families":{"actions":[{"timestamp":1315501284459,"qualifier":"0","vlen":9667580},{"timestamp":1315501284459,"qualifier":"1","vlen":10122412},{"timestamp":1315501284459,"qualifier":"2","vlen":11104617},{"timestamp":1315501284459,"qualifier":"3","vlen":13430635}]},"row":"cfcd208495d565ef66e7dff9f98764da:0"}],"families":["actions"]}},"processingtimems":956,"client":"10.47.34.63:33623","starttimems":1315501284456,"queuetimems":0,"totalPuts":1,"class":"HRegionServer","responsesize":0,"method":"multiPut"}'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:status}
+          _logger_name \[%{notSpace:logger.name}\]
+          _logger_class %{data:logger.class}:
+          _slow_log_labels operationTooSlow|operationTooLarge|responseTooSlow|responseTooLarge
+          _slow_log \(%{_slow_log_labels:logger.slow}\):
+
+        matchRules: |
+          Hbase_default %{_date} %{_status}\s+(%{_logger_name}\s+)?%{_logger_class} (%{_slow_log} )?%{data:message}((\n|\t)%{data:error.stack})?
+
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `status` as the official status of the log
+      enabled: true
+      sources:
+        - status
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

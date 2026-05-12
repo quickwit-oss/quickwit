@@ -4156,18 +4156,6 @@ dependencies = [
 
 [[package]]
 name = "dns-lookup"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf5597a4b7fe5275fc9dcf88ce26326bc8e4cb87d0130f33752d4c5f717793cf"
-dependencies = [
- "cfg-if",
- "libc",
- "socket2 0.6.3",
- "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "dns-lookup"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e39034cee21a2f5bbb66ba0e3689819c4bb5d00382a282006e802a7ffa6c41d"
@@ -8900,30 +8888,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pomchi"
-version = "0.1.0"
-source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=7f8ee73#7f8ee7334fbd7ca44e3dc6124dd5486112a5402a"
-dependencies = [
- "event-percolation",
- "fnv",
- "grok",
- "itertools 0.14.0",
- "rand 0.9.4",
- "serde",
- "serde_json",
- "serde_with",
- "serde_yaml",
- "syslog_rfc5424",
- "thiserror 2.0.18",
- "time",
- "tracing 0.1.44",
- "uaparser",
- "urlencoding",
- "uuid",
- "vrl 0.30.0",
-]
-
-[[package]]
 name = "pomsky-intake"
 version = "0.1.27-dev"
 dependencies = [
@@ -10165,7 +10129,6 @@ dependencies = [
  "openssl",
  "parquet",
  "percent-encoding",
- "pomchi",
  "proptest",
  "prost 0.14.3",
  "pulsar",
@@ -10181,6 +10144,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-parquet-engine",
+ "quickwit-processing",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
@@ -10256,7 +10220,6 @@ dependencies = [
  "itertools 0.14.0",
  "metrics",
  "metrics-util 0.20.1",
- "pomchi",
  "prost 0.14.3",
  "prost-types 0.14.3",
  "quickwit-actors",
@@ -10270,6 +10233,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-parquet-engine",
+ "quickwit-processing",
  "quickwit-proto",
  "quickwit-rest-client",
  "quickwit-search",
@@ -10509,6 +10473,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-processing"
+version = "0.1.27-dev"
+dependencies = [
+ "binggan",
+ "env_logger",
+ "event-percolation",
+ "fnv",
+ "grok",
+ "itertools 0.14.0",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "serde_yaml",
+ "syslog_rfc5424",
+ "thiserror 2.0.18",
+ "time",
+ "tracing 0.1.44",
+ "uaparser",
+ "urlencoding",
+ "uuid",
+ "vrl 0.31.0",
+]
+
+[[package]]
 name = "quickwit-proto"
 version = "0.1.27-dev"
 dependencies = [
@@ -10708,7 +10697,6 @@ dependencies = [
  "pem",
  "percent-encoding",
  "pin-project",
- "pomchi",
  "postcard",
  "pprof",
  "prometheus",
@@ -10732,6 +10720,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-parquet-engine",
+ "quickwit-processing",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-search",
@@ -15424,106 +15413,6 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrl"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d513609a4e7b19a3715b01978152b7132a6e512bde68736ab5f47d42b22ddc8"
-dependencies = [
- "aes",
- "aes-siv",
- "base16",
- "base62",
- "base64-simd",
- "bytes 1.11.1",
- "cbc",
- "cfb-mode",
- "cfg-if",
- "chacha20poly1305",
- "charset",
- "chrono",
- "chrono-tz",
- "ciborium",
- "cidr",
- "codespan-reporting",
- "community-id",
- "convert_case 0.7.1",
- "crc",
- "crypto_secretbox",
- "csv",
- "ctr",
- "digest 0.10.7",
- "dns-lookup 2.1.1",
- "domain",
- "dyn-clone",
- "encoding_rs",
- "fancy-regex",
- "flate2",
- "grok",
- "hex",
- "hmac 0.12.1",
- "hostname",
- "iana-time-zone",
- "idna",
- "indexmap 2.14.0",
- "indoc",
- "influxdb-line-protocol",
- "ipcrypt-rs",
- "itertools 0.14.0",
- "jsonschema",
- "lalrpop",
- "lalrpop-util",
- "lz4_flex 0.11.6",
- "md-5 0.10.6",
- "nom 8.0.0",
- "nom-language",
- "ofb",
- "onig",
- "ordered-float 4.6.0",
- "parse-size",
- "peeking_take_while",
- "percent-encoding",
- "pest",
- "pest_derive",
- "prost 0.13.5",
- "prost-reflect",
- "psl",
- "psl-types",
- "publicsuffix",
- "quoted_printable",
- "rand 0.8.6",
- "regex",
- "reqwest 0.12.28",
- "reqwest-middleware",
- "reqwest-retry 0.7.0",
- "roxmltree 0.21.1",
- "rust_decimal",
- "seahash",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha-1",
- "sha2 0.10.9",
- "sha3",
- "simdutf8",
- "snafu 0.8.9",
- "snap",
- "strip-ansi-escapes",
- "syslog_loose",
- "termcolor",
- "thiserror 2.0.18",
- "tokio",
- "tracing 0.1.44",
- "ua-parser",
- "unicode-segmentation 1.13.2",
- "url",
- "utf8-width",
- "uuid",
- "woothee",
- "xxhash-rust",
- "zstd",
-]
-
-[[package]]
-name = "vrl"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "398a6efaf0e120eae12249f7cc89a82ffd3fa8d98165e341bee6dd9a973bba6a"
@@ -15551,7 +15440,7 @@ dependencies = [
  "csv",
  "ctr",
  "digest 0.10.7",
- "dns-lookup 3.0.1",
+ "dns-lookup",
  "domain",
  "dyn-clone",
  "encoding_rs",
@@ -15647,7 +15536,7 @@ dependencies = [
  "community-id",
  "convert_case 0.7.1",
  "csv",
- "dns-lookup 3.0.1",
+ "dns-lookup",
  "domain",
  "dyn-clone",
  "encoding_rs",

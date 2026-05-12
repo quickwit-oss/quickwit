@@ -1,0 +1,1209 @@
+id: "crest_data_systems_sentinel_one"
+tests:
+ -
+  sample: |-
+    {
+      "mitigationMode" : "protect",
+      "groupId" : "1713029962380842894",
+      "osArch" : "64 bit",
+      "locationType" : "fallback",
+      "isActive" : false,
+      "uuid" : "20ee9f810271234566c5d549705f3419",
+      "installerType" : ".msi",
+      "createdAt" : "2023-06-22T12:31:08.252701Z",
+      "inRemoteShellSession" : false,
+      "firstFullModeTime" : "2023-06-22T12:32:48.307000",
+      "encryptedApplications" : false,
+      "cpuCount" : 1,
+      "updatedAt" : "2023-07-21T05:36:50.953708Z",
+      "networkQuarantineEnabled" : false,
+      "serialNumber" : "GJ23502M",
+      "remoteProfilingState" : "disabled",
+      "consoleMigrationStatus" : "N/A",
+      "scanStatus" : "finished",
+      "detectionState" : "full_mode",
+      "rangerVersion" : "33.00.12.109",
+      "accountId" : "1234560237934123456",
+      "appsVulnerabilityStatus" : "up_to_date",
+      "groupName" : "Kali Systems",
+      "isUninstalled" : false,
+      "networkInterfaces" : [ {
+        "inet" : [ "192.168.000.33" ],
+        "name" : "Wi-Fi",
+        "inet6" : [ "2402:3a80:abcd:abcd:9ca7:8619:d2ba:0000", "2402:3a80:7777:ffbf:e0d4:0000:44c4:6dd6", "fe80::1053:6666:2784:1452" ],
+        "gatewayIp" : "192.00.111.151",
+        "gatewayMacAddress" : "da:aa:e9:04:12:3a",
+        "id" : "1234563713654123456",
+        "physical" : "bb:21:48:cc:ec:cc"
+      } ],
+      "domain" : "WORKGROUP",
+      "allowRemoteShell" : true,
+      "lastIpToMgmt" : "192.168.131.27",
+      "osRevision" : "22621",
+      "operationalState" : "na",
+      "firewallEnabled" : true,
+      "activeThreats" : 25,
+      "mitigationModeSuspicious" : "protect",
+      "scanStartedAt" : "2023-06-23T07:16:35.766206Z",
+      "cpuId" : "11th Gen Intel(R) Core(TM) i5-1122G7 @ 2.40GHz",
+      "accountName" : "Kali Systems",
+      "networkStatus" : "connected",
+      "isPendingUninstall" : false,
+      "lastActiveDate" : "2023-07-10T13:45:49.747310Z",
+      "siteName" : "Default site",
+      "rangerStatus" : "Enabled",
+      "isDecommissioned" : false,
+      "computerName" : "DESKTOP-123456",
+      "fullDiskScanLastUpdatedAt" : "2023-06-23T08:45:05.631495Z",
+      "sentinelone_id" : "1234563112770123456",
+      "osType" : "windows",
+      "machineType" : "laptop",
+      "isUpToDate" : true,
+      "locationEnabled" : true,
+      "infected" : true,
+      "osStartTime" : "2023-07-10T07:11:58Z",
+      "lastLoggedInUserName" : "Kali",
+      "registeredAt" : "2023-06-22T12:31:08.244942Z",
+      "externalId" : "",
+      "osName" : "Windows 11 Pro",
+      "coreCount" : 4,
+      "showAlertIcon" : false,
+      "licenseKey" : "",
+      "modelName" : "LENOVO123",
+      "totalMemory" : 7985,
+      "threatRebootRequired" : true,
+      "agentVersion" : "23.1.00.30",
+      "siteId" : "1234560242422055104",
+      "locations" : [ {
+        "scope" : "glo2bal",
+        "name" : "Fall2back",
+        "id" : "1234560009290123456"
+      } ],
+      "groupIp" : "42.33.00.x",
+      "externalIp" : "33.106.00.300",
+      "scanFinishedAt" : "2023-06-23T08:45:05.631495Z"
+    }
+  result:
+    custom:
+      accountId: "1234560237934123456"
+      accountName: "Kali Systems"
+      activeThreats: 25
+      agentVersion: "23.1.00.30"
+      allowRemoteShell: true
+      appsVulnerabilityStatus: "up_to_date"
+      cds:
+        sentinelone:
+          domain: "WORKGROUP"
+      computerName: "DESKTOP-123456"
+      consoleMigrationStatus: "N/A"
+      coreCount: 4
+      cpuCount: 1
+      cpuId: "11th Gen Intel(R) Core(TM) i5-1122G7 @ 2.40GHz"
+      createdAt: "2023-06-22T12:31:08.252701Z"
+      detectionState: "full_mode"
+      encryptedApplications: false
+      externalId: ""
+      externalIp:
+        geoip:
+          invalidAddress: "33.106.00.300"
+      firewallEnabled: true
+      firstFullModeTime: "2023-06-22T12:32:48.307000"
+      fullDiskScanLastUpdatedAt: "2023-06-23T08:45:05.631495Z"
+      groupId: "1713029962380842894"
+      groupIp: "42.33.00.x"
+      groupName: "Kali Systems"
+      inRemoteShellSession: false
+      infected: true
+      installerType: ".msi"
+      isActive: false
+      isDecommissioned: false
+      isPendingUninstall: false
+      isUninstalled: false
+      isUpToDate: true
+      lastActiveDate: "2023-07-10T13:45:49.747310Z"
+      lastIpToMgmt: "192.168.131.27"
+      lastLoggedInUserName: "Kali"
+      licenseKey: ""
+      locationEnabled: true
+      locationType: "fallback"
+      locations:
+       -
+        scope: "glo2bal"
+        name: "Fall2back"
+        id: "1234560009290123456"
+      machineType: "laptop"
+      mitigationMode: "protect"
+      mitigationModeSuspicious: "protect"
+      modelName: "LENOVO123"
+      networkInterfaces:
+       -
+        inet:
+         - "192.168.000.33"
+        name: "Wi-Fi"
+        inet6:
+         - "2402:3a80:abcd:abcd:9ca7:8619:d2ba:0000"
+         - "2402:3a80:7777:ffbf:e0d4:0000:44c4:6dd6"
+         - "fe80::1053:6666:2784:1452"
+        gatewayIp: "192.00.111.151"
+        gatewayMacAddress: "da:aa:e9:04:12:3a"
+        id: "1234563713654123456"
+        physical: "bb:21:48:cc:ec:cc"
+      networkQuarantineEnabled: false
+      networkStatus: "connected"
+      operationalState: "na"
+      osArch: "64 bit"
+      osName: "Windows 11 Pro"
+      osRevision: "22621"
+      osStartTime: "2023-07-10T07:11:58Z"
+      osType: "windows"
+      rangerStatus: "Enabled"
+      rangerVersion: "33.00.12.109"
+      registeredAt: "2023-06-22T12:31:08.244942Z"
+      remoteProfilingState: "disabled"
+      scanFinishedAt: "2023-06-23T08:45:05.631495Z"
+      scanStartedAt: "2023-06-23T07:16:35.766206Z"
+      scanStatus: "finished"
+      sentinelone_id: "1234563112770123456"
+      serialNumber: "GJ23502M"
+      showAlertIcon: false
+      siteId: "1234560242422055104"
+      siteName: "Default site"
+      threatRebootRequired: true
+      totalMemory: 7985
+      updatedAt: "2023-07-21T05:36:50.953708Z"
+      uuid: "20ee9f810271234566c5d549705f3419"
+    message: |-
+      {
+        "mitigationMode" : "protect",
+        "groupId" : "1713029962380842894",
+        "osArch" : "64 bit",
+        "locationType" : "fallback",
+        "isActive" : false,
+        "uuid" : "20ee9f810271234566c5d549705f3419",
+        "installerType" : ".msi",
+        "createdAt" : "2023-06-22T12:31:08.252701Z",
+        "inRemoteShellSession" : false,
+        "firstFullModeTime" : "2023-06-22T12:32:48.307000",
+        "encryptedApplications" : false,
+        "cpuCount" : 1,
+        "updatedAt" : "2023-07-21T05:36:50.953708Z",
+        "networkQuarantineEnabled" : false,
+        "serialNumber" : "GJ23502M",
+        "remoteProfilingState" : "disabled",
+        "consoleMigrationStatus" : "N/A",
+        "scanStatus" : "finished",
+        "detectionState" : "full_mode",
+        "rangerVersion" : "33.00.12.109",
+        "accountId" : "1234560237934123456",
+        "appsVulnerabilityStatus" : "up_to_date",
+        "groupName" : "Kali Systems",
+        "isUninstalled" : false,
+        "networkInterfaces" : [ {
+          "inet" : [ "192.168.000.33" ],
+          "name" : "Wi-Fi",
+          "inet6" : [ "2402:3a80:abcd:abcd:9ca7:8619:d2ba:0000", "2402:3a80:7777:ffbf:e0d4:0000:44c4:6dd6", "fe80::1053:6666:2784:1452" ],
+          "gatewayIp" : "192.00.111.151",
+          "gatewayMacAddress" : "da:aa:e9:04:12:3a",
+          "id" : "1234563713654123456",
+          "physical" : "bb:21:48:cc:ec:cc"
+        } ],
+        "domain" : "WORKGROUP",
+        "allowRemoteShell" : true,
+        "lastIpToMgmt" : "192.168.131.27",
+        "osRevision" : "22621",
+        "operationalState" : "na",
+        "firewallEnabled" : true,
+        "activeThreats" : 25,
+        "mitigationModeSuspicious" : "protect",
+        "scanStartedAt" : "2023-06-23T07:16:35.766206Z",
+        "cpuId" : "11th Gen Intel(R) Core(TM) i5-1122G7 @ 2.40GHz",
+        "accountName" : "Kali Systems",
+        "networkStatus" : "connected",
+        "isPendingUninstall" : false,
+        "lastActiveDate" : "2023-07-10T13:45:49.747310Z",
+        "siteName" : "Default site",
+        "rangerStatus" : "Enabled",
+        "isDecommissioned" : false,
+        "computerName" : "DESKTOP-123456",
+        "fullDiskScanLastUpdatedAt" : "2023-06-23T08:45:05.631495Z",
+        "sentinelone_id" : "1234563112770123456",
+        "osType" : "windows",
+        "machineType" : "laptop",
+        "isUpToDate" : true,
+        "locationEnabled" : true,
+        "infected" : true,
+        "osStartTime" : "2023-07-10T07:11:58Z",
+        "lastLoggedInUserName" : "Kali",
+        "registeredAt" : "2023-06-22T12:31:08.244942Z",
+        "externalId" : "",
+        "osName" : "Windows 11 Pro",
+        "coreCount" : 4,
+        "showAlertIcon" : false,
+        "licenseKey" : "",
+        "modelName" : "LENOVO123",
+        "totalMemory" : 7985,
+        "threatRebootRequired" : true,
+        "agentVersion" : "23.1.00.30",
+        "siteId" : "1234560242422055104",
+        "locations" : [ {
+          "scope" : "glo2bal",
+          "name" : "Fall2back",
+          "id" : "1234560009290123456"
+        } ],
+        "groupIp" : "42.33.00.x",
+        "externalIp" : "33.106.00.300",
+        "scanFinishedAt" : "2023-06-23T08:45:05.631495Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "sentinelone_type" : "app",
+      "agentId" : "1234563112770123456",
+      "agentComputerName" : "DESKTOP-123",
+      "agentInfected" : true,
+      "agentNetworkStatus" : "connected",
+      "riskLevel" : "none",
+      "agentIsDecommissioned" : false,
+      "installedAt" : "2023-05-12T08:26:53.624000Z",
+      "agentDomain" : "WORKGROUP",
+      "signed" : false,
+      "version" : "21.01",
+      "agentOsType" : "windows",
+      "createdAt" : "2023-06-22T12:32:55.169680Z",
+      "agentIsActive" : false,
+      "size" : 5521,
+      "sentinelone_id" : "1234564001234565064",
+      "osType" : "windows",
+      "agentVersion" : "23.1.0.10",
+      "publisher" : "Mavi Pradhan",
+      "agentUuid" : "12345681027b41234565d549705f3419",
+      "sentinelone_name" : "33-Zip 22.01 (x64)",
+      "agentMachineType" : "laptop",
+      "agentOperationalState" : "na",
+      "updatedAt" : "2023-06-22T13:32:11.988614Z"
+    }
+  result:
+    custom:
+      agentComputerName: "DESKTOP-123"
+      agentDomain: "WORKGROUP"
+      agentId: "1234563112770123456"
+      agentInfected: true
+      agentIsActive: false
+      agentIsDecommissioned: false
+      agentMachineType: "laptop"
+      agentNetworkStatus: "connected"
+      agentOperationalState: "na"
+      agentOsType: "windows"
+      agentUuid: "12345681027b41234565d549705f3419"
+      agentVersion: "23.1.0.10"
+      createdAt: "2023-06-22T12:32:55.169680Z"
+      installedAt: "2023-05-12T08:26:53.624000Z"
+      osType: "windows"
+      publisher: "Mavi Pradhan"
+      riskLevel: "none"
+      sentinelone_id: "1234564001234565064"
+      sentinelone_name: "33-Zip 22.01 (x64)"
+      sentinelone_type: "app"
+      signed: false
+      size: 5521
+      updatedAt: "2023-06-22T13:32:11.988614Z"
+      version: "21.01"
+    message: |-
+      {
+        "sentinelone_type" : "app",
+        "agentId" : "1234563112770123456",
+        "agentComputerName" : "DESKTOP-123",
+        "agentInfected" : true,
+        "agentNetworkStatus" : "connected",
+        "riskLevel" : "none",
+        "agentIsDecommissioned" : false,
+        "installedAt" : "2023-05-12T08:26:53.624000Z",
+        "agentDomain" : "WORKGROUP",
+        "signed" : false,
+        "version" : "21.01",
+        "agentOsType" : "windows",
+        "createdAt" : "2023-06-22T12:32:55.169680Z",
+        "agentIsActive" : false,
+        "size" : 5521,
+        "sentinelone_id" : "1234564001234565064",
+        "osType" : "windows",
+        "agentVersion" : "23.1.0.10",
+        "publisher" : "Mavi Pradhan",
+        "agentUuid" : "12345681027b41234565d549705f3419",
+        "sentinelone_name" : "33-Zip 22.01 (x64)",
+        "agentMachineType" : "laptop",
+        "agentOperationalState" : "na",
+        "updatedAt" : "2023-06-22T13:32:11.988614Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "mitigationStatus" : [ {
+        "groupNotFound" : false,
+        "latestReport" : "/threats/mitigation-report/1234561522652123456",
+        "actionsCounters" : {
+          "pendingReboot" : 0,
+          "total" : 1,
+          "success" : 1,
+          "notFound" : 0,
+          "failed" : 0
+        },
+        "lastUpdate" : "2023-06-23T07:05:35.901956Z",
+        "mitigationStartedAt" : "2023-06-23T06:49:58.506000Z",
+        "action" : "quarantine",
+        "agentSupportsReport" : true,
+        "mitigationEndedAt" : "2023-06-23T06:49:58.506000Z",
+        "status" : "success"
+      }, {
+        "groupNotFound" : false,
+        "lastUpdate" : "2023-06-23T07:01:33.050960Z",
+        "mitigationStartedAt" : "2023-06-23T07:01:33.042086Z",
+        "action" : "kill",
+        "agentSupportsReport" : true,
+        "mitigationEndedAt" : "2023-06-23T07:01:33.042087Z",
+        "status" : "success"
+      } ],
+      "threatInfo" : {
+        "threatId" : "1713581103784123456",
+        "isValidCertificate" : false,
+        "mitigationStatusDescription" : "Mitigated",
+        "cloudFilesHashVerdict" : "black",
+        "confidenceLevel" : "malicious",
+        "mitigationStatus" : "mitigated",
+        "rebootRequired" : false,
+        "externalTicketExists" : false,
+        "originatorProcess" : "WinRAR.exe",
+        "certificateId" : "",
+        "classificationSource" : "Engine",
+        "processUser" : "DESKTOP-TestB\\TEST",
+        "reachedEventsLimit" : false,
+        "fileVerificationType" : "NotSigned",
+        "analystVerdictDescription" : "Suspicious",
+        "automaticallyResolved" : false,
+        "createdAt" : "2023-06-23T06:49:45.968339Z",
+        "detectionEngines" : [ {
+          "title" : "On-Write Static AI",
+          "key" : "pre_execution"
+        } ],
+        "engines" : [ "On-Write DFI" ],
+        "fileExtension" : "EXE",
+        "storyline" : "966897C6A0123456",
+        "pendingActions" : false,
+        "fileExtensionType" : "Executable",
+        "collectionId" : "1234563460959123456",
+        "initiatedBy" : "agent_policy",
+        "incidentStatus" : "in_progress",
+        "updatedAt" : "2023-07-07T14:04:51.258216Z",
+        "identifiedAt" : "2023-06-23T06:59:45.957094Z",
+        "filePath" : "\\Device\\ABC\\Users\\ABC\\Downloads\\The-MALWARE-Repo-master\\The-MALWARE-Repo-master\\Worm\\ABC.exe",
+        "classification" : "Malware",
+        "sha1" : "0d90c40d2e123456c1dafb5123456b45e15fda81",
+        "incidentStatusDescription" : "In progress",
+        "detectionType" : "static",
+        "analystVerdict" : "suspicious",
+        "isFileless" : false,
+        "fileSize" : 271633,
+        "publisherName" : "",
+        "threatName" : "ABC.exe",
+        "failedActions" : false,
+        "mitigatedPreemptively" : false,
+        "initiatedByDescription" : "Agent Policy"
+      },
+      "whiteningOptions" : [ "hash", "path" ],
+      "agentDetectionInfo" : {
+        "agentOsName" : "Windows 11 Pro",
+        "accountName" : "Test Systems",
+        "agentLastLoggedInUserName" : "Test",
+        "groupId" : "1234529962380812345",
+        "agentRegisteredAt" : "2023-06-22T12:31:09.244942Z",
+        "agentDomain" : "WORKGROUP",
+        "siteName" : "Default site",
+        "agentMitigationMode" : "protect",
+        "accountId" : "3332500237931234567",
+        "groupName" : "Test Systems",
+        "agentDetectionState" : "full_mode",
+        "agentOsRevision" : "22000",
+        "agentVersion" : "22.2.5.981",
+        "siteId" : "3312500242422123456",
+        "agentIpV6" : "2202:8100:39ab:9067:34cd:e8a:adb1:44a,2402:8100:39af:1234:b83b:0001:db8e:5178,1e80::1053:0001:2784:7af9",
+        "agentUuid" : "20ee9f810212345678c5d549705f3419",
+        "agentIpV4" : "192.168.00.00",
+        "externalIp" : "106.76.00.000"
+      },
+      "sentinelone_id" : "1234561103784123456",
+      "agentRealtimeInfo" : {
+        "activeThreats" : 22,
+        "agentId" : "1234563112770123456",
+        "rebootRequired" : true,
+        "agentComputerName" : "DESKTOP-TEST",
+        "agentInfected" : true,
+        "scanStartedAt" : "2023-06-23T07:17:35.766206Z",
+        "accountName" : "Test Systems",
+        "agentIsDecommissioned" : false,
+        "groupId" : "1234569962380123456",
+        "agentDomain" : "WORKGROUP",
+        "siteName" : "Default site",
+        "agentMitigationMode" : "protect",
+        "agentIsActive" : false,
+        "agentMachineType" : "laptop",
+        "agentNetworkStatus" : "connected",
+        "agentOsName" : "Windows 11 Pro",
+        "scanStatus" : "finished",
+        "agentOsType" : "windows",
+        "accountId" : "1234561234564148927",
+        "groupName" : "Test Systems",
+        "networkInterfaces" : [ {
+          "inet" : [ "192.168.00.00" ],
+          "name" : "Wi-Fi",
+          "inet6" : [ "2402:1234:1b83:ffbf:1234:8619:d2ba:1234", "1234:3a80:1234:ffbf:1234:6664:1234:6dd6", "fe80::1234:a5ad:1234:2af9" ],
+          "id" : "1234563713654123456",
+          "physical" : "dc:33:48:33:ec:01"
+        } ],
+        "agentOsRevision" : "22520",
+        "agentVersion" : "23.3.2.001",
+        "siteId" : "1234560242422123456",
+        "operationalState" : "na",
+        "agentUuid" : "12345681027b432fb6c5d54970123456",
+        "scanFinishedAt" : "2023-06-23T08:49:05.631495Z"
+      }
+    }
+  result:
+    custom:
+      agentDetectionInfo:
+        accountId: "3332500237931234567"
+        accountName: "Test Systems"
+        agentDetectionState: "full_mode"
+        agentDomain: "WORKGROUP"
+        agentIpV4: "192.168.00.00"
+        agentIpV6: "2202:8100:39ab:9067:34cd:e8a:adb1:44a,2402:8100:39af:1234:b83b:0001:db8e:5178,1e80::1053:0001:2784:7af9"
+        agentLastLoggedInUserName: "Test"
+        agentMitigationMode: "protect"
+        agentOsName: "Windows 11 Pro"
+        agentOsRevision: "22000"
+        agentRegisteredAt: "2023-06-22T12:31:09.244942Z"
+        agentUuid: "20ee9f810212345678c5d549705f3419"
+        agentVersion: "22.2.5.981"
+        externalIp:
+          geoip:
+            invalidAddress: "106.76.00.000"
+        groupId: "1234529962380812345"
+        groupName: "Test Systems"
+        siteId: "3312500242422123456"
+        siteName: "Default site"
+      agentRealtimeInfo:
+        accountId: "1234561234564148927"
+        accountName: "Test Systems"
+        activeThreats: 22
+        agentComputerName: "DESKTOP-TEST"
+        agentDomain: "WORKGROUP"
+        agentId: "1234563112770123456"
+        agentInfected: true
+        agentIsActive: false
+        agentIsDecommissioned: false
+        agentMachineType: "laptop"
+        agentMitigationMode: "protect"
+        agentNetworkStatus: "connected"
+        agentOsName: "Windows 11 Pro"
+        agentOsRevision: "22520"
+        agentOsType: "windows"
+        agentUuid: "12345681027b432fb6c5d54970123456"
+        agentVersion: "23.3.2.001"
+        groupId: "1234569962380123456"
+        groupName: "Test Systems"
+        networkInterfaces:
+         -
+          inet:
+           - "192.168.00.00"
+          name: "Wi-Fi"
+          inet6:
+           - "2402:1234:1b83:ffbf:1234:8619:d2ba:1234"
+           - "1234:3a80:1234:ffbf:1234:6664:1234:6dd6"
+           - "fe80::1234:a5ad:1234:2af9"
+          id: "1234563713654123456"
+          physical: "dc:33:48:33:ec:01"
+        operationalState: "na"
+        rebootRequired: true
+        scanFinishedAt: "2023-06-23T08:49:05.631495Z"
+        scanStartedAt: "2023-06-23T07:17:35.766206Z"
+        scanStatus: "finished"
+        siteId: "1234560242422123456"
+        siteName: "Default site"
+      mitigationStatus:
+       -
+        groupNotFound: false
+        latestReport: "/threats/mitigation-report/1234561522652123456"
+        actionsCounters:
+          pendingReboot: 0
+          total: 1
+          success: 1
+          notFound: 0
+          failed: 0
+        lastUpdate: "2023-06-23T07:05:35.901956Z"
+        mitigationStartedAt: "2023-06-23T06:49:58.506000Z"
+        action: "quarantine"
+        agentSupportsReport: true
+        mitigationEndedAt: "2023-06-23T06:49:58.506000Z"
+        status: "success"
+       -
+        groupNotFound: false
+        lastUpdate: "2023-06-23T07:01:33.050960Z"
+        mitigationStartedAt: "2023-06-23T07:01:33.042086Z"
+        action: "kill"
+        agentSupportsReport: true
+        mitigationEndedAt: "2023-06-23T07:01:33.042087Z"
+        status: "success"
+      sentinelone_id: "1234561103784123456"
+      threatInfo:
+        analystVerdict: "suspicious"
+        analystVerdictDescription: "Suspicious"
+        automaticallyResolved: false
+        certificateId: ""
+        classification: "Malware"
+        classificationSource: "Engine"
+        cloudFilesHashVerdict: "black"
+        collectionId: "1234563460959123456"
+        confidenceLevel: "malicious"
+        createdAt: "2023-06-23T06:49:45.968339Z"
+        detectionEngines:
+         -
+          title: "On-Write Static AI"
+          key: "pre_execution"
+        detectionType: "static"
+        engines:
+         - "On-Write DFI"
+        externalTicketExists: false
+        failedActions: false
+        fileExtension: "EXE"
+        fileExtensionType: "Executable"
+        filePath: "\\Device\\ABC\\Users\\ABC\\Downloads\\The-MALWARE-Repo-master\\The-MALWARE-Repo-master\\Worm\\ABC.exe"
+        fileSize: 271633
+        fileVerificationType: "NotSigned"
+        identifiedAt: "2023-06-23T06:59:45.957094Z"
+        incidentStatus: "in_progress"
+        incidentStatusDescription: "In progress"
+        initiatedBy: "agent_policy"
+        initiatedByDescription: "Agent Policy"
+        isFileless: false
+        isValidCertificate: false
+        mitigatedPreemptively: false
+        mitigationStatus: "mitigated"
+        mitigationStatusDescription: "Mitigated"
+        originatorProcess: "WinRAR.exe"
+        pendingActions: false
+        processUser: "DESKTOP-TestB\\TEST"
+        publisherName: ""
+        reachedEventsLimit: false
+        rebootRequired: false
+        sha1: "0d90c40d2e123456c1dafb5123456b45e15fda81"
+        storyline: "966897C6A0123456"
+        threatId: "1713581103784123456"
+        threatName: "ABC.exe"
+        updatedAt: "2023-07-07T14:04:51.258216Z"
+      usr:
+        name: "Test"
+      whiteningOptions:
+       - "hash"
+       - "path"
+    message: |-
+      {
+        "mitigationStatus" : [ {
+          "groupNotFound" : false,
+          "latestReport" : "/threats/mitigation-report/1234561522652123456",
+          "actionsCounters" : {
+            "pendingReboot" : 0,
+            "total" : 1,
+            "success" : 1,
+            "notFound" : 0,
+            "failed" : 0
+          },
+          "lastUpdate" : "2023-06-23T07:05:35.901956Z",
+          "mitigationStartedAt" : "2023-06-23T06:49:58.506000Z",
+          "action" : "quarantine",
+          "agentSupportsReport" : true,
+          "mitigationEndedAt" : "2023-06-23T06:49:58.506000Z",
+          "status" : "success"
+        }, {
+          "groupNotFound" : false,
+          "lastUpdate" : "2023-06-23T07:01:33.050960Z",
+          "mitigationStartedAt" : "2023-06-23T07:01:33.042086Z",
+          "action" : "kill",
+          "agentSupportsReport" : true,
+          "mitigationEndedAt" : "2023-06-23T07:01:33.042087Z",
+          "status" : "success"
+        } ],
+        "threatInfo" : {
+          "threatId" : "1713581103784123456",
+          "isValidCertificate" : false,
+          "mitigationStatusDescription" : "Mitigated",
+          "cloudFilesHashVerdict" : "black",
+          "confidenceLevel" : "malicious",
+          "mitigationStatus" : "mitigated",
+          "rebootRequired" : false,
+          "externalTicketExists" : false,
+          "originatorProcess" : "WinRAR.exe",
+          "certificateId" : "",
+          "classificationSource" : "Engine",
+          "processUser" : "DESKTOP-TestB\\TEST",
+          "reachedEventsLimit" : false,
+          "fileVerificationType" : "NotSigned",
+          "analystVerdictDescription" : "Suspicious",
+          "automaticallyResolved" : false,
+          "createdAt" : "2023-06-23T06:49:45.968339Z",
+          "detectionEngines" : [ {
+            "title" : "On-Write Static AI",
+            "key" : "pre_execution"
+          } ],
+          "engines" : [ "On-Write DFI" ],
+          "fileExtension" : "EXE",
+          "storyline" : "966897C6A0123456",
+          "pendingActions" : false,
+          "fileExtensionType" : "Executable",
+          "collectionId" : "1234563460959123456",
+          "initiatedBy" : "agent_policy",
+          "incidentStatus" : "in_progress",
+          "updatedAt" : "2023-07-07T14:04:51.258216Z",
+          "identifiedAt" : "2023-06-23T06:59:45.957094Z",
+          "filePath" : "\\Device\\ABC\\Users\\ABC\\Downloads\\The-MALWARE-Repo-master\\The-MALWARE-Repo-master\\Worm\\ABC.exe",
+          "classification" : "Malware",
+          "sha1" : "0d90c40d2e123456c1dafb5123456b45e15fda81",
+          "incidentStatusDescription" : "In progress",
+          "detectionType" : "static",
+          "analystVerdict" : "suspicious",
+          "isFileless" : false,
+          "fileSize" : 271633,
+          "publisherName" : "",
+          "threatName" : "ABC.exe",
+          "failedActions" : false,
+          "mitigatedPreemptively" : false,
+          "initiatedByDescription" : "Agent Policy"
+        },
+        "whiteningOptions" : [ "hash", "path" ],
+        "agentDetectionInfo" : {
+          "agentOsName" : "Windows 11 Pro",
+          "accountName" : "Test Systems",
+          "agentLastLoggedInUserName" : "Test",
+          "groupId" : "1234529962380812345",
+          "agentRegisteredAt" : "2023-06-22T12:31:09.244942Z",
+          "agentDomain" : "WORKGROUP",
+          "siteName" : "Default site",
+          "agentMitigationMode" : "protect",
+          "accountId" : "3332500237931234567",
+          "groupName" : "Test Systems",
+          "agentDetectionState" : "full_mode",
+          "agentOsRevision" : "22000",
+          "agentVersion" : "22.2.5.981",
+          "siteId" : "3312500242422123456",
+          "agentIpV6" : "2202:8100:39ab:9067:34cd:e8a:adb1:44a,2402:8100:39af:1234:b83b:0001:db8e:5178,1e80::1053:0001:2784:7af9",
+          "agentUuid" : "20ee9f810212345678c5d549705f3419",
+          "agentIpV4" : "192.168.00.00",
+          "externalIp" : "106.76.00.000"
+        },
+        "sentinelone_id" : "1234561103784123456",
+        "agentRealtimeInfo" : {
+          "activeThreats" : 22,
+          "agentId" : "1234563112770123456",
+          "rebootRequired" : true,
+          "agentComputerName" : "DESKTOP-TEST",
+          "agentInfected" : true,
+          "scanStartedAt" : "2023-06-23T07:17:35.766206Z",
+          "accountName" : "Test Systems",
+          "agentIsDecommissioned" : false,
+          "groupId" : "1234569962380123456",
+          "agentDomain" : "WORKGROUP",
+          "siteName" : "Default site",
+          "agentMitigationMode" : "protect",
+          "agentIsActive" : false,
+          "agentMachineType" : "laptop",
+          "agentNetworkStatus" : "connected",
+          "agentOsName" : "Windows 11 Pro",
+          "scanStatus" : "finished",
+          "agentOsType" : "windows",
+          "accountId" : "1234561234564148927",
+          "groupName" : "Test Systems",
+          "networkInterfaces" : [ {
+            "inet" : [ "192.168.00.00" ],
+            "name" : "Wi-Fi",
+            "inet6" : [ "2402:1234:1b83:ffbf:1234:8619:d2ba:1234", "1234:3a80:1234:ffbf:1234:6664:1234:6dd6", "fe80::1234:a5ad:1234:2af9" ],
+            "id" : "1234563713654123456",
+            "physical" : "dc:33:48:33:ec:01"
+          } ],
+          "agentOsRevision" : "22520",
+          "agentVersion" : "23.3.2.001",
+          "siteId" : "1234560242422123456",
+          "operationalState" : "na",
+          "agentUuid" : "12345681027b432fb6c5d54970123456",
+          "scanFinishedAt" : "2023-06-23T08:49:05.631495Z"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "agentId" : "1713059693172741297",
+      "data" : {
+        "registrykeypath" : "",
+        "origagentname" : "local",
+        "dstport" : 0,
+        "sourceprocessname" : "postdrop",
+        "tgtprocname" : "",
+        "rulename" : "File Activity",
+        "sourceparentprocesspath" : "/usr/sbin/sendmail.postfix",
+        "tgtfilehashsha1" : "",
+        "loginaccountsid" : "",
+        "dveventid" : "01H5SW123456",
+        "scopeLevel" : "Group",
+        "dstip" : "",
+        "loginsusername" : "",
+        "neteventdirection" : "",
+        "sourceprocessstoryline" : "123456-3209-c937-7a56-8e04d9b72a60",
+        "scopeId" : 1234560237934123456,
+        "ruledescription" : "",
+        "sourceparentprocessintegritylevel" : "unknown",
+        "tgtfilehashsha256" : "",
+        "sourceparentprocesssha1" : "123456343c64158f5590276eade3bc120c123456",
+        "k8snamespacelabels" : "",
+        "tgtprocessstarttime" : 0,
+        "accountId" : "1234560237934123456",
+        "groupName" : "KK Systems",
+        "dnsresponse" : "",
+        "sourceparentprocesspid" : 49323,
+        "registrypath" : "",
+        "rulescopeid" : 1234560237934148927,
+        "detectedat" : "2023-07-20T14:57:07Z",
+        "tgtprocimagepath" : "",
+        "alertid" : "1234560414878123456",
+        "k8scontainerid" : "",
+        "ruleid" : "1234561490875123456",
+        "origagentmachinetype" : "server",
+        "sourceprocessstarttime" : 1689864123456,
+        "modulesha1" : "",
+        "sourceprocesssubsystem" : "unknown",
+        "sourceprocessintegritylevel" : "unknown",
+        "siteName" : "Default site",
+        "registryoldvaluetype" : "",
+        "tgtfilecreatedat" : 1689864123456,
+        "registryvalue" : "",
+        "loginisadministratorequivalent" : "",
+        "sourceprocesspid" : 49324,
+        "eventexternalid" : "",
+        "origagentosrevision" : "CentOS release 7.9",
+        "tgtfilepath" : "/var/spool/postfix/maildrop/0A5EB6",
+        "sourceprocesssha256" : "",
+        "datasourcename" : "Sentinel33One",
+        "userId" : 1234566475444123456,
+        "tgtfilemodifiedat" : 0,
+        "k8scontrollerlabels" : "",
+        "tgtprocstorylineid" : "",
+        "loginaccountdomain" : "",
+        "sourceprocessfilesigneridentity" : "",
+        "sourceprocessmd5" : "",
+        "k8spod" : "",
+        "loginissuccessful" : "",
+        "sourceprocesssha1" : "1234565cb801fb75d88f0ef01790a77e66123456",
+        "srcip" : "",
+        "tiindicatorvalue" : "",
+        "fullScopeDetails" : "KK Systems in Site Default site of Account KK Systems",
+        "k8scontainername" : "",
+        "scopeName" : "KK Systems",
+        "eventtime" : 1689864123456,
+        "origagentosname" : "Linux",
+        "sourceparentprocesscommandline" : " /usr/sbin/sendmail",
+        "commandCorrelationid" : "86123456-d44e-3366-a884-b21ea04e2325",
+        "tgtprocpid" : 0,
+        "sourceprocessusername" : "",
+        "tgtprocsignedstatus" : "",
+        "tiindicatortype" : "",
+        "dveventtype" : "FILEMODIFICATION",
+        "sourceprocesskey" : "733aeee4-1234-cb9e-abcd-9259173438c3",
+        "externalip" : "122.179.00.00",
+        "indicatorname" : "",
+        "sourceparentprocesssigneridentity" : "",
+        "sourceprocesscommandline" : " /usr/sbin/postdrop -r",
+        "sourceparentprocessusername" : "",
+        "origagentversion" : "23.1.00.00",
+        "origagentsiteid" : "171250012345655104",
+        "tiindicatorcomparisonmethod" : "",
+        "eventdetails" : "",
+        "sourceparentprocessname" : "sendmail.postfix",
+        "tgtfileoldpath" : "",
+        "rulescopelevel" : "IE_ACCOUNT",
+        "srcmachineip" : "",
+        "tgtfileissigned" : "unsigned",
+        "externalthreatvalue" : "",
+        "logintype" : "",
+        "k8snode" : "",
+        "modulepath" : "",
+        "k8scontrollerkind" : "",
+        "sourceparentprocessmd5" : "",
+        "origagentosfamily" : "linux",
+        "accountName" : "KK Systems",
+        "systemUser" : 0,
+        "k8spodlabels" : "",
+        "dnsrequest" : "",
+        "fullScopeDetailsPath" : "Global / KK Systems / Default site / KK Systems",
+        "tgtfileid" : "123456-f751-1234-ba34-3f6d12db9f6d",
+        "tgtprocintegritylevel" : "unknown",
+        "actoralternateid" : "",
+        "agentipv4" : "10.50.00.00",
+        "commandTimestamp" : 1689865123456,
+        "k8scontainerlabels" : "",
+        "k8scontrollername" : "",
+        "physical" : "00:50:bb:83:00:9B",
+        "tgtprocuid" : "",
+        "k8snamespace" : "",
+        "severity" : "IE_LOW",
+        "sourceparentprocesskey" : "123456-03fe-d28a-1425-38249f266576",
+        "tgtproccmdline" : "",
+        "k8scontainerimage" : "",
+        "sourceparentprocessstarttime" : 1689864123456,
+        "indicatordescription" : "",
+        "registryoldvalue" : "",
+        "sourceparentprocesssha256" : "",
+        "sourcename" : "STAR",
+        "sourceparentprocesssubsystem" : "unknown",
+        "userName" : "Mo Jov",
+        "origagentuuid" : "6a01777a-1992-1425-ae8c-kgjhgjfjfjfuj5",
+        "sourceprocessfilepath" : "/usr/sbin/postdrop",
+        "k8sclustername" : "",
+        "tiindicatorsource" : "",
+        "eventcategory" : "file",
+        "siteId" : "1234560242422123456",
+        "srcport" : 0,
+        "indicatorcategory" : "",
+        "sourceparentprocessstoryline" : "123456-3209-abcd-7a56-8e04d9b72a60"
+      },
+      "accountName" : "KK Systems",
+      "groupId" : "1234569962380123456",
+      "siteName" : "Default site",
+      "primaryDescription" : "Alert created for postdrop from Custom Rule: File Activity in KK",
+      "userId" : "1712986475444123456",
+      "accountId" : "1234560237934123456",
+      "createdAt" : "2023-07-20T14:57:20.039081Z",
+      "secondaryDescription" : "3d75365cb801fb75d88f0ef01790a77e66883a4a",
+      "groupName" : "KK Systems",
+      "sentinelone_id" : "1234560416296123456",
+      "siteId" : "1234560242422123456",
+      "activityType" : 3608,
+      "activityUuid" : "0b766539-42ee-1234-8c00-123456863df4",
+      "updatedAt" : "2023-07-20T14:57:20.035984Z"
+    }
+  result:
+    custom:
+      accountId: "1234560237934123456"
+      accountName: "KK Systems"
+      activityType: 3608
+      activityUuid: "0b766539-42ee-1234-8c00-123456863df4"
+      agentId: "1713059693172741297"
+      createdAt: "2023-07-20T14:57:20.039081Z"
+      data:
+        accountId: "1234560237934123456"
+        accountName: "KK Systems"
+        actoralternateid: ""
+        agentipv4: "10.50.00.00"
+        alertid: "1234560414878123456"
+        commandCorrelationid: "86123456-d44e-3366-a884-b21ea04e2325"
+        commandTimestamp: 1689865123456
+        datasourcename: "Sentinel33One"
+        detectedat: "2023-07-20T14:57:07Z"
+        dnsrequest: ""
+        dnsresponse: ""
+        dstip: ""
+        dstport: 0
+        dveventid: "01H5SW123456"
+        dveventtype: "FILEMODIFICATION"
+        eventcategory: "file"
+        eventdetails: ""
+        eventexternalid: ""
+        eventtime: 1689864123456
+        externalip: "122.179.00.00"
+        externalthreatvalue: ""
+        fullScopeDetails: "KK Systems in Site Default site of Account KK Systems"
+        fullScopeDetailsPath: "Global / KK Systems / Default site / KK Systems"
+        groupName: "KK Systems"
+        indicatorcategory: ""
+        indicatordescription: ""
+        indicatorname: ""
+        k8sclustername: ""
+        k8scontainerid: ""
+        k8scontainerimage: ""
+        k8scontainerlabels: ""
+        k8scontainername: ""
+        k8scontrollerkind: ""
+        k8scontrollerlabels: ""
+        k8scontrollername: ""
+        k8snamespace: ""
+        k8snamespacelabels: ""
+        k8snode: ""
+        k8spod: ""
+        k8spodlabels: ""
+        loginaccountdomain: ""
+        loginaccountsid: ""
+        loginisadministratorequivalent: ""
+        loginissuccessful: ""
+        loginsusername: ""
+        logintype: ""
+        modulepath: ""
+        modulesha1: ""
+        neteventdirection: ""
+        origagentmachinetype: "server"
+        origagentname: "local"
+        origagentosfamily: "linux"
+        origagentosname: "Linux"
+        origagentosrevision: "CentOS release 7.9"
+        origagentsiteid: "171250012345655104"
+        origagentuuid: "6a01777a-1992-1425-ae8c-kgjhgjfjfjfuj5"
+        origagentversion: "23.1.00.00"
+        physical: "00:50:bb:83:00:9B"
+        registrykeypath: ""
+        registryoldvalue: ""
+        registryoldvaluetype: ""
+        registrypath: ""
+        registryvalue: ""
+        ruledescription: ""
+        ruleid: "1234561490875123456"
+        rulename: "File Activity"
+        rulescopeid: 1234560237934148927
+        rulescopelevel: "IE_ACCOUNT"
+        scopeId: 1234560237934123456
+        scopeLevel: "Group"
+        scopeName: "KK Systems"
+        severity: "IE_LOW"
+        siteId: "1234560242422123456"
+        siteName: "Default site"
+        sourcename: "STAR"
+        sourceparentprocesscommandline: " /usr/sbin/sendmail"
+        sourceparentprocessintegritylevel: "unknown"
+        sourceparentprocesskey: "123456-03fe-d28a-1425-38249f266576"
+        sourceparentprocessmd5: ""
+        sourceparentprocessname: "sendmail.postfix"
+        sourceparentprocesspath: "/usr/sbin/sendmail.postfix"
+        sourceparentprocesspid: 49323
+        sourceparentprocesssha1: "123456343c64158f5590276eade3bc120c123456"
+        sourceparentprocesssha256: ""
+        sourceparentprocesssigneridentity: ""
+        sourceparentprocessstarttime: 1689864123456
+        sourceparentprocessstoryline: "123456-3209-abcd-7a56-8e04d9b72a60"
+        sourceparentprocesssubsystem: "unknown"
+        sourceparentprocessusername: ""
+        sourceprocesscommandline: " /usr/sbin/postdrop -r"
+        sourceprocessfilepath: "/usr/sbin/postdrop"
+        sourceprocessfilesigneridentity: ""
+        sourceprocessintegritylevel: "unknown"
+        sourceprocesskey: "733aeee4-1234-cb9e-abcd-9259173438c3"
+        sourceprocessmd5: ""
+        sourceprocessname: "postdrop"
+        sourceprocesspid: 49324
+        sourceprocesssha1: "1234565cb801fb75d88f0ef01790a77e66123456"
+        sourceprocesssha256: ""
+        sourceprocessstarttime: 1689864123456
+        sourceprocessstoryline: "123456-3209-c937-7a56-8e04d9b72a60"
+        sourceprocesssubsystem: "unknown"
+        sourceprocessusername: ""
+        srcip: ""
+        srcmachineip: ""
+        srcport: 0
+        systemUser: 0
+        tgtfilecreatedat: 1689864123456
+        tgtfilehashsha1: ""
+        tgtfilehashsha256: ""
+        tgtfileid: "123456-f751-1234-ba34-3f6d12db9f6d"
+        tgtfileissigned: "unsigned"
+        tgtfilemodifiedat: 0
+        tgtfileoldpath: ""
+        tgtfilepath: "/var/spool/postfix/maildrop/0A5EB6"
+        tgtproccmdline: ""
+        tgtprocessstarttime: 0
+        tgtprocimagepath: ""
+        tgtprocintegritylevel: "unknown"
+        tgtprocname: ""
+        tgtprocpid: 0
+        tgtprocsignedstatus: ""
+        tgtprocstorylineid: ""
+        tgtprocuid: ""
+        tiindicatorcomparisonmethod: ""
+        tiindicatorsource: ""
+        tiindicatortype: ""
+        tiindicatorvalue: ""
+        userId: 1234566475444123456
+        userName: "Mo Jov"
+      groupId: "1234569962380123456"
+      groupName: "KK Systems"
+      network:
+        client:
+          ip: ""
+          port: 0
+        destination:
+          ip: ""
+          port: 0
+      primaryDescription: "Alert created for postdrop from Custom Rule: File Activity in KK"
+      secondaryDescription: "3d75365cb801fb75d88f0ef01790a77e66883a4a"
+      sentinelone_id: "1234560416296123456"
+      siteId: "1234560242422123456"
+      siteName: "Default site"
+      updatedAt: "2023-07-20T14:57:20.035984Z"
+      userId: "1712986475444123456"
+      usr:
+        id: 1234566475444123456
+        name: "Mo Jov"
+    message: |-
+      {
+        "agentId" : "1713059693172741297",
+        "data" : {
+          "registrykeypath" : "",
+          "origagentname" : "local",
+          "dstport" : 0,
+          "sourceprocessname" : "postdrop",
+          "tgtprocname" : "",
+          "rulename" : "File Activity",
+          "sourceparentprocesspath" : "/usr/sbin/sendmail.postfix",
+          "tgtfilehashsha1" : "",
+          "loginaccountsid" : "",
+          "dveventid" : "01H5SW123456",
+          "scopeLevel" : "Group",
+          "dstip" : "",
+          "loginsusername" : "",
+          "neteventdirection" : "",
+          "sourceprocessstoryline" : "123456-3209-c937-7a56-8e04d9b72a60",
+          "scopeId" : 1234560237934123456,
+          "ruledescription" : "",
+          "sourceparentprocessintegritylevel" : "unknown",
+          "tgtfilehashsha256" : "",
+          "sourceparentprocesssha1" : "123456343c64158f5590276eade3bc120c123456",
+          "k8snamespacelabels" : "",
+          "tgtprocessstarttime" : 0,
+          "accountId" : "1234560237934123456",
+          "groupName" : "KK Systems",
+          "dnsresponse" : "",
+          "sourceparentprocesspid" : 49323,
+          "registrypath" : "",
+          "rulescopeid" : 1234560237934148927,
+          "detectedat" : "2023-07-20T14:57:07Z",
+          "tgtprocimagepath" : "",
+          "alertid" : "1234560414878123456",
+          "k8scontainerid" : "",
+          "ruleid" : "1234561490875123456",
+          "origagentmachinetype" : "server",
+          "sourceprocessstarttime" : 1689864123456,
+          "modulesha1" : "",
+          "sourceprocesssubsystem" : "unknown",
+          "sourceprocessintegritylevel" : "unknown",
+          "siteName" : "Default site",
+          "registryoldvaluetype" : "",
+          "tgtfilecreatedat" : 1689864123456,
+          "registryvalue" : "",
+          "loginisadministratorequivalent" : "",
+          "sourceprocesspid" : 49324,
+          "eventexternalid" : "",
+          "origagentosrevision" : "CentOS release 7.9",
+          "tgtfilepath" : "/var/spool/postfix/maildrop/0A5EB6",
+          "sourceprocesssha256" : "",
+          "datasourcename" : "Sentinel33One",
+          "userId" : 1234566475444123456,
+          "tgtfilemodifiedat" : 0,
+          "k8scontrollerlabels" : "",
+          "tgtprocstorylineid" : "",
+          "loginaccountdomain" : "",
+          "sourceprocessfilesigneridentity" : "",
+          "sourceprocessmd5" : "",
+          "k8spod" : "",
+          "loginissuccessful" : "",
+          "sourceprocesssha1" : "1234565cb801fb75d88f0ef01790a77e66123456",
+          "srcip" : "",
+          "tiindicatorvalue" : "",
+          "fullScopeDetails" : "KK Systems in Site Default site of Account KK Systems",
+          "k8scontainername" : "",
+          "scopeName" : "KK Systems",
+          "eventtime" : 1689864123456,
+          "origagentosname" : "Linux",
+          "sourceparentprocesscommandline" : " /usr/sbin/sendmail",
+          "commandCorrelationid" : "86123456-d44e-3366-a884-b21ea04e2325",
+          "tgtprocpid" : 0,
+          "sourceprocessusername" : "",
+          "tgtprocsignedstatus" : "",
+          "tiindicatortype" : "",
+          "dveventtype" : "FILEMODIFICATION",
+          "sourceprocesskey" : "733aeee4-1234-cb9e-abcd-9259173438c3",
+          "externalip" : "122.179.00.00",
+          "indicatorname" : "",
+          "sourceparentprocesssigneridentity" : "",
+          "sourceprocesscommandline" : " /usr/sbin/postdrop -r",
+          "sourceparentprocessusername" : "",
+          "origagentversion" : "23.1.00.00",
+          "origagentsiteid" : "171250012345655104",
+          "tiindicatorcomparisonmethod" : "",
+          "eventdetails" : "",
+          "sourceparentprocessname" : "sendmail.postfix",
+          "tgtfileoldpath" : "",
+          "rulescopelevel" : "IE_ACCOUNT",
+          "srcmachineip" : "",
+          "tgtfileissigned" : "unsigned",
+          "externalthreatvalue" : "",
+          "logintype" : "",
+          "k8snode" : "",
+          "modulepath" : "",
+          "k8scontrollerkind" : "",
+          "sourceparentprocessmd5" : "",
+          "origagentosfamily" : "linux",
+          "accountName" : "KK Systems",
+          "systemUser" : 0,
+          "k8spodlabels" : "",
+          "dnsrequest" : "",
+          "fullScopeDetailsPath" : "Global / KK Systems / Default site / KK Systems",
+          "tgtfileid" : "123456-f751-1234-ba34-3f6d12db9f6d",
+          "tgtprocintegritylevel" : "unknown",
+          "actoralternateid" : "",
+          "agentipv4" : "10.50.00.00",
+          "commandTimestamp" : 1689865123456,
+          "k8scontainerlabels" : "",
+          "k8scontrollername" : "",
+          "physical" : "00:50:bb:83:00:9B",
+          "tgtprocuid" : "",
+          "k8snamespace" : "",
+          "severity" : "IE_LOW",
+          "sourceparentprocesskey" : "123456-03fe-d28a-1425-38249f266576",
+          "tgtproccmdline" : "",
+          "k8scontainerimage" : "",
+          "sourceparentprocessstarttime" : 1689864123456,
+          "indicatordescription" : "",
+          "registryoldvalue" : "",
+          "sourceparentprocesssha256" : "",
+          "sourcename" : "STAR",
+          "sourceparentprocesssubsystem" : "unknown",
+          "userName" : "Mo Jov",
+          "origagentuuid" : "6a01777a-1992-1425-ae8c-kgjhgjfjfjfuj5",
+          "sourceprocessfilepath" : "/usr/sbin/postdrop",
+          "k8sclustername" : "",
+          "tiindicatorsource" : "",
+          "eventcategory" : "file",
+          "siteId" : "1234560242422123456",
+          "srcport" : 0,
+          "indicatorcategory" : "",
+          "sourceparentprocessstoryline" : "123456-3209-abcd-7a56-8e04d9b72a60"
+        },
+        "accountName" : "KK Systems",
+        "groupId" : "1234569962380123456",
+        "siteName" : "Default site",
+        "primaryDescription" : "Alert created for postdrop from Custom Rule: File Activity in KK",
+        "userId" : "1712986475444123456",
+        "accountId" : "1234560237934123456",
+        "createdAt" : "2023-07-20T14:57:20.039081Z",
+        "secondaryDescription" : "3d75365cb801fb75d88f0ef01790a77e66883a4a",
+        "groupName" : "KK Systems",
+        "sentinelone_id" : "1234560416296123456",
+        "siteId" : "1234560242422123456",
+        "activityType" : 3608,
+        "activityUuid" : "0b766539-42ee-1234-8c00-123456863df4",
+        "updatedAt" : "2023-07-20T14:57:20.035984Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

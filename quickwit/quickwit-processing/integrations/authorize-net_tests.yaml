@@ -1,0 +1,72 @@
+id: "authorize-net"
+tests:
+  - sample: |-
+      {
+        "enrichment_details": {
+            "merchantId": "2zHHE7jW",
+            "batchId": "157463",
+            "settlementTimeUTC": "2024-12-03T09:23:05Z"
+        },
+        "log": {
+            "submitTimeUTC": "2024-10-21T08:28:47Z",
+            "product": "Card Not Present",
+            "transactionStatus": "settledSuccessfully",
+            "transId": "800205266",
+            "submitTimeLocal": "2024-10-21T01:28:47",
+            "accountType": "AmericanExpress",
+            "settleAmount": 115,
+            "accountNumber": "XXXX0002",
+            "firstName": "John",
+            "lastName": "Doe",
+            "marketType": "eCommerce"
+        }
+      }
+    service: "transaction"
+    result:
+      custom:
+        authorize-net:
+          settleAmount: 115
+        enrichment_details:
+          batchId: "157463"
+          merchantId: "2zHHE7jW"
+          settlementTimeUTC: "2024-12-03T09:23:05Z"
+        log:
+          accountNumber: "XXXX0002"
+          accountType: "AmericanExpress"
+          firstName: "John"
+          lastName: "Doe"
+          marketType: "eCommerce"
+          product: "Card Not Present"
+          submitTimeLocal: "2024-10-21T01:28:47"
+          submitTimeUTC: "2024-10-21T08:28:47Z"
+          transId: "800205266"
+          transactionStatus: "settledSuccessfully"
+        status: "info"
+        usr:
+          name: "John Doe"
+      message: |-
+        {
+          "enrichment_details" : {
+            "merchantId" : "2zHHE7jW",
+            "settlementTimeUTC" : "2024-12-03T09:23:05Z",
+            "batchId" : "157463"
+          },
+          "log" : {
+            "submitTimeUTC" : "2024-10-21T08:28:47Z",
+            "firstName" : "John",
+            "lastName" : "Doe",
+            "product" : "Card Not Present",
+            "transactionStatus" : "settledSuccessfully",
+            "transId" : "800205266",
+            "submitTimeLocal" : "2024-10-21T01:28:47",
+            "accountType" : "AmericanExpress",
+            "settleAmount" : 115,
+            "accountNumber" : "XXXX0002",
+            "marketType" : "eCommerce"
+          }
+        }
+      service: "transaction"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1733217785000

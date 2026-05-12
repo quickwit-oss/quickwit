@@ -1,0 +1,127 @@
+id: gcp.gae.app
+metric_id: google-app-engine
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - GCP
+    name: Project ID
+    path: project_id
+    source: tag
+pipeline:
+  type: pipeline
+  name: Google App Engine
+  enabled: true
+  filter:
+    query: source:gcp.gae.app
+  processors:
+    - type: date-remapper
+      name: Define `data.timestamp`, `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - data.timestamp
+        - timestamp
+    - type: status-remapper
+      name: Define `data.severity`, `severity` as the official status of the log
+      enabled: true
+      sources:
+        - data.severity
+        - severity
+    - type: attribute-remapper
+      name: Map `data.httpRequest.status`, `httpRequest.status` to `http.status_code`
+      enabled: true
+      sources:
+        - data.httpRequest.status
+        - httpRequest.status
+      target: http.status_code
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: user-agent-parser
+      name: Parse data.protoPayload.userAgent
+      enabled: true
+      sources:
+        - data.protoPayload.userAgent
+        - protoPayload.userAgent
+      target: http.useragent_details
+      encoded: false
+    - type: url-parser
+      name: Parse data.protoPayload.referrer
+      enabled: true
+      sources:
+        - data.protoPayload.referrer
+        - protoPayload.referrer
+      target: http.url_details
+    - type: attribute-remapper
+      name: Map `data.protoPayload.ip`, `protoPayload.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.protoPayload.ip
+        - protoPayload.ip
+      target: network.client.ip
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `data.protoPayload.method`, `protoPayload.method` to `http.method`
+      enabled: true
+      sources:
+        - data.protoPayload.method
+        - protoPayload.method
+      target: http.method
+      preserveSource: false
+      overrideOnConflict: false
+
+      sourceType: attribute
+      targetType: attribute

@@ -1,0 +1,88 @@
+id: "perimeterx"
+tests:
+ -
+  sample: |-
+    {
+      "country" : "US",
+      "px_app_id" : "PXiCF5izAO",
+      "true_ip" : "45.79.17.102",
+      "full_url" : "http://vps272189.better-than.tv/",
+      "city" : "Dallas",
+      "risk_score" : 20,
+      "true_ip_asn_name" : "Linode, LLC",
+      "true_ip_classification" : [ {
+        "name" : "Shared IPs",
+        "class" : "SharedIPs"
+      } ],
+      "event_type" : "legitimate",
+      "client_ip" : "45.79.17.102",
+      "px_vid" : "169fd2d1-cad1-11ea-8241-b3a37884a018",
+      "px_client_uuid" : "169fd2d0-cad1-11ea-8241-b3a37884a018",
+      "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
+      "timestamp" : "2020-07-20T21:36:37Z"
+    }
+  result:
+    custom:
+      city: "Dallas"
+      client_ip: "45.79.17.102"
+      country: "US"
+      evt:
+        name: "legitimate"
+      full_url: "http://vps272189.better-than.tv/"
+      http:
+        url_details:
+          host: "vps272189.better-than.tv"
+          path: "/"
+          scheme: "http"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "41"
+            minor: "0"
+            patch: "2228"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          asn: "Linode, LLC"
+          geoip: {}
+          ip: "45.79.17.102"
+      px_app_id: "PXiCF5izAO"
+      px_client_uuid: "169fd2d0-cad1-11ea-8241-b3a37884a018"
+      px_vid: "169fd2d1-cad1-11ea-8241-b3a37884a018"
+      risk_score: 20
+      timestamp: "2020-07-20T21:36:37Z"
+      title: "legitimate Request From 45.79.17.102"
+      true_ip_classification:
+       -
+        name: "Shared IPs"
+        class: "SharedIPs"
+      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
+    message: |-
+      {
+        "country" : "US",
+        "px_app_id" : "PXiCF5izAO",
+        "true_ip" : "45.79.17.102",
+        "full_url" : "http://vps272189.better-than.tv/",
+        "city" : "Dallas",
+        "risk_score" : 20,
+        "true_ip_asn_name" : "Linode, LLC",
+        "true_ip_classification" : [ {
+          "name" : "Shared IPs",
+          "class" : "SharedIPs"
+        } ],
+        "event_type" : "legitimate",
+        "client_ip" : "45.79.17.102",
+        "px_vid" : "169fd2d1-cad1-11ea-8241-b3a37884a018",
+        "px_client_uuid" : "169fd2d0-cad1-11ea-8241-b3a37884a018",
+        "user_agent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
+        "timestamp" : "2020-07-20T21:36:37Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

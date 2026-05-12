@@ -1,0 +1,410 @@
+id: akamai-sia
+metric_id: akamai-zero-trust
+backend_only: false
+facets:
+  - groups:
+      - DNS
+    name: Answer Name
+    path: dns.answer.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Name
+    path: dns.question.name
+    source: log
+  - groups:
+      - DNS
+    name: Question Type
+    path: dns.question.type
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Version
+    path: http.version
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - Akamai SIA
+    name: Detection Type
+    path: akamai_sia.detectionType
+    source: log
+  - groups:
+      - Akamai SIA
+    name: Severity Level
+    path: akamai_sia.severityLevel
+    source: log
+  - groups:
+      - Akamai SIA
+    name: Threat Name
+    path: akamai_sia.threatName
+    source: log
+  - groups:
+      - Akamai SIA
+    name: Machine Name
+    path: akamai_sia.machineName
+    source: log
+  - groups:
+      - Akamai SIA
+    name: Block Description
+    path: akamai_sia.blockDescription
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+pipeline:
+  type: pipeline
+  name: Akamai SIA
+  enabled: true
+  filter:
+    query: source:akamai-sia
+  processors:
+    - type: attribute-remapper
+      name: Map `clientIP`, `query.clientIp`, `request.clientIp` to `network.client.ip`
+      enabled: true
+      sources:
+        - clientIP
+        - query.clientIp
+        - request.clientIp
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Parse IP
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `clientPort` to `network.client.port`
+      enabled: true
+      sources:
+        - clientPort
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destinationPort`, `request.destinationPort` to `network.destination.port`
+      enabled: true
+      sources:
+        - destinationPort
+        - request.destinationPort
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `destinationIP`, `request.destinationIP` to `network.destination.ip`
+      enabled: true
+      sources:
+        - destinationIP
+        - request.destinationIP
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `httpUserAgent`, `event.clientAgents` to `http.useragent`
+      enabled: true
+      sources:
+        - httpUserAgent
+        - event.clientAgents
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: Parse UserAgent
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: attribute-remapper
+      name: Map `httpVersion`, `event.httpVersion` to `http.version`
+      enabled: true
+      sources:
+        - httpVersion
+        - event.httpVersion
+      sourceType: attribute
+      target: http.version
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `request.method` to `http.method`
+      enabled: true
+      sources:
+        - request.method
+      sourceType: attribute
+      target: http.method
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `clientRequestId`, `event.clientRequestId` to `http.request_id`
+      enabled: true
+      sources:
+        - clientRequestId
+        - event.clientRequestId
+      sourceType: attribute
+      target: http.request_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `response.responseCode` to `http.status_code`
+      enabled: true
+      sources:
+        - response.responseCode
+      sourceType: attribute
+      target: http.status_code
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `stats.inBytes` to `network.bytes_written`
+      enabled: true
+      sources:
+        - stats.inBytes
+      sourceType: attribute
+      target: network.bytes_written
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `stats.outBytes` to `network.read_bytes`
+      enabled: true
+      sources:
+        - stats.outBytes
+      sourceType: attribute
+      target: network.read_bytes
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `query.domain` to `dns.question.name`
+      enabled: true
+      sources:
+        - query.domain
+      sourceType: attribute
+      target: dns.question.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `query.queryType` to `dns.question.type`
+      enabled: true
+      sources:
+        - query.queryType
+      sourceType: attribute
+      target: dns.question.type
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `query.dnsIp` to `dns.answer.name`
+      enabled: true
+      sources:
+        - query.dnsIp
+      sourceType: attribute
+      target: dns.answer.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.policyName` to `evt.name`
+      enabled: true
+      sources:
+        - event.policyName
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.actionName` to `evt.outcome`
+      enabled: true
+      sources:
+        - event.actionName
+      sourceType: attribute
+      target: evt.outcome
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.categoryName` to `evt.category`
+      enabled: true
+      sources:
+        - event.categoryName
+      sourceType: attribute
+      target: evt.category
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.detectionType` to `akamai_sia.detectionType`
+      enabled: true
+      sources:
+        - event.detectionType
+      sourceType: attribute
+      target: akamai_sia.detectionType
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.severityLevel` to `akamai_sia.severityLevel`
+      enabled: true
+      sources:
+        - event.severityLevel
+      sourceType: attribute
+      target: akamai_sia.severityLevel
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `machineName` to `akamai_sia.machineName`
+      enabled: true
+      sources:
+        - machineName
+      sourceType: attribute
+      target: akamai_sia.machineName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.blockDescription` to `akamai_sia.blockDescription`
+      enabled: true
+      sources:
+        - event.blockDescription
+      sourceType: attribute
+      target: akamai_sia.blockDescription
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `event.threatName` to `akamai_sia.threatName`
+      enabled: true
+      sources:
+        - event.threatName
+      sourceType: attribute
+      target: akamai_sia.threatName
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `event.detectionTime`, `connStartTime`, `query.time` as the official date of the log
+      enabled: true
+      sources:
+        - event.detectionTime
+        - connStartTime
+        - query.time

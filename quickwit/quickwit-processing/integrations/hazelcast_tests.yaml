@@ -1,0 +1,83 @@
+id: "hazelcast"
+tests:
+ -
+  sample: "2020-03-17 03:13:52 [main] INFO AbstractConfigLocator:69 - Loading 'hazelcast-default.xml' from the classpath."
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "AbstractConfigLocator"
+        thread_name: "main"
+      timestamp: 1584414832000
+    message: "Loading 'hazelcast-default.xml' from the classpath."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584414832000
+ -
+  sample: "2020-03-17 03:13:54 [main] INFO AddressPicker:176 - [LOCAL] [dev] [4.0] Prefer IPv4 stack is true, prefer IPv6 addresses is false"
+  result:
+    custom:
+      hazelcast:
+        cluster: "dev"
+        host: "LOCAL"
+        version: "4.0"
+      level: "INFO"
+      logger:
+        name: "AddressPicker"
+        thread_name: "main"
+      timestamp: 1584414834000
+    message: "Prefer IPv4 stack is true, prefer IPv6 addresses is false"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584414834000
+ -
+  sample: "2020-03-17 03:13:54 [main] INFO BackpressureRegulator - [172.28.0.3]:5701 [dev] [4.0] Backpressure is disabled"
+  result:
+    custom:
+      hazelcast:
+        cluster: "dev"
+        host: "172.28.0.3"
+        version: "4.0"
+      level: "INFO"
+      logger:
+        name: "BackpressureRegulator"
+        thread_name: "main"
+      timestamp: 1584414834000
+    message: "Backpressure is disabled"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584414834000
+ -
+  sample: |-
+    2020-03-17 03:14:03 [hz.happy_fermi.generic-operation.thread-0] INFO ClusterService:176 - [172.28.0.3]:5701 [dev] [4.0]
+
+    Members {size:2, ver:2} [
+      Member [172.28.0.2]:5701 - d06deb64-59ad-4183-ac4d-f0797ad7f8eb
+      Member [172.28.0.3]:5701 - 50cd2566-61ff-4e35-aed4-553d6d5adb7e this
+    ]
+  result:
+    custom:
+      hazelcast:
+        cluster: "dev"
+        host: "172.28.0.3"
+        version: "4.0"
+      level: "INFO"
+      logger:
+        name: "ClusterService"
+        thread_name: "hz.happy_fermi.generic-operation.thread-0"
+      timestamp: 1584414843000
+    message: |2-
+
+
+      Members {size:2, ver:2} [
+        Member [172.28.0.2]:5701 - d06deb64-59ad-4183-ac4d-f0797ad7f8eb
+        Member [172.28.0.3]:5701 - 50cd2566-61ff-4e35-aed4-553d6d5adb7e this
+      ]
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584414843000
+

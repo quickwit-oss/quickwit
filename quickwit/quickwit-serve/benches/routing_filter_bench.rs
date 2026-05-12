@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use binggan::{InputGroup, black_box};
-use pomchi::DatadogLogMsg;
+use quickwit_processing::DatadogLogMsg;
 use quickwit_proto::metastore::IndexRoutingRule;
 use quickwit_serve::datadog_api::{IndexRouter, custom_field_accessor, tag_accessor};
 use rand::rngs::StdRng;
@@ -192,7 +192,9 @@ fn generate_synthetic_messages(count: usize) -> Vec<DatadogLogMsg> {
             });
 
             DatadogLogMsg {
-                message: pomchi::MessageValue::Obj(message_obj.as_object().unwrap().clone()),
+                message: quickwit_processing::MessageValue::Obj(
+                    message_obj.as_object().unwrap().clone(),
+                ),
                 service: Some(service.to_string()),
                 hostname: Some(hostname.to_string()),
                 ddsource: Some(source.to_string()),

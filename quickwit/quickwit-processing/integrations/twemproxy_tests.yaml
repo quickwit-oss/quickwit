@@ -1,0 +1,129 @@
+id: "twemproxy"
+tests:
+ -
+  sample: "[Tue Mar 30 15:51:03 2021] nc_proxy.c:206 p 5 listening on '0.0.0.0:6100' in redis pool 0 'situ' with 2 servers"
+  result:
+    custom:
+      filename: "nc_proxy.c"
+      hostname: "0.0.0.0"
+      level: "info"
+      lineno: 206
+      port: "6100"
+      process:
+        id: 5
+      timestamp: 1617119463000
+      twemproxy:
+        pool:
+          name: "situ"
+          number: 0
+          servers: 2
+          service: "redis"
+    message: "p 5 listening on '0.0.0.0:6100' in redis pool 0 'situ' with 2 servers"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1617119463000
+ -
+  sample: "[2021-03-19 11:24:36.976] nc_ketama.c:120 1 of 1 servers are live for pool 1 'alpha'"
+  result:
+    custom:
+      filename: "nc_ketama.c"
+      level: "info"
+      lineno: 120
+      timestamp: 1616153076976
+      twemproxy:
+        pool:
+          name: "alpha"
+          number: 1
+        servers:
+          live: 1
+          total: 1
+    message: "1 of 1 servers are live for pool 1 'alpha'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1616153076976
+ -
+  sample: "[2021-03-19 11:24:37.302] nc_proxy.c:213 p 9 listening on '127.0.0.1:22121' in memcache pool 3 'gamma' with 2 servers"
+  result:
+    custom:
+      filename: "nc_proxy.c"
+      hostname: "127.0.0.1"
+      level: "info"
+      lineno: 213
+      port: "22121"
+      process:
+        id: 9
+      timestamp: 1616153077302
+      twemproxy:
+        pool:
+          name: "gamma"
+          number: 3
+          servers: 2
+          service: "memcache"
+    message: "p 9 listening on '127.0.0.1:22121' in memcache pool 3 'gamma' with 2 servers"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1616153077302
+ -
+  sample: "[2021-03-19 11:24:36.975] nc_server.c:166 init 2 servers in pool 4 'omega'"
+  result:
+    custom:
+      filename: "nc_server.c"
+      level: "info"
+      lineno: 166
+      timestamp: 1616153076975
+      twemproxy:
+        pool:
+          name: "omega"
+          number: 4
+          servers: 2
+    message: "init 2 servers in pool 4 'omega'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1616153076975
+ -
+  sample: "[2021-03-19 11:24:49.387] nc_util.c:505 address resolution of node 'invalid' service '11213' failed: Name or service not known"
+  result:
+    custom:
+      error:
+        message: "address resolution of node 'invalid' service '11213'"
+        type: "Name or service not known"
+      filename: "nc_util.c"
+      level: "warning"
+      lineno: 505
+      timestamp: 1616153089387
+    message: "address resolution of node 'invalid' service '11213' failed: Name or service not known"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1616153089387
+ -
+  sample: "[2021-03-19 11:24:36.975] nc.c:190 run, rabbit run / dig that hole, forget the sun / and when at last the work is done / don't sit down / it's time to dig another one"
+  result:
+    custom:
+      filename: "nc.c"
+      level: "info"
+      lineno: 190
+      timestamp: 1616153076975
+    message: "run, rabbit run / dig that hole, forget the sun / and when at last the work is done / don't sit down / it's time to dig another one"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1616153076975
+ -
+  sample: "[Wed Apr  7 17:02:54 2021] nc.c:190 run, rabbit run / dig that hole, forget the sun / and when at last the work is done / don't sit down / it's time to dig another one"
+  result:
+    custom:
+      filename: "nc.c"
+      level: "info"
+      lineno: 190
+      timestamp: 1617814974000
+    message: "run, rabbit run / dig that hole, forget the sun / and when at last the work is done / don't sit down / it's time to dig another one"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1617814974000
+

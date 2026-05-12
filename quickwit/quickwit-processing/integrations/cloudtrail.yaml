@@ -1,0 +1,1505 @@
+# If you update the facet list, you must update line 141 of
+# logs-backend/jobs/src/test/java/com/dd/logs/jobs/job/integrations/FacetsUpdateJobHandlerTest.java
+# For questions see #security-monitoring or logs-backend slack channels.
+id: cloudtrail
+metric_id: amazon-cloudtrail
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Web Access
+    name: Request ID
+    path: http.request_id
+    source: log
+  - groups:
+      - Web Access
+    name: User-Agent
+    path: http.useragent
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - AWS
+    name: Account
+    path: account
+    source: tag
+  - groups:
+      - AWS
+    name: S3 Bucket
+    path: aws.s3.bucket
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Event Source
+    path: eventSource
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Is ReadOnly Operation
+    path: readOnly
+    source: log
+    type: boolean
+  - groups:
+      - AWS
+    name: Region
+    path: region
+    source: tag
+  - groups:
+      - AWS
+    name: Requested Bucket Name
+    path: requestParameters.bucketName
+    source: log
+    type: string
+  - facetType: range
+    groups:
+      - AWS
+    name: S3 Lifecycle Expiration Period
+    path: requestParameters.LifecycleConfiguration.Rule.Expiration.Days
+    source: log
+    type: double
+    unit:
+      family: time
+      name: day
+  - groups:
+      - AWS
+    name: Requested EventBus Name
+    path: requestParameters.eventBusName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Role Name
+    path: requestParameters.roleName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Role Arn
+    path: requestParameters.roleArn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Role Session Name
+    path: requestParameters.roleSessionName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Instance ID
+    path: requestParameters.instanceId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Policy ARN
+    path: requestParameters.policyArn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested User Name
+    path: requestParameters.userName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Resource Account ID
+    path: resource.accountId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Resource ARN
+    path: resource.ARN
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Resource Type
+    path: resource.type
+    source: log
+    type: string
+  - groups:
+      - AWS Elastic Container Registry
+    name: Container Image Hash
+    path: responseElements.image.imageId.imageDigest
+    source: log
+    type: string
+  - groups:
+      - AWS Elastic Container Registry
+    name: Container Image Tag
+    path: responseElements.image.imageId.imageTag
+    source: log
+    type: string
+  - groups:
+      - AWS Elastic Container Registry
+    name: Container Repository Name
+    path: responseElements.image.repositoryName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Requested Role ARN
+    path: responseElements.role.arn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Snapshot ID
+    path: responseElements.snapshotId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role ID
+    path: responseElements.assumedRoleUser.assumedRoleId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role User ARN
+    path: responseElements.assumedRoleUser.arn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role User Name
+    path: responseElements.assumedRoleUser.userName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role Access Key ID
+    path: responseElements.credentials.accessKeyId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role Federated User ARN
+    path: responseElements.federatedUser.arn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User Account ID
+    path: userIdentity.accountId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User Account ID (Friendly Name)
+    path: userIdentity.accountIdFriendlyName
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User Access Key ID
+    path: userIdentity.accessKeyId
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User ARN
+    path: userIdentity.arn
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Assumed Role
+    path: userIdentity.assumed_role
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Event InvokedBy
+    path: userIdentity.invokedBy
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: Session Name
+    path: userIdentity.session_name
+    source: log
+    type: string
+  - groups:
+      - AWS
+    name: AWS User Type
+    path: userIdentity.type
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: AWS CloudTrail
+  enabled: true
+  filter:
+    query: source:cloudtrail
+  processors:
+    - type: pipeline
+      name: Amazon Security Lake
+      enabled: true
+      filter:
+        query: "@metadata.product.name:CloudTrail"
+      processors:
+        - type: attribute-remapper
+          name: Map `actor.invoked_by` to `userIdentity.invokedBy`
+          enabled: true
+          sources:
+            - actor.invoked_by
+          sourceType: attribute
+          target: userIdentity.invokedBy
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.session.is_mfa` to `userIdentity.sessionContext.attributes.mfaAuthenticated`
+          enabled: true
+          sources:
+            - actor.session.is_mfa
+          sourceType: attribute
+          target: userIdentity.sessionContext.attributes.mfaAuthenticated
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.uid_alt` to `userIdentity.principalId`
+          enabled: true
+          sources:
+            - actor.user.uid_alt
+          sourceType: attribute
+          target: userIdentity.principalId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `api.service.name` to `eventSource`
+          enabled: true
+          sources:
+            - api.service.name
+          sourceType: attribute
+          target: eventSource
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.uid` to `userIdentity.arn`
+          enabled: true
+          sources:
+            - actor.user.uid
+          sourceType: attribute
+          target: userIdentity.arn
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.type` to `userIdentity.type`
+          enabled: true
+          sources:
+            - actor.user.type
+          sourceType: attribute
+          target: userIdentity.type
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.credential_uid` to `userIdentity.accessKeyId`
+          enabled: true
+          sources:
+            - actor.user.credential_uid
+          sourceType: attribute
+          target: userIdentity.accessKeyId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `actor.user.account.uid` to `userIdentity.accountId`
+          enabled: true
+          sources:
+            - actor.user.account.uid
+          sourceType: attribute
+          target: userIdentity.accountId
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parse `requestParameters`
+          enabled: true
+          source: api.request.data
+          samples:
+            - '{"name":"test"}'
+          grok:
+            supportRules: ""
+            matchRules: |
+              parse_request_parameters %{data:requestParameters:json}
+        - type: grok-parser
+          name: Parse `responseElements`
+          enabled: true
+          source: api.response.data
+          samples:
+            - '{"name":"test"}'
+          grok:
+            supportRules: ""
+            matchRules: |
+              parse_response_elements %{data:responseElements:json}
+    - type: attribute-remapper
+      name: Map `requestID` to `http.request_id`
+      enabled: true
+      sources:
+        - requestID
+      sourceType: attribute
+      target: http.request_id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `sourceIPAddress`, `src_endpoint.ip` to `network.client.ip`
+      enabled: true
+      sources:
+        - sourceIPAddress
+        - src_endpoint.ip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: geo-ip-parser
+      name: Fetching GeoIp data for client ip
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `errorCode`, `api.response.error` to `error.kind`
+      enabled: true
+      sources:
+        - errorCode
+        - api.response.error
+      sourceType: attribute
+      target: error.kind
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `errorMessage`, `api.response.message` to `error.message`
+      enabled: true
+      sources:
+        - errorMessage
+        - api.response.message
+      sourceType: attribute
+      target: error.message
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `userAgent`, `http_request.user_agent` to `http.useragent`
+      enabled: true
+      sources:
+        - userAgent
+        - http_request.user_agent
+      sourceType: attribute
+      target: http.useragent
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: user-agent-parser
+      name: ""
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+      combineVersionDetails: false
+    - type: category-processor
+      name: Define logs as error if they have an error message
+      enabled: true
+      categories:
+        - filter:
+            query: "@error.message:* OR @error.kind:*"
+          name: Error
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: attribute-remapper
+      name: Map `eventName`, `api.operation` to `evt.name`
+      enabled: true
+      sources:
+        - eventName
+        - api.operation
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `userIdentity.userName` to `usr.name`
+      enabled: true
+      sources:
+        - userIdentity.userName
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `userIdentity.userName` to `usr.id`
+      enabled: true
+      sources:
+        - userIdentity.userName
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: category-processor
+      name: Categorise Root User
+      enabled: true
+      categories:
+        - filter:
+            query: "@userIdentity.type:Root"
+          name: Root
+      target: usr.id
+    - type: attribute-remapper
+      name: Map `userIdentity.sessionContext.sessionIssuer.userName` to `userIdentity.assumed_role`
+      enabled: true
+      sources:
+        - userIdentity.sessionContext.sessionIssuer.userName
+      sourceType: attribute
+      target: userIdentity.assumed_role
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map attribute `recipientAccountId`, `aws_account` to tag `account`
+      enabled: true
+      sources:
+        - recipientAccountId
+        - aws_account
+      sourceType: attribute
+      target: account
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+    - type: grok-parser
+      name: Parsing Session Name
+      enabled: true
+      source: userIdentity.arn
+      samples:
+        - arn:aws:iam::862849134031:user/paul
+        - arn:aws:sts::862849134031:assumed-role/DatadogAWSIntegrationRole/DatadogAWSIntegration
+      grok:
+        supportRules: ""
+        matchRules: "parsing_session_name %{notSpace:}/%{regex(\"[\\\\w+=,.@-]*\"):userIdentity.session_name}\n"
+    - type: attribute-remapper
+      name: Map attribute `awsRegion`, `cloud.region` to tag `region`
+      enabled: true
+      sources:
+        - awsRegion
+        - cloud.region
+      sourceType: attribute
+      target: region
+      targetType: tag
+      preserveSource: true
+      overrideOnConflict: false
+    - type: string-builder-processor
+      name: extract resource.type
+      enabled: true
+      template: "%{resources.type}"
+      target: resource.type
+      replaceMissing: false
+    - type: string-builder-processor
+      name: extract resource.accountId
+      enabled: true
+      template: "%{resources.accountId}"
+      target: resource.accountId
+      replaceMissing: false
+    - type: string-builder-processor
+      name: extract resource.ARN
+      enabled: true
+      template: "%{resources.ARN}"
+      target: resource.ARN
+      replaceMissing: false
+    - type: grok-parser
+      name: Parse Policy FederatedToken
+      enabled: true
+      source: requestParameters.policy
+      samples:
+        - '{"Version": "2012-10-17","Statement": [{"Effect": "Allow","Action":
+          "*","Resource": "*"}]}'
+      grok:
+        supportRules: ""
+        matchRules: |
+          parse_session_policy %{data:requestParameters.SessionPolicyARN:json}
+    #OCSF transformations
+    - type: pipeline
+      name: OCSF pre transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: attribute-remapper
+          name: Map `eventName` to `ocsf.api.operation`
+          enabled: true
+          sources:
+            - eventName
+          sourceType: attribute
+          target: ocsf.api.operation
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventSource` to `ocsf.api.service.name`
+          enabled: true
+          sources:
+            - eventSource
+          sourceType: attribute
+          target: ocsf.api.service.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `apiVersion` to `ocsf.api.version`
+          enabled: true
+          sources:
+            - apiVersion
+          sourceType: attribute
+          target: ocsf.api.version
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `errorCode` to `ocsf.api.response.error`
+          enabled: true
+          sources:
+            - errorCode
+          sourceType: attribute
+          target: ocsf.api.response.error
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `errorMessage` to `ocsf.api.response.error_message`
+          enabled: true
+          sources:
+            - errorMessage
+          sourceType: attribute
+          target: ocsf.api.response.error_message
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestParameters` to `ocsf.api.request.data`
+          enabled: true
+          sources:
+            - requestParameters
+          sourceType: attribute
+          target: ocsf.api.request.data
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `responseElements` to `ocsf.api.response.data`
+          enabled: true
+          sources:
+            - responseElements
+          sourceType: attribute
+          target: ocsf.api.response.data
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestID` to `ocsf.api.request.uid`
+          enabled: true
+          sources:
+            - requestID
+          sourceType: attribute
+          target: ocsf.api.request.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.accountId` to `ocsf.actor.user.account.uid`
+          enabled: true
+          sources:
+            - userIdentity.accountId
+          sourceType: attribute
+          target: ocsf.actor.user.account.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.accessKeyId` to `ocsf.actor.user.credential_uid`
+          enabled: true
+          sources:
+            - userIdentity.accessKeyId
+          sourceType: attribute
+          target: ocsf.actor.user.credential_uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.userName` to `ocsf.actor.user.name`
+          enabled: true
+          sources:
+            - userIdentity.userName
+          sourceType: attribute
+          target: ocsf.actor.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.type` to `ocsf.actor.user.type`
+          enabled: true
+          sources:
+            - userIdentity.type
+          sourceType: attribute
+          target: ocsf.actor.user.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.type` to `ocsf.actor.user.type`
+          enabled: true
+          sources:
+            - userIdentity.type
+          sourceType: attribute
+          target: ocsf.actor.user.type
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.onBehalfOf.userId`, `userIdentity.principalId` to `ocsf.actor.user.uid_alt`
+          enabled: true
+          sources:
+            - userIdentity.onBehalfOf.userId
+            - userIdentity.principalId
+          sourceType: attribute
+          target: ocsf.actor.user.uid_alt
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.onBehalfOf.identityStoreArn`, `userIdentity.arn` to `ocsf.actor.user.uid`
+          enabled: true
+          sources:
+            - userIdentity.onBehalfOf.identityStoreArn
+            - userIdentity.arn
+          sourceType: attribute
+          target: ocsf.actor.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.sessionContext.attributes.creationDate` to `ocsf.actor.session.created_time_dt`
+          enabled: true
+          sources:
+            - userIdentity.sessionContext.attributes.creationDate
+          sourceType: attribute
+          target: ocsf.actor.session.created_time_dt
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.sessionContext.attributes.mfaAuthenticated` to `ocsf.actor.session.is_mfa`
+          enabled: true
+          sources:
+            - userIdentity.sessionContext.attributes.mfaAuthenticated
+          sourceType: attribute
+          target: ocsf.actor.session.is_mfa
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.sessionContext.sessionIssuer.arn` to `ocsf.actor.session.issuer`
+          enabled: true
+          sources:
+            - userIdentity.sessionContext.sessionIssuer.arn
+          sourceType: attribute
+          target: ocsf.actor.session.issuer
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.invokedBy` to `ocsf.actor.invoked_by`
+          enabled: true
+          sources:
+            - userIdentity.invokedBy
+          sourceType: attribute
+          target: ocsf.actor.invoked_by
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.webIdFederationData.federatedProvider`, `userIdentity.identityProvider` to `ocsf.actor.idp.name`
+          enabled: true
+          sources:
+            - userIdentity.webIdFederationData.federatedProvider
+            - userIdentity.identityProvider
+          sourceType: attribute
+          target: ocsf.actor.idp.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `awsRegion` to `ocsf.cloud.region`
+          enabled: true
+          sources:
+            - awsRegion
+          sourceType: attribute
+          target: ocsf.cloud.region
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add `ocsf.cloud.provider`
+          enabled: true
+          template: AWS
+          target: ocsf.cloud.provider
+          replaceMissing: true
+        - type: attribute-remapper
+          name: Map `userAgent` to `ocsf.http_request.user_agent`
+          enabled: true
+          sources:
+            - userAgent
+          sourceType: attribute
+          target: ocsf.http_request.user_agent
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventVersion` to `ocsf.metadata.product.version`
+          enabled: true
+          sources:
+            - eventVersion
+          sourceType: attribute
+          target: ocsf.metadata.product.version
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventID` to `ocsf.metadata.uid`
+          enabled: true
+          sources:
+            - eventID
+          sourceType: attribute
+          target: ocsf.metadata.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventType` to `ocsf.metadata.event_code`
+          enabled: true
+          sources:
+            - eventType
+          sourceType: attribute
+          target: ocsf.metadata.event_code
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `eventCategory` to `ocsf.metadata.product.feature.name`
+          enabled: true
+          sources:
+            - eventCategory
+          sourceType: attribute
+          target: ocsf.metadata.product.feature.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add product name
+          enabled: true
+          template: CloudTrail
+          target: ocsf.metadata.product.name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add product vendor
+          enabled: true
+          template: AWS
+          target: ocsf.metadata.product.vendor_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add version
+          enabled: true
+          template: 1.3.0
+          target: ocsf.metadata.version
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add OCSF profiles
+          enabled: true
+          template: "[cloud,datetime]"
+          target: ocsf.metadata.profiles
+          replaceMissing: false
+        - type: grok-parser
+          name: Profiles string to array
+          enabled: true
+          source: ocsf.metadata.profiles
+          samples:
+            - "[date,time]"
+          grok:
+            supportRules: ""
+            matchRules: ProfileStrToArray %{data:ocsf.metadata.profiles:array("[]",",")}
+        - type: grok-parser
+          name: Parsing event time
+          enabled: true
+          source: eventTime
+          samples:
+            - "2023-07-19T21:25:09Z"
+            - "2025-01-01T21:25:09Z"
+          grok:
+            supportRules: ""
+            matchRules: parsing_time %{date("yyyy-MM-dd'T'HH:mm:ssZ"):ocsf.time}
+        - type: attribute-remapper
+          name: Map `eventTime` to `ocsf.time_dt`
+          enabled: true
+          sources:
+            - eventTime
+          sourceType: attribute
+          target: ocsf.time_dt
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Parse IP/AWS service
+          enabled: true
+          source: sourceIPAddress
+          samples:
+            - 18.125.34.56
+            - lambda.amazonaws.com
+            - 34.255.179.99
+            - s3.amazonaws.com
+          grok:
+            supportRules: ""
+            matchRules: |
+              match_ip %{ip:ocsf.src_endpoint.ip}
+              match_hostname %{hostname:ocsf.src_endpoint.domain}
+        - type: attribute-remapper
+          name: Map `vpcEndpointId` to `ocsf.src_endpoint.uid`
+          enabled: true
+          sources:
+            - vpcEndpointId
+          sourceType: attribute
+          target: ocsf.src_endpoint.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Convert `ocsf.actor.session.is_mfa` to boolean type
+          enabled: true
+          source: ocsf.actor.session.is_mfa
+          samples:
+            - "false"
+            - "true"
+            - "True"
+            - "False"
+          grok:
+            supportRules: ""
+            matchRules: |
+              convert_to_boolean %{boolean("true","false"):ocsf.actor.session.is_mfa}
+              convert_to_boolean_upper %{boolean("True","False"):ocsf.actor.session.is_mfa}
+    - type: pipeline
+      name: AWS CloudTrail OCSF sub pipeline for class Account Change [3001]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@eventName:(UpdateRole OR AttachUserPolicy OR PutRolePermissionsBoundary OR DeletePolicy OR RemoveUserFromGroup OR ChangePassword OR CreateAccessKey OR AttachGroupPolicy OR ResyncMFADevice OR DeleteRolePolicy OR PutUserPermissionsBoundary OR CreateUser OR CreateServiceLinkedRole OR PutRolePolicy OR DetachGroupPolicy OR UpdateAccessKey OR ChangePassword OR CreateInstanceProfile OR CreateRole OR DeleteUserPermissionsBoundary OR DeleteAccountAlias OR PutGroupPolicy OR CreateLoginProfile OR DeleteGroupPolicy OR DeleteLoginProfile OR DeleteUserPolicy OR DeactivateMFADevice OR RemoveRoleFromInstanceProfile OR UpdateUser OR EnableMFADevice OR DeleteUser OR AddRoleToInstanceProfile OR UpdateAccountEmailAddress OR UpdateRoleDescription OR DetachUserPolicy OR UpdateAssumeRolePolicy OR DeleteGroup OR DeleteServiceLinkedRole OR DeleteAccessKey OR AddUserToGroup OR DeleteVirtualMFADevice OR FinalizeSmsMfaRegistration OR DeleteRolePermissionsBoundary OR DetachRolePolicy OR DeleteInstanceProfile OR UpdateGroup OR UpdateLoginProfile OR RequestSmsMfaRegistration OR DeleteRole OR PutUserPolicy OR CreateVirtualMFADevice OR AttachRolePolicy OR EmailUpdated OR AccountNameUpdated OR PasswordUpdated OR DeleteAccountPasswordPolicy OR UpdateAccountPasswordPolicy OR UpdateAccountName OR TagInstanceProfile OR TagRole OR TagUser OR UntagInstanceProfile OR UntagRole OR UntagUser OR CreateAccountAlias)"
+      processors:
+        - type: attribute-remapper
+          name: Map `eventName` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - eventName
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(*Create*)"
+              name: "1"
+            - filter:
+                query: "@eventName:(ChangePassword OR PasswordUpdated)"
+              name: "3"
+            - filter:
+                query: "@eventName:(*Attach*)"
+              name: "7"
+            - filter:
+                query: "@eventName:(*Detach* OR *Remove*)"
+              name: "8"
+            - filter:
+                query: "@eventName:(*Delete*)"
+              name: "6"
+            - filter:
+                query: "@eventName:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(*Create*)"
+              name: Create
+            - filter:
+                query: "@eventName:(ChangePassword OR PasswordUpdated)"
+              name: Password Change
+            - filter:
+                query: "@eventName:(*Attach*)"
+              name: Attach Policy
+            - filter:
+                query: "@eventName:(*Detach* OR *Remove*)"
+              name: Detach Policy
+            - filter:
+                query: "@eventName:(*Delete*)"
+              name: Delete
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3001"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Account Change
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: category-processor
+          name: status_id
+          enabled: true
+          categories:
+            - filter:
+                query: -@errorCode:*
+              name: "1"
+            - filter:
+                query: "@errorCode:*"
+              name: "2"
+          target: ocsf.status_id
+        - type: category-processor
+          name: status_name
+          enabled: true
+          categories:
+            - filter:
+                query: -@errorCode:*
+              name: Success
+            - filter:
+                query: "@errorCode:*"
+              name: Failure
+          target: ocsf.status
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.principalId`, `responseElements.role.roleId`, `responseElements.user.userId` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - userIdentity.principalId
+            - responseElements.role.roleId
+            - responseElements.user.userId
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name:
+            Map `requestParameters.userName`, `responseElements.role.roleName`, `requestParameters.roleName`, `responseElements.user.userName` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - requestParameters.userName
+            - responseElements.role.roleName
+            - requestParameters.roleName
+            - responseElements.user.userName
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: AWS CloudTrail OCSF sub pipeline for class Authentication [3002]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@eventName:(ConsoleLogin OR ExternalIdPDirectoryLogin OR UserAuthentication OR Authenticate)"
+      processors:
+        - type: attribute-remapper
+          name: Map `eventName` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - eventName
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(ConsoleLogin OR ExternalIdPDirectoryLogin OR UserAuthentication OR Authenticate)"
+              name: "1"
+            - filter:
+                query: "@eventName:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(ConsoleLogin OR ExternalIdPDirectoryLogin OR UserAuthentication OR Authenticate)"
+              name: "Logon"
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "3"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Identity & Access Management
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "3002"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: Authentication
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `additionalEventData.LoginTo` to `ocsf.dst_endpoint.svc_name`
+          enabled: true
+          sources:
+            - additionalEventData.LoginTo
+          sourceType: attribute
+          target: ocsf.dst_endpoint.svc_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `additionalEventData.MFAUsed` to `ocsf.is_mfa`
+          enabled: true
+          sources:
+            - additionalEventData.MFAUsed
+          sourceType: attribute
+          target: ocsf.is_mfa
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: grok-parser
+          name: Convert `ocsf.is_mfa` to boolean type
+          enabled: true
+          source: ocsf.is_mfa
+          samples:
+            - "Yes"
+            - "No"
+          grok:
+            supportRules: ""
+            matchRules: |
+              convert_to_boolean %{boolean("Yes","No"):ocsf.is_mfa}
+        - type: category-processor
+          name: status_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@responseElements.ConsoleLogin:Success OR @responseElements.ExternalIdPDirectoryLogin:Success OR @serviceEventDetails.UserAuthentication:Success OR @serviceEventDetails.CredentialChallenge:Success OR @serviceEventDetails.CredentialVerification:Success"
+              name: "1"
+            - filter:
+                query: "@responseElements.ConsoleLogin:Failure OR @responseElements.ExternalIdPDirectoryLogin:Failure OR @serviceEventDetails.UserAuthentication:Failure @serviceEventDetails.CredentialChallenge:Failure OR @serviceEventDetails.CredentialVerification:Failure"
+              name: "2"
+          target: ocsf.status_id
+        - type: category-processor
+          name: status_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@responseElements.ConsoleLogin:Success OR @responseElements.ExternalIdPDirectoryLogin:Success OR @serviceEventDetails.UserAuthentication:Success OR @serviceEventDetails.CredentialChallenge:Success OR @serviceEventDetails.CredentialVerification:Success"
+              name: Success
+            - filter:
+                query: "@responseElements.ConsoleLogin:Failure OR @responseElements.ExternalIdPDirectoryLogin:Failure OR @serviceEventDetails.UserAuthentication:Failure @serviceEventDetails.CredentialChallenge:Failure OR @serviceEventDetails.CredentialVerification:Failure"
+              name: Failure
+          target: ocsf.status
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestParameters.roleArn`, `userIdentity.onBehalfOf.identityStoreArn`, `userIdentity.arn` to `ocsf.user.uid`
+          enabled: true
+          sources:
+            - requestParameters.roleArn
+            - userIdentity.onBehalfOf.identityStoreArn
+            - userIdentity.arn
+          sourceType: attribute
+          target: ocsf.user.uid
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `requestParameters.roleSessionName` to `ocsf.user.name`
+          enabled: true
+          sources:
+            - requestParameters.roleSessionName
+          sourceType: attribute
+          target: ocsf.user.name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `userIdentity.principalId` to `ocsf.user.uid_alt`
+          enabled: true
+          sources:
+            - userIdentity.principalId
+          sourceType: attribute
+          target: ocsf.user.uid_alt
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: AWS CloudTrail OCSF sub pipeline for class API Activity [6003]
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "@eventName:* -@ocsf.category_uid:*"
+      processors:
+        - type: attribute-remapper
+          name: Map `eventName` to `ocsf.activity_name`
+          enabled: true
+          sources:
+            - eventName
+          sourceType: attribute
+          target: ocsf.activity_name
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: category-processor
+          name: activity_id
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(*Create* OR *Run* OR *Generate*)"
+              name: "1"
+            - filter:
+                query: "@eventName:(*Get* OR *List* OR *Describe* OR *Search* OR *Lookup*)"
+              name: "2"
+            - filter:
+                query: "@eventName:(*Update* OR *Put* OR *Modify* OR *Add* OR *Remove* OR *Start* OR *Stop* OR *Attach* OR *Detach* OR *Associate* OR *Disassociate* OR *Tag* OR *Untag* OR *Enable* OR *Disable* OR *Register* OR *Deregister* OR *Disassociate*)"
+              name: "3"
+            - filter:
+                query: "@eventName:(*Delete* OR *Terminate*)"
+              name: "4"
+            - filter:
+                query: "@eventName:*"
+              name: "99"
+          target: ocsf.activity_id
+        - type: category-processor
+          name: activity_name
+          enabled: true
+          categories:
+            - filter:
+                query: "@eventName:(*Create* OR *Run* OR *Generate*)"
+              name: Create
+            - filter:
+                query: "@eventName:(*Get* OR *List* OR *Describe* OR *Search* OR *Lookup*)"
+              name: Read
+            - filter:
+                query: "@eventName:(*Update* OR *Put* OR *Modify* OR *Add* OR *Remove* OR *Start* OR *Stop* OR *Attach* OR *Detach* OR *Associate* OR *Disassociate* OR *Tag* OR *Untag* OR *Enable* OR *Disable* OR *Register* OR *Deregister* OR *Disassociate*)"
+              name: Update
+            - filter:
+                query: "@eventName:(*Delete* OR *Terminate*)"
+              name: Delete
+          target: ocsf.activity_name
+        - type: attribute-remapper
+          name: Map `ocsf.activity_id` to `ocsf.activity_id`
+          enabled: true
+          sources:
+            - ocsf.activity_id
+          sourceType: attribute
+          target: ocsf.activity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category uid
+          enabled: true
+          template: "6"
+          target: ocsf.category_uid
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add category name
+          enabled: true
+          template: Application Activity
+          target: ocsf.category_name
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class uid
+          enabled: true
+          template: "6003"
+          target: ocsf.class_uid
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add class name
+          enabled: true
+          template: API Activity
+          target: ocsf.class_name
+          replaceMissing: false
+        - type: category-processor
+          name: status_id
+          enabled: true
+          categories:
+            - filter:
+                query: -@errorCode:*
+              name: "1"
+            - filter:
+                query: "@errorCode:*"
+              name: "2"
+          target: ocsf.status_id
+        - type: category-processor
+          name: status_name
+          enabled: true
+          categories:
+            - filter:
+                query: -@errorCode:*
+              name: Success
+            - filter:
+                query: "@errorCode:*"
+              name: Failure
+          target: ocsf.status
+        - type: attribute-remapper
+          name: Map `ocsf.status_id` to `ocsf.status_id`
+          enabled: true
+          sources:
+            - ocsf.status_id
+          sourceType: attribute
+          target: ocsf.status_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: OCSF post transformations
+      enabled: true
+      ocsf:
+        isOcsf: true
+      filter:
+        query: "*"
+      processors:
+        - type: attribute-remapper
+          name: Map `ocsf.category_uid` to `ocsf.category_uid`
+          enabled: true
+          sources:
+            - ocsf.category_uid
+          sourceType: attribute
+          target: ocsf.category_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `ocsf.class_uid` to `ocsf.class_uid`
+          enabled: true
+          sources:
+            - ocsf.class_uid
+          sourceType: attribute
+          target: ocsf.class_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: string-builder-processor
+          name: Add severity
+          enabled: true
+          template: Informational
+          target: ocsf.severity
+          replaceMissing: false
+        - type: string-builder-processor
+          name: Add severity id
+          enabled: true
+          template: "1"
+          target: ocsf.severity_id
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.severity_id` to `ocsf.severity_id`
+          enabled: true
+          sources:
+            - ocsf.severity_id
+          sourceType: attribute
+          target: ocsf.severity_id
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false
+        - type: arithmetic-processor
+          name: Type ID calculator
+          enabled: true
+          expression: (ocsf.class_uid * 100) + ocsf.activity_id
+          target: ocsf.type_uid_float
+          replaceMissing: false
+        - type: attribute-remapper
+          name: Map `ocsf.type_uid_float` to `ocsf.type_uid`
+          enabled: true
+          sources:
+            - ocsf.type_uid_float
+          sourceType: attribute
+          target: ocsf.type_uid
+          targetType: attribute
+          targetFormat: integer
+          preserveSource: false
+          overrideOnConflict: false

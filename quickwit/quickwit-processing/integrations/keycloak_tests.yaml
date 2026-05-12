@@ -1,0 +1,165 @@
+id: keycloak
+tests:
+ -
+  sample: "type=\"CODE_TO_TOKEN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"25e60089-0911-4332-a7c3-71b17b038be5\", ipAddress=\"10.10.10.10\", token_id=\"71eea26a-b9c3-47bf-921b-c90c6cfe1c99\", grant_type=\"authorization_code\", refresh_token_type=\"Refresh\", scope=\"openid email profile\", refresh_token_id=\"d1159936-cb35-4296-8ac2-524aa9af265b\", code_id=\"25e60089-0911-4332-a7c3-71b17b038be5\", client_auth_method=\"client-secret\""
+  result:
+    custom:
+      clientId: "security-admin-console"
+      client_auth_method: "client-secret"
+      code_id: "25e60089-0911-4332-a7c3-71b17b038be5"
+      grant_type: "authorization_code"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      refresh_token_id: "d1159936-cb35-4296-8ac2-524aa9af265b"
+      refresh_token_type: "Refresh"
+      scope: "openid email profile"
+      service: "other"
+      sessionId: "25e60089-0911-4332-a7c3-71b17b038be5"
+      token_id: "71eea26a-b9c3-47bf-921b-c90c6cfe1c99"
+      type: "CODE_TO_TOKEN"
+      usr:
+        id: "15745079-6780-4b93-80d9-c0d3480885d3"
+    message: "type=\"CODE_TO_TOKEN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"25e60089-0911-4332-a7c3-71b17b038be5\", ipAddress=\"10.10.10.10\", token_id=\"71eea26a-b9c3-47bf-921b-c90c6cfe1c99\", grant_type=\"authorization_code\", refresh_token_type=\"Refresh\", scope=\"openid email profile\", refresh_token_id=\"d1159936-cb35-4296-8ac2-524aa9af265b\", code_id=\"25e60089-0911-4332-a7c3-71b17b038be5\", client_auth_method=\"client-secret\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "type=\"LOGOUT\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"25e60089-0911-4332-a7c3-71b17b038be5\", ipAddress=\"10.10.10.10\", redirect_uri=\"https://keycloak/admin/master/console/#/master/realm-settings/login\", authSessionParentId=\"b048abf0-b0ce-4edd-ad5d-3dac1380b5f2\", authSessionTabId=\"UsC4tXgBJrc\""
+  result:
+    custom:
+      authSessionParentId: "b048abf0-b0ce-4edd-ad5d-3dac1380b5f2"
+      authSessionTabId: "UsC4tXgBJrc"
+      clientId: "security-admin-console"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      redirect_uri: "https://keycloak/admin/master/console/#/master/realm-settings/login"
+      service: "other"
+      sessionId: "25e60089-0911-4332-a7c3-71b17b038be5"
+      type: "LOGOUT"
+      usr:
+        id: "15745079-6780-4b93-80d9-c0d3480885d3"
+    message: "type=\"LOGOUT\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"25e60089-0911-4332-a7c3-71b17b038be5\", ipAddress=\"10.10.10.10\", redirect_uri=\"https://keycloak/admin/master/console/#/master/realm-settings/login\", authSessionParentId=\"b048abf0-b0ce-4edd-ad5d-3dac1380b5f2\", authSessionTabId=\"UsC4tXgBJrc\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "type=\"LOGIN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", ipAddress=\"10.10.10.10\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://keycloak/admin/master/console/#/master/realm-settings/login\", consent=\"no_consent_required\", code_id=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", username=\"admin\", response_mode=\"query\", authSessionParentId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", authSessionTabId=\"8qA3L4Mn4N0\""
+  result:
+    custom:
+      authSessionParentId: "56bb687a-5104-4d9b-8786-58dd54b3d297"
+      authSessionTabId: "8qA3L4Mn4N0"
+      auth_method: "openid-connect"
+      auth_type: "code"
+      clientId: "security-admin-console"
+      code_id: "56bb687a-5104-4d9b-8786-58dd54b3d297"
+      consent: "no_consent_required"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      redirect_uri: "https://keycloak/admin/master/console/#/master/realm-settings/login"
+      response_mode: "query"
+      response_type: "code"
+      service: "other"
+      sessionId: "56bb687a-5104-4d9b-8786-58dd54b3d297"
+      type: "LOGIN"
+      usr:
+        id: "15745079-6780-4b93-80d9-c0d3480885d3"
+        name: "admin"
+    message: "type=\"LOGIN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", ipAddress=\"10.10.10.10\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://keycloak/admin/master/console/#/master/realm-settings/login\", consent=\"no_consent_required\", code_id=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", username=\"admin\", response_mode=\"query\", authSessionParentId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", authSessionTabId=\"8qA3L4Mn4N0\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "type=\"CODE_TO_TOKEN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", ipAddress=\"10.10.10.10\", token_id=\"9cf18c16-dead-44fb-a399-d2683a06eb4e\", grant_type=\"authorization_code\", refresh_token_type=\"Refresh\", scope=\"openid email profile\", refresh_token_id=\"b7584b74-eb4b-401d-97c4-2fcdd92a4ddc\", code_id=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", client_auth_method=\"client-secret\""
+  result:
+    custom:
+      clientId: "security-admin-console"
+      client_auth_method: "client-secret"
+      code_id: "56bb687a-5104-4d9b-8786-58dd54b3d297"
+      grant_type: "authorization_code"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      refresh_token_id: "b7584b74-eb4b-401d-97c4-2fcdd92a4ddc"
+      refresh_token_type: "Refresh"
+      scope: "openid email profile"
+      service: "other"
+      sessionId: "56bb687a-5104-4d9b-8786-58dd54b3d297"
+      token_id: "9cf18c16-dead-44fb-a399-d2683a06eb4e"
+      type: "CODE_TO_TOKEN"
+      usr:
+        id: "15745079-6780-4b93-80d9-c0d3480885d3"
+    message: "type=\"CODE_TO_TOKEN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", sessionId=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", ipAddress=\"10.10.10.10\", token_id=\"9cf18c16-dead-44fb-a399-d2683a06eb4e\", grant_type=\"authorization_code\", refresh_token_type=\"Refresh\", scope=\"openid email profile\", refresh_token_id=\"b7584b74-eb4b-401d-97c4-2fcdd92a4ddc\", code_id=\"56bb687a-5104-4d9b-8786-58dd54b3d297\", client_auth_method=\"client-secret\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "operationType=\"CREATE\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"21cba97c-4ce2-4272-8787-2f8016e43971\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", ipAddress=\"10.10.10.10\", resourceType=\"USER\", resourcePath=\"users/036f571f-fc92-4917-9e8a-64c9f37db0b0\""
+  result:
+    custom:
+      clientId: "21cba97c-4ce2-4272-8787-2f8016e43971"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      operationType: "CREATE"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      resourcePath: "users/036f571f-fc92-4917-9e8a-64c9f37db0b0"
+      resourceType: "USER"
+      service: "other"
+      usr:
+        id: "15745079-6780-4b93-80d9-c0d3480885d3"
+    message: "operationType=\"CREATE\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"21cba97c-4ce2-4272-8787-2f8016e43971\", userId=\"15745079-6780-4b93-80d9-c0d3480885d3\", ipAddress=\"10.10.10.10\", resourceType=\"USER\", resourcePath=\"users/036f571f-fc92-4917-9e8a-64c9f37db0b0\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "type=\"LOGIN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"68670103-b2c3-460c-9ed1-9d166c857b47\", sessionId=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", ipAddress=\"10.10.10.10\", custom_required_action=\"webauthn-register-passwordless\", public_key_credential_id=\"uJ-uEa0FTMp5AdVj0PYtjw\", response_type=\"code\", consent=\"no_consent_required\", code_id=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", public_key_credential_label=\"Passkey (Default Label)\", response_mode=\"query\", credential_type=\"webauthn-passwordless\", auth_method=\"openid-connect\", public_key_credential_aaguid=\"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4\", redirect_uri=\"https://keycloak/admin/master/console/#/master/users/036f571f-fc92-4917-9e8a-64c9f37db0b0/settings\", remember_me=\"false\", username=\"test\", authSessionParentId=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", authSessionTabId=\"4djXDUqb2og\""
+  result:
+    custom:
+      authSessionParentId: "0c5b4021-4c26-4bc8-b863-ba46a5aa7418"
+      authSessionTabId: "4djXDUqb2og"
+      auth_method: "openid-connect"
+      clientId: "security-admin-console"
+      code_id: "0c5b4021-4c26-4bc8-b863-ba46a5aa7418"
+      consent: "no_consent_required"
+      credential_type: "webauthn-passwordless"
+      custom_required_action: "webauthn-register-passwordless"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      public_key_credential_aaguid: "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4"
+      public_key_credential_id: "uJ-uEa0FTMp5AdVj0PYtjw"
+      public_key_credential_label: "Passkey (Default Label)"
+      realmId: "f16e7899-3616-4c57-a8db-deab1da434c1"
+      realmName: "master"
+      redirect_uri: "https://keycloak/admin/master/console/#/master/users/036f571f-fc92-4917-9e8a-64c9f37db0b0/settings"
+      remember_me: "false"
+      response_mode: "query"
+      response_type: "code"
+      service: "other"
+      sessionId: "0c5b4021-4c26-4bc8-b863-ba46a5aa7418"
+      type: "LOGIN"
+      usr:
+        id: "68670103-b2c3-460c-9ed1-9d166c857b47"
+        name: "test"
+    message: "type=\"LOGIN\", realmId=\"f16e7899-3616-4c57-a8db-deab1da434c1\", realmName=\"master\", clientId=\"security-admin-console\", userId=\"68670103-b2c3-460c-9ed1-9d166c857b47\", sessionId=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", ipAddress=\"10.10.10.10\", custom_required_action=\"webauthn-register-passwordless\", public_key_credential_id=\"uJ-uEa0FTMp5AdVj0PYtjw\", response_type=\"code\", consent=\"no_consent_required\", code_id=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", public_key_credential_label=\"Passkey (Default Label)\", response_mode=\"query\", credential_type=\"webauthn-passwordless\", auth_method=\"openid-connect\", public_key_credential_aaguid=\"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4\", redirect_uri=\"https://keycloak/admin/master/console/#/master/users/036f571f-fc92-4917-9e8a-64c9f37db0b0/settings\", remember_me=\"false\", username=\"test\", authSessionParentId=\"0c5b4021-4c26-4bc8-b863-ba46a5aa7418\", authSessionTabId=\"4djXDUqb2og\""
+    service: "other"
+    tags:
+     - "source:LOGS_SOURCE"

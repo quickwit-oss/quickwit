@@ -1,0 +1,912 @@
+id: wazuh
+tests:
+  -
+    sample: |-
+      <132>Sep 23 05:55:30 ub20 ossec: {"timestamp":"2024-09-23T05:55:30","rule":{"level":5,"description":"Registry Value Integrity Checksum Changed","id":"750","mitre":{"id":["T1565.001","T1112"],"tactic":["Impact","Defense Evasion"],"technique":["Stored Data Manipulation","Modify Registry"]},"firedtimes":11,"mail":false,"groups":["ossec","syscheck","syscheck_entry_modified","syscheck_registry"],"pci_dss":["11.5"],"gpg13":["4.13"],"gdpr":["II_5.1.f"],"hipaa":["164.312.c.1","164.312.c.2"],"nist_800_53":["SI.7"],"tsc":["PI1.4","PI1.5","CC6.1","CC6.8","CC7.2","CC7.3"]},"agent":{"id":"007","name":"ub20","ip":"10.10.10.10"},"manager":{"name":"ub20"},"id":"1727051130.307309","full_log":"Registry Value '[x32] HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\bam\\State\\UserSettings\\S-1-5-21-407847833-942180688-1368611096-1010\\\\Device\\HarddiskVolume3\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' modified
+      Mode: scheduled
+      Changed attributes: md5,sha1,sha256
+      Old md5sum was: '4846b4c5616e0c64cb5b8e819ab04f89'
+      New md5sum is : '0ee93c27cf42e2da3604b882ee45532b'
+      Old sha1sum was: 'f532d82856fe2caa1855cfac46db8ef15a86e89c'
+      New sha1sum is : '19c0cef959812a95c7ac12d465ec400df796f952'
+      Old sha256sum was: '578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9'
+      New sha256sum is : 'da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc'
+      ","syscheck":{"path":"HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\bam\\State\\UserSettings\\S-1-5-21-407847833-942180688-1368611096-1010","mode":"scheduled","arch":"[x32]","value_name":"\\Device\\HarddiskVolume3\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe","value_type":"REG_BINARY","size_after":"24","md5_before":"4846b4c5616e0c64cb5b8e819ab04f89","md5_after":"0ee93c27cf42e2da3604b882ee45532b","sha1_before":"f532d82856fe2caa1855cfac46db8ef15a86e89c","sha1_after":"19c0cef959812a95c7ac12d465ec400df796f952","sha256_before":"578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9","sha256_after":"da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc","changed_attributes":["md5","sha1","sha256"],"event":"modified"},"decoder":{"name":"syscheck_registry_value_modified"},"location":"syscheck"}
+    service: "file-integrity-monitoring"
+    result:
+      custom:
+        agent:
+          id: "007"
+          ip: "10.10.10.10"
+          name: "ub20"
+        decoder:
+          name: "syscheck_registry_value_modified"
+        full_log: |
+          Registry Value '[x32] HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\bam\State\UserSettings\S-1-5-21-407847833-942180688-1368611096-1010\\Device\HarddiskVolume3\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' modified
+          Mode: scheduled
+          Changed attributes: md5,sha1,sha256
+          Old md5sum was: '4846b4c5616e0c64cb5b8e819ab04f89'
+          New md5sum is : '0ee93c27cf42e2da3604b882ee45532b'
+          Old sha1sum was: 'f532d82856fe2caa1855cfac46db8ef15a86e89c'
+          New sha1sum is : '19c0cef959812a95c7ac12d465ec400df796f952'
+          Old sha256sum was: '578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9'
+          New sha256sum is : 'da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc'
+        id: "1727051130.307309"
+        location: "syscheck"
+        manager:
+          name: "ub20"
+        rule:
+          description: "Registry Value Integrity Checksum Changed"
+          firedtimes: 11
+          gdpr:
+          - "II_5.1.f"
+          gpg13:
+          - "4.13"
+          groups:
+          - "ossec"
+          - "syscheck"
+          - "syscheck_entry_modified"
+          - "syscheck_registry"
+          hipaa:
+          - "164.312.c.1"
+          - "164.312.c.2"
+          id: "750"
+          level: 5
+          mail: false
+          mitre:
+            id:
+            - "T1565.001"
+            - "T1112"
+            tactic:
+            - "Impact"
+            - "Defense Evasion"
+            technique:
+            - "Stored Data Manipulation"
+            - "Modify Registry"
+          nist_800_53:
+          - "SI.7"
+          pci_dss:
+          - "11.5"
+          tsc:
+          - "PI1.4"
+          - "PI1.5"
+          - "CC6.1"
+          - "CC6.8"
+          - "CC7.2"
+          - "CC7.3"
+        service: "file-integrity-monitoring"
+        status: "information"
+        syscheck:
+          arch: "[x32]"
+          changed_attributes:
+          - "md5"
+          - "sha1"
+          - "sha256"
+          event: "modified"
+          md5_after: "0ee93c27cf42e2da3604b882ee45532b"
+          md5_before: "4846b4c5616e0c64cb5b8e819ab04f89"
+          mode: "scheduled"
+          path: "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\bam\\State\\UserSettings\\S-1-5-21-407847833-942180688-1368611096-1010"
+          sha1_after: "19c0cef959812a95c7ac12d465ec400df796f952"
+          sha1_before: "f532d82856fe2caa1855cfac46db8ef15a86e89c"
+          sha256_after: "da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc"
+          sha256_before: "578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9"
+          size_after: "24"
+          value_name: "\\Device\\HarddiskVolume3\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+          value_type: "REG_BINARY"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-23T05:55:30"
+      message: |-
+        <132>Sep 23 05:55:30 ub20 ossec: {"timestamp":"2024-09-23T05:55:30","rule":{"level":5,"description":"Registry Value Integrity Checksum Changed","id":"750","mitre":{"id":["T1565.001","T1112"],"tactic":["Impact","Defense Evasion"],"technique":["Stored Data Manipulation","Modify Registry"]},"firedtimes":11,"mail":false,"groups":["ossec","syscheck","syscheck_entry_modified","syscheck_registry"],"pci_dss":["11.5"],"gpg13":["4.13"],"gdpr":["II_5.1.f"],"hipaa":["164.312.c.1","164.312.c.2"],"nist_800_53":["SI.7"],"tsc":["PI1.4","PI1.5","CC6.1","CC6.8","CC7.2","CC7.3"]},"agent":{"id":"007","name":"ub20","ip":"10.10.10.10"},"manager":{"name":"ub20"},"id":"1727051130.307309","full_log":"Registry Value '[x32] HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\bam\\State\\UserSettings\\S-1-5-21-407847833-942180688-1368611096-1010\\\\Device\\HarddiskVolume3\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' modified
+        Mode: scheduled
+        Changed attributes: md5,sha1,sha256
+        Old md5sum was: '4846b4c5616e0c64cb5b8e819ab04f89'
+        New md5sum is : '0ee93c27cf42e2da3604b882ee45532b'
+        Old sha1sum was: 'f532d82856fe2caa1855cfac46db8ef15a86e89c'
+        New sha1sum is : '19c0cef959812a95c7ac12d465ec400df796f952'
+        Old sha256sum was: '578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9'
+        New sha256sum is : 'da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc'
+        ","syscheck":{"path":"HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\bam\\State\\UserSettings\\S-1-5-21-407847833-942180688-1368611096-1010","mode":"scheduled","arch":"[x32]","value_name":"\\Device\\HarddiskVolume3\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe","value_type":"REG_BINARY","size_after":"24","md5_before":"4846b4c5616e0c64cb5b8e819ab04f89","md5_after":"0ee93c27cf42e2da3604b882ee45532b","sha1_before":"f532d82856fe2caa1855cfac46db8ef15a86e89c","sha1_after":"19c0cef959812a95c7ac12d465ec400df796f952","sha256_before":"578954f71e55ba6b255e4cdb349bb7c1f981eeeb04ed05f7ad1855a8f389d2c9","sha256_after":"da42382c2410098d76ebee82fc73a696224433c82deff26fb5ff1c796b3f7bdc","changed_attributes":["md5","sha1","sha256"],"event":"modified"},"decoder":{"name":"syscheck_registry_value_modified"},"location":"syscheck"}
+      service: "file-integrity-monitoring"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1727070930000
+  - sample: '<132>Sep 19 08:25:04 ub20 ossec:
+      {"timestamp":"2024-09-19T08:25:04.210+0530","rule":{"level":7,"description":"Dpkg
+      (Debian Package) half
+      configured.","id":"2904","firedtimes":7,"mail":false,"groups":["syslog","dpkg","config_changed"],"pci_dss":["10.6.1","10.2.7"],"gpg13":["4.10"],"gdpr":["IV_35.7.d"],"hipaa":["164.312.b"],"nist_800_53":["AU.6","AU.14"],"tsc":["CC7.2","CC7.3","CC6.8","CC8.1"]},"agent":{"id":"000","name":"ub20"},"manager":{"name":"ub20"},"id":"1726714504.1044193","full_log":"2024-09-19
+      08:25:02 status half-configured linux-headers-5.15.0-119:all
+      5.15.0-119.129","decoder":{"name":"dpkg-decoder"},"data":{"dpkg_status":"status
+      half-configured","package":"linux-headers-5.15.0-119","arch":"all","version":"5.15.0-119.129"},"location":"/var/log/dpkg.log"}'
+    result:
+      custom:
+        agent:
+          id: "000"
+          name: "ub20"
+        data:
+          arch: "all"
+          dpkg_status: "status half-configured"
+          package: "linux-headers-5.15.0-119"
+          version: "5.15.0-119.129"
+        decoder:
+          name: "dpkg-decoder"
+        full_log: "2024-09-19 08:25:02 status half-configured linux-headers-5.15.0-119:all 5.15.0-119.129"
+        id: "1726714504.1044193"
+        location: "/var/log/dpkg.log"
+        manager:
+          name: "ub20"
+        rule:
+          description: "Dpkg (Debian Package) half configured."
+          firedtimes: 7
+          gdpr:
+          - "IV_35.7.d"
+          gpg13:
+          - "4.10"
+          groups:
+          - "syslog"
+          - "dpkg"
+          - "config_changed"
+          hipaa:
+          - "164.312.b"
+          id: "2904"
+          level: 7
+          mail: false
+          nist_800_53:
+          - "AU.6"
+          - "AU.14"
+          pci_dss:
+          - "10.6.1"
+          - "10.2.7"
+          tsc:
+          - "CC7.2"
+          - "CC7.3"
+          - "CC6.8"
+          - "CC8.1"
+        service: "system"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-19T08:25:04.210+0530"
+      message: "<132>Sep 19 08:25:04 ub20 ossec: {\"timestamp\":\"2024-09-19T08:25:04.210+0530\",\"rule\":{\"level\":7,\"description\":\"Dpkg (Debian Package) half configured.\",\"id\":\"2904\",\"firedtimes\":7,\"mail\":false,\"groups\":[\"syslog\",\"dpkg\",\"config_changed\"],\"pci_dss\":[\"10.6.1\",\"10.2.7\"],\"gpg13\":[\"4.10\"],\"gdpr\":[\"IV_35.7.d\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.6\",\"AU.14\"],\"tsc\":[\"CC7.2\",\"CC7.3\",\"CC6.8\",\"CC8.1\"]},\"agent\":{\"id\":\"000\",\"name\":\"ub20\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726714504.1044193\",\"full_log\":\"2024-09-19 08:25:02 status half-configured linux-headers-5.15.0-119:all 5.15.0-119.129\",\"decoder\":{\"name\":\"dpkg-decoder\"},\"data\":{\"dpkg_status\":\"status half-configured\",\"package\":\"linux-headers-5.15.0-119\",\"arch\":\"all\",\"version\":\"5.15.0-119.129\"},\"location\":\"/var/log/dpkg.log\"}"
+      service: "system"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726714504210
+  - sample: '<132>Sep 18 16:05:21 ub20 ossec:
+      {"timestamp":"2024-09-18T16:05:21.609+0530","rule":{"level":3,"description":"PAM:
+      Login session
+      closed.","id":"5502","firedtimes":5,"mail":false,"groups":["pam","syslog"],"pci_dss":["10.2.5"],"gpg13":["7.8","7.9"],"gdpr":["IV_32.2"],"hipaa":["164.312.b"],"nist_800_53":["AU.14","AC.7"],"tsc":["CC6.8","CC7.2","CC7.3"]},"agent":{"id":"000","name":"ub20"},"manager":{"name":"ub20"},"id":"1726655721.947358","full_log":"Sep
+      18 16:05:20 ub20 su: pam_unix(su:session): session closed for
+      user root","predecoder":{"program_name":"su","timestamp":"Sep 18
+      16:05:20","hostname":"ub20"},"decoder":{"parent":"pam","name":"pam"},"data":{"dstuser":"root"},"location":"/var/log/auth.log"}'
+    result:
+      custom:
+        agent:
+          id: "000"
+          name: "ub20"
+        data:
+          dstuser: "root"
+        decoder:
+          name: "pam"
+          parent: "pam"
+        full_log: "Sep 18 16:05:20 ub20 su: pam_unix(su:session): session closed for user root"
+        id: "1726655721.947358"
+        location: "/var/log/auth.log"
+        manager:
+          name: "ub20"
+        predecoder:
+          hostname: "ub20"
+          program_name: "su"
+          timestamp: "Sep 18 16:05:20"
+        rule:
+          description: "PAM: Login session closed."
+          firedtimes: 5
+          gdpr:
+          - "IV_32.2"
+          gpg13:
+          - "7.8"
+          - "7.9"
+          groups:
+          - "pam"
+          - "syslog"
+          hipaa:
+          - "164.312.b"
+          id: "5502"
+          level: 3
+          mail: false
+          nist_800_53:
+          - "AU.14"
+          - "AC.7"
+          pci_dss:
+          - "10.2.5"
+          tsc:
+          - "CC6.8"
+          - "CC7.2"
+          - "CC7.3"
+        service: "system"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-18T16:05:21.609+0530"
+      message: "<132>Sep 18 16:05:21 ub20 ossec: {\"timestamp\":\"2024-09-18T16:05:21.609+0530\",\"rule\":{\"level\":3,\"description\":\"PAM: Login session closed.\",\"id\":\"5502\",\"firedtimes\":5,\"mail\":false,\"groups\":[\"pam\",\"syslog\"],\"pci_dss\":[\"10.2.5\"],\"gpg13\":[\"7.8\",\"7.9\"],\"gdpr\":[\"IV_32.2\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.14\",\"AC.7\"],\"tsc\":[\"CC6.8\",\"CC7.2\",\"CC7.3\"]},\"agent\":{\"id\":\"000\",\"name\":\"ub20\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726655721.947358\",\"full_log\":\"Sep 18 16:05:20 ub20 su: pam_unix(su:session): session closed for user root\",\"predecoder\":{\"program_name\":\"su\",\"timestamp\":\"Sep 18 16:05:20\",\"hostname\":\"ub20\"},\"decoder\":{\"parent\":\"pam\",\"name\":\"pam\"},\"data\":{\"dstuser\":\"root\"},\"location\":\"/var/log/auth.log\"}"
+      service: "system"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726655721609
+  -
+    sample: "<132>Sep 20 01:30:20 ub20 ossec: {\"timestamp\":\"2024-09-20T01:30:20.439+0530\",\"rule\":{\"level\":7,\"description\":\"Host-based anomaly detection event (rootcheck).\",\"id\":\"510\",\"firedtimes\":2,\"mail\":false,\"groups\":[\"ossec\",\"rootcheck\"],\"pci_dss\":[\"10.6.1\"],\"gdpr\":[\"IV_35.7.d\"]},\"agent\":{\"id\":\"000\",\"name\":\"ub20\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726776020.112790\",\"full_log\":\"Trojaned version of file '/usr/bin/diff' detected. Signature used: 'bash|^/bin/sh|file\\\\.h|proc\\\\.h|/dev/[^n]|^/bin/.*sh' (Generic).\",\"decoder\":{\"name\":\"rootcheck\"},\"data\":{\"title\":\"Trojaned version of file detected.\",\"file\":\"/usr/bin/diff\"},\"location\":\"rootcheck\"}"
+    result:
+      custom:
+        agent:
+          id: "000"
+          name: "ub20"
+        data:
+          file: "/usr/bin/diff"
+          title: "Trojaned version of file detected."
+        decoder:
+          name: "rootcheck"
+        full_log: "Trojaned version of file '/usr/bin/diff' detected. Signature used: 'bash|^/bin/sh|file\\.h|proc\\.h|/dev/[^n]|^/bin/.*sh' (Generic)."
+        id: "1726776020.112790"
+        location: "rootcheck"
+        manager:
+          name: "ub20"
+        rule:
+          description: "Host-based anomaly detection event (rootcheck)."
+          firedtimes: 2
+          gdpr:
+          - "IV_35.7.d"
+          groups:
+          - "ossec"
+          - "rootcheck"
+          id: "510"
+          level: 7
+          mail: false
+          pci_dss:
+          - "10.6.1"
+        service: "malware-detector"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-20T01:30:20.439+0530"
+      message: "<132>Sep 20 01:30:20 ub20 ossec: {\"timestamp\":\"2024-09-20T01:30:20.439+0530\",\"rule\":{\"level\":7,\"description\":\"Host-based anomaly detection event (rootcheck).\",\"id\":\"510\",\"firedtimes\":2,\"mail\":false,\"groups\":[\"ossec\",\"rootcheck\"],\"pci_dss\":[\"10.6.1\"],\"gdpr\":[\"IV_35.7.d\"]},\"agent\":{\"id\":\"000\",\"name\":\"ub20\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726776020.112790\",\"full_log\":\"Trojaned version of file '/usr/bin/diff' detected. Signature used: 'bash|^/bin/sh|file\\\\.h|proc\\\\.h|/dev/[^n]|^/bin/.*sh' (Generic).\",\"decoder\":{\"name\":\"rootcheck\"},\"data\":{\"title\":\"Trojaned version of file detected.\",\"file\":\"/usr/bin/diff\"},\"location\":\"rootcheck\"}"
+      service: "malware-detector"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726776020439
+  -
+    sample: "<132>Sep 18 15:47:37 ub20 ossec: {\"timestamp\":\"2024-09-18T15:47:37.787+0530\",\"rule\":{\"level\":7,\"description\":\"New Yum package installed.\",\"id\":\"2932\",\"firedtimes\":8,\"mail\":false,\"groups\":[\"syslog\",\"yum\",\"config_changed\"],\"pci_dss\":[\"10.6.1\",\"10.2.7\"],\"gpg13\":[\"4.10\"],\"gdpr\":[\"IV_35.7.d\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.6\",\"AU.14\"],\"tsc\":[\"CC7.2\",\"CC7.3\",\"CC6.8\",\"CC8.1\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726654657.842337\",\"full_log\":\"Sep 18 15:47:36 co7 yum[28968]: Installed: libX11-devel-1.6.7-5.el7_9.x86_64\",\"predecoder\":{\"program_name\":\"yum\",\"timestamp\":\"Sep 18 15:47:36\",\"hostname\":\"co7\"},\"decoder\":{},\"location\":\"/var/log/messages\"}"
+    result:
+      custom:
+        agent:
+          id: "010"
+          ip: "10.10.10.10"
+          name: "co7"
+        data:
+          package: "libX11-devel-1.6.7-5.el7_9.x86_64"
+          yum_status: "Installed"
+        full_log: "Sep 18 15:47:36 co7 yum[28968]: Installed: libX11-devel-1.6.7-5.el7_9.x86_64"
+        id: "1726654657.842337"
+        location: "/var/log/messages"
+        manager:
+          name: "ub20"
+        predecoder:
+          hostname: "co7"
+          program_name: "yum"
+          timestamp: "Sep 18 15:47:36"
+        rule:
+          description: "New Yum package installed."
+          firedtimes: 8
+          gdpr:
+          - "IV_35.7.d"
+          gpg13:
+          - "4.10"
+          groups:
+          - "syslog"
+          - "yum"
+          - "config_changed"
+          hipaa:
+          - "164.312.b"
+          id: "2932"
+          level: 7
+          mail: false
+          nist_800_53:
+          - "AU.6"
+          - "AU.14"
+          pci_dss:
+          - "10.6.1"
+          - "10.2.7"
+          tsc:
+          - "CC7.2"
+          - "CC7.3"
+          - "CC6.8"
+          - "CC8.1"
+        service: "system"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-18T15:47:37.787+0530"
+      message: "<132>Sep 18 15:47:37 ub20 ossec: {\"timestamp\":\"2024-09-18T15:47:37.787+0530\",\"rule\":{\"level\":7,\"description\":\"New Yum package installed.\",\"id\":\"2932\",\"firedtimes\":8,\"mail\":false,\"groups\":[\"syslog\",\"yum\",\"config_changed\"],\"pci_dss\":[\"10.6.1\",\"10.2.7\"],\"gpg13\":[\"4.10\"],\"gdpr\":[\"IV_35.7.d\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.6\",\"AU.14\"],\"tsc\":[\"CC7.2\",\"CC7.3\",\"CC6.8\",\"CC8.1\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726654657.842337\",\"full_log\":\"Sep 18 15:47:36 co7 yum[28968]: Installed: libX11-devel-1.6.7-5.el7_9.x86_64\",\"predecoder\":{\"program_name\":\"yum\",\"timestamp\":\"Sep 18 15:47:36\",\"hostname\":\"co7\"},\"decoder\":{},\"location\":\"/var/log/messages\"}"
+      service: "system"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726654657787
+  -
+    sample: "<132>Sep 16 16:58:16 Debian ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-16T16:58:16.015398+05:30\", \"rule\": {\"firedtimes\": 27, \"mail\": false, \"level\": 3, \"description\": \"AWS GuardDuty: PORT_PROBE - Unprotected port on EC2 instance i-0b0b8b34a48c8f1c4 is being probed. [IP: 10.10.10.10] [Port: 80]\", \"groups\": [\"amazon\", \"aws\", \"aws_guardduty\"], \"id\": \"80305\"}, \"agent\": {\"id\": \"007\", \"name\": \"Debian\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"aws\": {\"severity\": \"2\", \"schemaVersion\": \"2.0\", \"resource\": {\"resourceType\": \"Instance\", \"instanceDetails\": {\"launchTime\": \"2019-03-22T14:15:41Z\", \"instanceId\": \"i-0cab4a083d57dc400\", \"networkInterfaces\": {\"networkInterfaceId\": \"eni-0bb465b2d939dbda6\", \"subnetId\": \"subnet-6b1d6203\", \"vpcId\": \"vpc-921e61fa\", \"privateDnsName\": \"ip-10-0-0-1.ec2.internal\", \"publicIp\": \"10.10.10.10\", \"publicDnsName\": \"ec2-10.10.10.10.compute-1.amazonaws.com\", \"privateIpAddress\": \"10.0.0.1\"}, \"instanceState\": \"running\", \"imageId\": \"ami-09ae67bbfcd740875\", \"instanceType\": \"a1.medium\", \"imageDescription\": \"Canonical, Ubuntu, 18.04 LTS, UNSUPPORTED daily arm64 bionic image build on 2019-02-12\", \"productCodes\": {\"productCodeId\": \"zud1u4kjmxu2j2jf0n36bqa\", \"productCodeType\": \"marketplace\"}, \"iamInstanceProfile\": {\"id\": \"AIPAJGAZMFPZHKIBOUFGA\", \"arn\": \"arn:aws:iam::150447125201:instance-profile/opsworks-web-production\"}, \"availabilityZone\": \"us-east-1e\"}}, \"description\": \"EC2 instance has an unprotected port which is being probed by a known malicious host.\", \"source\": \"guardduty\", \"type\": \"Recon:EC2/PortProbeUnprotectedPort\", \"title\": \"Unprotected port on EC2 instance i-0cab4a083d57dc400 is being probed.\", \"partition\": \"aws\", \"service\": {\"archived\": \"false\", \"resourceRole\": \"TARGET\", \"detectorId\": \"cab38390b400c06fb2897dfcebffb80d\", \"additionalInfo\": {\"threatListName\": \"ProofPoint\", \"threatName\": \"Scanner\"}, \"count\": \"2115\", \"action\": {\"actionType\": \"PORT_PROBE\", \"portProbeAction\": {\"blocked\": \"false\", \"portProbeDetails\": {\"localPortDetails\": {\"port\": \"80\", \"portName\": \"HTTP\"}, \"remoteIpDetails\": {\"country\": {\"countryName\": \"Mexico\"}, \"city\": {\"cityName\": \"M\\u00e9rida\"}, \"geoLocation\": {\"lon\": \"-89.616700\", \"lat\": \"20.950000\"}, \"organization\": {\"asnOrg\": \"Internet Mexico Company\", \"org\": \"Internet Mexico Company\", \"isp\": \"Internet Mexico Company\", \"asn\": \"4257\"}, \"ipAddressV4\": \"10.10.10.10\"}}}}, \"serviceName\": \"guardduty\", \"eventFirstSeen\": \"2024-08-28T05:41:44.820Z\", \"eventLastSeen\": \"2024-08-31T05:41:44.820Z\"}, \"region\": \"eu-west-1\", \"accountId\": \"18773455640\", \"log_info\": {\"s3bucket\": \"aws-sample-bucket-2\", \"log_file\": \"guardduty/2024/08/31/05/firehose_guardduty-1-2024-08-31-05-41-44-820b5b9b-ec62-4a07-85d7-b1699b9c031e.zip\"}, \"createdAt\": \"2024-08-28T05:41:44.820Z\"}, \"integration\": \"aws\"}, \"location\": \"Wazuh-AWS\", \"input\": {\"type\": \"log\"}, \"GeoLocation\": {\"country_name\": \"Germany\", \"location\": {\"lat\": 52.524, \"lon\": 13.411}, \"region_name\": \"Berlin\", \"city_name\": \"Berlin\"}}"
+    result:
+      custom:
+        '@sampledata': true
+        GeoLocation:
+          city_name: "Berlin"
+          country_name: "Germany"
+          location:
+            lat: 52.524
+            lon: 13.411
+          region_name: "Berlin"
+        agent:
+          id: "007"
+          ip: "10.10.10.10"
+          name: "Debian"
+        cluster:
+          name: "wazuh"
+        data:
+          aws:
+            accountId: "18773455640"
+            createdAt: "2024-08-28T05:41:44.820Z"
+            description: "EC2 instance has an unprotected port which is being probed by a known malicious host."
+            log_info:
+              log_file: "guardduty/2024/08/31/05/firehose_guardduty-1-2024-08-31-05-41-44-820b5b9b-ec62-4a07-85d7-b1699b9c031e.zip"
+              s3bucket: "aws-sample-bucket-2"
+            partition: "aws"
+            region: "eu-west-1"
+            resource:
+              instanceDetails:
+                availabilityZone: "us-east-1e"
+                iamInstanceProfile:
+                  arn: "arn:aws:iam::150447125201:instance-profile/opsworks-web-production"
+                  id: "AIPAJGAZMFPZHKIBOUFGA"
+                imageDescription: "Canonical, Ubuntu, 18.04 LTS, UNSUPPORTED daily arm64 bionic image build on 2019-02-12"
+                imageId: "ami-09ae67bbfcd740875"
+                instanceId: "i-0cab4a083d57dc400"
+                instanceState: "running"
+                instanceType: "a1.medium"
+                launchTime: "2019-03-22T14:15:41Z"
+                networkInterfaces:
+                  networkInterfaceId: "eni-0bb465b2d939dbda6"
+                  privateDnsName: "ip-10-0-0-1.ec2.internal"
+                  privateIpAddress: "10.0.0.1"
+                  publicDnsName: "ec2-10.10.10.10.compute-1.amazonaws.com"
+                  publicIp: "10.10.10.10"
+                  subnetId: "subnet-6b1d6203"
+                  vpcId: "vpc-921e61fa"
+                productCodes:
+                  productCodeId: "zud1u4kjmxu2j2jf0n36bqa"
+                  productCodeType: "marketplace"
+              resourceType: "Instance"
+            schemaVersion: "2.0"
+            service:
+              action:
+                actionType: "PORT_PROBE"
+                portProbeAction:
+                  blocked: "false"
+                  portProbeDetails:
+                    localPortDetails:
+                      port: "80"
+                      portName: "HTTP"
+                    remoteIpDetails:
+                      city:
+                        cityName: "Mérida"
+                      country:
+                        countryName: "Mexico"
+                      geoLocation:
+                        lat: "20.950000"
+                        lon: "-89.616700"
+                      ipAddressV4: "10.10.10.10"
+                      organization:
+                        asn: "4257"
+                        asnOrg: "Internet Mexico Company"
+                        isp: "Internet Mexico Company"
+                        org: "Internet Mexico Company"
+              additionalInfo:
+                threatListName: "ProofPoint"
+                threatName: "Scanner"
+              archived: "false"
+              count: "2115"
+              detectorId: "cab38390b400c06fb2897dfcebffb80d"
+              eventFirstSeen: "2024-08-28T05:41:44.820Z"
+              eventLastSeen: "2024-08-31T05:41:44.820Z"
+              resourceRole: "TARGET"
+              serviceName: "guardduty"
+            severity: "2"
+            source: "guardduty"
+            title: "Unprotected port on EC2 instance i-0cab4a083d57dc400 is being probed."
+            type: "Recon:EC2/PortProbeUnprotectedPort"
+          integration: "aws"
+        decoder:
+          name: "json"
+        id: "1580123327.49031"
+        input:
+          type: "log"
+        location: "Wazuh-AWS"
+        manager:
+          name: "ub20"
+        rule:
+          description: "AWS GuardDuty: PORT_PROBE - Unprotected port on EC2 instance i-0b0b8b34a48c8f1c4 is being probed. [IP: 10.10.10.10] [Port: 80]"
+          firedtimes: 27
+          groups:
+          - "amazon"
+          - "aws"
+          - "aws_guardduty"
+          id: "80305"
+          level: 3
+          mail: false
+        service: "wazuh-amazon"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "Debian"
+        timestamp: "2024-09-16T16:58:16.015398+05:30"
+      message: "<132>Sep 16 16:58:16 Debian ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-16T16:58:16.015398+05:30\", \"rule\": {\"firedtimes\": 27, \"mail\": false, \"level\": 3, \"description\": \"AWS GuardDuty: PORT_PROBE - Unprotected port on EC2 instance i-0b0b8b34a48c8f1c4 is being probed. [IP: 10.10.10.10] [Port: 80]\", \"groups\": [\"amazon\", \"aws\", \"aws_guardduty\"], \"id\": \"80305\"}, \"agent\": {\"id\": \"007\", \"name\": \"Debian\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"aws\": {\"severity\": \"2\", \"schemaVersion\": \"2.0\", \"resource\": {\"resourceType\": \"Instance\", \"instanceDetails\": {\"launchTime\": \"2019-03-22T14:15:41Z\", \"instanceId\": \"i-0cab4a083d57dc400\", \"networkInterfaces\": {\"networkInterfaceId\": \"eni-0bb465b2d939dbda6\", \"subnetId\": \"subnet-6b1d6203\", \"vpcId\": \"vpc-921e61fa\", \"privateDnsName\": \"ip-10-0-0-1.ec2.internal\", \"publicIp\": \"10.10.10.10\", \"publicDnsName\": \"ec2-10.10.10.10.compute-1.amazonaws.com\", \"privateIpAddress\": \"10.0.0.1\"}, \"instanceState\": \"running\", \"imageId\": \"ami-09ae67bbfcd740875\", \"instanceType\": \"a1.medium\", \"imageDescription\": \"Canonical, Ubuntu, 18.04 LTS, UNSUPPORTED daily arm64 bionic image build on 2019-02-12\", \"productCodes\": {\"productCodeId\": \"zud1u4kjmxu2j2jf0n36bqa\", \"productCodeType\": \"marketplace\"}, \"iamInstanceProfile\": {\"id\": \"AIPAJGAZMFPZHKIBOUFGA\", \"arn\": \"arn:aws:iam::150447125201:instance-profile/opsworks-web-production\"}, \"availabilityZone\": \"us-east-1e\"}}, \"description\": \"EC2 instance has an unprotected port which is being probed by a known malicious host.\", \"source\": \"guardduty\", \"type\": \"Recon:EC2/PortProbeUnprotectedPort\", \"title\": \"Unprotected port on EC2 instance i-0cab4a083d57dc400 is being probed.\", \"partition\": \"aws\", \"service\": {\"archived\": \"false\", \"resourceRole\": \"TARGET\", \"detectorId\": \"cab38390b400c06fb2897dfcebffb80d\", \"additionalInfo\": {\"threatListName\": \"ProofPoint\", \"threatName\": \"Scanner\"}, \"count\": \"2115\", \"action\": {\"actionType\": \"PORT_PROBE\", \"portProbeAction\": {\"blocked\": \"false\", \"portProbeDetails\": {\"localPortDetails\": {\"port\": \"80\", \"portName\": \"HTTP\"}, \"remoteIpDetails\": {\"country\": {\"countryName\": \"Mexico\"}, \"city\": {\"cityName\": \"M\\u00e9rida\"}, \"geoLocation\": {\"lon\": \"-89.616700\", \"lat\": \"20.950000\"}, \"organization\": {\"asnOrg\": \"Internet Mexico Company\", \"org\": \"Internet Mexico Company\", \"isp\": \"Internet Mexico Company\", \"asn\": \"4257\"}, \"ipAddressV4\": \"10.10.10.10\"}}}}, \"serviceName\": \"guardduty\", \"eventFirstSeen\": \"2024-08-28T05:41:44.820Z\", \"eventLastSeen\": \"2024-08-31T05:41:44.820Z\"}, \"region\": \"eu-west-1\", \"accountId\": \"18773455640\", \"log_info\": {\"s3bucket\": \"aws-sample-bucket-2\", \"log_file\": \"guardduty/2024/08/31/05/firehose_guardduty-1-2024-08-31-05-41-44-820b5b9b-ec62-4a07-85d7-b1699b9c031e.zip\"}, \"createdAt\": \"2024-08-28T05:41:44.820Z\"}, \"integration\": \"aws\"}, \"location\": \"Wazuh-AWS\", \"input\": {\"type\": \"log\"}, \"GeoLocation\": {\"country_name\": \"Germany\", \"location\": {\"lat\": 52.524, \"lon\": 13.411}, \"region_name\": \"Berlin\", \"city_name\": \"Berlin\"}}"
+      service: "wazuh-amazon"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726486096015
+  -
+    sample: "<132>Sep 17 10:25:49 Amazon ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T10:25:49.352657+05:30\", \"rule\": {\"level\": 3, \"description\": \"GitHub Git push.\", \"id\": \"91160\", \"firedtimes\": 2, \"mail\": false, \"groups\": [\"github\", \"git\", \"git_git\"]}, \"agent\": {\"id\": \"002\", \"name\": \"Amazon\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"github\": {\"actor\": \"User1\", \"@timestamp\": \"2024-08-30T17:23:47.725+0000\", \"org\": \"Organization1\", \"repo\": \"Organization1/Repo7\", \"actor_location\": {\"country_code\": \"DE\"}, \"action\": \"git.push\", \"transport_protocol_name\": \"http\", \"transport_protocol\": \"1\", \"repository\": \"Organization1/Repo1\", \"repository_public\": \"false\"}}, \"location\": \"github\"}"
+    result:
+      custom:
+        '@sampledata': true
+        agent:
+          id: "002"
+          ip: "10.10.10.10"
+          name: "Amazon"
+        cluster:
+          name: "wazuh"
+        data:
+          github:
+            '@timestamp': "2024-08-30T17:23:47.725+0000"
+            action: "git.push"
+            actor_location:
+              country_code: "DE"
+            org: "Organization1"
+            repo: "Organization1/Repo7"
+            repository: "Organization1/Repo1"
+            repository_public: "false"
+            transport_protocol: "1"
+            transport_protocol_name: "http"
+        decoder:
+          name: "json"
+        id: "1580123327.49031"
+        location: "github"
+        manager:
+          name: "ub20"
+        rule:
+          description: "GitHub Git push."
+          firedtimes: 2
+          groups:
+          - "github"
+          - "git"
+          - "git_git"
+          id: "91160"
+          level: 3
+          mail: false
+        service: "wazuh-github"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "Amazon"
+        timestamp: "2024-09-17T10:25:49.352657+05:30"
+        usr:
+          name: "User1"
+      message: "<132>Sep 17 10:25:49 Amazon ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T10:25:49.352657+05:30\", \"rule\": {\"level\": 3, \"description\": \"GitHub Git push.\", \"id\": \"91160\", \"firedtimes\": 2, \"mail\": false, \"groups\": [\"github\", \"git\", \"git_git\"]}, \"agent\": {\"id\": \"002\", \"name\": \"Amazon\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"github\": {\"actor\": \"User1\", \"@timestamp\": \"2024-08-30T17:23:47.725+0000\", \"org\": \"Organization1\", \"repo\": \"Organization1/Repo7\", \"actor_location\": {\"country_code\": \"DE\"}, \"action\": \"git.push\", \"transport_protocol_name\": \"http\", \"transport_protocol\": \"1\", \"repository\": \"Organization1/Repo1\", \"repository_public\": \"false\"}}, \"location\": \"github\"}"
+      service: "wazuh-github"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726548949352
+  -
+    sample: "<132>Sep 18 20:41:50 ub20 ossec: {\"timestamp\":\"2024-09-18T20:41:50.115+0530\",\"rule\":{\"level\":10,\"description\":\"CVE-2023-43787 affects libX11-devel\",\"id\":\"23505\",\"firedtimes\":12,\"mail\":false,\"groups\":[\"vulnerability-detector\"],\"gdpr\":[\"IV_35.7.d\"],\"pci_dss\":[\"11.2.1\",\"11.2.3\"],\"tsc\":[\"CC7.1\",\"CC7.2\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726672310.1698045\",\"decoder\":{\"name\":\"json\"},\"data\":{\"vulnerability\":{\"assigner\":\"redhat\",\"cve\":\"CVE-2023-43787\",\"cvss\":{\"cvss3\":{\"base_score\":\"7.800000\",\"vector\":{\"availability\":\"HIGH\",\"confidentiality_impact\":\"HIGH\",\"integrity_impact\":\"HIGH\",\"privileges_required\":\"LOW\",\"scope\":\"UNCHANGED\",\"user_interaction\":\"NONE\"}}},\"cwe_reference\":\"CWE-122\",\"enumeration\":\"CVE\",\"package\":{\"architecture\":\"x86_64\",\"condition\":\"Package default status\",\"name\":\"libX11-devel\",\"source\":\" \",\"version\":\"1.6.7-5.el7_9\"},\"published\":\"2023-10-10T13:15:22Z\",\"rationale\":\"A vulnerability was found in libX11 due to an integer overflow within the XCreateImage() function. This flaw allows a local user to trigger an integer overflow and execute arbitrary code with elevated privileges.\",\"reference\":\"https://bugzilla.redhat.com/show_bug.cgi?id=2242254, https://access.redhat.com/security/cve/CVE-2023-43787, http://www.openwall.com/lists/oss-security/2024/01/24/9, https://access.redhat.com/errata/RHSA-2024:2145, https://access.redhat.com/errata/RHSA-2024:2973, https://jfrog.com/blog/xorg-libx11-vulns-cve-2023-43786-cve-2023-43787-part-two/, https://security.netapp.com/advisory/ntap-20231103-0006/\",\"severity\":\"High\",\"status\":\"Active\",\"title\":\"CVE-2023-43787 affects libX11-devel\",\"type\":\"Packages\",\"updated\":\"2024-05-22T17:16:05Z\"}},\"location\":\"vulnerability-detector\"}"
+    result:
+      custom:
+        agent:
+          id: "010"
+          ip: "10.10.10.10"
+          name: "co7"
+        data:
+          vulnerability:
+            assigner: "redhat"
+            cve: "CVE-2023-43787"
+            cvss:
+              cvss3:
+                base_score: "7.800000"
+                vector:
+                  availability: "HIGH"
+                  confidentiality_impact: "HIGH"
+                  integrity_impact: "HIGH"
+                  privileges_required: "LOW"
+                  scope: "UNCHANGED"
+                  user_interaction: "NONE"
+            cwe_reference: "CWE-122"
+            enumeration: "CVE"
+            package:
+              architecture: "x86_64"
+              condition: "Package default status"
+              name: "libX11-devel"
+              source: " "
+              version: "1.6.7-5.el7_9"
+            published: "2023-10-10T13:15:22Z"
+            rationale: "A vulnerability was found in libX11 due to an integer overflow within the XCreateImage() function. This flaw allows a local user to trigger an integer overflow and execute arbitrary code with elevated privileges."
+            reference: "https://bugzilla.redhat.com/show_bug.cgi?id=2242254, https://access.redhat.com/security/cve/CVE-2023-43787, http://www.openwall.com/lists/oss-security/2024/01/24/9, https://access.redhat.com/errata/RHSA-2024:2145, https://access.redhat.com/errata/RHSA-2024:2973, https://jfrog.com/blog/xorg-libx11-vulns-cve-2023-43786-cve-2023-43787-part-two/, https://security.netapp.com/advisory/ntap-20231103-0006/"
+            severity: "High"
+            status: "Active"
+            title: "CVE-2023-43787 affects libX11-devel"
+            type: "Packages"
+            updated: "2024-05-22T17:16:05Z"
+        decoder:
+          name: "json"
+        id: "1726672310.1698045"
+        location: "vulnerability-detector"
+        manager:
+          name: "ub20"
+        rule:
+          description: "CVE-2023-43787 affects libX11-devel"
+          firedtimes: 12
+          gdpr:
+          - "IV_35.7.d"
+          groups:
+          - "vulnerability-detector"
+          id: "23505"
+          level: 10
+          mail: false
+          pci_dss:
+          - "11.2.1"
+          - "11.2.3"
+          tsc:
+          - "CC7.1"
+          - "CC7.2"
+        service: "vulnerability-detector"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-18T20:41:50.115+0530"
+      message: "<132>Sep 18 20:41:50 ub20 ossec: {\"timestamp\":\"2024-09-18T20:41:50.115+0530\",\"rule\":{\"level\":10,\"description\":\"CVE-2023-43787 affects libX11-devel\",\"id\":\"23505\",\"firedtimes\":12,\"mail\":false,\"groups\":[\"vulnerability-detector\"],\"gdpr\":[\"IV_35.7.d\"],\"pci_dss\":[\"11.2.1\",\"11.2.3\"],\"tsc\":[\"CC7.1\",\"CC7.2\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726672310.1698045\",\"decoder\":{\"name\":\"json\"},\"data\":{\"vulnerability\":{\"assigner\":\"redhat\",\"cve\":\"CVE-2023-43787\",\"cvss\":{\"cvss3\":{\"base_score\":\"7.800000\",\"vector\":{\"availability\":\"HIGH\",\"confidentiality_impact\":\"HIGH\",\"integrity_impact\":\"HIGH\",\"privileges_required\":\"LOW\",\"scope\":\"UNCHANGED\",\"user_interaction\":\"NONE\"}}},\"cwe_reference\":\"CWE-122\",\"enumeration\":\"CVE\",\"package\":{\"architecture\":\"x86_64\",\"condition\":\"Package default status\",\"name\":\"libX11-devel\",\"source\":\" \",\"version\":\"1.6.7-5.el7_9\"},\"published\":\"2023-10-10T13:15:22Z\",\"rationale\":\"A vulnerability was found in libX11 due to an integer overflow within the XCreateImage() function. This flaw allows a local user to trigger an integer overflow and execute arbitrary code with elevated privileges.\",\"reference\":\"https://bugzilla.redhat.com/show_bug.cgi?id=2242254, https://access.redhat.com/security/cve/CVE-2023-43787, http://www.openwall.com/lists/oss-security/2024/01/24/9, https://access.redhat.com/errata/RHSA-2024:2145, https://access.redhat.com/errata/RHSA-2024:2973, https://jfrog.com/blog/xorg-libx11-vulns-cve-2023-43786-cve-2023-43787-part-two/, https://security.netapp.com/advisory/ntap-20231103-0006/\",\"severity\":\"High\",\"status\":\"Active\",\"title\":\"CVE-2023-43787 affects libX11-devel\",\"type\":\"Packages\",\"updated\":\"2024-05-22T17:16:05Z\"}},\"location\":\"vulnerability-detector\"}"
+      service: "vulnerability-detector"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726672310115
+  -
+    sample: "<132>Sep 16 16:17:37 Ubuntu ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T11:30:16.015304+05:30\", \"rule\": {\"level\": 5, \"description\": \"GCP notice event with source IP 10.10.10.10 from europe-west1 with response code NXDOMAIN\", \"id\": \"65010\", \"firedtimes\": 2, \"mail\": true, \"groups\": [\"gcp\"]}, \"agent\": {\"id\": \"004\", \"name\": \"Ubuntu\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {}, \"data\": {\"integration\": \"gcp\", \"gcp\": {\"insertId\": \"uk1zpe23xcj\", \"jsonPayload\": {\"authAnswer\": \"true\", \"protocol\": \"UDP\", \"queryName\": \"41.212.95.203.in-addr.arpa\", \"queryType\": \"A\", \"responseCode\": \"NXDOMAIN\", \"sourceIP\": \"10.10.10.10\", \"vmInstanceId\": \"4980113928800839680.000000\", \"vmInstanceName\": \"531339229531.instance-1\"}, \"logName\": \"projects/wazuh-dev/logs/dns.googleapis.com%2Fdns_queries\", \"receiveTimestamp\": \"2019-11-11T02:42:05.05853152Z\", \"resource\": {\"labels\": {\"location\": \"us-central1\", \"project_id\": \"wazuh-test\", \"source_type\": \"gce-vm\", \"target_type\": \"external\"}, \"type\": \"dns_query\"}, \"severity\": \"CRITICAL\", \"timestamp\": \"2019-11-11T02:42:04.34921449Z\"}}, \"location\": \"\", \"GeoLocation\": {\"country_name\": \"Australia\", \"location\": {\"lat\": -33.8678513, \"lon\": 151.2073212}, \"region_name\": \"Sydney\", \"city_name\": \"Sydney\"}}"
+    result:
+      custom:
+        '@sampledata': true
+        GeoLocation:
+          city_name: "Sydney"
+          country_name: "Australia"
+          location:
+            lat: -33.8678513
+            lon: 151.2073212
+          region_name: "Sydney"
+        agent:
+          id: "004"
+          ip: "10.10.10.10"
+          name: "Ubuntu"
+        cluster:
+          name: "wazuh"
+        data:
+          gcp:
+            insertId: "uk1zpe23xcj"
+            jsonPayload:
+              authAnswer: "true"
+              protocol: "UDP"
+              queryName: "41.212.95.203.in-addr.arpa"
+              queryType: "A"
+              responseCode: "NXDOMAIN"
+              vmInstanceId: "4980113928800839680.000000"
+              vmInstanceName: "531339229531.instance-1"
+            logName: "projects/wazuh-dev/logs/dns.googleapis.com%2Fdns_queries"
+            receiveTimestamp: "2019-11-11T02:42:05.05853152Z"
+            resource:
+              labels:
+                location: "us-central1"
+                project_id: "wazuh-test"
+                source_type: "gce-vm"
+                target_type: "external"
+              type: "dns_query"
+            severity: "CRITICAL"
+            timestamp: "2019-11-11T02:42:04.34921449Z"
+          integration: "gcp"
+        id: "1580123327.49031"
+        location: ""
+        manager:
+          name: "ub20"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        rule:
+          description: "GCP notice event with source IP 10.10.10.10 from europe-west1 with response code NXDOMAIN"
+          firedtimes: 2
+          groups:
+          - "gcp"
+          id: "65010"
+          level: 5
+          mail: true
+        service: "wazuh-google-cloud"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "Ubuntu"
+        timestamp: "2024-09-17T11:30:16.015304+05:30"
+      message: "<132>Sep 16 16:17:37 Ubuntu ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T11:30:16.015304+05:30\", \"rule\": {\"level\": 5, \"description\": \"GCP notice event with source IP 10.10.10.10 from europe-west1 with response code NXDOMAIN\", \"id\": \"65010\", \"firedtimes\": 2, \"mail\": true, \"groups\": [\"gcp\"]}, \"agent\": {\"id\": \"004\", \"name\": \"Ubuntu\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {}, \"data\": {\"integration\": \"gcp\", \"gcp\": {\"insertId\": \"uk1zpe23xcj\", \"jsonPayload\": {\"authAnswer\": \"true\", \"protocol\": \"UDP\", \"queryName\": \"41.212.95.203.in-addr.arpa\", \"queryType\": \"A\", \"responseCode\": \"NXDOMAIN\", \"sourceIP\": \"10.10.10.10\", \"vmInstanceId\": \"4980113928800839680.000000\", \"vmInstanceName\": \"531339229531.instance-1\"}, \"logName\": \"projects/wazuh-dev/logs/dns.googleapis.com%2Fdns_queries\", \"receiveTimestamp\": \"2019-11-11T02:42:05.05853152Z\", \"resource\": {\"labels\": {\"location\": \"us-central1\", \"project_id\": \"wazuh-test\", \"source_type\": \"gce-vm\", \"target_type\": \"external\"}, \"type\": \"dns_query\"}, \"severity\": \"CRITICAL\", \"timestamp\": \"2019-11-11T02:42:04.34921449Z\"}}, \"location\": \"\", \"GeoLocation\": {\"country_name\": \"Australia\", \"location\": {\"lat\": -33.8678513, \"lon\": 151.2073212}, \"region_name\": \"Sydney\", \"city_name\": \"Sydney\"}}"
+      service: "wazuh-google-cloud"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726552816015
+  -
+    sample: "<132>Sep 17 12:09:39 ub20 ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T12:09:39.565041+05:30\", \"rule\": {\"level\": 3, \"description\": \"Office 365: Data Insights REST API events.\", \"id\": \"91580\", \"mail\": false, \"firedtimes\": 4, \"groups\": [\"office365\", \"DataInsightsRestApiAudit\", \"hipaa_164.312.b\", \"pci_dss_10.6.2\"]}, \"agent\": {\"id\": \"000\", \"ip\": \"10.10.10.10\", \"name\": \"ub20\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"integration\": \"Office365\", \"office365\": {\"CreationTime\": \"2024-08-29T20:06:43.482Z\", \"Id\": \"a0995136-91d8-4acf-8449-28c275ffb7e3\", \"Operation\": \"ValidaterbacAccessCheck\", \"OrganizationId\": \"ce013f05-a783-4186-9d85-5a14998b6111\", \"RecordType\": 52, \"UserKey\": \"d36253fb-24a1-481c-a199-f778534ccb5f\", \"UserType\": 0, \"Version\": 1, \"Workload\": \"SecurityComplianceCenter\", \"UserId\": \"frank@wazuh.com\", \"AadAppId\": \"d6fdaa33-e821-4211-83d0-cf74736489e1\", \"DataType\": \"rbacAccessCheck\", \"RelativeUrl\": \"/DataInsights/DataInsightsService.svc/validate/rbacAccessCheck?tenantid=0fea4e03-8146-453b-b889-54b4bd11565b\", \"ResultCount\": \"0\", \"Subscription\": \"Audit.General\", \"ResultStatus\": \"Failed\", \"ObjectId\": \"d14aa5cb-b070-42f8-8709-0f8afd942fc0\", \"ClientIP\": \"10.10.10.10\"}}, \"location\": \"office365\", \"GeoLocation\": {\"country_name\": \"England\", \"location\": {\"lat\": 51.5085297, \"lon\": -0.12574}, \"region_name\": \"London\", \"city_name\": \"London\"}}"
+    result:
+      custom:
+        '@sampledata': true
+        GeoLocation:
+          city_name: "London"
+          country_name: "England"
+          location:
+            lat: 51.5085297
+            lon: -0.12574
+          region_name: "London"
+        agent:
+          id: "000"
+          ip: "10.10.10.10"
+          name: "ub20"
+        cluster:
+          name: "wazuh"
+        data:
+          integration: "Office365"
+          office365:
+            AadAppId: "d6fdaa33-e821-4211-83d0-cf74736489e1"
+            CreationTime: "2024-08-29T20:06:43.482Z"
+            DataType: "rbacAccessCheck"
+            Id: "a0995136-91d8-4acf-8449-28c275ffb7e3"
+            ObjectId: "d14aa5cb-b070-42f8-8709-0f8afd942fc0"
+            Operation: "ValidaterbacAccessCheck"
+            OrganizationId: "ce013f05-a783-4186-9d85-5a14998b6111"
+            RecordType: 52
+            RelativeUrl: "/DataInsights/DataInsightsService.svc/validate/rbacAccessCheck?tenantid=0fea4e03-8146-453b-b889-54b4bd11565b"
+            ResultCount: "0"
+            ResultStatus: "Failed"
+            Subscription: "Audit.General"
+            UserKey: "d36253fb-24a1-481c-a199-f778534ccb5f"
+            UserType: 0
+            Version: 1
+            Workload: "SecurityComplianceCenter"
+        decoder:
+          name: "json"
+        id: "1580123327.49031"
+        location: "office365"
+        manager:
+          name: "ub20"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+        rule:
+          description: "Office 365: Data Insights REST API events."
+          firedtimes: 4
+          groups:
+          - "office365"
+          - "DataInsightsRestApiAudit"
+          - "hipaa_164.312.b"
+          - "pci_dss_10.6.2"
+          id: "91580"
+          level: 3
+          mail: false
+        service: "wazuh-office365"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-17T12:09:39.565041+05:30"
+        usr:
+          email: "frank@wazuh.com"
+      message: "<132>Sep 17 12:09:39 ub20 ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T12:09:39.565041+05:30\", \"rule\": {\"level\": 3, \"description\": \"Office 365: Data Insights REST API events.\", \"id\": \"91580\", \"mail\": false, \"firedtimes\": 4, \"groups\": [\"office365\", \"DataInsightsRestApiAudit\", \"hipaa_164.312.b\", \"pci_dss_10.6.2\"]}, \"agent\": {\"id\": \"000\", \"ip\": \"10.10.10.10\", \"name\": \"ub20\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {\"name\": \"json\"}, \"data\": {\"integration\": \"Office365\", \"office365\": {\"CreationTime\": \"2024-08-29T20:06:43.482Z\", \"Id\": \"a0995136-91d8-4acf-8449-28c275ffb7e3\", \"Operation\": \"ValidaterbacAccessCheck\", \"OrganizationId\": \"ce013f05-a783-4186-9d85-5a14998b6111\", \"RecordType\": 52, \"UserKey\": \"d36253fb-24a1-481c-a199-f778534ccb5f\", \"UserType\": 0, \"Version\": 1, \"Workload\": \"SecurityComplianceCenter\", \"UserId\": \"frank@wazuh.com\", \"AadAppId\": \"d6fdaa33-e821-4211-83d0-cf74736489e1\", \"DataType\": \"rbacAccessCheck\", \"RelativeUrl\": \"/DataInsights/DataInsightsService.svc/validate/rbacAccessCheck?tenantid=0fea4e03-8146-453b-b889-54b4bd11565b\", \"ResultCount\": \"0\", \"Subscription\": \"Audit.General\", \"ResultStatus\": \"Failed\", \"ObjectId\": \"d14aa5cb-b070-42f8-8709-0f8afd942fc0\", \"ClientIP\": \"10.10.10.10\"}}, \"location\": \"office365\", \"GeoLocation\": {\"country_name\": \"England\", \"location\": {\"lat\": 51.5085297, \"lon\": -0.12574}, \"region_name\": \"London\", \"city_name\": \"London\"}}"
+      service: "wazuh-office365"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726555179565
+  -
+    sample: "<132>Sep 17 12:37:36 Debian ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T12:37:36.093817+05:30\", \"rule\": {\"firedtimes\": 1, \"mail\": false, \"level\": 3, \"description\": \"Docker: Network bridge connected\", \"groups\": [\"docker\"], \"id\": \"87928\"}, \"agent\": {\"id\": \"007\", \"name\": \"Debian\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {}, \"data\": {\"integration\": \"docker\", \"docker\": {\"Action\": \"connect\", \"Type\": \"network\", \"Actor\": {\"Attributes\": {\"container\": \"4d193284273eda41a869c2ef22091d7e0492323b91d654f1bea09fcefde50c08\", \"name\": \"bridge\", \"type\": \"bridge\"}, \"ID\": \"128075e00d6a056b6454afaa183c3a2714f0307a848ee4dba0e095e0a29f086a\"}, \"scope\": \"local\", \"timeNano\": \"1587084599776133888.000000\", \"time\": \"1587084599\"}}, \"location\": \"\"}"
+    result:
+      custom:
+        '@sampledata': true
+        agent:
+          id: "007"
+          ip: "10.10.10.10"
+          name: "Debian"
+        cluster:
+          name: "wazuh"
+        data:
+          docker:
+            Action: "connect"
+            Actor:
+              Attributes:
+                container: "4d193284273eda41a869c2ef22091d7e0492323b91d654f1bea09fcefde50c08"
+                name: "bridge"
+                type: "bridge"
+              ID: "128075e00d6a056b6454afaa183c3a2714f0307a848ee4dba0e095e0a29f086a"
+            Type: "network"
+            scope: "local"
+            time: "1587084599"
+            timeNano: "1587084599776133888.000000"
+          integration: "docker"
+        id: "1580123327.49031"
+        location: ""
+        manager:
+          name: "ub20"
+        rule:
+          description: "Docker: Network bridge connected"
+          firedtimes: 1
+          groups:
+          - "docker"
+          id: "87928"
+          level: 3
+          mail: false
+        service: "wazuh-docker"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "Debian"
+        timestamp: "2024-09-17T12:37:36.093817+05:30"
+      message: "<132>Sep 17 12:37:36 Debian ossec: {\"@sampledata\": true, \"timestamp\": \"2024-09-17T12:37:36.093817+05:30\", \"rule\": {\"firedtimes\": 1, \"mail\": false, \"level\": 3, \"description\": \"Docker: Network bridge connected\", \"groups\": [\"docker\"], \"id\": \"87928\"}, \"agent\": {\"id\": \"007\", \"name\": \"Debian\", \"ip\": \"10.10.10.10\"}, \"manager\": {\"name\": \"ub20\"}, \"cluster\": {\"name\": \"wazuh\"}, \"id\": \"1580123327.49031\", \"predecoder\": {}, \"decoder\": {}, \"data\": {\"integration\": \"docker\", \"docker\": {\"Action\": \"connect\", \"Type\": \"network\", \"Actor\": {\"Attributes\": {\"container\": \"4d193284273eda41a869c2ef22091d7e0492323b91d654f1bea09fcefde50c08\", \"name\": \"bridge\", \"type\": \"bridge\"}, \"ID\": \"128075e00d6a056b6454afaa183c3a2714f0307a848ee4dba0e095e0a29f086a\"}, \"scope\": \"local\", \"timeNano\": \"1587084599776133888.000000\", \"time\": \"1587084599\"}}, \"location\": \"\"}"
+      service: "wazuh-docker"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726556856093
+  -
+    sample: "<132>Sep 18 14:53:16 ub20 ossec: {\"timestamp\":\"2024-09-18T14:53:16.251+0530\",\"rule\":{\"level\":7,\"description\":\"SCA summary: CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0: Score less than 50% (33)\",\"id\":\"19004\",\"firedtimes\":1,\"mail\":false,\"groups\":[\"sca\"],\"gdpr\":[\"IV_35.7.d\"],\"pci_dss\":[\"2.2\"],\"nist_800_53\":[\"CM.1\"],\"tsc\":[\"CC7.1\",\"CC7.2\"]},\"agent\":{\"id\":\"005\",\"name\":\"DESKTOP-C1V1PSE\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726651396.585956\",\"decoder\":{\"name\":\"sca\"},\"data\":{\"sca\":{\"type\":\"summary\",\"scan_id\":\"245628523\",\"policy\":\"CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0\",\"description\":\"This document provides prescriptive guidance for establishing a secure configuration posture for Microsoft Windows 10 Enterprise.\",\"policy_id\":\"cis_win10_enterprise\",\"passed\":\"131\",\"failed\":\"258\",\"invalid\":\"5\",\"total_checks\":\"394\",\"score\":\"33\",\"file\":\"cis_win10_enterprise.yml\"}},\"location\":\"sca\"}"
+    result:
+      custom:
+        agent:
+          id: "005"
+          ip: "10.10.10.10"
+          name: "DESKTOP-C1V1PSE"
+        data:
+          sca:
+            description: "This document provides prescriptive guidance for establishing a secure configuration posture for Microsoft Windows 10 Enterprise."
+            failed: "258"
+            file: "cis_win10_enterprise.yml"
+            invalid: "5"
+            passed: "131"
+            policy: "CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0"
+            policy_id: "cis_win10_enterprise"
+            scan_id: "245628523"
+            score: "33"
+            total_checks: "394"
+            type: "summary"
+        decoder:
+          name: "sca"
+        id: "1726651396.585956"
+        location: "sca"
+        manager:
+          name: "ub20"
+        rule:
+          description: "SCA summary: CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0: Score less than 50% (33)"
+          firedtimes: 1
+          gdpr:
+          - "IV_35.7.d"
+          groups:
+          - "sca"
+          id: "19004"
+          level: 7
+          mail: false
+          nist_800_53:
+          - "CM.1"
+          pci_dss:
+          - "2.2"
+          tsc:
+          - "CC7.1"
+          - "CC7.2"
+        service: "other"
+        status: "warning"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-18T14:53:16.251+0530"
+      message: "<132>Sep 18 14:53:16 ub20 ossec: {\"timestamp\":\"2024-09-18T14:53:16.251+0530\",\"rule\":{\"level\":7,\"description\":\"SCA summary: CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0: Score less than 50% (33)\",\"id\":\"19004\",\"firedtimes\":1,\"mail\":false,\"groups\":[\"sca\"],\"gdpr\":[\"IV_35.7.d\"],\"pci_dss\":[\"2.2\"],\"nist_800_53\":[\"CM.1\"],\"tsc\":[\"CC7.1\",\"CC7.2\"]},\"agent\":{\"id\":\"005\",\"name\":\"DESKTOP-C1V1PSE\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726651396.585956\",\"decoder\":{\"name\":\"sca\"},\"data\":{\"sca\":{\"type\":\"summary\",\"scan_id\":\"245628523\",\"policy\":\"CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0\",\"description\":\"This document provides prescriptive guidance for establishing a secure configuration posture for Microsoft Windows 10 Enterprise.\",\"policy_id\":\"cis_win10_enterprise\",\"passed\":\"131\",\"failed\":\"258\",\"invalid\":\"5\",\"total_checks\":\"394\",\"score\":\"33\",\"file\":\"cis_win10_enterprise.yml\"}},\"location\":\"sca\"}"
+      service: "other"
+      status: "warn"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726651396251
+  -
+    sample: "<132>Sep 18 15:31:44 ub20 ossec: {\"timestamp\":\"2024-09-18T15:31:44.788+0530\",\"rule\":{\"level\":5,\"description\":\"sshd: authentication failed.\",\"id\":\"5760\",\"mitre\":{\"id\":[\"T1110.001\",\"T1021.004\"],\"tactic\":[\"Credential Access\",\"Lateral Movement\"],\"technique\":[\"Password Guessing\",\"SSH\"]},\"firedtimes\":2,\"mail\":false,\"groups\":[\"syslog\",\"sshd\",\"authentication_failed\"],\"gdpr\":[\"IV_35.7.d\",\"IV_32.2\"],\"gpg13\":[\"7.1\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.14\",\"AC.7\"],\"pci_dss\":[\"10.2.4\",\"10.2.5\"],\"tsc\":[\"CC6.1\",\"CC6.8\",\"CC7.2\",\"CC7.3\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726653704.812551\",\"full_log\":\"Sep 18 15:31:43 co7 sshd[28830]: Failed password for devuser from 10.10.10.10 port 57137 ssh2\",\"predecoder\":{\"program_name\":\"sshd\",\"timestamp\":\"Sep 18 15:31:43\",\"hostname\":\"co7\"},\"decoder\":{\"parent\":\"sshd\",\"name\":\"sshd\"},\"data\":{\"srcip\":\"10.10.10.10\",\"srcport\":\"57137\",\"dstuser\":\"devuser\"},\"location\":\"/var/log/secure\"}"
+    result:
+      custom:
+        agent:
+          id: "010"
+          ip: "10.10.10.10"
+          name: "co7"
+        data:
+          dstuser: "devuser"
+        decoder:
+          name: "sshd"
+          parent: "sshd"
+        full_log: "Sep 18 15:31:43 co7 sshd[28830]: Failed password for devuser from 10.10.10.10 port 57137 ssh2"
+        id: "1726653704.812551"
+        location: "/var/log/secure"
+        manager:
+          name: "ub20"
+        network:
+          client:
+            geoip: {}
+            ip: "10.10.10.10"
+            port: "57137"
+        predecoder:
+          hostname: "co7"
+          program_name: "sshd"
+          timestamp: "Sep 18 15:31:43"
+        rule:
+          description: "sshd: authentication failed."
+          firedtimes: 2
+          gdpr:
+          - "IV_35.7.d"
+          - "IV_32.2"
+          gpg13:
+          - "7.1"
+          groups:
+          - "syslog"
+          - "sshd"
+          - "authentication_failed"
+          hipaa:
+          - "164.312.b"
+          id: "5760"
+          level: 5
+          mail: false
+          mitre:
+            id:
+            - "T1110.001"
+            - "T1021.004"
+            tactic:
+            - "Credential Access"
+            - "Lateral Movement"
+            technique:
+            - "Password Guessing"
+            - "SSH"
+          nist_800_53:
+          - "AU.14"
+          - "AC.7"
+          pci_dss:
+          - "10.2.4"
+          - "10.2.5"
+          tsc:
+          - "CC6.1"
+          - "CC6.8"
+          - "CC7.2"
+          - "CC7.3"
+        service: "system"
+        status: "information"
+        syslog:
+          appname: "ossec"
+          hostname: "ub20"
+        timestamp: "2024-09-18T15:31:44.788+0530"
+      message: "<132>Sep 18 15:31:44 ub20 ossec: {\"timestamp\":\"2024-09-18T15:31:44.788+0530\",\"rule\":{\"level\":5,\"description\":\"sshd: authentication failed.\",\"id\":\"5760\",\"mitre\":{\"id\":[\"T1110.001\",\"T1021.004\"],\"tactic\":[\"Credential Access\",\"Lateral Movement\"],\"technique\":[\"Password Guessing\",\"SSH\"]},\"firedtimes\":2,\"mail\":false,\"groups\":[\"syslog\",\"sshd\",\"authentication_failed\"],\"gdpr\":[\"IV_35.7.d\",\"IV_32.2\"],\"gpg13\":[\"7.1\"],\"hipaa\":[\"164.312.b\"],\"nist_800_53\":[\"AU.14\",\"AC.7\"],\"pci_dss\":[\"10.2.4\",\"10.2.5\"],\"tsc\":[\"CC6.1\",\"CC6.8\",\"CC7.2\",\"CC7.3\"]},\"agent\":{\"id\":\"010\",\"name\":\"co7\",\"ip\":\"10.10.10.10\"},\"manager\":{\"name\":\"ub20\"},\"id\":\"1726653704.812551\",\"full_log\":\"Sep 18 15:31:43 co7 sshd[28830]: Failed password for devuser from 10.10.10.10 port 57137 ssh2\",\"predecoder\":{\"program_name\":\"sshd\",\"timestamp\":\"Sep 18 15:31:43\",\"hostname\":\"co7\"},\"decoder\":{\"parent\":\"sshd\",\"name\":\"sshd\"},\"data\":{\"srcip\":\"10.10.10.10\",\"srcport\":\"57137\",\"dstuser\":\"devuser\"},\"location\":\"/var/log/secure\"}"
+      service: "system"
+      status: "info"
+      tags:
+      - "source:LOGS_SOURCE"
+      timestamp: 1726653704788

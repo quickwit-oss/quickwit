@@ -1,0 +1,47 @@
+id: cacti
+metric_id: cacti
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: Cacti
+  enabled: true
+  filter:
+    query: source:cacti
+  processors:
+    - type: grok-parser
+      name: Parsing cacti logs
+      enabled: true
+      source: message
+      samples:
+        - '10/01/2020 09:14:50 - POLLER: Poller[1] WARNING: Cacti Master Poller process terminated by user'
+        - '2020/01/04 21:25:52 - PING Device[2] SNMP: Device responded to SNMP'
+        - "2020/10/01 09:21:10 - SPINE: Poller[Main Poller] PID[999] FATAL: MySQL Error:'2013', Message:'Lost connection to MySQL server during query'"
+        - '2020/09/21 22:44:05 - INSTALL: Checking arguments'
+      grok:
+        supportRules: |
+          _timestamp (%{date("dd/MM/yyyy HH:mm:ss"):timestamp}|%{date("yyyy/MM/dd HH:mm:ss"):timestamp})
+          _thread_name %{word:logger.thread_name}.*\]
+        matchRules: |
+          rule_full %{_timestamp} - %{word:logger.name}: %{_thread_name} %{word:level}: %{data:msg}
+          rule_default %{_timestamp} - %{data:msg}
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

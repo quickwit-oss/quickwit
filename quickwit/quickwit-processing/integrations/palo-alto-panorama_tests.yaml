@@ -1,0 +1,436 @@
+id: "palo-alto-panorama"
+tests:
+ -
+  sample: "<190>Jan 18 12:46:54 PA-VM serial=42808DUMMY733|type=TRAFFIC|subtype=end|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.0|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=LAN-WAN|suser=|duser=|app=incomplete|vsys=vsys1|from=LAN|to=WAN|inboundif=ethernet1/1|outboundif=ethernet1/2|logset=POC-Dash-DD-204-9099|sessionid=15281|repeatcnt=1|sport=42071|dport=233|natsport=46973|natdport=233|flags=0x40001b|proto=tcp|act=allow|bytes=134|bytes_sent=74|bytes_received=60|pkt=2|start=2024/01/18 12:46:45|elapsed=0|cat=any|seq=7288183648727243213|actflag=0x0|sloc=10.0.0.0-10.255.255.255|dloc=10.0.0.0-10.255.255.255|pktsent=1|pktrcvd=1|sessionendreason=tcp-rst-from-server|vsysname=|dvc=PA-VM|actsrc=from-policy|suuid=|duuid=|tunnelid=0|monitortag=|parentid=0|parentst=|tunnel=N/A|associd=0|chunk=0|chunksent=0|chunkrcvd=0|ruleuuid=9d526565-xxyy-4e35-9c2e-6f54430132ec|http2conn=0|appflap=0|policyid=|link=|dynusrgrp=|xffip=|scat=|sprofile=|smodel=|sven=|sosfam=|sosver=|shost=|smac=|dcat=|dprofile=|dmodel=|dven=|dosfam=|dosver=|dhost=|dmac=|contid=|podnamespace=|podname=|sedl=|dedl=|hostid=|srnum=|sdag=|ddag=|sessionown=|subcatapp=unknown|appcat=unknown|apptech=unknown|apprisk=1|appchar=|appcont=|tunneledapp=incomplete|appsaas=no|appstate=no|offloaded=0|flowtype=|cluster="
+  result:
+    custom:
+      actflag: "0x0"
+      actsrc: "from-policy"
+      app: "incomplete"
+      appcat: "unknown"
+      appflap: 0
+      appsaas: "no"
+      appstate: "no"
+      apptech: "unknown"
+      associd: 0
+      bytes: 134
+      cat: "any"
+      chunk: 0
+      chunkrcvd: 0
+      chunksent: 0
+      dloc: "10.0.0.0-10.255.255.255"
+      dport: 233
+      dst: "185.64.148.0"
+      dstzone: "WAN"
+      dvc: "PA-VM"
+      elapsed: 0
+      flags: "0x40001b"
+      http2conn: 0
+      inboundif: "ethernet1/1"
+      logset: "POC-Dash-DD-204-9099"
+      network:
+        bytes_read: 74
+        bytes_written: 60
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 46973
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 233
+      offloaded: 0
+      outboundif: "ethernet1/2"
+      palo:
+        alto:
+          panorama:
+            action: "allow"
+            apprisk: 1
+            pkt: 2
+            pktrcvd: 1
+            pktsent: 1
+            vsys: "vsys1"
+      parentid: 0
+      proto: "tcp"
+      repeatcnt: 1
+      rule: "LAN-WAN"
+      ruleuuid: "9d526565-xxyy-4e35-9c2e-6f54430132ec"
+      seq: 7288183648727243213
+      serial: "42808DUMMY733"
+      sessionendreason: "tcp-rst-from-server"
+      sessionid: 15281
+      sloc: "10.0.0.0-10.255.255.255"
+      sport: 42071
+      src: "185.64.148.0"
+      srczone: "LAN"
+      start: "2024/01/18 12:46:45"
+      subcatapp: "unknown"
+      subtype: "end"
+      time_generated: "Jan 25 2024 11:02:57 GMT"
+      timestamp: 1706180577000
+      tunnel: "N/A"
+      tunneledapp: "incomplete"
+      tunnelid: 0
+      type: "TRAFFIC"
+    message: "<190>Jan 18 12:46:54 PA-VM serial=42808DUMMY733|type=TRAFFIC|subtype=end|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.0|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=LAN-WAN|suser=|duser=|app=incomplete|vsys=vsys1|from=LAN|to=WAN|inboundif=ethernet1/1|outboundif=ethernet1/2|logset=POC-Dash-DD-204-9099|sessionid=15281|repeatcnt=1|sport=42071|dport=233|natsport=46973|natdport=233|flags=0x40001b|proto=tcp|act=allow|bytes=134|bytes_sent=74|bytes_received=60|pkt=2|start=2024/01/18 12:46:45|elapsed=0|cat=any|seq=7288183648727243213|actflag=0x0|sloc=10.0.0.0-10.255.255.255|dloc=10.0.0.0-10.255.255.255|pktsent=1|pktrcvd=1|sessionendreason=tcp-rst-from-server|vsysname=|dvc=PA-VM|actsrc=from-policy|suuid=|duuid=|tunnelid=0|monitortag=|parentid=0|parentst=|tunnel=N/A|associd=0|chunk=0|chunksent=0|chunkrcvd=0|ruleuuid=9d526565-xxyy-4e35-9c2e-6f54430132ec|http2conn=0|appflap=0|policyid=|link=|dynusrgrp=|xffip=|scat=|sprofile=|smodel=|sven=|sosfam=|sosver=|shost=|smac=|dcat=|dprofile=|dmodel=|dven=|dosfam=|dosver=|dhost=|dmac=|contid=|podnamespace=|podname=|sedl=|dedl=|hostid=|srnum=|sdag=|ddag=|sessionown=|subcatapp=unknown|appcat=unknown|apptech=unknown|apprisk=1|appchar=|appcont=|tunneledapp=incomplete|appsaas=no|appstate=no|offloaded=0|flowtype=|cluster="
+    service: "TRAFFIC"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706180577000
+ -
+  sample: "<190>Jan 16 14:15:34 PA-VM serial=42808DUMMY733|type=THREAT|subtype=url|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.0|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=Block URL and Apps|suser=|duser=|app=facebook-base|vsys=vsys1|from=LAN|to=WAN|inboundif=ethernet1/2|outboundif=ethernet1/1|logset=New_Log_Profile|sessionid=1553|repeatcnt=1|sport=49896|dport=443|natsport=16742|natdport=443|flags=0x403400|proto=tcp|act=block-url|misc=www.facebook.com/|threatid=9999(9999)|cat=social-networking|severity=informational|dir=client-to-server|seqno=7312400435275366420|actflags=0x0|sloc=10.0.0.0-10.255.255.255|dloc=India|contenttype=|pcapip=0|filedigest=|cloud=|urlidx=0|useragent=|filetype=|xff=|ref=|sender=|sub=|recipient=|reportid=0|vsysname=|dvc=PA-VM|suuid=|duuid=|http_method=|tunnelid=0|monitortag=|tunnel=N/A|thrcategory=N/A|contentver=AppThreat-0-0|ppid=4294967295|httpheaders=|urlcategory=social-networking,low-risk|ruleuuid=b77632fb-xxyy-49f2-b319-e02d91a826fc|http2conn=0|dynusrgrp=|xffip=|scat=|sprofile=|smodel=|sven=|sosfam=|sosver=|shost=|smac=|dcat=|dprofile=|dmodel=|dven=|dosfam=|dosver=|dhost=|dmac=|contid=|podnamespace=|podname=|hostid=|srnum=|reason=|justification=|subcatApp=social-networking|appcat=saas|apptech=browser-based|apprisk=4|appchar=used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use,is-saas,no-certifications|appcont=facebook|tunneledapp=facebook-base|appsaas=yes|appstate=no|cloudreportid=|cluster=|flowtype="
+  result:
+    custom:
+      actflags: "0x0"
+      app: "facebook-base"
+      appcat: "saas"
+      appsaas: "yes"
+      appstate: "no"
+      apptech: "browser-based"
+      cat: "social-networking"
+      contentver: "AppThreat-0-0"
+      dir: "client-to-server"
+      dloc: "India"
+      dport: 443
+      dst: "185.64.148.0"
+      dstzone: "WAN"
+      dvc: "PA-VM"
+      flags: "0x403400"
+      http2conn: 0
+      inboundif: "ethernet1/2"
+      logset: "New_Log_Profile"
+      misc: "www.facebook.com/"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 16742
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 443
+      outboundif: "ethernet1/1"
+      palo:
+        alto:
+          panorama:
+            action: "block-url"
+            appchar: "used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use,is-saas,no-certifications"
+            appcont: "facebook"
+            apprisk: 4
+            vsys: "vsys1"
+      pcapip: 0
+      ppid: 4294967295
+      proto: "tcp"
+      repeatcnt: 1
+      reportid: 0
+      rule: "Block URL and Apps"
+      ruleuuid: "b77632fb-xxyy-49f2-b319-e02d91a826fc"
+      seqno: 7312400435275366420
+      serial: "42808DUMMY733"
+      sessionid: 1553
+      severity: "informational"
+      sloc: "10.0.0.0-10.255.255.255"
+      sport: 49896
+      src: "185.64.148.0"
+      srczone: "LAN"
+      status: "info"
+      subcatApp: "social-networking"
+      subtype: "url"
+      thrcategory: "N/A"
+      threatid: "9999(9999)"
+      time_generated: "Jan 25 2024 11:02:57 GMT"
+      timestamp: 1706180577000
+      tunnel: "N/A"
+      tunneledapp: "facebook-base"
+      tunnelid: 0
+      type: "THREAT"
+      urlcategory: "social-networking,low-risk"
+      urlidx: 0
+    message: "<190>Jan 16 14:15:34 PA-VM serial=42808DUMMY733|type=THREAT|subtype=url|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.0|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=Block URL and Apps|suser=|duser=|app=facebook-base|vsys=vsys1|from=LAN|to=WAN|inboundif=ethernet1/2|outboundif=ethernet1/1|logset=New_Log_Profile|sessionid=1553|repeatcnt=1|sport=49896|dport=443|natsport=16742|natdport=443|flags=0x403400|proto=tcp|act=block-url|misc=www.facebook.com/|threatid=9999(9999)|cat=social-networking|severity=informational|dir=client-to-server|seqno=7312400435275366420|actflags=0x0|sloc=10.0.0.0-10.255.255.255|dloc=India|contenttype=|pcapip=0|filedigest=|cloud=|urlidx=0|useragent=|filetype=|xff=|ref=|sender=|sub=|recipient=|reportid=0|vsysname=|dvc=PA-VM|suuid=|duuid=|http_method=|tunnelid=0|monitortag=|tunnel=N/A|thrcategory=N/A|contentver=AppThreat-0-0|ppid=4294967295|httpheaders=|urlcategory=social-networking,low-risk|ruleuuid=b77632fb-xxyy-49f2-b319-e02d91a826fc|http2conn=0|dynusrgrp=|xffip=|scat=|sprofile=|smodel=|sven=|sosfam=|sosver=|shost=|smac=|dcat=|dprofile=|dmodel=|dven=|dosfam=|dosver=|dhost=|dmac=|contid=|podnamespace=|podname=|hostid=|srnum=|reason=|justification=|subcatApp=social-networking|appcat=saas|apptech=browser-based|apprisk=4|appchar=used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use,is-saas,no-certifications|appcont=facebook|tunneledapp=facebook-base|appsaas=yes|appstate=no|cloudreportid=|cluster=|flowtype="
+    service: "THREAT"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706180577000
+ -
+  sample: "<190>Jan 16 14:15:34 PA-VM serial=42808DUMMY733|type=DECRYPTION|subtype=|configver=10.2.5-h5|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.03|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=DNS|suser=sruser1|duser=dstuser1|app=ssl|vsys=vsys3|from=LAN|to=WAN|inboundif=ethernet1/2|outboundif=ethernet1/1|logset=POC-Dash-DD-204-9099|time_received=2024/01/01 11:20:30|sessionid=1578|repeatcnt=1|sport=5347|dport=7007|natsport=5431|natdport=7001|flags=0x02000000|proto=tcp|act=deny|tunnel=bi-tunnel|suuid=9d526565-ba09-yyxx-9c2e-6f54430132ac|duuid=9d526565-ba09-aabb-9c2e-6f54430132dc|ruleuuid=9d526565-ba01-4e35-1234-6f54430032er|hsstagec2f=Client Hello|hsstagef2s=Server Finished|tlsver=1|tlskeyxchg=RSA|tlsenc=AES-128-CBC|tlsauth=SHA|policyname=CLI Command|eccurve=test_ec_curve|errindex=Cipher|rootstatus=trusted|chainstatus=Uninspected|proxytype=Forward|certserial=XYZ420|fingerprint=test-9d526565-ba01-4e35-9c2e-6f54430032er|notbefore=1704068400|notafter=1704069400|certver=v1|certsize=65536|cnlen=33000|issuerlen=532|rootcnlen=895|snilen=99|certflags=padding3|cn=YM204|issuercn=FRID|rootcn=Yiffi|sni=server1|err=failed validation|contid=fashfgdshkfgdskfsh21515|podnamespace=pod_namespace|podname=pod_name|sedl=src_edl|dedl=dst_edl|sdag=src_dag|ddag=dst_dag|scat=network|sprofile=roaming_comp|smodel=lenovo-win|sven=win|src_osfamily=windows|sosver=1803|shost=WIN45|smac=00:11:22:33:44:55|dcat=firewall|dprofile=router|dmodel=44OS|dven=cisfo|dosfam=windows|dosver=1809|dhost=DE423|dmac=BE:EF:57:33:13:C4|seqno=7288183790458945051|actflag=0x0|vsysname=vsys2|dvc=PA-VM|vsysid=5455545|appsubcat=encrypted-tunnel|appcat=business-systems|apptech=browser-based|apprisk=1|appchar=used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use|appcont=docker|appsaas=1|appstate=1|cluster=CLN0"
+  result:
+    custom:
+      actflag: "0x0"
+      app: "ssl"
+      appcat: "business-systems"
+      appsaas: 1
+      appstate: 1
+      apptech: "browser-based"
+      certflags: "padding3"
+      certserial: "XYZ420"
+      certsize: 65536
+      certver: "v1"
+      chainstatus: "Uninspected"
+      cluster: "CLN0"
+      cn: "YM204"
+      cnlen: 33000
+      configver: "10.2.5-h5"
+      contid: "fashfgdshkfgdskfsh21515"
+      ddag: "dst_dag"
+      dedl: "dst_edl"
+      dhost: "DE423"
+      dosfam: "windows"
+      dport: 7007
+      dst: "185.64.148.0"
+      dstzone: "WAN"
+      duser: "dstuser1"
+      duuid: "9d526565-ba09-aabb-9c2e-6f54430132dc"
+      dvc: "PA-VM"
+      eccurve: "test_ec_curve"
+      err: "failed validation"
+      errindex: "Cipher"
+      fingerprint: "test-9d526565-ba01-4e35-9c2e-6f54430032er"
+      flag_details: "IPv6 session"
+      flags: "0x02000000"
+      hsstagec2f: "Client Hello"
+      hsstagef2s: "Server Finished"
+      http:
+        useragent_details:
+          os:
+            family: "windows"
+      inboundif: "ethernet1/2"
+      issuercn: "FRID"
+      issuerlen: 532
+      logset: "POC-Dash-DD-204-9099"
+      network:
+        client:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 5431
+        destination:
+          geoip:
+            city:
+              name: "Paris"
+            continent:
+              code: "EU"
+              name: "Europe"
+            country:
+              iso_code: "FR"
+              name: "France"
+            ipAddress: "185.64.148.0"
+            location:
+              latitude: 48.90654
+              longitude: 2.33339
+            subdivision:
+              iso_code: "FR-IDF"
+              name: "Île-de-France"
+            timezone: "Europe/Paris"
+          ip: "185.64.148.0"
+          port: 7001
+      notafter: 1704069400
+      notbefore: 1704068400
+      outboundif: "ethernet1/1"
+      palo:
+        alto:
+          panorama:
+            action: "deny"
+            appchar: "used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use"
+            appcont: "docker"
+            apprisk: 1
+            appsubcat: "encrypted-tunnel"
+            dcat: "firewall"
+            dmac: "BE:EF:57:33:13:C4"
+            dmodel: "44OS"
+            dosver: 1809
+            dprofile: "router"
+            dven: "cisfo"
+            scat: "network"
+            smodel: "lenovo-win"
+            sosver: 1803
+            sprofile: "roaming_comp"
+            sven: "win"
+            vsys: "vsys3"
+      podname: "pod_name"
+      podnamespace: "pod_namespace"
+      policyname: "CLI Command"
+      proto: "tcp"
+      proxytype: "Forward"
+      repeatcnt: 1
+      rootcn: "Yiffi"
+      rootcnlen: 895
+      rootstatus: "trusted"
+      rule: "DNS"
+      ruleuuid: "9d526565-ba01-4e35-1234-6f54430032er"
+      sdag: "src_dag"
+      sedl: "src_edl"
+      seqno: 7288183790458945051
+      serial: "42808DUMMY733"
+      sessionid: 1578
+      shost: "WIN45"
+      smac: "00:11:22:33:44:55"
+      sni: "server1"
+      snilen: 99
+      sport: 5347
+      src: "185.64.148.03"
+      srczone: "LAN"
+      suser: "sruser1"
+      suuid: "9d526565-ba09-yyxx-9c2e-6f54430132ac"
+      time_generated: "Jan 25 2024 11:02:57 GMT"
+      time_received: "2024/01/01 11:20:30"
+      timestamp: 1706180577000
+      tlsauth: "SHA"
+      tlsenc: "AES-128-CBC"
+      tlskeyxchg: "RSA"
+      tlsver: 1
+      tunnel: "bi-tunnel"
+      type: "DECRYPTION"
+      vsysid: 5455545
+      vsysname: "vsys2"
+    message: "<190>Jan 16 14:15:34 PA-VM serial=42808DUMMY733|type=DECRYPTION|subtype=|configver=10.2.5-h5|time_generated=Jan 25 2024 11:02:57 GMT|src=185.64.148.03|dst=185.64.148.0|natsrc=185.64.148.0|natdst=185.64.148.0|rule=DNS|suser=sruser1|duser=dstuser1|app=ssl|vsys=vsys3|from=LAN|to=WAN|inboundif=ethernet1/2|outboundif=ethernet1/1|logset=POC-Dash-DD-204-9099|time_received=2024/01/01 11:20:30|sessionid=1578|repeatcnt=1|sport=5347|dport=7007|natsport=5431|natdport=7001|flags=0x02000000|proto=tcp|act=deny|tunnel=bi-tunnel|suuid=9d526565-ba09-yyxx-9c2e-6f54430132ac|duuid=9d526565-ba09-aabb-9c2e-6f54430132dc|ruleuuid=9d526565-ba01-4e35-1234-6f54430032er|hsstagec2f=Client Hello|hsstagef2s=Server Finished|tlsver=1|tlskeyxchg=RSA|tlsenc=AES-128-CBC|tlsauth=SHA|policyname=CLI Command|eccurve=test_ec_curve|errindex=Cipher|rootstatus=trusted|chainstatus=Uninspected|proxytype=Forward|certserial=XYZ420|fingerprint=test-9d526565-ba01-4e35-9c2e-6f54430032er|notbefore=1704068400|notafter=1704069400|certver=v1|certsize=65536|cnlen=33000|issuerlen=532|rootcnlen=895|snilen=99|certflags=padding3|cn=YM204|issuercn=FRID|rootcn=Yiffi|sni=server1|err=failed validation|contid=fashfgdshkfgdskfsh21515|podnamespace=pod_namespace|podname=pod_name|sedl=src_edl|dedl=dst_edl|sdag=src_dag|ddag=dst_dag|scat=network|sprofile=roaming_comp|smodel=lenovo-win|sven=win|src_osfamily=windows|sosver=1803|shost=WIN45|smac=00:11:22:33:44:55|dcat=firewall|dprofile=router|dmodel=44OS|dven=cisfo|dosfam=windows|dosver=1809|dhost=DE423|dmac=BE:EF:57:33:13:C4|seqno=7288183790458945051|actflag=0x0|vsysname=vsys2|dvc=PA-VM|vsysid=5455545|appsubcat=encrypted-tunnel|appcat=business-systems|apptech=browser-based|apprisk=1|appchar=used-by-malware,able-to-transfer-file,has-known-vulnerability,tunnel-other-application,pervasive-use|appcont=docker|appsaas=1|appstate=1|cluster=CLN0"
+    service: "DECRYPTION"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706180577000
+ -
+  sample: "<190>Jan 16 14:15:24 PA-VM receive_time=2024/01/16 11:27:19|serial=7051000206484|type=SYSTEM|subtype=general|time_generated=Jan 25 2024 11:02:57 GMT|vsys=|eventid=general|object=|module=general|severity=informational|opaque=User admin performed a log export operation for config log.|seqno=7288183790458945051|actionflags=0x0|dg_hier_level_1=0|dg_hier_level_2=0|dg_hier_level_3=0|dg_hier_level_4=0|vsys_name=|device_name=PA-VM|high_res_timestamp=2024-01-16T11:27:20.587+05:30"
+  result:
+    custom:
+      actionflags: "0x0"
+      device_name: "PA-VM"
+      dg_hier_level_1: 0
+      dg_hier_level_2: 0
+      dg_hier_level_3: 0
+      dg_hier_level_4: 0
+      eventid: "general"
+      high_res_timestamp: "2024-01-16T11:27:20.587+05:30"
+      module: "general"
+      opaque: "User admin performed a log export operation for config log."
+      receive_time: "2024/01/16 11:27:19"
+      seqno: 7288183790458945051
+      serial: 7051000206484
+      severity: "informational"
+      status: "info"
+      subtype: "general"
+      time_generated: "Jan 25 2024 11:02:57 GMT"
+      timestamp: 1706180577000
+      type: "SYSTEM"
+    message: "<190>Jan 16 14:15:24 PA-VM receive_time=2024/01/16 11:27:19|serial=7051000206484|type=SYSTEM|subtype=general|time_generated=Jan 25 2024 11:02:57 GMT|vsys=|eventid=general|object=|module=general|severity=informational|opaque=User admin performed a log export operation for config log.|seqno=7288183790458945051|actionflags=0x0|dg_hier_level_1=0|dg_hier_level_2=0|dg_hier_level_3=0|dg_hier_level_4=0|vsys_name=|device_name=PA-VM|high_res_timestamp=2024-01-16T11:27:20.587+05:30"
+    service: "SYSTEM"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706180577000
+ -
+  sample: "<190>Jan 16 14:15:24 PA-VM receive_time=2023/11/24 15:38:21|serial=42808DUMMY733|type=CONFIG|subtype=1|time_generated=Jan 25 2024 11:02:57 GMT|host=8.8.8.8|vsys=test1|cmd=audit-commit|admin=admin|client=Web|result=Succeeded|path=vsys vsys1 rulebase nat rules LAN-WAN|before-change-detail=d3669n472-xxyy-4d21-bf0f-ed099ecfbaad|after-change-detail=d3669472-xxyy-4d21-bf0f-ed099ecfbaad|seqno=7304913645853474846|actionflags=0x0|dg_hier_level_1=0|dg_hier_level_2=0|dg_hier_level_3=0|dg_hier_level_4=0|vsys_name=|device_name=PA-VM|dg_id=0|comment=LAN-WAN|high_res_timestamp=2024-01-16T14:15:34.518+05:30"
+  result:
+    custom:
+      actionflags: "0x0"
+      after-change-detail: "d3669472-xxyy-4d21-bf0f-ed099ecfbaad"
+      before-change-detail: "d3669n472-xxyy-4d21-bf0f-ed099ecfbaad"
+      client: "Web"
+      cmd: "audit-commit"
+      comment: "LAN-WAN"
+      device_name: "PA-VM"
+      dg_hier_level_1: 0
+      dg_hier_level_2: 0
+      dg_hier_level_3: 0
+      dg_hier_level_4: 0
+      dg_id: 0
+      high_res_timestamp: "2024-01-16T14:15:34.518+05:30"
+      host: "8.8.8.8"
+      palo:
+        alto:
+          panorama:
+            vsys: "test1"
+      path: "vsys vsys1 rulebase nat rules LAN-WAN"
+      receive_time: "2023/11/24 15:38:21"
+      result: "Succeeded"
+      seqno: 7304913645853474846
+      serial: "42808DUMMY733"
+      subtype: 1
+      time_generated: "Jan 25 2024 11:02:57 GMT"
+      timestamp: 1706180577000
+      type: "CONFIG"
+      usr:
+        name: "admin"
+    message: "<190>Jan 16 14:15:24 PA-VM receive_time=2023/11/24 15:38:21|serial=42808DUMMY733|type=CONFIG|subtype=1|time_generated=Jan 25 2024 11:02:57 GMT|host=8.8.8.8|vsys=test1|cmd=audit-commit|admin=admin|client=Web|result=Succeeded|path=vsys vsys1 rulebase nat rules LAN-WAN|before-change-detail=d3669n472-xxyy-4d21-bf0f-ed099ecfbaad|after-change-detail=d3669472-xxyy-4d21-bf0f-ed099ecfbaad|seqno=7304913645853474846|actionflags=0x0|dg_hier_level_1=0|dg_hier_level_2=0|dg_hier_level_3=0|dg_hier_level_4=0|vsys_name=|device_name=PA-VM|dg_id=0|comment=LAN-WAN|high_res_timestamp=2024-01-16T14:15:34.518+05:30"
+    service: "CONFIG"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1706180577000

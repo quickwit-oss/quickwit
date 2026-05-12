@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use super::LogRouter;
 
-/// Mock document structure for testing without pomchi dependency.
+/// Mock document structure for testing without quickwit-processing dependency.
 /// Contains tags (flat key-value) and custom fields (nested JSON-like structure).
 #[derive(Default)]
 struct MockDoc {

@@ -1,0 +1,137 @@
+id: php
+metric_id: php
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Error Type
+    path: error.kind
+    source: log
+pipeline:
+  type: pipeline
+  name: PHP
+  enabled: true
+  filter:
+    query: source:php
+  processors:
+    - type: grok-parser
+      name: Parsing php Default formats
+      enabled: true
+      source: message
+      samples:
+        - '[12-June-2023 13:53:08] ERROR: [pool www] child 1234 said into stderr: "[2023-06-13T13:53:00.103088+00:00] AlbumController.WARNING: Sample log [dd.span_id="4014120331748607290" dd.trace_id="2762343115747197098"] [] []"'
+        - '[2023-05-26 13:53:08] production.DEBUG: email sent {"dd.trace_id":"12441063084678150498","dd.span_id":"14615341708603940851"}'
+        - '2023-06-13T07:59:21+00:00 NOTICE (5): Notice message [dd.trace_id="8702072361770304301" dd.span_id="12316750189659236094" level_name="notice"]'
+        - '2023-06-13T14:11:24+00:00 DEBUG (7): Debug message {"dd.trace_id":"3874201437900919142","dd.span_id":"1097783838439658713","level_name":"debug"}'
+        - Error message. [dd.span_id="4014120331748607290" dd.trace_id="2762343115747197096"]
+      grok:
+        supportRules: |
+          _monolog_date %{date("yyyy-MM-dd HH:mm:ss"):timestamp}
+          _laminas_date %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _status %{word:status}
+          _message %{regex("(?<message>.*)")}
+        matchRules: |
+          monolog_append \[%{_monolog_date}\] %{word:channel}\.%{_status}: %{_message} \[%{data::keyvalue}\]
+
+          monolog_context \[%{_monolog_date}\] %{word:channel}\.%{_status}: %{_message} %{data::json}
+
+          laminas_append %{_laminas_date} %{_status} (?>\(%{number}\)): %{_message} \[%{data::keyvalue}\]
+
+          laminas_default %{_laminas_date} %{_status} (?>\(%{number}\)): %{_message} %{data::json}
+
+          default_parser %{data::keyvalue}
+    - type: attribute-remapper
+      name: Map `context.dd.span_id`, `extra.dd.span_id` to `dd.span_id`
+      enabled: true
+      sources:
+        - context.dd.span_id
+        - extra.dd.span_id
+      target: dd.span_id
+      sourceType: attribute
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: true
+    - type: trace-id-remapper
+      name: Define `dd.trace_id`, `context.dd.trace_id`, `extra.dd.trace_id` as the official trace ID of the log
+      enabled: true
+      sources:
+        - dd.trace_id
+        - context.dd.trace_id
+        - extra.dd.trace_id
+    - type: attribute-remapper
+      name: Map attribute `dd.env`, `context.dd.env`, `extra.dd.env` to tag `env`
+      enabled: true
+      sources:
+        - dd.env
+        - context.dd.env
+        - extra.dd.env
+      target: env
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: attribute-remapper
+      name: Map attribute `dd.version`, `context.dd.version`, `extra.dd.version` to tag `version`
+      enabled: true
+      sources:
+        - dd.version
+        - context.dd.version
+        - extra.dd.version
+      target: version
+      targetType: tag
+      preserveSource: false
+      overrideOnConflict: true
+      sourceType: attribute
+    - type: service-remapper
+      name: Define `dd.service`, `context.dd.service`, `extra.dd.service` as the official service of the log
+      enabled: true
+      sources:
+        - dd.service
+        - context.dd.service
+        - extra.dd.service
+    - type: status-remapper
+      name: Define `status`, `context.status`, `extra.status`, `level_name` as the official status of the log
+      enabled: true
+      sources:
+        - status
+        - context.status
+        - extra.status
+        - level_name
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `context.error.kind`, `extra.error.kind` to `error.kind`
+      enabled: true
+      sources:
+        - context.error.kind
+        - extra.error.kind
+      target: error.kind
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `context.error.stack`, `extra.error.stack` to `error.stack`
+      enabled: true
+      sources:
+        - context.error.stack
+        - extra.error.stack
+      target: error.stack
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `context.error.message`, `extra.error.message` to `error.message`
+      enabled: true
+      sources:
+        - context.error.message
+        - extra.error.message
+      target: error.message
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

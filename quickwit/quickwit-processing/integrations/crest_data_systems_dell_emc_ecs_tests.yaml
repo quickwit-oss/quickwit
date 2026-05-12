@@ -1,0 +1,1309 @@
+id: "crest_data_systems_dell_emc_ecs"
+tests:
+ -
+  sample: |
+    Aug 11 19:22:15 hop-ex300-01-pub-05.solarch.lab.emc.com BUCKET DELETE cosbench cosbench Bucket costest18 has been deleted
+  result:
+    custom:
+      dell_emc_ecs_eventType: "DELETE"
+      dell_emc_ecs_namespace: "cosbench"
+      dell_emc_ecs_nodeid: "hop-ex300-01-pub-05.solarch.lab.emc.com"
+      dell_emc_ecs_userId: "cosbench"
+      description: "Bucket costest18 has been deleted"
+      serviceType: "BUCKET"
+      timestamp: 19250535000
+      usr:
+        id: "cosbench"
+    message: |
+      Aug 11 19:22:15 hop-ex300-01-pub-05.solarch.lab.emc.com BUCKET DELETE cosbench cosbench Bucket costest18 has been deleted
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 19250535000
+ -
+  sample: |-
+    {
+      "eventServiceType" : "Login",
+      "eventResourceId" : "root",
+      "auditEventId" : "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b",
+      "eventUserId" : "root",
+      "eventDescription" : "User root logged in successfully",
+      "eventType" : "Update",
+      "eventNamespace" : "-",
+      "timestamp" : "2023-09-26T06:34:50"
+    }
+  result:
+    custom:
+      auditEventId: "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b"
+      eventDescription: "User root logged in successfully"
+      eventNamespace: "-"
+      eventResourceId: "root"
+      eventServiceType: "Login"
+      eventType: "Update"
+      eventUserId: "root"
+      timestamp: "2023-09-26T06:34:50"
+      usr:
+        id: "root"
+    message: |-
+      {
+        "eventServiceType" : "Login",
+        "eventResourceId" : "root",
+        "auditEventId" : "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b",
+        "eventUserId" : "root",
+        "eventDescription" : "User root logged in successfully",
+        "eventType" : "Update",
+        "eventNamespace" : "-",
+        "timestamp" : "2023-09-26T06:34:50"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1695710090000
+ -
+  sample: |-
+    {
+      "alertsNamespace" : "-",
+      "hostname" : "10.50.3.251",
+      "alertsDescription" : "Storage pool is unavailable due to two or less nodes running",
+      "service" : "cds.dell.emc.ecs.alerts",
+      "alertsSymptomCode" : "13000",
+      "alertTimestamp" : "2023-08-19T02:26:33",
+      "alertsAcknowledged" : false,
+      "alertsId" : "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917",
+      "alertsSeverity" : "ERROR",
+      "alertsType" : "Storage tier is degraded or possibly unavailable"
+    }
+  result:
+    custom:
+      alertTimestamp: "2023-08-19T02:26:33"
+      alertsAcknowledged: false
+      alertsDescription: "Storage pool is unavailable due to two or less nodes running"
+      alertsId: "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917"
+      alertsNamespace: "-"
+      alertsSeverity: "ERROR"
+      alertsSymptomCode: "13000"
+      alertsType: "Storage tier is degraded or possibly unavailable"
+      hostname: "10.50.3.251"
+      service: "cds.dell.emc.ecs.alerts"
+    message: |-
+      {
+        "alertsNamespace" : "-",
+        "hostname" : "10.50.3.251",
+        "alertsDescription" : "Storage pool is unavailable due to two or less nodes running",
+        "service" : "cds.dell.emc.ecs.alerts",
+        "alertsSymptomCode" : "13000",
+        "alertTimestamp" : "2023-08-19T02:26:33",
+        "alertsAcknowledged" : false,
+        "alertsId" : "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917",
+        "alertsSeverity" : "ERROR",
+        "alertsType" : "Storage tier is degraded or possibly unavailable"
+      }
+    service: "cds.dell.emc.ecs.alerts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |
+    Aug 11 19:39:29 hop-ex300-01-pub-05 ecs 2019-08-11 18:12:48,578 0af616b9:16b3dcc22e1:4d8c1:126f 10.246.22.185:9020 10.246.21.91:51678 - - GET - - - ping HTTP/1.1 200 9 - 291 9
+  result:
+    custom:
+      cip: "10.246.21.91"
+      csUserAgent: "-"
+      csbytes: "-"
+      csmethod: "GET"
+      csprotocolversion: "HTTP/1.1"
+      csuriquery: "ping"
+      date: "2019-08-11"
+      machinename: "hop-ex300-01-pub-05"
+      network:
+        client:
+          ip: "10.246.22.185"
+      scbytes: "291"
+      scstatus: "200"
+      sip: "10.246.22.185"
+      systemname: "ecs"
+      time: "18:12:48"
+      timestamp: 19251569000
+      timetaken: "9"
+      usr:
+        name: "-"
+      xbucket: "-"
+      xnamespace: "-"
+      xobject_: "-"
+      xrequestid: "0af616b9:16b3dcc22e1:4d8c1:126f"
+      xstorageprocessingtime: 9.0
+      xusername: "-"
+    message: |
+      Aug 11 19:39:29 hop-ex300-01-pub-05 ecs 2019-08-11 18:12:48,578 0af616b9:16b3dcc22e1:4d8c1:126f 10.246.22.185:9020 10.246.21.91:51678 - - GET - - - ping HTTP/1.1 200 9 - 291 9
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 19251569000
+ -
+  sample: |-
+    {
+      "chunksJournalPendingBootstrapReplicationTotalSize" : 500000,
+      "chunksPendingXorTotalSize" : 500000,
+      "chunksRepoPendingBootstrapReplicationTotalSize" : 500000,
+      "chunksRepoPendingReplicationTotalSize" : 500000,
+      "zone1Name" : "VDC1",
+      "BootstrapState" : "ReplicateBTree",
+      "replicationRepoChunksRpoTimestamp" : 12345678,
+      "replicationEgressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "replicationIngressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "rgName" : "rg-name",
+      "zoneId" : "rglink-id1",
+      "zone2Name" : "VDC2",
+      "rglinkStatus" : "Good",
+      "replicationRpoTimestamp" : 12345678,
+      "chunksBTreePendingBootstrapReplicationTotalSize" : 500000,
+      "replicationJournalChunksRpoTimestamp" : 12345678,
+      "chunksJournalPendingReplicationTotalSize" : 500000,
+      "BootstrapProgressPercent" : 20
+    }
+  result:
+    custom:
+      BootstrapProgressPercent: 20
+      BootstrapState: "ReplicateBTree"
+      chunksBTreePendingBootstrapReplicationTotalSize: 500000
+      chunksJournalPendingBootstrapReplicationTotalSize: 500000
+      chunksJournalPendingReplicationTotalSize: 500000
+      chunksPendingXorTotalSize: 500000
+      chunksRepoPendingBootstrapReplicationTotalSize: 500000
+      chunksRepoPendingReplicationTotalSize: 500000
+      replicationEgressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationIngressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationJournalChunksRpoTimestamp: 12345678
+      replicationRepoChunksRpoTimestamp: 12345678
+      replicationRpoTimestamp: 12345678
+      rgName: "rg-name"
+      rglinkStatus: "Good"
+      zone1Name: "VDC1"
+      zone2Name: "VDC2"
+      zoneId: "rglink-id1"
+    message: |-
+      {
+        "chunksJournalPendingBootstrapReplicationTotalSize" : 500000,
+        "chunksPendingXorTotalSize" : 500000,
+        "chunksRepoPendingBootstrapReplicationTotalSize" : 500000,
+        "chunksRepoPendingReplicationTotalSize" : 500000,
+        "zone1Name" : "VDC1",
+        "BootstrapState" : "ReplicateBTree",
+        "replicationRepoChunksRpoTimestamp" : 12345678,
+        "replicationEgressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "replicationIngressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "rgName" : "rg-name",
+        "zoneId" : "rglink-id1",
+        "zone2Name" : "VDC2",
+        "rglinkStatus" : "Good",
+        "replicationRpoTimestamp" : 12345678,
+        "chunksBTreePendingBootstrapReplicationTotalSize" : 500000,
+        "replicationJournalChunksRpoTimestamp" : 12345678,
+        "chunksJournalPendingReplicationTotalSize" : 500000,
+        "BootstrapProgressPercent" : 20
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "sample_time" : "2023-09-26T06:34:57Z",
+      "total_mpu_size" : "1.0634",
+      "total_objects_deleted" : "0",
+      "total_objects" : 6,
+      "total_size" : "0.0088",
+      "uptodate_till" : "-",
+      "total_mpu_parts" : 137,
+      "billingNamespace" : "ns1",
+      "next_marker" : "-",
+      "valid_namespace" : "true",
+      "total_size_deleted" : "0",
+      "bucket_billing_info" : "-",
+      "total_size_unit" : "GB"
+    }
+  result:
+    custom:
+      billingNamespace: "ns1"
+      bucket_billing_info: "-"
+      next_marker: "-"
+      sample_time: "2023-09-26T06:34:57Z"
+      total_mpu_parts: 137
+      total_mpu_size: "1.0634"
+      total_objects: 6
+      total_objects_deleted: "0"
+      total_size: "0.0088"
+      total_size_deleted: "0"
+      total_size_unit: "GB"
+      uptodate_till: "-"
+      valid_namespace: "true"
+    message: |-
+      {
+        "sample_time" : "2023-09-26T06:34:57Z",
+        "total_mpu_size" : "1.0634",
+        "total_objects_deleted" : "0",
+        "total_objects" : 6,
+        "total_size" : "0.0088",
+        "uptodate_till" : "-",
+        "total_mpu_parts" : 137,
+        "billingNamespace" : "ns1",
+        "next_marker" : "-",
+        "valid_namespace" : "true",
+        "total_size_deleted" : "0",
+        "bucket_billing_info" : "-",
+        "total_size_unit" : "GB"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1695710097000
+ -
+  sample: |-
+    {
+      "storagePoolName" : "sp1",
+      "nodeDisplayName" : "luna",
+      "diskId" : "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6",
+      "slotId" : "-",
+      "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+      "nodeId" : "3796ce52-2790-11ee-b84f-00505681b183",
+      "diskHealthStatus" : "Good",
+      "diskDisplayName" : "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+    }
+  result:
+    custom:
+      dell_emc_ecs_nodeid: "3796ce52-2790-11ee-b84f-00505681b183"
+      diskDisplayName: "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      diskHealthStatus: "Good"
+      diskId: "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      nodeDisplayName: "luna"
+      slotId: "-"
+      storagePoolId: "40832a89-285f-4c4d-92de-b04b84fa5739"
+      storagePoolName: "sp1"
+    message: |-
+      {
+        "storagePoolName" : "sp1",
+        "nodeDisplayName" : "luna",
+        "diskId" : "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6",
+        "slotId" : "-",
+        "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+        "nodeId" : "3796ce52-2790-11ee-b84f-00505681b183",
+        "diskHealthStatus" : "Good",
+        "diskDisplayName" : "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "numBadDisks" : "0",
+      "storagePoolName" : "sp1",
+      "numGoodDisks" : "1",
+      "nodeDisplayName" : "phobos",
+      "numDisks" : "1",
+      "numReadyToReplaceDisks" : "0",
+      "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+      "nodeHealthStatus" : "Good",
+      "nodeId" : "37ceac6e-2790-11ee-acb6-005056815357",
+      "numMaintenanceDisks" : "0"
+    }
+  result:
+    custom:
+      dell_emc_ecs_nodeid: "37ceac6e-2790-11ee-acb6-005056815357"
+      nodeDisplayName: "phobos"
+      nodeHealthStatus: "Good"
+      numBadDisks: "0"
+      numDisks: "1"
+      numGoodDisks: "1"
+      numMaintenanceDisks: "0"
+      numReadyToReplaceDisks: "0"
+      storagePoolId: "40832a89-285f-4c4d-92de-b04b84fa5739"
+      storagePoolName: "sp1"
+    message: |-
+      {
+        "numBadDisks" : "0",
+        "storagePoolName" : "sp1",
+        "numGoodDisks" : "1",
+        "nodeDisplayName" : "phobos",
+        "numDisks" : "1",
+        "numReadyToReplaceDisks" : "0",
+        "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+        "nodeHealthStatus" : "Good",
+        "nodeId" : "37ceac6e-2790-11ee-acb6-005056815357",
+        "numMaintenanceDisks" : "0"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "chunksRepoPendingFailoverRereplicationTotalSize" : 500000,
+      "chunksRepoPendingFailoverXorDecodingTotalSize" : 500000,
+      "chunksPendingXorTotalSize" : 500000,
+      "chunksBTreePendingFailoverRereplicationTotalSize" : 500000,
+      "chunksRepoPendingReplicationTotalSize" : 500000,
+      "FailoverProgressPercent" : 20,
+      "zone1Name" : "VDC1",
+      "replicationRepoChunksRpoTimestamp" : 12345678,
+      "replicationEgressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "replicationIngressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "FailoverState" : "BlindReplayDone",
+      "rgName" : "rg-name",
+      "zoneId" : "rglink-id1",
+      "zone2Name" : "VDC2",
+      "rglinkStatus" : "Good",
+      "replicationRpoTimestamp" : 12345678,
+      "chunksJournalPendingFailoverRereplicationTotalSize" : 500000,
+      "replicationJournalChunksRpoTimestamp" : 12345678,
+      "chunksJournalPendingReplicationTotalSize" : 500000
+    }
+  result:
+    custom:
+      FailoverProgressPercent: 20
+      FailoverState: "BlindReplayDone"
+      chunksBTreePendingFailoverRereplicationTotalSize: 500000
+      chunksJournalPendingFailoverRereplicationTotalSize: 500000
+      chunksJournalPendingReplicationTotalSize: 500000
+      chunksPendingXorTotalSize: 500000
+      chunksRepoPendingFailoverRereplicationTotalSize: 500000
+      chunksRepoPendingFailoverXorDecodingTotalSize: 500000
+      chunksRepoPendingReplicationTotalSize: 500000
+      replicationEgressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationIngressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationJournalChunksRpoTimestamp: 12345678
+      replicationRepoChunksRpoTimestamp: 12345678
+      replicationRpoTimestamp: 12345678
+      rgName: "rg-name"
+      rglinkStatus: "Good"
+      zone1Name: "VDC1"
+      zone2Name: "VDC2"
+      zoneId: "rglink-id1"
+    message: |-
+      {
+        "chunksRepoPendingFailoverRereplicationTotalSize" : 500000,
+        "chunksRepoPendingFailoverXorDecodingTotalSize" : 500000,
+        "chunksPendingXorTotalSize" : 500000,
+        "chunksBTreePendingFailoverRereplicationTotalSize" : 500000,
+        "chunksRepoPendingReplicationTotalSize" : 500000,
+        "FailoverProgressPercent" : 20,
+        "zone1Name" : "VDC1",
+        "replicationRepoChunksRpoTimestamp" : 12345678,
+        "replicationEgressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "replicationIngressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "FailoverState" : "BlindReplayDone",
+        "rgName" : "rg-name",
+        "zoneId" : "rglink-id1",
+        "zone2Name" : "VDC2",
+        "rglinkStatus" : "Good",
+        "replicationRpoTimestamp" : 12345678,
+        "chunksJournalPendingFailoverRereplicationTotalSize" : 500000,
+        "replicationJournalChunksRpoTimestamp" : 12345678,
+        "chunksJournalPendingReplicationTotalSize" : 500000
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |
+    Sep 12 12:12:12 machine1 systemm1 12T10:12:12,4 [ddw],[dew],clientname/[swq]/abcBLOB[abc] info[abc]) method bucke!@#$%t1 c1fwrf23 -200 123 123
+  result:
+    custom:
+      blob_id: "c1fwrf23"
+      bucket: "bucke!@#$%t1"
+      cas_bytes: 123
+      cas_transaction_time: 123
+      client_name: "clientname"
+      date: "12"
+      log_level: "info"
+      machinename: "machine1"
+      method: "method"
+      response_code: -200
+      systemname: "systemm1"
+      time: "10:12:12"
+      timestamp: 21989532000
+      transaction_type: "abcBLOB"
+    message: |
+      Sep 12 12:12:12 machine1 systemm1 12T10:12:12,4 [ddw],[dew],clientname/[swq]/abcBLOB[abc] info[abc]) method bucke!@#$%t1 c1fwrf23 -200 123 123
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 21989532000
+ -
+  sample: |-
+    {
+      "eventServiceType" : "Login",
+      "eventResourceId" : "root",
+      "auditEventId" : "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b",
+      "eventUserId" : "root",
+      "eventDescription" : "User root logged in successfully",
+      "eventType" : "Update",
+      "eventNamespace" : "-",
+      "timestamp" : "2023-09-26T06:34:50"
+    }
+  result:
+    custom:
+      auditEventId: "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b"
+      eventDescription: "User root logged in successfully"
+      eventNamespace: "-"
+      eventResourceId: "root"
+      eventServiceType: "Login"
+      eventType: "Update"
+      eventUserId: "root"
+      timestamp: "2023-09-26T06:34:50"
+      usr:
+        id: "root"
+    message: |-
+      {
+        "eventServiceType" : "Login",
+        "eventResourceId" : "root",
+        "auditEventId" : "urn:storageos:Event:f25e70dd-44be-4787-803f-d490c760655b",
+        "eventUserId" : "root",
+        "eventDescription" : "User root logged in successfully",
+        "eventType" : "Update",
+        "eventNamespace" : "-",
+        "timestamp" : "2023-09-26T06:34:50"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1695710090000
+ -
+  sample: |-
+    {
+      "alertsNamespace" : "-",
+      "hostname" : "10.50.3.251",
+      "alertsDescription" : "Storage pool is unavailable due to two or less nodes running",
+      "service" : "cds.dell.emc.ecs.alerts",
+      "alertsSymptomCode" : "13000",
+      "alertTimestamp" : "2023-08-19T02:26:33",
+      "alertsAcknowledged" : false,
+      "alertsId" : "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917",
+      "alertsSeverity" : "ERROR",
+      "alertsType" : "Storage tier is degraded or possibly unavailable"
+    }
+  result:
+    custom:
+      alertTimestamp: "2023-08-19T02:26:33"
+      alertsAcknowledged: false
+      alertsDescription: "Storage pool is unavailable due to two or less nodes running"
+      alertsId: "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917"
+      alertsNamespace: "-"
+      alertsSeverity: "ERROR"
+      alertsSymptomCode: "13000"
+      alertsType: "Storage tier is degraded or possibly unavailable"
+      hostname: "10.50.3.251"
+      service: "cds.dell.emc.ecs.alerts"
+    message: |-
+      {
+        "alertsNamespace" : "-",
+        "hostname" : "10.50.3.251",
+        "alertsDescription" : "Storage pool is unavailable due to two or less nodes running",
+        "service" : "cds.dell.emc.ecs.alerts",
+        "alertsSymptomCode" : "13000",
+        "alertTimestamp" : "2023-08-19T02:26:33",
+        "alertsAcknowledged" : false,
+        "alertsId" : "urn:storageos:Alert:0b9d9e5f-018a-12be-a03f-acf9dcde7917",
+        "alertsSeverity" : "ERROR",
+        "alertsType" : "Storage tier is degraded or possibly unavailable"
+      }
+    service: "cds.dell.emc.ecs.alerts"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "chunksJournalPendingBootstrapReplicationTotalSize" : 500000,
+      "chunksPendingXorTotalSize" : 500000,
+      "chunksRepoPendingBootstrapReplicationTotalSize" : 500000,
+      "chunksRepoPendingReplicationTotalSize" : 500000,
+      "zone1Name" : "VDC1",
+      "BootstrapState" : "ReplicateBTree",
+      "replicationRepoChunksRpoTimestamp" : 12345678,
+      "replicationEgressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "replicationIngressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "rgName" : "rg-name",
+      "zoneId" : "rglink-id1",
+      "zone2Name" : "VDC2",
+      "rglinkStatus" : "Good",
+      "replicationRpoTimestamp" : 12345678,
+      "chunksBTreePendingBootstrapReplicationTotalSize" : 500000,
+      "replicationJournalChunksRpoTimestamp" : 12345678,
+      "chunksJournalPendingReplicationTotalSize" : 500000,
+      "BootstrapProgressPercent" : 20
+    }
+  result:
+    custom:
+      BootstrapProgressPercent: 20
+      BootstrapState: "ReplicateBTree"
+      chunksBTreePendingBootstrapReplicationTotalSize: 500000
+      chunksJournalPendingBootstrapReplicationTotalSize: 500000
+      chunksJournalPendingReplicationTotalSize: 500000
+      chunksPendingXorTotalSize: 500000
+      chunksRepoPendingBootstrapReplicationTotalSize: 500000
+      chunksRepoPendingReplicationTotalSize: 500000
+      replicationEgressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationIngressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationJournalChunksRpoTimestamp: 12345678
+      replicationRepoChunksRpoTimestamp: 12345678
+      replicationRpoTimestamp: 12345678
+      rgName: "rg-name"
+      rglinkStatus: "Good"
+      zone1Name: "VDC1"
+      zone2Name: "VDC2"
+      zoneId: "rglink-id1"
+    message: |-
+      {
+        "chunksJournalPendingBootstrapReplicationTotalSize" : 500000,
+        "chunksPendingXorTotalSize" : 500000,
+        "chunksRepoPendingBootstrapReplicationTotalSize" : 500000,
+        "chunksRepoPendingReplicationTotalSize" : 500000,
+        "zone1Name" : "VDC1",
+        "BootstrapState" : "ReplicateBTree",
+        "replicationRepoChunksRpoTimestamp" : 12345678,
+        "replicationEgressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "replicationIngressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "rgName" : "rg-name",
+        "zoneId" : "rglink-id1",
+        "zone2Name" : "VDC2",
+        "rglinkStatus" : "Good",
+        "replicationRpoTimestamp" : 12345678,
+        "chunksBTreePendingBootstrapReplicationTotalSize" : 500000,
+        "replicationJournalChunksRpoTimestamp" : 12345678,
+        "chunksJournalPendingReplicationTotalSize" : 500000,
+        "BootstrapProgressPercent" : 20
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "sample_time" : "2023-09-26T06:34:57Z",
+      "total_mpu_size" : "1.0634",
+      "total_objects_deleted" : "0",
+      "total_objects" : 6,
+      "total_size" : "0.0088",
+      "uptodate_till" : "-",
+      "total_mpu_parts" : 137,
+      "billingNamespace" : "ns1",
+      "next_marker" : "-",
+      "valid_namespace" : "true",
+      "total_size_deleted" : "0",
+      "bucket_billing_info" : "-",
+      "total_size_unit" : "GB"
+    }
+  result:
+    custom:
+      billingNamespace: "ns1"
+      bucket_billing_info: "-"
+      next_marker: "-"
+      sample_time: "2023-09-26T06:34:57Z"
+      total_mpu_parts: 137
+      total_mpu_size: "1.0634"
+      total_objects: 6
+      total_objects_deleted: "0"
+      total_size: "0.0088"
+      total_size_deleted: "0"
+      total_size_unit: "GB"
+      uptodate_till: "-"
+      valid_namespace: "true"
+    message: |-
+      {
+        "sample_time" : "2023-09-26T06:34:57Z",
+        "total_mpu_size" : "1.0634",
+        "total_objects_deleted" : "0",
+        "total_objects" : 6,
+        "total_size" : "0.0088",
+        "uptodate_till" : "-",
+        "total_mpu_parts" : 137,
+        "billingNamespace" : "ns1",
+        "next_marker" : "-",
+        "valid_namespace" : "true",
+        "total_size_deleted" : "0",
+        "bucket_billing_info" : "-",
+        "total_size_unit" : "GB"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1695710097000
+ -
+  sample: |-
+    {
+      "bucketName" : "bucket1",
+      "is_stale_allowed" : true,
+      "default_group_dir_execute_permission" : false,
+      "default_group_file_write_permission" : false,
+      "fs_access_enabled" : false,
+      "maximum_variable_retention" : "-",
+      "bucketId" : "ns1.bucket1",
+      "default_group_file_execute_permission" : false,
+      "tagset_key" : [ "b1" ],
+      "is_object_lock_with_ado_allowed" : false,
+      "default_group" : "-",
+      "default_object_lock_retention_days" : "-",
+      "advancedMetadataSearchTargetName" : "-",
+      "auto_commit_period" : 0,
+      "bucketNamespace" : "ns1",
+      "enforce_retention" : false,
+      "notificationSizeInCount" : -1,
+      "default_object_lock_retention_years" : "-",
+      "default_group_file_read_permission" : false,
+      "advancedMetadataSearchTargetStream" : "-",
+      "is_empty_bucket_in_progress" : false,
+      "api_type" : "S3",
+      "is_tso_read_only" : false,
+      "notification_size" : 1,
+      "tagset_value" : [ "b1" ],
+      "is_encryption_enabled" : "false",
+      "default_object_lock_retention_mode" : "-",
+      "block_size" : 1,
+      "audit_delete_expiration" : -2,
+      "minimum_fixed_retention" : "-",
+      "default_group_dir_read_permission" : false,
+      "vpool" : "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global",
+      "default_group_dir_write_permission" : false,
+      "bucketOwner" : "root",
+      "created" : "2023-07-21T08:15:42.882Z",
+      "bucketRetention" : 31536000,
+      "minimum_variable_retention" : "-",
+      "blockSizeInCount" : -1,
+      "softquota" : "1",
+      "default_retention" : 31536000,
+      "maximum_fixed_retention" : "-",
+      "is_object_lock_enabled" : false,
+      "enableAdvancedMetadataSearch" : false,
+      "bucketLocked" : false
+    }
+  result:
+    custom:
+      advancedMetadataSearchTargetName: "-"
+      advancedMetadataSearchTargetStream: "-"
+      api_type: "S3"
+      audit_delete_expiration: -2
+      auto_commit_period: 0
+      blockSizeInCount: -1
+      block_size: 1
+      bucketId: "ns1.bucket1"
+      bucketLocked: false
+      bucketName: "bucket1"
+      bucketNamespace: "ns1"
+      bucketOwner: "root"
+      bucketRetention: 31536000
+      created: "2023-07-21T08:15:42.882Z"
+      default_group: "-"
+      default_group_dir_execute_permission: false
+      default_group_dir_read_permission: false
+      default_group_dir_write_permission: false
+      default_group_file_execute_permission: false
+      default_group_file_read_permission: false
+      default_group_file_write_permission: false
+      default_object_lock_retention_days: "-"
+      default_object_lock_retention_mode: "-"
+      default_object_lock_retention_years: "-"
+      default_retention: 31536000
+      enableAdvancedMetadataSearch: false
+      enforce_retention: false
+      fs_access_enabled: false
+      is_empty_bucket_in_progress: false
+      is_encryption_enabled: "false"
+      is_object_lock_enabled: false
+      is_object_lock_with_ado_allowed: false
+      is_stale_allowed: true
+      is_tso_read_only: false
+      maximum_fixed_retention: "-"
+      maximum_variable_retention: "-"
+      minimum_fixed_retention: "-"
+      minimum_variable_retention: "-"
+      notificationSizeInCount: -1
+      notification_size: 1
+      softquota: "1"
+      tagset_key:
+       - "b1"
+      tagset_value:
+       - "b1"
+      vpool: "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global"
+    message: |-
+      {
+        "bucketName" : "bucket1",
+        "is_stale_allowed" : true,
+        "default_group_dir_execute_permission" : false,
+        "default_group_file_write_permission" : false,
+        "fs_access_enabled" : false,
+        "maximum_variable_retention" : "-",
+        "bucketId" : "ns1.bucket1",
+        "default_group_file_execute_permission" : false,
+        "tagset_key" : [ "b1" ],
+        "is_object_lock_with_ado_allowed" : false,
+        "default_group" : "-",
+        "default_object_lock_retention_days" : "-",
+        "advancedMetadataSearchTargetName" : "-",
+        "auto_commit_period" : 0,
+        "bucketNamespace" : "ns1",
+        "enforce_retention" : false,
+        "notificationSizeInCount" : -1,
+        "default_object_lock_retention_years" : "-",
+        "default_group_file_read_permission" : false,
+        "advancedMetadataSearchTargetStream" : "-",
+        "is_empty_bucket_in_progress" : false,
+        "api_type" : "S3",
+        "is_tso_read_only" : false,
+        "notification_size" : 1,
+        "tagset_value" : [ "b1" ],
+        "is_encryption_enabled" : "false",
+        "default_object_lock_retention_mode" : "-",
+        "block_size" : 1,
+        "audit_delete_expiration" : -2,
+        "minimum_fixed_retention" : "-",
+        "default_group_dir_read_permission" : false,
+        "vpool" : "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global",
+        "default_group_dir_write_permission" : false,
+        "bucketOwner" : "root",
+        "created" : "2023-07-21T08:15:42.882Z",
+        "bucketRetention" : 31536000,
+        "minimum_variable_retention" : "-",
+        "blockSizeInCount" : -1,
+        "softquota" : "1",
+        "default_retention" : 31536000,
+        "maximum_fixed_retention" : "-",
+        "is_object_lock_enabled" : false,
+        "enableAdvancedMetadataSearch" : false,
+        "bucketLocked" : false
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "storagePoolName" : "sp1",
+      "nodeDisplayName" : "luna",
+      "diskId" : "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6",
+      "slotId" : "-",
+      "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+      "nodeId" : "3796ce52-2790-11ee-b84f-00505681b183",
+      "diskHealthStatus" : "Good",
+      "diskDisplayName" : "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+    }
+  result:
+    custom:
+      dell_emc_ecs_nodeid: "3796ce52-2790-11ee-b84f-00505681b183"
+      diskDisplayName: "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      diskHealthStatus: "Good"
+      diskId: "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      nodeDisplayName: "luna"
+      slotId: "-"
+      storagePoolId: "40832a89-285f-4c4d-92de-b04b84fa5739"
+      storagePoolName: "sp1"
+    message: |-
+      {
+        "storagePoolName" : "sp1",
+        "nodeDisplayName" : "luna",
+        "diskId" : "3796ce52-2790-11ee-b84f-00505681b183-PD-731cd008-42ae-409d-836e-dd829fdde0b6",
+        "slotId" : "-",
+        "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+        "nodeId" : "3796ce52-2790-11ee-b84f-00505681b183",
+        "diskHealthStatus" : "Good",
+        "diskDisplayName" : "PD-731cd008-42ae-409d-836e-dd829fdde0b6"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "creation_time" : "-",
+      "internal" : "-",
+      "managementEndPoints" : "10.50.3.251,10.50.3.252",
+      "link" : {
+        "rel" : "self",
+        "href" : "/object/vdcs/vdc/vdc1"
+      },
+      "global" : "-",
+      "remote" : "-",
+      "permanentlyFailed" : false,
+      "interVdcCmdEndPoints" : "10.50.3.251,10.50.3.252",
+      "hosted" : false,
+      "local" : true,
+      "inactive" : false,
+      "vdc" : "-",
+      "name" : "vdc1",
+      "interVdcEndPoints" : "10.50.3.251,10.50.3.252",
+      "id" : "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef",
+      "vdcName" : "vdc1",
+      "secretKeys" : "h44hqBDW5derz5nry4IU",
+      "is_encryption_enabled" : true,
+      "vdcId" : "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef"
+    }
+  result:
+    custom:
+      creation_time: "-"
+      global: "-"
+      hosted: false
+      id: "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef"
+      inactive: false
+      interVdcCmdEndPoints: "10.50.3.251,10.50.3.252"
+      interVdcEndPoints: "10.50.3.251,10.50.3.252"
+      internal: "-"
+      is_encryption_enabled: true
+      link:
+        href: "/object/vdcs/vdc/vdc1"
+        rel: "self"
+      local: true
+      managementEndPoints: "10.50.3.251,10.50.3.252"
+      name: "vdc1"
+      permanentlyFailed: false
+      remote: "-"
+      secretKeys: "h44hqBDW5derz5nry4IU"
+      vdc: "-"
+      vdcId: "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef"
+      vdcName: "vdc1"
+    message: |-
+      {
+        "creation_time" : "-",
+        "internal" : "-",
+        "managementEndPoints" : "10.50.3.251,10.50.3.252",
+        "link" : {
+          "rel" : "self",
+          "href" : "/object/vdcs/vdc/vdc1"
+        },
+        "global" : "-",
+        "remote" : "-",
+        "permanentlyFailed" : false,
+        "interVdcCmdEndPoints" : "10.50.3.251,10.50.3.252",
+        "hosted" : false,
+        "local" : true,
+        "inactive" : false,
+        "vdc" : "-",
+        "name" : "vdc1",
+        "interVdcEndPoints" : "10.50.3.251,10.50.3.252",
+        "id" : "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef",
+        "vdcName" : "vdc1",
+        "secretKeys" : "h44hqBDW5derz5nry4IU",
+        "is_encryption_enabled" : true,
+        "vdcId" : "urn:storageos:VirtualDataCenterData:f1821ffb-1c0d-4a7b-9f81-baf469d535ef"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "numBadDisks" : "0",
+      "storagePoolName" : "sp1",
+      "numGoodDisks" : "1",
+      "nodeDisplayName" : "phobos",
+      "numDisks" : "1",
+      "numReadyToReplaceDisks" : "0",
+      "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+      "nodeHealthStatus" : "Good",
+      "nodeId" : "37ceac6e-2790-11ee-acb6-005056815357",
+      "numMaintenanceDisks" : "0"
+    }
+  result:
+    custom:
+      dell_emc_ecs_nodeid: "37ceac6e-2790-11ee-acb6-005056815357"
+      nodeDisplayName: "phobos"
+      nodeHealthStatus: "Good"
+      numBadDisks: "0"
+      numDisks: "1"
+      numGoodDisks: "1"
+      numMaintenanceDisks: "0"
+      numReadyToReplaceDisks: "0"
+      storagePoolId: "40832a89-285f-4c4d-92de-b04b84fa5739"
+      storagePoolName: "sp1"
+    message: |-
+      {
+        "numBadDisks" : "0",
+        "storagePoolName" : "sp1",
+        "numGoodDisks" : "1",
+        "nodeDisplayName" : "phobos",
+        "numDisks" : "1",
+        "numReadyToReplaceDisks" : "0",
+        "storagePoolId" : "40832a89-285f-4c4d-92de-b04b84fa5739",
+        "nodeHealthStatus" : "Good",
+        "nodeId" : "37ceac6e-2790-11ee-acb6-005056815357",
+        "numMaintenanceDisks" : "0"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "chunksRepoPendingFailoverRereplicationTotalSize" : 500000,
+      "chunksRepoPendingFailoverXorDecodingTotalSize" : 500000,
+      "chunksPendingXorTotalSize" : 500000,
+      "chunksBTreePendingFailoverRereplicationTotalSize" : 500000,
+      "chunksRepoPendingReplicationTotalSize" : 500000,
+      "FailoverProgressPercent" : 20,
+      "zone1Name" : "VDC1",
+      "replicationRepoChunksRpoTimestamp" : 12345678,
+      "replicationEgressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "replicationIngressTraffic" : [ {
+        "t" : "55433455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "23435455",
+        "Bandwidth " : 10000
+      }, {
+        "t" : "12345678",
+        "Bandwidth" : 10000
+      } ],
+      "FailoverState" : "BlindReplayDone",
+      "rgName" : "rg-name",
+      "zoneId" : "rglink-id1",
+      "zone2Name" : "VDC2",
+      "rglinkStatus" : "Good",
+      "replicationRpoTimestamp" : 12345678,
+      "chunksJournalPendingFailoverRereplicationTotalSize" : 500000,
+      "replicationJournalChunksRpoTimestamp" : 12345678,
+      "chunksJournalPendingReplicationTotalSize" : 500000
+    }
+  result:
+    custom:
+      FailoverProgressPercent: 20
+      FailoverState: "BlindReplayDone"
+      chunksBTreePendingFailoverRereplicationTotalSize: 500000
+      chunksJournalPendingFailoverRereplicationTotalSize: 500000
+      chunksJournalPendingReplicationTotalSize: 500000
+      chunksPendingXorTotalSize: 500000
+      chunksRepoPendingFailoverRereplicationTotalSize: 500000
+      chunksRepoPendingFailoverXorDecodingTotalSize: 500000
+      chunksRepoPendingReplicationTotalSize: 500000
+      replicationEgressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationIngressTraffic:
+       -
+        t: "55433455"
+        'Bandwidth ': 10000
+       -
+        t: "23435455"
+        'Bandwidth ': 10000
+       -
+        t: "12345678"
+        Bandwidth: 10000
+      replicationJournalChunksRpoTimestamp: 12345678
+      replicationRepoChunksRpoTimestamp: 12345678
+      replicationRpoTimestamp: 12345678
+      rgName: "rg-name"
+      rglinkStatus: "Good"
+      zone1Name: "VDC1"
+      zone2Name: "VDC2"
+      zoneId: "rglink-id1"
+    message: |-
+      {
+        "chunksRepoPendingFailoverRereplicationTotalSize" : 500000,
+        "chunksRepoPendingFailoverXorDecodingTotalSize" : 500000,
+        "chunksPendingXorTotalSize" : 500000,
+        "chunksBTreePendingFailoverRereplicationTotalSize" : 500000,
+        "chunksRepoPendingReplicationTotalSize" : 500000,
+        "FailoverProgressPercent" : 20,
+        "zone1Name" : "VDC1",
+        "replicationRepoChunksRpoTimestamp" : 12345678,
+        "replicationEgressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "replicationIngressTraffic" : [ {
+          "t" : "55433455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "23435455",
+          "Bandwidth " : 10000
+        }, {
+          "t" : "12345678",
+          "Bandwidth" : 10000
+        } ],
+        "FailoverState" : "BlindReplayDone",
+        "rgName" : "rg-name",
+        "zoneId" : "rglink-id1",
+        "zone2Name" : "VDC2",
+        "rglinkStatus" : "Good",
+        "replicationRpoTimestamp" : 12345678,
+        "chunksJournalPendingFailoverRereplicationTotalSize" : 500000,
+        "replicationJournalChunksRpoTimestamp" : 12345678,
+        "chunksJournalPendingReplicationTotalSize" : 500000
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "creation_time" : 1689927299885,
+      "user_mapping" : "-",
+      "notificationSize" : 1,
+      "internal" : "-",
+      "external_group_admins" : "-",
+      "is_stale_allowed" : true,
+      "default_bucket_block_size" : 1,
+      "global" : "-",
+      "remote" : "-",
+      "is_object_lock_with_ado_allowed" : false,
+      "namespace_name" : "ns1",
+      "notificationSizeInCount" : -1,
+      "inactive" : false,
+      "root_user_name" : "root@@ns1",
+      "root_user_password" : "-",
+      "default_data_services_vpool" : "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global",
+      "is_encryption_enabled" : "false",
+      "retention_classes_period" : [ 10 ],
+      "retention_classes_name" : [ "policy1" ],
+      "allowed_vpools_list" : "-",
+      "disallowed_vpools_list" : "-",
+      "blockSizeInCount" : -1,
+      "is_compliance_enabled" : false,
+      "default_audit_delete_expiration" : "-",
+      "blockSize" : 1,
+      "namespace_admins" : "root",
+      "vdc" : "-",
+      "namespace_id" : "ns1"
+    }
+  result:
+    custom:
+      allowed_vpools_list: "-"
+      blockSize: 1
+      blockSizeInCount: -1
+      creation_time: 1689927299885
+      default_audit_delete_expiration: "-"
+      default_bucket_block_size: 1
+      default_data_services_vpool: "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global"
+      disallowed_vpools_list: "-"
+      external_group_admins: "-"
+      global: "-"
+      inactive: false
+      internal: "-"
+      is_compliance_enabled: false
+      is_encryption_enabled: "false"
+      is_object_lock_with_ado_allowed: false
+      is_stale_allowed: true
+      namespace_admins: "root"
+      namespace_id: "ns1"
+      namespace_name: "ns1"
+      notificationSize: 1
+      notificationSizeInCount: -1
+      remote: "-"
+      retention_classes_name:
+       - "policy1"
+      retention_classes_period:
+       - 10
+      root_user_name: "root@@ns1"
+      root_user_password: "-"
+      user_mapping: "-"
+      vdc: "-"
+    message: |-
+      {
+        "creation_time" : 1689927299885,
+        "user_mapping" : "-",
+        "notificationSize" : 1,
+        "internal" : "-",
+        "external_group_admins" : "-",
+        "is_stale_allowed" : true,
+        "default_bucket_block_size" : 1,
+        "global" : "-",
+        "remote" : "-",
+        "is_object_lock_with_ado_allowed" : false,
+        "namespace_name" : "ns1",
+        "notificationSizeInCount" : -1,
+        "inactive" : false,
+        "root_user_name" : "root@@ns1",
+        "root_user_password" : "-",
+        "default_data_services_vpool" : "urn:storageos:ReplicationGroupInfo:f8ca9587-965a-4150-af5f-bd18304999f3:global",
+        "is_encryption_enabled" : "false",
+        "retention_classes_period" : [ 10 ],
+        "retention_classes_name" : [ "policy1" ],
+        "allowed_vpools_list" : "-",
+        "disallowed_vpools_list" : "-",
+        "blockSizeInCount" : -1,
+        "is_compliance_enabled" : false,
+        "default_audit_delete_expiration" : "-",
+        "blockSize" : 1,
+        "namespace_admins" : "root",
+        "vdc" : "-",
+        "namespace_id" : "ns1"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

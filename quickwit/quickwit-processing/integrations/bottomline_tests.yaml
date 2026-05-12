@@ -1,0 +1,105 @@
+id: "bottomline"
+tests:
+ -
+  sample: |-
+    {
+      "bottomline" : {
+        "mainframe" : {
+          "activity" : {
+            "reference" : "",
+            "money" : {
+              "reference" : "",
+              "amount" : 0,
+              "destination" : {
+                "currency" : ""
+              },
+              "source" : {
+                "currency" : ""
+              },
+              "transaction_type" : ""
+            },
+            "resource" : {
+              "duration" : 222000000,
+              "code" : "BNKLSTM",
+              "name" : "Current Account Subsystem - List  Menu"
+            },
+            "usr" : {
+              "duration" : 1602000000,
+              "action" : "[enter]",
+              "id" : "dalek"
+            },
+            "session" : {
+              "timezone" : "NULL",
+              "step" : "7",
+              "id" : "08FD09FE-50ED-4F55-9080-F0D4ECF85C24",
+              "source" : "UNKNOWN",
+              "replay" : "http://35.87.210.81:30023/replay/cfrm_replay/replay.jsp?gxsessionid=08FD09FE-50ED-4F55-9080-F0D4ECF85C24&gxstep=7",
+              "type" : "3270"
+            },
+            "type" : "Access",
+            "message" : "dalek accessed the following resource: BNKLSTM",
+            "account" : {
+              "id" : ""
+            },
+            "timestamp" : "2023-01-17T17:04:29.199Z",
+            "customer" : {
+              "id" : ""
+            },
+            "network" : {
+              "destination" : {
+                "ip" : "192.168.1.37"
+              },
+              "client" : {
+                "ip" : "192.168.1.178"
+              }
+            }
+          }
+        }
+      }
+    }
+  result:
+    custom:
+      bottomline:
+        mainframe:
+          activity:
+            account:
+              id: ""
+            customer:
+              id: ""
+            money:
+              amount: 0
+              destination:
+                currency: ""
+              reference: ""
+              source:
+                currency: ""
+              transaction_type: ""
+            reference: ""
+            resource:
+              code: "BNKLSTM"
+              duration: 222000000
+              name: "Current Account Subsystem - List  Menu"
+            session:
+              id: "08FD09FE-50ED-4F55-9080-F0D4ECF85C24"
+              replay: "http://35.87.210.81:30023/replay/cfrm_replay/replay.jsp?gxsessionid=08FD09FE-50ED-4F55-9080-F0D4ECF85C24&gxstep=7"
+              source: "UNKNOWN"
+              step: "7"
+              timezone: "NULL"
+              type: "3270"
+            timestamp: "2023-01-17T17:04:29.199Z"
+            type: "Access"
+            usr:
+              action: "[enter]"
+              duration: 1602000000
+              id: "dalek"
+      network:
+        client:
+          geoip: {}
+          ip: "192.168.1.178"
+        destination:
+          ip: "192.168.1.37"
+    message: "dalek accessed the following resource: BNKLSTM"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1673975069199
+

@@ -1,0 +1,90 @@
+id: "sidekiq"
+tests:
+ -
+  sample: "2012-03-02T19:40:45Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg start"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        thread_id: "oveahmcxw"
+      pid: 32515
+      sidekiq:
+        class: "HardWorker"
+        jobid: "oveaivtrg"
+      timestamp: 1330717245000
+    message: "2012-03-02T19:40:45Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg start"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1330717245000
+ -
+  sample: "2012-03-02T19:40:55Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg done: 10.003 sec"
+  result:
+    custom:
+      duration: 1.0003E10
+      level: "INFO"
+      logger:
+        thread_id: "TID-oveahmcxw"
+      pid: 32515
+      sidekiq:
+        class: "HardWorker"
+        jobid: "oveaivtrg"
+      timestamp: 1330717255000
+    message: "2012-03-02T19:40:55Z 32515 TID-oveahmcxw INFO: HardWorker JID-oveaivtrg done: 10.003 sec"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1330717255000
+ -
+  sample: "2012-03-02T19:40:55.031Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: start"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        thread_id: "oveahmcxw"
+      pid: 3640
+      sidekiq:
+        jobid: "12343drgwe23413"
+        jobname: "ElasticSearchBulkOperationJob"
+      timestamp: 1330717255031
+    message: "2012-03-02T19:40:55.031Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: start"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1330717255031
+ -
+  sample: "2012-03-02T19:40:55.032Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: custom message send from sidekiq worker"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        thread_id: "oveahmcxw"
+      pid: 3640
+      sidekiq:
+        jobid: "12343drgwe23413"
+        jobname: "ElasticSearchBulkOperationJob"
+      timestamp: 1330717255032
+    message: "2012-03-02T19:40:55.032Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: custom message send from sidekiq worker"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1330717255032
+ -
+  sample: "2012-03-02T19:40:55.077Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: done: 0.046 sec"
+  result:
+    custom:
+      duration: 4.6E7
+      level: "INFO"
+      logger:
+        thread_id: "oveahmcxw"
+      pid: 3640
+      sidekiq:
+        jobid: "12343drgwe23413"
+        jobname: "ElasticSearchBulkOperationJob"
+      timestamp: 1330717255077
+    message: "2012-03-02T19:40:55.077Z 3640 TID-oveahmcxw ElasticSearchBulkOperationJob JID-12343drgwe23413 INFO: done: 0.046 sec"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1330717255077
+

@@ -1,0 +1,442 @@
+id: crest_data_systems_dell_emc_ecs
+metric_id: crest-data-systems-dell-emc-ecs
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alert Timestamp
+    path: alertTimestamp
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Encryption Enabled
+    path: is_encryption_enabled
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Management EndPoints
+    path: managementEndPoints
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts Type
+    path: alertsType
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Dell EMC ECS
+    name: CAS Bytes
+    path: cas_bytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Dell EMC ECS Node ID
+    path: dell_emc_ecs_nodeid
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Name
+    path: namespace_name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Node Display Name
+    path: nodeDisplayName
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Dell EMC ECS
+    name: CS Bytes
+    path: csbytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Retention
+    path: bucketRetention
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts Acknowledged
+    path: alertsAcknowledged
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts Namespace
+    path: alertsNamespace
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: X Namespace
+    path: xnamespace
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Transaction Error Category
+    path: transactionErrorsTypesCategory
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Inactive
+    path: inactive
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Disk Name
+    path: diskDisplayName
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Audit Event Id
+    path: auditEventId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts Severity
+    path: alertsSeverity
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Dell EMC ECS
+    name: CAS Transaction Time
+    path: cas_transaction_time
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Namespace
+    path: bucketNamespace
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Locked
+    path: bucketLocked
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: X Bucket
+    path: xbucket
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Name
+    path: bucketName
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Transaction Error Type
+    path: transactionErrorsTypesErrorType
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Compliance Enabled
+    path: is_compliance_enabled
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Method
+    path: method
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Error Name
+    path: error_name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket
+    path: bucket
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Machine Name
+    path: machinename
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Retention Classes Period
+    path: retention_classes_period
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Id
+    path: bucketId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Event Namespace
+    path: eventNamespace
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Storage Processing Time
+    path: xstorageprocessingtime
+    source: log
+    type: integer
+    unit:
+      family: time
+      name: second
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Retention Classes Name
+    path: retention_classes_name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Block Size
+    path: blockSize
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace
+    path: dell_emc_ecs_namespace
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Client Name
+    path: client_name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts Description
+    path: alertsDescription
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts SymptomCode
+    path: alertsSymptomCode
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Inter VDC Cmd EndPoints
+    path: interVdcCmdEndPoints
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Node Name
+    path: node-name
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Alerts ID
+    path: alertsId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace ID
+    path: namespace_id
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Dell EMC ECS
+    name: SC Bytes
+    path: scbytes
+    source: log
+    type: integer
+    unit:
+      family: bytes
+      name: byte
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Event Service Type
+    path: eventServiceType
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Event Description
+    path: eventDescription
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: VDC ID
+    path: vdcId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: CS Method
+    path: csmethod
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: VDC Name
+    path: vdcName
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Node Health Status
+    path: nodeHealthStatus
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Storage Pool Name
+    path: storagePoolName
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Inter VDC EndPoints
+    path: interVdcEndPoints
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Bucket Owner
+    path: bucketOwner
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Storage Pool ID
+    path: storagePoolId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Dell EMC ECS Event Type
+    path: dell_emc_ecs_eventType
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Disk Health Status
+    path: diskHealthStatus
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Namespace Notification Size
+    path: notificationSize
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: System Name
+    path: systemname
+    source: log
+  - groups:
+      - Event
+    name: Event Type
+    path: eventType
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Disk ID
+    path: diskId
+    source: log
+  - groups:
+      - Crest Data Systems Dell EMC ECS
+    name: Event Resource ID
+    path: eventResourceId
+    source: log
+pipeline:
+  type: pipeline
+  name: Dell EMC ECS by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_dell_emc_ecs
+  processors:
+    - type: grok-parser
+      name: Parsing Attributes for Access Logs, CAS Logs and Audit Logs
+      enabled: true
+      source: message
+      samples:
+        - "Sep 12 10:30:45 abc-ab123-02-nyc-65 ecs 2023-09-12 10:30:45,12345 bhjb786:erfef156:4a65f 192.168.1.100:80 192.168.2.200:12345 demouser Mozilla/5.0 GET mynamespace mybucket myfile.jpg ?param=value HTTP/1.1 -200 500 10 50 1000 'X-Forwarded-For: 192.168.3.300'"
+        - Sep 20 09:23:23 abc-094-45.a.b.com BUCKET DELETE uiheirub User login successful
+        - Sep 12 12:12:12 machine1 systemm1 12T10:12:12,4 [ddw],[dew],clientname/[swq]/abcBLOB[abc] info[abc]) method bucke!@#$%t1 c1fwrf23 -200 123 123
+      grok:
+        supportRules: "numWithHiphen %{regex(\"[0-9-]+\"):}\ntime %{regex(\"[0-9:-]+\"):}\ncip %{regex(\"[0-9\\\\.-]+\"):}\ncsMethod %{regex(\"[A-Z-]+\"):}\ndescription %{regex(\".*\"):}\nmachine %{regex(\"[^ ]+\"):}\nsystemName %{regex(\"[^ ]+\"):}\ndate2 %{regex(\"[0-9-]+\"):}\ntime2 %{regex(\"[0-9:-]+\"):}\nnum %{regex(\"\\\\d+\"):}\nclientName %{regex(\"[^\\\\/]+\"):}\ntransactiontypeBLOB %{regex(\"\\\\w+BLOB\"):}\ntransactiontypeCLIP %{regex(\"\\\\w+CLIP\"):}\n_word %{regex(\"\\\\w+\"):}\nskip %{regex(\"\\\\[[^,]+\"):}\nskipFormat1 %{regex(\"\\\\/[^\\\\/]+\\\\/\"):}\nskipFormat2 %{regex(\"[^ ]*\\\\]\\\\s+\"):}\nskipFormat3 %{regex(\"[^)]*\\\\)\\\\s+\"):}\n_space %{regex(\"(\\\\s)*\"):}"
+        matchRules: "accessRule %{date(\"MMM d HH:mm:ss\"):timestamp} %{notSpace:machinename} %{notSpace:systemname} %{numWithHiphen:date} %{time:time},%{number:} %{notSpace:xrequestid} %{notSpace:sip}:%{number} %{cip:cip}:%{number} %{notSpace:xusername} %{notSpace:csUserAgent} %{csMethod:csmethod} %{notSpace:xnamespace} %{notSpace:xbucket} %{notSpace:xobject_} %{notSpace:csuriquery} %{notSpace:csprotocolversion} %{numWithHiphen:scstatus} %{numWithHiphen:timetaken} %{numWithHiphen:csbytes} %{numWithHiphen:scbytes} %{number:xstorageprocessingtime}( 'X-Forwarded-For: %{cip:xforwardedfor}')?\nblobRule %{date(\"MMM d HH:mm:ss\"):timestamp} %{machine:machinename} %{systemName:systemname} %{date2:date}T%{time2:time},%{num:} %{skip:},%{skip:},%{clientName:client_name}%{skipFormat1:}%{transactiontypeBLOB:transaction_type}%{skipFormat2:}%{_word:log_level}%{skipFormat3:}%{_word:method} %{notSpace:bucket} %{notSpace:blob_id} %{integer:response_code} %{integer:cas_transaction_time} %{integer:cas_bytes}\nclipRule %{date(\"MMM d HH:mm:ss\"):timestamp} %{machine:machinename} %{systemName:systemname} %{date2:date}T%{time2:time},%{num:} %{skip:},%{skip:},%{clientName:client_name}%{skipFormat1:}%{transactiontypeCLIP:transaction_type}%{skipFormat2:}%{_word:log_level}%{skipFormat3:}%{_word:method} %{notSpace:bucket} %{notSpace:clip_id} %{integer:response_code} %{integer:cas_transaction_time} %{integer:cas_bytes}\nauditRule %{date(\"MMM d HH:mm:ss\"):timestamp} %{notSpace:nodeId} %{notSpace:serviceType} %{notSpace:dell_emc_ecs_eventType}%{_space}%{notSpace:dell_emc_ecs_namespace} %{notSpace:dell_emc_ecs_userId} %{description:description}"
+    - type: pipeline
+      name: Parsing CAS logs
+      enabled: true
+      filter:
+        query: '@blob_id:* OR @clip_id:* '
+      processors:
+        - name: lookup response_code in error_name
+          enabled: true
+          source: response_code
+          target: error_name
+          lookupTable: "-10001,FP_INVALID_NAME\n-10002,FP_UNKNOWN_OPTION\n-10003,FP_NOT_SEND_REQUEST_ERR\n-10004,FP_NOT_RECEIVE_REPLY_ERR\n-10005,FP_SERVER_ERR\n-10006,FP_PARAM_ERR\n-10007,FP_PATH_NOT_FOUND_ERR\n-10008,FP_CONTROLFIELD_ERR\n-10009,FP_SEGDATA_ERR\n-10010,FP_DUPLICATE_FILE_ERR\n-10011,FP_OFFSET_FIELD_ERR\n-10012,FP_OPERATION_NOT_SUPPORTED\n-10013,FP_ACK_NOT_RCV_ERR\n-10014,FP_FILE_NOT_STORED_ERR\n-10015,FP_NUMLOC_FIELD_ERR\n-10016,FP_SECTION_NOT_FOUND_ERR\n-10017,FP_TAG_NOT_FOUND_ERR\n-10018,FP_ATTR_NOT_FOUND_ERR\n-10019,FP_WRONG_REFERENCE_ERR\n-10020,FP_NO_POOL_ERR\n-10021,FP_CLIP_NOT_FOUND_ERR\n-10022,FP_TAGTREE_ERR\n-10023,FP_ISNOT_DIRECTORY_ERR\n-10024,FP_UNEXPECTEDTAG_ERR\n-10025,FP_TAG_READONLY_ERR\n-10026,FP_OUT_OF_BOUNDS_ERR\n-10027,FP_FILESYS_ERR\n-10029,FP_STACK_DEPTH_ERR\n-10030,FP_TAG_HAS_NO_DATA_ERR\n-10031,FP_VERSION_ERR\n-10032,FP_MULTI_BLOB_ERR\n-10033,FP_PROTOCOL_ERR\n-10034,FP_NO_SOCKET_AVAIL_ERR\n-10035,FP_BLOBIDFIELD_ERR\n-10036,FP_BLOBIDMISMATCH_ERR\n-10037,FP_PROBEPACKET_ERR\n-10038,FP_CLIPCLOSED_ERR\n-10039,FP_POOLCLOSED_ERR\n-10040,FP_BLOBBUSY_ERR\n-10041,FP_SERVER_NOTREADY_ERR\n-10042,FP_SERVER_NO_CAPACITY_ERR\n-10043,FP_DUPLICATE_ID_ERR\n-10044,FP_STREAM_VALIDATION_ERR\n-10045,FP_STREAM_BYTECOUNT_MISMATCH_ERR\n-10101,FP_SOCKET_ERR\n-10102,FP_PACKETDATA_ERR\n-10103,FP_ACCESSNODE_ERR\n-10151,FP_OPCODE_FIELD_ERR\n-10152,FP_PACKET_FIELD_MISSING_ERR\n-10153,FP_AUTHENTICATION_FAILED_ERR\n-10154,FP_UNKNOWN_AUTH_SCHEME_ERR\n-10155,FP_UNKNOWN_AUTH_PROTOCOL_ERR\n-10156,FP_TRANSACTION_FAILED_ERR\n-10157,FP_PROFILECLIPID_NOTFOUND_ERR\n-10158,FP_ADVANCED_RETENTION_DISABLED_ERR\n-10159,FP_NON_EBR_CLIP_ERR\n-10160,FP_EBR_OVERRIDE_ERR\n-10161,FP_NO_EBR_EVENT_ERR\n-10162,FP_RETENTION_OUT_OF_BOUNDS_ERR\n-10163,FP_RETENTION_HOLD_COUNT_ERR\n-10164,FP_METADATA_MISMATCH_ERR\n-10201,FP_OPERATION_REQUIRES_MARK\n-10202,FP_QUERYCLOSED_ERR\n-10203,FP_WRONG_STREAM_ERR\n-10204,FP_OPERATION_NOT_ALLOWED\n-10205,FP_SDK_INTERNAL_ERR\n-10206,FP_OUT_OF_MEMORY_ERR\n-10207,FP_OBJECTINUSE_ERR\n-10208,FP_NOTYET_OPEN_ERR\n-10209,FP_STREAM_ERR\n-10210,FP_TAG_CLOSED_ERR\n-10211,FP_THREAD_ERR\n-10212,FP_PROBE_TIME_EXPIRED_ERR\n-10213,FP_PROFILECLIPID_WRITE_ERR\n-10214,FP_INVALID_XML_ERR\n-10215,FP_UNABLE_TO_GET_LAST_ERROR\n-10216,FP_LOGGING_CALLBACK_ERR"
+          type: lookup-processor
+    - type: attribute-remapper
+      name: Map `sip`, `cip` to `network.client.ip`
+      enabled: true
+      sources:
+        - sip
+        - cip
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `dell_emc_ecs_userId`, `eventUserId` to `usr.id`
+      enabled: true
+      sources:
+        - dell_emc_ecs_userId
+        - eventUserId
+      sourceType: attribute
+      target: usr.id
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `xusername` to `usr.name`
+      enabled: true
+      sources:
+        - xusername
+      sourceType: attribute
+      target: usr.name
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map tag `host` to an attribute
+      enabled: true
+      sources:
+        - host
+      sourceType: tag
+      target: host
+      targetType: attribute
+      preserveSource: true
+      overrideOnConflict: false
+    - type: date-remapper
+      name: Define `timestamp`, `sample_time` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+        - sample_time
+    - type: attribute-remapper
+      name: Map `nodeId` to `dell_emc_ecs_nodeid`
+      enabled: true
+      sources:
+        - nodeId
+      sourceType: attribute
+      target: dell_emc_ecs_nodeid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

@@ -1,0 +1,119 @@
+id: "browser"
+tests:
+ -
+  sample: |-
+    {
+      "name" : "registerButton",
+      "http" : {
+        "useragent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
+        "url" : "/datadoghq/company?test=var1%20Pl"
+      },
+      "message" : "Button Clicked",
+      "network" : {
+        "client" : {
+          "ip" : "172.17.0.1"
+        }
+      }
+    }
+  result:
+    custom:
+      http:
+        url: "/datadoghq/company?test=var1%20Pl"
+        url_details:
+          path: "/datadoghq/company"
+          queryString:
+            test: "var1%20Pl"
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+      name: "registerButton"
+      network:
+        client:
+          geoip: {}
+          ip: "172.17.0.1"
+    message: "Button Clicked"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "date" : 1573031676010,
+      "agent" : "browserLogCollector",
+      "datadog_version" : "35.1859776",
+      "session_id" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+      "sessionId" : "20cdb46b-eb38-48c8-8037-baa19b188f1e",
+      "message" : "Browser Log Collector started and logging debug logs to http",
+      "datadog_version_number" : 1859776,
+      "application_id" : "ac8218cf-498b-4d33-bd44-151095959547",
+      "network" : {
+        "client" : {
+          "ip" : "81.175.170.234"
+        }
+      },
+      "view" : {
+        "referrer" : "https://app.datadoghq.com/account/profile",
+        "id" : "9252b1eb-5910-4f6f-9b09-a6cb76609be3",
+        "url" : "https://app.datadoghq.com/account/team"
+      },
+      "http" : {
+        "referer" : "https://app.datadoghq.com/account/team",
+        "useragent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:70.0) Gecko/20100101 Firefox/70.0"
+      },
+      "status" : "info",
+      "browser_test" : false
+    }
+  result:
+    custom:
+      agent: "browserLogCollector"
+      application_id: "ac8218cf-498b-4d33-bd44-151095959547"
+      browser_test: false
+      datadog_version: "35.1859776"
+      datadog_version_number: 1859776
+      date: 1573031676010
+      http:
+        referer: "https://app.datadoghq.com/account/team"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:70.0) Gecko/20100101 Firefox/70.0"
+        useragent_details:
+          browser:
+            family: "Firefox"
+            major: "70"
+            minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      network:
+        client:
+          geoip: {}
+          ip: "81.175.170.234"
+      sessionId: "20cdb46b-eb38-48c8-8037-baa19b188f1e"
+      session_id: "20cdb46b-eb38-48c8-8037-baa19b188f1e"
+      status: "info"
+      view:
+        id: "9252b1eb-5910-4f6f-9b09-a6cb76609be3"
+        referrer: "https://app.datadoghq.com/account/profile"
+        referrer_details:
+          host: "app.datadoghq.com"
+          path: "/account/profile"
+          scheme: "https"
+        url: "https://app.datadoghq.com/account/team"
+        url_details:
+          host: "app.datadoghq.com"
+          path: "/account/team"
+          scheme: "https"
+    message: "Browser Log Collector started and logging debug logs to http"
+    tags:
+     - "source:LOGS_SOURCE"
+

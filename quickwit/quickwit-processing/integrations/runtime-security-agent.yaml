@@ -1,0 +1,63 @@
+id: runtime-security-agent
+backend_only: true # runtime-security-agent integration is a deprecated integration and is only defined in logs-backend
+installation_sources:
+  - runtime-security-agent
+  - cloud-workload-security
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Outcome
+    path: evt.outcome
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Runtime Security
+    name: File Name
+    path: file.name
+    source: log
+  - groups:
+      - Runtime Security
+    name: File Path
+    path: file.path
+    source: log
+  - groups:
+      - Runtime Security
+    name: File Flags
+    path: file.flags
+    source: log
+  - groups:
+      - Runtime Security
+    name: Process Executable Name
+    path: process.executable.name
+    source: log
+  - groups:
+      - Runtime Security
+    name: Process Executable Path
+    path: process.executable.path
+    source: log
+  - groups:
+      - Runtime Security
+    name: Process Arguments
+    path: process.args
+    source: log
+  - groups:
+      - Runtime Security
+    name: Process Arguments Truncated
+    path: process.args_truncated
+    source: log
+pipeline:
+  type: pipeline
+  name: Runtime Security Agent
+  enabled: true
+  filter:
+    query: source:(runtime-security-agent OR cloud-workload-security)
+  processors: []

@@ -1,0 +1,180 @@
+id: azure.iot_edge
+metric_id: azure-iot-edge
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - Azure
+    name: Resource ID
+    path: resourceId
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Resource Name
+    path: resource_name
+    source: log
+    type: string
+  - groups:
+      - Azure
+    name: Subscription ID
+    path: subscription_id
+    source: tag
+    type: string
+  - groups:
+      - Azure
+    name: Resource Group
+    path: resource_group
+    source: tag
+    type: string
+pipeline:
+  type: pipeline
+  name: Azure IoT Edge
+  enabled: true
+  filter:
+    query: source:azure.iot_edge
+  processors:
+    - type: grok-parser
+      name: Parsing default formats
+      enabled: true
+      source: message
+      samples:
+        - <6> 2020-09-18 09:58:12.881 +00:00 [INF] - Started task to cleanup processed and stale messages
+        - <6> 2020-09-18 09:58:12.881 +00:00 [INF] - Request starting HTTP/1.1 GET http://localhost:9601/metrics
+        - '<6> 2020-09-18 09:58:12.881 +00:00 [INF] - Executing command: "Create module SimulatedTemperatureSensor"'
+        - <6>2020-11-19T13:12:04Z [INFO] - [mgmt] - - - [2020-11-19 13:12:04.084402100 UTC] "GET /modules?api-version=2020-07-07 HTTP/1.1" 200 OK 2099 "-" "-" auth_id(-)
+        - <6>2020-11-19T13:11:59Z [INFO] - Querying system resources...
+      grok:
+        supportRules: |
+          _prefix (\<6\> ?)?
+          _timestamp %{date("yyyy-MM-dd HH:mm:ss.SSS Z"):timestamp}
+          _device_timestamp %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _device_http_timestamp %{date("yyyy-MM-dd HH:mm:ss.SSSSSSSSS z")}
+          _level %{word:level}
+          _loggerName %{notSpace:logger.name}
+          _duration %{number:duration}
+          _http_method %{word:http.method}
+          _http_url %{notSpace:http.url}
+          _http_version %{word}\/%{regex("\\d+\\.\\d+"):http.version}
+          _http_content_type %{regex("\\w+/\\w+"):http.content_type}
+          _http_status_code %{integer:http.status_code}
+          _http_reason_phrase %{notSpace:http.reason_phrase}
+          _http_bytes_written %{integer:network.bytes_written}
+          _http_ident %{notSpace:http.ident:nullIf("-")}
+          _http_auth %{notSpace:http.auth:nullIf("-")}
+          _http_auth_id %{notSpace:http.auth_id:nullIf("-")}
+          _http_fields %{data:http.fields:keyvalue}
+        matchRules: |
+          edge_hub_http_start %{_prefix}%{_timestamp} \[%{_level}\] - Request starting %{_http_version} %{_http_method} %{_http_url}
+          edge_hub_http_end %{_prefix}%{_timestamp} \[%{_level}\] - Request finished in %{_duration}ms %{_http_status_code} %{_http_content_type}; %{_http_fields}
+          device_http %{_prefix}%{_device_timestamp} \[%{_level}\] - \[%{_loggerName}\] - - - \[%{_device_http_timestamp}\] "%{_http_method} %{_http_url} %{_http_version}" %{_http_status_code} %{_http_reason_phrase} %{_http_bytes_written} "%{_http_ident}" "%{_http_auth}" auth_id\(%{_http_auth_id}\)
+          device_default %{_prefix}%{_device_timestamp} \[%{_level}\] - %{data:msg}
+          default %{_prefix}%{_timestamp} \[%{_level}\] - %{data:msg}
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: arithmetic-processor
+      name: Compute duration in nanoseconds from duration in milliseconds
+      enabled: true
+      expression: duration * 1000000
+      target: duration
+      replaceMissing: false
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: grok-parser
+      name: Parsing `resource_name` from `resourceId`
+      enabled: true
+      source: resourceId
+      samples:
+        - /SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/ET-COMPUTE-RG/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/ETFLOWLOGS
+      grok:
+        supportRules: |
+          _non_extracted_resource %{regex("[a-zA-Z0-9-_.]*")}
+          _resource_name %{regex("[a-zA-Z0-9-_.]*"):resource_name:lowercase}
+          _subscriptions %{regex("(?i)SUBSCRIPTIONS")}
+          _resource_groups %{regex("(?i)RESOURCEGROUPS")}
+          _providers %{regex("(?i)PROVIDERS")}
+        matchRules: |
+          extract_resource_name /%{_subscriptions}\/%{_non_extracted_resource}\/%{_resource_groups}\/%{_non_extracted_resource}\/%{_providers}%{_non_extracted_resource}\/%{_non_extracted_resource}\/%{data}\/%{_resource_name}

@@ -1,0 +1,47 @@
+id: "nvidia_triton"
+tests:
+ -
+  sample: "I1011 13:21:57.174321 1 cache_manager.cc:174] Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+  result:
+    custom:
+      level: "I"
+      logger:
+        lineno: 174
+        name: "cache_manager.cc"
+      pid: 1
+      timestamp: 24499317174
+    message: "Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 24499317174
+ -
+  sample: "2023-10-1113:21:57 I 1 cache_manager.cc:174] Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+  result:
+    custom:
+      level: "I"
+      logger:
+        lineno: 174
+        name: "cache_manager.cc"
+      pid: 1
+      timestamp: 1697030517000
+    message: "Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1697030517000
+ -
+  sample: "2023-10-11 13:21:57.768609: I tensorflow/core/util/port.cc:110] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`."
+  result:
+    custom:
+      level: "I"
+      logger:
+        lineno: 110
+        name: "tensorflow/core/util/port.cc"
+      timestamp: 1697030517768
+    message: "oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`."
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1697030517768
+

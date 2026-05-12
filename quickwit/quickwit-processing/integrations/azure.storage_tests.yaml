@@ -1,0 +1,67 @@
+id: "azure.storage"
+tests:
+ -
+  sample: |-
+    {
+      "callerIpAddress" : "104.209.130.4",
+      "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/CONTAINERGROUP/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/B7UI4VJGWZ6EODIAG0",
+      "level" : "Error",
+      "identity" : {
+        "authorization" : {
+          "evidence" : {
+            "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+          }
+        }
+      },
+      "operationName" : "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION",
+      "correlationId" : "f860428d-66c1-4639-a3da-b963663f892f",
+      "time" : "2020-04-04T02:48:41.1195332Z",
+      "category" : "Administrative",
+      "resultType" : "Failure",
+      "durationMs" : 28455,
+      "resultSignature" : "Failed.InternalServerError"
+    }
+  result:
+    custom:
+      correlationId: "f860428d-66c1-4639-a3da-b963663f892f"
+      duration: 2.8455E10
+      durationMs: 28455
+      evt:
+        category: "Administrative"
+        name: "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION"
+        outcome: "Failure"
+      level: "Error"
+      network:
+        client:
+          ip: "104.209.130.4"
+      resourceId: "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/CONTAINERGROUP/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/B7UI4VJGWZ6EODIAG0"
+      resource_name: "b7ui4vjgwz6eodiag0"
+      resultSignature: "Failed.InternalServerError"
+      time: "2020-04-04T02:48:41.1195332Z"
+      usr:
+        id: "5f6793e4783e49a2bfb8cdaasdada"
+    message: |-
+      {
+        "callerIpAddress" : "104.209.130.4",
+        "resourceId" : "/SUBSCRIPTIONS/8C56D827-5F07-45CE-8F2B-6C5001DB5C6F/RESOURCEGROUPS/CONTAINERGROUP/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/B7UI4VJGWZ6EODIAG0",
+        "level" : "Error",
+        "identity" : {
+          "authorization" : {
+            "evidence" : {
+              "principalId" : "5f6793e4783e49a2bfb8cdaasdada"
+            }
+          }
+        },
+        "operationName" : "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION",
+        "correlationId" : "f860428d-66c1-4639-a3da-b963663f892f",
+        "time" : "2020-04-04T02:48:41.1195332Z",
+        "category" : "Administrative",
+        "resultType" : "Failure",
+        "durationMs" : 28455,
+        "resultSignature" : "Failed.InternalServerError"
+      }
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585968521119
+

@@ -1,0 +1,603 @@
+id: "crest_data_systems_prefect"
+tests:
+ -
+  sample: |-
+    {
+      "empirical_policy" : {
+        "max_retries" : 0,
+        "resuming" : false,
+        "retry_delay_seconds" : 0.0
+      },
+      "state_type" : "SCHEDULED",
+      "run_count" : 0,
+      "state_name" : "Late",
+      "flow_id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b",
+      "estimated_run_time" : 0.0,
+      "idempotency_key" : "automation 2ddc4bc9-b358-4e7e-9125-47e0741068d8, action 0, invocation 03066949-5292-495e-9add-9605183eb468",
+      "id" : "74ebdad7-06a9-4839-92bc-9fa8d065b91f",
+      "state_id" : "494de7a2-8b43-4dea-b406-36bbd762ea71",
+      "deployment_id" : "1521b27f-001b-49d4-bce9-db3f1eb456d1",
+      "state" : {
+        "state_details" : {
+          "untrackable_result" : false,
+          "scheduled_time" : "2025-02-20T09:09:38.372850Z",
+          "flow_run_id" : "74ebdad7-06a9-4839-92bc-9fa8d065b91f",
+          "pause_reschedule" : false
+        },
+        "name" : "Late",
+        "id" : "494de7a2-8b43-4dea-b406-36bbd762ea71",
+        "type" : "SCHEDULED",
+        "timestamp" : "2025-02-20T09:10:15.020175Z"
+      },
+      "auto_scheduled" : false,
+      "estimated_start_time_delta" : 595424.867075,
+      "created" : "2025-02-20T09:09:38.407831Z",
+      "total_run_time" : 0.0,
+      "flow_name" : "hello-world",
+      "created_by" : {
+        "display_value" : "Automate hello_world",
+        "id" : "2ddc4bc9-b358-4e7e-9125-47e0741068d8",
+        "type" : "AUTOMATION"
+      },
+      "tags" : [ "onboarding" ],
+      "labels" : {
+        "prefect" : {
+          "flow" : {
+            "name" : "hello-world",
+            "id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+          },
+          "deployment" : {
+            "name" : "my-first-deployment",
+            "id" : "1521b27f-001b-49d4-bce9-db3f1eb456d1"
+          }
+        }
+      },
+      "deployment_version" : "4af05901a08e6d7abdc9e506949e8fa7",
+      "expected_start_time" : "2025-02-20T09:09:38.372850Z",
+      "next_scheduled_start_time" : "2025-02-20T09:09:38.372850Z",
+      "name" : "sociable-crayfish",
+      "updated" : "2025-02-20T09:10:15.029560Z",
+      "parameters" : {
+        "goodbye" : true
+      }
+    }
+  service: "cds.prefect.flow_runs"
+  result:
+    custom:
+      cds:
+        prefect:
+          deployment:
+            id: "1521b27f-001b-49d4-bce9-db3f1eb456d1"
+          flow:
+            id: "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+            name: "hello-world"
+          flow_run:
+            auto_scheduled: false
+            created: "2025-02-20T09:09:38.407831Z"
+            created_by_display_value: "Automate hello_world"
+            created_by_type: "AUTOMATION"
+            id: "74ebdad7-06a9-4839-92bc-9fa8d065b91f"
+            name: "sociable-crayfish"
+            status: "SCHEDULED"
+            total_run_time: 0.0
+            updated: "2025-02-20T09:10:15.029560Z"
+      created_by:
+        id: "2ddc4bc9-b358-4e7e-9125-47e0741068d8"
+      deployment_version: "4af05901a08e6d7abdc9e506949e8fa7"
+      empirical_policy:
+        max_retries: 0
+        resuming: false
+        retry_delay_seconds: 0.0
+      estimated_run_time: 0.0
+      estimated_start_time_delta: 595424.867075
+      expected_start_time: "2025-02-20T09:09:38.372850Z"
+      flow_run:
+        status: "notice"
+      idempotency_key: "automation 2ddc4bc9-b358-4e7e-9125-47e0741068d8, action 0, invocation 03066949-5292-495e-9add-9605183eb468"
+      labels:
+        prefect:
+          deployment:
+            id: "1521b27f-001b-49d4-bce9-db3f1eb456d1"
+            name: "my-first-deployment"
+          flow:
+            id: "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+            name: "hello-world"
+      next_scheduled_start_time: "2025-02-20T09:09:38.372850Z"
+      parameters:
+        goodbye: true
+      run_count: 0
+      state:
+        id: "494de7a2-8b43-4dea-b406-36bbd762ea71"
+        name: "Late"
+        state_details:
+          flow_run_id: "74ebdad7-06a9-4839-92bc-9fa8d065b91f"
+          pause_reschedule: false
+          scheduled_time: "2025-02-20T09:09:38.372850Z"
+          untrackable_result: false
+        timestamp: "2025-02-20T09:10:15.020175Z"
+        type: "SCHEDULED"
+      state_id: "494de7a2-8b43-4dea-b406-36bbd762ea71"
+      state_name: "Late"
+      tags:
+       - "onboarding"
+    message: |-
+      {
+        "empirical_policy" : {
+          "max_retries" : 0,
+          "resuming" : false,
+          "retry_delay_seconds" : 0.0
+        },
+        "state_type" : "SCHEDULED",
+        "run_count" : 0,
+        "state_name" : "Late",
+        "flow_id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b",
+        "estimated_run_time" : 0.0,
+        "idempotency_key" : "automation 2ddc4bc9-b358-4e7e-9125-47e0741068d8, action 0, invocation 03066949-5292-495e-9add-9605183eb468",
+        "id" : "74ebdad7-06a9-4839-92bc-9fa8d065b91f",
+        "state_id" : "494de7a2-8b43-4dea-b406-36bbd762ea71",
+        "deployment_id" : "1521b27f-001b-49d4-bce9-db3f1eb456d1",
+        "state" : {
+          "state_details" : {
+            "untrackable_result" : false,
+            "scheduled_time" : "2025-02-20T09:09:38.372850Z",
+            "flow_run_id" : "74ebdad7-06a9-4839-92bc-9fa8d065b91f",
+            "pause_reschedule" : false
+          },
+          "name" : "Late",
+          "id" : "494de7a2-8b43-4dea-b406-36bbd762ea71",
+          "type" : "SCHEDULED",
+          "timestamp" : "2025-02-20T09:10:15.020175Z"
+        },
+        "auto_scheduled" : false,
+        "estimated_start_time_delta" : 595424.867075,
+        "created" : "2025-02-20T09:09:38.407831Z",
+        "total_run_time" : 0.0,
+        "flow_name" : "hello-world",
+        "created_by" : {
+          "display_value" : "Automate hello_world",
+          "id" : "2ddc4bc9-b358-4e7e-9125-47e0741068d8",
+          "type" : "AUTOMATION"
+        },
+        "tags" : [ "onboarding" ],
+        "labels" : {
+          "prefect" : {
+            "flow" : {
+              "name" : "hello-world",
+              "id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+            },
+            "deployment" : {
+              "name" : "my-first-deployment",
+              "id" : "1521b27f-001b-49d4-bce9-db3f1eb456d1"
+            }
+          }
+        },
+        "deployment_version" : "4af05901a08e6d7abdc9e506949e8fa7",
+        "expected_start_time" : "2025-02-20T09:09:38.372850Z",
+        "next_scheduled_start_time" : "2025-02-20T09:09:38.372850Z",
+        "name" : "sociable-crayfish",
+        "updated" : "2025-02-20T09:10:15.029560Z",
+        "parameters" : {
+          "goodbye" : true
+        }
+      }
+    service: "cds.prefect.flow_runs"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740042615029
+ -
+  sample: |-
+    {
+      "empirical_policy" : {
+        "retries" : 0,
+        "max_retries" : 0,
+        "retry_delay" : 0,
+        "retry_delay_seconds" : 0.0
+      },
+      "estimated_start_time_delta" : 0.007876,
+      "created" : "2025-02-27T11:39:29.361891Z",
+      "dynamic_key" : "72cb9ceb-5404-4797-921b-da73f2b78ee9",
+      "state_type" : "COMPLETED",
+      "total_run_time" : 0.009196,
+      "end_time" : "2025-02-27T11:39:27.774587Z",
+      "flow_run_run_count" : 1,
+      "flow_run_id" : "223a23dc-0008-4e93-9566-2740ff010537",
+      "run_count" : 1,
+      "expected_start_time" : "2025-02-27T11:39:27.757515Z",
+      "start_time" : "2025-02-27T11:39:27.765391Z",
+      "task_inputs" : {
+        "repo_stats" : [ {
+          "input_type" : "task_run",
+          "id" : "bc8d6a98-d379-4f1c-98fb-46403d4805fe"
+        } ]
+      },
+      "state_name" : "Completed",
+      "task_key" : "get_stars-55c75256",
+      "name" : "get_stars-72c",
+      "estimated_run_time" : 0.009196,
+      "id" : "d2757161-97e0-486a-b443-188886916f6c",
+      "state_id" : "3903fcd9-030d-4336-8025-d32e8d575e0f",
+      "state" : {
+        "state_details" : {
+          "task_run_id" : "d2757161-97e0-486a-b443-188886916f6c",
+          "untrackable_result" : false,
+          "flow_run_id" : "223a23dc-0008-4e93-9566-2740ff010537",
+          "pause_reschedule" : false
+        },
+        "name" : "Completed",
+        "id" : "3903fcd9-030d-4336-8025-d32e8d575e0f",
+        "type" : "COMPLETED",
+        "message" : "",
+        "timestamp" : "2025-02-27T11:39:27.774587Z"
+      },
+      "updated" : "2025-02-27T11:39:29.412471Z"
+    }
+  service: "cds.prefect.task_runs"
+  result:
+    custom:
+      cds:
+        prefect:
+          task_run:
+            created: "2025-02-27T11:39:29.361891Z"
+            id: "d2757161-97e0-486a-b443-188886916f6c"
+            name: "get_stars-72c"
+            status: "COMPLETED"
+            status_message: ""
+            total_run_time: 0.009196
+            updated: "2025-02-27T11:39:29.412471Z"
+      dynamic_key: "72cb9ceb-5404-4797-921b-da73f2b78ee9"
+      empirical_policy:
+        max_retries: 0
+        retries: 0
+        retry_delay: 0
+        retry_delay_seconds: 0.0
+      end_time: "2025-02-27T11:39:27.774587Z"
+      estimated_run_time: 0.009196
+      estimated_start_time_delta: 0.007876
+      expected_start_time: "2025-02-27T11:39:27.757515Z"
+      flow_run_id: "223a23dc-0008-4e93-9566-2740ff010537"
+      flow_run_run_count: 1
+      run_count: 1
+      start_time: "2025-02-27T11:39:27.765391Z"
+      state:
+        id: "3903fcd9-030d-4336-8025-d32e8d575e0f"
+        name: "Completed"
+        state_details:
+          flow_run_id: "223a23dc-0008-4e93-9566-2740ff010537"
+          pause_reschedule: false
+          task_run_id: "d2757161-97e0-486a-b443-188886916f6c"
+          untrackable_result: false
+        timestamp: "2025-02-27T11:39:27.774587Z"
+        type: "COMPLETED"
+      state_id: "3903fcd9-030d-4336-8025-d32e8d575e0f"
+      state_name: "Completed"
+      task_inputs:
+        repo_stats:
+         -
+          input_type: "task_run"
+          id: "bc8d6a98-d379-4f1c-98fb-46403d4805fe"
+      task_key: "get_stars-55c75256"
+      task_run:
+        status: "info"
+    message: |-
+      {
+        "empirical_policy" : {
+          "retries" : 0,
+          "max_retries" : 0,
+          "retry_delay" : 0,
+          "retry_delay_seconds" : 0.0
+        },
+        "estimated_start_time_delta" : 0.007876,
+        "created" : "2025-02-27T11:39:29.361891Z",
+        "dynamic_key" : "72cb9ceb-5404-4797-921b-da73f2b78ee9",
+        "state_type" : "COMPLETED",
+        "total_run_time" : 0.009196,
+        "end_time" : "2025-02-27T11:39:27.774587Z",
+        "flow_run_run_count" : 1,
+        "flow_run_id" : "223a23dc-0008-4e93-9566-2740ff010537",
+        "run_count" : 1,
+        "expected_start_time" : "2025-02-27T11:39:27.757515Z",
+        "start_time" : "2025-02-27T11:39:27.765391Z",
+        "task_inputs" : {
+          "repo_stats" : [ {
+            "input_type" : "task_run",
+            "id" : "bc8d6a98-d379-4f1c-98fb-46403d4805fe"
+          } ]
+        },
+        "state_name" : "Completed",
+        "task_key" : "get_stars-55c75256",
+        "name" : "get_stars-72c",
+        "estimated_run_time" : 0.009196,
+        "id" : "d2757161-97e0-486a-b443-188886916f6c",
+        "state_id" : "3903fcd9-030d-4336-8025-d32e8d575e0f",
+        "state" : {
+          "state_details" : {
+            "task_run_id" : "d2757161-97e0-486a-b443-188886916f6c",
+            "untrackable_result" : false,
+            "flow_run_id" : "223a23dc-0008-4e93-9566-2740ff010537",
+            "pause_reschedule" : false
+          },
+          "name" : "Completed",
+          "id" : "3903fcd9-030d-4336-8025-d32e8d575e0f",
+          "type" : "COMPLETED",
+          "message" : "",
+          "timestamp" : "2025-02-27T11:39:27.774587Z"
+        },
+        "updated" : "2025-02-27T11:39:29.412471Z"
+      }
+    service: "cds.prefect.task_runs"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740656369412
+ -
+  sample: |-
+    {
+      "parameter_openapi_schema" : {
+        "type" : "object",
+        "title" : "Parameters",
+        "properties" : {
+          "goodbye" : {
+            "default" : false,
+            "position" : 1,
+            "type" : "boolean",
+            "title" : "goodbye"
+          },
+          "name" : {
+            "default" : "world",
+            "position" : 0,
+            "type" : "string",
+            "title" : "name"
+          }
+        }
+      },
+      "paused" : true,
+      "created" : "2025-02-20T09:24:04.187668Z",
+      "version" : "4bd09cc1aa7b79f48141161b60257912",
+      "created_by" : {
+        "display_value" : "iota-kayal-void",
+        "id" : "f5e07b75-d4c1-4268-964a-6f0fca95557a",
+        "type" : "USER"
+      },
+      "tags" : [ "onboarded" ],
+      "labels" : {
+        "prefect" : {
+          "flow" : {
+            "id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+          }
+        }
+      },
+      "path" : ".",
+      "last_polled" : "2025-02-20T09:27:14.339760Z",
+      "flow_id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b",
+      "entrypoint" : "hello_world.py:hello_world",
+      "name" : "my-second-deployment",
+      "updated_by" : {
+        "display_value" : "iota-kayal-void",
+        "id" : "f5e07b75-d4c1-4268-964a-6f0fca95557a",
+        "type" : "USER"
+      },
+      "disabled" : false,
+      "enforce_parameter_schema" : true,
+      "id" : "d6b5b7f5-b2e3-4c0b-ac3e-0f618f9fb42c",
+      "updated" : "2025-02-20T09:27:23.683443Z",
+      "parameters" : {
+        "goodbye" : true
+      },
+      "is_schedule_active" : false,
+      "status" : "NOT_READY"
+    }
+  service: "cds.prefect.deployments"
+  result:
+    custom:
+      cds:
+        prefect:
+          deployment:
+            created: "2025-02-20T09:24:04.187668Z"
+            created_by_display_value: "iota-kayal-void"
+            created_by_id: "f5e07b75-d4c1-4268-964a-6f0fca95557a"
+            created_by_type: "USER"
+            id: "d6b5b7f5-b2e3-4c0b-ac3e-0f618f9fb42c"
+            is_schedule_active: false
+            name: "my-second-deployment"
+            status: "NOT_READY"
+            updated: "2025-02-20T09:27:23.683443Z"
+            updated_by_display_value: "iota-kayal-void"
+            updated_by_id: "f5e07b75-d4c1-4268-964a-6f0fca95557a"
+            updated_by_type: "USER"
+            version: "4bd09cc1aa7b79f48141161b60257912"
+      deployment:
+        status: "notice"
+      disabled: false
+      enforce_parameter_schema: true
+      entrypoint: "hello_world.py:hello_world"
+      flow_id: "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+      labels:
+        prefect:
+          flow:
+            id: "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+      last_polled: "2025-02-20T09:27:14.339760Z"
+      parameter_openapi_schema:
+        properties:
+          goodbye:
+            default: false
+            position: 1
+            title: "goodbye"
+            type: "boolean"
+          name:
+            default: "world"
+            position: 0
+            title: "name"
+            type: "string"
+        title: "Parameters"
+        type: "object"
+      parameters:
+        goodbye: true
+      path: "."
+      paused: true
+      tags:
+       - "onboarded"
+    message: |-
+      {
+        "parameter_openapi_schema" : {
+          "type" : "object",
+          "title" : "Parameters",
+          "properties" : {
+            "goodbye" : {
+              "default" : false,
+              "position" : 1,
+              "type" : "boolean",
+              "title" : "goodbye"
+            },
+            "name" : {
+              "default" : "world",
+              "position" : 0,
+              "type" : "string",
+              "title" : "name"
+            }
+          }
+        },
+        "paused" : true,
+        "created" : "2025-02-20T09:24:04.187668Z",
+        "version" : "4bd09cc1aa7b79f48141161b60257912",
+        "created_by" : {
+          "display_value" : "iota-kayal-void",
+          "id" : "f5e07b75-d4c1-4268-964a-6f0fca95557a",
+          "type" : "USER"
+        },
+        "tags" : [ "onboarded" ],
+        "labels" : {
+          "prefect" : {
+            "flow" : {
+              "id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b"
+            }
+          }
+        },
+        "path" : ".",
+        "last_polled" : "2025-02-20T09:27:14.339760Z",
+        "flow_id" : "79b471f7-a1f3-4bd2-abb5-bccaeb1bc63b",
+        "entrypoint" : "hello_world.py:hello_world",
+        "name" : "my-second-deployment",
+        "updated_by" : {
+          "display_value" : "iota-kayal-void",
+          "id" : "f5e07b75-d4c1-4268-964a-6f0fca95557a",
+          "type" : "USER"
+        },
+        "disabled" : false,
+        "enforce_parameter_schema" : true,
+        "id" : "d6b5b7f5-b2e3-4c0b-ac3e-0f618f9fb42c",
+        "updated" : "2025-02-20T09:27:23.683443Z",
+        "parameters" : {
+          "goodbye" : true
+        },
+        "is_schedule_active" : false,
+        "status" : "NOT_READY"
+      }
+    service: "cds.prefect.deployments"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1740043643683
+ -
+  sample: |-
+    {
+      "workspace" : "55b7d00a-acf6-467a-bcd2-bff0dc35f2e0",
+      "occurred" : "2025-04-14T06:54:25.284558Z",
+      "related" : [ {
+        "prefect" : {
+          "resource" : {
+            "role" : "flow",
+            "name" : "twins",
+            "id" : "prefect.flow.7f442282-84c7-4312-8313-ebf410c4f8a2"
+          }
+        }
+      }, {
+        "prefect" : {
+          "resource" : {
+            "role" : "creator",
+            "name" : "iota-kayal-void",
+            "id" : "prefect-cloud.user.f5e07b75-d4c1-4268-964a-6f0fca95557a"
+          }
+        }
+      } ],
+      "resource" : {
+        "prefect" : {
+          "delete-stage" : "soft",
+          "resource" : {
+            "id" : "prefect.flow-run.7a2c76a5-458b-4f2a-90f5-a81fd48ea11f"
+          }
+        }
+      },
+      "received" : "2025-04-14T06:54:26.221112Z",
+      "id" : "7dc20ecf-3c36-436e-936e-3d9e8493c649",
+      "event" : "prefect.flow-run.deleted",
+      "account" : "e5937251-39f4-4c12-9ab5-64a1899459ba"
+    }
+  service: "cds.prefect.workspace_events"
+  result:
+    custom:
+      cds:
+        prefect:
+          account_id: "e5937251-39f4-4c12-9ab5-64a1899459ba"
+          workspace_event:
+            event_name: "prefect.flow-run.deleted"
+            id: "7dc20ecf-3c36-436e-936e-3d9e8493c649"
+            occurred: "2025-04-14T06:54:25.284558Z"
+          workspace_id: "55b7d00a-acf6-467a-bcd2-bff0dc35f2e0"
+      received: "2025-04-14T06:54:26.221112Z"
+      related:
+       -
+        prefect:
+          resource:
+            role: "flow"
+            name: "twins"
+            id: "prefect.flow.7f442282-84c7-4312-8313-ebf410c4f8a2"
+       -
+        prefect:
+          resource:
+            role: "creator"
+            name: "iota-kayal-void"
+            id: "prefect-cloud.user.f5e07b75-d4c1-4268-964a-6f0fca95557a"
+      resource:
+        prefect:
+          delete-stage: "soft"
+          resource:
+            id: "prefect.flow-run.7a2c76a5-458b-4f2a-90f5-a81fd48ea11f"
+    message: |-
+      {
+        "workspace" : "55b7d00a-acf6-467a-bcd2-bff0dc35f2e0",
+        "occurred" : "2025-04-14T06:54:25.284558Z",
+        "related" : [ {
+          "prefect" : {
+            "resource" : {
+              "role" : "flow",
+              "name" : "twins",
+              "id" : "prefect.flow.7f442282-84c7-4312-8313-ebf410c4f8a2"
+            }
+          }
+        }, {
+          "prefect" : {
+            "resource" : {
+              "role" : "creator",
+              "name" : "iota-kayal-void",
+              "id" : "prefect-cloud.user.f5e07b75-d4c1-4268-964a-6f0fca95557a"
+            }
+          }
+        } ],
+        "resource" : {
+          "prefect" : {
+            "delete-stage" : "soft",
+            "resource" : {
+              "id" : "prefect.flow-run.7a2c76a5-458b-4f2a-90f5-a81fd48ea11f"
+            }
+          }
+        },
+        "received" : "2025-04-14T06:54:26.221112Z",
+        "id" : "7dc20ecf-3c36-436e-936e-3d9e8493c649",
+        "event" : "prefect.flow-run.deleted",
+        "account" : "e5937251-39f4-4c12-9ab5-64a1899459ba"
+      }
+    service: "cds.prefect.workspace_events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1744613665284

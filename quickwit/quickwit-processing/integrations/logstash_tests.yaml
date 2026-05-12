@@ -1,0 +1,128 @@
+id: "logstash"
+tests:
+ -
+  sample: "[2020-03-13T08:12:00,829][WARN ][logstash.pipeline ] CAUTION: Recommended inflight events max exceeded! Logstash will run with up to 36000 events in memory in your current configuration. If your message sizes are large this may cause instability with the default heap size. Please consider setting a non-standard heap size, changing the batch size (currently 1000), or changing the number of pipeline workers (currently 18) {:pipeline_id=>\"main\", :thread=>\"#<Thread:0x6b7a719f@/usr/share/logstash/logstash-core/lib/logstash/pipeline.rb:246 run>\"}"
+  result:
+    custom:
+      level: "WARN"
+      logger:
+        name: "logstash.pipeline"
+      pipeline_id: "main"
+      thread: "#<Thread:0x6b7a719f@/usr/share/logstash/logstash-core/lib/logstash/pipeline.rb:246 run>"
+      timestamp: 1584087120829
+    message: "[2020-03-13T08:12:00,829][WARN ][logstash.pipeline ] CAUTION: Recommended inflight events max exceeded! Logstash will run with up to 36000 events in memory in your current configuration. If your message sizes are large this may cause instability with the default heap size. Please consider setting a non-standard heap size, changing the batch size (currently 1000), or changing the number of pipeline workers (currently 18) {:pipeline_id=>\"main\", :thread=>\"#<Thread:0x6b7a719f@/usr/share/logstash/logstash-core/lib/logstash/pipeline.rb:246 run>\"}"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584087120829
+ -
+  sample: "[2020-03-13T08:12:00,829][INFO ][logstash.inputs.s3] Using default generated file for the sincedb {:filename=>\"/var/lib/logstash/plugins/inputs/s3/testdb_ueihqwe8ryw9833hd372387\"}"
+  result:
+    custom:
+      filename: "/var/lib/logstash/plugins/inputs/s3/testdb_ueihqwe8ryw9833hd372387"
+      level: "INFO"
+      logger:
+        name: "logstash.inputs.s3"
+      timestamp: 1584087120829
+    message: "[2020-03-13T08:12:00,829][INFO ][logstash.inputs.s3] Using default generated file for the sincedb {:filename=>\"/var/lib/logstash/plugins/inputs/s3/testdb_ueihqwe8ryw9833hd372387\"}"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584087120829
+ -
+  sample: "[2020-03-13T08:11:10,608][ERROR][logstash.agent ] API HTTP Request {:status=>500, :request_method=>\"GET\", :path_info=>\"/_node/stats\", :query_string=>\"\", :http_version=>\"HTTP/1.1\", :http_accept=>\"*/*\"}"
+  result:
+    custom:
+      http:
+        accept: "*/*"
+        method: "GET"
+        status_code: 500.0
+        url_details:
+          path: "/_node/stats"
+          queryString: ""
+        version: "HTTP/1.1"
+      level: "ERROR"
+      logger:
+        name: "logstash.agent"
+      timestamp: 1584087070608
+    message: "[2020-03-13T08:11:10,608][ERROR][logstash.agent ] API HTTP Request {:status=>500, :request_method=>\"GET\", :path_info=>\"/_node/stats\", :query_string=>\"\", :http_version=>\"HTTP/1.1\", :http_accept=>\"*/*\"}"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1584087070608
+ -
+  sample: "[2020-04-03T04:30:20,604][ERROR][logstash.agent ] Internal API server error {:status=>500, :request_method=>\"GET\", :path_info=>\"/_node/stats\", :query_string=>\"\", :http_version=>\"HTTP/1.1\", :http_accept=>\"*/*\", :error=>\"Unexpected Internal Error\", :class=>\"LogStash::Instrument::MetricStore::MetricNotFound\", :message=>\"For path: events. Map keys: [:reloads]\", :backtrace=>[\"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:225:in `block in get_recursively\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:235:in `block in get_recursively\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:95:in `block in get\", \"org/jruby/ext/thread/Mutex.java:148:in `synchronize\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:94:in `get\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:108:in `get_shallow\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:157:in `block in extract_metrics\", \"org/jruby/RubyArray.java:1734:in `each\", \"org/jruby/RubyEnumerable.java:936:in `inject\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:133:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/service.rb:30:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/commands/base.rb:22:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/commands/stats.rb:42:in `events\", \"/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:35:in `events_payload\", \"/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:21:in `block in GET /?:filter?\", \"org/jruby/RubyMethod.java:111:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1611:in `block in compile!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:994:in `route_eval\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1015:in `block in process_route\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1013:in `process_route\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:973:in `block in route!\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:972:in `route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1085:in `block in dispatch!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1082:in `dispatch!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `block in call!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `call!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:895:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/xss_header.rb:18:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/path_traversal.rb:16:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/json_csrf.rb:18:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/frame_options.rb:31:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-1.6.6/lib/rack/nulllogger.rb:9:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack\"}"
+  result:
+    custom:
+      class: "LogStash::Instrument::MetricStore::MetricNotFound"
+      error:
+        msg: "Unexpected Internal Error"
+        stack:
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:225:in `block in get_recursively"
+         - "org/jruby/RubyArray.java:1734:in `each"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:235:in `block in get_recursively"
+         - "org/jruby/RubyArray.java:1734:in `each"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:95:in `block in get"
+         - "org/jruby/ext/thread/Mutex.java:148:in `synchronize"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:94:in `get"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:108:in `get_shallow"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:157:in `block in extract_metrics"
+         - "org/jruby/RubyArray.java:1734:in `each"
+         - "org/jruby/RubyEnumerable.java:936:in `inject"
+         - "/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:133:in `extract_metrics"
+         - "/usr/share/logstash/logstash-core/lib/logstash/api/service.rb:30:in `extract_metrics"
+         - "/usr/share/logstash/logstash-core/lib/logstash/api/commands/base.rb:22:in `extract_metrics"
+         - "/usr/share/logstash/logstash-core/lib/logstash/api/commands/stats.rb:42:in `events"
+         - "/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:35:in `events_payload"
+         - "/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:21:in `block in GET /?:filter?"
+         - "org/jruby/RubyMethod.java:111:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1611:in `block in compile!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:994:in `route_eval"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1015:in `block in process_route"
+         - "org/jruby/RubyKernel.java:1114:in `catch"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1013:in `process_route"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:973:in `block in route!"
+         - "org/jruby/RubyArray.java:1734:in `each"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:972:in `route!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1085:in `block in dispatch!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke"
+         - "org/jruby/RubyKernel.java:1114:in `catch"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1082:in `dispatch!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `block in call!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke"
+         - "org/jruby/RubyKernel.java:1114:in `catch"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `call!"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:895:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/xss_header.rb:18:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/path_traversal.rb:16:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/json_csrf.rb:18:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/frame_options.rb:31:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-1.6.6/lib/rack/nulllogger.rb:9:in `call"
+         - "/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack"
+      http:
+        accept: "*/*"
+        method: "GET"
+        status_code: 500.0
+        url_details:
+          path: "/_node/stats"
+          queryString: ""
+        version: "HTTP/1.1"
+      level: "ERROR"
+      logger:
+        name: "logstash.agent"
+      message: "For path: events. Map keys: [:reloads]"
+      timestamp: 1585888220604
+    message: "[2020-04-03T04:30:20,604][ERROR][logstash.agent ] Internal API server error {:status=>500, :request_method=>\"GET\", :path_info=>\"/_node/stats\", :query_string=>\"\", :http_version=>\"HTTP/1.1\", :http_accept=>\"*/*\", :error=>\"Unexpected Internal Error\", :class=>\"LogStash::Instrument::MetricStore::MetricNotFound\", :message=>\"For path: events. Map keys: [:reloads]\", :backtrace=>[\"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:225:in `block in get_recursively\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:235:in `block in get_recursively\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:224:in `get_recursively\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:95:in `block in get\", \"org/jruby/ext/thread/Mutex.java:148:in `synchronize\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:94:in `get\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:108:in `get_shallow\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:157:in `block in extract_metrics\", \"org/jruby/RubyArray.java:1734:in `each\", \"org/jruby/RubyEnumerable.java:936:in `inject\", \"/usr/share/logstash/logstash-core/lib/logstash/instrument/metric_store.rb:133:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/service.rb:30:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/commands/base.rb:22:in `extract_metrics\", \"/usr/share/logstash/logstash-core/lib/logstash/api/commands/stats.rb:42:in `events\", \"/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:35:in `events_payload\", \"/usr/share/logstash/logstash-core/lib/logstash/api/modules/node_stats.rb:21:in `block in GET /?:filter?\", \"org/jruby/RubyMethod.java:111:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1611:in `block in compile!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:994:in `route_eval\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:975:in `block in route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1015:in `block in process_route\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1013:in `process_route\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:973:in `block in route!\", \"org/jruby/RubyArray.java:1734:in `each\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:972:in `route!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1085:in `block in dispatch!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1082:in `dispatch!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `block in call!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `block in invoke\", \"org/jruby/RubyKernel.java:1114:in `catch\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:1067:in `invoke\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:907:in `call!\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/sinatra-1.4.8/lib/sinatra/base.rb:895:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/xss_header.rb:18:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/path_traversal.rb:16:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/json_csrf.rb:18:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/base.rb:49:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-protection-1.5.5/lib/rack/protection/frame_options.rb:31:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack-1.6.6/lib/rack/nulllogger.rb:9:in `call\", \"/usr/share/logstash/vendor/bundle/jruby/2.3.0/gems/rack\"}"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1585888220604
+

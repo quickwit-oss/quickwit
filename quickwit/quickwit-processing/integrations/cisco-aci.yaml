@@ -1,0 +1,215 @@
+id: cisco-aci
+metric_id: cisco-aci
+backend_only: false
+facets:
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Ack
+    path: cisco_aci.ack
+    source: log
+    type: boolean
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Affected
+    path: cisco_aci.affected
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Alert
+    path: cisco_aci.alert
+    source: log
+    type: boolean
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Cause
+    path: cisco_aci.cause
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Change Set
+    path: cisco_aci.changeSet
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Child Action
+    path: cisco_aci.childAction
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Code
+    path: cisco_aci.code
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Delegated
+    path: cisco_aci.delegated
+    source: log
+    type: boolean
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Dn
+    path: cisco_aci.dn
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Domain
+    path: cisco_aci.domain
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Fault Category
+    path: cisco_aci.faultCategory
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Highest Severity
+    path: cisco_aci.highestSeverity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Lifecycle Status
+    path: cisco_aci.lc
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Occur
+    path: cisco_aci.occur
+    source: log
+    type: integer
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Orig Severity
+    path: cisco_aci.origSeverity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Prev Severity
+    path: cisco_aci.prevSeverity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Rule
+    path: cisco_aci.rule
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Severity
+    path: cisco_aci.severity
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Subject
+    path: cisco_aci.subject
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Title
+    path: cisco_aci.title
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Type
+    path: cisco_aci.type
+    source: log
+    type: string
+  - description: ""
+    facetType: list
+    groups:
+      - Cisco ACI
+    name: Upgrade Status
+    path: cisco_aci.status
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: Cisco ACI
+  enabled: true
+  filter:
+    query: source:cisco-aci
+  processors:
+    - type: date-remapper
+      name: Define `cisco_aci.lastTransition` as the official date of the log
+      enabled: true
+      sources:
+        - cisco_aci.lastTransition
+    - type: message-remapper
+      name: Define `cisco_aci.descr` as the official message of the log
+      enabled: true
+      sources:
+        - cisco_aci.descr
+    - name: Map `cisco_aci.severity` levels into `log_status`
+      enabled: true
+      source: cisco_aci.severity
+      target: log_status
+      lookupTable: |-
+        critical,critical
+        major,error
+        minor,warning
+        warning,warning
+        info,info
+        cleared,info
+      defaultLookup: info
+      type: lookup-processor
+    - type: status-remapper
+      name: Define `log_status` as the official status of the log
+      enabled: true
+      sources:
+        - log_status

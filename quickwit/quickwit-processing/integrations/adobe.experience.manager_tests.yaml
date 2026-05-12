@@ -1,0 +1,150 @@
+id: "adobe.experience.manager"
+tests:
+ -
+  sample: "2018-10-22 02:01:04.921 INFO [ch.hirslanden.aem.interfaces.baby.service.impl.BabyPictureServiceImpl] Path /content/corporate/de/babies/2018/8/b21436858 with activation status false"
+  result:
+    custom:
+      activation_status: "false"
+      http:
+        url: "/content/corporate/de/babies/2018/8/b21436858"
+        url_details:
+          path: "/content/corporate/de/babies/2018/8/b21436858"
+      level: "INFO"
+      logger:
+        name: "ch.hirslanden.aem.interfaces.baby.service.impl.BabyPictureServiceImpl"
+      timestamp: 1540173664921
+    message: "2018-10-22 02:01:04.921 INFO [ch.hirslanden.aem.interfaces.baby.service.impl.BabyPictureServiceImpl] Path /content/corporate/de/babies/2018/8/b21436858 with activation status false"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540173664921
+ -
+  sample: "22.10.2018 15:49:26.748 *INFO* [loggerContext] BundleEvent Started"
+  result:
+    custom:
+      level: "INFO"
+      logger:
+        name: "BundleEvent"
+        thread_name: "loggerContext"
+      timestamp: 1540223366748
+    message: "22.10.2018 15:49:26.748 *INFO* [loggerContext] BundleEvent Started"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540223366748
+ -
+  sample: "22.10.2018 15:49:26.748 *INFO* [loggerContext] my.logger.name << HTTP/1.1 200 OK"
+  result:
+    custom:
+      http:
+        status_category: "OK"
+        status_code: 200.0
+        version: 1.1
+      level: "INFO"
+      logger:
+        name: "my.logger.name"
+        thread_name: "loggerContext"
+      timestamp: 1540223366748
+    message: "22.10.2018 15:49:26.748 *INFO* [loggerContext] my.logger.name << HTTP/1.1 200 OK"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1540223366748
+ -
+  sample: "[Fri Sep 15 17:26:36 2017] [D] [pid 5052 (tid 4732)] Found a website for flush.application-2.org"
+  result:
+    custom:
+      level: "D"
+      pid: 5052.0
+      timestamp: 1505496396000
+    message: "[Fri Sep 15 17:26:36 2017] [D] [pid 5052 (tid 4732)] Found a website for flush.application-2.org"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1505496396000
+ -
+  sample: "31/Mar/2009:11:32:57 +0200 [379] -> GET /path/x HTTP/1.1 "
+  result:
+    custom:
+      data_in_out: "->"
+      http:
+        method: "GET"
+        url: "/path/x"
+        url_details:
+          path: "/path/x"
+        version: 1.1
+      pid: 379.0
+      timestamp: 1238491977000
+    message: "31/Mar/2009:11:32:57 +0200 [379] -> GET /path/x HTTP/1.1 "
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1238491977000
+ -
+  sample: "31/Mar/2009:11:32:57 +0200 [379] <- 200 text/html 33ms"
+  result:
+    custom:
+      data_in_out: "<-"
+      duration: 3.3E7
+      http:
+        status_category: "OK"
+        status_code: 200.0
+        url: "text/html"
+        url_details:
+          path: "text/html"
+      pid: 379.0
+      timestamp: 1238491977000
+    message: "31/Mar/2009:11:32:57 +0200 [379] <- 200 text/html 33ms"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1238491977000
+ -
+  sample: "[Fri Sep 15 17:26:36 2017] [I] [pid 5052 (tid 4732)] \"GET /my/test/url\" 200 13 132ms [website/-]"
+  result:
+    custom:
+      duration: 1.32E8
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200.0
+        url: "/my/test/url"
+        url_details:
+          path: "/my/test/url"
+      level: "I"
+      network:
+        bytes_written: 13.0
+      pid: 5052.0
+      timestamp: 1505496396000
+    message: "[Fri Sep 15 17:26:36 2017] [I] [pid 5052 (tid 4732)] \"GET /my/test/url\" 200 13 132ms [website/-]"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1505496396000
+ -
+  sample: "2198ms 31/Mar/2009:11:15:20 +0200 200 GET /my/test/url application/x-javascript"
+  result:
+    custom:
+      duration: 2.198E9
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200.0
+        url: "/my/test/url"
+        url_details:
+          path: "/my/test/url"
+        useragent: "application/x-javascript"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+      timestamp: 1238490920000
+    message: "2198ms 31/Mar/2009:11:15:20 +0200 200 GET /my/test/url application/x-javascript"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1238490920000
+

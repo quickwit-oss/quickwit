@@ -1,0 +1,217 @@
+id: crest-data-systems-togetherai
+metric_id: crest-data-systems-togetherai
+backend_only: false
+facets:
+  - facetType: list
+    groups:
+      - TogetherAI
+    name: batch_size
+    path: cds.together_ai.batch_size
+    source: log
+    type: integer
+  - facetType: range
+    groups:
+      - TogetherAI
+    name: bytes
+    path: cds.together_ai.bytes
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - TogetherAI
+    name: epochs_completed
+    path: cds.together_ai.epochs_completed
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - TogetherAI
+    name: n_checkpoints
+    path: cds.together_ai.n_checkpoints
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - TogetherAI
+    name: n_epochs
+    path: cds.together_ai.n_epochs
+    source: log
+    type: integer
+  - facetType: list
+    groups:
+      - TogetherAI
+    name: token_count
+    path: cds.together_ai.token_count
+    source: log
+    type: integer
+pipeline:
+  type: pipeline
+  name: TogetherAI by Crest Data Systems
+  enabled: true
+  filter:
+    query: "source:crest-data-systems-togetherai"
+  processors:
+    - type: pipeline
+      name: Finetuning
+      enabled: true
+      filter:
+        query: "service:cds.togetherai.finetuning"
+      processors:
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: attribute-remapper
+          name: Map `batch_size` to `cds.together_ai.batch_size`
+          enabled: true
+          sources:
+            - batch_size
+          sourceType: attribute
+          target: cds.together_ai.batch_size
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `token_count` to `cds.together_ai.token_count`
+          enabled: true
+          sources:
+            - token_count
+          sourceType: attribute
+          target: cds.together_ai.token_count
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `n_epochs` to `cds.together_ai.n_epochs`
+          enabled: true
+          sources:
+            - n_epochs
+          sourceType: attribute
+          target: cds.together_ai.n_epochs
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `n_checkpoints` to `cds.together_ai.n_checkpoints`
+          enabled: true
+          sources:
+            - n_checkpoints
+          sourceType: attribute
+          target: cds.together_ai.n_checkpoints
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `epochs_completed` to `cds.together_ai.epochs_completed`
+          enabled: true
+          sources:
+            - epochs_completed
+          sourceType: attribute
+          target: cds.together_ai.epochs_completed
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `status` to `job_status`
+          enabled: true
+          sources:
+            - status
+          sourceType: attribute
+          target: job_status
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - name: Lookup for `job_status` to `status`
+          enabled: true
+          source: job_status
+          target: status
+          lookupTable: |-
+            pending, info
+            queued, info
+            running, info
+            compressing, info
+            uploading, info
+            cancel_requested, info
+            cancelled, info
+            error, info
+            user_error, info
+            completed, info
+          type: lookup-processor
+        - type: status-remapper
+          name: Define `status` as the official status of the log
+          enabled: true
+          sources:
+            - status
+        - type: attribute-remapper
+          name: Map `id` to `finetuningjob_id`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: finetuningjob_id
+          targetType: attribute
+          preserveSource: true
+          overrideOnConflict: false
+    - type: pipeline
+      name: Finetuning events
+      enabled: true
+      filter:
+        query: "service:cds.togetherai.finetuningevents"
+      processors:
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: attribute-remapper
+          name: Map `job_training_file` to `training_file`
+          enabled: true
+          sources:
+            - job_training_file
+          sourceType: attribute
+          target: training_file
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `job_id` to `finetuningjob_id`
+          enabled: true
+          sources:
+            - job_id
+          sourceType: attribute
+          target: finetuningjob_id
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+    - type: pipeline
+      name: Files
+      enabled: true
+      filter:
+        query: "service:cds.togetherai.files"
+      processors:
+        - type: service-remapper
+          name: Define `service` as the official service of the log
+          enabled: true
+          sources:
+            - service
+        - type: attribute-remapper
+          name: Map `id` to `training_file`
+          enabled: true
+          sources:
+            - id
+          sourceType: attribute
+          target: training_file
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: attribute-remapper
+          name: Map `bytes` to `cds.together_ai.bytes`
+          enabled: true
+          sources:
+            - bytes
+          sourceType: attribute
+          target: cds.together_ai.bytes
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false

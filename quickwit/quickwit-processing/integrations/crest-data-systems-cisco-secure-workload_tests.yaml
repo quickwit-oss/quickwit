@@ -1,0 +1,1027 @@
+id: crest-data-systems-cisco-secure-workload
+tests:
+ -
+  sample: |-
+    {
+      "rev_nc_count" : 0,
+      "fwd_fin" : "FIN",
+      "dst_address" : "16.25.16.25",
+      "rev_psh_count" : 4,
+      "server_stack_latency_usec" : "0",
+      "rev_synfin_count" : 0,
+      "rev_tcp_mss_changed" : "false",
+      "fwd_pkts" : 20,
+      "fwd_policy_permitted" : "PERMITTED",
+      "related_key_is_set" : "false",
+      "rev_special_type" : "LINKLOCAL",
+      "rev_pingdeath_count" : 0,
+      "__time" : 1731650111000,
+      "fwd_null_count" : 0,
+      "total_network_latency_usec" : 0,
+      "dst_scope_name" : [ "ARMIS", "ARMIS:Internet" ],
+      "fwd_tiny_count" : 0,
+      "is_conversation" : "true",
+      "rev_ack_count" : 20,
+      "srtt_dim_usec" : "0",
+      "fwd_ack_count" : 16,
+      "rev_pkts" : 20,
+      "srtt_available" : "SRTT_NONE",
+      "src_uuid" : "8ce4809b085c57eb6b731df4c04c602ffa3ae939",
+      "fwd_pingdeath_count" : 0,
+      "fwd_synfin_count" : 0,
+      "fwd_tcp_handshake_usec_bin" : "0",
+      "fwd_tcp_bottleneck" : "BOTTLENECK_NA",
+      "fwd_urg_count" : 0,
+      "fwd_psh" : "PSH",
+      "fwd_tcp_handshake_usec" : 0,
+      "fwd_bytes" : 2036,
+      "fwd_syn" : "SYN",
+      "total_perceived_latency_usec" : 0,
+      "fwd_psh_count" : 4,
+      "rev_policy_permitted" : "PERMITTED",
+      "src_is_internal" : "true",
+      "tls_version" : "NONE",
+      "server_app_latency_usec" : 0,
+      "vrf_name" : "ARMIS",
+      "fwd_cwr_count" : 0,
+      "fwd_tcp_mss_changed" : "false",
+      "fwd_tcp_pkts_retransmitted_bin" : "0",
+      "rev_urg_count" : 0,
+      "rev_fin_count" : 4,
+      "fwd_finnoack_count" : 0,
+      "related_flow_src_port" : "0",
+      "rev_flow_duration" : 58441,
+      "rev_rst_count" : 0,
+      "rev_tcp_cwnd_bytes" : 0,
+      "fwd_xmas_count" : 0,
+      "rev_finnoack_count" : 0,
+      "rev_fabric_latency" : 0,
+      "timestamp" : "2024-11-15T03:04:00+0000",
+      "fwd_flow_duration" : 58528,
+      "rev_ack" : "ACK",
+      "srtt_usec" : 0,
+      "tls_cipher" : "NONE",
+      "fwd_tcp_rcv_window_zero" : "false",
+      "dst_is_internal" : "false",
+      "fwd_syn_count" : 4,
+      "flow_duration_dim" : "65536",
+      "dst_port" : "80",
+      "pkt_count_dim" : "16",
+      "five_tuple_count" : 0,
+      "rev_ece_count" : 0,
+      "provider_malicious" : "false",
+      "src_resource_type" : "WORKLOAD",
+      "fwd_rst_count" : 0,
+      "vrf_id" : "700618",
+      "fwd_network_latency_usec" : "0",
+      "fwd_pid" : "FEATURE_DISABLED",
+      "src_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+      "start_timestamp" : "1731650111000",
+      "byte_count_dim" : "2048",
+      "fwd_ack" : "ACK",
+      "fwd_drop_reason" : "NA",
+      "csw_flow_datasource" : "aggregated_flows",
+      "EXPERIMENTAL_fwd_policy_permitted" : "PERMITTED",
+      "data_duration_dim" : "0",
+      "rev_drop_reason" : "NA",
+      "fwd_tcp_cwnd_reduced" : "false",
+      "src_process_id" : "0",
+      "src_address" : "172.31.41.133",
+      "rev_xmas_count" : 0,
+      "bandwidth_bytes_per_second" : "0",
+      "rev_null_count" : 0,
+      "fwd_tcp_cwnd_bytes" : 0,
+      "consumer_malicious" : "false",
+      "dst_process_id" : "0",
+      "rev_tcp_pkts_retransmitted" : 0,
+      "is_malicious_flow" : "false",
+      "rev_psh" : "PSH",
+      "service_name" : "HTTP",
+      "rev_syn" : "SYN",
+      "related_flow_key_type" : "0",
+      "rev_tcp_rcv_window_zero" : "false",
+      "fwd_nc_count" : 0,
+      "dst_logged_in_user_account_type" : "0",
+      "rev_network_latency_usec" : "0",
+      "consumer_sensor_type" : "Enforcement",
+      "proto" : "TCP",
+      "src_hostname" : "ip-12-31-4-13",
+      "key_type" : "1",
+      "fwd_ece_count" : 0,
+      "rev_tcp_bottleneck" : "BOTTLENECK_NA",
+      "fwd_fabric_latency" : 0,
+      "rev_tiny_count" : 0,
+      "src_logged_in_user_account_type" : "0",
+      "fwd_fabric_drops" : 0,
+      "fwd_tcp_pkts_retransmitted" : 0,
+      "rev_syn_count" : 4,
+      "rev_data_duration" : 0,
+      "rev_tcp_pkts_retransmitted_bin" : "0",
+      "random_sample_5" : "false",
+      "related_flow_dst_port" : "0",
+      "random_sample_1" : "false",
+      "random_sample_2" : "false",
+      "random_sample_3" : "false",
+      "random_sample_4" : "false",
+      "dst_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+      "fwd_data_duration" : 0,
+      "fwd_allzero_count" : 0,
+      "rev_fin" : "FIN",
+      "rev_bytes" : 2340,
+      "rev_allzero_count" : 0,
+      "fwd_synrst_count" : 0,
+      "src_port" : "0",
+      "fwd_special_type" : "NOTSPECIAL",
+      "rev_cwr_count" : 0,
+      "src_scope_name" : [ "ARMIS", "ARMIS:Internet" ],
+      "related_flow_start_timestamp" : "0",
+      "rev_fabric_drops" : 0,
+      "rev_synrst_count" : 0,
+      "rev_tcp_cwnd_reduced" : "false",
+      "EXPERIMENTAL_rev_policy_permitted" : "PERMITTED",
+      "fwd_fin_count" : 4,
+      "nat_direction" : "NOT_A_NAT"
+    }
+  service: "cd.cisco.secure.workload.cisco_secure_workload_query_for_flows"
+  result:
+    custom:
+      EXPERIMENTAL_fwd_policy_permitted: "PERMITTED"
+      EXPERIMENTAL_rev_policy_permitted: "PERMITTED"
+      __time: 1731650111000
+      bandwidth_bytes_per_second: "0"
+      byte_count_dim: "2048"
+      consumer_address: "172.31.41.133"
+      consumer_hostname: "ip-12-31-4-13"
+      consumer_malicious: "false"
+      consumer_port: "0"
+      consumer_sensor_type: "Enforcement"
+      csw_flow_datasource: "aggregated_flows"
+      data_duration_dim: "0"
+      dst_is_internal: "false"
+      dst_logged_in_user_account_type: "0"
+      dst_process_id: "0"
+      dst_scope_id:
+       - "661f009e755f022ba62ab608"
+       - "66a8d871497d4f475c970322"
+      dst_scope_name:
+       - "ARMIS"
+       - "ARMIS:Internet"
+      five_tuple_count: 0
+      flow_duration_dim: "65536"
+      fwd_ack: "ACK"
+      fwd_ack_count: 16
+      fwd_allzero_count: 0
+      fwd_bytes: 2036
+      fwd_cwr_count: 0
+      fwd_data_duration: 0
+      fwd_drop_reason: "NA"
+      fwd_ece_count: 0
+      fwd_fabric_drops: 0
+      fwd_fabric_latency: 0
+      fwd_fin: "FIN"
+      fwd_fin_count: 4
+      fwd_finnoack_count: 0
+      fwd_flow_duration: 58528
+      fwd_nc_count: 0
+      fwd_network_latency_usec: "0"
+      fwd_null_count: 0
+      fwd_pid: "FEATURE_DISABLED"
+      fwd_pingdeath_count: 0
+      fwd_pkts: 20
+      fwd_policy_permitted: "PERMITTED"
+      fwd_psh: "PSH"
+      fwd_psh_count: 4
+      fwd_rst_count: 0
+      fwd_special_type: "NOTSPECIAL"
+      fwd_syn: "SYN"
+      fwd_syn_count: 4
+      fwd_synfin_count: 0
+      fwd_synrst_count: 0
+      fwd_tcp_bottleneck: "BOTTLENECK_NA"
+      fwd_tcp_cwnd_bytes: 0
+      fwd_tcp_cwnd_reduced: "false"
+      fwd_tcp_handshake_usec: 0
+      fwd_tcp_handshake_usec_bin: "0"
+      fwd_tcp_mss_changed: "false"
+      fwd_tcp_pkts_retransmitted: 0
+      fwd_tcp_pkts_retransmitted_bin: "0"
+      fwd_tcp_rcv_window_zero: "false"
+      fwd_tiny_count: 0
+      fwd_urg_count: 0
+      fwd_xmas_count: 0
+      is_conversation: "true"
+      is_malicious_flow: "false"
+      key_type: "1"
+      nat_direction: "NOT_A_NAT"
+      pkt_count_dim: "16"
+      proto: "TCP"
+      provider_address: "16.25.16.25"
+      provider_malicious: "false"
+      provider_port: "80"
+      random_sample_1: "false"
+      random_sample_2: "false"
+      random_sample_3: "false"
+      random_sample_4: "false"
+      random_sample_5: "false"
+      related_flow_dst_port: "0"
+      related_flow_key_type: "0"
+      related_flow_src_port: "0"
+      related_flow_start_timestamp: "0"
+      related_key_is_set: "false"
+      rev_ack: "ACK"
+      rev_ack_count: 20
+      rev_allzero_count: 0
+      rev_bytes: 2340
+      rev_cwr_count: 0
+      rev_data_duration: 0
+      rev_drop_reason: "NA"
+      rev_ece_count: 0
+      rev_fabric_drops: 0
+      rev_fabric_latency: 0
+      rev_fin: "FIN"
+      rev_fin_count: 4
+      rev_finnoack_count: 0
+      rev_flow_duration: 58441
+      rev_nc_count: 0
+      rev_network_latency_usec: "0"
+      rev_null_count: 0
+      rev_pingdeath_count: 0
+      rev_pkts: 20
+      rev_policy_permitted: "PERMITTED"
+      rev_psh: "PSH"
+      rev_psh_count: 4
+      rev_rst_count: 0
+      rev_special_type: "LINKLOCAL"
+      rev_syn: "SYN"
+      rev_syn_count: 4
+      rev_synfin_count: 0
+      rev_synrst_count: 0
+      rev_tcp_bottleneck: "BOTTLENECK_NA"
+      rev_tcp_cwnd_bytes: 0
+      rev_tcp_cwnd_reduced: "false"
+      rev_tcp_mss_changed: "false"
+      rev_tcp_pkts_retransmitted: 0
+      rev_tcp_pkts_retransmitted_bin: "0"
+      rev_tcp_rcv_window_zero: "false"
+      rev_tiny_count: 0
+      rev_urg_count: 0
+      rev_xmas_count: 0
+      server_app_latency_usec: 0
+      server_stack_latency_usec: "0"
+      service_name: "HTTP"
+      src_is_internal: "true"
+      src_logged_in_user_account_type: "0"
+      src_process_id: "0"
+      src_resource_type: "WORKLOAD"
+      src_scope_id:
+       - "661f009e755f022ba62ab608"
+       - "66a8d871497d4f475c970322"
+      src_scope_name:
+       - "ARMIS"
+       - "ARMIS:Internet"
+      src_uuid: "8ce4809b085c57eb6b731df4c04c602ffa3ae939"
+      srtt_available: "SRTT_NONE"
+      srtt_dim_usec: "0"
+      srtt_usec: 0
+      start_timestamp: "1731650111000"
+      timestamp: "2024-11-15T03:04:00+0000"
+      tls_cipher: "NONE"
+      tls_version: "NONE"
+      total_network_latency_usec: 0
+      total_perceived_latency_usec: 0
+      vrf_id: "700618"
+      vrf_name: "ARMIS"
+    message: |-
+      {
+        "rev_nc_count" : 0,
+        "fwd_fin" : "FIN",
+        "dst_address" : "16.25.16.25",
+        "rev_psh_count" : 4,
+        "server_stack_latency_usec" : "0",
+        "rev_synfin_count" : 0,
+        "rev_tcp_mss_changed" : "false",
+        "fwd_pkts" : 20,
+        "fwd_policy_permitted" : "PERMITTED",
+        "related_key_is_set" : "false",
+        "rev_special_type" : "LINKLOCAL",
+        "rev_pingdeath_count" : 0,
+        "__time" : 1731650111000,
+        "fwd_null_count" : 0,
+        "total_network_latency_usec" : 0,
+        "dst_scope_name" : [ "ARMIS", "ARMIS:Internet" ],
+        "fwd_tiny_count" : 0,
+        "is_conversation" : "true",
+        "rev_ack_count" : 20,
+        "srtt_dim_usec" : "0",
+        "fwd_ack_count" : 16,
+        "rev_pkts" : 20,
+        "srtt_available" : "SRTT_NONE",
+        "src_uuid" : "8ce4809b085c57eb6b731df4c04c602ffa3ae939",
+        "fwd_pingdeath_count" : 0,
+        "fwd_synfin_count" : 0,
+        "fwd_tcp_handshake_usec_bin" : "0",
+        "fwd_tcp_bottleneck" : "BOTTLENECK_NA",
+        "fwd_urg_count" : 0,
+        "fwd_psh" : "PSH",
+        "fwd_tcp_handshake_usec" : 0,
+        "fwd_bytes" : 2036,
+        "fwd_syn" : "SYN",
+        "total_perceived_latency_usec" : 0,
+        "fwd_psh_count" : 4,
+        "rev_policy_permitted" : "PERMITTED",
+        "src_is_internal" : "true",
+        "tls_version" : "NONE",
+        "server_app_latency_usec" : 0,
+        "vrf_name" : "ARMIS",
+        "fwd_cwr_count" : 0,
+        "fwd_tcp_mss_changed" : "false",
+        "fwd_tcp_pkts_retransmitted_bin" : "0",
+        "rev_urg_count" : 0,
+        "rev_fin_count" : 4,
+        "fwd_finnoack_count" : 0,
+        "related_flow_src_port" : "0",
+        "rev_flow_duration" : 58441,
+        "rev_rst_count" : 0,
+        "rev_tcp_cwnd_bytes" : 0,
+        "fwd_xmas_count" : 0,
+        "rev_finnoack_count" : 0,
+        "rev_fabric_latency" : 0,
+        "timestamp" : "2024-11-15T03:04:00+0000",
+        "fwd_flow_duration" : 58528,
+        "rev_ack" : "ACK",
+        "srtt_usec" : 0,
+        "tls_cipher" : "NONE",
+        "fwd_tcp_rcv_window_zero" : "false",
+        "dst_is_internal" : "false",
+        "fwd_syn_count" : 4,
+        "flow_duration_dim" : "65536",
+        "dst_port" : "80",
+        "pkt_count_dim" : "16",
+        "five_tuple_count" : 0,
+        "rev_ece_count" : 0,
+        "provider_malicious" : "false",
+        "src_resource_type" : "WORKLOAD",
+        "fwd_rst_count" : 0,
+        "vrf_id" : "700618",
+        "fwd_network_latency_usec" : "0",
+        "fwd_pid" : "FEATURE_DISABLED",
+        "src_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+        "start_timestamp" : "1731650111000",
+        "byte_count_dim" : "2048",
+        "fwd_ack" : "ACK",
+        "fwd_drop_reason" : "NA",
+        "csw_flow_datasource" : "aggregated_flows",
+        "EXPERIMENTAL_fwd_policy_permitted" : "PERMITTED",
+        "data_duration_dim" : "0",
+        "rev_drop_reason" : "NA",
+        "fwd_tcp_cwnd_reduced" : "false",
+        "src_process_id" : "0",
+        "src_address" : "172.31.41.133",
+        "rev_xmas_count" : 0,
+        "bandwidth_bytes_per_second" : "0",
+        "rev_null_count" : 0,
+        "fwd_tcp_cwnd_bytes" : 0,
+        "consumer_malicious" : "false",
+        "dst_process_id" : "0",
+        "rev_tcp_pkts_retransmitted" : 0,
+        "is_malicious_flow" : "false",
+        "rev_psh" : "PSH",
+        "service_name" : "HTTP",
+        "rev_syn" : "SYN",
+        "related_flow_key_type" : "0",
+        "rev_tcp_rcv_window_zero" : "false",
+        "fwd_nc_count" : 0,
+        "dst_logged_in_user_account_type" : "0",
+        "rev_network_latency_usec" : "0",
+        "consumer_sensor_type" : "Enforcement",
+        "proto" : "TCP",
+        "src_hostname" : "ip-12-31-4-13",
+        "key_type" : "1",
+        "fwd_ece_count" : 0,
+        "rev_tcp_bottleneck" : "BOTTLENECK_NA",
+        "fwd_fabric_latency" : 0,
+        "rev_tiny_count" : 0,
+        "src_logged_in_user_account_type" : "0",
+        "fwd_fabric_drops" : 0,
+        "fwd_tcp_pkts_retransmitted" : 0,
+        "rev_syn_count" : 4,
+        "rev_data_duration" : 0,
+        "rev_tcp_pkts_retransmitted_bin" : "0",
+        "random_sample_5" : "false",
+        "related_flow_dst_port" : "0",
+        "random_sample_1" : "false",
+        "random_sample_2" : "false",
+        "random_sample_3" : "false",
+        "random_sample_4" : "false",
+        "dst_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+        "fwd_data_duration" : 0,
+        "fwd_allzero_count" : 0,
+        "rev_fin" : "FIN",
+        "rev_bytes" : 2340,
+        "rev_allzero_count" : 0,
+        "fwd_synrst_count" : 0,
+        "src_port" : "0",
+        "fwd_special_type" : "NOTSPECIAL",
+        "rev_cwr_count" : 0,
+        "src_scope_name" : [ "ARMIS", "ARMIS:Internet" ],
+        "related_flow_start_timestamp" : "0",
+        "rev_fabric_drops" : 0,
+        "rev_synrst_count" : 0,
+        "rev_tcp_cwnd_reduced" : "false",
+        "EXPERIMENTAL_rev_policy_permitted" : "PERMITTED",
+        "fwd_fin_count" : 4,
+        "nat_direction" : "NOT_A_NAT"
+      }
+    service: "cd.cisco.secure.workload.cisco_secure_workload_query_for_flows"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "agent_type" : 3,
+      "agent_config" : {
+        "agent_uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+        "enforcement_mode" : "WAF",
+        "allow_multicast" : true,
+        "control_tet_rules_only" : false,
+        "allow_broadcast" : true,
+        "allow_link_local" : true,
+        "fail_mode" : "FAIL_OPEN",
+        "enforcement_cpu_quota_mode" : "1",
+        "enforcement_cpu_quota_us" : "30000",
+        "enforcement_max_rss_limit" : 134217728,
+        "enforcement_enabled" : true,
+        "version" : 1702487938
+      },
+      "agent_uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+      "desired_network_policy_config" : {
+        "network_policy" : [ {
+          "match_set" : {
+            "dst_set_id" : "any",
+            "src_set_id" : "any"
+          },
+          "match" : {
+            "address_family" : "any",
+            "ip_protocol" : "any",
+            "direction" : "INGRESS"
+          },
+          "action" : {
+            "type" : "ALLOW"
+          },
+          "concrete_policy_id" : "4e67fe3627918d7739f9dd9a1de5fa94",
+          "priority" : "1",
+          "enforcement_intent_id" : ""
+        }, {
+          "match_set" : {
+            "dst_set_id" : "any",
+            "src_set_id" : "any"
+          },
+          "match" : {
+            "address_family" : "any",
+            "ip_protocol" : "any",
+            "direction" : "EGRESS"
+          },
+          "action" : {
+            "type" : "ALLOW"
+          },
+          "concrete_policy_id" : "4e67fe3627918d7739f9dd9a1de5fa94",
+          "priority" : "2",
+          "enforcement_intent_id" : ""
+        } ],
+        "version" : "1702641034",
+        "skipped" : false
+      },
+      "provisioned_state_update_timestamp" : 1731650299,
+      "agent_config_status" : {
+        "highest_seen_version" : 1702487938,
+        "current_version" : 1702487938
+      },
+      "provisioned_network_policy_config" : {
+        "highest_seen_version" : 1702641034,
+        "error_reason" : "CONFIG_SUCCESS",
+        "current_version" : 1702641034,
+        "version" : "1702641034"
+      },
+      "desired_policy_update_timestamp" : 1731650299,
+      "skipped" : false
+    }
+  service: "cd.cisco.secure.workload.cisco_secure_workload_agent_enforcement_network_policy_config"
+  result:
+    custom:
+      agent_config:
+        agent_uuid: "15ad68ee5a83959d02dba6e6d50f457e75547f12"
+        allow_broadcast: true
+        allow_link_local: true
+        allow_multicast: true
+        control_tet_rules_only: false
+        enforcement_cpu_quota_mode: "1"
+        enforcement_cpu_quota_us: "30000"
+        enforcement_enabled: true
+        enforcement_mode: "WAF"
+        fail_mode: "FAIL_OPEN"
+        version: 1702487938
+      agent_config_status:
+        current_version: 1702487938
+        highest_seen_version: 1702487938
+      agent_type: 3
+      cds:
+        cisco_secure_workload:
+          agent_config:
+            enforcement_max_rss_limit: 134217728
+          desired_network_policy_config:
+            version: "1702641034"
+          provisioned_network_policy_config:
+            current_version: 1702641034
+            error_reason: "CONFIG_SUCCESS"
+      desired_network_policy_config:
+        network_policy:
+         -
+          match_set:
+            dst_set_id: "any"
+            src_set_id: "any"
+          match:
+            address_family: "any"
+            ip_protocol: "any"
+            direction: "INGRESS"
+          action:
+            type: "ALLOW"
+          concrete_policy_id: "4e67fe3627918d7739f9dd9a1de5fa94"
+          priority: "1"
+          enforcement_intent_id: ""
+         -
+          match_set:
+            dst_set_id: "any"
+            src_set_id: "any"
+          match:
+            address_family: "any"
+            ip_protocol: "any"
+            direction: "EGRESS"
+          action:
+            type: "ALLOW"
+          concrete_policy_id: "4e67fe3627918d7739f9dd9a1de5fa94"
+          priority: "2"
+          enforcement_intent_id: ""
+        skipped: false
+      desired_policy_update_timestamp: 1731650299
+      provisioned_network_policy_config:
+        highest_seen_version: 1702641034
+        version: "1702641034"
+      provisioned_state_update_timestamp: 1731650299
+      skipped: false
+      uuid: "15ad68ee5a83959d02dba6e6d50f457e75547f12"
+    message: |-
+      {
+        "agent_type" : 3,
+        "agent_config" : {
+          "agent_uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+          "enforcement_mode" : "WAF",
+          "allow_multicast" : true,
+          "control_tet_rules_only" : false,
+          "allow_broadcast" : true,
+          "allow_link_local" : true,
+          "fail_mode" : "FAIL_OPEN",
+          "enforcement_cpu_quota_mode" : "1",
+          "enforcement_cpu_quota_us" : "30000",
+          "enforcement_max_rss_limit" : 134217728,
+          "enforcement_enabled" : true,
+          "version" : 1702487938
+        },
+        "agent_uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+        "desired_network_policy_config" : {
+          "network_policy" : [ {
+            "match_set" : {
+              "dst_set_id" : "any",
+              "src_set_id" : "any"
+            },
+            "match" : {
+              "address_family" : "any",
+              "ip_protocol" : "any",
+              "direction" : "INGRESS"
+            },
+            "action" : {
+              "type" : "ALLOW"
+            },
+            "concrete_policy_id" : "4e67fe3627918d7739f9dd9a1de5fa94",
+            "priority" : "1",
+            "enforcement_intent_id" : ""
+          }, {
+            "match_set" : {
+              "dst_set_id" : "any",
+              "src_set_id" : "any"
+            },
+            "match" : {
+              "address_family" : "any",
+              "ip_protocol" : "any",
+              "direction" : "EGRESS"
+            },
+            "action" : {
+              "type" : "ALLOW"
+            },
+            "concrete_policy_id" : "4e67fe3627918d7739f9dd9a1de5fa94",
+            "priority" : "2",
+            "enforcement_intent_id" : ""
+          } ],
+          "version" : "1702641034",
+          "skipped" : false
+        },
+        "provisioned_state_update_timestamp" : 1731650299,
+        "agent_config_status" : {
+          "highest_seen_version" : 1702487938,
+          "current_version" : 1702487938
+        },
+        "provisioned_network_policy_config" : {
+          "highest_seen_version" : 1702641034,
+          "error_reason" : "CONFIG_SUCCESS",
+          "current_version" : 1702641034,
+          "version" : "1702641034"
+        },
+        "desired_policy_update_timestamp" : 1731650299,
+        "skipped" : false
+      }
+    service: "cd.cisco.secure.workload.cisco_secure_workload_agent_enforcement_network_policy_config"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "is_internal" : false,
+      "vrf_id" : 700618,
+      "flows_disk_quota_bytes" : 209715200,
+      "forensics_mem_quota_bytes" : 134217728,
+      "uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+      "enable_meltdown" : false,
+      "agent_anomaly_types" : {
+        "agent_cpu_quota" : "Normal",
+        "upgrade_status" : "Successful",
+        "agent_mem_usage" : "Normal",
+        "agent_running_status" : "Normal",
+        "agent_convert_cap" : "Supported",
+        "enforcer_check_in_status" : "Active",
+        "upgrade_srv_check_in" : "Active",
+        "iface_flow_export_status" : "Working",
+        "enforcer_registration_status" : "Successful",
+        "amt_of_flow_obs" : "Normal"
+      },
+      "config_intent_id" : "66b1c9d3497d4f182397031a",
+      "client_ip" : "36.91.80.27",
+      "enable_cache_sidechannel" : false,
+      "unsupported_version" : false,
+      "bios_uuid" : "F7500342-CC1C-4AF5-A6E1-10EDCD6E20A9",
+      "auto_removal_after_sec" : 0,
+      "current_appliance_id" : "",
+      "last_software_update_at" : 1730873433,
+      "insecure_cipher" : false,
+      "max_rss_limit" : 209715200,
+      "auto_upgrade_opt_out" : false,
+      "agent_type" : 3,
+      "current_sw_version" : "3.9.1.52-enforcer",
+      "cpu_quota_us" : 30000,
+      "config_profile_name" : "test",
+      "enforcement_cpu_quota_us" : 30000,
+      "desired_agent_type" : "UNKNOWN_TYPE",
+      "enable_process_visibility" : true,
+      "cpu_quota_mode" : 1,
+      "enable_pid_lookup" : false,
+      "enable_forensics" : true,
+      "forensics_cpu_quota_us" : 30000,
+      "forensics_export_signals" : "PRIV_ESCALATION,FOLLOW_PROCESS",
+      "desired_appliance_id" : "",
+      "created_at" : 1729148249,
+      "enforcement_enabled" : true,
+      "platform" : "Ubuntu-22.04",
+      "desired_sw_version" : "3.9.1.52-enforcer",
+      "enable_conversation_flows" : true,
+      "data_plane_disabled" : false,
+      "os_display_label" : "Ubuntu-22.04 - 5.15.0-124-generic",
+      "flows_time_quota_sec" : 0,
+      "agent_type_str" : "ENFORCER",
+      "interfaces" : [ {
+        "vrf_id" : 700618,
+        "netmask" : "255.0.0.0",
+        "ip" : "127.0.0.1",
+        "name" : "lo",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV4",
+        "mac" : "00:00:00:00:00:00"
+      }, {
+        "vrf_id" : 700618,
+        "netmask" : "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "ip" : "::1",
+        "name" : "lo",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV6",
+        "mac" : "00:00:00:00:00:00"
+      }, {
+        "vrf_id" : 700618,
+        "netmask" : "255.255.240.0",
+        "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+        "ip" : "10.30.10.7",
+        "name" : "ens160",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV4",
+        "pcap_opened" : true,
+        "mac" : "00:50:56:83:44:fb"
+      }, {
+        "vrf_id" : 700618,
+        "netmask" : "ffff:ffff:ffff:ffff::",
+        "ip" : "fe80::230:56ef:fe83:44fb",
+        "name" : "ens160",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV6",
+        "pcap_opened" : true,
+        "mac" : "00:50:56:83:44:fb"
+      }, {
+        "vrf_id" : 700618,
+        "netmask" : "ffff:ffff:ffff:ffff::",
+        "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+        "ip" : "fdfe:9040:c53d:0:250:56ff:fe83:44fb",
+        "name" : "ens160",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV6",
+        "pcap_opened" : true,
+        "mac" : "00:50:56:83:44:fb"
+      }, {
+        "vrf_id" : 700618,
+        "netmask" : "ffff:ffff:ffff:ffff::",
+        "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+        "ip" : "fda7:e6ee:2f09:0:250:56ff:fe83:44fb",
+        "name" : "ens160",
+        "vrf" : "ARMIS",
+        "family_type" : "IPV6",
+        "pcap_opened" : true,
+        "mac" : "00:50:56:83:44:fb"
+      } ],
+      "enforcement_cpu_quota_mode" : 1,
+      "enable_package_visibility" : true,
+      "deprecated_tls" : false,
+      "kernel_version" : "5.15.0-124-generic",
+      "cpu_quota_alert" : false,
+      "windows_enforcement_mode" : "WAF",
+      "arch" : "x86_64",
+      "enforcement_max_rss_limit" : 134217728,
+      "config_profile_id" : "66b1c984497d4f149197031b",
+      "mem_usage_alert" : false,
+      "forensics_cpu_quota_mode" : 1,
+      "host_name" : "UB22-30-10-57",
+      "enable_service_protection" : false,
+      "last_config_fetch_at" : 1731501342
+    }
+  service: "cd.cisco.secure.workload.cisco_secure_workload_workload_details"
+  result:
+    custom:
+      agent_anomaly_types:
+        agent_convert_cap: "Supported"
+        agent_running_status: "Normal"
+        amt_of_flow_obs: "Normal"
+      agent_type: 3
+      agent_type_str: "ENFORCER"
+      arch: "x86_64"
+      auto_removal_after_sec: 0
+      auto_upgrade_opt_out: false
+      bios_uuid: "F7500342-CC1C-4AF5-A6E1-10EDCD6E20A9"
+      cds:
+        cisco_secure_workload:
+          agent_anomaly_types:
+            agent_cpu_quota: "Normal"
+            agent_mem_usage: "Normal"
+            enforcer_check_in_status: "Active"
+            enforcer_registration_status: "Successful"
+            iface_flow_export_status: "Working"
+            upgrade_srv_check_in: "Active"
+            upgrade_status: "Successful"
+          current_sw_version: "3.9.1.52-enforcer"
+          max_rss_limit: 209715200
+      client_ip: "36.91.80.27"
+      config_intent_id: "66b1c9d3497d4f182397031a"
+      config_profile_id: "66b1c984497d4f149197031b"
+      config_profile_name: "test"
+      cpu_quota_alert: false
+      cpu_quota_mode: 1
+      cpu_quota_us: 30000
+      created_at: 1729148249
+      current_appliance_id: ""
+      data_plane_disabled: false
+      deprecated_tls: false
+      desired_agent_type: "UNKNOWN_TYPE"
+      desired_appliance_id: ""
+      desired_sw_version: "3.9.1.52-enforcer"
+      enable_cache_sidechannel: false
+      enable_conversation_flows: true
+      enable_forensics: true
+      enable_meltdown: false
+      enable_package_visibility: true
+      enable_pid_lookup: false
+      enable_process_visibility: true
+      enable_service_protection: false
+      enforcement_cpu_quota_mode: 1
+      enforcement_cpu_quota_us: 30000
+      enforcement_enabled: true
+      enforcement_max_rss_limit: 134217728
+      flows_disk_quota_bytes: 209715200
+      flows_time_quota_sec: 0
+      forensics_cpu_quota_mode: 1
+      forensics_cpu_quota_us: 30000
+      forensics_export_signals: "PRIV_ESCALATION,FOLLOW_PROCESS"
+      forensics_mem_quota_bytes: 134217728
+      host_name: "UB22-30-10-57"
+      insecure_cipher: false
+      interfaces:
+       -
+        vrf_id: 700618
+        netmask: "255.0.0.0"
+        ip: "127.0.0.1"
+        name: "lo"
+        vrf: "ARMIS"
+        family_type: "IPV4"
+        mac: "00:00:00:00:00:00"
+       -
+        vrf_id: 700618
+        netmask: "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+        ip: "::1"
+        name: "lo"
+        vrf: "ARMIS"
+        family_type: "IPV6"
+        mac: "00:00:00:00:00:00"
+       -
+        vrf_id: 700618
+        netmask: "255.255.240.0"
+        tags_scope_id:
+         - "661f009e755f022ba62ab608"
+         - "66a8d871497d4f475c970322"
+        ip: "10.30.10.7"
+        name: "ens160"
+        vrf: "ARMIS"
+        family_type: "IPV4"
+        pcap_opened: true
+        mac: "00:50:56:83:44:fb"
+       -
+        vrf_id: 700618
+        netmask: "ffff:ffff:ffff:ffff::"
+        ip: "fe80::230:56ef:fe83:44fb"
+        name: "ens160"
+        vrf: "ARMIS"
+        family_type: "IPV6"
+        pcap_opened: true
+        mac: "00:50:56:83:44:fb"
+       -
+        vrf_id: 700618
+        netmask: "ffff:ffff:ffff:ffff::"
+        tags_scope_id:
+         - "661f009e755f022ba62ab608"
+         - "66a8d871497d4f475c970322"
+        ip: "fdfe:9040:c53d:0:250:56ff:fe83:44fb"
+        name: "ens160"
+        vrf: "ARMIS"
+        family_type: "IPV6"
+        pcap_opened: true
+        mac: "00:50:56:83:44:fb"
+       -
+        vrf_id: 700618
+        netmask: "ffff:ffff:ffff:ffff::"
+        tags_scope_id:
+         - "661f009e755f022ba62ab608"
+         - "66a8d871497d4f475c970322"
+        ip: "fda7:e6ee:2f09:0:250:56ff:fe83:44fb"
+        name: "ens160"
+        vrf: "ARMIS"
+        family_type: "IPV6"
+        pcap_opened: true
+        mac: "00:50:56:83:44:fb"
+      is_internal: false
+      kernel_version: "5.15.0-124-generic"
+      last_config_fetch_at: 1731501342
+      last_software_update_at: 1730873433
+      mem_usage_alert: false
+      os_display_label: "Ubuntu-22.04 - 5.15.0-124-generic"
+      platform: "Ubuntu-22.04"
+      unsupported_version: false
+      uuid: "15ad68ee5a83959d02dba6e6d50f457e75547f12"
+      vrf_id: 700618
+      windows_enforcement_mode: "WAF"
+    message: |-
+      {
+        "is_internal" : false,
+        "vrf_id" : 700618,
+        "flows_disk_quota_bytes" : 209715200,
+        "forensics_mem_quota_bytes" : 134217728,
+        "uuid" : "15ad68ee5a83959d02dba6e6d50f457e75547f12",
+        "enable_meltdown" : false,
+        "agent_anomaly_types" : {
+          "agent_cpu_quota" : "Normal",
+          "upgrade_status" : "Successful",
+          "agent_mem_usage" : "Normal",
+          "agent_running_status" : "Normal",
+          "agent_convert_cap" : "Supported",
+          "enforcer_check_in_status" : "Active",
+          "upgrade_srv_check_in" : "Active",
+          "iface_flow_export_status" : "Working",
+          "enforcer_registration_status" : "Successful",
+          "amt_of_flow_obs" : "Normal"
+        },
+        "config_intent_id" : "66b1c9d3497d4f182397031a",
+        "client_ip" : "36.91.80.27",
+        "enable_cache_sidechannel" : false,
+        "unsupported_version" : false,
+        "bios_uuid" : "F7500342-CC1C-4AF5-A6E1-10EDCD6E20A9",
+        "auto_removal_after_sec" : 0,
+        "current_appliance_id" : "",
+        "last_software_update_at" : 1730873433,
+        "insecure_cipher" : false,
+        "max_rss_limit" : 209715200,
+        "auto_upgrade_opt_out" : false,
+        "agent_type" : 3,
+        "current_sw_version" : "3.9.1.52-enforcer",
+        "cpu_quota_us" : 30000,
+        "config_profile_name" : "test",
+        "enforcement_cpu_quota_us" : 30000,
+        "desired_agent_type" : "UNKNOWN_TYPE",
+        "enable_process_visibility" : true,
+        "cpu_quota_mode" : 1,
+        "enable_pid_lookup" : false,
+        "enable_forensics" : true,
+        "forensics_cpu_quota_us" : 30000,
+        "forensics_export_signals" : "PRIV_ESCALATION,FOLLOW_PROCESS",
+        "desired_appliance_id" : "",
+        "created_at" : 1729148249,
+        "enforcement_enabled" : true,
+        "platform" : "Ubuntu-22.04",
+        "desired_sw_version" : "3.9.1.52-enforcer",
+        "enable_conversation_flows" : true,
+        "data_plane_disabled" : false,
+        "os_display_label" : "Ubuntu-22.04 - 5.15.0-124-generic",
+        "flows_time_quota_sec" : 0,
+        "agent_type_str" : "ENFORCER",
+        "interfaces" : [ {
+          "vrf_id" : 700618,
+          "netmask" : "255.0.0.0",
+          "ip" : "127.0.0.1",
+          "name" : "lo",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV4",
+          "mac" : "00:00:00:00:00:00"
+        }, {
+          "vrf_id" : 700618,
+          "netmask" : "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+          "ip" : "::1",
+          "name" : "lo",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV6",
+          "mac" : "00:00:00:00:00:00"
+        }, {
+          "vrf_id" : 700618,
+          "netmask" : "255.255.240.0",
+          "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+          "ip" : "10.30.10.7",
+          "name" : "ens160",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV4",
+          "pcap_opened" : true,
+          "mac" : "00:50:56:83:44:fb"
+        }, {
+          "vrf_id" : 700618,
+          "netmask" : "ffff:ffff:ffff:ffff::",
+          "ip" : "fe80::230:56ef:fe83:44fb",
+          "name" : "ens160",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV6",
+          "pcap_opened" : true,
+          "mac" : "00:50:56:83:44:fb"
+        }, {
+          "vrf_id" : 700618,
+          "netmask" : "ffff:ffff:ffff:ffff::",
+          "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+          "ip" : "fdfe:9040:c53d:0:250:56ff:fe83:44fb",
+          "name" : "ens160",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV6",
+          "pcap_opened" : true,
+          "mac" : "00:50:56:83:44:fb"
+        }, {
+          "vrf_id" : 700618,
+          "netmask" : "ffff:ffff:ffff:ffff::",
+          "tags_scope_id" : [ "661f009e755f022ba62ab608", "66a8d871497d4f475c970322" ],
+          "ip" : "fda7:e6ee:2f09:0:250:56ff:fe83:44fb",
+          "name" : "ens160",
+          "vrf" : "ARMIS",
+          "family_type" : "IPV6",
+          "pcap_opened" : true,
+          "mac" : "00:50:56:83:44:fb"
+        } ],
+        "enforcement_cpu_quota_mode" : 1,
+        "enable_package_visibility" : true,
+        "deprecated_tls" : false,
+        "kernel_version" : "5.15.0-124-generic",
+        "cpu_quota_alert" : false,
+        "windows_enforcement_mode" : "WAF",
+        "arch" : "x86_64",
+        "enforcement_max_rss_limit" : 134217728,
+        "config_profile_id" : "66b1c984497d4f149197031b",
+        "mem_usage_alert" : false,
+        "forensics_cpu_quota_mode" : 1,
+        "host_name" : "UB22-30-10-57",
+        "enable_service_protection" : false,
+        "last_config_fetch_at" : 1731501342
+      }
+    service: "cd.cisco.secure.workload.cisco_secure_workload_workload_details"
+    tags:
+     - "source:LOGS_SOURCE"

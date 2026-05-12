@@ -1,0 +1,1295 @@
+id: "akamai"
+tests:
+ -
+  sample: |-
+    {
+      "reqPort" : "80",
+      "reqMethod" : "GET",
+      "type" : "Raw",
+      "UA" : "curl/7.54.0",
+      "reqid" : "35d9521f",
+      "network" : {
+        "bw" : "5000",
+        "throughput" : "vhigh"
+      },
+      "geo" : {
+        "country" : "IN",
+        "city" : "BANGALORE",
+        "region" : "KA",
+        "lat" : "12.98",
+        "long" : "77.58"
+      },
+      "protoVer" : "-",
+      "fwdHost" : "datastream.download.akamai.com",
+      "id" : "2718",
+      "reqHost" : "www.ds-sqa-od.edgesuite.net",
+      "reqPath" : "/",
+      "cache" : {
+        "cacheH" : "0/32296/0/0/0",
+        "cacheHit" : "0",
+        "cacheable" : "1",
+        "cacheStatus" : "2",
+        "cacheStats" : "0/31829"
+      },
+      "cliIP" : "80.67.65.12",
+      "start" : "1574061966265",
+      "netPerf" : {
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "1",
+        "clientRTT" : "11",
+        "asnum" : "9583",
+        "errCdR14" : "ERR_NONE",
+        "downloadStatus" : "1110",
+        "downloadTime" : "120",
+        "edgeIP" : "184.26.162.13"
+      },
+      "httpVer" : "1.1",
+      "cp" : "868861",
+      "respHdr" : {
+        "date" : "Date: Mon, 18 Nov 2019 07:26:06 GMT",
+        "server" : "Server: AkamaiNetStorage",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+        "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1574061980731",
+      "reqHdr" : {
+        "cookie" : "New-Connectors-Test-3",
+        "reqTime" : "1574061966.26"
+      },
+      "bytes" : "31829",
+      "proto" : "http",
+      "guid" : "da21ab83c635d9521f",
+      "status" : "200"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "0/32296/0/0/0"
+        cacheHit: "0"
+        cacheStats: "0/31829"
+        cacheStatus: "2"
+        cacheable: "1"
+      cp: "868861"
+      duration: 1.31E8
+      fwdHost: "datastream.download.akamai.com"
+      geo:
+        lat: "12.98"
+        long: "77.58"
+      guid: "da21ab83c635d9521f"
+      http:
+        method: "GET"
+        request_id: "35d9521f"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "www.ds-sqa-od.edgesuite.net"
+          path: "/"
+          port: "80"
+          scheme: "http"
+        useragent: "curl/7.54.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "54"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      id: "2718"
+      netPerf:
+        asnum: "9583"
+        clientRTT: "11"
+        downloadStatus: "1110"
+        downloadTime: "120"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_NONE"
+        lastByte: "1"
+      network:
+        bw: "5000"
+        bytes_written: "31829"
+        client:
+          geoip:
+            city:
+              name: "BANGALORE"
+            country:
+              iso_code: "IN"
+            subdivision:
+              iso_code: "KA"
+          ip: "80.67.65.12"
+        destination:
+          ip: "184.26.162.13"
+        throughput: "vhigh"
+      processedTime: "1574061980731"
+      protoVer: "-"
+      reqHdr:
+        cookie: "New-Connectors-Test-3"
+        reqTime: "1574061966.26"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        date: "Date: Mon, 18 Nov 2019 07:26:06 GMT"
+        eTag: "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\""
+        lastMod: "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AkamaiNetStorage"
+      timestamp: "1574061966265"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "80",
+        "reqMethod" : "GET",
+        "type" : "Raw",
+        "UA" : "curl/7.54.0",
+        "reqid" : "35d9521f",
+        "network" : {
+          "bw" : "5000",
+          "throughput" : "vhigh"
+        },
+        "geo" : {
+          "country" : "IN",
+          "city" : "BANGALORE",
+          "region" : "KA",
+          "lat" : "12.98",
+          "long" : "77.58"
+        },
+        "protoVer" : "-",
+        "fwdHost" : "datastream.download.akamai.com",
+        "id" : "2718",
+        "reqHost" : "www.ds-sqa-od.edgesuite.net",
+        "reqPath" : "/",
+        "cache" : {
+          "cacheH" : "0/32296/0/0/0",
+          "cacheHit" : "0",
+          "cacheable" : "1",
+          "cacheStatus" : "2",
+          "cacheStats" : "0/31829"
+        },
+        "cliIP" : "80.67.65.12",
+        "start" : "1574061966265",
+        "netPerf" : {
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "1",
+          "clientRTT" : "11",
+          "asnum" : "9583",
+          "errCdR14" : "ERR_NONE",
+          "downloadStatus" : "1110",
+          "downloadTime" : "120",
+          "edgeIP" : "184.26.162.13"
+        },
+        "httpVer" : "1.1",
+        "cp" : "868861",
+        "respHdr" : {
+          "date" : "Date: Mon, 18 Nov 2019 07:26:06 GMT",
+          "server" : "Server: AkamaiNetStorage",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+          "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1574061980731",
+        "reqHdr" : {
+          "cookie" : "New-Connectors-Test-3",
+          "reqTime" : "1574061966.26"
+        },
+        "bytes" : "31829",
+        "proto" : "http",
+        "guid" : "da21ab83c635d9521f",
+        "status" : "200"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574061966265
+ -
+  sample: |-
+    {
+      "reqPort" : "80",
+      "reqMethod" : "GET",
+      "type" : "Raw",
+      "UA" : "curl/7.54.0",
+      "reqid" : "20084b5",
+      "network" : {
+        "bw" : "1",
+        "throughput" : "low"
+      },
+      "geo" : {
+        "country" : "IN",
+        "city" : "BANGALORE",
+        "region" : "KA",
+        "lat" : "12.98",
+        "long" : "77.58"
+      },
+      "protoVer" : "-",
+      "fwdHost" : "datastream.download.akamai.com",
+      "id" : "2718",
+      "reqHost" : "www.ds-sqa-od.edgesuite.net",
+      "reqPath" : "/",
+      "cache" : {
+        "cacheH" : "0/32295/0/0/0",
+        "cacheHit" : "0",
+        "cacheable" : "1",
+        "cacheStats" : "0/22698"
+      },
+      "cliIP" : "2001:4878:a062:3000:d9f9:9824:bd20:5705",
+      "start" : "1574061954133",
+      "netPerf" : {
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "0",
+        "clientRTT" : "199",
+        "asnum" : "9583",
+        "errCdR14" : "ERR_CLIENT_ABORT",
+        "downloadStatus" : "1001",
+        "downloadTime" : "1673",
+        "edgeIP" : "23.15.37.13"
+      },
+      "httpVer" : "1.1",
+      "cp" : "868861",
+      "respHdr" : {
+        "date" : "Date: Mon, 18 Nov 2019 07:25:55 GMT",
+        "server" : "Server: AkamaiNetStorage",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+        "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1574061967930",
+      "reqHdr" : {
+        "cookie" : "New-Connectors-Test-1",
+        "reqTime" : "1574061954.13"
+      },
+      "bytes" : "22698",
+      "proto" : "http",
+      "guid" : "d250f173bb20084b5",
+      "status" : "200"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "0/32295/0/0/0"
+        cacheHit: "0"
+        cacheStats: "0/22698"
+        cacheable: "1"
+      cp: "868861"
+      duration: 1.872E9
+      fwdHost: "datastream.download.akamai.com"
+      geo:
+        lat: "12.98"
+        long: "77.58"
+      guid: "d250f173bb20084b5"
+      http:
+        method: "GET"
+        request_id: "20084b5"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "www.ds-sqa-od.edgesuite.net"
+          path: "/"
+          port: "80"
+          scheme: "http"
+        useragent: "curl/7.54.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "54"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      id: "2718"
+      netPerf:
+        asnum: "9583"
+        clientRTT: "199"
+        downloadStatus: "1001"
+        downloadTime: "1673"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_CLIENT_ABORT"
+        lastByte: "0"
+      network:
+        bw: "1"
+        bytes_written: "22698"
+        client:
+          geoip:
+            city:
+              name: "BANGALORE"
+            country:
+              iso_code: "IN"
+            subdivision:
+              iso_code: "KA"
+          ip: "2001:4878:a062:3000:d9f9:9824:bd20:5705"
+        destination:
+          ip: "23.15.37.13"
+        throughput: "low"
+      processedTime: "1574061967930"
+      protoVer: "-"
+      reqHdr:
+        cookie: "New-Connectors-Test-1"
+        reqTime: "1574061954.13"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        date: "Date: Mon, 18 Nov 2019 07:25:55 GMT"
+        eTag: "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\""
+        lastMod: "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AkamaiNetStorage"
+      timestamp: "1574061954133"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "80",
+        "reqMethod" : "GET",
+        "type" : "Raw",
+        "UA" : "curl/7.54.0",
+        "reqid" : "20084b5",
+        "network" : {
+          "bw" : "1",
+          "throughput" : "low"
+        },
+        "geo" : {
+          "country" : "IN",
+          "city" : "BANGALORE",
+          "region" : "KA",
+          "lat" : "12.98",
+          "long" : "77.58"
+        },
+        "protoVer" : "-",
+        "fwdHost" : "datastream.download.akamai.com",
+        "id" : "2718",
+        "reqHost" : "www.ds-sqa-od.edgesuite.net",
+        "reqPath" : "/",
+        "cache" : {
+          "cacheH" : "0/32295/0/0/0",
+          "cacheHit" : "0",
+          "cacheable" : "1",
+          "cacheStats" : "0/22698"
+        },
+        "cliIP" : "2001:4878:a062:3000:d9f9:9824:bd20:5705",
+        "start" : "1574061954133",
+        "netPerf" : {
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "0",
+          "clientRTT" : "199",
+          "asnum" : "9583",
+          "errCdR14" : "ERR_CLIENT_ABORT",
+          "downloadStatus" : "1001",
+          "downloadTime" : "1673",
+          "edgeIP" : "23.15.37.13"
+        },
+        "httpVer" : "1.1",
+        "cp" : "868861",
+        "respHdr" : {
+          "date" : "Date: Mon, 18 Nov 2019 07:25:55 GMT",
+          "server" : "Server: AkamaiNetStorage",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+          "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1574061967930",
+        "reqHdr" : {
+          "cookie" : "New-Connectors-Test-1",
+          "reqTime" : "1574061954.13"
+        },
+        "bytes" : "22698",
+        "proto" : "http",
+        "guid" : "d250f173bb20084b5",
+        "status" : "200"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574061954133
+ -
+  sample: |-
+    {
+      "reqPort" : "80",
+      "reqMethod" : "GET",
+      "type" : "Raw",
+      "UA" : "curl/7.54.0",
+      "reqid" : "704217d",
+      "network" : {
+        "bw" : "1",
+        "throughput" : "low"
+      },
+      "geo" : {
+        "country" : "IN",
+        "city" : "BANGALORE",
+        "region" : "KA",
+        "lat" : "12.98",
+        "long" : "77.58"
+      },
+      "protoVer" : "-",
+      "fwdHost" : "datastream.download.akamai.com",
+      "id" : "2718",
+      "reqHost" : "www.ds-sqa-od.edgesuite.net",
+      "reqPath" : "/",
+      "cache" : {
+        "cacheH" : "32296/0/0/0/0",
+        "cacheHit" : "0",
+        "cacheable" : "1",
+        "cacheStatus" : "2",
+        "cacheStats" : "0/31829"
+      },
+      "cliIP" : "2001:4878:a062:3000:d9f9:9824:bd20:5705",
+      "start" : "1574061961517",
+      "netPerf" : {
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "1",
+        "clientRTT" : "109",
+        "asnum" : "9583",
+        "errCdR14" : "ERR_NONE",
+        "downloadStatus" : "1110",
+        "downloadTime" : "11",
+        "edgeIP" : "23.15.37.28"
+      },
+      "httpVer" : "1.1",
+      "cp" : "868861",
+      "respHdr" : {
+        "date" : "Date: Mon, 18 Nov 2019 07:26:01 GMT",
+        "server" : "Server: AkamaiNetStorage",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+        "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1574061973403",
+      "reqHdr" : {
+        "cookie" : "New-Connectors-Test-2",
+        "reqTime" : "1574061961.51"
+      },
+      "bytes" : "31829",
+      "proto" : "http",
+      "guid" : "1c250f173c1704217d",
+      "status" : "200"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "32296/0/0/0/0"
+        cacheHit: "0"
+        cacheStats: "0/31829"
+        cacheStatus: "2"
+        cacheable: "1"
+      cp: "868861"
+      duration: 1.2E8
+      fwdHost: "datastream.download.akamai.com"
+      geo:
+        lat: "12.98"
+        long: "77.58"
+      guid: "1c250f173c1704217d"
+      http:
+        method: "GET"
+        request_id: "704217d"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "www.ds-sqa-od.edgesuite.net"
+          path: "/"
+          port: "80"
+          scheme: "http"
+        useragent: "curl/7.54.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "54"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      id: "2718"
+      netPerf:
+        asnum: "9583"
+        clientRTT: "109"
+        downloadStatus: "1110"
+        downloadTime: "11"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_NONE"
+        lastByte: "1"
+      network:
+        bw: "1"
+        bytes_written: "31829"
+        client:
+          geoip:
+            city:
+              name: "BANGALORE"
+            country:
+              iso_code: "IN"
+            subdivision:
+              iso_code: "KA"
+          ip: "2001:4878:a062:3000:d9f9:9824:bd20:5705"
+        destination:
+          ip: "23.15.37.28"
+        throughput: "low"
+      processedTime: "1574061973403"
+      protoVer: "-"
+      reqHdr:
+        cookie: "New-Connectors-Test-2"
+        reqTime: "1574061961.51"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        date: "Date: Mon, 18 Nov 2019 07:26:01 GMT"
+        eTag: "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\""
+        lastMod: "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AkamaiNetStorage"
+      timestamp: "1574061961517"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "80",
+        "reqMethod" : "GET",
+        "type" : "Raw",
+        "UA" : "curl/7.54.0",
+        "reqid" : "704217d",
+        "network" : {
+          "bw" : "1",
+          "throughput" : "low"
+        },
+        "geo" : {
+          "country" : "IN",
+          "city" : "BANGALORE",
+          "region" : "KA",
+          "lat" : "12.98",
+          "long" : "77.58"
+        },
+        "protoVer" : "-",
+        "fwdHost" : "datastream.download.akamai.com",
+        "id" : "2718",
+        "reqHost" : "www.ds-sqa-od.edgesuite.net",
+        "reqPath" : "/",
+        "cache" : {
+          "cacheH" : "32296/0/0/0/0",
+          "cacheHit" : "0",
+          "cacheable" : "1",
+          "cacheStatus" : "2",
+          "cacheStats" : "0/31829"
+        },
+        "cliIP" : "2001:4878:a062:3000:d9f9:9824:bd20:5705",
+        "start" : "1574061961517",
+        "netPerf" : {
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "1",
+          "clientRTT" : "109",
+          "asnum" : "9583",
+          "errCdR14" : "ERR_NONE",
+          "downloadStatus" : "1110",
+          "downloadTime" : "11",
+          "edgeIP" : "23.15.37.28"
+        },
+        "httpVer" : "1.1",
+        "cp" : "868861",
+        "respHdr" : {
+          "date" : "Date: Mon, 18 Nov 2019 07:26:01 GMT",
+          "server" : "Server: AkamaiNetStorage",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"12f48e52c6d5298448fe49c05082ff51:1519289789\\\"",
+          "lastMod" : "Last-Modified: Thu, 22 Feb 2018 08:56:29 GMT",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1574061973403",
+        "reqHdr" : {
+          "cookie" : "New-Connectors-Test-2",
+          "reqTime" : "1574061961.51"
+        },
+        "bytes" : "31829",
+        "proto" : "http",
+        "guid" : "1c250f173c1704217d",
+        "status" : "200"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1574061961517
+ -
+  sample: |-
+    {
+      "reqPort" : "80",
+      "reqMethod" : "GET",
+      "UA" : "Mozilla/5.0 (iPhone; CPU iPhone OS 13_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/NativeDfs/lotteDfs/7.1.4/13.1.3/iPhone/2B09D19F-9788-4A0F-ABC1-9999999999999",
+      "type" : "Raw",
+      "network" : {
+        "bw" : "2000",
+        "throughput" : "vhigh"
+      },
+      "reqid" : "1dfd5d4",
+      "geo" : {
+        "area" : "703",
+        "zip" : "20170-20172+20192+22095",
+        "country" : "US",
+        "city" : "HERNDON",
+        "region" : "VA",
+        "lat" : "38.9807",
+        "long" : "-77.3799"
+      },
+      "protoVer" : "-",
+      "fwdHost" : "static.datadog.test",
+      "id" : "2829",
+      "reqHost" : "static.datadog.test",
+      "reqPath" : "/static-fo-mo/css/common/mobile.css",
+      "cliIP" : "144.121.112.110",
+      "cache" : {
+        "cacheH" : "0/1261/0/0/0",
+        "cacheHit" : "0",
+        "cacheable" : "1",
+        "cacheStatus" : "3",
+        "cacheStats" : "0/592"
+      },
+      "start" : "1576058204057",
+      "netPerf" : {
+        "midMileLatency" : "21",
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "1",
+        "clientRTT" : "248",
+        "asnum" : "46887",
+        "errCdR14" : "ERR_NONE",
+        "downloadStatus" : "1110",
+        "netOriginLatency" : "389",
+        "edgeIP" : "23.52.1.156",
+        "downloadTime" : "426"
+      },
+      "httpVer" : "1.1",
+      "cp" : "912439",
+      "respHdr" : {
+        "date" : "Date: Wed, 11 Dec 2019 09:56:44 GMT",
+        "server" : "Server: AmazonS3",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"727994c88e5c57c4b5dee7b1ef862101\\\"",
+        "lastMod" : "Last-Modified: Mon, 09 Dec 2019 17:26:39 GMT",
+        "allowOrigin" : "Access-Control-Allow-Origin: *",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1576058215564",
+      "reqHdr" : {
+        "referer" : "http://m.chn.datadog.test/kr/product/webViewPrdDetailInfoTabNew?prdNo=123&prdOptNo=",
+        "reqConn" : "keep-alive",
+        "cookie" : "cntry=KR; cntry_gate=OT; cntry_mc=KR; crc=CNY; dprt.KR=D01; lang=ZH; lang_gate=EN; lang_mc=ZH; _ga=GA1.2.e4e05364-c199-46c5-bb0f-999999; _gid=GA1.2.847706083.99999999; dimension={\\\"dimension1\\\":\\\"App\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"10~19\\\",\\\"dimension4\\\":\\\"F\\\",\\\"dimension5\\\":\\\"%EC%A4%91%EA%B5%AD\\\",\\\"dimension6\\\":\\\"%EC%97%86%EC%9D%8C\\\",\\\"dimension7\\\":\\\"%EC%9D%BC%EB%B0%98\\\",\\\"dimension8\\\":\\\"Y\\\",\\\"dimension9\\\":\\\"%EB%A9%B4%EC%84%B8%EC%A0%90%EA%B0%9C%EB%B3%84%ED%9A%8C%EC%9B%90\\\",\\\"dimension10\\\":\\\"200145826786\\\",\\\"dimension11\\\":\\\"\\\"}; appChkYn=Y; recentSearchKeyword=kissme%2Fa1*; lodfsAdltYn=N; RB_SSID=cy2ilOObai; _gat=1; _gat_rollup=1; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; RB_GUID=5d9d4654-1000-448e-8f8b-939111cf8c2f; lodfsEncLoginIdCookie=AAOkddr4g%2FDcqEAXRklbym3u; lodfsMbrNoCookie=200145826786; lodfsMbrRcgnCdCookie=0101; lodfsOnlGrdCdCookie=01; lodfsUnMbrSctCdCookie=02; lodfsUserKeepId=%7B%7D; lodfslpntCustNoCookie=; RB_PCID=15760578599999999999; JSESSIONID=9ec5250d-728d-4032-8b5f-99999999",
+        "reqTime" : "1576058204.05",
+        "accLang" : "en-us",
+        "accEnc" : "gzip, deflate"
+      },
+      "bytes" : "592",
+      "proto" : "http",
+      "guid" : "9c013417cc1dfd5d4",
+      "status" : "200",
+      "queryStr" : "version%3d201912111814"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "0/1261/0/0/0"
+        cacheHit: "0"
+        cacheStats: "0/592"
+        cacheStatus: "3"
+        cacheable: "1"
+      cp: "912439"
+      duration: 6.74E8
+      fwdHost: "static.datadog.test"
+      geo:
+        area: "703"
+        lat: "38.9807"
+        long: "-77.3799"
+        zip: "20170-20172+20192+22095"
+      guid: "9c013417cc1dfd5d4"
+      http:
+        method: "GET"
+        referer: "http://m.chn.datadog.test/kr/product/webViewPrdDetailInfoTabNew?prdNo=123&prdOptNo="
+        request_id: "1dfd5d4"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "static.datadog.test"
+          path: "/static-fo-mo/css/common/mobile.css"
+          port: "80"
+          scheme: "http"
+        useragent: "Mozilla/5.0 (iPhone; CPU iPhone OS 13_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/NativeDfs/lotteDfs/7.1.4/13.1.3/iPhone/2B09D19F-9788-4A0F-ABC1-9999999999999"
+        useragent_details:
+          browser:
+            family: "Mobile Safari UI/WKWebView"
+          device:
+            brand: "Apple"
+            category: "Mobile"
+            family: "iPhone"
+            model: "iPhone"
+          os:
+            family: "iOS"
+            major: "13"
+            minor: "1"
+            patch: "3"
+        version: "1.1"
+      id: "2829"
+      netPerf:
+        asnum: "46887"
+        clientRTT: "248"
+        downloadStatus: "1110"
+        downloadTime: "426"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_NONE"
+        lastByte: "1"
+        midMileLatency: "21"
+        netOriginLatency: "389"
+      network:
+        bw: "2000"
+        bytes_written: "592"
+        client:
+          geoip:
+            city:
+              name: "HERNDON"
+            country:
+              iso_code: "US"
+            subdivision:
+              iso_code: "VA"
+          ip: "144.121.112.110"
+        destination:
+          ip: "23.52.1.156"
+        throughput: "vhigh"
+      processedTime: "1576058215564"
+      protoVer: "-"
+      queryStr: "version%3d201912111814"
+      reqHdr:
+        accEnc: "gzip, deflate"
+        accLang: "en-us"
+        cookie: "cntry=KR; cntry_gate=OT; cntry_mc=KR; crc=CNY; dprt.KR=D01; lang=ZH; lang_gate=EN; lang_mc=ZH; _ga=GA1.2.e4e05364-c199-46c5-bb0f-999999; _gid=GA1.2.847706083.99999999; dimension={\\\"dimension1\\\":\\\"App\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"10~19\\\",\\\"dimension4\\\":\\\"F\\\",\\\"dimension5\\\":\\\"%EC%A4%91%EA%B5%AD\\\",\\\"dimension6\\\":\\\"%EC%97%86%EC%9D%8C\\\",\\\"dimension7\\\":\\\"%EC%9D%BC%EB%B0%98\\\",\\\"dimension8\\\":\\\"Y\\\",\\\"dimension9\\\":\\\"%EB%A9%B4%EC%84%B8%EC%A0%90%EA%B0%9C%EB%B3%84%ED%9A%8C%EC%9B%90\\\",\\\"dimension10\\\":\\\"200145826786\\\",\\\"dimension11\\\":\\\"\\\"}; appChkYn=Y; recentSearchKeyword=kissme%2Fa1*; lodfsAdltYn=N; RB_SSID=cy2ilOObai; _gat=1; _gat_rollup=1; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; RB_GUID=5d9d4654-1000-448e-8f8b-939111cf8c2f; lodfsEncLoginIdCookie=AAOkddr4g%2FDcqEAXRklbym3u; lodfsMbrNoCookie=200145826786; lodfsMbrRcgnCdCookie=0101; lodfsOnlGrdCdCookie=01; lodfsUnMbrSctCdCookie=02; lodfsUserKeepId=%7B%7D; lodfslpntCustNoCookie=; RB_PCID=15760578599999999999; JSESSIONID=9ec5250d-728d-4032-8b5f-99999999"
+        reqConn: "keep-alive"
+        reqTime: "1576058204.05"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        allowOrigin: "Access-Control-Allow-Origin: *"
+        date: "Date: Wed, 11 Dec 2019 09:56:44 GMT"
+        eTag: "ETag: \\\"727994c88e5c57c4b5dee7b1ef862101\\\""
+        lastMod: "Last-Modified: Mon, 09 Dec 2019 17:26:39 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AmazonS3"
+      timestamp: "1576058204057"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "80",
+        "reqMethod" : "GET",
+        "UA" : "Mozilla/5.0 (iPhone; CPU iPhone OS 13_1_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/NativeDfs/lotteDfs/7.1.4/13.1.3/iPhone/2B09D19F-9788-4A0F-ABC1-9999999999999",
+        "type" : "Raw",
+        "network" : {
+          "bw" : "2000",
+          "throughput" : "vhigh"
+        },
+        "reqid" : "1dfd5d4",
+        "geo" : {
+          "area" : "703",
+          "zip" : "20170-20172+20192+22095",
+          "country" : "US",
+          "city" : "HERNDON",
+          "region" : "VA",
+          "lat" : "38.9807",
+          "long" : "-77.3799"
+        },
+        "protoVer" : "-",
+        "fwdHost" : "static.datadog.test",
+        "id" : "2829",
+        "reqHost" : "static.datadog.test",
+        "reqPath" : "/static-fo-mo/css/common/mobile.css",
+        "cliIP" : "144.121.112.110",
+        "cache" : {
+          "cacheH" : "0/1261/0/0/0",
+          "cacheHit" : "0",
+          "cacheable" : "1",
+          "cacheStatus" : "3",
+          "cacheStats" : "0/592"
+        },
+        "start" : "1576058204057",
+        "netPerf" : {
+          "midMileLatency" : "21",
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "1",
+          "clientRTT" : "248",
+          "asnum" : "46887",
+          "errCdR14" : "ERR_NONE",
+          "downloadStatus" : "1110",
+          "netOriginLatency" : "389",
+          "edgeIP" : "23.52.1.156",
+          "downloadTime" : "426"
+        },
+        "httpVer" : "1.1",
+        "cp" : "912439",
+        "respHdr" : {
+          "date" : "Date: Wed, 11 Dec 2019 09:56:44 GMT",
+          "server" : "Server: AmazonS3",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"727994c88e5c57c4b5dee7b1ef862101\\\"",
+          "lastMod" : "Last-Modified: Mon, 09 Dec 2019 17:26:39 GMT",
+          "allowOrigin" : "Access-Control-Allow-Origin: *",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1576058215564",
+        "reqHdr" : {
+          "referer" : "http://m.chn.datadog.test/kr/product/webViewPrdDetailInfoTabNew?prdNo=123&prdOptNo=",
+          "reqConn" : "keep-alive",
+          "cookie" : "cntry=KR; cntry_gate=OT; cntry_mc=KR; crc=CNY; dprt.KR=D01; lang=ZH; lang_gate=EN; lang_mc=ZH; _ga=GA1.2.e4e05364-c199-46c5-bb0f-999999; _gid=GA1.2.847706083.99999999; dimension={\\\"dimension1\\\":\\\"App\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"10~19\\\",\\\"dimension4\\\":\\\"F\\\",\\\"dimension5\\\":\\\"%EC%A4%91%EA%B5%AD\\\",\\\"dimension6\\\":\\\"%EC%97%86%EC%9D%8C\\\",\\\"dimension7\\\":\\\"%EC%9D%BC%EB%B0%98\\\",\\\"dimension8\\\":\\\"Y\\\",\\\"dimension9\\\":\\\"%EB%A9%B4%EC%84%B8%EC%A0%90%EA%B0%9C%EB%B3%84%ED%9A%8C%EC%9B%90\\\",\\\"dimension10\\\":\\\"200145826786\\\",\\\"dimension11\\\":\\\"\\\"}; appChkYn=Y; recentSearchKeyword=kissme%2Fa1*; lodfsAdltYn=N; RB_SSID=cy2ilOObai; _gat=1; _gat_rollup=1; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; RB_GUID=5d9d4654-1000-448e-8f8b-939111cf8c2f; lodfsEncLoginIdCookie=AAOkddr4g%2FDcqEAXRklbym3u; lodfsMbrNoCookie=200145826786; lodfsMbrRcgnCdCookie=0101; lodfsOnlGrdCdCookie=01; lodfsUnMbrSctCdCookie=02; lodfsUserKeepId=%7B%7D; lodfslpntCustNoCookie=; RB_PCID=15760578599999999999; JSESSIONID=9ec5250d-728d-4032-8b5f-99999999",
+          "reqTime" : "1576058204.05",
+          "accLang" : "en-us",
+          "accEnc" : "gzip, deflate"
+        },
+        "bytes" : "592",
+        "proto" : "http",
+        "guid" : "9c013417cc1dfd5d4",
+        "status" : "200",
+        "queryStr" : "version%3d201912111814"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576058204057
+ -
+  sample: |-
+    {
+      "reqPort" : "80",
+      "reqMethod" : "GET",
+      "UA" : "lotteDfs-ios/7.1.4 (iPhone; iOS 13.1.3; Scale/2.00)",
+      "type" : "Raw",
+      "network" : {
+        "bw" : "2000",
+        "throughput" : "vhigh"
+      },
+      "reqid" : "1dfdf45",
+      "geo" : {
+        "area" : "703",
+        "zip" : "20170-20172+20192+22095",
+        "country" : "US",
+        "city" : "HERNDON",
+        "region" : "VA",
+        "lat" : "38.9807",
+        "long" : "-77.3799"
+      },
+      "protoVer" : "-",
+      "fwdHost" : "static.datadog.test",
+      "id" : "2829",
+      "reqHost" : "static.datadog.test",
+      "reqPath" : "/prod/prd-img/79/61/26/02/00/01/10002266179_2.jpg/dims/resize/220x220",
+      "cliIP" : "144.121.112.110",
+      "cache" : {
+        "cacheH" : "0/0/0/0/0",
+        "cacheHit" : "1",
+        "cacheable" : "1",
+        "cacheStatus" : "1",
+        "cacheStats" : "139886/139886"
+      },
+      "start" : "1576058207173",
+      "netPerf" : {
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "1",
+        "clientRTT" : "284",
+        "asnum" : "46887",
+        "errCdR14" : "ERR_NONE",
+        "downloadStatus" : "1110",
+        "edgeIP" : "23.52.1.156",
+        "downloadTime" : "1"
+      },
+      "httpVer" : "1.1",
+      "cp" : "912439",
+      "respHdr" : {
+        "date" : "Date: Wed, 11 Dec 2019 09:56:47 GMT",
+        "server" : "Server: AmazonS3",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"5d4ccd0b:3e815\\\"",
+        "lastMod" : "Last-Modified: Fri, 09 Aug 2019 01:31:55 GMT",
+        "allowOrigin" : "Access-Control-Allow-Origin: *",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1576058215563",
+      "reqHdr" : {
+        "reqConn" : "keep-alive",
+        "reqTime" : "1576058207.17",
+        "accLang" : "en-us",
+        "accEnc" : "gzip, deflate"
+      },
+      "bytes" : "139886",
+      "proto" : "http",
+      "guid" : "9c013417cf1dfdf45",
+      "status" : "200"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "0/0/0/0/0"
+        cacheHit: "1"
+        cacheStats: "139886/139886"
+        cacheStatus: "1"
+        cacheable: "1"
+      cp: "912439"
+      duration: 2.85E8
+      fwdHost: "static.datadog.test"
+      geo:
+        area: "703"
+        lat: "38.9807"
+        long: "-77.3799"
+        zip: "20170-20172+20192+22095"
+      guid: "9c013417cf1dfdf45"
+      http:
+        method: "GET"
+        request_id: "1dfdf45"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "static.datadog.test"
+          path: "/prod/prd-img/79/61/26/02/00/01/10002266179_2.jpg/dims/resize/220x220"
+          port: "80"
+          scheme: "http"
+        useragent: "lotteDfs-ios/7.1.4 (iPhone; iOS 13.1.3; Scale/2.00)"
+        useragent_details:
+          browser:
+            family: "Mobile Safari UI/WKWebView"
+          device:
+            brand: "Apple"
+            category: "Mobile"
+            family: "iPhone"
+            model: "iPhone"
+          os:
+            family: "iOS"
+            major: "13"
+            minor: "1"
+            patch: "3"
+        version: "1.1"
+      id: "2829"
+      netPerf:
+        asnum: "46887"
+        clientRTT: "284"
+        downloadStatus: "1110"
+        downloadTime: "1"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_NONE"
+        lastByte: "1"
+      network:
+        bw: "2000"
+        bytes_written: "139886"
+        client:
+          geoip:
+            city:
+              name: "HERNDON"
+            country:
+              iso_code: "US"
+            subdivision:
+              iso_code: "VA"
+          ip: "144.121.112.110"
+        destination:
+          ip: "23.52.1.156"
+        throughput: "vhigh"
+      processedTime: "1576058215563"
+      protoVer: "-"
+      reqHdr:
+        accEnc: "gzip, deflate"
+        accLang: "en-us"
+        reqConn: "keep-alive"
+        reqTime: "1576058207.17"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        allowOrigin: "Access-Control-Allow-Origin: *"
+        date: "Date: Wed, 11 Dec 2019 09:56:47 GMT"
+        eTag: "ETag: \\\"5d4ccd0b:3e815\\\""
+        lastMod: "Last-Modified: Fri, 09 Aug 2019 01:31:55 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AmazonS3"
+      timestamp: "1576058207173"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "80",
+        "reqMethod" : "GET",
+        "UA" : "lotteDfs-ios/7.1.4 (iPhone; iOS 13.1.3; Scale/2.00)",
+        "type" : "Raw",
+        "network" : {
+          "bw" : "2000",
+          "throughput" : "vhigh"
+        },
+        "reqid" : "1dfdf45",
+        "geo" : {
+          "area" : "703",
+          "zip" : "20170-20172+20192+22095",
+          "country" : "US",
+          "city" : "HERNDON",
+          "region" : "VA",
+          "lat" : "38.9807",
+          "long" : "-77.3799"
+        },
+        "protoVer" : "-",
+        "fwdHost" : "static.datadog.test",
+        "id" : "2829",
+        "reqHost" : "static.datadog.test",
+        "reqPath" : "/prod/prd-img/79/61/26/02/00/01/10002266179_2.jpg/dims/resize/220x220",
+        "cliIP" : "144.121.112.110",
+        "cache" : {
+          "cacheH" : "0/0/0/0/0",
+          "cacheHit" : "1",
+          "cacheable" : "1",
+          "cacheStatus" : "1",
+          "cacheStats" : "139886/139886"
+        },
+        "start" : "1576058207173",
+        "netPerf" : {
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "1",
+          "clientRTT" : "284",
+          "asnum" : "46887",
+          "errCdR14" : "ERR_NONE",
+          "downloadStatus" : "1110",
+          "edgeIP" : "23.52.1.156",
+          "downloadTime" : "1"
+        },
+        "httpVer" : "1.1",
+        "cp" : "912439",
+        "respHdr" : {
+          "date" : "Date: Wed, 11 Dec 2019 09:56:47 GMT",
+          "server" : "Server: AmazonS3",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"5d4ccd0b:3e815\\\"",
+          "lastMod" : "Last-Modified: Fri, 09 Aug 2019 01:31:55 GMT",
+          "allowOrigin" : "Access-Control-Allow-Origin: *",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1576058215563",
+        "reqHdr" : {
+          "reqConn" : "keep-alive",
+          "reqTime" : "1576058207.17",
+          "accLang" : "en-us",
+          "accEnc" : "gzip, deflate"
+        },
+        "bytes" : "139886",
+        "proto" : "http",
+        "guid" : "9c013417cf1dfdf45",
+        "status" : "200"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576058207173
+ -
+  sample: |-
+    {
+      "reqPort" : "443",
+      "reqMethod" : "GET",
+      "UA" : "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36",
+      "type" : "Raw",
+      "network" : {
+        "bw" : "5000",
+        "throughput" : "vhigh"
+      },
+      "reqid" : "40b5c04d",
+      "geo" : {
+        "country" : "HK",
+        "city" : "KWUNTONG",
+        "lat" : "22.32",
+        "long" : "114.22"
+      },
+      "protoVer" : "TLSv1.2",
+      "fwdHost" : "static.datadog.test",
+      "id" : "2829",
+      "reqHost" : "static.datadog.test",
+      "reqPath" : "/contents/images/store-img/store-content-img/1200050/02/12101050/20191203162534969d9008bf22f954879838586b99999999999.png",
+      "cliIP" : "180.235.155.50",
+      "cache" : {
+        "cacheH" : "0/0/0/0/0",
+        "cacheHit" : "1",
+        "cacheable" : "1",
+        "cacheStatus" : "3",
+        "cacheStats" : "34238/34238"
+      },
+      "start" : "1576052629729",
+      "netPerf" : {
+        "midMileLatency" : "11",
+        "errCdF29" : "ERR_NONE",
+        "lastByte" : "1",
+        "clientRTT" : "7",
+        "asnum" : "133125",
+        "errCdR14" : "ERR_NONE",
+        "downloadStatus" : "1110",
+        "netOriginLatency" : "78",
+        "edgeIP" : "184.28.218.79",
+        "downloadTime" : "111"
+      },
+      "httpVer" : "2.0",
+      "cp" : "912439",
+      "respHdr" : {
+        "date" : "Date: Wed, 11 Dec 2019 08:23:49 GMT",
+        "server" : "Server: AmazonS3",
+        "accRange" : "Accept-Ranges: bytes",
+        "eTag" : "ETag: \\\"5de60df3:85be\\\"",
+        "lastMod" : "Last-Modified: Tue, 03 Dec 2019 07:25:39 GMT",
+        "allowOrigin" : "Access-Control-Allow-Origin: *",
+        "respConn" : "Connection: keep-alive"
+      },
+      "processedTime" : "1576052639380",
+      "reqHdr" : {
+        "referer" : "https://chn.datadog.test/kr/member/login?_ga=2.11192564.1305341460.1576052617-1468825588.999999999",
+        "cookie" : "RB_PCID=156567039999999; _ga=GA1.2.1468825588.99999; RB_GUID=d8851215-5510-40cf-8db9-999999; _atrk_siteuid=YBVE0xi7GQS-4X4e; lang_pc=ZH; cntry_pc=KR; cntry_gate=OT; lang_gate=EN; lang=ZH; cntry=KR; dprt.KR=D01; crc=CNY; inChannelCd=100343; alliance_pc=Y; RB_SSID=kAcFiZvZEE; _gid=GA1.2.1305341460.99999; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; JSESSIONID=a7b60672-debe-4285-b21e-9999999; lodfsAdltYn=N; _gat=1; _gat_rollup=1; dimension={\\\"dimension1\\\":\\\"PC Web\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"U\\\",\\\"dimension4\\\":\\\"U\\\",\\\"dimension5\\\":\\\"U\\\",\\\"dimension6\\\":\\\"U\\\",\\\"dimension7\\\":\\\"U\\\",\\\"dimension8\\\":\\\"N\\\",\\\"dimension9\\\":\\\"U\\\",\\\"dimension10\\\":\\\"\\\",\\\"dimension11\\\":\\\"\\\"}",
+        "reqTime" : "1576052629.72",
+        "accLang" : "en-US,en;q=0.9",
+        "accEnc" : "gzip,deflate,br"
+      },
+      "bytes" : "34238",
+      "proto" : "https",
+      "guid" : "4fda1cb827540b5c04d",
+      "status" : "200"
+    }
+  result:
+    custom:
+      cache:
+        cacheH: "0/0/0/0/0"
+        cacheHit: "1"
+        cacheStats: "34238/34238"
+        cacheStatus: "3"
+        cacheable: "1"
+      cp: "912439"
+      duration: 1.18E8
+      fwdHost: "static.datadog.test"
+      geo:
+        lat: "22.32"
+        long: "114.22"
+      guid: "4fda1cb827540b5c04d"
+      http:
+        method: "GET"
+        referer: "https://chn.datadog.test/kr/member/login?_ga=2.11192564.1305341460.1576052617-1468825588.999999999"
+        request_id: "40b5c04d"
+        status_category: "Success"
+        status_code: 200
+        url_details:
+          host: "static.datadog.test"
+          path: "/contents/images/store-img/store-content-img/1200050/02/12101050/20191203162534969d9008bf22f954879838586b99999999999.png"
+          port: "443"
+          scheme: "https"
+        useragent: "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "67"
+            minor: "0"
+            patch: "3396"
+            patch_minor: "99"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "7"
+        version: "2.0"
+      id: "2829"
+      netPerf:
+        asnum: "133125"
+        clientRTT: "7"
+        downloadStatus: "1110"
+        downloadTime: "111"
+        errCdF29: "ERR_NONE"
+        errCdR14: "ERR_NONE"
+        lastByte: "1"
+        midMileLatency: "11"
+        netOriginLatency: "78"
+      network:
+        bw: "5000"
+        bytes_written: "34238"
+        client:
+          geoip:
+            city:
+              name: "KWUNTONG"
+            country:
+              iso_code: "HK"
+          ip: "180.235.155.50"
+        destination:
+          ip: "184.28.218.79"
+        throughput: "vhigh"
+      processedTime: "1576052639380"
+      protoVer: "TLSv1.2"
+      reqHdr:
+        accEnc: "gzip,deflate,br"
+        accLang: "en-US,en;q=0.9"
+        cookie: "RB_PCID=156567039999999; _ga=GA1.2.1468825588.99999; RB_GUID=d8851215-5510-40cf-8db9-999999; _atrk_siteuid=YBVE0xi7GQS-4X4e; lang_pc=ZH; cntry_pc=KR; cntry_gate=OT; lang_gate=EN; lang=ZH; cntry=KR; dprt.KR=D01; crc=CNY; inChannelCd=100343; alliance_pc=Y; RB_SSID=kAcFiZvZEE; _gid=GA1.2.1305341460.99999; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; JSESSIONID=a7b60672-debe-4285-b21e-9999999; lodfsAdltYn=N; _gat=1; _gat_rollup=1; dimension={\\\"dimension1\\\":\\\"PC Web\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"U\\\",\\\"dimension4\\\":\\\"U\\\",\\\"dimension5\\\":\\\"U\\\",\\\"dimension6\\\":\\\"U\\\",\\\"dimension7\\\":\\\"U\\\",\\\"dimension8\\\":\\\"N\\\",\\\"dimension9\\\":\\\"U\\\",\\\"dimension10\\\":\\\"\\\",\\\"dimension11\\\":\\\"\\\"}"
+        reqTime: "1576052629.72"
+      respHdr:
+        accRange: "Accept-Ranges: bytes"
+        allowOrigin: "Access-Control-Allow-Origin: *"
+        date: "Date: Wed, 11 Dec 2019 08:23:49 GMT"
+        eTag: "ETag: \\\"5de60df3:85be\\\""
+        lastMod: "Last-Modified: Tue, 03 Dec 2019 07:25:39 GMT"
+        respConn: "Connection: keep-alive"
+        server: "Server: AmazonS3"
+      timestamp: "1576052629729"
+      type: "Raw"
+    message: |-
+      {
+        "reqPort" : "443",
+        "reqMethod" : "GET",
+        "UA" : "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36",
+        "type" : "Raw",
+        "network" : {
+          "bw" : "5000",
+          "throughput" : "vhigh"
+        },
+        "reqid" : "40b5c04d",
+        "geo" : {
+          "country" : "HK",
+          "city" : "KWUNTONG",
+          "lat" : "22.32",
+          "long" : "114.22"
+        },
+        "protoVer" : "TLSv1.2",
+        "fwdHost" : "static.datadog.test",
+        "id" : "2829",
+        "reqHost" : "static.datadog.test",
+        "reqPath" : "/contents/images/store-img/store-content-img/1200050/02/12101050/20191203162534969d9008bf22f954879838586b99999999999.png",
+        "cliIP" : "180.235.155.50",
+        "cache" : {
+          "cacheH" : "0/0/0/0/0",
+          "cacheHit" : "1",
+          "cacheable" : "1",
+          "cacheStatus" : "3",
+          "cacheStats" : "34238/34238"
+        },
+        "start" : "1576052629729",
+        "netPerf" : {
+          "midMileLatency" : "11",
+          "errCdF29" : "ERR_NONE",
+          "lastByte" : "1",
+          "clientRTT" : "7",
+          "asnum" : "133125",
+          "errCdR14" : "ERR_NONE",
+          "downloadStatus" : "1110",
+          "netOriginLatency" : "78",
+          "edgeIP" : "184.28.218.79",
+          "downloadTime" : "111"
+        },
+        "httpVer" : "2.0",
+        "cp" : "912439",
+        "respHdr" : {
+          "date" : "Date: Wed, 11 Dec 2019 08:23:49 GMT",
+          "server" : "Server: AmazonS3",
+          "accRange" : "Accept-Ranges: bytes",
+          "eTag" : "ETag: \\\"5de60df3:85be\\\"",
+          "lastMod" : "Last-Modified: Tue, 03 Dec 2019 07:25:39 GMT",
+          "allowOrigin" : "Access-Control-Allow-Origin: *",
+          "respConn" : "Connection: keep-alive"
+        },
+        "processedTime" : "1576052639380",
+        "reqHdr" : {
+          "referer" : "https://chn.datadog.test/kr/member/login?_ga=2.11192564.1305341460.1576052617-1468825588.999999999",
+          "cookie" : "RB_PCID=156567039999999; _ga=GA1.2.1468825588.99999; RB_GUID=d8851215-5510-40cf-8db9-999999; _atrk_siteuid=YBVE0xi7GQS-4X4e; lang_pc=ZH; cntry_pc=KR; cntry_gate=OT; lang_gate=EN; lang=ZH; cntry=KR; dprt.KR=D01; crc=CNY; inChannelCd=100343; alliance_pc=Y; RB_SSID=kAcFiZvZEE; _gid=GA1.2.1305341460.99999; _dc_gtm_UA-84350687-2=1; _dc_gtm_UA-84350687-3=1; JSESSIONID=a7b60672-debe-4285-b21e-9999999; lodfsAdltYn=N; _gat=1; _gat_rollup=1; dimension={\\\"dimension1\\\":\\\"PC Web\\\",\\\"dimension2\\\":\\\"%EC%A4%91%EB%AC%B8_%ED%95%9C%EA%B5%AD\\\",\\\"dimension3\\\":\\\"U\\\",\\\"dimension4\\\":\\\"U\\\",\\\"dimension5\\\":\\\"U\\\",\\\"dimension6\\\":\\\"U\\\",\\\"dimension7\\\":\\\"U\\\",\\\"dimension8\\\":\\\"N\\\",\\\"dimension9\\\":\\\"U\\\",\\\"dimension10\\\":\\\"\\\",\\\"dimension11\\\":\\\"\\\"}",
+          "reqTime" : "1576052629.72",
+          "accLang" : "en-US,en;q=0.9",
+          "accEnc" : "gzip,deflate,br"
+        },
+        "bytes" : "34238",
+        "proto" : "https",
+        "guid" : "4fda1cb827540b5c04d",
+        "status" : "200"
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1576052629729
+

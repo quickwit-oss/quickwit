@@ -1,0 +1,349 @@
+id: "elb"
+tests:
+ -
+  sample: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 0.000057 200 200 0 29 \"GET http://www.example.com:80/ HTTP/1.1\" \"curl/7.38.0\" - -"
+  result:
+    custom:
+      date_access: 1431560383945
+      duration: 1178000.0
+      elb:
+        backend_status_code: 200
+        name: "my-loadbalancer"
+        performance:
+          backend_processing_time: 1.048
+          request_processing_time: 0.073
+          response_processing_time: 0.057
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "http://www.example.com:80/"
+        url_details:
+          host: "www.example.com"
+          path: "/"
+          port: 80
+          scheme: "http"
+        useragent: "curl/7.38.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "38"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_read: 0
+        bytes_written: 29
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 0.000057 200 200 0 29 \"GET http://www.example.com:80/ HTTP/1.1\" \"curl/7.38.0\" - -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1431560383945
+ -
+  sample: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000086 0.001048 0.001337 200 200 0 57 \"GET https://www.example.com:443/ HTTP/1.1\" \"curl/7.38.0\" DHE-RSA-AES128-SHA TLSv1.2"
+  result:
+    custom:
+      date_access: 1431560383945
+      duration: 2471000.0
+      elb:
+        backend_status_code: 200
+        name: "my-loadbalancer"
+        performance:
+          backend_processing_time: 1.048
+          request_processing_time: 0.086
+          response_processing_time: 1.337
+      http:
+        method: "GET"
+        ssl:
+          cipher: "DHE-RSA-AES128-SHA"
+          protocol: "TLSv1.2"
+        status_category: "OK"
+        status_code: 200
+        url: "https://www.example.com:443/"
+        url_details:
+          host: "www.example.com"
+          path: "/"
+          port: 443
+          scheme: "https"
+        useragent: "curl/7.38.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "38"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_read: 0
+        bytes_written: 57
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000086 0.001048 0.001337 200 200 0 57 \"GET https://www.example.com:443/ HTTP/1.1\" \"curl/7.38.0\" DHE-RSA-AES128-SHA TLSv1.2"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1431560383945
+ -
+  sample: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.001069 0.000028 0.000041 - - 82 305 \"- - - \" \"-\" - -"
+  result:
+    custom:
+      date_access: 1431560383945
+      duration: 1138000.0
+      elb:
+        name: "my-loadbalancer"
+        performance:
+          backend_processing_time: 0.028
+          request_processing_time: 1.069
+          response_processing_time: 0.041
+      network:
+        bytes_read: 82
+        bytes_written: 305
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.001069 0.000028 0.000041 - - 82 305 \"- - - \" \"-\" - -"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1431560383945
+ -
+  sample: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.001065 0.000015 0.000023 - - 57 502 \"- - - \" \"-\" ECDHE-ECDSA-AES128-GCM-SHA256 TLSv1.2"
+  result:
+    custom:
+      date_access: 1431560383945
+      duration: 1103000.0
+      elb:
+        name: "my-loadbalancer"
+        performance:
+          backend_processing_time: 0.015
+          request_processing_time: 1.065
+          response_processing_time: 0.023
+      http:
+        ssl:
+          cipher: "ECDHE-ECDSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+      network:
+        bytes_read: 57
+        bytes_written: 502
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.001065 0.000015 0.000023 - - 57 502 \"- - - \" \"-\" ECDHE-ECDSA-AES128-GCM-SHA256 TLSv1.2"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1431560383945
+ -
+  sample: "https 2016-08-10T23:39:43.065466Z app/my-loadbalancer/50dc6c495c0c9188  192.168.131.39:2817 10.0.0.1:80 0.086 0.048 0.037 200 200 0 57  \"GET https://www.example.com:443/ HTTP/1.1\" \"curl/7.46.0\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2  arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets/73e2d6bc24d8a067 \"Root=1-58337281-1d84f3d73c47ec4e58577259\" www.example.com arn:aws:acm:us-east-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+  result:
+    custom:
+      date_access: 1470872383065
+      duration: 1.71E8
+      elb:
+        backend_status_code: 200
+        name: "app/my-loadbalancer/50dc6c495c0c9188"
+        performance:
+          backend_processing_time: 48.0
+          request_processing_time: 86.0
+          response_processing_time: 37.0
+      http:
+        method: "GET"
+        protocol: "https"
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "OK"
+        status_code: 200
+        url: "https://www.example.com:443/"
+        url_details:
+          host: "www.example.com"
+          path: "/"
+          port: 443
+          scheme: "https"
+        useragent: "curl/7.46.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "46"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_read: 0
+        bytes_written: 57
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "https 2016-08-10T23:39:43.065466Z app/my-loadbalancer/50dc6c495c0c9188  192.168.131.39:2817 10.0.0.1:80 0.086 0.048 0.037 200 200 0 57  \"GET https://www.example.com:443/ HTTP/1.1\" \"curl/7.46.0\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2  arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets/73e2d6bc24d8a067 \"Root=1-58337281-1d84f3d73c47ec4e58577259\" www.example.com arn:aws:acm:us-east-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1470872383065
+ -
+  sample: "https 2018-07-26T07:25:27.097202Z app/service-nginx-gopro-qa/6b9804b5390fe5d8 213.155.158.249:40906 - -1 -1 -1 400 - 0 0 \"- https://service-nginx-gopro-qa-1524415610.us-west-2.elb.amazonaws.com:443- -\" \"-\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 - \"-\" \"-\" \"arn:aws:acm:us-west-2:786930545984:certificate/1e812ad2-c509-4607-b1d4-af2f3f1ca73e\" - 2018-07-26T07:25:27.097000Z \"-\" \"-\""
+  result:
+    custom:
+      date_access: 1532589927097
+      elb:
+        name: "app/service-nginx-gopro-qa/6b9804b5390fe5d8"
+      http:
+        protocol: "https"
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "warning"
+        status_code: 400
+        url: "https://service-nginx-gopro-qa-1524415610.us-west-2.elb.amazonaws.com:443-"
+      network:
+        bytes_read: 0
+        bytes_written: 0
+        client:
+          ip: "213.155.158.249"
+          port: 40906
+    message: "https 2018-07-26T07:25:27.097202Z app/service-nginx-gopro-qa/6b9804b5390fe5d8 213.155.158.249:40906 - -1 -1 -1 400 - 0 0 \"- https://service-nginx-gopro-qa-1524415610.us-west-2.elb.amazonaws.com:443- -\" \"-\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 - \"-\" \"-\" \"arn:aws:acm:us-west-2:786930545984:certificate/1e812ad2-c509-4607-b1d4-af2f3f1ca73e\" - 2018-07-26T07:25:27.097000Z \"-\" \"-\""
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1532589927097
+ -
+  sample: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 -1 200 200 0 29 \"GET http://www.example.com:80/ HTTP/1.1\" \"curl/7.38.0\" - -"
+  result:
+    custom:
+      date_access: 1431560383945
+      elb:
+        backend_status_code: 200
+        name: "my-loadbalancer"
+        performance:
+          backend_processing_time: 1.048
+          request_processing_time: 0.073
+      http:
+        method: "GET"
+        status_category: "OK"
+        status_code: 200
+        url: "http://www.example.com:80/"
+        url_details:
+          host: "www.example.com"
+          path: "/"
+          port: 80
+          scheme: "http"
+        useragent: "curl/7.38.0"
+        useragent_details:
+          browser:
+            family: "curl"
+            major: "7"
+            minor: "38"
+            patch: "0"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_read: 0
+        bytes_written: 29
+        client:
+          ip: "192.168.131.39"
+          port: 2817
+        destination:
+          ip: "10.0.0.1"
+          port: 80
+    message: "2015-05-13T23:39:43.945958Z my-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 -1 200 200 0 29 \"GET http://www.example.com:80/ HTTP/1.1\" \"curl/7.38.0\" - -"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1431560383945
+ -
+  sample: "h2 2019-07-09T01:19:09.306877Z app/kube-ing-LB-1SRXCH1QMK2ID/187b8a917f230a5a 203.125.82.206:54191 172.20.38.240:9999 0.000 0.067 0.000 302 302 204 716 \"GET https://vic.zengrc.com:443/new-password?token=InNoYW5zaGFuLmF1eWV1bmdAc2l2YW50b3MuY29tIg.EATqPQ.e_avn4PJHlB3JVWaxav2CWIqnrY HTTP/2.0\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:197323206373:targetgroup/kube-ing-TG-1WBO4QZBZO3FE/7c02f7691135f596 \"Root=1-5d23eb8d-64840818b6fd82acf15a800a\" \"vic.zengrc.com\" \"arn:aws:acm:us-east-1:197323206373:certificate/74439ceb-a705-4cc8-bb1b-998554dc7b42\" 0 2019-07-09T01:19:09.239000Z \"forward\" \"-\" \"-\""
+  result:
+    custom:
+      TraceId: "1-5d23eb8d-64840818b6fd82acf15a800a"
+      aws:
+        arn: "arn:aws:elasticloadbalancing:us-east-1:197323206373:targetgroup/kube-ing-TG-1WBO4QZBZO3FE/7c02f7691135f596"
+      date_access: 1562635149306
+      duration: 6.7E7
+      elb:
+        backend_status_code: 302
+        name: "app/kube-ing-LB-1SRXCH1QMK2ID/187b8a917f230a5a"
+        performance:
+          backend_processing_time: 67.0
+          request_processing_time: 0.0
+          response_processing_time: 0.0
+      http:
+        method: "GET"
+        protocol: "h2"
+        ssl:
+          cipher: "ECDHE-RSA-AES128-GCM-SHA256"
+          protocol: "TLSv1.2"
+        status_category: "notice"
+        status_code: 302
+        url: "https://vic.zengrc.com:443/new-password?token=InNoYW5zaGFuLmF1eWV1bmdAc2l2YW50b3MuY29tIg.EATqPQ.e_avn4PJHlB3JVWaxav2CWIqnrY"
+        url_details:
+          host: "vic.zengrc.com"
+          path: "/new-password"
+          port: 443
+          queryString:
+            token: "InNoYW5zaGFuLmF1eWV1bmdAc2l2YW50b3MuY29tIg.EATqPQ.e_avn4PJHlB3JVWaxav2CWIqnrY"
+          scheme: "https"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "70"
+            minor: "0"
+            patch: "3538"
+            patch_minor: "77"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+        version: "2.0"
+      network:
+        bytes_read: 204
+        bytes_written: 716
+        client:
+          ip: "203.125.82.206"
+          port: 54191
+        destination:
+          ip: "172.20.38.240"
+          port: 9999
+    message: "h2 2019-07-09T01:19:09.306877Z app/kube-ing-LB-1SRXCH1QMK2ID/187b8a917f230a5a 203.125.82.206:54191 172.20.38.240:9999 0.000 0.067 0.000 302 302 204 716 \"GET https://vic.zengrc.com:443/new-password?token=InNoYW5zaGFuLmF1eWV1bmdAc2l2YW50b3MuY29tIg.EATqPQ.e_avn4PJHlB3JVWaxav2CWIqnrY HTTP/2.0\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36\" ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 arn:aws:elasticloadbalancing:us-east-1:197323206373:targetgroup/kube-ing-TG-1WBO4QZBZO3FE/7c02f7691135f596 \"Root=1-5d23eb8d-64840818b6fd82acf15a800a\" \"vic.zengrc.com\" \"arn:aws:acm:us-east-1:197323206373:certificate/74439ceb-a705-4cc8-bb1b-998554dc7b42\" 0 2019-07-09T01:19:09.239000Z \"forward\" \"-\" \"-\""
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1562635149306
+

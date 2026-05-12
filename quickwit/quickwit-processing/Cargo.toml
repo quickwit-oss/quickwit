@@ -1,0 +1,43 @@
+[package]
+name = "quickwit-processing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+fnv = { workspace = true }
+grok = "2.4.0"
+itertools = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+serde_yaml = { workspace = true }
+syslog_rfc5424 = "0.10.0"
+thiserror = { workspace = true }
+time = { workspace = true, features = ["std", "serde", "parsing", "formatting", "macros"] }
+tracing = { workspace = true }
+uaparser = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { workspace = true }
+vrl = { workspace = true }
+
+# Event-percolation for filtering
+event-percolation = { git = "ssh://git@github.com/DataDog/event-percolation.git", tag = "0.5.2" }
+
+[dev-dependencies]
+binggan = { workspace = true }
+env_logger = { workspace = true }
+serde_yaml = { workspace = true }
+
+[features]
+testsuite = []
+
+[[bin]]
+name = "convert_integrations"
+path = "src/bin/convert_integrations.rs"
+
+[[bench]]
+name = "processors_bench"
+harness = false

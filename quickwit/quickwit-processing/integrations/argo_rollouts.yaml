@@ -1,0 +1,93 @@
+id: argo_rollouts
+metric_id: argo-rollouts
+backend_only: false
+facets:
+  - groups:
+      - Argo Rollouts
+    name: Argo Resource Name
+    path: argo_rollouts.resource.name
+    source: log
+  - groups:
+      - Argo Rollouts
+    name: Argo Rollouts Name
+    path: argo_rollouts.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Argo Rollouts
+  enabled: true
+  filter:
+    query: source:argo_rollouts
+  processors:
+    - type: grok-parser
+      name: Parsing Argo Rollouts logs
+      enabled: true
+      source: message
+      samples:
+        - time="2024-03-28T20:36:30Z" level=info msg="successfully acquired lease argo-rollouts/argo-rollouts-controller-lock"
+        - time="2024-02-20T20:49:32Z" level=info msg="Start processing" resource=default/rollouts-demo
+        - time="2024-02-20T20:49:32Z" level=info msg="Processing completed" resource=default/rollouts-demo
+        - time="2024-02-20T20:49:32Z" level=info msg="Started syncing rollout" generation=4 namespace=default resourceVersion=24435167 rollout=rollouts-demo
+        - time="2024-02-20T20:49:32Z" level=info msg="No TrafficRouting Reconcilers found" namespace=default rollout=rollouts-demo
+      grok:
+        matchRules: |
+          argo_common time="%{_date}" level=%{_level} msg="%{_msg}" ?%{data::keyvalue("=","/:")}
+        supportRules: |
+          _date %{date("yyyy-MM-dd'T'HH:mm:ssZ"):timestamp}
+          _msg %{data:msg}
+          _level %{word:level}
+    - type: attribute-remapper
+      name: Map `rollout` to `argo_rollouts.name`
+      enabled: true
+      sources:
+        - rollout
+      target: argo_rollouts.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resource` to `argo_rollouts.resource.name`
+      enabled: true
+      sources:
+        - resource
+      target: argo_rollouts.resource.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `namespace` to `argo_rollouts.namespace`
+      enabled: true
+      sources:
+        - namespace
+      target: argo_rollouts.namespace
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `resourceVersion` to `argo_rollouts.resource.version`
+      enabled: true
+      sources:
+        - resourceVersion
+      target: argo_rollouts.resource.version
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

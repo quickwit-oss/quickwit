@@ -1,0 +1,16 @@
+id: "ignite"
+tests:
+ -
+  sample: "[2020-04-03 07:01:55,248][INFO ][exchange-worker-#43][FileWriteAheadLogManager] Started write-ahead log manager [mode=LOG_ONLY]"
+  result:
+    custom:
+      date: 1585897315248
+      level: "INFO"
+      logger:
+        name: "FileWriteAheadLogManager"
+        thread_id: 43
+        thread_name: "exchange-worker"
+    message: "[2020-04-03 07:01:55,248][INFO ][exchange-worker-#43][FileWriteAheadLogManager] Started write-ahead log manager [mode=LOG_ONLY]"
+    tags:
+     - "source:LOGS_SOURCE"
+

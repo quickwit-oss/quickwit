@@ -1,0 +1,99 @@
+id: "karpenter"
+tests:
+ -
+  sample: |-
+    {
+      "level" : "DEBUG",
+      "logger" : "controller",
+      "cluster-endpoint" : "https://D326AC16637B9DBA283767977E6F46D3.sk1.ca-central-1.eks.amazonaws.com",
+      "commit" : "3a61217",
+      "time" : "2023-11-28T16:49:41.858Z",
+      "message" : "discovered cluster endpoint"
+    }
+  result:
+    custom:
+      cluster-endpoint: "https://D326AC16637B9DBA283767977E6F46D3.sk1.ca-central-1.eks.amazonaws.com"
+      commit: "3a61217"
+      level: "DEBUG"
+      logger:
+        name: "controller"
+      time: "2023-11-28T16:49:41.858Z"
+      timestamp: 1701190181858
+    message: "discovered cluster endpoint"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1701190181858
+ -
+  sample: |-
+    {
+      "level" : "DEBUG",
+      "logger" : "controller",
+      "commit" : "3a61217",
+      "time" : "2023-11-28T16:49:41.683Z",
+      "message" : "retrieving region from IMDS"
+    }
+  result:
+    custom:
+      commit: "3a61217"
+      level: "DEBUG"
+      logger:
+        name: "controller"
+      time: "2023-11-28T16:49:41.683Z"
+      timestamp: 1701190181683
+    message: "retrieving region from IMDS"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1701190181683
+ -
+  sample: |-
+    {
+      "controller" : "nodeclaim.tagging",
+      "level" : "INFO",
+      "logger" : "controller",
+      "commit" : "3a61217",
+      "controllerGroup" : "karpenter.sh",
+      "time" : "2023-11-28T17:42:02.908Z",
+      "message" : "Starting Controller",
+      "controllerKind" : "NodeClaim"
+    }
+  result:
+    custom:
+      commit: "3a61217"
+      controller: "nodeclaim.tagging"
+      controllerGroup: "karpenter.sh"
+      controllerKind: "NodeClaim"
+      level: "INFO"
+      logger:
+        name: "controller"
+      time: "2023-11-28T17:42:02.908Z"
+      timestamp: 1701193322908
+    message: "Starting Controller"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1701193322908
+ -
+  sample: |-
+    {
+      "level" : "ERROR",
+      "logger" : "controller.interruption",
+      "commit" : "3a61217",
+      "time" : "2023-11-28T17:42:02.908Z",
+      "message" : "getting messages from queue, discovering queue url, fetching queue url, AWS.SimpleQueueService.NonExistentQueue: The specified queue does not exist for this wsdl version.\n\tstatus code: 400, request id: ae70a985-8d67-5d68-8513-f441f2c7e8c7"
+    }
+  result:
+    custom:
+      commit: "3a61217"
+      level: "ERROR"
+      logger:
+        name: "controller.interruption"
+      time: "2023-11-28T17:42:02.908Z"
+      timestamp: 1701193322908
+    message: "getting messages from queue, discovering queue url, fetching queue url, AWS.SimpleQueueService.NonExistentQueue: The specified queue does not exist for this wsdl version.\n\tstatus code: 400, request id: ae70a985-8d67-5d68-8513-f441f2c7e8c7"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1701193322908
+

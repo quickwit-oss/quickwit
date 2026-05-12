@@ -1,0 +1,103 @@
+id: "tenable"
+tests:
+ -
+  sample: "[06/Oct/2019:16:00:58 +0000] [info] [scheduler] [schedule_id=7, container_id=0] Started scan 'scan_name' as '1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50'"
+  result:
+    custom:
+      date: 1570377658000
+      evt:
+        name: "Scan Started"
+      function: "scheduler"
+      scan: "1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50"
+      scan_name: "scan_name"
+      status: "info"
+    message: "Started scan 'scan_name' as '1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570377658000
+ -
+  sample: "[06/Oct/2019:16:00:58 +0000] [debug, scan] done processing scan"
+  result:
+    custom:
+      date: 1570377658000
+      function: "scan"
+      status: "debug"
+    message: "done processing scan"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570377658000
+ -
+  sample: "[10/Oct/2019:18:12:20 +0000] [debug] Generating the attached csv report."
+  result:
+    custom:
+      date: 1570731140000
+      status: "debug"
+    message: "Generating the attached csv report."
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570731140000
+ -
+  sample: "[Sun Oct  6 16:00:58 2019][2168.17][user=user_name][name=scan_name][scan=1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50] : starting with Target(s): 1.2.3.4, 8.8.8.8"
+  result:
+    custom:
+      date: 1570377658000
+      scan: "1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50"
+      scan_name: "scan_name"
+      usr:
+        name: "user_name"
+    message: "starting with Target(s): 1.2.3.4, 8.8.8.8"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570377658000
+ -
+  sample: "[Thu Oct 10 18:04:25 2019][2168.17][user=user_name][name=scan_name][scan=1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50] : starting with Target(s): www.example.com"
+  result:
+    custom:
+      date: 1570730665000
+      scan: "1fc82d8d-770b-59c1-4c7d-daa1ab70dbf8c8e449bb9eaa9a50"
+      scan_name: "scan_name"
+      usr:
+        name: "user_name"
+    message: "starting with Target(s): www.example.com"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1570730665000
+ -
+  sample: "[Tue Jul 23 01:55:22 2019][2196.0][scan=6959bc4d-2c25-0fe8-1765-5826ee97a873e411400b6f167043][duration=487.00s] : Finished: 1 of 1 hosts up, 0 unscanned, 0 rejected, 0 dead, 0 timeout, 0 aborted"
+  result:
+    custom:
+      date: 1563846922000
+      duration: 4.87E11
+      evt:
+        name: "Scan Finished"
+      scan: "6959bc4d-2c25-0fe8-1765-5826ee97a873e411400b6f167043"
+    message: "Finished: 1 of 1 hosts up, 0 unscanned, 0 rejected, 0 dead, 0 timeout, 0 aborted"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1563846922000
+ -
+  sample: "1.2.3.4 mug/1571433041:0:4965 frank [18/Oct/2019:21:10:41 +0000] \"GET /folders HTTP/1.0\" 200 181 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36\""
+  result:
+    custom:
+      date: 1571433041000
+      http:
+        auth: "frank"
+        ident: "mug/1571433041:0:4965"
+        method: "GET"
+        referer: "-"
+        status_code: 200
+        url: "/folders"
+        useragent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36"
+        version: "1.0"
+      network:
+        bytes_written: 181
+        client:
+          ip: "1.2.3.4"
+    message: "1.2.3.4 mug/1571433041:0:4965 frank [18/Oct/2019:21:10:41 +0000] \"GET /folders HTTP/1.0\" 200 181 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36\""
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+

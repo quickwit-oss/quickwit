@@ -1,0 +1,101 @@
+id: yarn
+metric_id: yarn
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ApplicationID
+    path: mapreduce.application.app_id
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce Application State
+    path: mapreduce.application.state
+    source: log
+  - groups:
+      - MapReduce
+    name: MapReduce ApplicationAttemptID
+    path: mapreduce.attempt.attempt_id
+    source: log
+pipeline:
+  type: pipeline
+  name: YARN
+  enabled: true
+  filter:
+    query: source:yarn
+  processors:
+    - type: grok-parser
+      name: Parsing YARN Default formats
+      enabled: true
+      source: message
+      samples:
+        - '2020-07-14 16:43:55,460 WARN org.apache.hadoop.yarn.server.nodemanager.DirectoryCollection: Directory /tmp/hadoop-root/nm-local-dir error, used space above threshold of 90.0%, removing from list of valid directories'
+        - '2020-07-14 16:46:22,349 INFO org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeImpl: yarn-container:40113 Node Transitioned from NEW to RUNNING'
+
+        # multi-line example
+        - "2020-07-15 16:03:48,880 INFO org.apache.hadoop.yarn.server.nodemanager.NodeManager: STARTUP_MSG: /************************************************************ STARTUP_MSG: Starting NodeManager STARTUP_MSG:   host = yarn-container/172.18.0.2 STARTUP_MSG:   args = [] STARTUP_MSG:   version = 2.7.1 STARTUP_MSG:   classpath = /usr/local/hadoop/etc/hadoop/:/usr/local/hadoop/etc/hadoop/: STARTUP_MSG:   build = https://git-wip-us.apache.org/repos/asf/hadoop.git -r 15ecc87ccf4a0228f35af08fc56de536e6ce657a; compiled by 'jenkins' on 2015-06-29T06:04Z STARTUP_MSG:   java = 1.7.0_71 ************************************************************/"
+
+        # applications
+        - '2020-07-20 15:26:00,735 INFO org.apache.hadoop.yarn.server.resourcemanager.rmapp.RMAppImpl: application_1595271076848_0001 State change from KILLING to FINAL_SAVING'
+        - '2020-07-20 15:26:00,730 INFO org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptImpl: appattempt_1595271076848_0001_000001 State change from SCHEDULED to FINAL_SAVING'
+
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp}
+          _status %{word:level}
+          _logger_name %{notSpace:logger.name}
+
+        matchRules: |
+          yarn_default %{_date} %{_status}\s+%{_logger_name}:\W+%{data:msg}
+
+    - type: grok-parser
+      name: Parse app and attempt ids
+      enabled: true
+      source: msg
+      grok:
+        supportRules: |
+          _app_id %{regex("application_\\d{13}_\\d{4}"):mapreduce.application.app_id}
+          _attempt_id %{regex("appattempt_\\d{13}_\\d{4}_\\d{6}"):mapreduce.attempt.attempt_id}
+        matchRules: |
+          app_ids %{data}(%{_app_id}|%{_attempt_id})%{data}
+      samples:
+        - application_1595271076848_0001 State change from KILLING to FINAL_SAVING
+        - appattempt_1595271076848_0001_000001 State change from SCHEDULED to FINAL_SAVING
+    - type: grok-parser
+      name: Parse state per activity type
+      enabled: true
+      source: msg
+      grok:
+        supportRules: |
+          _app_id %{regex("application_\\d{13}_\\d{4}")}
+          _attempt_id %{regex("appattempt_\\d{13}_\\d{4}_\\d{6}")}
+
+          _app_state %{word:mapreduce.application.state}
+          _attempt_state %{word:mapreduce.attempt.state}
+        matchRules: |
+          app_state_change %{_app_id} State change from %{word} to %{_app_state}
+          attempt_state_change %{_attempt_id} State change from %{word} to %{_attempt_state}
+          final_state %{data} finalState=%{_app_state}
+      samples:
+        - application_1595271076848_0001 State change from KILLING to FINAL_SAVING
+        - appattempt_1595271076848_0001_000001 State change from SCHEDULED to FINAL_SAVING
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

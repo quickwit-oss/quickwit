@@ -1,0 +1,48 @@
+id: nagios
+metric_id: nagios
+backend_only: false
+pipeline:
+  type: pipeline
+  name: Nagios
+  enabled: true
+  filter:
+    query: source:nagios
+  processors:
+    - type: grok-parser
+      name: Extract Nagios message
+      enabled: true
+      source: message
+      samples:
+        - '[1606472947] SERVICE NOTIFICATION: nagiosadmin;localhost;Root Partition;CRITICAL;notify-service-by-email;DISK CRITICAL - free space: / 2023 MB (3.56% inode=68%):'
+        - '[1606472574] wproc: Registry request: name=Core Worker 39;pid=39'
+        - '[1606472584] SERVICE ALERT: localhost;HTTP;WARNING;HARD;4;HTTP WARNING: HTTP/1.1 401 Unauthorized - 695 bytes in 0.001 second response time'
+        - '[1606474830] SERVICE ALERT: localhost;Root Partition;CRITICAL;SOFT;2;DISK CRITICAL - free space: / 2020 MB (3.56% inode=68%):'
+        - '[1606810725] HOST ALERT: localhost;UP;SOFT;1;PING OK - Packet loss = 0%, RTA = 0.06 ms'
+      grok:
+        supportRules: |
+          nagios_service %{regex("(SERVICE ALERT|CURRENT SERVICE STATE)"):type}: %{data::csv("syslog.hostname,syslog.appname,level,state,attempt,message", ";")}
+          nagios_service_notification %{regex("(SERVICE NOTIFICATION)"):type}: %{data::csv("usr.name,syslog.hostname,syslog.appname,level,notification,message", ";")}
+          nagios_host %{regex("(HOST ALERT|CURRENT HOST STATE)"):type}: %{data::csv("syslog.hostname,level,state,attempt,message", ";")}
+          nagios_wproc %{regex("wproc: .*"):type}: %{data::keyvalue("="," ",";")}
+        matchRules: |
+          nagios_rule \[%{integer:timestamp}\] (%{nagios_service}|%{nagios_service_notification}|%{nagios_host}|%{nagios_wproc}|%{data:message})
+    - type: arithmetic-processor
+      name: Convert `timestamp` from second to millisecond EPOCH format
+      enabled: true
+      expression: timestamp * 1000
+      target: timestamp
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

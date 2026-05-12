@@ -1,0 +1,148 @@
+id: weblogic
+metric_id: weblogic
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Subsystem
+    path: weblogic.subsystem
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Host
+    path: weblogic.host
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Server
+    path: weblogic.server
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Thread
+    path: weblogic.thread
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic User
+    path: weblogic.user_id
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Transaction ID
+    path: weblogic.transaction_id
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Context ID
+    path: weblogic.context_id
+    source: log
+  - groups:
+      - WebLogic
+    name: WebLogic Message ID
+    path: weblogic.message_id
+    source: log
+pipeline:
+  type: pipeline
+  name: WebLogic
+  enabled: true
+  filter:
+    query: source:weblogic
+  processors:
+    - type: grok-parser
+      name: Parsing WebLogic Standard Out/Error Server Logs
+      enabled: true
+      source: message
+      samples:
+        - <Dec 6, 2021, 2:04:34,902 PM EST> <Warning> <Diagnostics> <BEA-320111> <The elapsed time since the last Harvester cycle (377 milliseconds) is unacceptably short. Skipping this cycle in order to smooth out the responses.>
+        - <Dec 6, 2021, 2:04:43,285 PM EST> <Warning> <Socket> <BEA-000449> <Closing the socket, as no data read from it on 192.168.1.4:63,157 during the configured idle timeout of 5 seconds.>
+        - '<Dec 6, 2021, 2:03:02,265 PM EST> <Notice> <JMX> <BEA-149535> <JMX Resiliency Activity Server=AdminServer : Added MBeanServerConnection in DomainRuntimeServiceMBean >'
+        - <Dec 6, 2021, 2:02:31,829 PM EST> <Notice> <JMX> <BEA-149512> <JMX Connector Server started at service:jmx:iiop://192.168.1.4:7001/jndi/weblogic.management.mbeanservers.edit.>
+        - <Dec 6, 2021, 4:21:04,727 PM GMT> <Notice> <Server> <BEA-002613> <Channel "Default" is now listening on 172.19.0.3:8001 for protocols iiop, t3, CLUSTER-BROADCAST, ldap, snmp, http.>
+      grok:
+        supportRules: |
+          _timestamp %{date("MMM d, y, h:mm:ss,SSS a z"):timestamp}
+        matchRules: |
+          stdout_stderr_format <%{_timestamp}> <%{data:level}> <%{data:weblogic.subsystem}> <%{data:weblogic.message_id}> <%{data:message}>.*
+    - type: grok-parser
+      name: Parsing Server and Domain Logs
+      enabled: true
+      source: message
+      samples:
+        - "####<Dec 6, 2021, 2:04:34,902 PM EST> <Warning> <Diagnostics> <COMP-C02FF0NQML87> <AdminServer> <[ACTIVE] ExecuteThread: '14' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <d77d9327-0117-40ce-811c-1bc7653aa16f-00000045> <1638817474902> <[severity-value: 16] [rid: 0] > <BEA-320111> <The elapsed time since the last Harvester cycle (377 milliseconds) is unacceptably short. Skipping this cycle in order to smooth out the responses.>"
+        - '####<Dec 6, 2021, 2:08:46,828 PM EST> <Info> <WorkManager> <COMP-C02FF0NQML87> <AdminServer> <Timer-2> <<WLS Kernel>> <> <d77d9327-0117-40ce-811c-1bc7653aa16f-0000001c> <1638817726828> <[severity-value: 64] [rid: 0] > <BEA-002959> <Self-tuning thread pool contains 0 running threads, 1 idle threads, and 17 standby threads>'
+        - '####<Dec 6, 2021, 2:37:55,839 PM EST> <Info> <WorkManager> <ms2> <managed-server2> <Timer-2> <<WLS Kernel>> <> <438c0324-7b56-4c73-ac53-9a2039ff995e-00000003> <1638819475839> <[severity-value: 64] [rid: 0] > <BEA-002959> <Self-tuning thread pool contains 0 running threads, 2 idle threads, and 10 standby threads>'
+        - "####<Dec 6, 2021, 7:43:22,144 PM EST> <Warning> <Socket> <wlsadmin> <admin-server> <[ACTIVE] ExecuteThread: '0' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <1b003804-43a7-48f1-b4d2-20fec7da7968-00000e34> <1638819802144> <[severity-value: 16] [rid: 0] > <BEA-000449> <Closing the socket, as no data read from it on 172.19.0.1:59,016 during the configured idle timeout of 5 seconds.>"
+        - "####<Dec 6, 2021, 2:03:02,274 PM EST> <Notice> <JMX> <COMP-C02FF0NQML87> <AdminServer> <[STANDBY] ExecuteThread: '11' for queue: 'weblogic.kernel.Default (self-tuning)'> <<WLS Kernel>> <> <d77d9327-0117-40ce-811c-1bc7653aa16f-00000025> <1638817382274> <[severity-value: 32] [rid: 0] > <BEA-149535> <JMX Resiliency Activity Server=AdminServer : Connection already exists for the server. Did not attempt to connect to the server>"
+      grok:
+        supportRules: |
+          _timestamp %{date("MMM d, y, h:mm:ss,SSS a z"):timestamp}
+        matchRules: |
+          server_format %{data}<%{_timestamp}> <%{word:level}> <%{data:weblogic.subsystem}> <%{data:weblogic.host}> <%{data:weblogic.server}> <%{data:weblogic.thread}> (<<%{data:weblogic.user_id}>>|<%{data:weblogic.user_id:nullIf("<>")}>) <%{data:weblogic.transaction_id:nullIf("")}> <%{data:weblogic.context_id}> <%{number}> %{data} <%{data:weblogic.message_id}> <%{data:message}>.*
+    - type: grok-parser
+      name: Parsing HTTP Access Logs
+      enabled: true
+      source: message
+      samples:
+        - 192.168.1.4 - weblogic [01/Dec/2021:20:24:39 -0500] "POST /medrec/registerPatient.xhtml HTTP/1.1" 200 3242
+        - 192.168.1.4 - - [01/Dec/2021:20:21:43 -0500] "GET /medrec-jaxrs-services/resources/records?patientId=2 HTTP/1.1" 200 1136
+        - 192.168.1.4 - weblogic [01/Dec/2021:20:21:36 -0500] "POST /medrec/physician/physician/viewPatient.xhtml HTTP/1.1" 200 8942
+        - 192.168.1.4 - weblogic [01/Dec/2021:20:54:58 -0500] "POST /medrec/physician/physician/viewRecordSummary.xhtml HTTP/1.1" 302 335
+        - 192.168.1.4 - - [01/Dec/2021:20:54:52 -0500] "POST /medrec-jaxrs-services/resources/records HTTP/1.1" 204 0
+      grok:
+        matchRules: |
+          http_access_format (%{ipOrHost:network.client.ip})? (%{data:http.ident:nullIf("-")})? (%{notSpace:http.auth:nullIf("-")})? \[%{date("dd/MMM/yyyy:HH:mm:ss Z"):timestamp}\] "%{word:http.method} %{notSpace:http.url} HTTP\/%{regex("\\d+\\.\\d+"):http.version}" %{integer:http.status_code:nullIf("-")} %{integer:network.bytes_written:nullIf("-")}.*
+        supportRules: ''
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: category-processor
+      name: Categorize status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category`, `level` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

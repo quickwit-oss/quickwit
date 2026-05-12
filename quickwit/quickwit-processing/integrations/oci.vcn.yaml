@@ -1,0 +1,330 @@
+id: oci.vcn
+metric_id: oci-vcn
+backend_only: false
+installation_sources:
+    - oci.vcn
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - facetType: list
+    groups:
+      - OCI
+    name: Log Group Id
+    path: oci.log_group_id
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Compartment OCID
+    path: oci.compartment_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: Tenancy OCID
+    path: oci.tenancy_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: VCN OCID
+    path: oci.vcn_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: VNIC Compartment OCID
+    path: oci.vnic_compartment_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: VNIC OCID
+    path: oci.vnic_ocid
+    source: log
+    type: string
+  - facetType: list
+    groups:
+      - OCI
+    name: VNIC Subnet OCID
+    path: oci.vnic_subnet_ocid
+    source: log
+    type: string
+pipeline:
+  type: pipeline
+  name: OCI VCN Flow Logs Pipeline
+  enabled: true
+  filter:
+    query: source:oci.vcn
+  processors:
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: attribute-remapper
+      name: Map `oracle.tenantid` to `oci.tenancy_ocid`
+      enabled: true
+      sources:
+        - oracle.tenantid
+      sourceType: attribute
+      target: oci.tenancy_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.compartmentid` to `oci.compartment_ocid`
+      enabled: true
+      sources:
+        - oracle.compartmentid
+      sourceType: attribute
+      target: oci.compartment_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.loggroupid` to `oci.log_group_id`
+      enabled: true
+      sources:
+        - oracle.loggroupid
+      sourceType: attribute
+      target: oci.log_group_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.logid` to `oci.log_id`
+      enabled: true
+      sources:
+        - oracle.logid
+      sourceType: attribute
+      target: oci.log_id
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.sourceAddress` to `network.client.ip`
+      enabled: true
+      sources:
+        - data.sourceAddress
+      sourceType: attribute
+      target: network.client.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.sourcePort` to `network.client.port`
+      enabled: true
+      sources:
+        - data.sourcePort
+      sourceType: attribute
+      target: network.client.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.destinationAddress` to `network.destination.ip`
+      enabled: true
+      sources:
+        - data.destinationAddress
+      sourceType: attribute
+      target: network.destination.ip
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.destinationPort` to `network.destination.port`
+      enabled: true
+      sources:
+        - data.destinationPort
+      sourceType: attribute
+      target: network.destination.port
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `data.action` to `evt.name`
+      enabled: true
+      sources:
+        - data.action
+      sourceType: attribute
+      target: evt.name
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: category-processor
+      name: Process status from "data.status" field
+      enabled: true
+      categories:
+        - filter:
+            query: "@data.status:OK"
+          name: OK
+        - filter:
+            query: "@data.status:NODATA"
+          name: Notice
+        - filter:
+            query: "@data.status:SKIPDATA"
+          name: "Error"
+      target: oci.status
+    - type: status-remapper
+      name: Define `oci.status` as the official status of the log
+      enabled: true
+      sources:
+        - oci.status
+    - type: geo-ip-parser
+      name: GeoIP Parser  - client
+      enabled: true
+      sources:
+        - network.client.ip
+      target: network.client.geoip
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: GeoIP Parser - destination
+      enabled: true
+      sources:
+        - network.destination.ip
+      target: network.destination.geoip
+      ip_processing_behavior: do-nothing
+    - type: attribute-remapper
+      name: Map `oracle.vcnOcid` to `oci.vcn_ocid`
+      enabled: true
+      sources:
+        - oracle.vcnOcid
+      sourceType: attribute
+      target: oci.vcn_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.vniccompartmentocid` to `oci.vnic_compartment_ocid`
+      enabled: true
+      sources:
+        - oracle.vniccompartmentocid
+      sourceType: attribute
+      target: oci.vnic_compartment_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.vnicocid` to `oci.vnic_ocid`
+      enabled: true
+      sources:
+        - oracle.vnicocid
+      sourceType: attribute
+      target: oci.vnic_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: attribute-remapper
+      name: Map `oracle.vnicsubnetocid` to `oci.vnic_subnet_ocid`
+      enabled: true
+      sources:
+        - oracle.vnicsubnetocid
+      sourceType: attribute
+      target: oci.vnic_subnet_ocid
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service

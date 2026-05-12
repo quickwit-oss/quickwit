@@ -1,0 +1,506 @@
+id: crest_data_systems_ivanti_uem
+metric_id: crest-data-systems-ivanti-uem
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Email
+    path: usr.email
+    source: log
+  - groups:
+      - User
+    name: User ID
+    path: usr.id
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Total Storage
+    path: fixed-drives-total-storage
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Network ID
+    path: adapter-network-id
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Total Capacity
+    path: total-capacity
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Category
+    path: package-category
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Available Capacity
+    path: available-capacity
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Agent Running
+    path: agent-running
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Platform Type
+    path: platform-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Description
+    path: adapter-description
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Interface
+    path: fixed-drives-interface
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Server Type
+    path: server-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Protection Status
+    path: bitlocker-protection-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Cellular Technology
+    path: cellular-technology
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Batch
+    path: ivanti-batch
+    source: tag
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Bypass SAML
+    path: bypass-saml
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Primary DNS
+    path: adapter-primary-dns
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Software Title
+    path: software-title
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Conversion Status
+    path: bitlocker-conversion-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Username
+    path: ivanti-username
+    source: tag
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Dm Partition Name
+    path: dm-partition-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Company Name
+    path: company-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Publisher
+    path: package-publisher
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Product GUID
+    path: product-guid
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Client Version
+    path: client-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Product Name
+    path: product-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Last Checkin
+    path: last-checkin
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Antivirus Product Version
+    path: antivirus-product-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Software Executable File Name
+    path: software-executable-file-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Product Title
+    path: product-title
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Size
+    path: package-size
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Name
+    path: fixed-drives-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Instance
+    path: ivanti-instance
+    source: tag
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Lock Status
+    path: bitlocker-lock-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Locked
+    path: locked
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: OS Type
+    path: os-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Blocked
+    path: blocked
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Account Source
+    path: account-source
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Device ID
+    path: device-id
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Antivirus Product Name
+    path: antivirus-product-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Software Company Name
+    path: software-company-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Super User
+    path: super-user
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Manufacturer
+    path: fixed-drives-manufacturer
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Battery Health Status
+    path: battery-health-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Encrypt Mode
+    path: bitlocker-encrypt-mode
+    source: log
+  - facetType: range
+    groups:
+      - Crest Data Systems Ivanti UEM
+    name: Uptime
+    path: cds.ivantiuem.uptime
+    source: log
+    type: double
+    unit:
+      family: time
+      name: second
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Services Name
+    path: services-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Battery Level
+    path: battery-level
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Client Last Checkin
+    path: client-last-checkin
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Quarantined
+    path: quarantined
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Locale
+    path: locale
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Encryption Percentage
+    path: bitlocker-encryption-percentage
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Physical Address
+    path: adapter-physical-address
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Owner
+    path: owner
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Kiosk State
+    path: kiosk-state
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Media Type
+    path: fixed-drives-media-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Fixed Drives Model
+    path: fixed-drives-model
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Device Name
+    path: device-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Login Failure Count
+    path: login-failure-count
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: OS Last Startup Time
+    path: os-last-startup-time
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter IP Address
+    path: adapter-ip-address
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Last Updated
+    path: last-updated
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: System Manufacturer
+    path: system-manufacturer
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Support Lock Message
+    path: support-lock-message
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Total RAM MB
+    path: total-ram-mb
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Antivirus Autoprotect
+    path: antivirus-autoprotect
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Services Status
+    path: services-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Hidden
+    path: adapter-hidden
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Battery Charging Status
+    path: battery-charging-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Firewall Enabled
+    path: adapter-firewall-enabled
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: BitLocker Gen Encrypt
+    path: bitlocker-gen-encrypt
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Ownership Type
+    path: ownership-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Device Status
+    path: device-status
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Enabled
+    path: enabled
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Account Type
+    path: account-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Mutable
+    path: mutable
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Device Type
+    path: device-type
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Invite State
+    path: invite-state
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Name
+    path: package-name
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Violated Policies
+    path: violated-policies
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Adapter Subnet Mask
+    path: adapter-subnet-mask
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Description
+    path: package-description
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Platform Version
+    path: platform-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Last Virus Scan
+    path: last-virus-scan
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Product Version
+    path: product-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package License
+    path: package-license
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Device Count
+    path: device-count
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Registration State
+    path: registration-state
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Package Version
+    path: package-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Password Never Expire
+    path: password-never-expire
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Jailbroken
+    path: jailbroken
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Groups
+    path: groups
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: OS Version
+    path: cds.ivantiuem.os-version
+    source: log
+  - groups:
+      - Crest Data Systems Ivanti UEM
+    name: Software Version
+    path: cds.ivantiuem.software-version
+    source: log
+pipeline:
+  type: pipeline
+  name: Ivanti UEM by Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_ivanti_uem
+  processors:
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map `uptime` to `cds.ivantiuem.uptime`
+      enabled: true
+      sources:
+        - uptime
+      sourceType: attribute
+      target: cds.ivantiuem.uptime
+      targetType: attribute
+      preserveSource: false
+      overrideOnConflict: false

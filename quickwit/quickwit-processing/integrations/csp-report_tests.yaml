@@ -1,0 +1,172 @@
+id: "csp-report"
+tests:
+ -
+  sample: |-
+    {
+      "http" : {
+        "useragent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+      },
+      "csp-report" : {
+        "referrer" : "",
+        "disposition" : "report",
+        "violated-directive" : "style-src cdn.example.com",
+        "original-policy" : "default-src none; style-src cdn.example.com; report-uri /_/csp-reports",
+        "document-uri" : "http://example.com/signup.html",
+        "blocked-uri" : "http://example.com/css/style.css"
+      },
+      "network" : {
+        "client" : {
+          "ip" : "108.128.146.105"
+        }
+      }
+    }
+  result:
+    custom:
+      csp-report:
+        blocked-uri: "http://example.com/css/style.css"
+        blocked-uri_details:
+          host: "example.com"
+          path: "/css/style.css"
+          scheme: "http"
+        disposition: "report"
+        document-uri: "http://example.com/signup.html"
+        document-uri_details:
+          host: "example.com"
+          path: "/signup.html"
+          scheme: "http"
+        original-policy: "default-src none; style-src cdn.example.com; report-uri /_/csp-reports"
+        referrer: ""
+        referrer_details:
+          path: ""
+        violated-directive: "style-src cdn.example.com"
+      http:
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+      network:
+        client:
+          geoip: {}
+          ip: "108.128.146.105"
+      title: "Directive style-src cdn.example.com was violated (report) at 108.128.146.105"
+    message: |-
+      {
+        "http" : {
+          "useragent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        },
+        "csp-report" : {
+          "referrer" : "",
+          "disposition" : "report",
+          "violated-directive" : "style-src cdn.example.com",
+          "original-policy" : "default-src none; style-src cdn.example.com; report-uri /_/csp-reports",
+          "document-uri" : "http://example.com/signup.html",
+          "blocked-uri" : "http://example.com/css/style.css"
+        },
+        "network" : {
+          "client" : {
+            "ip" : "108.128.146.105"
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "http" : {
+        "useragent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+      },
+      "csp-report" : {
+        "referrer" : "https://jsfiddle.net/",
+        "status-code" : 200,
+        "script-sample" : "",
+        "disposition" : "enforce",
+        "violated-directive" : "frame-ancestors",
+        "original-policy" : "frame-ancestors *.example.com; report-to custom-curl-command",
+        "document-uri" : "https://example.com/",
+        "effective-directive" : "frame-ancestors",
+        "blocked-uri" : "https://example.com/"
+      },
+      "network" : {
+        "client" : {
+          "ip" : "108.128.146.105"
+        }
+      }
+    }
+  result:
+    custom:
+      csp-report:
+        blocked-uri: "https://example.com/"
+        blocked-uri_details:
+          host: "example.com"
+          path: "/"
+          scheme: "https"
+        disposition: "enforce"
+        document-uri: "https://example.com/"
+        document-uri_details:
+          host: "example.com"
+          path: "/"
+          scheme: "https"
+        effective-directive: "frame-ancestors"
+        original-policy: "frame-ancestors *.example.com; report-to custom-curl-command"
+        referrer: "https://jsfiddle.net/"
+        referrer_details:
+          host: "jsfiddle.net"
+          path: "/"
+          scheme: "https"
+        script-sample: ""
+        status-code: 200
+        violated-directive: "frame-ancestors"
+      http:
+        useragent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "55"
+            minor: "0"
+            patch: "2883"
+            patch_minor: "87"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Linux"
+      network:
+        client:
+          geoip: {}
+          ip: "108.128.146.105"
+      title: "Directive frame-ancestors was violated (enforce) at 108.128.146.105"
+    message: |-
+      {
+        "http" : {
+          "useragent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36"
+        },
+        "csp-report" : {
+          "referrer" : "https://jsfiddle.net/",
+          "status-code" : 200,
+          "script-sample" : "",
+          "disposition" : "enforce",
+          "violated-directive" : "frame-ancestors",
+          "original-policy" : "frame-ancestors *.example.com; report-to custom-curl-command",
+          "document-uri" : "https://example.com/",
+          "effective-directive" : "frame-ancestors",
+          "blocked-uri" : "https://example.com/"
+        },
+        "network" : {
+          "client" : {
+            "ip" : "108.128.146.105"
+          }
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+

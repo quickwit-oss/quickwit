@@ -22,7 +22,6 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use fnv::FnvHashMap;
 use metrics::Counter;
-use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
@@ -33,6 +32,9 @@ use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
+};
+use quickwit_processing::{
+    DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
 };
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::{Deserialize, Serialize};

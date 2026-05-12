@@ -1,0 +1,57 @@
+id: "mesos"
+tests:
+ -
+  sample: "I0301 14:47:46.959683 89194 group.cpp:831] Syncing group operations: queue size (joins, cancels, datas) = (0, 0, 0)"
+  result:
+    custom:
+      level: "I"
+      line: 831
+      logger:
+        name: "group.cpp"
+      pid: 89194
+      timestamp: 36686866959
+    message: "Syncing group operations: queue size (joins, cancels, datas) = (0, 0, 0)"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 36686866959
+ -
+  sample: "I0301 09:51:43.015770    16 detector.cpp:152] Detected a new leader: (id='0')"
+  result:
+    custom:
+      level: "I"
+      line: 152
+      logger:
+        name: "detector.cpp"
+      pid: 16
+      timestamp: 36669103015
+    message: "Detected a new leader: (id='0')"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 36669103015
+ -
+  sample: "I0301 09:55:21.503362    15 http.cpp:391] HTTP GET for /master/roles.json from 172.28.0.1:59406 with User-Agent='Datadog Agent/7.27.0'"
+  result:
+    custom:
+      http:
+        method: "GET"
+        url: "/master/roles.json"
+        url_details:
+          path: "/master/roles.json"
+      level: "I"
+      line: 391
+      logger:
+        name: "http.cpp"
+      network:
+        client:
+          ip: "172.28.0.1"
+          port: 59406
+      pid: 15
+      timestamp: 36669321503
+    message: "I0301 09:55:21.503362    15 http.cpp:391] HTTP GET for /master/roles.json from 172.28.0.1:59406 with User-Agent='Datadog Agent/7.27.0'"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 36669321503
+

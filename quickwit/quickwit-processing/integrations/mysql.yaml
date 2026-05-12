@@ -1,0 +1,140 @@
+id: mysql
+metric_id: mysql
+backend_only: false
+facets:
+
+  - groups:
+      - Database
+    name: Operation Type
+    path: db.operation
+    source: log
+  - groups:
+      - Database
+    name: Statement
+    path: db.statement
+    source: log
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+pipeline:
+  type: pipeline
+  name: MySQL
+  enabled: true
+  filter:
+    query: source:mysql
+  processors:
+    - type: grok-parser
+      name: Parsing mysql default format
+      enabled: true
+      source: message
+      samples:
+        - 2017-12-29T12:33:33.095243Z         2 Query     SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE CREATE_OPTIONS LIKE '%partitioned%';
+        - 2017-12-29T12:04:09.954078Z 0 [Warning] System table 'plugin' is expected to be transactional.
+        - '171113 14:14:20  InnoDB: Shutdown completed; log sequence number 1595675'
+        - '2016-06-15  7:53:33 139651251140544 [Note] InnoDB: The InnoDB memory heap is disabled'
+        - |
+          # Time: 2019-11-27T10:43:13.460744Z
+          # User@Host: root[root] @ localhost [1.2.3.4]  Id:    35
+          # Query_time: 0.214922  Lock_time: 0.000184 Rows_sent: 248832  Rows_examined: 72
+          # Thread_id: 55   Killed: 0  Errno: 0
+          # Bytes_sent: 123456   Bytes_received: 0
+          SET timestamp=1574851393;
+          SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5
+      grok:
+        supportRules: |
+          _timestamp %{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"):db.date}
+          _timestamp_mariadb_post_1015 (%{date("yyyy-MM-dd HH:mm:ss"):db.date}|%{date("yyyy-MM-dd  H:mm:ss"):db.date})
+          _rawtimestamp %{date("yyMMdd HH:mm:ss"):db.date}
+          _severity %{?>notSpace:db.severity}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _operation %{word:db.operation}
+          _database %{word:db.instance}
+          _raw_query %{data:db.statement}
+          _time_line \# Time: %{notSpace}(\s+%{notSpace})?
+          _user_line \# User@Host\: %{notSpace:db.user}\s+@\s+%{notSpace:db.host}\s+\[(%{notSpace:network.client.ip})?\](\s+Id\:\s+%{number:mysql.query.id})?
+          _instance_line use %{notSpace:db.instance};
+          _set_line SET timestamp=%{number:mysql.query.timestamp};
+          _query_line %{data:db.slow_statement}
+        matchRules: |
+          query_format (%{_timestamp}\s+|(?:%{_rawtimestamp}\s+)?)%{integer:thread_id}\s+%{_operation}\s+%{_raw_query}
+
+          default_format (%{_timestamp}|%{_timestamp_mariadb_post_1015}) %{integer:thread_id} \[%{_severity}\] %{data:message}
+
+          raw_default_format %{_rawtimestamp}\s+(?>InnoDB:|\[%{_severity}\])\s+%{data:message}
+
+          slow_query_format (%{_time_line}\s)?(%{_user_line}\s)?\# %{data::keyvalue(": ")}(%{_instance_line}\s)?%{_set_line}\s%{_query_line}
+
+      # To prevent this parser from overriding 'db.operation' for regular logs,
+      # we should only apply it to slow query logs.
+      # This is achieved by storing the query in a separate, slow-log-specific field,
+      # applying the parser to that field, and then normalizing the field as 'db.statement' (see the next processor).
+    - type: grok-parser
+      name: Parse slow query operation
+      enabled: true
+      source: db.slow_statement
+      grok:
+        matchRules: |
+          slow_query_format %{word:db.operation} .*
+        supportRules: ''
+      samples:
+        - SELECT * FROM fruit f1, fruit f2, fruit f3, fruit f4, fruit f5
+    - type: attribute-remapper
+      name: Map `db.slow_statement` to `db.statement`
+      enabled: true
+      sources:
+        - db.slow_statement
+      target: db.statement
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: arithmetic-processor
+      name: Compute duration in nanoseconds from Query_time in seconds
+      enabled: true
+      expression: Query_time * 1000000000
+      target: duration
+      replaceMissing: false
+    - type: arithmetic-processor
+      name: Compute db.date in milliseconds from mysql.query.timestamp in seconds
+      enabled: true
+      expression: mysql.query.timestamp * 1000
+      target: db.date
+      replaceMissing: false
+    - type: attribute-remapper
+      name: Map `Bytes_sent` to `network.bytes_written`
+      enabled: true
+      sources:
+        - Bytes_sent
+      target: network.bytes_written
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `Bytes_received` to `network.bytes_read`
+      enabled: true
+      sources:
+        - Bytes_received
+      target: network.bytes_read
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: date-remapper
+      name: Define `db.date` as the official date of the log
+      enabled: true
+      sources:
+        - db.date
+    - type: status-remapper
+      name: Define `db.severity` as the official status of the log
+      enabled: true
+      sources:
+        - db.severity

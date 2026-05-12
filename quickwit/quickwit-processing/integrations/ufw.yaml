@@ -1,0 +1,26 @@
+id: UFW
+metric_id: UFW
+backend_only: true
+facets:
+  - groups:
+      - System
+    name: Action
+    path: system.action
+    source: log
+pipeline:
+  type: pipeline
+  name: UFW
+  enabled: true
+  filter:
+    query: source:UFW
+  processors:
+    - type: grok-parser
+      name: Parsing UFW logs
+      enabled: true
+      source: message
+      samples:
+        - '[1746862.282899] [UFW BLOCK] IN=eth0 OUT= MAC=de:ad:be:ef:12:34:56:78:00:00:00:00:00:00 SRC=1.2.3.4 DST=2.3.4.5 LEN=40 TOS=0x00 PREC=0x00 TTL=249 ID=4368 PROTO=TCP SPT=45983 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0'
+      grok:
+        supportRules: |
+        matchRules: |
+          ufw.block_audit \[%{notSpace}\] \[UFW %{word:system.action}\] %{data:system.details:keyvalue("=", "\\w.\\-_@:")}

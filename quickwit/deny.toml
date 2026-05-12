@@ -99,13 +99,6 @@ license-files = [
     { path = "LICENSE", hash = 0xbd0eed23 }
 ]
 
-# PomChi does not have a license, so we arbitrarily declare it as MIT in order to allow it.
-[[licenses.clarify]]
-name = "pomchi"
-version = "*"
-expression = "MIT"
-license-files = []
-
 # event-percolation does not have a license, so we arbitrarily declare it as MIT in order to allow it.
 [[licenses.clarify]]
 name = "event-percolation"

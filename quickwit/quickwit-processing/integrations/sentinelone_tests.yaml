@@ -1,0 +1,1374 @@
+id: "sentinelone"
+tests:
+  - sample: |-
+      {
+        "sourceProcessInfo" : {
+          "effectiveUser" : "root",
+          "filePath" : "/usr/bin/curl",
+          "pidStarttime" : "2024-03-12T07:31:00.290000Z",
+          "subsystem" : "unknown",
+          "pid" : "3842928",
+          "commandline" : "curl https://ipinfo.io",
+          "fileHashSha1" : "892369774c45fa487b26e3b353eeccffaa04fc65",
+          "loginUser" : "root",
+          "realUser" : "root",
+          "storyline" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e",
+          "name" : "curl",
+          "integrityLevel" : "unknown",
+          "user" : "Effective: root, Real: root, Login: root",
+          "uniqueId" : "bbe802d1-1ff9-b3a3-cba3-ec0716c601a3"
+        },
+        "service" : "sentinelone",
+        "ruleInfo" : {
+          "severity" : "Medium",
+          "name" : "test_custom_rule",
+          "description" : "test",
+          "scopeLevel" : "account",
+          "id" : "1859507951912869298",
+          "s1ql" : "endpoint.name='ip-172-31-80-153' src.process.cmdline='curl https://ipinfo.io' dataSource.category = 'security' dataSource.name in ('SentinelOne', 'Windows Event Logs')",
+          "treatAsThreat" : "Suspicious",
+          "queryLang" : "2.0",
+          "queryType" : "events"
+        },
+        "agentDetectionInfo" : {
+          "accountId" : "1804382808325351424",
+          "osFamily" : "linux",
+          "name" : "ip-172-31-80-153",
+          "siteId" : "1804382809315207183",
+          "osRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+          "osName" : "Linux",
+          "uuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+          "version" : "23.3.2.12",
+          "machineType" : "server"
+        },
+        "agentRealtimeInfo" : {
+          "isDecommissioned" : false,
+          "infected" : true,
+          "os" : "linux",
+          "name" : "ip-172-31-80-153",
+          "id" : "1814430588195716092",
+          "isActive" : true,
+          "uuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+          "machineType" : "server"
+        },
+        "alertInfo" : {
+          "dnsRequest" : "type:  1 ipinfo.io",
+          "reportedAt" : "2024-03-12T07:33:06.040872Z",
+          "srcIp" : "185.64.148.140",
+          "srcPort" : "443",
+          "eventType" : "DNS",
+          "source" : "STAR",
+          "createdAt" : "2024-03-12T07:32:42.370000Z",
+          "dvEventId" : "01HRRS7NEQY77HF8VJFM4Z619D_29",
+          "hitType" : "Events",
+          "dstPort" : "443",
+          "analystVerdict" : "Undefined",
+          "isEdr" : true,
+          "dnsResponse" : "185.64.148.140;",
+          "dstIp" : "185.64.148.140",
+          "alertId" : "1904213898908910018",
+          "incidentStatus" : "Unresolved",
+          "updatedAt" : "2024-03-12T07:33:06.040872Z"
+        },
+        "sourceParentProcessInfo" : {
+          "effectiveUser" : "root",
+          "filePath" : "/usr/bin/dash",
+          "pidStarttime" : "2024-03-12T07:31:00.290000Z",
+          "subsystem" : "unknown",
+          "pid" : "3842926",
+          "commandline" : "/bin/sh -c    curl https://ipinfo.io",
+          "fileHashSha1" : "42e94914c7800c7063c51d7a17aec3a2069a3769",
+          "loginUser" : "root",
+          "realUser" : "root",
+          "storyline" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e",
+          "name" : "dash",
+          "integrityLevel" : "unknown",
+          "user" : "Effective: root, Real: root, Login: root",
+          "uniqueId" : "bbe802b8-057b-c56d-2e7d-8d9a9c9b33ef"
+        },
+        "targetProcessInfo" : {
+          "tgtFileIsSigned" : "unsigned",
+          "tgtProcessStartTime" : "1970-01-01T00:00:00Z",
+          "tgtFileModifiedAt" : "1970-01-01T00:00:00Z",
+          "tgtProcIntegrityLevel" : "unknown",
+          "tgtFileCreatedAt" : "1970-01-01T00:00:00Z"
+        }
+      }
+    result:
+      custom:
+        agentDetectionInfo:
+          accountId: "1804382808325351424"
+          machineType: "server"
+          name: "ip-172-31-80-153"
+          osFamily: "linux"
+          osName: "Linux"
+          osRevision: "Ubuntu 22.04.3 LTS 6.2.0-1012-aws"
+          siteId: "1804382809315207183"
+          uuid: "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+          version: "23.3.2.12"
+        agentRealtimeInfo:
+          id: "1814430588195716092"
+          infected: true
+          isActive: true
+          isDecommissioned: false
+          machineType: "server"
+          name: "ip-172-31-80-153"
+          os: "linux"
+          uuid: "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+        alertInfo:
+          alertId: "1904213898908910018"
+          analystVerdict: "Undefined"
+          createdAt: "2024-03-12T07:32:42.370000Z"
+          dnsRequest: "type:  1 ipinfo.io"
+          dnsResponse: "185.64.148.140;"
+          dvEventId: "01HRRS7NEQY77HF8VJFM4Z619D_29"
+          eventType: "DNS"
+          hitType: "Events"
+          isEdr: true
+          reportedAt: "2024-03-12T07:33:06.040872Z"
+          source: "STAR"
+          updatedAt: "2024-03-12T07:33:06.040872Z"
+        evt:
+          name: "test_custom_rule"
+          outcome: "Unresolved"
+          severity: "Medium"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+            port: "443"
+          destination:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+            port: "443"
+        ruleInfo:
+          id: "1859507951912869298"
+          queryLang: "2.0"
+          queryType: "events"
+          s1ql: "endpoint.name='ip-172-31-80-153' src.process.cmdline='curl https://ipinfo.io' dataSource.category = 'security' dataSource.name in ('SentinelOne', 'Windows Event Logs')"
+          scopeLevel: "account"
+          treatAsThreat: "Suspicious"
+        sentinelone:
+          host_name: "ip-172-31-80-153"
+        service: "sentinelone"
+        sourceParentProcessInfo:
+          commandline: "/bin/sh -c    curl https://ipinfo.io"
+          effectiveUser: "root"
+          fileHashSha1: "42e94914c7800c7063c51d7a17aec3a2069a3769"
+          filePath: "/usr/bin/dash"
+          integrityLevel: "unknown"
+          loginUser: "root"
+          name: "dash"
+          pid: "3842926"
+          pidStarttime: "2024-03-12T07:31:00.290000Z"
+          realUser: "root"
+          storyline: "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+          subsystem: "unknown"
+          uniqueId: "bbe802b8-057b-c56d-2e7d-8d9a9c9b33ef"
+          user: "Effective: root, Real: root, Login: root"
+        sourceProcessInfo:
+          commandline: "curl https://ipinfo.io"
+          effectiveUser: "root"
+          fileHashSha1: "892369774c45fa487b26e3b353eeccffaa04fc65"
+          filePath: "/usr/bin/curl"
+          integrityLevel: "unknown"
+          loginUser: "root"
+          name: "curl"
+          pid: "3842928"
+          pidStarttime: "2024-03-12T07:31:00.290000Z"
+          realUser: "root"
+          storyline: "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+          subsystem: "unknown"
+          uniqueId: "bbe802d1-1ff9-b3a3-cba3-ec0716c601a3"
+          user: "Effective: root, Real: root, Login: root"
+        targetProcessInfo:
+          tgtFileCreatedAt: "1970-01-01T00:00:00Z"
+          tgtFileIsSigned: "unsigned"
+          tgtFileModifiedAt: "1970-01-01T00:00:00Z"
+          tgtProcIntegrityLevel: "unknown"
+          tgtProcessStartTime: "1970-01-01T00:00:00Z"
+      message: "test"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1710228762370
+  - sample: |-
+      {
+        "tgt" : {
+          "file" : {
+            "isSigned" : "unsigned"
+          }
+        },
+        "process" : {
+          "unique" : {
+            "key" : "bb121b86-9ba3-3c83-0ada-98ddfcbc9717"
+          }
+        },
+        "agent" : {
+          "version" : "23.3.2.12",
+          "uuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+        },
+        "dst" : {
+          "port" : {
+            "number" : 443
+          },
+          "ip" : {
+            "address" : "185.64.148.140"
+          }
+        },
+        "os" : {
+          "name" : "Linux"
+        },
+        "src" : {
+          "process" : {
+            "parent" : {
+              "image" : {
+                "sha1" : "42e94914c7800c7063c51d7a17aec3a2069a3769",
+                "path" : "/usr/bin/dash"
+              },
+              "displayName" : "dash",
+              "rUserName" : "root",
+              "isStorylineRoot" : false,
+              "subsystem" : "SUBSYSTEM_UNKNOWN",
+              "signedStatus" : "unsigned",
+              "rUserUid" : 0,
+              "eUserUid" : 0,
+              "pid" : 3842991,
+              "sessionId" : 0,
+              "lUserUid" : 0,
+              "eUserName" : "root",
+              "isRedirectCmdProcessor" : false,
+              "uid" : "bb121b79-8b07-4ce0-c399-5dd3b6963402",
+              "cmdline" : "/bin/sh -c    curl https://ipinfo.io",
+              "lUserName" : "root",
+              "storyline" : {
+                "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+              },
+              "name" : "dash",
+              "startTime" : 1710228840760,
+              "isNative64Bit" : false,
+              "integrityLevel" : "INTEGRITY_LEVEL_UNKNOWN"
+            },
+            "crossProcessDupThreadHandleCount" : 0,
+            "crossProcessOutOfStorylineCount" : 0,
+            "crossProcessDupRemoteProcessHandleCount" : 0,
+            "indicatorExploitationCount" : 0,
+            "childProcCount" : 0,
+            "displayName" : "curl",
+            "isStorylineRoot" : false,
+            "subsystem" : "SUBSYSTEM_UNKNOWN",
+            "crossProcessOpenProcessCount" : 0,
+            "pid" : 3842992,
+            "rUserUid" : 0,
+            "lUserUid" : 0,
+            "eUserName" : "root",
+            "indicatorEvasionCount" : 0,
+            "netConnCount" : 1,
+            "isRedirectCmdProcessor" : false,
+            "uid" : "bb121b86-9ba3-3c83-0ada-98ddfcbc9717",
+            "cmdline" : "curl https://ipinfo.io",
+            "indicatorReconnaissanceCount" : 0,
+            "crossProcessCount" : 0,
+            "lUserName" : "root",
+            "storyline" : {
+              "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+            },
+            "netConnInCount" : 0,
+            "startTime" : 1710228840770,
+            "isNative64Bit" : false,
+            "tgtFileModificationCount" : 0,
+            "tgtFileDeletionCount" : 0,
+            "image" : {
+              "sha1" : "892369774c45fa487b26e3b353eeccffaa04fc65",
+              "path" : "/usr/bin/curl"
+            },
+            "dnsCount" : 0,
+            "rUserName" : "root",
+            "indicatorGeneralCount" : 0,
+            "tgtFileCreationCount" : 0,
+            "signedStatus" : "unsigned",
+            "eUserUid" : 0,
+            "indicatorPersistenceCount" : 0,
+            "indicatorInjectionCount" : 0,
+            "sessionId" : 0,
+            "moduleCount" : 0,
+            "name" : "curl",
+            "indicatorRansomwareCount" : 0,
+            "indicatorBootConfigurationUpdateCount" : 0,
+            "netConnOutCount" : 1,
+            "registryChangeCount" : 0,
+            "integrityLevel" : "INTEGRITY_LEVEL_UNKNOWN",
+            "crossProcessThreadCreateCount" : 0,
+            "indicatorInfostealerCount" : 0,
+            "indicatorPostExploitationCount" : 0
+          },
+          "port" : {
+            "number" : 46306
+          },
+          "ip" : {
+            "address" : "172.31.80.153"
+          }
+        },
+        "i" : {
+          "scheme" : "edr",
+          "version" : "preprocess-lib-1.0"
+        },
+        "packet" : {
+          "id" : "bb27f279-da14-9551-d61a-3cd48c4d6016"
+        },
+        "url" : {
+          "address" : "testvalue"
+        },
+        "endpoint" : {
+          "os" : "linux",
+          "name" : "ip-172-31-80-153",
+          "type" : "server"
+        },
+        "site" : {
+          "id" : "1804382809315207183"
+        },
+        "mgmt" : {
+          "osRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+          "id" : "19488",
+          "url" : "usea1-partners.sentinelone.net"
+        },
+        "trace" : {
+          "id" : "01HRRSD57QY8YVYMZ4D863ZRMW"
+        },
+        "service" : "sentinelone",
+        "meta" : {
+          "event" : {
+            "name" : "TCPV4"
+          }
+        },
+        "host" : "arn:aws:s3:::dd-saas-integrations-sentinelone-sandbox",
+        "aws" : {
+          "s3" : {
+            "bucket" : "dd-saas-integrations-sentinelone-sandbox",
+            "key" : "s1/cloud_funnel/2024/03/12/account_id=1804382808325351424/2024-03-12T07-30-00Z.1.gz"
+          },
+          "invoked_function_arn" : "arn:aws:lambda:us-east-2:601427279990:function:datadog-forwarder-sentinelone-lindali-st-Forwarder-6dxy9juUb2GY",
+          "function_version" : "$LATEST"
+        },
+        "event" : {
+          "repetitionCount" : 1,
+          "dns" : {
+            "request" : "ip.info.io",
+            "response" : "A 185.64.148.140",
+            "type" : "test"
+          },
+          "time" : 1710228841751,
+          "id" : "01HRRSD57QY8YVYMZ4D863ZRMW_15",
+          "category" : "ip",
+          "type" : "IP Connect",
+          "url" : {
+            "action" : "POST"
+          },
+          "network" : {
+            "protocolName" : "https",
+            "connectionStatus" : "SUCCESS",
+            "direction" : "OUTGOING"
+          }
+        },
+        "dataSource" : {
+          "vendor" : "SentinelOne",
+          "name" : "SentinelOne",
+          "category" : "security"
+        },
+        "account" : {
+          "id" : "1804382808325351424"
+        },
+        "timestamp" : "2024-03-12T07:34:01.751Z",
+        "group" : {
+          "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+        }
+      }
+    result:
+      custom:
+        account:
+          id: "1804382808325351424"
+        agent:
+          uuid: "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+          version: "23.3.2.12"
+        aws:
+          function_version: "$LATEST"
+          invoked_function_arn: "arn:aws:lambda:us-east-2:601427279990:function:datadog-forwarder-sentinelone-lindali-st-Forwarder-6dxy9juUb2GY"
+          s3:
+            bucket: "dd-saas-integrations-sentinelone-sandbox"
+            key: "s1/cloud_funnel/2024/03/12/account_id=1804382808325351424/2024-03-12T07-30-00Z.1.gz"
+        dataSource:
+          category: "security"
+          name: "SentinelOne"
+          vendor: "SentinelOne"
+        dns:
+          answer:
+            name: "A 185.64.148.140"
+          question:
+            name: "ip.info.io"
+            type: "test"
+        endpoint:
+          name: "ip-172-31-80-153"
+          os: "linux"
+          type: "server"
+        event:
+          id: "01HRRSD57QY8YVYMZ4D863ZRMW_15"
+          network:
+            connectionStatus: "SUCCESS"
+            direction: "OUTGOING"
+            protocolName: "https"
+          repetitionCount: 1
+          time: 1710228841751
+        evt:
+          category: "ip"
+          name: "TCPV4"
+          type: "IP Connect"
+        group:
+          id: "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+        host: "arn:aws:s3:::dd-saas-integrations-sentinelone-sandbox"
+        http:
+          method: "POST"
+          url: "testvalue"
+        i:
+          scheme: "edr"
+          version: "preprocess-lib-1.0"
+        mgmt:
+          id: "19488"
+          osRevision: "Ubuntu 22.04.3 LTS 6.2.0-1012-aws"
+          url: "usea1-partners.sentinelone.net"
+        network:
+          client:
+            geoip: {}
+            ip: "172.31.80.153"
+            port: 46306
+          destination:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+            port: 443
+        os:
+          name: "Linux"
+        packet:
+          id: "bb27f279-da14-9551-d61a-3cd48c4d6016"
+        process:
+          unique:
+            key: "bb121b86-9ba3-3c83-0ada-98ddfcbc9717"
+        sentinelone:
+          host_name: "ip-172-31-80-153"
+        service: "sentinelone"
+        site:
+          id: "1804382809315207183"
+        src:
+          process:
+            childProcCount: 0
+            cmdline: "curl https://ipinfo.io"
+            crossProcessCount: 0
+            crossProcessDupRemoteProcessHandleCount: 0
+            crossProcessDupThreadHandleCount: 0
+            crossProcessOpenProcessCount: 0
+            crossProcessOutOfStorylineCount: 0
+            crossProcessThreadCreateCount: 0
+            displayName: "curl"
+            dnsCount: 0
+            eUserName: "root"
+            eUserUid: 0
+            image:
+              path: "/usr/bin/curl"
+              sha1: "892369774c45fa487b26e3b353eeccffaa04fc65"
+            indicatorBootConfigurationUpdateCount: 0
+            indicatorEvasionCount: 0
+            indicatorExploitationCount: 0
+            indicatorGeneralCount: 0
+            indicatorInfostealerCount: 0
+            indicatorInjectionCount: 0
+            indicatorPersistenceCount: 0
+            indicatorPostExploitationCount: 0
+            indicatorRansomwareCount: 0
+            indicatorReconnaissanceCount: 0
+            integrityLevel: "INTEGRITY_LEVEL_UNKNOWN"
+            isNative64Bit: false
+            isRedirectCmdProcessor: false
+            isStorylineRoot: false
+            lUserName: "root"
+            lUserUid: 0
+            moduleCount: 0
+            name: "curl"
+            netConnCount: 1
+            netConnInCount: 0
+            netConnOutCount: 1
+            parent:
+              cmdline: "/bin/sh -c    curl https://ipinfo.io"
+              displayName: "dash"
+              eUserName: "root"
+              eUserUid: 0
+              image:
+                path: "/usr/bin/dash"
+                sha1: "42e94914c7800c7063c51d7a17aec3a2069a3769"
+              integrityLevel: "INTEGRITY_LEVEL_UNKNOWN"
+              isNative64Bit: false
+              isRedirectCmdProcessor: false
+              isStorylineRoot: false
+              lUserName: "root"
+              lUserUid: 0
+              name: "dash"
+              pid: 3842991
+              rUserName: "root"
+              rUserUid: 0
+              sessionId: 0
+              signedStatus: "unsigned"
+              startTime: 1710228840760
+              storyline:
+                id: "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+              subsystem: "SUBSYSTEM_UNKNOWN"
+              uid: "bb121b79-8b07-4ce0-c399-5dd3b6963402"
+            pid: 3842992
+            rUserName: "root"
+            rUserUid: 0
+            registryChangeCount: 0
+            sessionId: 0
+            signedStatus: "unsigned"
+            startTime: 1710228840770
+            storyline:
+              id: "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+            subsystem: "SUBSYSTEM_UNKNOWN"
+            tgtFileCreationCount: 0
+            tgtFileDeletionCount: 0
+            tgtFileModificationCount: 0
+            uid: "bb121b86-9ba3-3c83-0ada-98ddfcbc9717"
+        tgt:
+          file:
+            isSigned: "unsigned"
+        timestamp: "2024-03-12T07:34:01.751Z"
+        trace:
+          id: "01HRRSD57QY8YVYMZ4D863ZRMW"
+      message: |-
+        {
+          "tgt" : {
+            "file" : {
+              "isSigned" : "unsigned"
+            }
+          },
+          "process" : {
+            "unique" : {
+              "key" : "bb121b86-9ba3-3c83-0ada-98ddfcbc9717"
+            }
+          },
+          "agent" : {
+            "version" : "23.3.2.12",
+            "uuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+          },
+          "dst" : {
+            "port" : {
+              "number" : 443
+            },
+            "ip" : {
+              "address" : "185.64.148.140"
+            }
+          },
+          "os" : {
+            "name" : "Linux"
+          },
+          "src" : {
+            "process" : {
+              "parent" : {
+                "image" : {
+                  "sha1" : "42e94914c7800c7063c51d7a17aec3a2069a3769",
+                  "path" : "/usr/bin/dash"
+                },
+                "displayName" : "dash",
+                "rUserName" : "root",
+                "isStorylineRoot" : false,
+                "subsystem" : "SUBSYSTEM_UNKNOWN",
+                "signedStatus" : "unsigned",
+                "rUserUid" : 0,
+                "eUserUid" : 0,
+                "pid" : 3842991,
+                "sessionId" : 0,
+                "lUserUid" : 0,
+                "eUserName" : "root",
+                "isRedirectCmdProcessor" : false,
+                "uid" : "bb121b79-8b07-4ce0-c399-5dd3b6963402",
+                "cmdline" : "/bin/sh -c    curl https://ipinfo.io",
+                "lUserName" : "root",
+                "storyline" : {
+                  "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+                },
+                "name" : "dash",
+                "startTime" : 1710228840760,
+                "isNative64Bit" : false,
+                "integrityLevel" : "INTEGRITY_LEVEL_UNKNOWN"
+              },
+              "crossProcessDupThreadHandleCount" : 0,
+              "crossProcessOutOfStorylineCount" : 0,
+              "crossProcessDupRemoteProcessHandleCount" : 0,
+              "indicatorExploitationCount" : 0,
+              "childProcCount" : 0,
+              "displayName" : "curl",
+              "isStorylineRoot" : false,
+              "subsystem" : "SUBSYSTEM_UNKNOWN",
+              "crossProcessOpenProcessCount" : 0,
+              "pid" : 3842992,
+              "rUserUid" : 0,
+              "lUserUid" : 0,
+              "eUserName" : "root",
+              "indicatorEvasionCount" : 0,
+              "netConnCount" : 1,
+              "isRedirectCmdProcessor" : false,
+              "uid" : "bb121b86-9ba3-3c83-0ada-98ddfcbc9717",
+              "cmdline" : "curl https://ipinfo.io",
+              "indicatorReconnaissanceCount" : 0,
+              "crossProcessCount" : 0,
+              "lUserName" : "root",
+              "storyline" : {
+                "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+              },
+              "netConnInCount" : 0,
+              "startTime" : 1710228840770,
+              "isNative64Bit" : false,
+              "tgtFileModificationCount" : 0,
+              "tgtFileDeletionCount" : 0,
+              "image" : {
+                "sha1" : "892369774c45fa487b26e3b353eeccffaa04fc65",
+                "path" : "/usr/bin/curl"
+              },
+              "dnsCount" : 0,
+              "rUserName" : "root",
+              "indicatorGeneralCount" : 0,
+              "tgtFileCreationCount" : 0,
+              "signedStatus" : "unsigned",
+              "eUserUid" : 0,
+              "indicatorPersistenceCount" : 0,
+              "indicatorInjectionCount" : 0,
+              "sessionId" : 0,
+              "moduleCount" : 0,
+              "name" : "curl",
+              "indicatorRansomwareCount" : 0,
+              "indicatorBootConfigurationUpdateCount" : 0,
+              "netConnOutCount" : 1,
+              "registryChangeCount" : 0,
+              "integrityLevel" : "INTEGRITY_LEVEL_UNKNOWN",
+              "crossProcessThreadCreateCount" : 0,
+              "indicatorInfostealerCount" : 0,
+              "indicatorPostExploitationCount" : 0
+            },
+            "port" : {
+              "number" : 46306
+            },
+            "ip" : {
+              "address" : "172.31.80.153"
+            }
+          },
+          "i" : {
+            "scheme" : "edr",
+            "version" : "preprocess-lib-1.0"
+          },
+          "packet" : {
+            "id" : "bb27f279-da14-9551-d61a-3cd48c4d6016"
+          },
+          "url" : {
+            "address" : "testvalue"
+          },
+          "endpoint" : {
+            "os" : "linux",
+            "name" : "ip-172-31-80-153",
+            "type" : "server"
+          },
+          "site" : {
+            "id" : "1804382809315207183"
+          },
+          "mgmt" : {
+            "osRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+            "id" : "19488",
+            "url" : "usea1-partners.sentinelone.net"
+          },
+          "trace" : {
+            "id" : "01HRRSD57QY8YVYMZ4D863ZRMW"
+          },
+          "service" : "sentinelone",
+          "meta" : {
+            "event" : {
+              "name" : "TCPV4"
+            }
+          },
+          "host" : "arn:aws:s3:::dd-saas-integrations-sentinelone-sandbox",
+          "aws" : {
+            "s3" : {
+              "bucket" : "dd-saas-integrations-sentinelone-sandbox",
+              "key" : "s1/cloud_funnel/2024/03/12/account_id=1804382808325351424/2024-03-12T07-30-00Z.1.gz"
+            },
+            "invoked_function_arn" : "arn:aws:lambda:us-east-2:601427279990:function:datadog-forwarder-sentinelone-lindali-st-Forwarder-6dxy9juUb2GY",
+            "function_version" : "$LATEST"
+          },
+          "event" : {
+            "repetitionCount" : 1,
+            "dns" : {
+              "request" : "ip.info.io",
+              "response" : "A 185.64.148.140",
+              "type" : "test"
+            },
+            "time" : 1710228841751,
+            "id" : "01HRRSD57QY8YVYMZ4D863ZRMW_15",
+            "category" : "ip",
+            "type" : "IP Connect",
+            "url" : {
+              "action" : "POST"
+            },
+            "network" : {
+              "protocolName" : "https",
+              "connectionStatus" : "SUCCESS",
+              "direction" : "OUTGOING"
+            }
+          },
+          "dataSource" : {
+            "vendor" : "SentinelOne",
+            "name" : "SentinelOne",
+            "category" : "security"
+          },
+          "account" : {
+            "id" : "1804382808325351424"
+          },
+          "timestamp" : "2024-03-12T07:34:01.751Z",
+          "group" : {
+            "id" : "ac94f371-33a0-f4ec-7ad3-bb5d841e4b9e"
+          }
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1710228841751
+  - sample: |-
+      {
+        "mitigationStatus" : [ {
+          "groupNotFound" : false,
+          "reportId" : "1904217506265050714",
+          "lastUpdate" : "2024-03-12T07:40:16.072583Z",
+          "mitigationStartedAt" : "2024-03-12T07:40:16.066495Z",
+          "action" : "kill",
+          "agentSupportsReport" : true,
+          "mitigationEndedAt" : "2024-03-12T07:40:16.066496Z",
+          "status" : "success"
+        }, {
+          "groupNotFound" : false,
+          "latestReport" : "/threats/mitigation-report/1904217505484910153",
+          "actionsCounters" : {
+            "pendingReboot" : 0,
+            "total" : 1,
+            "success" : 1,
+            "notFound" : 0,
+            "failed" : 0
+          },
+          "reportId" : "1904217505484910153",
+          "lastUpdate" : "2024-03-12T07:40:15.979376Z",
+          "mitigationStartedAt" : "2024-03-12T07:40:14.283000Z",
+          "action" : "quarantine",
+          "agentSupportsReport" : true,
+          "mitigationEndedAt" : "2024-03-12T07:40:14.283000Z",
+          "status" : "success"
+        } ],
+        "threatInfo" : {
+          "threatId" : "1904217491660483932",
+          "mitigationStatusDescription" : "Mitigated",
+          "cloudFilesHashVerdict" : "black",
+          "confidenceLevel" : "malicious",
+          "mitigationStatus" : "mitigated",
+          "rebootRequired" : false,
+          "externalTicketExists" : false,
+          "originatorProcess" : "pwsh",
+          "classificationSource" : "Engine",
+          "processUser" : "ubuntu",
+          "analystVerdictDescription" : "Undefined",
+          "automaticallyResolved" : false,
+          "createdAt" : "2024-03-12T07:40:14.331253Z",
+          "detectionEngines" : [ {
+            "title" : "SentinelOne Cloud",
+            "key" : "sentinelone_cloud"
+          } ],
+          "engines" : [ "SentinelOne Cloud" ],
+          "storyline" : "bb68c1c2-b148-3013-73d3-a09e37638825",
+          "initiatingUsername" : "test",
+          "pendingActions" : false,
+          "collectionId" : "1545762775092968901",
+          "initiatingUserid" : "test",
+          "initiatedBy" : "agent_policy",
+          "incidentStatus" : "unresolved",
+          "updatedAt" : "2024-03-12T07:40:16.070926Z",
+          "identifiedAt" : "2024-03-12T07:40:14.284576Z",
+          "filePath" : "/home/ubuntu/AtomicRedTeam/tmp/atomic-red-team-master/atomics/T1134.001/bin/BadPotato.exe",
+          "classification" : "Malware",
+          "sha1" : "db2454bfcad98ebfc9999f503064843940083a45",
+          "incidentStatusDescription" : "Unresolved",
+          "detectionType" : "static",
+          "analystVerdict" : "undefined",
+          "isFileless" : false,
+          "fileSize" : 61440,
+          "threatName" : "BadPotato.exe",
+          "failedActions" : false,
+          "mitigatedPreemptively" : false,
+          "initiatedByDescription" : "Agent Policy"
+        },
+        "whiteningOptions" : [ "hash" ],
+        "service" : "sentinelone",
+        "agentDetectionInfo" : {
+          "agentOsName" : "Linux",
+          "accountName" : "Datadog, Inc.",
+          "agentLastLoggedInUserName" : "",
+          "groupId" : "1814412925151066175",
+          "agentRegisteredAt" : "2023-11-09T10:29:41.352902Z",
+          "agentDomain" : "ec2.internal",
+          "siteName" : "Default site",
+          "agentMitigationMode" : "protect",
+          "accountId" : "1804382808325351424",
+          "groupName" : "Linux Agents",
+          "agentOsRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+          "agentVersion" : "23.3.2.12",
+          "siteId" : "1804382809315207183",
+          "cloudProviders" : {
+            "AWS" : {
+              "awsSecurityGroups" : [ "launch-wizard-16" ],
+              "cloudInstanceId" : "i-0263bb4b21f60e020",
+              "cloudNetwork" : "vpc-07abacd02c49b7c6d",
+              "cloudAccount" : "677301038893",
+              "cloudLocation" : "us-east-1",
+              "cloudInstanceSize" : "t2.medium",
+              "cloudTags" : [ "Endpoint does not have sufficient permissions to fetch tags" ],
+              "cloudImage" : "ami-0fc5d935ebf8bc3bc",
+              "awsSubnetIds" : [ "subnet-0521c2a8ac8224991" ]
+            }
+          },
+          "agentIpV6" : "fe80::1010:36ff:fef0:6a37",
+          "agentUuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+          "agentIpV4" : "172.31.80.153",
+          "externalIp" : "54.152.229.118"
+        },
+        "agentRealtimeInfo" : {
+          "activeThreats" : 1,
+          "agentId" : "1814430588195716092",
+          "rebootRequired" : false,
+          "agentComputerName" : "ip-172-31-80-153",
+          "agentInfected" : true,
+          "scanStartedAt" : "2023-11-09T10:29:50.720993Z",
+          "accountName" : "Datadog, Inc.",
+          "agentIsDecommissioned" : false,
+          "groupId" : "1814412925151066175",
+          "agentDomain" : "ec2.internal",
+          "siteName" : "Default site",
+          "agentMitigationMode" : "protect",
+          "agentIsActive" : true,
+          "agentMachineType" : "server",
+          "agentNetworkStatus" : "connected",
+          "agentOsName" : "Linux",
+          "scanStatus" : "finished",
+          "agentOsType" : "linux",
+          "accountId" : "1804382808325351424",
+          "groupName" : "Linux Agents",
+          "networkInterfaces" : [ {
+            "inet" : [ "172.31.80.153" ],
+            "name" : "eth0",
+            "inet6" : [ "fe80::1010:36ff:fef0:6a37" ],
+            "id" : "1814430588204104701",
+            "physical" : "12:10:36:F0:6A:37"
+          } ],
+          "agentOsRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+          "agentVersion" : "23.3.2.12",
+          "siteId" : "1804382809315207183",
+          "operationalState" : "na",
+          "agentUuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+          "scanFinishedAt" : "2023-11-09T10:44:20.444336Z"
+        },
+        "id" : "1904217491660483932"
+      }
+    result:
+      custom:
+        agentDetectionInfo:
+          accountId: "1804382808325351424"
+          accountName: "Datadog, Inc."
+          agentDomain: "ec2.internal"
+          agentIpV4: "172.31.80.153"
+          agentIpV6: "fe80::1010:36ff:fef0:6a37"
+          agentLastLoggedInUserName: ""
+          agentMitigationMode: "protect"
+          agentOsName: "Linux"
+          agentOsRevision: "Ubuntu 22.04.3 LTS 6.2.0-1012-aws"
+          agentRegisteredAt: "2023-11-09T10:29:41.352902Z"
+          agentUuid: "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+          agentVersion: "23.3.2.12"
+          cloudProviders:
+            AWS:
+              awsSecurityGroups:
+                - "launch-wizard-16"
+              awsSubnetIds:
+                - "subnet-0521c2a8ac8224991"
+              cloudAccount: "677301038893"
+              cloudImage: "ami-0fc5d935ebf8bc3bc"
+              cloudInstanceId: "i-0263bb4b21f60e020"
+              cloudInstanceSize: "t2.medium"
+              cloudLocation: "us-east-1"
+              cloudNetwork: "vpc-07abacd02c49b7c6d"
+              cloudTags:
+                - "Endpoint does not have sufficient permissions to fetch tags"
+          externalIp: "54.152.229.118"
+          groupId: "1814412925151066175"
+          groupName: "Linux Agents"
+          siteId: "1804382809315207183"
+          siteName: "Default site"
+        agentRealtimeInfo:
+          accountId: "1804382808325351424"
+          accountName: "Datadog, Inc."
+          activeThreats: 1
+          agentComputerName: "ip-172-31-80-153"
+          agentDomain: "ec2.internal"
+          agentId: "1814430588195716092"
+          agentInfected: true
+          agentIsActive: true
+          agentIsDecommissioned: false
+          agentMachineType: "server"
+          agentMitigationMode: "protect"
+          agentNetworkStatus: "connected"
+          agentOsName: "Linux"
+          agentOsRevision: "Ubuntu 22.04.3 LTS 6.2.0-1012-aws"
+          agentOsType: "linux"
+          agentUuid: "95abd3d0-746c-3a4c-698e-b7897a1ba86a"
+          agentVersion: "23.3.2.12"
+          groupId: "1814412925151066175"
+          groupName: "Linux Agents"
+          networkInterfaces:
+            - inet:
+                - "172.31.80.153"
+              name: "eth0"
+              inet6:
+                - "fe80::1010:36ff:fef0:6a37"
+              id: "1814430588204104701"
+              physical: "12:10:36:F0:6A:37"
+          operationalState: "na"
+          rebootRequired: false
+          scanFinishedAt: "2023-11-09T10:44:20.444336Z"
+          scanStartedAt: "2023-11-09T10:29:50.720993Z"
+          scanStatus: "finished"
+          siteId: "1804382809315207183"
+          siteName: "Default site"
+        evt:
+          category: "Malware"
+          name: "BadPotato.exe"
+          outcome: "unresolved"
+        id: "1904217491660483932"
+        mitigationStatus:
+          - groupNotFound: false
+            reportId: "1904217506265050714"
+            lastUpdate: "2024-03-12T07:40:16.072583Z"
+            mitigationStartedAt: "2024-03-12T07:40:16.066495Z"
+            action: "kill"
+            agentSupportsReport: true
+            mitigationEndedAt: "2024-03-12T07:40:16.066496Z"
+            status: "success"
+          - groupNotFound: false
+            latestReport: "/threats/mitigation-report/1904217505484910153"
+            actionsCounters:
+              pendingReboot: 0
+              total: 1
+              success: 1
+              notFound: 0
+              failed: 0
+            reportId: "1904217505484910153"
+            lastUpdate: "2024-03-12T07:40:15.979376Z"
+            mitigationStartedAt: "2024-03-12T07:40:14.283000Z"
+            action: "quarantine"
+            agentSupportsReport: true
+            mitigationEndedAt: "2024-03-12T07:40:14.283000Z"
+            status: "success"
+        sentinelone:
+          agentRealtimeInfo:
+            agentgroupName: "Linux Agents"
+          host_name: "ip-172-31-80-153"
+          threatInfo:
+            analystVerdict: "undefined"
+            classificationSource: "Engine"
+            confidenceLevel: "malicious"
+            detectionType: "static"
+            mitigationStatus: "mitigated"
+        service: "sentinelone"
+        threatInfo:
+          analystVerdict: "undefined"
+          analystVerdictDescription: "Undefined"
+          automaticallyResolved: false
+          classificationSource: "Engine"
+          cloudFilesHashVerdict: "black"
+          collectionId: "1545762775092968901"
+          confidenceLevel: "malicious"
+          createdAt: "2024-03-12T07:40:14.331253Z"
+          detectionEngines:
+            - title: "SentinelOne Cloud"
+              key: "sentinelone_cloud"
+          detectionType: "static"
+          engines:
+            - "SentinelOne Cloud"
+          externalTicketExists: false
+          failedActions: false
+          filePath: "/home/ubuntu/AtomicRedTeam/tmp/atomic-red-team-master/atomics/T1134.001/bin/BadPotato.exe"
+          fileSize: 61440
+          identifiedAt: "2024-03-12T07:40:14.284576Z"
+          incidentStatusDescription: "Unresolved"
+          initiatedBy: "agent_policy"
+          initiatedByDescription: "Agent Policy"
+          isFileless: false
+          mitigatedPreemptively: false
+          mitigationStatus: "mitigated"
+          mitigationStatusDescription: "Mitigated"
+          originatorProcess: "pwsh"
+          pendingActions: false
+          processUser: "ubuntu"
+          rebootRequired: false
+          sha1: "db2454bfcad98ebfc9999f503064843940083a45"
+          storyline: "bb68c1c2-b148-3013-73d3-a09e37638825"
+          threatId: "1904217491660483932"
+          updatedAt: "2024-03-12T07:40:16.070926Z"
+        usr:
+          id: "test"
+          name: "test"
+        whiteningOptions:
+          - "hash"
+      message: |-
+        {
+          "mitigationStatus" : [ {
+            "groupNotFound" : false,
+            "reportId" : "1904217506265050714",
+            "lastUpdate" : "2024-03-12T07:40:16.072583Z",
+            "mitigationStartedAt" : "2024-03-12T07:40:16.066495Z",
+            "action" : "kill",
+            "agentSupportsReport" : true,
+            "mitigationEndedAt" : "2024-03-12T07:40:16.066496Z",
+            "status" : "success"
+          }, {
+            "groupNotFound" : false,
+            "latestReport" : "/threats/mitigation-report/1904217505484910153",
+            "actionsCounters" : {
+              "pendingReboot" : 0,
+              "total" : 1,
+              "success" : 1,
+              "notFound" : 0,
+              "failed" : 0
+            },
+            "reportId" : "1904217505484910153",
+            "lastUpdate" : "2024-03-12T07:40:15.979376Z",
+            "mitigationStartedAt" : "2024-03-12T07:40:14.283000Z",
+            "action" : "quarantine",
+            "agentSupportsReport" : true,
+            "mitigationEndedAt" : "2024-03-12T07:40:14.283000Z",
+            "status" : "success"
+          } ],
+          "threatInfo" : {
+            "threatId" : "1904217491660483932",
+            "mitigationStatusDescription" : "Mitigated",
+            "cloudFilesHashVerdict" : "black",
+            "confidenceLevel" : "malicious",
+            "mitigationStatus" : "mitigated",
+            "rebootRequired" : false,
+            "externalTicketExists" : false,
+            "originatorProcess" : "pwsh",
+            "classificationSource" : "Engine",
+            "processUser" : "ubuntu",
+            "analystVerdictDescription" : "Undefined",
+            "automaticallyResolved" : false,
+            "createdAt" : "2024-03-12T07:40:14.331253Z",
+            "detectionEngines" : [ {
+              "title" : "SentinelOne Cloud",
+              "key" : "sentinelone_cloud"
+            } ],
+            "engines" : [ "SentinelOne Cloud" ],
+            "storyline" : "bb68c1c2-b148-3013-73d3-a09e37638825",
+            "initiatingUsername" : "test",
+            "pendingActions" : false,
+            "collectionId" : "1545762775092968901",
+            "initiatingUserid" : "test",
+            "initiatedBy" : "agent_policy",
+            "incidentStatus" : "unresolved",
+            "updatedAt" : "2024-03-12T07:40:16.070926Z",
+            "identifiedAt" : "2024-03-12T07:40:14.284576Z",
+            "filePath" : "/home/ubuntu/AtomicRedTeam/tmp/atomic-red-team-master/atomics/T1134.001/bin/BadPotato.exe",
+            "classification" : "Malware",
+            "sha1" : "db2454bfcad98ebfc9999f503064843940083a45",
+            "incidentStatusDescription" : "Unresolved",
+            "detectionType" : "static",
+            "analystVerdict" : "undefined",
+            "isFileless" : false,
+            "fileSize" : 61440,
+            "threatName" : "BadPotato.exe",
+            "failedActions" : false,
+            "mitigatedPreemptively" : false,
+            "initiatedByDescription" : "Agent Policy"
+          },
+          "whiteningOptions" : [ "hash" ],
+          "service" : "sentinelone",
+          "agentDetectionInfo" : {
+            "agentOsName" : "Linux",
+            "accountName" : "Datadog, Inc.",
+            "agentLastLoggedInUserName" : "",
+            "groupId" : "1814412925151066175",
+            "agentRegisteredAt" : "2023-11-09T10:29:41.352902Z",
+            "agentDomain" : "ec2.internal",
+            "siteName" : "Default site",
+            "agentMitigationMode" : "protect",
+            "accountId" : "1804382808325351424",
+            "groupName" : "Linux Agents",
+            "agentOsRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+            "agentVersion" : "23.3.2.12",
+            "siteId" : "1804382809315207183",
+            "cloudProviders" : {
+              "AWS" : {
+                "awsSecurityGroups" : [ "launch-wizard-16" ],
+                "cloudInstanceId" : "i-0263bb4b21f60e020",
+                "cloudNetwork" : "vpc-07abacd02c49b7c6d",
+                "cloudAccount" : "677301038893",
+                "cloudLocation" : "us-east-1",
+                "cloudInstanceSize" : "t2.medium",
+                "cloudTags" : [ "Endpoint does not have sufficient permissions to fetch tags" ],
+                "cloudImage" : "ami-0fc5d935ebf8bc3bc",
+                "awsSubnetIds" : [ "subnet-0521c2a8ac8224991" ]
+              }
+            },
+            "agentIpV6" : "fe80::1010:36ff:fef0:6a37",
+            "agentUuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+            "agentIpV4" : "172.31.80.153",
+            "externalIp" : "54.152.229.118"
+          },
+          "agentRealtimeInfo" : {
+            "activeThreats" : 1,
+            "agentId" : "1814430588195716092",
+            "rebootRequired" : false,
+            "agentComputerName" : "ip-172-31-80-153",
+            "agentInfected" : true,
+            "scanStartedAt" : "2023-11-09T10:29:50.720993Z",
+            "accountName" : "Datadog, Inc.",
+            "agentIsDecommissioned" : false,
+            "groupId" : "1814412925151066175",
+            "agentDomain" : "ec2.internal",
+            "siteName" : "Default site",
+            "agentMitigationMode" : "protect",
+            "agentIsActive" : true,
+            "agentMachineType" : "server",
+            "agentNetworkStatus" : "connected",
+            "agentOsName" : "Linux",
+            "scanStatus" : "finished",
+            "agentOsType" : "linux",
+            "accountId" : "1804382808325351424",
+            "groupName" : "Linux Agents",
+            "networkInterfaces" : [ {
+              "inet" : [ "172.31.80.153" ],
+              "name" : "eth0",
+              "inet6" : [ "fe80::1010:36ff:fef0:6a37" ],
+              "id" : "1814430588204104701",
+              "physical" : "12:10:36:F0:6A:37"
+            } ],
+            "agentOsRevision" : "Ubuntu 22.04.3 LTS 6.2.0-1012-aws",
+            "agentVersion" : "23.3.2.12",
+            "siteId" : "1804382809315207183",
+            "operationalState" : "na",
+            "agentUuid" : "95abd3d0-746c-3a4c-698e-b7897a1ba86a",
+            "scanFinishedAt" : "2023-11-09T10:44:20.444336Z"
+          },
+          "id" : "1904217491660483932"
+        }
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1710229216070
+  - sample: |-
+      {
+        "data" : {
+          "deactivationPeriodInDays" : "90",
+          "role" : "Viewer",
+          "accountName" : "Datadog, Inc.",
+          "fullScopeDetails" : "Site Default site of Account Datadog, Inc.",
+          "userScope" : "site",
+          "scopeName" : "Default site",
+          "ipAddress" : "185.64.148.140",
+          "scopeLevel" : "Site",
+          "siteName" : "Default site",
+          "fullScopeDetailsPath" : "Global / Datadog, Inc. / Default site",
+          "byUser" : "SentinelOne",
+          "username" : "test"
+        },
+        "accountName" : "Datadog, Inc.",
+        "description" : "SentinelOne",
+        "siteName" : "Default site",
+        "primaryDescription" : "test",
+        "userId" : "111111111111",
+        "accountId" : "1804382808325351424",
+        "createdAt" : "2024-02-27T16:50:51.615962Z",
+        "service" : "sentinelone",
+        "siteId" : "1804382809315207183",
+        "id" : "1894347768263507747",
+        "activityType" : 103,
+        "activityUuid" : "d433c7e9-a868-4221-83d6-99f99ad657ed",
+        "updatedAt" : "2024-02-27T16:50:51.615967Z"
+      }
+    result:
+      custom:
+        accountId: "1804382808325351424"
+        accountName: "Datadog, Inc."
+        activityType: 103
+        activityUuid: "d433c7e9-a868-4221-83d6-99f99ad657ed"
+        createdAt: "2024-02-27T16:50:51.615962Z"
+        data:
+          accountName: "Datadog, Inc."
+          byUser: "SentinelOne"
+          deactivationPeriodInDays: "90"
+          fullScopeDetails: "Site Default site of Account Datadog, Inc."
+          fullScopeDetailsPath: "Global / Datadog, Inc. / Default site"
+          role: "Viewer"
+          scopeLevel: "Site"
+          scopeName: "Default site"
+          siteName: "Default site"
+          userScope: "site"
+        description: "SentinelOne"
+        id: "1894347768263507747"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+        service: "sentinelone"
+        siteId: "1804382809315207183"
+        siteName: "Default site"
+        updatedAt: "2024-02-27T16:50:51.615967Z"
+        usr:
+          id: "111111111111"
+          name: "test"
+      message: "test"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1709052651615
+  - sample: |-
+      {
+        "primary_description" : "test",
+        "data" : {
+          "dnsRequest" : "ipinfo.io",
+          "severity" : "E_LOW",
+          "dstPort" : "53",
+          "eventCategory" : "DNS",
+          "scopeName" : "Default site",
+          "dnsResponse" : "34.117.186.192;",
+          "ip_address" : "185.64.148.140",
+          "dstIp" : "185.64.148.140"
+        },
+        "created_at" : "2024-03-18T07:55:52.607714Z",
+        "type" : "NEW_USER",
+        "user_id" : "111111"
+      }
+    result:
+      custom:
+        created_at: "2024-03-18T07:55:52.607714Z"
+        data:
+          scopeName: "Default site"
+        dns:
+          answer:
+            name: "34.117.186.192;"
+          question:
+            name: "ipinfo.io"
+        evt:
+          category: "DNS"
+          name: "NEW_USER"
+          severity: "E_LOW"
+        network:
+          client:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+          destination:
+            geoip:
+              city:
+                name: "Paris"
+              continent:
+                code: "EU"
+                name: "Europe"
+              country:
+                iso_code: "FR"
+                name: "France"
+              ipAddress: "185.64.148.140"
+              location:
+                latitude: 48.90654
+                longitude: 2.33339
+              subdivision:
+                iso_code: "FR-IDF"
+                name: "Île-de-France"
+              timezone: "Europe/Paris"
+            ip: "185.64.148.140"
+            port: "53"
+        usr:
+          id: "111111"
+      message: "test"
+      tags:
+        - "source:LOGS_SOURCE"
+      timestamp: 1

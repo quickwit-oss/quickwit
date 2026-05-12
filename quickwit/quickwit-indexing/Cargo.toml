@@ -32,9 +32,9 @@ libz-sys = { workspace = true, optional = true }
 metrics = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
-pomchi = { workspace = true }
 percent-encoding = { workspace = true }
 pulsar = { workspace = true, optional = true }
+quickwit-processing = { workspace = true }
 quickwit-query = { workspace = true }
 regex = { workspace = true }
 rdkafka = { workspace = true, optional = true }

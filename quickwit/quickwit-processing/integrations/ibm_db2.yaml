@@ -1,0 +1,88 @@
+id: ibm_db2
+metric_id: ibm-db2
+backend_only: false
+facets:
+  - groups:
+      - Database
+    name: Database
+    path: db.instance
+    source: log
+  - groups:
+      - Source Code
+    name: Logger Name
+    path: logger.name
+    source: log
+  - groups:
+      - Database
+    name: Record ID
+    path: db.recordID
+    source: log
+  - groups:
+      - IBM DB2
+    name: Component Name
+    path: function.compName
+    source: log
+  - groups:
+      - Functions
+    name: Function Name
+    path: function.name
+    source: log
+  - groups:
+      - IBM DB2
+    name: Partition
+    path: db.partition
+    source: log
+pipeline:
+  type: pipeline
+  name: IBM Db2
+  enabled: true
+  meta:
+    description: '[Documentation on AWS IBM Db2 logs](https://www.ibm.com/support/knowledgecenter/en/SSEPGG_9.7.0/com.ibm.db2.luw.admin.trb.doc/doc/c0020815.html)'
+  filter:
+    query: source:ibm_db2
+  processors:
+    - type: grok-parser
+      name: Parsing IBM Db2 logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+          _date_and_level %{date("yyyy-MM-dd-HH.mm.ss.SSSSSS"):timestamp}(\+|-)\d+\s+%{notSpace:db.recordID}\s+LEVEL: %{word:level}
+          _pid_tid_proc PID\s*: %{number:pid}(\s|\t)*TID\s*: %{number:logger.thread_id}(\s|\t)*PROC\s*:( %{regex("\\S+(\\s+\\d+)?"):logger.name})?
+          _instance_node_db INSTANCE\s*: %{notSpace:db.instance}(\s|\t)*NODE\s*: %{notSpace:db.partition}(\s|\t)*(?>DB\s*: %{notSpace:db.name})?
+          _app APPHDL\s*: %{notSpace:application.handle}(\s|\t)*APPID\s*: %{notSpace:application.id}
+          _auth_host (AUTHID\s*: %{notSpace:authID})?(\s|\t)*(HOSTNAME\s*: %{notSpace:db.hostname})?
+          _edu EDUID\s*: %{notSpace:edu.id}(\s|\t)*EDUNAME\s*:\s+%{data:edu.name}
+          _function FUNCTION\s*: %{regex("[^,]+"):function.prodName}, %{regex("[^,]+"):function.compName}, %{regex("[^,]+"):function.name}, probe:%{number:function.probe}
+          _message MESSAGE\s*: %{data:error.message}
+          _called CALLED\s*: (\s|\t)+OSERR: %{data:error.kind}
+          _retcode RETCODE\s*: %{notSpace:error.code} %{data:error.stack}
+          _arg ARG #%{number:arg.number}\s+: %{regex("[^,]+"):arg.typeTitle}, %{regex("[^,]+"):arg.typeName}, %{number:arg.bytes} bytes
+        matchRules: |
+          ibm_db2 %{_date_and_level}(\s|\t|\n)*%{_pid_tid_proc}(\s|\t|\n)*%{_instance_node_db}(\s|\t|\n)*(?>%{_app})?(\s|\t|\n)*%{_auth_host}(\s|\t|\n)*(%{_edu})?(\s|\t|\n)*%{_function}(\s|\t|\n)*(?>%{_message})?(\s|\t|\n)*(?>%{_called})?(\s|\t|\n)*(?>%{_retcode})?(\s|\t|\n)*(?>%{_arg})?.*
+      samples:
+        - |
+          2007-05-18-14.20.46.973000-240     I27204F655             LEVEL: Info
+          PID     : 3228                     TID : 8796             PROC : db2syscs.exe
+          INSTANCE: DB2MPP                   NODE : 002             DB : WIN3DB1
+          APPHDL  : 0-51                     APPID: 9.26.54.62.45837.070518182042
+          AUTHID  : UDBADM 
+          EDUID   : 8796                     EDUNAME: db2agntp (WIN3DB1) 2
+          FUNCTION: DB2 UDB, data management, sqldInitDBCB, probe:4820
+          DATA #1 : String, 26 bytes
+          Setting ADC Threshold to: 
+          DATA #2 : unsigned integer, 8 bytes 
+          1048576
+    - type: category-processor
+      name: Set the severity level
+      enabled: true
+      categories:
+        - filter:
+            query: '@level:"Event"'
+          name: notice
+      target: level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

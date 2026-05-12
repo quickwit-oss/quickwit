@@ -1,0 +1,56 @@
+id: lacework
+metric_id: lacework
+backend_only: false
+facets:
+  - groups:
+      - Event
+    name: Event Name
+    path: evt.name
+    source: log
+  - groups:
+      - Event
+    name: Event Category
+    path: evt.category
+    source: log
+pipeline:
+  type: pipeline
+  name: Lacework
+  enabled: true
+  filter:
+    query: source:lacework
+  processors:
+    - type: status-remapper
+      name: Define `severity` as the official status of the log
+      enabled: true
+      sources:
+        - severity
+    - type: attribute-remapper
+      name: Map `details.SUMMARY` to `title`
+      enabled: true
+      sources:
+        - details.SUMMARY
+      target: title
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `type` to `evt.name`
+      enabled: true
+      sources:
+        - type
+      target: evt.name
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute
+    - type: attribute-remapper
+      name: Map `category` to `evt.category`
+      enabled: true
+      sources:
+        - category
+      target: evt.category
+      preserveSource: false
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: attribute

@@ -1,0 +1,315 @@
+id: openvpn
+metric_id: openvpn
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+pipeline:
+  type: pipeline
+  name: OpenVPN
+  enabled: true
+  filter:
+    query: source:openvpn
+  processors:
+    - type: grok-parser
+      name: Parsing Header
+      enabled: true
+      source: message
+      samples:
+        - "<14>Feb 20 12:15:47 openvpnas2 openvpnas: [-] VPN Auth Failed: 'local
+          auth failed: password verification failed' [None]"
+        - "<14>Feb 20 12:17:1 openvpnas2 openvpnas: [-] AUTH SUCCESS {'status':
+          0, 'user': 'openvpn', 'reason': 'local auth succeeded', 'auth method':
+          'local', 'proplist': {'prop_autogenerate': 'true', 'conn_group':
+          'test1', 'prop_superuser': 'true', 'prop_autologin': 'false',
+          'prop_deny': 'false', 'type': 'user_compile', 'pvt_password_digest':
+          '[redacted]', 'user_auth_type': 'local', 'pvt_google_auth_secret':
+          '[redacted]', 'pvt_google_auth_secret_locked': 'false'},
+          'common_name': 'openvpn', 'serial': '5735787958742102047',
+          'serial_list': []} cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+        - "<14>Feb 20 12:48:43 openvpnas2 openvpnas:[-] AUTH ERROR: DENY: user
+          in deny list. user=test"
+      grok:
+        supportRules: ""
+        matchRules: rule (<(%{integer})>)?(%{date("MMM  d H:m:s"):timestamp}|%{date("MMM
+          d H:m:s"):timestamp}) %{notSpace:syslog.hostname}
+          %{notSpace:syslog.process_name}:(\s+)?%{data:syslog_message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: pipeline
+      name: Processing OpenVPN Access Server Logs
+      enabled: true
+      filter:
+        query: "@syslog.process_name:openvpnas"
+      processors:
+        - type: grok-parser
+          name: Parsing Authentication Success Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] AUTH SUCCESS {'status': 0, 'user': 'openvpn', 'reason':
+              'local auth succeeded', 'auth method': 'local', 'proplist':
+              {'prop_autogenerate': 'true', 'prop_superuser': 'true', 'type':
+              'user_compile', 'pvt_password_digest': '[redacted]',
+              'user_auth_type': 'local', 'pvt_google_auth_secret': '[redacted]',
+              'pvt_google_auth_secret_locked': 'false'}, 'common_name':
+              'openvpn', 'serial': '4596440362163920331', 'serial_list': []}
+              cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+            - "[-] AUTH SUCCESS {'status': 0, 'user': 'test', 'reason':
+              'SESSION_ID HMAC session continuation succeeded', 'session_id':
+              '[redacted]', 'create_new_session': True, 'proplist':
+              {'prop_autogenerate': 'true', 'type': 'user_connect'},
+              'common_name': 'test', 'serial': '2625112669000384146',
+              'serial_list': []} cli='mac'/'3.6.7'/'OCmacOS_3.4.2-4547'"
+            - "[-] AUTH SUCCESS {'status': 0, 'user': 'test', 'reason':
+              'SESSION_ID auth succeeded', 'session_id': '[redacted]', 'auth
+              method': 'ldap', 'proplist': {'prop_autogenerate': 'true', 'type':
+              'user_connect'}, 'common_name': 'test', 'serial':
+              '6084254746989972980', 'serial_list': []}
+              cli='ios'/'3.10.5'/'net.openvpn.connect.ios_3.5.1-6211'"
+            - "[-] AUTH SUCCESS {'status': 0, 'user': 'openvpn', 'reason':
+              'local auth succeeded', 'auth method': 'local', 'proplist':
+              {'prop_autogenerate': 'true', 'conn_group': 'test1',
+              'prop_superuser': 'true', 'prop_autologin': 'false', 'prop_deny':
+              'false', 'type': 'user_compile', 'pvt_password_digest':
+              '[redacted]', 'user_auth_type': 'local', 'pvt_google_auth_secret':
+              '[redacted]', 'pvt_google_auth_secret_locked': 'false'},
+              'common_name': 'openvpn', 'serial': '5735787958742102047',
+              'serial_list': []} cli='win'/'3.8connect1'/'OCWindows_3.4.0-3121'"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              rule1 (\[\-\])(\s+)?%{regex("AUTH
+              SUCCESS"):log_type}\s+\{%{data::keyvalue(": ",", ")}, 'auth
+              method': '%{regex("(.*?)(?=\\')"):auth_method}',
+              %{data::keyvalue(": ",", ")}
+              cli='%{word:os}'/'%{regex("(.*?)(?=\\')")}'/'%{regex("(.*?)(?=_)")}_%{notSpace:client_connect_version}'
+
+
+              rule2 (\[\-\])(\s+)?%{regex("AUTH SUCCESS"):log_type}\s+\{%{data::keyvalue(": ",", ")} cli='%{word:os}'/'%{regex("(.*?)(?=\\')"):data}'/'%{regex("(.*?)(?=_)")}_%{notSpace:client_connect_version}'
+        - type: grok-parser
+          name: Parsing VPN Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] VPN Auth Failed: 'LICENSE: Access Server license failure:
+              Connection exceeds currently allocated connection to this server
+              (2)' ['LICENSE: Access Server license failure: Connection exceeds
+              currently allocated connection to this server (2)']"
+            - "[-] VPN Auth Failed: 'local auth failed: password verification
+              failed' [None]"
+            - "[-] VPN Auth Failed: 'The user is not enrolled in the
+              Authenticator yet.' ['You must enroll this user in Authenticator
+              first before you are allowed to retrieve a connection profile.']"
+          grok:
+            supportRules: ""
+            matchRules: "rule (\\[\\-\\])(\\s+)?%{regex(\"VPN Auth Failed\"):log_type}:
+              '%{regex(\"(.*?)(?=\\\\')\"):reason}'%{data}"
+        - type: grok-parser
+          name: Parsing Web Portal Login Authentication Failed Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] [WEB] OUT: \"2025-02-11T11:12:28+0000 [stdout#info] Web login
+              authentication failed: {'status': 1, 'user': 'openvpn', 'reason':
+              'local auth failed: password verification failed', 'auth method':
+              'local'}\""
+            - "[-] [WEB] OUT: \"2025-02-11T11:12:28+0000 [stdout#info] Web login
+              authentication failed: {'status': 1, 'user': 'openvpn', 'reason':
+              'local auth failed: password verification failed'}\""
+            - "[-] [WEB] OUT: '2025-03-11T12:59:46+0000 [stdout#info] Web login
+              authentication failed: {\\'status\\': 2, \\'user\\': \\'abc\\',
+              \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10:
+              socket connection error while opening: [Errno 113] No route to
+              host (facility=\\'initialize [10.10.10.10]\\')\", \\'auth
+              method\\': \\'ldap\\'}'"
+            - "[-] [WEB] OUT: '2025-03-11T12:59:46+0000 [stdout#info] Web login
+              authentication failed: {\\'status\\': 2, \\'user\\': \\'abc\\',
+              \\'reason\\': \"Cannot connect to LDAP server ldap://10.10.10.10:
+              socket connection error while opening: [Errno 113] No route to
+              host (facility=\\'initialize [10.10.10.10.10]\\')\"}'"
+          grok:
+            supportRules: ""
+            matchRules: "rule %{regex(\"(.*?)(?=:)\")}:(\\s+)?(\\\"|\\')%{notSpace}
+              %{notSpace} %{regex(\"Web login authentication
+              failed\"):log_type}:
+              %{regex(\"(.*)(?:})\"):authentication_info}(\\\"|\\')"
+        - type: grok-parser
+          name: Parsing of authentication infomation
+          enabled: true
+          source: authentication_info
+          samples:
+            - "{'status': 1, 'user': 'openvpn', 'reason': 'local auth failed:
+              password verification failed', 'auth method': 'local'}"
+            - "{\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot
+              connect to LDAP server ldap://10.10.10.10: socket connection
+              error while opening: [Errno 113] No route to host
+              (facility=\\'initialize [10.10.10.10]\\')\", \\'auth method\\':
+              \\'ldap\\'}"
+            - "{\\'status\\': 2, \\'user\\': \\'abc\\', \\'reason\\': \"Cannot
+              connect to LDAP server ldap://10.10.10.10: socket connection
+              error while opening: [Errno 113] No route to host
+              (facility=\\'initialize [10.10.10.10]\\')\"}"
+            - "{'status': 1, 'user': 'openvpn', 'reason': 'local auth failed:
+              password verification failed'}"
+          grok:
+            supportRules: ""
+            matchRules: >-
+              rule_1 \{%{data::keyvalue(": ",", ")}, 'auth method':
+              '%{regex("(.*?)(?=\\')"):auth_method}'%{data::keyvalue(": ",", ")}
+
+
+              rule_2 \{\\'status\\': %{integer:status}, \\'user\\': \\'%{regex("(.*)(?=\\\\')"):user}\\', \\'reason\\': "%{regex("(.*)(?=\")"):reason}"(, \\'auth method\\': \\'%{regex("(.*?)(?=\\\\')"):auth_method}\\')?}
+
+
+              rule_3 \{%{data::keyvalue(": ",", ")}
+        - type: grok-parser
+          name: Parsing Peer Connection Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] [OVPN 2] OUT: '2025-02-11 12:34:01 10.10.10.10:49152
+              [openvpn] Peer Connection Initiated with
+              [AF_INET]10.10.10.10:49152 (via [AF_INET]11.50.13.24%ens32)'"
+            - "[-] [OVPN 2] OUT: '2025-2-1 1:3:0 10.10.10.10:49152 [openvpn]
+              Peer Connection Initiated with [AF_INET]10.10.10.10:49152 (via
+              [AF_INET]2001:db8:3333:4444:5555:6666:7777:8888%ens32)'"
+          grok:
+            supportRules: ""
+            matchRules: rule %{regex("(.*?)(?=:)")}:(\s+)?\'%{date("yyyy-M-d H:m:s"):date}
+              %{ip:network.client.ip}:%{port:network.client.port}
+              \[%{notSpace:user}\] %{regex("Peer Connection
+              Initiated"):log_type}\s+with%{regex("(.*?)(?=\\()")}\(%{regex("(.*?)(?=])")}\]%{ip:server_ip}[%]%{data}
+        - type: grok-parser
+          name: Parsing Virtual IP Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] [OVPN 2] OUT: '2025-02-12 13:16:02 test/10.10.10.10:49152
+              MULTI: primary virtual IP for
+              test/10.10.10.10:49152:  10.10.10.10'"
+          grok:
+            supportRules: ""
+            matchRules: "rule %{regex(\"(.*?)(?=:)\")}:(\\s+)?\\'%{date(\"yyyy-M-d
+              H:m:s\"):date}
+              %{notSpace:user}/%{ip:network.client.ip}:%{port:network.client.po\
+              rt} %{notSpace:client_mode}: %{regex(\"primary virtual
+              IP\"):log_type}
+              for%{regex(\"(.*?)(?=:[\\\\s])\")}:\\s+%{ip:virtual_ip}'"
+        - type: grok-parser
+          name: Parsing User Deny Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] AUTH ERROR: DENY: user in deny list. user=test"
+            - "[-] AUTH ERROR: local auth failed: no stored password digest
+              found in authcred attributes. user=test"
+          grok:
+            supportRules: ""
+            matchRules: 'rule \[%{regex("(.*?)(?=])")}\](\s+)?%{regex("AUTH
+              ERROR"):log_type}: %{regex(".*?\\."):reason}
+              user=%{notSpace:user}'
+        - type: grok-parser
+          name: Parsing Signal Termination Logs
+          enabled: true
+          source: syslog_message
+          samples:
+            - "[-] [OVPN 3] OUT: '2025-02-14 12:38:25 test/10.10.10.10:49152
+              SIGTERM[soft,delayed-exit] received, client-instance exiting'"
+            - "[-] [OVPN 0] OUT: '2025-02-14 09:17:54 10.10.10.10:49152
+              SIGTERM[soft,port-share-redirect] received, client-instance
+              exiting'"
+            - "[-] [OVPN 0] OUT: '2025-02-14 09:48:49 10.10.10.10:49152
+              SIGTERM[soft,port-share-redirect] received, client-instance
+              exiting'"
+          grok:
+            supportRules: ""
+            matchRules: rule %{regex("(.*?)(?=:)")}:(\s+)?\'%{date("yyyy-M-d H:m:s"):date}(
+              (%{notSpace:user}/)?%{ip:network.client.ip}:%{port:network.client.port})?
+              %{regex("(.*?)(?=)"):signal_details} received,
+              %{regex("client-instance exiting"):log_type}'
+        - type: grok-parser
+          name: Parsing Terminating Signal
+          enabled: true
+          source: signal_details
+          samples:
+            - SIGTERM[soft,management-exit]
+          grok:
+            supportRules: ""
+            matchRules: rule SIGTERM\[%{regex("(.*?)(?=])"):termination_signal}\]
+        - type: attribute-remapper
+          name: Map `user` to `usr.name`
+          enabled: true
+          sources:
+            - user
+          sourceType: attribute
+          target: usr.name
+          targetType: attribute
+          preserveSource: false
+          overrideOnConflict: false
+        - type: geo-ip-parser
+          name: Define `network.client.ip` as default geoip attribute for source
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: category-processor
+          name: Define `log_type` for Primary Virtual IP
+          enabled: true
+          categories:
+            - filter:
+                query: '@log_type:"primary virtual IP"'
+              name: Assigning virtual IP
+          target: log_type

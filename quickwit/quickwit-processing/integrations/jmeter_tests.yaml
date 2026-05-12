@@ -1,0 +1,93 @@
+id: "jmeter"
+tests:
+ -
+  sample: |-
+    {
+      "sample_start_time" : 1617786558198,
+      "response_code" : 429,
+      "headers_size" : 475,
+      "sample_label" : "Github request",
+      "group_threads" : 9,
+      "latency" : 64,
+      "idle_time" : 0,
+      "error_count" : 1,
+      "url" : "https://github.com/test",
+      "sent_bytes" : 110,
+      "thread_group" : "Thread Group",
+      "body_size" : 1474,
+      "http_method" : "GET",
+      "content_type" : "text/html; charset=utf-8",
+      "load_time" : 64,
+      "bytes" : 1949,
+      "sample_end_time" : 1617786558262,
+      "thread_name" : "Thread Group 1-94",
+      "connect_time" : 48,
+      "data_type" : "text",
+      "sample_count" : 1,
+      "all_threads" : 9,
+      "data_encoding" : "utf-8"
+    }
+  result:
+    custom:
+      http:
+        method: "GET"
+      network:
+        body_size: 1474
+        bytes_received: 1949
+        bytes_written: 110
+        connect_time: 48
+        headers_size: 475
+        idle_time: 0
+        latency: 64
+        load_time: 64
+      sampler:
+        content_type: "text/html; charset=utf-8"
+        data_encoding: "utf-8"
+        data_type: "text"
+        error_count: 1
+        response_code: 429
+        sample_count: 1
+        sample_end_time: 1617786558262
+        sample_label: "Github request"
+        sample_start_time: 1617786558198
+        status_category: "warning"
+        url: "https://github.com/test"
+        url_details:
+          host: "github.com"
+          path: "/test"
+          scheme: "https"
+      threads:
+        all_threads: 9
+        group_threads: 9
+        thread_group: "Thread Group"
+        thread_name: "Thread Group 1-94"
+    message: |-
+      {
+        "sample_start_time" : 1617786558198,
+        "response_code" : 429,
+        "headers_size" : 475,
+        "sample_label" : "Github request",
+        "group_threads" : 9,
+        "latency" : 64,
+        "idle_time" : 0,
+        "error_count" : 1,
+        "url" : "https://github.com/test",
+        "sent_bytes" : 110,
+        "thread_group" : "Thread Group",
+        "body_size" : 1474,
+        "http_method" : "GET",
+        "content_type" : "text/html; charset=utf-8",
+        "load_time" : 64,
+        "bytes" : 1949,
+        "sample_end_time" : 1617786558262,
+        "thread_name" : "Thread Group 1-94",
+        "connect_time" : 48,
+        "data_type" : "text",
+        "sample_count" : 1,
+        "all_threads" : 9,
+        "data_encoding" : "utf-8"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+

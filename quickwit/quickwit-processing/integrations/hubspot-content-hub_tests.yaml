@@ -1,0 +1,788 @@
+id: hubspot-content-hub
+tests:
+ -
+  sample: |-
+    {
+      "regionCode" : "dl",
+      "countryCode" : "in",
+      "ipAddress" : "10.10.10.10",
+      "location" : "delhi, india",
+      "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      "id" : "3959685975",
+      "loginAt" : "2024-09-16T06:55:51.186Z",
+      "userId" : 70769783,
+      "email" : "john.doe@techworldhub.com",
+      "loginSucceeded" : true
+    }
+  result:
+    custom:
+      countryCode: "in"
+      email: "john.doe@techworldhub.com"
+      id: "3959685975"
+      ipAddress: "10.10.10.10"
+      location: "delhi, india"
+      loginAt: "2024-09-16T06:55:51.186Z"
+      loginSucceeded: true
+      regionCode: "dl"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+      userId: 70769783
+    message: |-
+      {
+        "regionCode" : "dl",
+        "countryCode" : "in",
+        "ipAddress" : "10.10.10.10",
+        "location" : "delhi, india",
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "id" : "3959685975",
+        "loginAt" : "2024-09-16T06:55:51.186Z",
+        "userId" : 70769783,
+        "email" : "john.doe@techworldhub.com",
+        "loginSucceeded" : true
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "sara.lee@nextgenventures.com",
+        "userId" : 70700058
+      },
+      "subCategory" : "LOGIN_SUCCEEDED",
+      "occurredAt" : "2024-09-10T12:12:47.868Z",
+      "targetObjectId" : "1",
+      "action" : "PERFORM",
+      "id" : "LT83ZDteVkseUUdWEQUSg==",
+      "category" : "LOGIN"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "sara.lee@nextgenventures.com"
+        userId: 70700058
+      action: "PERFORM"
+      category: "LOGIN"
+      id: "LT83ZDteVkseUUdWEQUSg=="
+      occurredAt: "2024-09-10T12:12:47.868Z"
+      subCategory: "LOGIN_SUCCEEDED"
+      targetObjectId: "1"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "sara.lee@nextgenventures.com",
+          "userId" : 70700058
+        },
+        "subCategory" : "LOGIN_SUCCEEDED",
+        "occurredAt" : "2024-09-10T12:12:47.868Z",
+        "targetObjectId" : "1",
+        "action" : "PERFORM",
+        "id" : "LT83ZDteVkseUUdWEQUSg==",
+        "category" : "LOGIN"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "sara.lee@nextgenventures.com",
+        "userId" : 70700058
+      },
+      "subCategory" : "CONTENT_SETTINGS",
+      "occurredAt" : "2024-09-10T12:12:56.858Z",
+      "targetObjectId" : "178043830806",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZUAfREhSRV1EGVhdSlFIQBtYMDc3bDUwIERFGkFQWkVVRxpdXUxZ",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "sara.lee@nextgenventures.com"
+        userId: 70700058
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZUAfREhSRV1EGVhdSlFIQBtYMDc3bDUwIERFGkFQWkVVRxpdXUxZ"
+      occurredAt: "2024-09-10T12:12:56.858Z"
+      subCategory: "CONTENT_SETTINGS"
+      targetObjectId: "178043830806"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "sara.lee@nextgenventures.com",
+          "userId" : 70700058
+        },
+        "subCategory" : "CONTENT_SETTINGS",
+        "occurredAt" : "2024-09-10T12:12:56.858Z",
+        "targetObjectId" : "178043830806",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZUAfREhSRV1EGVhdSlFIQBtYMDc3bDUwIERFGkFQWkVVRxpdXUxZ",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "BLOG",
+      "occurredAt" : "2024-09-10T12:51:50.745Z",
+      "targetObjectId" : "178046197799",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1UQFZHSRRYMDc3bDUwIERFGkFQWkVXQxxbUk1U",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1UQFZHSRRYMDc3bDUwIERFGkFQWkVXQxxbUk1U"
+      occurredAt: "2024-09-10T12:51:50.745Z"
+      subCategory: "BLOG"
+      targetObjectId: "178046197799"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "BLOG",
+        "occurredAt" : "2024-09-10T12:51:50.745Z",
+        "targetObjectId" : "178046197799",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1UQFZHSRRYMDc3bDUwIERFGkFQWkVXQxxbUk1U",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "BLOG",
+      "occurredAt" : "2024-09-10T12:51:51.163Z",
+      "targetObjectId" : "178046197799",
+      "action" : "UPDATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1UQFZHSRRYJjU2bDUwIERFGkFQWkVXQxxaVE9S",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "UPDATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1UQFZHSRRYJjU2bDUwIERFGkFQWkVXQxxaVE9S"
+      occurredAt: "2024-09-10T12:51:51.163Z"
+      subCategory: "BLOG"
+      targetObjectId: "178046197799"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "BLOG",
+        "occurredAt" : "2024-09-10T12:51:51.163Z",
+        "targetObjectId" : "178046197799",
+        "action" : "UPDATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1UQFZHSRRYJjU2bDUwIERFGkFQWkVXQxxaVE9S",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "BLOG_POST",
+      "occurredAt" : "2024-09-10T12:53:49.085Z",
+      "targetObjectId" : "178046827264",
+      "action" : "PUBLISH",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYIzAwYSgmLCwwAEJSUUdcQx9TV0BRSEU=",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "PUBLISH"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYIzAwYSgmLCwwAEJSUUdcQx9TV0BRSEU="
+      occurredAt: "2024-09-10T12:53:49.085Z"
+      subCategory: "BLOG_POST"
+      targetObjectId: "178046827264"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "BLOG_POST",
+        "occurredAt" : "2024-09-10T12:53:49.085Z",
+        "targetObjectId" : "178046827264",
+        "action" : "PUBLISH",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYIzAwYSgmLCwwAEJSUUdcQx9TV0BRSEU=",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "BLOG_POST",
+      "occurredAt" : "2024-09-10T12:55:40.612Z",
+      "targetObjectId" : "178045688981",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E5TQVlJSBxYMDc3bUwIERFGkFQWkVXTRlbU0hT",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E5TQVlJSBxYMDc3bUwIERFGkFQWkVXTRlbU0hT"
+      occurredAt: "2024-09-10T12:55:40.612Z"
+      subCategory: "BLOG_POST"
+      targetObjectId: "178045688981"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "BLOG_POST",
+        "occurredAt" : "2024-09-10T12:55:40.612Z",
+        "targetObjectId" : "178045688981",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E5TQVlJSBxYMDc3bUwIERFGkFQWkVXTRlbU0hT",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "BLOG_POST",
+      "occurredAt" : "2024-09-10T12:53:47.946Z",
+      "targetObjectId" : "178046827264",
+      "action" : "UPDATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYJjU2bUwIERFGkFQWkVXTB9cXE1X",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "UPDATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYJjU2bUwIERFGkFQWkVXTB9cXE1X"
+      occurredAt: "2024-09-10T12:53:47.946Z"
+      subCategory: "BLOG_POST"
+      targetObjectId: "178046827264"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "BLOG_POST",
+        "occurredAt" : "2024-09-10T12:53:47.946Z",
+        "targetObjectId" : "178046827264",
+        "action" : "UPDATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dS1ZCRhlYJjU2bUwIERFGkFQWkVXTB9cXE1X",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "THEME",
+      "occurredAt" : "2024-09-10T12:53:34.120Z",
+      "targetObjectId" : "@hubspot/growth",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREgjGhAWsKDU4XAkICBw1fbMwJT0xaV5UVEBQTRpZXUhVQUId",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREgjGhAWsKDU4XAkICBw1fbMwJT0xaV5UVEBQTRpZXUhVQUId"
+      occurredAt: "2024-09-10T12:53:34.120Z"
+      subCategory: "THEME"
+      targetObjectId: "@hubspot/growth"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "THEME",
+        "occurredAt" : "2024-09-10T12:53:34.120Z",
+        "targetObjectId" : "@hubspot/growth",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREgjGhAWsKDU4XAkICBw1fbMwJT0xaV5UVEBQTRpZXUhVQUId",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "david.williams@creativelabs.com",
+        "userId" : 70700783
+      },
+      "subCategory" : "WEBSITE_PAGE",
+      "occurredAt" : "2024-09-10T12:54:50.705Z",
+      "targetObjectId" : "178046838146",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYMDc3bUwIERFGkFQWkVXTBRbUklU",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "david.williams@creativelabs.com"
+        userId: 70700783
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYMDc3bUwIERFGkFQWkVXTBRbUklU"
+      occurredAt: "2024-09-10T12:54:50.705Z"
+      subCategory: "WEBSITE_PAGE"
+      targetObjectId: "178046838146"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "david.williams@creativelabs.com",
+          "userId" : 70700783
+        },
+        "subCategory" : "WEBSITE_PAGE",
+        "occurredAt" : "2024-09-10T12:54:50.705Z",
+        "targetObjectId" : "178046838146",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYMDc3bUwIERFGkFQWkVXTBRbUklU",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "david.williams@creativelabs.com",
+        "userId" : 70700783
+      },
+      "subCategory" : "WEBSITE_PAGE",
+      "occurredAt" : "2024-09-10T12:55:15.264Z",
+      "targetObjectId" : "178046838146",
+      "action" : "UPDATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYJjU2bUwIERFGkFQWkVXTRxeV09V",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "david.williams@creativelabs.com"
+        userId: 70700783
+      action: "UPDATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYJjU2bUwIERFGkFQWkVXTRxeV09V"
+      occurredAt: "2024-09-10T12:55:15.264Z"
+      subCategory: "WEBSITE_PAGE"
+      targetObjectId: "178046838146"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "david.williams@creativelabs.com",
+          "userId" : 70700783
+        },
+        "subCategory" : "WEBSITE_PAGE",
+        "occurredAt" : "2024-09-10T12:55:15.264Z",
+        "targetObjectId" : "178046838146",
+        "action" : "UPDATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYJjU2bUwIERFGkFQWkVXTRxeV09V",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "david.williams@creativelabs.com",
+        "userId" : 70700783
+      },
+      "subCategory" : "WEBSITE_PAGE",
+      "occurredAt" : "2024-09-10T12:57:21.992Z",
+      "targetObjectId" : "178046838146",
+      "action" : "PUBLISH",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYIzAwYSgmLCwwAEJSUUdcQx5bUUhYSUI=",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "david.williams@creativelabs.com"
+        userId: 70700783
+      action: "PUBLISH"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYIzAwYSgmLCwwAEJSUUdcQx5bUUhYSUI="
+      occurredAt: "2024-09-10T12:57:21.992Z"
+      subCategory: "WEBSITE_PAGE"
+      targetObjectId: "178046838146"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "david.williams@creativelabs.com",
+          "userId" : 70700783
+        },
+        "subCategory" : "WEBSITE_PAGE",
+        "occurredAt" : "2024-09-10T12:57:21.992Z",
+        "targetObjectId" : "178046838146",
+        "action" : "PUBLISH",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1E1dSllBRBtYIzAwYSgmLCwwAEJSUUdcQx5bUUhYSUI=",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "FILE",
+      "occurredAt" : "2024-09-10T12:58:34.394Z",
+      "targetObjectId" : "178051157103",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EpUTFZBQB5YMDc3bDUwIERFGkFQWkVWRRxfVkBV",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EpUTFZBQB5YMDc3bDUwIERFGkFQWkVWRRxfVkBV"
+      occurredAt: "2024-09-10T12:58:34.394Z"
+      subCategory: "FILE"
+      targetObjectId: "178051157103"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "FILE",
+        "occurredAt" : "2024-09-10T12:58:34.394Z",
+        "targetObjectId" : "178051157103",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EpUTFZBQB5YMDc3bDUwIERFGkFQWkVWRRxfVkBV",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "LANDING_PAGE",
+      "occurredAt" : "2024-09-10T13:11:04.942Z",
+      "targetObjectId" : "178046366002",
+      "action" : "UPDATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YJjU2bDUwIERFGkFQWkVWTBtfXE1T",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "UPDATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YJjU2bDUwIERFGkFQWkVWTBtfXE1T"
+      occurredAt: "2024-09-10T13:11:04.942Z"
+      subCategory: "LANDING_PAGE"
+      targetObjectId: "178046366002"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "LANDING_PAGE",
+        "occurredAt" : "2024-09-10T13:11:04.942Z",
+        "targetObjectId" : "178046366002",
+        "action" : "UPDATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YJjU2bDUwIERFGkFQWkVWTBtfXE1T",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "LANDING_PAGE",
+      "occurredAt" : "2024-09-10T13:10:54.216Z",
+      "targetObjectId" : "178046366002",
+      "action" : "CREATE",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YMDc3bDUwIERFGkFQWkVWTBhfV0hX",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "CREATE"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YMDc3bDUwIERFGkFQWkVWTBhfV0hX"
+      occurredAt: "2024-09-10T13:10:54.216Z"
+      subCategory: "LANDING_PAGE"
+      targetObjectId: "178046366002"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "LANDING_PAGE",
+        "occurredAt" : "2024-09-10T13:10:54.216Z",
+        "targetObjectId" : "178046366002",
+        "action" : "CREATE",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YMDc3bDUwIERFGkFQWkVWTBhfV0hX",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "jane.smith@innovatesolutions.org",
+        "userId" : 70700061
+      },
+      "subCategory" : "LANDING_PAGE",
+      "occurredAt" : "2024-09-10T13:11:05.908Z",
+      "targetObjectId" : "178046366002",
+      "action" : "PUBLISH",
+      "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YIzAwYSgmLCwwAEJSUUdcQx5TU0xYQEg=",
+      "category" : "CONTENT"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "jane.smith@innovatesolutions.org"
+        userId: 70700061
+      action: "PUBLISH"
+      category: "CONTENT"
+      id: "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YIzAwYSgmLCwwAEJSUUdcQx5TU0xYQEg="
+      occurredAt: "2024-09-10T13:11:05.908Z"
+      subCategory: "LANDING_PAGE"
+      targetObjectId: "178046366002"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "jane.smith@innovatesolutions.org",
+          "userId" : 70700061
+        },
+        "subCategory" : "LANDING_PAGE",
+        "occurredAt" : "2024-09-10T13:11:05.908Z",
+        "targetObjectId" : "178046366002",
+        "action" : "PUBLISH",
+        "id" : "Ij8+eTA9MV8ZVkZRWUAfREhSRV1EGV1WT1dAQB9YIzAwYSgmLCwwAEJSUUdcQx5TU0xYQEg=",
+        "category" : "CONTENT"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "actingUser" : {
+        "userEmail" : "sara.lee@nextgenventures.com",
+        "userId" : 70700058
+      },
+      "subCategory" : "ADD_ADMIN_USER",
+      "occurredAt" : "2024-09-10T12:17:22.688Z",
+      "targetObjectId" : "70700783",
+      "action" : "CREATE",
+      "id" : "IiI5eTwwJ5yIDYwIDtjXlZWRFFNHV5USQ==",
+      "category" : "CRITICAL_ACTION"
+    }
+  result:
+    custom:
+      actingUser:
+        userEmail: "sara.lee@nextgenventures.com"
+        userId: 70700058
+      action: "CREATE"
+      category: "CRITICAL_ACTION"
+      id: "IiI5eTwwJ5yIDYwIDtjXlZWRFFNHV5USQ=="
+      occurredAt: "2024-09-10T12:17:22.688Z"
+      subCategory: "ADD_ADMIN_USER"
+      targetObjectId: "70700783"
+    message: |-
+      {
+        "actingUser" : {
+          "userEmail" : "sara.lee@nextgenventures.com",
+          "userId" : 70700058
+        },
+        "subCategory" : "ADD_ADMIN_USER",
+        "occurredAt" : "2024-09-10T12:17:22.688Z",
+        "targetObjectId" : "70700783",
+        "action" : "CREATE",
+        "id" : "IiI5eTwwJ5yIDYwIDtjXlZWRFFNHV5USQ==",
+        "category" : "CRITICAL_ACTION"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "createdAt" : "2024-09-10T12:26:58.098Z",
+      "actingUser" : "david.williams@creativelabs.com",
+      "regionCode" : "mh",
+      "countryCode" : "in",
+      "ipAddress" : "10.10.10.10",
+      "id" : "356492480",
+      "type" : "DEACTIVATE_USER",
+      "userId" : 70700783,
+      "objectId" : "70769658"
+    }
+  result:
+    custom:
+      actingUser: "david.williams@creativelabs.com"
+      countryCode: "in"
+      createdAt: "2024-09-10T12:26:58.098Z"
+      id: "356492480"
+      ipAddress: "10.10.10.10"
+      objectId: "70769658"
+      regionCode: "mh"
+      type: "DEACTIVATE_USER"
+      userId: 70700783
+    message: |-
+      {
+        "createdAt" : "2024-09-10T12:26:58.098Z",
+        "actingUser" : "david.williams@creativelabs.com",
+        "regionCode" : "mh",
+        "countryCode" : "in",
+        "ipAddress" : "10.10.10.10",
+        "id" : "356492480",
+        "type" : "DEACTIVATE_USER",
+        "userId" : 70700783,
+        "objectId" : "70769658"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "createdAt" : "2024-09-13T07:45:47.385Z",
+      "actingUser" : "david.williams@creativelabs.com",
+      "id" : "357371136",
+      "type" : "INSTALL_INTEGRATION",
+      "userId" : 70700783,
+      "objectId" : "39031290"
+    }
+  result:
+    custom:
+      actingUser: "david.williams@creativelabs.com"
+      createdAt: "2024-09-13T07:45:47.385Z"
+      id: "357371136"
+      objectId: "39031290"
+      type: "INSTALL_INTEGRATION"
+      userId: 70700783
+    message: |-
+      {
+        "createdAt" : "2024-09-13T07:45:47.385Z",
+        "actingUser" : "david.williams@creativelabs.com",
+        "id" : "357371136",
+        "type" : "INSTALL_INTEGRATION",
+        "userId" : 70700783,
+        "objectId" : "39031290"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "createdAt" : "2024-09-10T12:25:49.854Z",
+      "actingUser" : "sara.lee@nextgenventures.com",
+      "regionCode" : "mh",
+      "countryCode" : "in",
+      "ipAddress" : "10.10.10.10",
+      "id" : "356492269",
+      "type" : "REMOVE_ADMIN_PERMISSIONS",
+      "userId" : 70769678,
+      "objectId" : "70769658"
+    }
+  result:
+    custom:
+      actingUser: "sara.lee@nextgenventures.com"
+      countryCode: "in"
+      createdAt: "2024-09-10T12:25:49.854Z"
+      id: "356492269"
+      ipAddress: "10.10.10.10"
+      objectId: "70769658"
+      regionCode: "mh"
+      type: "REMOVE_ADMIN_PERMISSIONS"
+      userId: 70769678
+    message: |-
+      {
+        "createdAt" : "2024-09-10T12:25:49.854Z",
+        "actingUser" : "sara.lee@nextgenventures.com",
+        "regionCode" : "mh",
+        "countryCode" : "in",
+        "ipAddress" : "10.10.10.10",
+        "id" : "356492269",
+        "type" : "REMOVE_ADMIN_PERMISSIONS",
+        "userId" : 70769678,
+        "objectId" : "70769658"
+      }
+    tags:
+     - "source:LOGS_SOURCE"

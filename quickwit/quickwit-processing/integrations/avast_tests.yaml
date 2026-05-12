@@ -1,0 +1,486 @@
+id: "avast"
+tests:
+ -
+  sample: |-
+    {
+      "traceId" : "6705207e9d91c767ec944daa51f11111",
+      "metadata" : {
+        "@type" : "AuditLoggingUserMetadata",
+        "user" : "john.doe@example.com"
+      },
+      "eventCategory" : "USER",
+      "companyName" : "Site - Test-cmp",
+      "origin" : "USER",
+      "ip" : "10.10.10.10",
+      "eventType" : "USER_LOGIN",
+      "userName" : "john.doe@example.com",
+      "userId" : "27897b75-64a5-4d59-1111-db1483842357",
+      "result" : "OK",
+      "companyId" : "3abe08bc-b483-1111-a802-4c43120d60b9",
+      "id" : "4381b07c-6ed1-1111-9bdb-7faedcc7950f",
+      "timestamp" : "2024-10-08T12:07:26.156Z"
+    }
+  result:
+    custom:
+      companyId: "3abe08bc-b483-1111-a802-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      eventCategory: "USER"
+      eventType: "USER_LOGIN"
+      id: "4381b07c-6ed1-1111-9bdb-7faedcc7950f"
+      ip: "10.10.10.10"
+      metadata:
+        '@type': "AuditLoggingUserMetadata"
+        user: "john.doe@example.com"
+      origin: "USER"
+      result: "OK"
+      timestamp: "2024-10-08T12:07:26.156Z"
+      traceId: "6705207e9d91c767ec944daa51f11111"
+      userId: "27897b75-64a5-4d59-1111-db1483842357"
+      userName: "john.doe@example.com"
+    message: |-
+      {
+        "traceId" : "6705207e9d91c767ec944daa51f11111",
+        "metadata" : {
+          "@type" : "AuditLoggingUserMetadata",
+          "user" : "john.doe@example.com"
+        },
+        "eventCategory" : "USER",
+        "companyName" : "Site - Test-cmp",
+        "origin" : "USER",
+        "ip" : "10.10.10.10",
+        "eventType" : "USER_LOGIN",
+        "userName" : "john.doe@example.com",
+        "userId" : "27897b75-64a5-4d59-1111-db1483842357",
+        "result" : "OK",
+        "companyId" : "3abe08bc-b483-1111-a802-4c43120d60b9",
+        "id" : "4381b07c-6ed1-1111-9bdb-7faedcc7950f",
+        "timestamp" : "2024-10-08T12:07:26.156Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "traceId" : "67052086c3dfb3a330425231ef4c1111",
+      "metadata" : {
+        "@type" : "AuditLoggingUserRoleMetadata",
+        "user" : "435cbc62-5cc1-4aa5-1111-e9415a17b63c"
+      },
+      "eventCategory" : "USER",
+      "companyName" : "Site - Test-cmp",
+      "origin" : "USER",
+      "ip" : "10.10.10.10",
+      "eventType" : "USER_REMOVED_ACCESS",
+      "userName" : "john.doe@example.com",
+      "userId" : "27897b75-64a5-4d59-1111-db1483842357",
+      "result" : "OK",
+      "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+      "id" : "9642cef5-c484-4863-1111-1e66612cb3f7",
+      "timestamp" : "2024-10-08T12:07:34.636Z"
+    }
+  result:
+    custom:
+      companyId: "3abe08bc-b483-47c3-1111-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      eventCategory: "USER"
+      eventType: "USER_REMOVED_ACCESS"
+      id: "9642cef5-c484-4863-1111-1e66612cb3f7"
+      ip: "10.10.10.10"
+      metadata:
+        '@type': "AuditLoggingUserRoleMetadata"
+        user: "435cbc62-5cc1-4aa5-1111-e9415a17b63c"
+      origin: "USER"
+      result: "OK"
+      timestamp: "2024-10-08T12:07:34.636Z"
+      traceId: "67052086c3dfb3a330425231ef4c1111"
+      userId: "27897b75-64a5-4d59-1111-db1483842357"
+      userName: "john.doe@example.com"
+    message: |-
+      {
+        "traceId" : "67052086c3dfb3a330425231ef4c1111",
+        "metadata" : {
+          "@type" : "AuditLoggingUserRoleMetadata",
+          "user" : "435cbc62-5cc1-4aa5-1111-e9415a17b63c"
+        },
+        "eventCategory" : "USER",
+        "companyName" : "Site - Test-cmp",
+        "origin" : "USER",
+        "ip" : "10.10.10.10",
+        "eventType" : "USER_REMOVED_ACCESS",
+        "userName" : "john.doe@example.com",
+        "userId" : "27897b75-64a5-4d59-1111-db1483842357",
+        "result" : "OK",
+        "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+        "id" : "9642cef5-c484-4863-1111-1e66612cb3f7",
+        "timestamp" : "2024-10-08T12:07:34.636Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "fileName" : "C:\\Users\\AppData\\Local\\Temp\\b0204c6f-c8e8-43aa-1111-a2a375bf5776_eicar_com (6).zip.776\\eicar.com",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "companyName" : "Site - Test-cmp",
+      "groupId" : "2282d5bd-a5c7-4549-1111-aea4517c667d",
+      "deviceId" : "d8cc06e8-9ed4-4361-1111-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "localizedDetail" : "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\b0204c6f-1111-43aa-b115-a2a375bf5776_eicar_com (6).zip.776\\eicar.com",
+      "actionType" : "CHEST",
+      "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+      "groupName" : "DEFAULT",
+      "infectionType" : "MALWARE",
+      "threatName" : "EICAR Test-NOT virus!!!",
+      "detectionSource" : "SHIELD_FILESYSTEM",
+      "id" : "228c6030-e91a-4efa-92cf-72e4095ab7ad",
+      "alertId" : "54f734f2d1a3",
+      "detectionTime" : "2024-10-09T05:07:51.296Z"
+    }
+  result:
+    custom:
+      actionType: "CHEST"
+      alertId: "54f734f2d1a3"
+      companyId: "3abe08bc-b483-47c3-1111-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      detectionSource: "SHIELD_FILESYSTEM"
+      detectionTime: "2024-10-09T05:07:51.296Z"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-9ed4-4361-1111-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      fileName: "C:\\Users\\AppData\\Local\\Temp\\b0204c6f-c8e8-43aa-1111-a2a375bf5776_eicar_com (6).zip.776\\eicar.com"
+      groupId: "2282d5bd-a5c7-4549-1111-aea4517c667d"
+      groupName: "DEFAULT"
+      id: "228c6030-e91a-4efa-92cf-72e4095ab7ad"
+      infectionType: "MALWARE"
+      localizedDetail: "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\b0204c6f-1111-43aa-b115-a2a375bf5776_eicar_com (6).zip.776\\eicar.com"
+      threatName: "EICAR Test-NOT virus!!!"
+    message: |-
+      {
+        "fileName" : "C:\\Users\\AppData\\Local\\Temp\\b0204c6f-c8e8-43aa-1111-a2a375bf5776_eicar_com (6).zip.776\\eicar.com",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "companyName" : "Site - Test-cmp",
+        "groupId" : "2282d5bd-a5c7-4549-1111-aea4517c667d",
+        "deviceId" : "d8cc06e8-9ed4-4361-1111-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "localizedDetail" : "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\b0204c6f-1111-43aa-b115-a2a375bf5776_eicar_com (6).zip.776\\eicar.com",
+        "actionType" : "CHEST",
+        "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+        "groupName" : "DEFAULT",
+        "infectionType" : "MALWARE",
+        "threatName" : "EICAR Test-NOT virus!!!",
+        "detectionSource" : "SHIELD_FILESYSTEM",
+        "id" : "228c6030-e91a-4efa-92cf-72e4095ab7ad",
+        "alertId" : "54f734f2d1a3",
+        "detectionTime" : "2024-10-09T05:07:51.296Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "fileName" : "C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "companyName" : "Site - Test-cmp",
+      "groupId" : "2282d5bd-1111-4549-1111-aea4517c667d",
+      "deviceId" : "d8cc06e8-1111-4361-869c-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "localizedDetail" : "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com",
+      "actionType" : "CHEST",
+      "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+      "groupName" : "DEFAULT",
+      "infectionType" : "MALWARE",
+      "threatName" : "EICAR Test-NOT virus!!!",
+      "detectionSource" : "SHIELD_FILESYSTEM",
+      "id" : "a7af396d-b7f6-40d4-b1b1-ca51eb84946d",
+      "alertId" : "5bc828e4c39e",
+      "detectionTime" : "2024-10-09T05:08:07.510Z"
+    }
+  result:
+    custom:
+      actionType: "CHEST"
+      alertId: "5bc828e4c39e"
+      companyId: "3abe08bc-b483-47c3-1111-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      detectionSource: "SHIELD_FILESYSTEM"
+      detectionTime: "2024-10-09T05:08:07.510Z"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-1111-4361-869c-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      fileName: "C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com"
+      groupId: "2282d5bd-1111-4549-1111-aea4517c667d"
+      groupName: "DEFAULT"
+      id: "a7af396d-b7f6-40d4-b1b1-ca51eb84946d"
+      infectionType: "MALWARE"
+      localizedDetail: "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com"
+      threatName: "EICAR Test-NOT virus!!!"
+    message: |-
+      {
+        "fileName" : "C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "companyName" : "Site - Test-cmp",
+        "groupId" : "2282d5bd-1111-4549-1111-aea4517c667d",
+        "deviceId" : "d8cc06e8-1111-4361-869c-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "localizedDetail" : "EICAR Test-NOT virus!!!<br/>C:\\Users\\AppData\\Local\\Temp\\082e8057-5928-48dc-9874-16720f906835_eicar_com (9).zip.835\\eicar.com",
+        "actionType" : "CHEST",
+        "companyId" : "3abe08bc-b483-47c3-1111-4c43120d60b9",
+        "groupName" : "DEFAULT",
+        "infectionType" : "MALWARE",
+        "threatName" : "EICAR Test-NOT virus!!!",
+        "detectionSource" : "SHIELD_FILESYSTEM",
+        "id" : "a7af396d-b7f6-40d4-b1b1-ca51eb84946d",
+        "alertId" : "5bc828e4c39e",
+        "detectionTime" : "2024-10-09T05:08:07.510Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "creationTime" : "2024-10-10T09:27:07.480Z",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "completedTime" : "2024-10-15T07:39:30.013Z",
+      "companyName" : "Site - Test-cmp",
+      "taskSource" : "ONCE",
+      "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+      "taskType" : "PATCH_SCAN",
+      "taskName" : "Patch Scan - Oct 10, 2024 2:57 PM",
+      "id" : "8e73d6a9-f01f-4981-8802-6f7d112a4acf",
+      "taskScheduleInterval" : "ONCE",
+      "taskId" : "dd9380f5-27e4-4fd0-8cb6-25a33604c84d",
+      "status" : "DONE"
+    }
+  result:
+    custom:
+      companyId: "3abe08bc-b483-47c3-a802-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      completedTime: "2024-10-15T07:39:30.013Z"
+      creationTime: "2024-10-10T09:27:07.480Z"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-9ed4-4361-869c-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      id: "8e73d6a9-f01f-4981-8802-6f7d112a4acf"
+      status: "DONE"
+      taskId: "dd9380f5-27e4-4fd0-8cb6-25a33604c84d"
+      taskName: "Patch Scan - Oct 10, 2024 2:57 PM"
+      taskScheduleInterval: "ONCE"
+      taskSource: "ONCE"
+      taskType: "PATCH_SCAN"
+    message: |-
+      {
+        "creationTime" : "2024-10-10T09:27:07.480Z",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "completedTime" : "2024-10-15T07:39:30.013Z",
+        "companyName" : "Site - Test-cmp",
+        "taskSource" : "ONCE",
+        "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+        "taskType" : "PATCH_SCAN",
+        "taskName" : "Patch Scan - Oct 10, 2024 2:57 PM",
+        "id" : "8e73d6a9-f01f-4981-8802-6f7d112a4acf",
+        "taskScheduleInterval" : "ONCE",
+        "taskId" : "dd9380f5-27e4-4fd0-8cb6-25a33604c84d",
+        "status" : "DONE"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "creationTime" : "2024-10-08T12:14:42.165Z",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "completedTime" : "2024-10-15T08:54:48.076Z",
+      "companyName" : "Site - Test-cmp",
+      "taskSource" : "SCHEDULED",
+      "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "result" : {
+        "threatsResolved" : 0,
+        "failed" : 0,
+        "threatsDetected" : 0,
+        "status" : "SAFE",
+        "notScanned" : 0
+      },
+      "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+      "taskType" : "AV_SCAN_QUICK",
+      "taskName" : "Quick Scan (CDS) - 15-Oct-2024, 10:54:48 am",
+      "id" : "502e5e56-9059-4611-a9aa-bf07e250ae79",
+      "taskScheduleInterval" : "WEEKLY",
+      "taskId" : "89897b3f-8163-46bd-ad22-3c70354a3541",
+      "status" : "DONE"
+    }
+  result:
+    custom:
+      companyId: "3abe08bc-b483-47c3-a802-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      completedTime: "2024-10-15T08:54:48.076Z"
+      creationTime: "2024-10-08T12:14:42.165Z"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-9ed4-4361-869c-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      id: "502e5e56-9059-4611-a9aa-bf07e250ae79"
+      result:
+        failed: 0
+        notScanned: 0
+        status: "SAFE"
+        threatsDetected: 0
+        threatsResolved: 0
+      status: "DONE"
+      taskId: "89897b3f-8163-46bd-ad22-3c70354a3541"
+      taskName: "Quick Scan (CDS) - 15-Oct-2024, 10:54:48 am"
+      taskScheduleInterval: "WEEKLY"
+      taskSource: "SCHEDULED"
+      taskType: "AV_SCAN_QUICK"
+    message: |-
+      {
+        "creationTime" : "2024-10-08T12:14:42.165Z",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "completedTime" : "2024-10-15T08:54:48.076Z",
+        "companyName" : "Site - Test-cmp",
+        "taskSource" : "SCHEDULED",
+        "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "result" : {
+          "threatsResolved" : 0,
+          "failed" : 0,
+          "threatsDetected" : 0,
+          "status" : "SAFE",
+          "notScanned" : 0
+        },
+        "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+        "taskType" : "AV_SCAN_QUICK",
+        "taskName" : "Quick Scan (CDS) - 15-Oct-2024, 10:54:48 am",
+        "id" : "502e5e56-9059-4611-a9aa-bf07e250ae79",
+        "taskScheduleInterval" : "WEEKLY",
+        "taskId" : "89897b3f-8163-46bd-ad22-3c70354a3541",
+        "status" : "DONE"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "severity" : "IMPORTANT",
+      "reason" : "APPROVED_FOR_SETTINGS",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "companyName" : "Site - Test-cmp",
+      "lastStatusUpdate" : "2024-10-15T07:38:47.807Z",
+      "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "patchName" : "windows11.0-kb5044033-x64-ndp481.msu",
+      "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+      "bulletinId" : "MS24-10-MRNET-5044033",
+      "vendor" : "Microsoft",
+      "bulletinUri" : "http://support.microsoft.com/kb/111111",
+      "patchDeployProgress" : "None",
+      "id" : "0f7c6933-b8f6-4323-887c-9ff81d281d7d",
+      "bulletinTitle" : "October 8, 2024-KB5044033 Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows 11, version 22H2 and Windows 11, version 23H2",
+      "applicationName" : "Windows",
+      "status" : "MISSING"
+    }
+  result:
+    custom:
+      applicationName: "Windows"
+      bulletinId: "MS24-10-MRNET-5044033"
+      bulletinTitle: "October 8, 2024-KB5044033 Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows 11, version 22H2 and Windows 11, version 23H2"
+      bulletinUri: "http://support.microsoft.com/kb/111111"
+      companyId: "3abe08bc-b483-47c3-a802-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-9ed4-4361-869c-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      id: "0f7c6933-b8f6-4323-887c-9ff81d281d7d"
+      lastStatusUpdate: "2024-10-15T07:38:47.807Z"
+      patchDeployProgress: "None"
+      patchName: "windows11.0-kb5044033-x64-ndp481.msu"
+      reason: "APPROVED_FOR_SETTINGS"
+      severity: "IMPORTANT"
+      status: "MISSING"
+      vendor: "Microsoft"
+    message: |-
+      {
+        "severity" : "IMPORTANT",
+        "reason" : "APPROVED_FOR_SETTINGS",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "companyName" : "Site - Test-cmp",
+        "lastStatusUpdate" : "2024-10-15T07:38:47.807Z",
+        "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "patchName" : "windows11.0-kb5044033-x64-ndp481.msu",
+        "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+        "bulletinId" : "MS24-10-MRNET-5044033",
+        "vendor" : "Microsoft",
+        "bulletinUri" : "http://support.microsoft.com/kb/111111",
+        "patchDeployProgress" : "None",
+        "id" : "0f7c6933-b8f6-4323-887c-9ff81d281d7d",
+        "bulletinTitle" : "October 8, 2024-KB5044033 Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows 11, version 22H2 and Windows 11, version 23H2",
+        "applicationName" : "Windows",
+        "status" : "MISSING"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: |-
+    {
+      "severity" : "IMPORTANT",
+      "reason" : "APPROVED_FOR_SETTINGS",
+      "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+      "companyName" : "Site - Test-cmp",
+      "lastStatusUpdate" : "2024-10-15T07:38:47.807Z",
+      "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+      "deviceName" : "AssetTag-EID",
+      "patchName" : "GoogleChromeStandaloneEnterprise_129.0.6668.101_x64.msi",
+      "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+      "bulletinId" : "CHROME-241008",
+      "vendor" : "Google",
+      "bulletinUri" : "https://chromereleases.googleblog.com/search/label/Stable updates",
+      "patchDeployProgress" : "None",
+      "id" : "84cbe992-3ddf-4ce1-96ce-fa55cde1d5f7",
+      "bulletinTitle" : "Google Chrome 129.0.6668.101",
+      "applicationName" : "Chrome",
+      "status" : "MISSING"
+    }
+  result:
+    custom:
+      applicationName: "Chrome"
+      bulletinId: "CHROME-241008"
+      bulletinTitle: "Google Chrome 129.0.6668.101"
+      bulletinUri: "https://chromereleases.googleblog.com/search/label/Stable updates"
+      companyId: "3abe08bc-b483-47c3-a802-4c43120d60b9"
+      companyName: "Site - Test-cmp"
+      deviceAlias: "WORKGROUP\\AssetTag-EID"
+      deviceId: "d8cc06e8-9ed4-4361-869c-99d787e4ae3c"
+      deviceName: "AssetTag-EID"
+      id: "84cbe992-3ddf-4ce1-96ce-fa55cde1d5f7"
+      lastStatusUpdate: "2024-10-15T07:38:47.807Z"
+      patchDeployProgress: "None"
+      patchName: "GoogleChromeStandaloneEnterprise_129.0.6668.101_x64.msi"
+      reason: "APPROVED_FOR_SETTINGS"
+      severity: "IMPORTANT"
+      status: "MISSING"
+      vendor: "Google"
+    message: |-
+      {
+        "severity" : "IMPORTANT",
+        "reason" : "APPROVED_FOR_SETTINGS",
+        "deviceAlias" : "WORKGROUP\\AssetTag-EID",
+        "companyName" : "Site - Test-cmp",
+        "lastStatusUpdate" : "2024-10-15T07:38:47.807Z",
+        "deviceId" : "d8cc06e8-9ed4-4361-869c-99d787e4ae3c",
+        "deviceName" : "AssetTag-EID",
+        "patchName" : "GoogleChromeStandaloneEnterprise_129.0.6668.101_x64.msi",
+        "companyId" : "3abe08bc-b483-47c3-a802-4c43120d60b9",
+        "bulletinId" : "CHROME-241008",
+        "vendor" : "Google",
+        "bulletinUri" : "https://chromereleases.googleblog.com/search/label/Stable updates",
+        "patchDeployProgress" : "None",
+        "id" : "84cbe992-3ddf-4ce1-96ce-fa55cde1d5f7",
+        "bulletinTitle" : "Google Chrome 129.0.6668.101",
+        "applicationName" : "Chrome",
+        "status" : "MISSING"
+      }
+    tags:
+     - "source:LOGS_SOURCE"

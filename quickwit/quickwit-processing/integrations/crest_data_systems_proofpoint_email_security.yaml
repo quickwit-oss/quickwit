@@ -1,0 +1,195 @@
+id: crest_data_systems_proofpoint_email_security
+metric_id: crest-data-systems-proofpoint-email-security
+backend_only: false
+facets:
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Clicks Blocked Guid
+    path: clicks-blocked-guid
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: SenderIP Country ISO Code
+    path: geoSenderIP.country.iso_code
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Sender Domain
+    path: from_domain
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Subject
+    path: subject
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Disposition
+    path: filter.disposition
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Clicks URL
+    path: url
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: TLS Protocol Version
+    path: tls_protocol_version
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Cluster
+    path: ppod_cluster_id
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Encryption
+    path: is_encrypted
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Completely Rewritten
+    path: completelyRewritten
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Message Size
+    path: messageSize
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Message Delivered Guid
+    path: messages-delivered-guid
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Threat Classification
+    path: threat-classification
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Final Rule
+    path: final_rule
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: ClickIP Country ISO Code
+    path: GeoClickIP.country.iso_code
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Message ID
+    path: message-id
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Recipient
+    path: to
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Threat Status
+    path: threat-status
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Messages Blocked Guid
+    path: messages-blocked-guid
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Sender IP
+    path: senderIP
+    source: tag
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Click IP
+    path: clickIP
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Route Direction
+    path: filter.routeDirection
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: TLS Cipher
+    path: tls_cipher
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Clicks Permitted Guid
+    path: clicks-permitted-guid
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Final Module
+    path: final_module
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Sender
+    path: from
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: DMARC Rule
+    path: action_dmarc_rule
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Sender
+    path: sender
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Recipient Domain
+    path: to_domain
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Quarantine Folder
+    path: filter.quarantine.folder
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Recipient
+    path: recipient
+    source: log
+  - groups:
+      - Crest Data Systems Proofpoint Email Security
+    name: Threat Type
+    path: threat-type
+    source: log
+pipeline:
+  type: pipeline
+  name: Proofpoint Email Security By Crest Data Systems
+  enabled: true
+  filter:
+    query: source:crest_data_systems_proofpoint_email_security
+  processors:
+    - type: geo-ip-parser
+      name: Lookup Sender IP Address with its Geo Locations
+      enabled: true
+      sources:
+        - senderIP
+      target: geoSenderIP
+      ip_processing_behavior: do-nothing
+    - type: geo-ip-parser
+      name: Lookup Click IP Address with its Geo Locations
+      enabled: true
+      sources:
+        - clickIP
+      target: GeoClickIP
+      ip_processing_behavior: do-nothing
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp

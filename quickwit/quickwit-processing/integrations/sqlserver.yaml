@@ -1,0 +1,49 @@
+id: sqlserver
+metric_id: sql-server
+backend_only: false
+facets:
+  - groups:
+      - Source Code
+    name: Thread Name
+    path: logger.thread_name
+    source: log
+pipeline:
+  type: pipeline
+  name: SQL Server
+  enabled: true
+  filter:
+    query: source:sqlserver
+  processors:
+    - type: grok-parser
+      name: Parsing SqlServer logs
+      enabled: true
+      source: message
+      samples:
+        - |-
+          2020-05-12 12:05:52.12 Server      Microsoft SQL Server 2017 (RTM-CU20) (KB4541283) - 14.0.3294.2 (X64)
+                Mar 13 2020 14:53:45
+                Copyright (C) 2017 Microsoft Corporation
+                Developer Edition (64-bit) on Linux (Ubuntu 16.04.6 LTS)
+        - 2020-05-12 12:10:54.49 spid51      Using 'dbghelp.dll' version '4.0.5'
+        - '2020-05-12 12:12:37.01 spid51      Warning: The join order has been enforced because a local join hint is used.'
+        - '2018-05-16 10:38:27.86 spid52      Error: 5105, Severity: 16, State: 2.'
+      grok:
+        supportRules: |
+          _date %{date("yyyy-MM-dd HH:mm:ss.SS"):timestamp}
+        matchRules: |
+          sqlserver %{_date} %{notSpace:logger.thread_name}\s+(%{word:level}:\s)?%{data:message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

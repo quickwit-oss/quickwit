@@ -1,0 +1,88 @@
+id: temporal
+metric_id: temporal
+backend_only: false
+facets:
+  - groups:
+      - Temporal
+    name: Namespace
+    path: wf-namespace
+    source: log
+  - groups:
+      - Temporal
+    name: Task Queue
+    path: wf-task-queue-name
+    source: log
+pipeline:
+  type: pipeline
+  name: Temporal
+  enabled: true
+  filter:
+    query: source:temporal
+  processors:
+    - type: attribute-remapper
+      name: Map attribute `service` to tag `service_name`
+      enabled: true
+      sources:
+        - service
+      target: service_name
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: tag
+    - type: string-builder-processor
+      name: Add temporal prefix to service
+      enabled: true
+      template: temporal-%{service}
+      target: service
+      replaceMissing: false
+    # TODO: This is necessary for the modified service to be picked up as the official service
+    - type: service-remapper
+      name: Define `service` as the official service of the log
+      enabled: true
+      sources:
+        - service
+    - type: attribute-remapper
+      name: Map attribute `wf-namespace` to tag `namespace`
+      enabled: true
+      sources:
+        - wf-namespace
+      target: namespace
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: tag
+    - type: attribute-remapper
+      name: Map attribute `wf-task-queue-name` to tag `taskqueue`
+      enabled: true
+      sources:
+        - wf-task-queue-name
+      target: taskqueue
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: tag
+    - type: attribute-remapper
+      name: Map attribute `wf-task-queue-type` to tag `task_type`
+      enabled: true
+      sources:
+        - wf-task-queue-type
+      target: task_type
+      preserveSource: true
+      overrideOnConflict: false
+      sourceType: attribute
+      targetType: tag
+    - type: date-remapper
+      name: Define `ts` as the official date of the log
+      enabled: true
+      sources:
+        - ts
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

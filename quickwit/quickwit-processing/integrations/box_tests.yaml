@@ -1,0 +1,533 @@
+id: "box"
+tests:
+ -
+  sample: |-
+    {
+      "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+      "event_type" : "SHIELD_ALERT",
+      "additional_details" : {
+        "shield_alert" : {
+          "rule_id" : 123,
+          "rule_name" : "Viruses and stuff",
+          "risk_score" : 100,
+          "rule_category" : "Malicious Content",
+          "alert_id" : 2398,
+          "link" : "https://app.box.com/master/shield/alerts/2398",
+          "created_at" : "2025-04-25T14:52:32+05:30",
+          "malware_info" : {
+            "file_version" : 4239023,
+            "file_version_uploaded" : "2025-04-25T14:52:32+05:30",
+            "detail_link" : "https://some.link/xyz",
+            "malware_name" : "BadMalware",
+            "first_seen" : "2025-04-25T14:52:32+05:30",
+            "last_seen" : "2025-04-25T14:52:32+05:30",
+            "file_name" : "malware.exe",
+            "description" : "This is a really bad file",
+            "file_created" : "2025-04-25T14:52:32+05:30",
+            "tags" : [ "FILE_MALICIOUS_EXECUTION", "FILE_OTHER_TAG" ],
+            "file_created_by" : {
+              "name" : "Bob",
+              "id" : 1010,
+              "email" : "bob@enterprise.com"
+            },
+            "file_hash" : "d869db7fe62fb07c25a0403ecaea55031744b5fb",
+            "file_hash_type" : "SHA-1",
+            "file_id" : 127,
+            "file_version_uploaded_by" : {
+              "name" : "Jane",
+              "id" : 1011,
+              "email" : "jane@enterprise.com"
+            },
+            "categories" : [ "Adware", "SpyWare" ],
+            "family" : "MalwareBot4000",
+            "file_size_bytes" : 51345,
+            "status" : "Malicious"
+          },
+          "priority" : "medium",
+          "alert_summary" : {
+            "upload_activity" : {
+              "occurred_at" : "2025-04-25T14:52:32+05:30",
+              "event_type" : "Upload",
+              "item_id" : "127",
+              "sha1_hash" : "",
+              "item_type" : "file",
+              "service_name" : "Service name",
+              "item_name" : "virus.exe",
+              "item_path" : "ABC/DEF",
+              "ip_info" : {
+                "country_code" : "US",
+                "city_name" : "San Jose",
+                "ip" : "1.2.3.4",
+                "latitude" : "37.5555",
+                "region_name" : "California",
+                "registrant" : "Microsoft Corporation",
+                "longitude" : "-120.6789"
+              }
+            }
+          },
+          "user" : {
+            "name" : "Some Name",
+            "id" : 2320,
+            "email" : "some@email.com"
+          }
+        }
+      },
+      "created_at" : "2025-04-25T14:52:32+05:30",
+      "ip_address" : "10.1.2.3",
+      "type" : "event"
+    }
+  service: "enterprise-events"
+  result:
+    custom:
+      additional_details:
+        shield_alert:
+          alert_id: 2398
+          alert_summary:
+            upload_activity:
+              event_type: "Upload"
+              ip_info:
+                city_name: "San Jose"
+                country_code: "US"
+                ip: "1.2.3.4"
+                latitude: "37.5555"
+                longitude: "-120.6789"
+                region_name: "California"
+                registrant: "Microsoft Corporation"
+              item_id: "127"
+              item_name: "virus.exe"
+              item_path: "ABC/DEF"
+              item_type: "file"
+              occurred_at: "2025-04-25T14:52:32+05:30"
+              service_name: "Service name"
+              sha1_hash: ""
+          created_at: "2025-04-25T14:52:32+05:30"
+          link: "https://app.box.com/master/shield/alerts/2398"
+          malware_info:
+            categories:
+             - "Adware"
+             - "SpyWare"
+            description: "This is a really bad file"
+            detail_link: "https://some.link/xyz"
+            family: "MalwareBot4000"
+            file_created: "2025-04-25T14:52:32+05:30"
+            file_created_by:
+              email: "bob@enterprise.com"
+              id: 1010
+              name: "Bob"
+            file_hash: "d869db7fe62fb07c25a0403ecaea55031744b5fb"
+            file_hash_type: "SHA-1"
+            file_id: 127
+            file_name: "malware.exe"
+            file_size_bytes: 51345
+            file_version: 4239023
+            file_version_uploaded: "2025-04-25T14:52:32+05:30"
+            file_version_uploaded_by:
+              email: "jane@enterprise.com"
+              id: 1011
+              name: "Jane"
+            first_seen: "2025-04-25T14:52:32+05:30"
+            last_seen: "2025-04-25T14:52:32+05:30"
+            malware_name: "BadMalware"
+            status: "Malicious"
+            tags:
+             - "FILE_MALICIOUS_EXECUTION"
+             - "FILE_OTHER_TAG"
+          priority: "medium"
+          risk_score: 100
+          rule_category: "Malicious Content"
+          rule_id: 123
+          rule_name: "Viruses and stuff"
+      box_event_category: "shield"
+      created_at: "2025-04-25T14:52:32+05:30"
+      event_id: "97f1b31f-f143-4777-81f8-1b557b39ca33"
+      evt:
+        name: "SHIELD_ALERT"
+      network:
+        client:
+          geoip: {}
+          ip: "10.1.2.3"
+      status: "warning"
+      type: "event"
+      usr:
+        email: "some@email.com"
+        id: 2320
+        name: "Some Name"
+    message: |-
+      {
+        "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+        "event_type" : "SHIELD_ALERT",
+        "additional_details" : {
+          "shield_alert" : {
+            "rule_id" : 123,
+            "rule_name" : "Viruses and stuff",
+            "risk_score" : 100,
+            "rule_category" : "Malicious Content",
+            "alert_id" : 2398,
+            "link" : "https://app.box.com/master/shield/alerts/2398",
+            "created_at" : "2025-04-25T14:52:32+05:30",
+            "malware_info" : {
+              "file_version" : 4239023,
+              "file_version_uploaded" : "2025-04-25T14:52:32+05:30",
+              "detail_link" : "https://some.link/xyz",
+              "malware_name" : "BadMalware",
+              "first_seen" : "2025-04-25T14:52:32+05:30",
+              "last_seen" : "2025-04-25T14:52:32+05:30",
+              "file_name" : "malware.exe",
+              "description" : "This is a really bad file",
+              "file_created" : "2025-04-25T14:52:32+05:30",
+              "tags" : [ "FILE_MALICIOUS_EXECUTION", "FILE_OTHER_TAG" ],
+              "file_created_by" : {
+                "name" : "Bob",
+                "id" : 1010,
+                "email" : "bob@enterprise.com"
+              },
+              "file_hash" : "d869db7fe62fb07c25a0403ecaea55031744b5fb",
+              "file_hash_type" : "SHA-1",
+              "file_id" : 127,
+              "file_version_uploaded_by" : {
+                "name" : "Jane",
+                "id" : 1011,
+                "email" : "jane@enterprise.com"
+              },
+              "categories" : [ "Adware", "SpyWare" ],
+              "family" : "MalwareBot4000",
+              "file_size_bytes" : 51345,
+              "status" : "Malicious"
+            },
+            "priority" : "medium",
+            "alert_summary" : {
+              "upload_activity" : {
+                "occurred_at" : "2025-04-25T14:52:32+05:30",
+                "event_type" : "Upload",
+                "item_id" : "127",
+                "sha1_hash" : "",
+                "item_type" : "file",
+                "service_name" : "Service name",
+                "item_name" : "virus.exe",
+                "item_path" : "ABC/DEF",
+                "ip_info" : {
+                  "country_code" : "US",
+                  "city_name" : "San Jose",
+                  "ip" : "1.2.3.4",
+                  "latitude" : "37.5555",
+                  "region_name" : "California",
+                  "registrant" : "Microsoft Corporation",
+                  "longitude" : "-120.6789"
+                }
+              }
+            },
+            "user" : {
+              "name" : "Some Name",
+              "id" : 2320,
+              "email" : "some@email.com"
+            }
+          }
+        },
+        "created_at" : "2025-04-25T14:52:32+05:30",
+        "ip_address" : "10.1.2.3",
+        "type" : "event"
+      }
+    service: "enterprise-events"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745572952000
+ -
+  sample: |-
+    {
+      "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+      "event_type" : "UPLOAD",
+      "additional_details" : {
+        "file_path" : "/",
+        "ekm_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+        "size" : 857117299,
+        "file_hash" : "a4354646vdsdsf443",
+        "service_name" : "Multiput Uploads",
+        "service_id" : "231318",
+        "version_id" : "2044534047872",
+        "hash_type" : "sha1"
+      },
+      "created_at" : "2025-05-06T21:46:37+05:30",
+      "source" : {
+        "parent" : {
+          "name" : "All Files",
+          "id" : "0",
+          "type" : "folder"
+        },
+        "item_id" : "8903212345",
+        "item_type" : "file",
+        "item_name" : "example.docx",
+        "owned_by" : {
+          "name" : "Aaron Levie",
+          "id" : "11446498",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        },
+        "classification" : {
+          "name" : "Top Secret"
+        }
+      },
+      "ip_address" : "10.1.2.3",
+      "type" : "event",
+      "created_by" : {
+        "name" : "Aaron Levie",
+        "id" : "13475339373",
+        "type" : "user",
+        "login" : "notifications@example.com"
+      }
+    }
+  service: "enterprise-events"
+  result:
+    custom:
+      additional_details:
+        ekm_id: "97f1b31f-f143-4777-81f8-1b557b39ca33"
+        file_hash: "a4354646vdsdsf443"
+        file_path: "/"
+        hash_type: "sha1"
+        service_id: "231318"
+        service_name: "Multiput Uploads"
+        size: 857117299
+        version_id: "2044534047872"
+      box_event_category: "file"
+      created_at: "2025-05-06T21:46:37+05:30"
+      created_by:
+        type: "user"
+      event_id: "97f1b31f-f143-4777-81f8-1b557b39ca33"
+      evt:
+        name: "UPLOAD"
+      file_type: "docx"
+      network:
+        client:
+          geoip: {}
+          ip: "10.1.2.3"
+      source:
+        classification:
+          name: "Top Secret"
+        item_id: "8903212345"
+        item_name: "example.docx"
+        item_type: "file"
+        owned_by:
+          id: "11446498"
+          login: "notifications@example.com"
+          name: "Aaron Levie"
+          type: "user"
+        parent:
+          id: "0"
+          name: "All Files"
+          type: "folder"
+      type: "event"
+      usr:
+        email: "notifications@example.com"
+        id: "13475339373"
+        name: "Aaron Levie"
+    message: |-
+      {
+        "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+        "event_type" : "UPLOAD",
+        "additional_details" : {
+          "file_path" : "/",
+          "ekm_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+          "size" : 857117299,
+          "file_hash" : "a4354646vdsdsf443",
+          "service_name" : "Multiput Uploads",
+          "service_id" : "231318",
+          "version_id" : "2044534047872",
+          "hash_type" : "sha1"
+        },
+        "created_at" : "2025-05-06T21:46:37+05:30",
+        "source" : {
+          "parent" : {
+            "name" : "All Files",
+            "id" : "0",
+            "type" : "folder"
+          },
+          "item_id" : "8903212345",
+          "item_type" : "file",
+          "item_name" : "example.docx",
+          "owned_by" : {
+            "name" : "Aaron Levie",
+            "id" : "11446498",
+            "type" : "user",
+            "login" : "notifications@example.com"
+          },
+          "classification" : {
+            "name" : "Top Secret"
+          }
+        },
+        "ip_address" : "10.1.2.3",
+        "type" : "event",
+        "created_by" : {
+          "name" : "Aaron Levie",
+          "id" : "13475339373",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        }
+      }
+    service: "enterprise-events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1746548197000
+ -
+  sample: |-
+    {
+      "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+      "event_type" : "ADD_LOGIN_ACTIVITY_DEVICE",
+      "created_at" : "2025-04-22T01:25:51-07:00",
+      "source" : {
+        "name" : "Aaron Levie",
+        "id" : "41799950245",
+        "type" : "user",
+        "login" : "notifications@example.com"
+      },
+      "ip_address" : "10.2.3.4",
+      "type" : "event",
+      "created_by" : {
+        "name" : "Aaron Levie",
+        "id" : "41799950245",
+        "type" : "user",
+        "login" : "notifications@example.com"
+      }
+    }
+  result:
+    custom:
+      box_event_category: "user"
+      created_at: "2025-04-22T01:25:51-07:00"
+      created_by:
+        type: "user"
+      event_id: "97f1b31f-f143-4777-81f8-1b557b39ca33"
+      evt:
+        name: "ADD_LOGIN_ACTIVITY_DEVICE"
+      network:
+        client:
+          geoip: {}
+          ip: "10.2.3.4"
+      source:
+        id: "41799950245"
+        login: "notifications@example.com"
+        name: "Aaron Levie"
+        type: "user"
+      type: "event"
+      usr:
+        email: "notifications@example.com"
+        id: "41799950245"
+        name: "Aaron Levie"
+    message: |-
+      {
+        "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+        "event_type" : "ADD_LOGIN_ACTIVITY_DEVICE",
+        "created_at" : "2025-04-22T01:25:51-07:00",
+        "source" : {
+          "name" : "Aaron Levie",
+          "id" : "41799950245",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        },
+        "ip_address" : "10.2.3.4",
+        "type" : "event",
+        "created_by" : {
+          "name" : "Aaron Levie",
+          "id" : "41799950245",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        }
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745310351000
+ -
+  sample: |-
+    {
+      "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+      "event_type" : "UPLOAD",
+      "created_at" : "2025-04-24T05:41:03-07:00",
+      "source" : {
+        "parent" : {
+          "name" : "Box Reports",
+          "id" : "317896184878",
+          "type" : "folder"
+        },
+        "item_id" : "318298854550",
+        "item_type" : "folder",
+        "item_name" : "Test",
+        "owned_by" : {
+          "name" : "Aaron Levie",
+          "id" : "41799950245",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        }
+      },
+      "ip_address" : "10.2.3.4",
+      "type" : "event",
+      "created_by" : {
+        "name" : "Aaron Levie",
+        "id" : "41799950245",
+        "type" : "user",
+        "login" : "notifications@example.com"
+      }
+    }
+  service: "enterprise-events"
+  result:
+    custom:
+      box_event_category: "folder"
+      created_at: "2025-04-24T05:41:03-07:00"
+      created_by:
+        type: "user"
+      event_id: "97f1b31f-f143-4777-81f8-1b557b39ca33"
+      evt:
+        name: "UPLOAD"
+      network:
+        client:
+          geoip: {}
+          ip: "10.2.3.4"
+      source:
+        item_id: "318298854550"
+        item_name: "Test"
+        item_type: "folder"
+        owned_by:
+          id: "41799950245"
+          login: "notifications@example.com"
+          name: "Aaron Levie"
+          type: "user"
+        parent:
+          id: "317896184878"
+          name: "Box Reports"
+          type: "folder"
+      type: "event"
+      usr:
+        email: "notifications@example.com"
+        id: "41799950245"
+        name: "Aaron Levie"
+    message: |-
+      {
+        "event_id" : "97f1b31f-f143-4777-81f8-1b557b39ca33",
+        "event_type" : "UPLOAD",
+        "created_at" : "2025-04-24T05:41:03-07:00",
+        "source" : {
+          "parent" : {
+            "name" : "Box Reports",
+            "id" : "317896184878",
+            "type" : "folder"
+          },
+          "item_id" : "318298854550",
+          "item_type" : "folder",
+          "item_name" : "Test",
+          "owned_by" : {
+            "name" : "Aaron Levie",
+            "id" : "41799950245",
+            "type" : "user",
+            "login" : "notifications@example.com"
+          }
+        },
+        "ip_address" : "10.2.3.4",
+        "type" : "event",
+        "created_by" : {
+          "name" : "Aaron Levie",
+          "id" : "41799950245",
+          "type" : "user",
+          "login" : "notifications@example.com"
+        }
+      }
+    service: "enterprise-events"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1745498463000

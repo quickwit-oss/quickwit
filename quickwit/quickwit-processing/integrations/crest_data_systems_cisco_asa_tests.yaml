@@ -1,0 +1,379 @@
+id: "crest_data_systems_cisco_asa"
+tests:
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-6-415001: HTTP - matched dropping in policy-map abc , header field count exceeded connection from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Informational"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415001
+      severity: 6
+    message: "<166>May 12 2023 13:47:33: %ASA-6-415001: HTTP - matched dropping in policy-map abc , header field count exceeded connection from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-6-415001: HTTP - matched dropping in policy-map abc , header field count exceeded connection from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Informational"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415001
+      severity: 6
+    message: "<166>May 12 2023 13:47:33: %ASA-6-415001: HTTP - matched dropping in policy-map abc , header field count exceeded connection from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-6-415002: HTTP - matched matched_string in policy-map map_name , header field length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Informational"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415002
+      severity: 6
+    message: "<166>May 12 2023 13:47:33: %ASA-6-415002: HTTP - matched matched_string in policy-map map_name , header field length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-6-415003: HTTP - matched matched_string in policy-map map_name , body length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Informational"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415003
+      severity: 6
+    message: "<166>May 12 2023 13:47:33: %ASA-6-415003: HTTP - matched matched_string in policy-map map_name , body length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-5-415005: HTTP - matched matched_string in policy-map map_name , URI length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Notification"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415005
+      severity: 5
+    message: "<166>May 12 2023 13:47:33: %ASA-5-415005: HTTP - matched matched_string in policy-map map_name , URI length exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-4-415016: policy-map map_name :Maximum number of unanswered HTTP requests exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.60.52.12"
+      cisco_asa_dest_port: 512
+      cisco_asa_severity: "Warning"
+      cisco_asa_src_ip: "10.50.2.13"
+      cisco_asa_src_port: 514
+      message_id: 415016
+      severity: 4
+    message: "<166>May 12 2023 13:47:33: %ASA-4-415016: policy-map map_name :Maximum number of unanswered HTTP requests exceeded connection_action from Ifc:10.50.2.13/514 to Inside:10.60.52.12/512"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 13:47:33: %ASA-5-415013: HTTP - policy-map map-name :Malformed chunked encoding connection_action from int_type :10.0.0.1/125 to int_type :10.0.0.0 /514"
+  result:
+    custom:
+      cisco_asa_dest_ip: "10.0.0.0"
+      cisco_asa_dest_port: 514
+      cisco_asa_severity: "Notification"
+      cisco_asa_src_ip: "10.0.0.1"
+      cisco_asa_src_port: 125
+      message_id: 415013
+      severity: 5
+    message: "<166>May 12 2023 13:47:33: %ASA-5-415013: HTTP - policy-map map-name :Malformed chunked encoding connection_action from int_type :10.0.0.1/125 to int_type :10.0.0.0 /514"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-110002: Failed to locate egress interface for protocol from src interface :10.50.5.12/514 to 10.50.4.12/516"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      message_id: 110002
+      severity: 6
+    message: "<166>May 12 2023 15:23:08: %ASA-6-110002: Failed to locate egress interface for protocol from src interface :10.50.5.12/514 to 10.50.4.12/516"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-110003: Routing failed to locate next-hop for protocol from src interface :10.50.5.12/514 to 10.50.4.12/516"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      message_id: 110003
+      severity: 6
+    message: "<166>May 12 2023 15:23:08: %ASA-6-110003: Routing failed to locate next-hop for protocol from src interface :10.50.5.12/514 to 10.50.4.12/516"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-110004: Egress interface changed from old_active_ifc to new_active_ifc on ip_protocol connection 123 for outside_zone /parent_outside_ifc :10.10.10.10 /514 (10.10.10.11 /519 ) to inside_zone /parent_inside_ifc :20.20.20.20 /914 (20.20.20.21 /825 )"
+  result:
+    custom:
+      cisco_asa_dest_ip: "20.20.20.20"
+      cisco_asa_dest_port: 914
+      cisco_asa_severity: "Informational"
+      cisco_asa_src_ip: "10.10.10.10"
+      cisco_asa_src_port: 514
+      connection_id: "123"
+      inside_mapped_address: "20.20.20.21"
+      inside_mapped_port: 825
+      inside_zone: "inside_zone"
+      ip_protocol: "ip_protocol"
+      message_id: 110004
+      new_active_ifc: "new_active_ifc"
+      old_active_ifc: "old_active_ifc"
+      outside_mapped_address: "10.10.10.11"
+      outside_mapped_port: 519
+      outside_zone: "outside_zone"
+      parent_inside_ifc: "parent_inside_ifc"
+      parent_outside_ifc: "parent_outside_ifc"
+      severity: 6
+    message: "<166>May 12 2023 15:23:08: %ASA-6-110004: Egress interface changed from old_active_ifc to new_active_ifc on ip_protocol connection 123 for outside_zone /parent_outside_ifc :10.10.10.10 /514 (10.10.10.11 /519 ) to inside_zone /parent_inside_ifc :20.20.20.20 /914 (20.20.20.21 /825 )"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:05:43: %ASA-6-746001: user-identity: 10.50.5.205 download started"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      download_status: "started"
+      message_id: 746001
+      severity: 6
+      user_identity: "10.50.5.205"
+    message: "<166>May 12 2023 15:05:43: %ASA-6-746001: user-identity: 10.50.5.205 download started"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:05:43: %ASA-6-746002: user-identity: 10.50.5.205 download complete"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      download_status: "complete"
+      message_id: 746002
+      severity: 6
+      user_identity: "10.50.5.205"
+    message: "<166>May 12 2023 15:05:43: %ASA-6-746002: user-identity: 10.50.5.205 download complete"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:05:43: %ASA-6-746003: user-identity: 10.50.5.205 download failed - bad request"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      download_status: "failed"
+      message_id: 746003
+      reason: "bad request"
+      severity: 6
+      user_identity: "10.50.5.205"
+    message: "<166>May 12 2023 15:05:43: %ASA-6-746003: user-identity: 10.50.5.205 download failed - bad request"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:05:43: %ASA-4-746004: user identity: Total number of activated user groups exceeds the max_groups groups for this platform."
+  result:
+    custom:
+      cisco_asa_severity: "Warning"
+      message_id: 746004
+      severity: 4
+    message: "<166>May 12 2023 15:05:43: %ASA-4-746004: user identity: Total number of activated user groups exceeds the max_groups groups for this platform."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:05:43: %ASA-3-746005: user-identity: The AD Agent 192.168.10.201 cannot be reached - reason [action   ]"
+  result:
+    custom:
+      action: "action"
+      cisco_asa_severity: "Error"
+      ip_address: "192.168.10.201"
+      message_id: 746005
+      reason: "reason"
+      severity: 3
+    message: "<166>May 12 2023 15:05:43: %ASA-3-746005: user-identity: The AD Agent 192.168.10.201 cannot be reached - reason [action   ]"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 23 2023 13:55:00: %ASA-5-746007: user-identity: NetBIOS response failed from User Demo-User at 10.50.13.16"
+  result:
+    custom:
+      auth_failed_ip_address: "10.50.13.16"
+      cisco_asa_severity: "Notification"
+      message_id: 746007
+      network:
+        client:
+          geoip: {}
+      severity: 5
+      usr:
+        name: "Demo-User"
+    message: "<166>May 23 2023 13:55:00: %ASA-5-746007: user-identity: NetBIOS response failed from User Demo-User at 10.50.13.16"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 23 2023 13:55:00: %ASA-6-746008: user-identity: NetBIOS Probe Process started"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      message_id: 746008
+      process_status: "started"
+      severity: 6
+    message: "<166>May 23 2023 13:55:00: %ASA-6-746008: user-identity: NetBIOS Probe Process started"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 23 2023 13:55:00: %ASA-6-746009: user-identity: NetBIOS Probe Process stopped"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      message_id: 746009
+      process_status: "stopped"
+      severity: 6
+    message: "<166>May 23 2023 13:55:00: %ASA-6-746009: user-identity: NetBIOS Probe Process stopped"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 23 2023 13:55:00: %ASA-3-746010: user-identity: update import-user abc.com - Import Failed [reason ]"
+  result:
+    custom:
+      cisco_asa_severity: "Error"
+      message_id: 746010
+      reason: "reason"
+      severity: 3
+      user_identity: "abc.com"
+    message: "<166>May 23 2023 13:55:00: %ASA-3-746010: user-identity: update import-user abc.com - Import Failed [reason ]"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 23 2023 13:55:00: %ASA-3-746016: user-identity: DNS lookup failed, reason: failure"
+  result:
+    custom:
+      cisco_asa_severity: "Error"
+      message_id: 746016
+      reason: "failure"
+      severity: 3
+    message: "<166>May 23 2023 13:55:00: %ASA-3-746016: user-identity: DNS lookup failed, reason: failure"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-4-733100: [ Interface] drop rate 1 exceeded. Current burst rate is 1 per second, max configured rate is 8000; Current average rate is 2030 per second, max configured rate is 2000; Cumulative total count is 3930654."
+  result:
+    custom:
+      cisco_asa_severity: "Warning"
+      drop_reason: "Interface"
+      message_id: 733100
+      severity: 4
+    message: "<166>May 12 2023 15:23:08: %ASA-4-733100: [ Interface] drop rate 1 exceeded. Current burst rate is 1 per second, max configured rate is 8000; Current average rate is 2030 per second, max configured rate is 2000; Cumulative total count is 3930654."
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-611102: User authentication failed: IP = 10.50.2.123, Uname: user"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      ip_address: "10.50.2.123"
+      message_id: 611102
+      severity: 6
+      usr:
+        name: "user"
+    message: "<166>May 12 2023 15:23:08: %ASA-6-611102: User authentication failed: IP = 10.50.2.123, Uname: user"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-113015: AAA user authentication Rejected: reason = reason : local database: user = user: user IP = 103.122.56.32"
+  result:
+    custom:
+      auth_failed_ip_address: "103.122.56.32"
+      cisco_asa_severity: "Informational"
+      message_id: 113015
+      network:
+        client:
+          geoip: {}
+      reason: "reason"
+      severity: 6
+      usr:
+        name: "user"
+    message: "<166>May 12 2023 15:23:08: %ASA-6-113015: AAA user authentication Rejected: reason = reason : local database: user = user: user IP = 103.122.56.32"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-315011: SSH session from 123.152.12.5 on interface interface_name for user user disconnected by SSH server, reason: reason"
+  result:
+    custom:
+      cisco_asa_severity: "Informational"
+      interface: "interface_name"
+      ip_address: "123.152.12.5"
+      message_id: 315011
+      reason: "reason"
+      severity: 6
+      usr:
+        name: "user"
+    message: "<166>May 12 2023 15:23:08: %ASA-6-315011: SSH session from 123.152.12.5 on interface interface_name for user user disconnected by SSH server, reason: reason"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-5-111008: User 'user' executed the 'ipnet -v' command"
+  result:
+    custom:
+      cisco_asa_severity: "Notification"
+      command: "ipnet -v"
+      message_id: 111008
+      severity: 5
+      usr:
+        name: "user"
+    message: "<166>May 12 2023 15:23:08: %ASA-5-111008: User 'user' executed the 'ipnet -v' command"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "<166>May 12 2023 15:23:08: %ASA-6-106100: access-list incoming permitted udp inside/127.2.3.4(56575) -> outside/127.3.4.5(53) hit-cnt 1 first hit [0x93d0e533, 0x578ef52f]"
+  result:
+    custom:
+      action: "permitted"
+      cisco_asa_severity: "Informational"
+      message_id: 106100
+      outbound_dest_ip: "127.3.4.5"
+      outbound_dest_port: 53
+      outbound_src_ip: "127.2.3.4"
+      outbound_src_port: 56575
+      protocol: "udp"
+      severity: 6
+    message: "<166>May 12 2023 15:23:08: %ASA-6-106100: access-list incoming permitted udp inside/127.2.3.4(56575) -> outside/127.3.4.5(53) hit-cnt 1 first hit [0x93d0e533, 0x578ef52f]"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+

@@ -1,0 +1,47 @@
+id: nvidia_nim
+metric_id: nvidia-nim
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: 'NVIDIA NIM'
+  enabled: true
+  filter:
+    query: source:nvidia_nim
+  processors:
+    - type: grok-parser
+      name: Parse timestamp, level, logger, and message
+      enabled: true
+      source: message
+      samples:
+        - "2024-10-30 21:56:25,295 [INFO] PyTorch version 2.3.1 available."
+        - "2024-10-30 21:58:26,914 [WARNING] [TRT-LLM] [W] Logger level already set from environment. Discard new verbosity: error"
+        - "INFO 2024-10-30 21:56:28.831 ngc_injector.py:152] Valid profile: e45b4b991bbc51d0df3ce53e87060fc3a7f76555406ed534a8479c6faa706987 (tensorrt_llm-a10g-bf16-tp4-latency) on GPUs [0, 1, 2, 3]"
+        - "WARNING 2024-10-30 21:58:27.670 arg_utils.py:775] Chunked prefill is enabled by default for models with max_model_len > 32K. Currently, chunked prefill might not work with some features or models. If you encounter any issues, please disable chunked prefill by setting --enable-chunked-prefill=False."
+        - "[1730325496.647520] [dd317ab0670e:126  :0]          parser.c:2305 UCX  WARN  (set UCX_WARN_UNUSED_ENV_VARS=n to suppress this warning)"
+      grok:
+        matchRules: |
+          nvidia_nim %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp} \[%{_level}\] \[%{notSpace:component_name}\] \[%{word}\] %{_msg}
+          nvidia_nim_logger %{_level} %{date("yyyy-MM-dd HH:mm:ss.SSS"):timestamp} %{_logger_name}:%{_logger_line}\] %{_msg}
+          generic_log %{date("yyyy-MM-dd HH:mm:ss,SSS"):timestamp} \[%{_level}\] %{_msg}
+          componont_log \[%{number:timestamp}\]\W+\[%{notSpace:container_id}:%{number:pid}\W+:%{number:thread_id}\W+%{_logger_name}:%{_logger_line} %{word:component_name}\W+%{_level}\W+\(%{_msg}\)
+        supportRules: |
+          _logger_line %{notSpace:logger.line}
+          _logger_name %{notSpace:logger.name}
+          _level %{word:level}
+          _msg %{data:msg}
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level

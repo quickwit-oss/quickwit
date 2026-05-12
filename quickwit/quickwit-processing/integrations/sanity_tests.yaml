@@ -1,0 +1,675 @@
+id: sanity
+tests:
+ -
+  sample: |-
+    {
+      "documentType" : "comment",
+      "service" : "activity-logs",
+      "datasetName" : "testing-dataset-comments",
+      "action" : "document.create",
+      "afterValues" : {
+        "threadId" : "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc",
+        "_createdAt" : "2025-01-02T09:34:44Z",
+        "context" : {
+          "notification" : {
+            "currentThreadLength" : 1,
+            "documentTitle" : "new1 (2024)",
+            "workspaceTitle" : "abc",
+            "url" : "https://studio-with-template.sanity.studio/structure/movie"
+          },
+          "payload" : {
+            "workspace" : "default"
+          },
+          "tool" : ""
+        },
+        "_type" : "comment",
+        "_rev" : "PLZU3STmlngeQSXnoPA4gq",
+        "_id" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+        "authorId" : "ppZaIKjRJ",
+        "message" : [ {
+          "children" : [ {
+            "_type" : "span",
+            "text" : "commentn1",
+            "_key" : "74830e586545"
+          } ],
+          "_type" : "block",
+          "style" : "normal",
+          "_key" : "ea0b25ee8e22"
+        } ],
+        "_updatedAt" : "2025-01-02T09:34:44Z",
+        "target" : {
+          "path" : {
+            "field" : "title"
+          },
+          "documentRevisionId" : "rYFaT4Hj0JassVhSW9iHEt",
+          "documentType" : "movie",
+          "document" : {
+            "_weak" : true,
+            "_type" : "crossDatasetReference",
+            "_ref" : "7c1c32ce-e6d5-4832-87e0-3c45accc9004",
+            "_dataset" : "testing-dataset",
+            "_projectId" : "6t8g3xid"
+          }
+        },
+        "status" : "open"
+      },
+      "documentId" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+      "projectId" : "6t8g3xid",
+      "timestamp" : "2025-01-02T09:34:44Z"
+    }
+  result:
+    custom:
+      afterValues:
+        _createdAt: "2025-01-02T09:34:44Z"
+        _id: "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c"
+        _rev: "PLZU3STmlngeQSXnoPA4gq"
+        _type: "comment"
+        _updatedAt: "2025-01-02T09:34:44Z"
+        authorId: "ppZaIKjRJ"
+        context:
+          notification:
+            currentThreadLength: 1
+            documentTitle: "new1 (2024)"
+            url: "https://studio-with-template.sanity.studio/structure/movie"
+            workspaceTitle: "abc"
+          payload:
+            workspace: "default"
+          tool: ""
+        message:
+         -
+          children:
+           -
+            _type: "span"
+            text: "commentn1"
+            _key: "74830e586545"
+          _type: "block"
+          style: "normal"
+          _key: "ea0b25ee8e22"
+        status: "open"
+        target:
+          document:
+            _dataset: "testing-dataset"
+            _projectId: "6t8g3xid"
+            _ref: "7c1c32ce-e6d5-4832-87e0-3c45accc9004"
+            _type: "crossDatasetReference"
+            _weak: true
+          documentRevisionId: "rYFaT4Hj0JassVhSW9iHEt"
+          documentType: "movie"
+          path:
+            field: "title"
+        threadId: "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc"
+      datasetName: "testing-dataset-comments"
+      documentId: "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c"
+      documentType: "comment"
+      evt:
+        name: "document.create"
+      projectId: "6t8g3xid"
+      service: "activity-logs"
+      timestamp: "2025-01-02T09:34:44Z"
+    message: |-
+      {
+        "documentType" : "comment",
+        "service" : "activity-logs",
+        "datasetName" : "testing-dataset-comments",
+        "action" : "document.create",
+        "afterValues" : {
+          "threadId" : "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc",
+          "_createdAt" : "2025-01-02T09:34:44Z",
+          "context" : {
+            "notification" : {
+              "currentThreadLength" : 1,
+              "documentTitle" : "new1 (2024)",
+              "workspaceTitle" : "abc",
+              "url" : "https://studio-with-template.sanity.studio/structure/movie"
+            },
+            "payload" : {
+              "workspace" : "default"
+            },
+            "tool" : ""
+          },
+          "_type" : "comment",
+          "_rev" : "PLZU3STmlngeQSXnoPA4gq",
+          "_id" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+          "authorId" : "ppZaIKjRJ",
+          "message" : [ {
+            "children" : [ {
+              "_type" : "span",
+              "text" : "commentn1",
+              "_key" : "74830e586545"
+            } ],
+            "_type" : "block",
+            "style" : "normal",
+            "_key" : "ea0b25ee8e22"
+          } ],
+          "_updatedAt" : "2025-01-02T09:34:44Z",
+          "target" : {
+            "path" : {
+              "field" : "title"
+            },
+            "documentRevisionId" : "rYFaT4Hj0JassVhSW9iHEt",
+            "documentType" : "movie",
+            "document" : {
+              "_weak" : true,
+              "_type" : "crossDatasetReference",
+              "_ref" : "7c1c32ce-e6d5-4832-87e0-3c45accc9004",
+              "_dataset" : "testing-dataset",
+              "_projectId" : "6t8g3xid"
+            }
+          },
+          "status" : "open"
+        },
+        "documentId" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+        "projectId" : "6t8g3xid",
+        "timestamp" : "2025-01-02T09:34:44Z"
+      }
+    service: "activity-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735810484000
+ -
+  sample: |-
+    {
+      "beforeValues" : {
+        "threadId" : "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc",
+        "_createdAt" : "2025-01-02T09:34:44Z",
+        "_rev" : "PLZU3STmlngeQSXnoPA4gq",
+        "_type" : "comment",
+        "context" : {
+          "notification" : {
+            "currentThreadLength" : 1,
+            "documentTitle" : "new1 (2024)",
+            "workspaceTitle" : "abc",
+            "url" : "https://studio-with-template.sanity.studio/structure/movie"
+          },
+          "payload" : {
+            "workspace" : "default"
+          },
+          "tool" : ""
+        },
+        "_id" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+        "message" : [ {
+          "children" : [ {
+            "_type" : "span",
+            "text" : "commentn1",
+            "_key" : "74830e586545"
+          } ],
+          "_type" : "block",
+          "style" : "normal",
+          "_key" : "ea0b25ee8e22"
+        } ],
+        "authorId" : "ppZaIKjRJ",
+        "_updatedAt" : "2025-01-02T09:34:44Z",
+        "target" : {
+          "path" : {
+            "field" : "title"
+          },
+          "documentRevisionId" : "rYFaT4Hj0JassVhSW9iHEt",
+          "documentType" : "movie",
+          "document" : {
+            "_weak" : true,
+            "_ref" : "7c1c32ce-e6d5-4832-87e0-3c45accc9004",
+            "_type" : "crossDatasetReference",
+            "_dataset" : "testing-dataset",
+            "_projectId" : "6t8g3xid"
+          }
+        },
+        "status" : "open"
+      },
+      "documentType" : "comment",
+      "service" : "activity-logs",
+      "datasetName" : "testing-dataset-comments",
+      "action" : "document.delete",
+      "documentId" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+      "projectId" : "6t8g3xid",
+      "timestamp" : "2025-01-02T10:11:01Z"
+    }
+  result:
+    custom:
+      beforeValues:
+        _createdAt: "2025-01-02T09:34:44Z"
+        _id: "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c"
+        _rev: "PLZU3STmlngeQSXnoPA4gq"
+        _type: "comment"
+        _updatedAt: "2025-01-02T09:34:44Z"
+        authorId: "ppZaIKjRJ"
+        context:
+          notification:
+            currentThreadLength: 1
+            documentTitle: "new1 (2024)"
+            url: "https://studio-with-template.sanity.studio/structure/movie"
+            workspaceTitle: "abc"
+          payload:
+            workspace: "default"
+          tool: ""
+        message:
+         -
+          children:
+           -
+            _type: "span"
+            text: "commentn1"
+            _key: "74830e586545"
+          _type: "block"
+          style: "normal"
+          _key: "ea0b25ee8e22"
+        status: "open"
+        target:
+          document:
+            _dataset: "testing-dataset"
+            _projectId: "6t8g3xid"
+            _ref: "7c1c32ce-e6d5-4832-87e0-3c45accc9004"
+            _type: "crossDatasetReference"
+            _weak: true
+          documentRevisionId: "rYFaT4Hj0JassVhSW9iHEt"
+          documentType: "movie"
+          path:
+            field: "title"
+        threadId: "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc"
+      datasetName: "testing-dataset-comments"
+      documentId: "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c"
+      documentType: "comment"
+      evt:
+        name: "document.delete"
+      projectId: "6t8g3xid"
+      service: "activity-logs"
+      timestamp: "2025-01-02T10:11:01Z"
+    message: |-
+      {
+        "beforeValues" : {
+          "threadId" : "8bd8fd8a-96d8-45a0-a27f-e79e3a5313cc",
+          "_createdAt" : "2025-01-02T09:34:44Z",
+          "_rev" : "PLZU3STmlngeQSXnoPA4gq",
+          "_type" : "comment",
+          "context" : {
+            "notification" : {
+              "currentThreadLength" : 1,
+              "documentTitle" : "new1 (2024)",
+              "workspaceTitle" : "abc",
+              "url" : "https://studio-with-template.sanity.studio/structure/movie"
+            },
+            "payload" : {
+              "workspace" : "default"
+            },
+            "tool" : ""
+          },
+          "_id" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+          "message" : [ {
+            "children" : [ {
+              "_type" : "span",
+              "text" : "commentn1",
+              "_key" : "74830e586545"
+            } ],
+            "_type" : "block",
+            "style" : "normal",
+            "_key" : "ea0b25ee8e22"
+          } ],
+          "authorId" : "ppZaIKjRJ",
+          "_updatedAt" : "2025-01-02T09:34:44Z",
+          "target" : {
+            "path" : {
+              "field" : "title"
+            },
+            "documentRevisionId" : "rYFaT4Hj0JassVhSW9iHEt",
+            "documentType" : "movie",
+            "document" : {
+              "_weak" : true,
+              "_ref" : "7c1c32ce-e6d5-4832-87e0-3c45accc9004",
+              "_type" : "crossDatasetReference",
+              "_dataset" : "testing-dataset",
+              "_projectId" : "6t8g3xid"
+            }
+          },
+          "status" : "open"
+        },
+        "documentType" : "comment",
+        "service" : "activity-logs",
+        "datasetName" : "testing-dataset-comments",
+        "action" : "document.delete",
+        "documentId" : "9ded3fab-5df8-43eb-8d3c-f94a44bbd91c",
+        "projectId" : "6t8g3xid",
+        "timestamp" : "2025-01-02T10:11:01Z"
+      }
+    service: "activity-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735812661000
+ -
+  sample: |-
+    {
+      "beforeValues" : {
+        "createdByUser" : "2025-01-01T04:30:32.513Z",
+        "subscribers" : [ "ppZaIKjRJ" ],
+        "_rev" : "72321a62-d605-4df3-ab23-d8c2b7306747",
+        "_type" : "tasks.task",
+        "description" : [ {
+          "children" : [ {
+            "_type" : "span",
+            "text" : "task_2_screening",
+            "_key" : "ea8e16ae3083"
+          } ],
+          "_type" : "block",
+          "style" : "normal",
+          "_key" : "76570d367036"
+        } ],
+        "title" : "task_screening_1 (copy)",
+        "authorId" : "ppZaIKjRJ",
+        "assignedTo" : "ppZaIKjRJ",
+        "target" : {
+          "documentType" : "screening",
+          "document" : {
+            "_weak" : true,
+            "_ref" : "c437cb0b-8b77-4ba6-b22b-86dd678bd797",
+            "_type" : "crossDatasetReference",
+            "_dataset" : "testing-dataset-comments",
+            "_projectId" : "6t8g3xid"
+          }
+        },
+        "_createdAt" : "2025-01-01T04:29:57Z",
+        "context" : {
+          "notification" : {
+            "targetContentImageUrl" : "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96",
+            "targetContentTitle" : "Test_screening_2",
+            "workspaceTitle" : "abc",
+            "url" : "https://studio-with-template.sanity.studio//structure"
+          }
+        },
+        "_id" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+        "_updatedAt" : "2025-01-01T04:32:19Z",
+        "status" : "open"
+      },
+      "documentType" : "tasks.task",
+      "service" : "activity-logs",
+      "datasetName" : "testing-dataset-comments",
+      "action" : "document.update",
+      "afterValues" : {
+        "createdByUser" : "2025-01-01T04:30:32.513Z",
+        "subscribers" : [ "ppZaIKjRJ" ],
+        "_type" : "tasks.task",
+        "_rev" : "aa1decd8-ff39-498d-9064-e0fa26ffe1c0",
+        "description" : [ {
+          "children" : [ {
+            "_type" : "span",
+            "text" : "task_2_screening",
+            "_key" : "ea8e16ae3083"
+          } ],
+          "_type" : "block",
+          "style" : "normal",
+          "_key" : "76570d367036"
+        } ],
+        "title" : "task_screening_1 ()",
+        "authorId" : "ppZaIKjRJ",
+        "assignedTo" : "ppZaIKjRJ",
+        "target" : {
+          "documentType" : "screening",
+          "document" : {
+            "_weak" : true,
+            "_ref" : "c437cb0b-8b77-4ba6-b22b-86dd678bd797",
+            "_type" : "crossDatasetReference",
+            "_dataset" : "testing-dataset-comments",
+            "_projectId" : "6t8g3xid"
+          }
+        },
+        "_createdAt" : "2025-01-01T04:29:57Z",
+        "context" : {
+          "notification" : {
+            "targetContentImageUrl" : "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96",
+            "targetContentTitle" : "Test_screening_2",
+            "workspaceTitle" : "abc",
+            "url" : "https://studio-with-template.sanity.studio//structure"
+          }
+        },
+        "_id" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+        "_updatedAt" : "2025-01-02T10:12:48Z",
+        "status" : "open"
+      },
+      "documentId" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+      "projectId" : "6t8g3xid",
+      "timestamp" : "2025-01-02T10:12:48Z"
+    }
+  result:
+    custom:
+      afterValues:
+        _createdAt: "2025-01-01T04:29:57Z"
+        _id: "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9"
+        _rev: "aa1decd8-ff39-498d-9064-e0fa26ffe1c0"
+        _type: "tasks.task"
+        _updatedAt: "2025-01-02T10:12:48Z"
+        assignedTo: "ppZaIKjRJ"
+        authorId: "ppZaIKjRJ"
+        context:
+          notification:
+            targetContentImageUrl: "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96"
+            targetContentTitle: "Test_screening_2"
+            url: "https://studio-with-template.sanity.studio//structure"
+            workspaceTitle: "abc"
+        createdByUser: "2025-01-01T04:30:32.513Z"
+        description:
+         -
+          children:
+           -
+            _type: "span"
+            text: "task_2_screening"
+            _key: "ea8e16ae3083"
+          _type: "block"
+          style: "normal"
+          _key: "76570d367036"
+        status: "open"
+        subscribers:
+         - "ppZaIKjRJ"
+        target:
+          document:
+            _dataset: "testing-dataset-comments"
+            _projectId: "6t8g3xid"
+            _ref: "c437cb0b-8b77-4ba6-b22b-86dd678bd797"
+            _type: "crossDatasetReference"
+            _weak: true
+          documentType: "screening"
+        title: "task_screening_1 ()"
+      beforeValues:
+        _createdAt: "2025-01-01T04:29:57Z"
+        _id: "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9"
+        _rev: "72321a62-d605-4df3-ab23-d8c2b7306747"
+        _type: "tasks.task"
+        _updatedAt: "2025-01-01T04:32:19Z"
+        assignedTo: "ppZaIKjRJ"
+        authorId: "ppZaIKjRJ"
+        context:
+          notification:
+            targetContentImageUrl: "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96"
+            targetContentTitle: "Test_screening_2"
+            url: "https://studio-with-template.sanity.studio//structure"
+            workspaceTitle: "abc"
+        createdByUser: "2025-01-01T04:30:32.513Z"
+        description:
+         -
+          children:
+           -
+            _type: "span"
+            text: "task_2_screening"
+            _key: "ea8e16ae3083"
+          _type: "block"
+          style: "normal"
+          _key: "76570d367036"
+        status: "open"
+        subscribers:
+         - "ppZaIKjRJ"
+        target:
+          document:
+            _dataset: "testing-dataset-comments"
+            _projectId: "6t8g3xid"
+            _ref: "c437cb0b-8b77-4ba6-b22b-86dd678bd797"
+            _type: "crossDatasetReference"
+            _weak: true
+          documentType: "screening"
+        title: "task_screening_1 (copy)"
+      datasetName: "testing-dataset-comments"
+      documentId: "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9"
+      documentType: "tasks.task"
+      evt:
+        name: "document.update"
+      projectId: "6t8g3xid"
+      service: "activity-logs"
+      timestamp: "2025-01-02T10:12:48Z"
+    message: |-
+      {
+        "beforeValues" : {
+          "createdByUser" : "2025-01-01T04:30:32.513Z",
+          "subscribers" : [ "ppZaIKjRJ" ],
+          "_rev" : "72321a62-d605-4df3-ab23-d8c2b7306747",
+          "_type" : "tasks.task",
+          "description" : [ {
+            "children" : [ {
+              "_type" : "span",
+              "text" : "task_2_screening",
+              "_key" : "ea8e16ae3083"
+            } ],
+            "_type" : "block",
+            "style" : "normal",
+            "_key" : "76570d367036"
+          } ],
+          "title" : "task_screening_1 (copy)",
+          "authorId" : "ppZaIKjRJ",
+          "assignedTo" : "ppZaIKjRJ",
+          "target" : {
+            "documentType" : "screening",
+            "document" : {
+              "_weak" : true,
+              "_ref" : "c437cb0b-8b77-4ba6-b22b-86dd678bd797",
+              "_type" : "crossDatasetReference",
+              "_dataset" : "testing-dataset-comments",
+              "_projectId" : "6t8g3xid"
+            }
+          },
+          "_createdAt" : "2025-01-01T04:29:57Z",
+          "context" : {
+            "notification" : {
+              "targetContentImageUrl" : "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96",
+              "targetContentTitle" : "Test_screening_2",
+              "workspaceTitle" : "abc",
+              "url" : "https://studio-with-template.sanity.studio//structure"
+            }
+          },
+          "_id" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+          "_updatedAt" : "2025-01-01T04:32:19Z",
+          "status" : "open"
+        },
+        "documentType" : "tasks.task",
+        "service" : "activity-logs",
+        "datasetName" : "testing-dataset-comments",
+        "action" : "document.update",
+        "afterValues" : {
+          "createdByUser" : "2025-01-01T04:30:32.513Z",
+          "subscribers" : [ "ppZaIKjRJ" ],
+          "_type" : "tasks.task",
+          "_rev" : "aa1decd8-ff39-498d-9064-e0fa26ffe1c0",
+          "description" : [ {
+            "children" : [ {
+              "_type" : "span",
+              "text" : "task_2_screening",
+              "_key" : "ea8e16ae3083"
+            } ],
+            "_type" : "block",
+            "style" : "normal",
+            "_key" : "76570d367036"
+          } ],
+          "title" : "task_screening_1 ()",
+          "authorId" : "ppZaIKjRJ",
+          "assignedTo" : "ppZaIKjRJ",
+          "target" : {
+            "documentType" : "screening",
+            "document" : {
+              "_weak" : true,
+              "_ref" : "c437cb0b-8b77-4ba6-b22b-86dd678bd797",
+              "_type" : "crossDatasetReference",
+              "_dataset" : "testing-dataset-comments",
+              "_projectId" : "6t8g3xid"
+            }
+          },
+          "_createdAt" : "2025-01-01T04:29:57Z",
+          "context" : {
+            "notification" : {
+              "targetContentImageUrl" : "https://cdn.sanity.io/images/6t8g3xid/testing-dataset/123-352x100.svg?rect=126,0,100,100&w=96&h=96",
+              "targetContentTitle" : "Test_screening_2",
+              "workspaceTitle" : "abc",
+              "url" : "https://studio-with-template.sanity.studio//structure"
+            }
+          },
+          "_id" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+          "_updatedAt" : "2025-01-02T10:12:48Z",
+          "status" : "open"
+        },
+        "documentId" : "7077cdfc-2d17-44e4-bc49-0bf15c7cfdd9",
+        "projectId" : "6t8g3xid",
+        "timestamp" : "2025-01-02T10:12:48Z"
+      }
+    service: "activity-logs"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735812768000
+ -
+  sample: |-
+    {
+      "metadata" : {
+        "roleTitle" : "test3",
+        "roleName" : "test"
+      },
+      "projectDisplayName" : "ABC",
+      "datasetName" : "dataset_test3",
+      "actorEmail" : "wetif@abc.com",
+      "description" : "\"Watif Pax\" was removed from the role \"test3\" on the project",
+      "actorName" : "Watif Pax",
+      "userName" : "Watif Pax",
+      "version" : "v2021-02-01",
+      "userId" : "g1CHkVlfZ",
+      "actorId" : "g1CHkVlfZ",
+      "action" : "project.members.role.delete",
+      "correlationId" : "c87c267d910f818378a248436ecb6d0x",
+      "userEmail" : "wetif@abc.com",
+      "id" : "ale-2qkaB8F2TktURrG2QmnARtoNpIk",
+      "projectId" : "6t8g3xid",
+      "timestamp" : "2024-12-26T10:28:08.669Z"
+    }
+  result:
+    custom:
+      action: "project.members.role.delete"
+      actorEmail: "wetif@abc.com"
+      actorId: "g1CHkVlfZ"
+      actorName: "Watif Pax"
+      correlationId: "c87c267d910f818378a248436ecb6d0x"
+      datasetName: "dataset_test3"
+      description: "\"Watif Pax\" was removed from the role \"test3\" on the project"
+      id: "ale-2qkaB8F2TktURrG2QmnARtoNpIk"
+      metadata:
+        roleName: "test"
+        roleTitle: "test3"
+      projectDisplayName: "ABC"
+      projectId: "6t8g3xid"
+      timestamp: "2024-12-26T10:28:08.669Z"
+      userEmail: "wetif@abc.com"
+      userId: "g1CHkVlfZ"
+      userName: "Watif Pax"
+      version: "v2021-02-01"
+    message: |-
+      {
+        "metadata" : {
+          "roleTitle" : "test3",
+          "roleName" : "test"
+        },
+        "projectDisplayName" : "ABC",
+        "datasetName" : "dataset_test3",
+        "actorEmail" : "wetif@abc.com",
+        "description" : "\"Watif Pax\" was removed from the role \"test3\" on the project",
+        "actorName" : "Watif Pax",
+        "userName" : "Watif Pax",
+        "version" : "v2021-02-01",
+        "userId" : "g1CHkVlfZ",
+        "actorId" : "g1CHkVlfZ",
+        "action" : "project.members.role.delete",
+        "correlationId" : "c87c267d910f818378a248436ecb6d0x",
+        "userEmail" : "wetif@abc.com",
+        "id" : "ale-2qkaB8F2TktURrG2QmnARtoNpIk",
+        "projectId" : "6t8g3xid",
+        "timestamp" : "2024-12-26T10:28:08.669Z"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1735208888669

@@ -1,0 +1,152 @@
+id: "apigateway"
+tests:
+ -
+  sample: "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif HTTP/1.0\" 200 2326 123432135"
+  result:
+    custom:
+      date_access: 971211336000
+      http:
+        auth: "frank"
+        method: "GET"
+        request_id: "123432135"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "1.0"
+      network:
+        bytes_written: 2326
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif HTTP/1.0\" 200 2326 123432135"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 971211336000
+ -
+  sample: "127.0.0.1,-,frank,10/Oct/2000:13:55:36 -0700,GET,/apache_pb.gif,HTTP/1.0,200,2326,123432135"
+  result:
+    custom:
+      date_access: 971211336000
+      http:
+        auth: "frank"
+        method: "GET"
+        request_id: "123432135"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "1.0"
+      network:
+        bytes_written: 2326
+        client:
+          ip: "127.0.0.1"
+    message: "127.0.0.1,-,frank,10/Oct/2000:13:55:36 -0700,GET,/apache_pb.gif,HTTP/1.0,200,2326,123432135"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 971211336000
+ -
+  sample: |-
+    {
+      "requestTime" : 971211336000,
+      "protocol" : "HTTP/1.1",
+      "requestId" : "123432135",
+      "ip" : "127.0.0.1",
+      "resourcePath" : "/apache_pb.gif",
+      "responseLength" : 2326,
+      "httpMethod" : "GET",
+      "user" : "frank",
+      "status" : 200
+    }
+  result:
+    custom:
+      date_access: 971211336000
+      http:
+        auth: "frank"
+        method: "GET"
+        request_id: "123432135"
+        status_category: "OK"
+        status_code: 200
+        url: "/apache_pb.gif"
+        url_details:
+          path: "/apache_pb.gif"
+        version: "HTTP/1.1"
+      network:
+        bytes_written: 2326
+        client:
+          ip: "127.0.0.1"
+    message: |-
+      {
+        "requestTime" : 971211336000,
+        "protocol" : "HTTP/1.1",
+        "requestId" : "123432135",
+        "ip" : "127.0.0.1",
+        "resourcePath" : "/apache_pb.gif",
+        "responseLength" : 2326,
+        "httpMethod" : "GET",
+        "user" : "frank",
+        "status" : 200
+      }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 971211336000
+ -
+  sample: |-
+    {
+      "apiId": "13l2t6jfig",
+      "stage": "$default",
+      "requestId": "U-ehAjiACGYEPKA=",
+      "ip": "127.0.0.1",
+      "caller": "-",
+      "user": "-",
+      "requestTime": 1711018297,
+      "httpMethod": "GET",
+      "resourcePath": "GET /rss/us-east-1",
+      "status": 200,
+      "protocol": "HTTP/1.1",
+      "responseLength": 699
+    }
+  result:
+    custom:
+      apiId: "13l2t6jfig"
+      date_access: 1711018297000
+      http:
+        auth: "-"
+        ident: "-"
+        method: "GET"
+        request_id: "U-ehAjiACGYEPKA="
+        status_category: "OK"
+        status_code: 200
+        url: "GET /rss/us-east-1"
+        url_details:
+          path: "GET /rss/us-east-1"
+        version: "HTTP/1.1"
+      network:
+        bytes_written: 699
+        client:
+          ip: "127.0.0.1"
+      stage: "$default"
+    message: |-
+        {
+          "requestTime" : 1711018297,
+          "caller" : "-",
+          "protocol" : "HTTP/1.1",
+          "stage" : "$default",
+          "requestId" : "U-ehAjiACGYEPKA=",
+          "ip" : "127.0.0.1",
+          "resourcePath" : "GET /rss/us-east-1",
+          "responseLength" : 699,
+          "httpMethod" : "GET",
+          "user" : "-",
+          "apiId" : "13l2t6jfig",
+          "status" : 200
+        }
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1711018297000
+

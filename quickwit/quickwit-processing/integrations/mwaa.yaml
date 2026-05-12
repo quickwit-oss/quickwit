@@ -1,0 +1,100 @@
+id: mwaa
+metric_id: amazon-mwaa
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: mwaa-logs
+  enabled: true
+  filter:
+    query: "source:mwaa"
+  processors:
+    - type: grok-parser
+      name: Extract Attributes
+      enabled: true
+      source: message
+      samples:
+        - "[2025-01-20T17:28:06.431+0000] {logging_mixin.py:190} INFO - Task is
+          running"
+        - "[2025-01-20T17:28:06.431+0000] {dag.py:20} WARNING - This is
+          a warning log from the task"
+        - "[2025-01-20T17:30:06.797+0000] {dag.py:21} ERROR - This is
+          an error log from the task"
+      grok:
+        supportRules: ""
+        matchRules: default (\[%{date("yyyy-MM-dd'T'HH:mm:ss.SSSZ"):timestamp}\]
+          \{%{notSpace:filename}:%{integer:lineno}\} %{word:level} -
+          %{data:message})
+    - type: grok-parser
+      name: Parsing Stack traces
+      enabled: true
+      source: error.stack
+      samples:
+        - >
+          File
+          "/usr/local/lib/python3.7/site-packages/airflow/operators/python_operator.py",
+          line 118, in execute_callable
+
+          return self.python_callable(*self.op_args, **self.op_kwargs)
+
+          File "/usr/local/airflow/dags/task_fail.py", line 9, in print_hello
+
+          raise Exception('Hello world fail!')
+
+          Exception: Hello world fail!
+        - >
+          File
+          "/usr/local/lib/python3.7/site-packages/airflow/models/dagbag.py",
+          line 204, in process_file
+            m = imp.load_source(mod_name, filepath)
+          airflow.exceptions.AirflowException: The key (hello_world invalid DAG name) has to be made of alphanumeric characters, dashes, dots and underscores exclusively
+      grok:
+        supportRules: ""
+        matchRules: |
+          error_rule .*(\n|\t)%{notSpace:error.kind}: %{data:error.message}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message
+    - type: grok-parser
+      name: MWAA Environment Name Parser
+      enabled: true
+      source: aws.awslogs.logGroup
+      samples:
+        - airflow-djm-airflow-test-logs-task
+      grok:
+        supportRules: ""
+        matchRules: default
+          (%{data:mwaa_env_name}-(?i)(?:task|webserver|scheduler|worker|dagprocessing))
+    - type: pipeline
+      name: task logs
+      enabled: true
+      filter:
+        query: "@aws.awslogs.logGroup:*Task"
+      processors:
+        - type: grok-parser
+          name: Task Attributes Parser
+          enabled: true
+          source: aws.awslogs.logStream
+          samples:
+            - dag_id=airflow_dag_0/run_id=scheduled__2025-02-18T14_46_00+00_00/task_id=print_task_0/attempt=1.log
+          grok:
+            supportRules: ""
+            matchRules: default
+              (dag_id=%{word:airflow.dagRun.dag_id}/run_id=%{data:airflow.dagRun.run_id}/task_id=%{word:airflow.task.task_id}/attempt=%{word:airflow.task.attempt_id}.log)
+        - type: service-remapper
+          name: Define `airflow.dagRun.dag_id` as the official service of the log
+          enabled: true
+          sources:
+            - airflow.dagRun.dag_id

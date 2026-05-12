@@ -1,0 +1,436 @@
+id: cisco-secure-web-appliance
+metric_id: cisco-secure-web-appliance
+backend_only: false
+facets:
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Geoip
+    name: City Name
+    path: network.client.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Code
+    path: network.client.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Continent Name
+    path: network.client.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Country ISO Code
+    path: network.client.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Country Name
+    path: network.client.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision ISO Code
+    path: network.client.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Subdivision Name
+    path: network.client.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Client Port
+    path: network.client.port
+    source: log
+  - groups:
+      - Geoip
+    name: Destination City Name
+    path: network.destination.geoip.city.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Code
+    path: network.destination.geoip.continent.code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Continent Name
+    path: network.destination.geoip.continent.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country ISO Code
+    path: network.destination.geoip.country.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Country Name
+    path: network.destination.geoip.country.name
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision ISO Code
+    path: network.destination.geoip.subdivision.iso_code
+    source: log
+  - groups:
+      - Geoip
+    name: Destination Subdivision Name
+    path: network.destination.geoip.subdivision.name
+    source: log
+  - groups:
+      - Web Access
+    name: Destination IP
+    path: network.destination.ip
+    source: log
+  - groups:
+      - Web Access
+    name: Destination Port
+    path: network.destination.port
+    source: log
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+pipeline:
+  type: pipeline
+  name: Cisco Secure Web Appliance
+  enabled: true
+  filter:
+    query: "source:cisco-secure-web-appliance"
+  processors:
+    - type: pipeline
+      name: Processing of Access Logs
+      enabled: true
+      filter:
+        query: "service:access_logs "
+      processors:
+        - type: grok-parser
+          name: "Parse access logs"
+          enabled: true
+          source: message
+          samples:
+            - '<38>Sep 23 11:14:10 Crest.CSWA accesslogs: Info: 1727070241.436
+              866 10.10.10.10 TCP_MISS/200 4394 CONNECT
+              tunnel://v10.events.data.microsoft.com:443/ -
+              DIRECT/v10.events.data.microsoft.com application/octet-stream
+              DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE
+              <"IW_comp",9.0,1,"-",-,-,-,1,"-",-,-,-,"-",1,-,"-","-",-,-,"IW_comp",-,"-","Computers
+              and Internet","-","Microsoft Dynamics CRM","Enterprise
+              Applications","Encrypted","-",40.59,0,-,"-","-",1,"-",-,-,"-","-",-,1,"-",-,->
+              - -'
+            - 1726663202.810 4 10.10.10.10 TCP_DENIED/403 0 CONNECT
+              tunnel://FORCEPOINTDLP:443/ - NONE/- -
+              BLOCK_WEBCAT_12-DefaultGroup-match_network-NONE-NONE-NONE-NONE-NONE
+              <"nc",ns,1,"-",-,-,-,-,"-",-,-,-,"-",-,-,"-","-",-,-,"nc",-,"-","-","-","Unknown","Unknown","-","-",0.00,0,-,"-","-",-,"-",-,-,"-","-",-,-,"-",-,->
+              - -
+            - '<38>Sep 24 16:22:24 Crest.CSWA accesslogs: Info: 1727175142.338
+              98 10.10.10.10 TCP_DENIED_SSL/403 0 GET
+              https://www.virustotal.com:443/favicon.ico - NONE/- -
+              BLOCK_CUSTOMCAT_12-DefaultGroup-10.50.6.5-NONE-NONE-NONE-NONE-NONE
+              <"C_viru",-,-,"-",-,-,-,-,"-",-,-,-,"-",-,-,"-","-",-,-,"-",-,"-","-","-","-","-","-","-",0.00,0,-,"-","-",-,"-",-,-,"-","-",-,-,"-",-,->
+              - -'
+            - '<38>Sep 25 12:13:55 Crest.CSWA accesslogs: Info: 1727246631.866
+              93971 10.xx.xx.xx TCP_MISS/200 8560 CONNECT
+              tunnel://csp.withgoogle.com:443/ - DIRECT/csp.withgoogle.com
+              application/octet-stream
+              DEFAULT_CASE_12-DefaultGroup-match_network-NONE-NONE-NONE-DefaultGroup-NONE
+              <"IW_comp",3.0,1,"-",-,-,-,1,"-",-,-,-,"-",1,-,"-","-",-,-,"IW_comp,IW_csec",-,"-","Computers
+              and
+              Internet","-","Unknown","Unknown","-","-",0.73,0,-,"-","-",1,"-",-,-,"-","-",-,1,"-",-,->
+              - -'
+          grok:
+            supportRules: |-
+              helper_rule_1 %{regex("[^,]*")}
+              helper_rule_2 %{regex("[^\"]*")}
+            matchRules: 'access_log_rule ((<%{integer:}>)?(%{date("MMM d
+              HH:mm:ss"):}|%{date("MMM  d HH:mm:ss"):})
+              %{notSpace:syslog.host} %{regex("[^:]*"):}:
+              %{regex("[^:]*"):syslog.severity}:
+              )?%{number:timestamp:scale(1000)} %{number:latency}
+              %{notSpace:network.client.ip}(
+              \(%{notSpace:source_domain_name}\))?
+              %{word:transaction_result_code}/%{integer:http.status_code}
+              %{number:response_size} %{word:http.method} %{notSpace:http.url}
+              %{notSpace:usr.name:nullIf("-")}
+              %{word:contacted_server_type}/(%{ip:network.destination.ip}|%{notSpace:server_name})
+              %{notSpace:mime_type}
+              %{word:acl_decision_tag}-%{regex("[^-]*"):policy_group_name}-%{regex("[^-]*"):identity}-%{regex("[^-]*"):outbound_malware_scanning_policy}-%{regex("[^-]*"):data_security_policy}-%{regex("[^-]*"):external_dlp_policy}-%{regex("[^-]*"):routing_policy}-%{notSpace:}
+              <("%{helper_rule_2:custom_url_category}"|%{helper_rule_1:custom_url_category}),("%{helper_rule_2:web_reputation}"|%{helper_rule_1:web_reputation}),("%{helper_rule_2:webroot_malware_scanning_verdict:nullIf("-")}"|%{helper_rule_1:webroot_malware_scanning_verdict:nullIf("-")}),("%{helper_rule_2:webroot_spyware_name:nullIf("-")}"|%{helper_rule_1:webroot_spyware_name:nullIf("-")}),("%{helper_rule_2:webroot_threat_risk_ratio:nullIf("-")}"|%{helper_rule_1:webroot_threat_risk_ratio:nullIf("-")}),("%{helper_rule_2:webroot_threat_identifier:nullIf("-")}"|%{helper_rule_1:webroot_threat_identifier:nullIf("-")}),("%{helper_rule_2:webroot_trace_identifier:nullIf("-")}"|%{helper_rule_1:webroot_trace_identifier:nullIf("-")}),("%{helper_rule_2:mcafee_malware_scanning_verdict:nullIf("-")}"|%{helper_rule_1:mcafee_malware_scanning_verdict:nullIf("-")}),("%{helper_rule_2:mcafee_scanned_file_name:nullIf("-")}"|%{helper_rule_1:mcafee_scanned_file_name:nullIf("-")}),("%{helper_rule_2:mcafee_scan_error:nullIf("-")}"|%{helper_rule_1:mcafee_scan_error:nullIf("-")}),("%{helper_rule_2:mcafee_detection_type:nullIf("-")}"|%{helper_rule_1:mcafee_detection_type:nullIf("-")}),("%{helper_rule_2:mcafee_virus_type:nullIf("-")}"|%{helper_rule_1:mcafee_virus_type:nullIf("-")}),("%{helper_rule_2:mcafee_detected_virus_name:nullIf("-")}"|%{helper_rule_1:mcafee_detected_virus_name:nullIf("-")}),("%{helper_rule_2:sophos_malware_scanning_verdict:nullIf("-")}"|%{helper_rule_1:sophos_malware_scanning_verdict:nullIf("-")}),("%{helper_rule_2:sophos_scan_return_code:nullIf("-")}"|%{helper_rule_1:sophos_scan_return_code:nullIf("-")}),("%{helper_rule_2:sophos_detected_file_name:nullIf("-")}"|%{helper_rule_1:sophos_detected_file_name:nullIf("-")}),("%{helper_rule_2:sophos_threat_name:nullIf("-")}"|%{helper_rule_1:sophos_threat_name:nullIf("-")}),("%{helper_rule_2:cisco_data_security_scanning_verdict}"|%{helper_rule_1:cisco_data_security_scanning_verdict}),("%{helper_rule_2:external_dlp_scan_verdict}"|%{helper_rule_1:external_dlp_scan_verdict}),("%{helper_rule_2:url_category_verdict}"|%{helper_rule_1:url_category_verdict}),("%{helper_rule_2:cisco_web_usage_url_category_verdict:nullIf("-")}"|%{helper_rule_1:cisco_web_usage_url_category_verdict:nullIf("-")}),("%{helper_rule_2:response_side_anti_malware_scanning_verdict:nullIf("-")}"|%{helper_rule_1:response_side_anti_malware_scanning_verdict:nullIf("-")}),("%{helper_rule_2:threat_type:nullIf("-")}"|%{helper_rule_1:threat_type:nullIf("-")}),("%{helper_rule_2:google_encapsulated_url:nullIf("-")}"|%{helper_rule_1:google_encapsulated_url:nullIf("-")}),("%{helper_rule_2:avc_adc_application_name:nullIf("-")}"|%{helper_rule_1:avc_adc_application_name:nullIf("-")}),("%{helper_rule_2:avc_adc_application_type:nullIf("-")}"|%{helper_rule_1:avc_adc_application_type:nullIf("-")}),("%{helper_rule_2:avc_adc_application_behavior:nullIf("-")}"|%{helper_rule_1:avc_adc_application_behavior:nullIf("-")}),("%{helper_rule_2:safe_browsing_scanning_verdict:nullIf("-")}"|%{helper_rule_1:safe_browsing_scanning_verdict:nullIf("-")}),("%{helper_rule_2:average_bandwidth_consumed:nullIf("-")}"|%{helper_rule_1:average_bandwidth_consumed:nullIf("-")}),("%{helper_rule_2:request_throttled:nullIf("-")}"|%{helper_rule_1:request_throttled:nullIf("-")}),("%{helper_rule_2:user_type:nullIf("-")}"|%{helper_rule_1:user_type:nullIf("-")}),("%{helper_rule_2:request_side_anti_malware_scanning_verdict:nullIf("-")}"|%{helper_rule_1:request_side_anti_malware_scanning_verdict:nullIf("-")}),("%{helper_rule_2:request_threat_name:nullIf("-")}"|%{helper_rule_1:request_threat_name:nullIf("-")}),("%{helper_rule_2:advance_malware_protection_file_scanning_verdict:nullIf("-")}"|%{helper_rule_1:advance_malware_protection_file_scanning_verdict:nullIf("-")}),("%{helper_rule_2:advance_malware_protection_detected_threat_name:nullIf("-")}"|%{helper_rule_1:advance_malware_protection_detected_threat_name:nullIf("-")}),("%{helper_rule_2:advance_malware_protection_detected_reputation_score:nullIf("-")}"|%{helper_rule_1:advance_malware_protection_detected_reputation_score:nullIf("-")}),("%{helper_rule_2:advance_malware_protection_request_indicator_upload:nullIf("-")}"|%{helper_rule_1:advance_malware_protection_request_indicator_upload:nullIf("-")}),("%{helper_rule_2:scanned_file_name:nullIf("-")}"|%{helper_rule_1:scanned_file_name:nullIf("-")}),("%{helper_rule_2:scanned_file_identifier:nullIf("-")}"|%{helper_rule_1:scanned_file_identifier:nullIf("-")}),("%{helper_rule_2:archive_scan_verdict}"|%{helper_rule_1:archive_scan_verdict}),("%{helper_rule_2:archive_scan_verdict_details}"|%{helper_rule_1:archive_scan_verdict_details}),("%{helper_rule_2:archive_scan_file_verdict}"|%{helper_rule_1:archive_scan_file_verdict}),("%{helper_rule_2:web_tap_behavior}"|%{helper_rule_1:web_tap_behavior}),("%{helper_rule_2:youtube_url_category}"|%{helper_rule_1:youtube_url_category})%{regex("[^>]*"):}>
+              %{greedyData:suspected_user_agent}'
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+        - name: Lookup for `cisco_data_security_scanning_verdict` to
+            `cisco_data_security_scanning_verdict_name` Field
+          enabled: true
+          source: cisco_data_security_scanning_verdict
+          target: cisco_data_security_scanning_verdict_name
+          lookupTable: |-
+            0,Allow
+            1,Block
+          type: lookup-processor
+        - name: Lookup for `external_dlp_scan_verdict` to `external_dlp_scan_verdict_name`
+            Field
+          enabled: true
+          source: external_dlp_scan_verdict
+          target: external_dlp_scan_verdict_name
+          lookupTable: |-
+            0,Allow
+            1,Block
+          type: lookup-processor
+        - name: Lookup for `webroot_malware_scanning_verdict` to
+            `webroot_malware_scanning_verdict_name` field
+          enabled: true
+          source: webroot_malware_scanning_verdict
+          target: webroot_malware_scanning_verdict_name
+          lookupTable: |-
+            0,Not Set
+            1,Unknown
+            2,Not Scanned
+            3,Timeout
+            4,Error
+            10,Generic Spyware
+            12,Browser Helper Object
+            13,Adware
+            14,System Monitor
+            18,Commercial System Monitor
+            19,Dialer
+            20,Hijacker
+            21,Phishing URL
+            22,Trojan Downloader
+            23,Trojan Horse
+            24,Trojan Phisher
+            25,Worm
+            26,Encrypted File
+            27,Virus
+            33,Other Malware
+            34,PUA
+            35,Aborted
+            36,Outbreak Heuristics
+            37,Known Malicious and High-Risk Files
+          type: lookup-processor
+        - name: Lookup for `sophos_malware_scanning_verdict` to
+            `sophos_malware_scanning_verdict_name` field
+          enabled: true
+          source: sophos_malware_scanning_verdict
+          target: sophos_malware_scanning_verdict_name
+          lookupTable: |-
+            0,Not Set
+            1,Unknown
+            2,Not Scanned
+            3,Timeout
+            4,Error
+            10,Generic Spyware
+            12,Browser Helper Object
+            13,Adware
+            14,System Monitor
+            18,Commercial System Monitor
+            19,Dialer
+            20,Hijacker
+            21,Phishing URL
+            22,Trojan Downloader
+            23,Trojan Horse
+            24,Trojan Phisher
+            25,Worm
+            26,Encrypted File
+            27,Virus
+            33,Other Malware
+            34,PUA
+            35,Aborted
+            36,Outbreak Heuristics
+            37,Known Malicious and High-Risk Files
+          type: lookup-processor
+        - name: Lookup for `mcafee_malware_scanning_verdict` to
+            `mcafee_malware_scanning_verdict_name` field
+          enabled: true
+          source: mcafee_malware_scanning_verdict
+          target: mcafee_malware_scanning_verdict_name
+          lookupTable: |-
+            0,Not Set
+            1,Unknown
+            2,Not Scanned
+            3,Timeout
+            4,Error
+            10,Generic Spyware
+            12,Browser Helper Object
+            13,Adware
+            14,System Monitor
+            18,Commercial System Monitor
+            19,Dialer
+            20,Hijacker
+            21,Phishing URL
+            22,Trojan Downloader
+            23,Trojan Horse
+            24,Trojan Phisher
+            25,Worm
+            26,Encrypted File
+            27,Virus
+            33,Other Malware
+            34,PUA
+            35,Aborted
+            36,Outbreak Heuristics
+            37,Known Malicious and High-Risk Files
+          type: lookup-processor
+        - name: Lookup for `request_throttled` to  `request_throttled_status` Field
+          enabled: true
+          source: request_throttled
+          target: request_throttled_status
+          lookupTable: |-
+            0,Not Throttled
+            1,Throttled
+          type: lookup-processor
+        - type: category-processor
+          name: advance_malware_protection_file_scanning_verdict category processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@advance_malware_protection_file_scanning_verdict:>3"
+              name: Malicious
+            - filter:
+                query: "@advance_malware_protection_file_scanning_verdict:3"
+              name: Scan Error
+            - filter:
+                query: "@advance_malware_protection_file_scanning_verdict:2"
+              name: Scan Timeout
+            - filter:
+                query: "@advance_malware_protection_file_scanning_verdict:1"
+              name: Not Scanned
+            - filter:
+                query: "@advance_malware_protection_file_scanning_verdict:0"
+              name: Not Malicious
+          target: advance_malware_protection_file_scanning_verdict
+        - type: category-processor
+          name: HTTP status category processor
+          enabled: true
+          categories:
+            - filter:
+                query: "@http.status_code:[100 TO 199]"
+              name: Informational
+            - filter:
+                query: "@http.status_code:[200 TO 299]"
+              name: Successful
+            - filter:
+                query: "@http.status_code:[300 TO 399]"
+              name: Redirection
+            - filter:
+                query: "@http.status_code:[400 TO 499]"
+              name: Client Error
+            - filter:
+                query: "@http.status_code:[500 TO 599]"
+              name: Server Error
+          target: http.status_category
+        - type: geo-ip-parser
+          name: Extracting Geo Location from Source IP Address
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: url-parser
+          name: Extracts information from `http.url`
+          enabled: true
+          sources:
+            - http.url
+          target: http.url_details
+          normalizeEndingSlashes: false
+        - type: status-remapper
+          name: Define `syslog.severity` as the official status of the log
+          enabled: true
+          sources:
+            - syslog.severity
+    - type: pipeline
+      name: Processing of l4tm logs
+      enabled: true
+      filter:
+        query: "service:l4tm_logs"
+      processors:
+        - type: grok-parser
+          name: Parse l4tm logs
+          enabled: true
+          source: message
+          samples:
+            - "Wed Sep 18 18:59:26 2024 Info: Firewall allowed TCP data from
+              10.10.10.10:80 to 10.10.10.10:80."
+            - "Wed Sep 19 18:59:26 2024 Info: Firewall allowed data from [10.xx.xx.xx] to
+              10.10.10.10."
+            - "Wed Sep 20 18:59:26 2024 Info: Address [10.10.10.xx] (aw.com):1080
+              discovered for blocksite.net (blocksite.net) added to firewall
+              allow list."
+            - "Wed Sep 21 18:59:26 2024 Info: Address 10.10.10.10 for blocksite.net
+              (blocksite.net) removed from firewall block list."
+            - "Wed Sep 22 18:59:26 2024 Info: 10.10.10.10 discovered for www.favoritesite.com
+              (www.favoritesite.com) added to firewall allow list."
+          grok:
+            supportRules: >-
+              SOURCE_IP_PARSER_RULE
+              (\[?(%{ip:network.client.ip}|%{regex("[^\\s|^:|^\\]]*"):network.client.ip})\]?((
+              )?\(%{notSpace:source_domain}\))?(:%{integer:network.client.port})?)
+
+              DESTINATION_IP_PARSER_RULE (\[?(%{ip:network.destination.ip}|%{regex("[^\\s|^:|^\\]]*"):network.destination.ip})\]?(( )?\(%{notSpace:destination_domain}\))?(:%{integer:network.destination.port})?)
+            matchRules: >-
+              firewall_rule_1 (%{number:timestamp:scale(1000)}|%{date("EEE MMM d
+              HH:mm:ss yyyy"):timestamp}|%{date("EEE MMM  d HH:mm:ss
+              yyyy"):timestamp}) %{word:syslog.severity}: Firewall
+              %{word:action}( %{word:protocol})?(:%{notSpace:protocol_version})?
+              data from %{SOURCE_IP_PARSER_RULE:} to
+              %{DESTINATION_IP_PARSER_RULE:}.
+
+
+              firewall_rule_2 (%{number:timestamp:scale(1000)}|%{date("EEE MMM d HH:mm:ss yyyy"):timestamp}|%{date("EEE MMM  d HH:mm:ss yyyy"):timestamp}) %{word:syslog.severity}: (Address )?%{DESTINATION_IP_PARSER_RULE:} (discovered )?for %{data:sub_domain} \(%{data:domain}\) %{word:firewall_action} (from|to) firewall %{notSpace:firewall_list} list.
+        - type: date-remapper
+          name: Define `timestamp` as the official date of the log
+          enabled: true
+          sources:
+            - timestamp
+        - type: geo-ip-parser
+          name: Extracting Geo Location from Source IP Address
+          enabled: true
+          sources:
+            - network.client.ip
+          target: network.client.geoip
+          ip_processing_behavior: do-nothing
+        - type: geo-ip-parser
+          name: Extracting Geo Location from Destination IP Address
+          enabled: true
+          sources:
+            - network.destination.ip
+          target: network.destination.geoip
+          ip_processing_behavior: do-nothing
+        - type: status-remapper
+          name: Define `syslog.severity` as the official status of the log
+          enabled: true
+          sources:
+            - syslog.severity

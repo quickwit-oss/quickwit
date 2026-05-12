@@ -1,0 +1,50 @@
+id: exchange-server
+metric_id: exchange-server
+backend_only: false
+facets:
+  - groups:
+      - Exchange Server
+    name: Event ID
+    path: event_id
+    source: log
+pipeline:
+  type: pipeline
+  name: Exchange Server
+  enabled: true
+  filter:
+    query: source:exchange-server
+  processors:
+    - type: grok-parser
+      name: Parsing Exchange Server logs
+      enabled: true
+      source: message
+      samples:
+        - 2020-09-14T13:19:20.093Z,,Transport,,*,service started; MaxConcurrentSubmissions=80; MaxConcurrentDeliveries=20; MaxSmtpOutConnections=1000
+        - 2020-09-14T13:19:10.813Z,MailboxDeliveryService,S:Stage=StartService
+        - 2020-09-14T13:19:16.946Z,START,,,,,,,,,Started MsExchangeThrottling service.
+      grok:
+        supportRules: |
+          _datetime %{date("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"):timestamp}
+          _session %{word:session}?
+          _source %{word:source}
+          _destination %{word:destination}?
+          _direction %{regex("[*+->]"):direction}
+          _eventId %{word:event_id}?
+          _client_hostname %{word:client.hostname}?
+          _client_info %{word:client.info}?
+          _client_processname %{word:client.processname}?
+          _mailbox %{word:mailbox}?
+          _request_action %{word:request.action}?
+          _quota %{word:quote}?
+          _request_token_count %{word:request.token_count}?
+          _response %{word:response}?
+
+        matchRules: |
+          exchange_server_throttling_service_log %{_datetime},%{_eventId},%{_client_hostname},%{_client_info},%{_client_processname},%{_mailbox},%{_request_action},%{_quota},%{_request_token_count},%{_response},%{data:message}
+          exchange_server_transport_connectivity_log %{_datetime},%{_session},%{_source},%{_destination},%{_direction},%{data:message}
+          exchange_server_common_diagnostics_log %{_datetime},%{_source},%{data:message}
+    - type: message-remapper
+      name: Define `message` as the official message of the log
+      enabled: true
+      sources:
+        - message

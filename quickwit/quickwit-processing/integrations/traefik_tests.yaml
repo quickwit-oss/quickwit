@@ -1,0 +1,244 @@
+id: "traefik"
+tests:
+ -
+  sample: "10.32.0.1 - - [07/Dec/2018:06:07:03 +0000] \"GET / HTTP/1.1\" 302 5 \"-\" \"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36\" 132170 \"entrypoint redirect for http\" \"/“ 0ms"
+  result:
+    custom:
+      date_access: 1544162823000
+      duration: 0.0
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "notice"
+        status_code: 302
+        url: "/"
+        url_details:
+          path: "/"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "51"
+            minor: "0"
+            patch: "2704"
+            patch_minor: "103"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+        version: "1.1"
+      network:
+        bytes_written: 5
+        client:
+          ip: "10.32.0.1"
+      traefik:
+        backend_url: "/"
+        name: "entrypoint redirect for http"
+        request_total: 132170.0
+    message: "10.32.0.1 - - [07/Dec/2018:06:07:03 +0000] \"GET / HTTP/1.1\" 302 5 \"-\" \"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36\" 132170 \"entrypoint redirect for http\" \"/“ 0ms"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544162823000
+ -
+  sample: "10.32.0.1 - - [07/Dec/2018:04:36:29 +0000] \"GET / HTTP/1.1\" 302 5 \"-\" \"HTTP Banner Detection (https://security.ipip.net)\" 132167 \"entrypoint redirect for http\" \"/“ 0ms"
+  result:
+    custom:
+      date_access: 1544157389000
+      duration: 0.0
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "notice"
+        status_code: 302
+        url: "/"
+        url_details:
+          path: "/"
+        useragent: "HTTP Banner Detection (https://security.ipip.net)"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            brand: "Generic"
+            category: "Other"
+            family: "Generic Feature Phone"
+            model: "Feature Phone"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 5
+        client:
+          ip: "10.32.0.1"
+      traefik:
+        backend_url: "/"
+        name: "entrypoint redirect for http"
+        request_total: 132167.0
+    message: "10.32.0.1 - - [07/Dec/2018:04:36:29 +0000] \"GET / HTTP/1.1\" 302 5 \"-\" \"HTTP Banner Detection (https://security.ipip.net)\" 132167 \"entrypoint redirect for http\" \"/“ 0ms"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544157389000
+ -
+  sample: "time=\"2019-04-05T11:57:47Z\" level=info msg=\"Skipping same configuration for provider consul_catalog\""
+  result:
+    custom:
+      level: "info"
+      time: "2019-04-05T11:57:47Z"
+    message: "Skipping same configuration for provider consul_catalog"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "RequestPath" : "https://mail.google.com/mail/u/0/#inbox",
+      "ClientAddr" : "180.150.154.44:5051",
+      "RequestHost" : "https://datadoghq.com",
+      "RequestMethod" : "GET",
+      "ClientPort" : "5051",
+      "RequestProtocol" : "1.1",
+      "BackendAddr" : "127.0.0.1:8088",
+      "OriginStatusLine" : "404 page not found",
+      "RequestCount" : 2,
+      "BackendName" : "unicorn-backend",
+      "OriginContentSize" : 257,
+      "OriginStatus" : 404,
+      "RequestContentSize" : 456,
+      "BackendURL" : {
+        "ForceQuery" : false,
+        "Host" : "127.0.0.1:8088"
+      },
+      "RetryAttempts" : 2,
+      "ClientUsername" : "-",
+      "DownstreamStatus" : 404,
+      "RequestPort" : "6014",
+      "Duration" : 12345678,
+      "OriginDuration" : 1345642,
+      "RequestAddr" : "127.150.32.44:10514",
+      "ClientHost" : "180.150.154.44",
+      "RequestLine" : "GET https://mail.google.com/mail/u/0/#inbox HTTP/1.1",
+      "DownstreamStatusLine" : "404 page not found",
+      "DownstreamContentSize" : 203,
+      "Overhead" : 100,
+      "GzipRatio" : 5,
+      "FrontendName" : "this-is-my-frontend-name"
+    }
+  result:
+    custom:
+      BackendAddr: "127.0.0.1:8088"
+      BackendName: "unicorn-backend"
+      BackendURL:
+        ForceQuery: false
+        Host: "127.0.0.1:8088"
+      ClientAddr: "180.150.154.44:5051"
+      ClientUsername: "-"
+      DownstreamStatusLine: "404 page not found"
+      FrontendName: "this-is-my-frontend-name"
+      GzipRatio: 5
+      OriginContentSize: 257
+      OriginDuration: 1345642
+      OriginStatusLine: "404 page not found"
+      Overhead: 100
+      RequestAddr: "127.150.32.44:10514"
+      RequestCount: 2
+      RequestHost: "https://datadoghq.com"
+      RequestLine: "GET https://mail.google.com/mail/u/0/#inbox HTTP/1.1"
+      RequestPath: "https://mail.google.com/mail/u/0/#inbox"
+      RequestPort: "6014"
+      RequestProtocol: "1.1"
+      RetryAttempts: 2
+      duration: 12345678
+      http:
+        method: "GET"
+        status_category: "warning"
+        status_code: 404
+        url_details:
+          hash: "inbox"
+          host: "mail.google.com"
+          path: "/mail/u/0/"
+          scheme: "https"
+      network:
+        bytes_read: 456
+        bytes_written: 203
+        client:
+          ip: "180.150.154.44"
+          port: "5051"
+    message: |-
+      {
+        "RequestPath" : "https://mail.google.com/mail/u/0/#inbox",
+        "ClientAddr" : "180.150.154.44:5051",
+        "RequestHost" : "https://datadoghq.com",
+        "RequestMethod" : "GET",
+        "ClientPort" : "5051",
+        "RequestProtocol" : "1.1",
+        "BackendAddr" : "127.0.0.1:8088",
+        "OriginStatusLine" : "404 page not found",
+        "RequestCount" : 2,
+        "BackendName" : "unicorn-backend",
+        "OriginContentSize" : 257,
+        "OriginStatus" : 404,
+        "RequestContentSize" : 456,
+        "BackendURL" : {
+          "ForceQuery" : false,
+          "Host" : "127.0.0.1:8088"
+        },
+        "RetryAttempts" : 2,
+        "ClientUsername" : "-",
+        "DownstreamStatus" : 404,
+        "RequestPort" : "6014",
+        "Duration" : 12345678,
+        "OriginDuration" : 1345642,
+        "RequestAddr" : "127.150.32.44:10514",
+        "ClientHost" : "180.150.154.44",
+        "RequestLine" : "GET https://mail.google.com/mail/u/0/#inbox HTTP/1.1",
+        "DownstreamStatusLine" : "404 page not found",
+        "DownstreamContentSize" : 203,
+        "Overhead" : 100,
+        "GzipRatio" : 5,
+        "FrontendName" : "this-is-my-frontend-name"
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "127.0.0.1 - - [07/Dec/2018:04:36:29 +0000] \"GET /ping HTTP/1.1\" 200 2 \"-\" \"-\" 1 - - 0ms"
+  result:
+    custom:
+      date_access: 1544157389000
+      duration: 0.0
+      http:
+        method: "GET"
+        referer: "-"
+        status_category: "OK"
+        status_code: 200
+        url: "/ping"
+        url_details:
+          path: "/ping"
+        useragent: "-"
+        useragent_details:
+          browser:
+            family: "Other"
+          device:
+            category: "Other"
+            family: "Other"
+          os:
+            family: "Other"
+        version: "1.1"
+      network:
+        bytes_written: 2
+        client:
+          ip: "127.0.0.1"
+      traefik:
+        backend_url: "-"
+        name: "-"
+        request_total: 1.0
+    message: "127.0.0.1 - - [07/Dec/2018:04:36:29 +0000] \"GET /ping HTTP/1.1\" 200 2 \"-\" \"-\" 1 - - 0ms"
+    status: "ok"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1544157389000

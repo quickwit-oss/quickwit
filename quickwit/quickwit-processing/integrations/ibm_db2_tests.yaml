@@ -1,0 +1,142 @@
+id: "ibm_db2"
+tests:
+ -
+  sample: "2018-05-14-08.47.36.193659+000 E15259E495            LEVEL: Event PID     : 1492                 TID : 140145063458688 PROC : db2star2 INSTANCE: db2inst1             NODE : 000 HOSTNAME: 04753ae5d01d FUNCTION: DB2 UDB, base sys utilities, DB2StartMain, probe:911 MESSAGE : ADM7513W  Database manager has started."
+  result:
+    custom:
+      db:
+        hostname: "04753ae5d01d"
+        instance: "db2inst1"
+        partition: "000"
+        recordID: "E15259E495"
+      function:
+        compName: "base sys utilities"
+        name: "DB2StartMain"
+        probe: 911.0
+        prodName: "DB2 UDB"
+      level: "notice"
+      logger:
+        name: "db2star2"
+        thread_id: 1.40145063458688E14
+      pid: 1492.0
+      timestamp: 1526287656193
+    message: "2018-05-14-08.47.36.193659+000 E15259E495            LEVEL: Event PID     : 1492                 TID : 140145063458688 PROC : db2star2 INSTANCE: db2inst1             NODE : 000 HOSTNAME: 04753ae5d01d FUNCTION: DB2 UDB, base sys utilities, DB2StartMain, probe:911 MESSAGE : ADM7513W  Database manager has started."
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2018-05-14-09.04.27.658344+000 I72564E623            LEVEL: Error PID     : 361                  TID : 139942277670656 PROC : db2sysc INSTANCE: db2inst1             NODE : 000            DB   : TSKDB APPHDL  : 0-9                  APPID: *LOCAL.db2inst1.180514090427 AUTHID  : DB2INST1             HOSTNAME: ce3be27c9efe EDUID   : 36                   EDUNAME: db2agent (TSKDB) FUNCTION: DB2 UDB, config/install, sqlfGetNumInstances, probe:10 MESSAGE : ECF=0x900001BF=-1879047745=ECF_GENREG_OPEN_INPUT_FILE_FAILED Failed to open the input registry DATA #1 : String, 37 bytes Error when opening the instance list."
+  result:
+    custom:
+      application:
+        handle: "0-9"
+        id: "*LOCAL.db2inst1.180514090427"
+      authID: "DB2INST1"
+      db:
+        hostname: "ce3be27c9efe"
+        instance: "db2inst1"
+        name: "TSKDB"
+        partition: "000"
+        recordID: "I72564E623"
+      edu:
+        id: "36"
+        name: "db2agent (TSKDB)"
+      function:
+        compName: "config/install"
+        name: "sqlfGetNumInstances"
+        probe: 10.0
+        prodName: "DB2 UDB"
+      level: "Error"
+      logger:
+        name: "db2sysc"
+        thread_id: 1.39942277670656E14
+      pid: 361.0
+      timestamp: 1526288667658
+    message: "2018-05-14-09.04.27.658344+000 I72564E623            LEVEL: Error PID     : 361                  TID : 139942277670656 PROC : db2sysc INSTANCE: db2inst1             NODE : 000            DB   : TSKDB APPHDL  : 0-9                  APPID: *LOCAL.db2inst1.180514090427 AUTHID  : DB2INST1             HOSTNAME: ce3be27c9efe EDUID   : 36                   EDUNAME: db2agent (TSKDB) FUNCTION: DB2 UDB, config/install, sqlfGetNumInstances, probe:10 MESSAGE : ECF=0x900001BF=-1879047745=ECF_GENREG_OPEN_INPUT_FILE_FAILED Failed to open the input registry DATA #1 : String, 37 bytes Error when opening the instance list."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2019-01-18-21.52.51.899662+000 I214165E540           LEVEL: Event PID     : 565                  TID : 140148880697088 PROC : db2sysc INSTANCE: db2inst1             NODE : 000            DB   : DATADOG APPHDL  : 0-22                 APPID: ::1.55310.190118215251 AUTHID  : DB2INST1             HOSTNAME: 923611e746f7 EDUID   : 22                   EDUNAME: db2agent (DATADOG) FUNCTION: DB2 UDB, config/install, sqlfLogUpdateCfgParam, probe:20 CHANGE  : CFG DB DATADOG : \"Database_memory\" From: \"62992\" <automatic>  To: \"64320\" <automatic>"
+  result:
+    custom:
+      application:
+        handle: "0-22"
+        id: "::1.55310.190118215251"
+      authID: "DB2INST1"
+      db:
+        hostname: "923611e746f7"
+        instance: "db2inst1"
+        name: "DATADOG"
+        partition: "000"
+        recordID: "I214165E540"
+      edu:
+        id: "22"
+        name: "db2agent (DATADOG)"
+      function:
+        compName: "config/install"
+        name: "sqlfLogUpdateCfgParam"
+        probe: 20.0
+        prodName: "DB2 UDB"
+      level: "notice"
+      logger:
+        name: "db2sysc"
+        thread_id: 1.40148880697088E14
+      pid: 565.0
+      timestamp: 1547848371899
+    message: "2019-01-18-21.52.51.899662+000 I214165E540           LEVEL: Event PID     : 565                  TID : 140148880697088 PROC : db2sysc INSTANCE: db2inst1             NODE : 000            DB   : DATADOG APPHDL  : 0-22                 APPID: ::1.55310.190118215251 AUTHID  : DB2INST1             HOSTNAME: 923611e746f7 EDUID   : 22                   EDUNAME: db2agent (DATADOG) FUNCTION: DB2 UDB, config/install, sqlfLogUpdateCfgParam, probe:20 CHANGE  : CFG DB DATADOG : \"Database_memory\" From: \"62992\" <automatic>  To: \"64320\" <automatic>"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2019-06-14-13.22.00.810792+000 I85959909E1014        LEVEL: Error PID     : 26319                TID : 139850784446336 PROC : INSTANCE: db2inst1             NODE : 000 HOSTNAME: ip-172-31-7-129.us-west-2.compute.internal FUNCTION: DB2 Common, Generic Control Facility, gcf_start, probe:1246 MESSAGE : ECF=0x900002BF=-1879047489=ECF_GCF_DB2START_SERVICE_FAILED DB2 start service failed DATA #1 : String, 34 bytes \"db2inst1\" could not be started. CALLSTCK: (Static functions may not be resolved correctly, as they are resolved to the nearest symbol) [0] 0x00007F318BDAD84B /opt/ibm/db2/V11.1/lib64/libdb2osse.so.1 + 0x23F84B [1] 0x00007F318BDAD681 ossLog + 0xA1 [2] 0x00007F3180C5EDA1 gcf_start + 0x2D11 [3] 0x00007F318B714FA0 _ZN9GcfCaller5startEP12GCF_PartInfomP11GCF_RetInfo + 0x1A0 [4] 0x0000000000405DE7 _Z11fmMainLogicP6fmInfoh + 0xE77 [5] 0x0000000000404D65 main + 0xCD5 [6] 0x00007F318A6F73D5 __libc_start_main + 0xF5 [7] 0x0000000000403FC9 /opt/ibm/db2/V11.1/bin/db2fmd + 0x3FC9"
+  result:
+    custom:
+      db:
+        hostname: "ip-172-31-7-129.us-west-2.compute.internal"
+        instance: "db2inst1"
+        partition: "000"
+        recordID: "I85959909E1014"
+      function:
+        compName: "Generic Control Facility"
+        name: "gcf_start"
+        probe: 1246.0
+        prodName: "DB2 Common"
+      level: "Error"
+      logger:
+        thread_id: 1.39850784446336E14
+      pid: 26319.0
+      timestamp: 1560518520810
+    message: "2019-06-14-13.22.00.810792+000 I85959909E1014        LEVEL: Error PID     : 26319                TID : 139850784446336 PROC : INSTANCE: db2inst1             NODE : 000 HOSTNAME: ip-172-31-7-129.us-west-2.compute.internal FUNCTION: DB2 Common, Generic Control Facility, gcf_start, probe:1246 MESSAGE : ECF=0x900002BF=-1879047489=ECF_GCF_DB2START_SERVICE_FAILED DB2 start service failed DATA #1 : String, 34 bytes \"db2inst1\" could not be started. CALLSTCK: (Static functions may not be resolved correctly, as they are resolved to the nearest symbol) [0] 0x00007F318BDAD84B /opt/ibm/db2/V11.1/lib64/libdb2osse.so.1 + 0x23F84B [1] 0x00007F318BDAD681 ossLog + 0xA1 [2] 0x00007F3180C5EDA1 gcf_start + 0x2D11 [3] 0x00007F318B714FA0 _ZN9GcfCaller5startEP12GCF_PartInfomP11GCF_RetInfo + 0x1A0 [4] 0x0000000000405DE7 _Z11fmMainLogicP6fmInfoh + 0xE77 [5] 0x0000000000404D65 main + 0xCD5 [6] 0x00007F318A6F73D5 __libc_start_main + 0xF5 [7] 0x0000000000403FC9 /opt/ibm/db2/V11.1/bin/db2fmd + 0x3FC9"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+ -
+  sample: "2019-11-07-15.20.56.067170-300 I3618738814E536       LEVEL: Error PID     : 261583               TID : 140348546344704 PROC : db2sysc 0 INSTANCE: db2inst1             NODE : 000            DB   : PTCTST HOSTNAME: ucspitt0104 EDUID   : 18337                EDUNAME: db2hadrp.0.1 (PTCTST) 0 FUNCTION: DB2 UDB, High Availability Disaster Recovery, hdrSendRedirectMsgToOneAddress, probe:31070 MESSAGE : ZRC=0xFFFFFFFF=-1 DATA #1 : <preformatted> The HADR primary was not able to form a TCP connection with the standby: 10.161.3.17:50003."
+  result:
+    custom:
+      db:
+        hostname: "ucspitt0104"
+        instance: "db2inst1"
+        name: "PTCTST"
+        partition: "000"
+        recordID: "I3618738814E536"
+      edu:
+        id: "18337"
+        name: "db2hadrp.0.1 (PTCTST) 0"
+      function:
+        compName: "High Availability Disaster Recovery"
+        name: "hdrSendRedirectMsgToOneAddress"
+        probe: 31070.0
+        prodName: "DB2 UDB"
+      level: "Error"
+      logger:
+        name: "db2sysc 0"
+        thread_id: 1.40348546344704E14
+      pid: 261583.0
+      timestamp: 1573140056067
+    message: "2019-11-07-15.20.56.067170-300 I3618738814E536       LEVEL: Error PID     : 261583               TID : 140348546344704 PROC : db2sysc 0 INSTANCE: db2inst1             NODE : 000            DB   : PTCTST HOSTNAME: ucspitt0104 EDUID   : 18337                EDUNAME: db2hadrp.0.1 (PTCTST) 0 FUNCTION: DB2 UDB, High Availability Disaster Recovery, hdrSendRedirectMsgToOneAddress, probe:31070 MESSAGE : ZRC=0xFFFFFFFF=-1 DATA #1 : <preformatted> The HADR primary was not able to form a TCP connection with the standby: 10.161.3.17:50003."
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+

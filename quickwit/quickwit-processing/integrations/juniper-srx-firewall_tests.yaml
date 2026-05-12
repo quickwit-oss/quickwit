@@ -1,0 +1,1030 @@
+id: "juniper-srx-firewall"
+tests:
+ -
+  sample: |-
+    {
+      "tunnel-inspection" : "Off",
+      "user-type" : "N/A",
+      "reason" : "idle Timeout",
+      "packet-incoming-interface" : "ge-0/0/1.0",
+      "bytes-from-client" : "650",
+      "source-tenant" : "N/A",
+      "peer-destination-port" : "0",
+      "nat-connection-tag" : "0",
+      "src-vrf-grp" : "N/A",
+      "connection-tag" : "0",
+      "service-name" : "junos-https",
+      "hostname" : "NA NA",
+      "session-flag" : "0",
+      "policy-name" : "default-permit",
+      "destination-address" : "10.10.20.20",
+      "packets-from-server" : "8",
+      "nat-destination-port" : "443",
+      "src-nat-rule-name" : "snat_pat",
+      "nat-source-address" : "20.20.20.20",
+      "destination-service" : "N/A",
+      "peer-source-port" : "0",
+      "source-zone-name" : "trust",
+      "secure-web-proxy-session-type" : "NA",
+      "bytes-from-server" : "6268",
+      "tunnel-inspection-policy-set" : "root",
+      "application-characteristics" : "N/A",
+      "peer-source-address" : "0.0.0.0",
+      "session-id" : "105822",
+      "source-port" : "50267",
+      "roles" : "N/A",
+      "dst-nat-rule-type" : "N/A",
+      "nested-application" : "UNKNOWN",
+      "syslog" : {
+        "severity" : 6,
+        "hostname" : "dds-srx",
+        "appname" : "RT_FLOW",
+        "msgid" : "RT_FLOW_SESSION_CLOSE",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "source-address" : "10.10.10.10",
+      "destination-zone-name" : "untrust",
+      "application-category" : "N/A",
+      "application-sub-category" : "N/A",
+      "src-nat-rule-type" : "source rule",
+      "elapsed-time" : "1803",
+      "nat-source-port" : "10019",
+      "nat-destination-address" : "30.30.30.30",
+      "application-risk" : "-1",
+      "packets-from-client" : "6",
+      "peer-session-id" : "0",
+      "dst-nat-rule-name" : "N/A",
+      "application" : "UNKNOWN",
+      "encrypted" : "UNKNOWN",
+      "peer-destination-address" : "0.0.0.0",
+      "destination-port" : "443",
+      "protocol-id" : "6",
+      "username" : "user1",
+      "dst-vrf-grp" : "N/A"
+    }
+  result:
+    custom:
+      application: "UNKNOWN"
+      application-category: "N/A"
+      application-characteristics: "N/A"
+      application-risk: "-1"
+      application-sub-category: "N/A"
+      connection-tag: "0"
+      destination-service: "N/A"
+      destination-zone-name: "untrust"
+      dst-nat-rule-name: "N/A"
+      dst-nat-rule-type: "N/A"
+      dst-vrf-grp: "N/A"
+      encrypted: "UNKNOWN"
+      hostname: "NA NA"
+      juniper_srx_firewall:
+        elapsed_time: "1803"
+        packets_from_client: "6"
+        packets_from_server: "8"
+      nat-connection-tag: "0"
+      nat-destination-address: "30.30.30.30"
+      nat-destination-port: "443"
+      nat-source-address: "20.20.20.20"
+      nat-source-port: "10019"
+      nested-application: "UNKNOWN"
+      network:
+        bytes_read: "650"
+        bytes_written: "6268"
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "50267"
+        destination:
+          geoip: {}
+          ip: "10.10.20.20"
+          port: "443"
+      packet-incoming-interface: "ge-0/0/1.0"
+      peer-destination-address: "0.0.0.0"
+      peer-destination-port: "0"
+      peer-session-id: "0"
+      peer-source-address: "0.0.0.0"
+      peer-source-port: "0"
+      policy-name: "default-permit"
+      protocol: "TCP"
+      protocol-id: "6"
+      reason: "idle Timeout"
+      roles: "N/A"
+      secure-web-proxy-session-type: "NA"
+      service: "juniper-srx-firewall"
+      service-name: "junos-https"
+      session-flag: "0"
+      session-id: "105822"
+      source-tenant: "N/A"
+      source-zone-name: "trust"
+      src-nat-rule-name: "snat_pat"
+      src-nat-rule-type: "source rule"
+      src-vrf-grp: "N/A"
+      syslog:
+        appname: "RT_FLOW"
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "RT_FLOW_SESSION_CLOSE"
+        prival: 14
+        severity: 6
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      tunnel-inspection: "Off"
+      tunnel-inspection-policy-set: "root"
+      user-type: "N/A"
+      usr:
+        name: "user1"
+    message: |-
+      {
+        "tunnel-inspection" : "Off",
+        "user-type" : "N/A",
+        "reason" : "idle Timeout",
+        "packet-incoming-interface" : "ge-0/0/1.0",
+        "bytes-from-client" : "650",
+        "source-tenant" : "N/A",
+        "peer-destination-port" : "0",
+        "nat-connection-tag" : "0",
+        "src-vrf-grp" : "N/A",
+        "connection-tag" : "0",
+        "service-name" : "junos-https",
+        "hostname" : "NA NA",
+        "session-flag" : "0",
+        "policy-name" : "default-permit",
+        "destination-address" : "10.10.20.20",
+        "packets-from-server" : "8",
+        "nat-destination-port" : "443",
+        "src-nat-rule-name" : "snat_pat",
+        "nat-source-address" : "20.20.20.20",
+        "destination-service" : "N/A",
+        "peer-source-port" : "0",
+        "source-zone-name" : "trust",
+        "secure-web-proxy-session-type" : "NA",
+        "bytes-from-server" : "6268",
+        "tunnel-inspection-policy-set" : "root",
+        "application-characteristics" : "N/A",
+        "peer-source-address" : "0.0.0.0",
+        "session-id" : "105822",
+        "source-port" : "50267",
+        "roles" : "N/A",
+        "dst-nat-rule-type" : "N/A",
+        "nested-application" : "UNKNOWN",
+        "syslog" : {
+          "severity" : 6,
+          "hostname" : "dds-srx",
+          "appname" : "RT_FLOW",
+          "msgid" : "RT_FLOW_SESSION_CLOSE",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "source-address" : "10.10.10.10",
+        "destination-zone-name" : "untrust",
+        "application-category" : "N/A",
+        "application-sub-category" : "N/A",
+        "src-nat-rule-type" : "source rule",
+        "elapsed-time" : "1803",
+        "nat-source-port" : "10019",
+        "nat-destination-address" : "30.30.30.30",
+        "application-risk" : "-1",
+        "packets-from-client" : "6",
+        "peer-session-id" : "0",
+        "dst-nat-rule-name" : "N/A",
+        "application" : "UNKNOWN",
+        "encrypted" : "UNKNOWN",
+        "peer-destination-address" : "0.0.0.0",
+        "destination-port" : "443",
+        "protocol-id" : "6",
+        "username" : "user1",
+        "dst-vrf-grp" : "N/A"
+      }
+    service: "juniper-srx-firewall"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "profile-name" : "profile-1",
+      "reason" : "timeout",
+      "source-port" : "12345",
+      "roles" : [ "admin" ],
+      "nested-application" : "NestedApp",
+      "bytes-from-client" : 2048,
+      "syslog" : {
+        "severity" : 5,
+        "hostname" : "dds-srx",
+        "msgid" : "APPTRACK_SESSION_CLOSE",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "multipath-rule-name" : "multipath-1",
+      "source-address" : "10.10.10.10",
+      "src-vrf-grp" : "vrf-1",
+      "service-name" : "HTTP",
+      "uplink-incoming-interface-name" : "uplink-eth0",
+      "sub-category" : "security",
+      "destination-zone-name" : "external",
+      "dscp-value" : 10,
+      "policy-name" : "policy-1",
+      "uplink-tx-bytes" : 1024,
+      "uplink-rx-bytes" : 2048,
+      "destination-address" : "10.10.20.20",
+      "elapsed-time" : 300,
+      "nat-source-port" : "54321",
+      "routing-instance" : "instance-1",
+      "packets-from-server" : 150,
+      "nat-destination-address" : "10.10.20.20",
+      "packets-from-client" : 100,
+      "nat-destination-port" : "8080",
+      "src-nat-rule-name" : "src-rule-1",
+      "nat-source-address" : "10.10.10.10",
+      "source-zone-name" : "internal",
+      "bytes-from-server" : 4096,
+      "apbr-rule-type" : "type-1",
+      "dst-nat-rule-name" : "dst-rule-1",
+      "destination-interface-name" : "eth0",
+      "application" : "Web",
+      "encrypted" : false,
+      "destination-port" : "80",
+      "rule-name" : "rule-1",
+      "apbr-policy-name" : "apbr-1",
+      "protocol-id" : "6",
+      "category" : "network",
+      "session-id" : "sess-001",
+      "username" : "user1",
+      "dst-vrf-grp" : "vrf-2"
+    }
+  result:
+    custom:
+      apbr-policy-name: "apbr-1"
+      apbr-rule-type: "type-1"
+      application: "Web"
+      category: "network"
+      destination-interface-name: "eth0"
+      destination-zone-name: "external"
+      dscp-value: 10
+      dst-nat-rule-name: "dst-rule-1"
+      dst-vrf-grp: "vrf-2"
+      encrypted: false
+      juniper_srx_firewall:
+        elapsed_time: 300
+        packets_from_client: 100
+        packets_from_server: 150
+      multipath-rule-name: "multipath-1"
+      nat-destination-address: "10.10.20.20"
+      nat-destination-port: "8080"
+      nat-source-address: "10.10.10.10"
+      nat-source-port: "54321"
+      nested-application: "NestedApp"
+      network:
+        bytes_read: 2048
+        bytes_written: 4096
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "12345"
+        destination:
+          geoip: {}
+          ip: "10.10.20.20"
+          port: "80"
+      policy-name: "policy-1"
+      profile-name: "profile-1"
+      protocol: "TCP"
+      protocol-id: "6"
+      reason: "timeout"
+      roles:
+       - "admin"
+      routing-instance: "instance-1"
+      rule-name: "rule-1"
+      service: "juniper-srx-firewall"
+      service-name: "HTTP"
+      session-id: "sess-001"
+      source-zone-name: "internal"
+      src-nat-rule-name: "src-rule-1"
+      src-vrf-grp: "vrf-1"
+      sub-category: "security"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "APPTRACK_SESSION_CLOSE"
+        prival: 14
+        severity: 5
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      uplink-incoming-interface-name: "uplink-eth0"
+      uplink-rx-bytes: 2048
+      uplink-tx-bytes: 1024
+      usr:
+        name: "user1"
+    message: |-
+      {
+        "profile-name" : "profile-1",
+        "reason" : "timeout",
+        "source-port" : "12345",
+        "roles" : [ "admin" ],
+        "nested-application" : "NestedApp",
+        "bytes-from-client" : 2048,
+        "syslog" : {
+          "severity" : 5,
+          "hostname" : "dds-srx",
+          "msgid" : "APPTRACK_SESSION_CLOSE",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "multipath-rule-name" : "multipath-1",
+        "source-address" : "10.10.10.10",
+        "src-vrf-grp" : "vrf-1",
+        "service-name" : "HTTP",
+        "uplink-incoming-interface-name" : "uplink-eth0",
+        "sub-category" : "security",
+        "destination-zone-name" : "external",
+        "dscp-value" : 10,
+        "policy-name" : "policy-1",
+        "uplink-tx-bytes" : 1024,
+        "uplink-rx-bytes" : 2048,
+        "destination-address" : "10.10.20.20",
+        "elapsed-time" : 300,
+        "nat-source-port" : "54321",
+        "routing-instance" : "instance-1",
+        "packets-from-server" : 150,
+        "nat-destination-address" : "10.10.20.20",
+        "packets-from-client" : 100,
+        "nat-destination-port" : "8080",
+        "src-nat-rule-name" : "src-rule-1",
+        "nat-source-address" : "10.10.10.10",
+        "source-zone-name" : "internal",
+        "bytes-from-server" : 4096,
+        "apbr-rule-type" : "type-1",
+        "dst-nat-rule-name" : "dst-rule-1",
+        "destination-interface-name" : "eth0",
+        "application" : "Web",
+        "encrypted" : false,
+        "destination-port" : "80",
+        "rule-name" : "rule-1",
+        "apbr-policy-name" : "apbr-1",
+        "protocol-id" : "6",
+        "category" : "network",
+        "session-id" : "sess-001",
+        "username" : "user1",
+        "dst-vrf-grp" : "vrf-2"
+      }
+    service: "juniper-srx-firewall"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "source-zone-name" : "trust",
+      "source-port" : "1234",
+      "destination-port" : "80",
+      "interface-name" : "ge-0/0/0",
+      "protocol-id" : "6",
+      "destination-address" : "10.10.10.20",
+      "syslog" : {
+        "severity" : 5,
+        "hostname" : "dds-srx",
+        "msgid" : "FLOW_LOG_PKT_DROP",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "message" : "Packet dropped 10.10.10.10/1234->10.10.10.20/80 6 ge-0/0/0 trust",
+      "source-address" : "10.10.10.10"
+    }
+  result:
+    custom:
+      interface-name: "ge-0/0/0"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "1234"
+        destination:
+          geoip: {}
+          ip: "10.10.10.20"
+          port: "80"
+      protocol: "TCP"
+      protocol-id: "6"
+      service: "juniper-srx-firewall"
+      source-zone-name: "trust"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "FLOW_LOG_PKT_DROP"
+        prival: 14
+        severity: 5
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+    message: "Packet dropped 10.10.10.10/1234->10.10.10.20/80 6 ge-0/0/0 trust"
+    service: "juniper-srx-firewall"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "hostname" : "dummyhost10",
+      "win-grp" : "dummygroup10",
+      "device-os" : "Windows 10",
+      "src-ip-str" : "10.10.10.10",
+      "win-domain" : "dummydomain10",
+      "syslog" : {
+        "severity" : 5,
+        "hostname" : "dds-srx",
+        "msgid" : "REMOTE_ACCESS_VPN_AUTH_OK",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "realm-name" : "dummyrealm10",
+      "user-application" : "dummyapp10",
+      "device-id-str" : "dummydevice10",
+      "username" : "dummyuser10"
+    }
+  result:
+    custom:
+      category: "Remote Access VPN Auth"
+      device-id-str: "dummydevice10"
+      device-os: "Windows 10"
+      hostname: "dummyhost10"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      realm-name: "dummyrealm10"
+      service: "juniper-srx-firewall"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "REMOTE_ACCESS_VPN_AUTH_OK"
+        prival: 14
+        severity: 5
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      user-application: "dummyapp10"
+      usr:
+        name: "dummyuser10"
+      win-domain: "dummydomain10"
+      win-grp: "dummygroup10"
+    message: |-
+      {
+        "hostname" : "dummyhost10",
+        "win-grp" : "dummygroup10",
+        "device-os" : "Windows 10",
+        "src-ip-str" : "10.10.10.10",
+        "win-domain" : "dummydomain10",
+        "syslog" : {
+          "severity" : 5,
+          "hostname" : "dds-srx",
+          "msgid" : "REMOTE_ACCESS_VPN_AUTH_OK",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "realm-name" : "dummyrealm10",
+        "user-application" : "dummyapp10",
+        "device-id-str" : "dummydevice10",
+        "username" : "dummyuser10"
+      }
+    service: "juniper-srx-firewall"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "hostname" : "dummyhost1",
+      "win-grp" : "dummygroup1",
+      "device-os" : "Windows 10",
+      "error-message" : "Invalid password",
+      "src-ip-str" : "192.10.10.10",
+      "win-domain" : "dummydomain1",
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "msgid" : "REMOTE_ACCESS_VPN_AUTH_FAIL",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "realm-name" : "dummyrealm1",
+      "user-application" : "dummyapp1",
+      "device-id-str" : "dummydevice1",
+      "username" : "dummyuser1"
+    }
+  result:
+    custom:
+      category: "Remote Access VPN Auth"
+      device-id-str: "dummydevice1"
+      device-os: "Windows 10"
+      error-message: "Invalid password"
+      hostname: "dummyhost1"
+      network:
+        client:
+          geoip: {}
+          ip: "192.10.10.10"
+      realm-name: "dummyrealm1"
+      service: "juniper-srx-firewall"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "REMOTE_ACCESS_VPN_AUTH_FAIL"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      user-application: "dummyapp1"
+      usr:
+        name: "dummyuser1"
+      win-domain: "dummydomain1"
+      win-grp: "dummygroup1"
+    message: |-
+      {
+        "hostname" : "dummyhost1",
+        "win-grp" : "dummygroup1",
+        "device-os" : "Windows 10",
+        "error-message" : "Invalid password",
+        "src-ip-str" : "192.10.10.10",
+        "win-domain" : "dummydomain1",
+        "syslog" : {
+          "severity" : 4,
+          "hostname" : "dds-srx",
+          "msgid" : "REMOTE_ACCESS_VPN_AUTH_FAIL",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "realm-name" : "dummyrealm1",
+        "user-application" : "dummyapp1",
+        "device-id-str" : "dummydevice1",
+        "username" : "dummyuser1"
+      }
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "client-address" : "10.10.10.10",
+      "group-name" : "dummygroup1",
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "msgid" : "FWAUTH_WEBAUTH_SUCCESS",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "username" : "dummyuser10"
+    }
+  result:
+    custom:
+      category: "Web Auth"
+      group-name: "dummygroup1"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      service: "juniper-srx-firewall"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "FWAUTH_WEBAUTH_SUCCESS"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      usr:
+        name: "dummyuser10"
+    message: |-
+      {
+        "client-address" : "10.10.10.10",
+        "group-name" : "dummygroup1",
+        "syslog" : {
+          "severity" : 4,
+          "hostname" : "dds-srx",
+          "msgid" : "FWAUTH_WEBAUTH_SUCCESS",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "username" : "dummyuser10"
+      }
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "client-address" : "10.10.10.10",
+      "group-name" : "dummygroup1",
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "msgid" : "FWAUTH_WEBAUTH_SUCCESS",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "username" : "dummyuser10"
+    }
+  result:
+    custom:
+      category: "Web Auth"
+      group-name: "dummygroup1"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      service: "juniper-srx-firewall"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "FWAUTH_WEBAUTH_SUCCESS"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      usr:
+        name: "dummyuser10"
+    message: |-
+      {
+        "client-address" : "10.10.10.10",
+        "group-name" : "dummygroup1",
+        "syslog" : {
+          "severity" : 4,
+          "hostname" : "dds-srx",
+          "msgid" : "FWAUTH_WEBAUTH_SUCCESS",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:15:19.289Z"
+        },
+        "username" : "dummyuser10"
+      }
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "verdict-number" : 2,
+      "reason" : "spyware detected",
+      "hostname" : "host-3",
+      "threat-score" : 75,
+      "policy-name" : "policy-3",
+      "state" : "cleaning",
+      "syslog" : {
+        "severity" : 3,
+        "hostname" : "dds-srx",
+        "msgid" : "AAMW_HOST_INFECTED_EVENT_LOG",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:17:19.289Z"
+      },
+      "message" : "Host infected due to spyware download",
+      "tenant-id" : "tenant-003",
+      "source-address" : "10.10.10.10",
+      "status" : "infected",
+      "username" : "user3"
+    }
+  result:
+    custom:
+      hostname: "host-3"
+      juniper_srx_firewall:
+        threat_score: 75
+        verdict_number: 2
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+      policy-name: "policy-3"
+      reason: "spyware detected"
+      service: "juniper-srx-firewall"
+      state: "cleaning"
+      status: "infected"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "AAMW_HOST_INFECTED_EVENT_LOG"
+        prival: 14
+        severity: 3
+        timestamp: "2025-02-19T20:17:19.289Z"
+        version: 1
+      tenant-id: "tenant-003"
+      usr:
+        name: "user3"
+    message: "Host infected due to spyware download"
+    service: "juniper-srx-firewall"
+    status: "error"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996239289
+ -
+  sample: |-
+    {
+      "outbound-bytes" : "4096",
+      "source-port" : "12346",
+      "inbound-bytes" : "2048",
+      "roles" : [ "user" ],
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "msgid" : "IDP_ATTACK_LOG_EVENT",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:15:19.289Z"
+      },
+      "protocol-name" : "TCP",
+      "source-address" : "10.10.10.10",
+      "source-interface-name" : "eth1",
+      "repeat-count" : "2",
+      "service-name" : "HTTPS",
+      "destination-zone-name" : "external",
+      "inbound-packets" : "15",
+      "xff-header" : "10.0.0.3",
+      "alert" : "false",
+      "message-type" : "Attack log",
+      "policy-name" : "policy-2",
+      "threat-severity" : "medium",
+      "destination-address" : "10.10.20.20",
+      "action" : "block",
+      "elapsed-time" : "150",
+      "nat-source-port" : "54322",
+      "application-name" : "Secure Web",
+      "attack-name" : "Cross-Site Scripting",
+      "nat-destination-address" : "10.10.20.20",
+      "nat-destination-port" : "8443",
+      "cve-id" : "CVE-2021-12346",
+      "message" : "Attack blocked",
+      "nat-source-address" : "10.10.10.10",
+      "epoch-time" : "1672531200",
+      "source-zone-name" : "internal",
+      "outbound-packets" : "30",
+      "destination-interface-name" : "eth2",
+      "packet-log-id" : "pkt-002",
+      "destination-port" : "443",
+      "rule-name" : "rule-2",
+      "export-id" : "exp-002",
+      "rulebase-name" : "rulebase-2",
+      "username" : "user2",
+      "session-id" : "sess-002"
+    }
+  result:
+    custom:
+      action: "block"
+      alert: "false"
+      application-name: "Secure Web"
+      attack-name: "Cross-Site Scripting"
+      cve-id: "CVE-2021-12346"
+      destination-interface-name: "eth2"
+      destination-zone-name: "external"
+      epoch-time: "1672531200"
+      export-id: "exp-002"
+      juniper_srx_firewall:
+        elapsed_time: "150"
+        inbound_bytes: "2048"
+        inbound_packets: "15"
+        outbound_bytes: "4096"
+        outbound_packets: "30"
+      message-type: "Attack log"
+      nat-destination-address: "10.10.20.20"
+      nat-destination-port: "8443"
+      nat-source-address: "10.10.10.10"
+      nat-source-port: "54322"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "12346"
+        destination:
+          geoip: {}
+          ip: "10.10.20.20"
+          port: "443"
+      packet-log-id: "pkt-002"
+      policy-name: "policy-2"
+      protocol-name: "TCP"
+      repeat-count: "2"
+      roles:
+       - "user"
+      rule-name: "rule-2"
+      rulebase-name: "rulebase-2"
+      service: "juniper-srx-firewall"
+      service-name: "HTTPS"
+      session-id: "sess-002"
+      source-interface-name: "eth1"
+      source-zone-name: "internal"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "IDP_ATTACK_LOG_EVENT"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T20:15:19.289Z"
+        version: 1
+      threat-severity: "medium"
+      usr:
+        name: "user2"
+      xff-header: "10.0.0.3"
+    message: "Attack blocked"
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996119289
+ -
+  sample: |-
+    {
+      "source-port" : "50001",
+      "reason" : "Malware",
+      "profile" : "web-protection-2",
+      "roles" : [ "user" ],
+      "source-zone" : "internal",
+      "nested-application" : "HTTPS",
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "msgid" : "WEBFILTER_URL_BLOCKED",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T20:16:19.289Z"
+      },
+      "urlcategory-risk" : "5",
+      "source-address" : "10.10.10.10",
+      "url" : "https://example.com",
+      "destination-zone" : "external",
+      "application" : "Secure Web",
+      "application-sub-category" : "High Risk",
+      "destination-port" : "443",
+      "destination-address" : "10.10.20.20",
+      "category" : "Malicious",
+      "session-id" : "sess-002",
+      "username" : "user2"
+    }
+  result:
+    custom:
+      action: "Blocked"
+      application: "Secure Web"
+      application-sub-category: "High Risk"
+      category: "Malicious"
+      destination-zone: "external"
+      nested-application: "HTTPS"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+          port: "50001"
+        destination:
+          geoip: {}
+          ip: "10.10.20.20"
+          port: "443"
+      profile: "web-protection-2"
+      reason: "Malware"
+      roles:
+       - "user"
+      service: "juniper-srx-firewall"
+      session-id: "sess-002"
+      source-zone: "internal"
+      syslog:
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "WEBFILTER_URL_BLOCKED"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T20:16:19.289Z"
+        version: 1
+      url: "https://example.com"
+      urlcategory-risk: "5"
+      usr:
+        name: "user2"
+    message: |-
+      {
+        "source-port" : "50001",
+        "reason" : "Malware",
+        "profile" : "web-protection-2",
+        "roles" : [ "user" ],
+        "source-zone" : "internal",
+        "nested-application" : "HTTPS",
+        "syslog" : {
+          "severity" : 4,
+          "hostname" : "dds-srx",
+          "msgid" : "WEBFILTER_URL_BLOCKED",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T20:16:19.289Z"
+        },
+        "urlcategory-risk" : "5",
+        "source-address" : "10.10.10.10",
+        "url" : "https://example.com",
+        "destination-zone" : "external",
+        "application" : "Secure Web",
+        "application-sub-category" : "High Risk",
+        "destination-port" : "443",
+        "destination-address" : "10.10.20.20",
+        "category" : "Malicious",
+        "session-id" : "sess-002",
+        "username" : "user2"
+      }
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739996179289
+ -
+  sample: |-
+    {
+      "attack-name" : "ICMP Echo",
+      "source-zone-name" : "untrust",
+      "interface-name" : "ge-0/0/1",
+      "destination-address" : "10.10.20.20",
+      "action" : "alert",
+      "syslog" : {
+        "severity" : 4,
+        "hostname" : "dds-srx",
+        "appname" : "RT_SCREEN",
+        "msgid" : "RT_SCREEN_ICMP",
+        "prival" : 14,
+        "facility" : 1,
+        "version" : 1,
+        "timestamp" : "2025-02-19T15:16:19.289+05:00"
+      },
+      "source-address" : "10.10.10.10"
+    }
+  result:
+    custom:
+      action: "alert"
+      attack-name: "ICMP Echo"
+      category: "ICMP"
+      interface-name: "ge-0/0/1"
+      network:
+        client:
+          geoip: {}
+          ip: "10.10.10.10"
+        destination:
+          geoip: {}
+          ip: "10.10.20.20"
+      service: "juniper-srx-firewall"
+      source-zone-name: "untrust"
+      syslog:
+        appname: "RT_SCREEN"
+        facility: 1
+        hostname: "dds-srx"
+        msgid: "RT_SCREEN_ICMP"
+        prival: 14
+        severity: 4
+        timestamp: "2025-02-19T15:16:19.289+05:00"
+        version: 1
+    message: |-
+      {
+        "attack-name" : "ICMP Echo",
+        "source-zone-name" : "untrust",
+        "interface-name" : "ge-0/0/1",
+        "destination-address" : "10.10.20.20",
+        "action" : "alert",
+        "syslog" : {
+          "severity" : 4,
+          "hostname" : "dds-srx",
+          "appname" : "RT_SCREEN",
+          "msgid" : "RT_SCREEN_ICMP",
+          "prival" : 14,
+          "facility" : 1,
+          "version" : 1,
+          "timestamp" : "2025-02-19T15:16:19.289+05:00"
+        },
+        "source-address" : "10.10.10.10"
+      }
+    service: "juniper-srx-firewall"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1739960179289

@@ -1,0 +1,226 @@
+id: crest_data_systems_cyberark_pam
+tests:
+ -
+  sample: |-
+    {
+      "account-name" : "Operating System-ABC_LinuxPlatform-121.50.80.12-devuser",
+      "secret-mgmt-status" : "success",
+      "account-id" : "30_3",
+      "created-time" : 1687957521,
+      "safe-name" : "Linux Account",
+      "account-address" : "121.50.80.12",
+      "account-user-name" : "devuser",
+      "platform-id" : "ABC_LinuxPlatform",
+      "secret-mgmt-enabled" : true,
+      "secret-type" : "password",
+      "account-properties" : "N/A"
+    }
+  result:
+    custom:
+      account-address: "121.50.80.12"
+      account-id: "30_3"
+      account-name: "Operating System-ABC_LinuxPlatform-121.50.80.12-devuser"
+      account-properties: "N/A"
+      account-user-name: "devuser"
+      created-time: 1687957521
+      cyberark:
+        pam:
+          safe_name: "Linux Account"
+      platform-id: "ABC_LinuxPlatform"
+      secret-mgmt-enabled: true
+      secret-mgmt-status: "success"
+      secret-type: "password"
+    message: |-
+      {
+        "account-name" : "Operating System-ABC_LinuxPlatform-121.50.80.12-devuser",
+        "secret-mgmt-status" : "success",
+        "account-id" : "30_3",
+        "created-time" : 1687957521,
+        "safe-name" : "Linux Account",
+        "account-address" : "121.50.80.12",
+        "account-user-name" : "devuser",
+        "platform-id" : "ABC_LinuxPlatform",
+        "secret-mgmt-enabled" : true,
+        "secret-type" : "password",
+        "account-properties" : "N/A"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "app-owner-email" : "admin@gmail.com",
+      "app-owner-lastname" : "ksjd",
+      "app-id" : "test_app",
+      "app-expiration" : "07-06-2023",
+      "app-diabled" : false,
+      "app-owner-phone" : "1234567891",
+      "app-location" : "\\\\System",
+      "app-owner-firstname" : "josh",
+      "app-description" : "This is test application"
+    }
+  result:
+    custom:
+      app-description: "This is test application"
+      app-diabled: false
+      app-expiration: "07-06-2023"
+      app-id: "test_app"
+      app-location: "\\\\System"
+      app-owner-email: "admin@gmail.com"
+      app-owner-firstname: "josh"
+      app-owner-lastname: "ksjd"
+      app-owner-phone: "1234567891"
+    message: |-
+      {
+        "app-owner-email" : "admin@gmail.com",
+        "app-owner-lastname" : "ksjd",
+        "app-id" : "test_app",
+        "app-expiration" : "07-06-2023",
+        "app-diabled" : false,
+        "app-owner-phone" : "1234567891",
+        "app-location" : "\\\\System",
+        "app-owner-firstname" : "josh",
+        "app-description" : "This is test application"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "group-member-id" : [ 3, 33, 2, 38 ],
+      "group-id" : 8,
+      "group-name" : "Auditors",
+      "group-type" : "Vault",
+      "description" : "Auditors group",
+      "group-location" : "\\\\",
+      "group-member-username" : [ "Auditor", "CyberArk Auditors", "Administrator", "admin" ]
+    }
+  result:
+    custom:
+      description: "Auditors group"
+      group-id: 8
+      group-location: "\\\\"
+      group-member-id:
+       - 3
+       - 33
+       - 2
+       - 38
+      group-member-username:
+       - "Auditor"
+       - "CyberArk Auditors"
+       - "Administrator"
+       - "admin"
+      group-name: "Auditors"
+      group-type: "Vault"
+    message: |-
+      {
+        "group-member-id" : [ 3, 33, 2, 38 ],
+        "group-id" : 8,
+        "group-name" : "Auditors",
+        "group-type" : "Vault",
+        "description" : "Auditors group",
+        "group-location" : "\\\\",
+        "group-member-username" : [ "Auditor", "CyberArk Auditors", "Administrator", "admin" ]
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "safe-creator-name" : "Administrator",
+      "olac-enabled" : false,
+      "retention-version" : "N/A",
+      "retention-days" : 30,
+      "safe-location" : "\\\\",
+      "safe-account-id" : [ "2_4" ],
+      "managing-cpm" : "N/A",
+      "safe-creator-id" : "2",
+      "safe-number" : 2,
+      "safe-description" : "N/A",
+      "creation-time" : 1687529130,
+      "safe-account-name" : [ "cyberarkpoc.local.pass" ],
+      "autopurge-enabled" : false,
+      "safe-name" : "VaultInternal",
+      "safe-url-id" : "VaultInternal",
+      "is-expired-member" : false
+    }
+  result:
+    custom:
+      autopurge-enabled: false
+      creation-time: 1687529130
+      cyberark:
+        pam:
+          safe_name: "VaultInternal"
+      is-expired-member: false
+      managing-cpm: "N/A"
+      olac-enabled: false
+      retention-days: 30
+      retention-version: "N/A"
+      safe-account-id:
+       - "2_4"
+      safe-account-name:
+       - "cyberarkpoc.local.pass"
+      safe-creator-id: "2"
+      safe-creator-name: "Administrator"
+      safe-description: "N/A"
+      safe-location: "\\\\"
+      safe-number: 2
+      safe-url-id: "VaultInternal"
+    message: |-
+      {
+        "safe-creator-name" : "Administrator",
+        "olac-enabled" : false,
+        "retention-version" : "N/A",
+        "retention-days" : 30,
+        "safe-location" : "\\\\",
+        "safe-account-id" : [ "2_4" ],
+        "managing-cpm" : "N/A",
+        "safe-creator-id" : "2",
+        "safe-number" : 2,
+        "safe-description" : "N/A",
+        "creation-time" : 1687529130,
+        "safe-account-name" : [ "cyberarkpoc.local.pass" ],
+        "autopurge-enabled" : false,
+        "safe-name" : "VaultInternal",
+        "safe-url-id" : "VaultInternal",
+        "is-expired-member" : false
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "<5>1 2023-07-12T09:10:54Z VAULT CEF:0|Cyber-Ark|Vault|12.6.0006|357|Monitor FW rules start|5|act=Monitor FW rules start suser=Batch fname= dvc= shost=0.0.0.0 dhost= duser= externalId= app= reason= cs1Label=\"Affected User Name\" cs1= cs2Label=\"Safe Name\" cs2= cs3Label=\"Device Type\" cs3= cs4Label=\"Database\" cs4= cs5Label=\"Other info\" cs5= cn1Label=\"Request Id\" cn1= cn2Label=\"Ticket Id\" cn2=  msg="
+  result:
+    custom:
+      act: "Monitor FW rules start"
+      action: "Monitor FW rules start"
+      cn1Label: "Request Id"
+      cn2: ""
+      cn2Label: "Ticket Id"
+      cs1Label: "Affected User Name"
+      cs2Label: "Safe Name"
+      cs3Label: "Device Type"
+      cs4Label: "Database"
+      cs5Label: "Other info"
+      cyberark:
+        pam:
+          event_id: "357"
+          severity: "Medium"
+      severity: "5"
+      shost: "0.0.0.0"
+      status: "warning"
+      suser: "Batch"
+      timestamp: 1689153054000
+      vendor:
+        name: "Cyber-Ark"
+        product:
+          name: "Vault"
+          version: "12.6.0006"
+    message: "<5>1 2023-07-12T09:10:54Z VAULT CEF:0|Cyber-Ark|Vault|12.6.0006|357|Monitor FW rules start|5|act=Monitor FW rules start suser=Batch fname= dvc= shost=0.0.0.0 dhost= duser= externalId= app= reason= cs1Label=\"Affected User Name\" cs1= cs2Label=\"Safe Name\" cs2= cs3Label=\"Device Type\" cs3= cs4Label=\"Database\" cs4= cs5Label=\"Other info\" cs5= cn1Label=\"Request Id\" cn1= cn2Label=\"Ticket Id\" cn2=  msg="
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1689153054000

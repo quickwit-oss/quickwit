@@ -1,0 +1,57 @@
+id: cloudhsm
+metric_id: amazon-cloudhsm
+backend_only: false
+facets:
+  - groups:
+      - User
+    name: User Name
+    path: usr.name
+    source: log
+  - groups:
+      - Web Access
+    name: Session ID
+    path: session_id
+    source: log
+  - groups:
+      - Cloudhsm
+    name: Log Type
+    path: log_type
+    source: log
+  - groups:
+      - Cloudhsm
+    name: OpCode
+    path: opcode
+    source: log
+pipeline:
+  type: pipeline
+  name: AWS Cloudhsm
+  enabled: true
+  meta:
+    description: '[Documentation on AWS Cloudhsm logs](https://docs.aws.amazon.com/cloudhsm/latest/userguide/interpreting-audit-logs.html)'
+  filter:
+    query: source:cloudhsm
+  processors:
+    - type: grok-parser
+      name: Parsing Cloudhsm logs
+      enabled: true
+      source: message
+      grok:
+        supportRules: |
+        matchRules: |
+          hms_format Time: %{date("MM/dd/yy HH:mm:ss.SSSSSS"):date_access}, usecs:%{number}(\n|\t|\s)*Sequence No\s*: %{notSpace:sequence_number}(\n|\t|\s)*Reboot counter\s*: %{notSpace:reboot_counter}(\n|\t|\s)*Command Type\(hex\)\s*: %{data:command_type}(\n|\t|\s)*Opcode\s*: %{data:opcode}(\n|\t|\s)*Session Handle\s*: %{notSpace:session_id}(\n|\t|\s)*Response\s*: %{notSpace:response} (Return\s*: %{notSpace:response_type}|Error\s*: %{data:error.message})(\n|\t|\s)*Log type\s*: %{notSpace:log_type}\s*%{notSpace}(\n|\t|\s)*(Priv\/Secret Key Handle\s*: %{notSpace:secret_key_handle}(\n|\t|\s)*Public Key Handle\s*: %{notSpace:public_key_handle}|User Name\s*:\s*%{notSpace:usr.name}(\n|\t|\s)*User Type\s*:\s*%{notSpace:usr.type} %{notSpace})?(\n|\t|\s)*
+      samples:
+        - |
+          Time: 12/19/17 21:01:16.962174, usecs:1513717276962174
+          Sequence No : 0x0
+          Reboot counter : 0xe8
+          Command Type(hex) : CN_MGMT_CMD (0x0)
+          Opcode : CN_INIT_TOKEN (0x1)
+          Session Handle : 0x1004001
+          Response : 0:HSM Return: SUCCESS
+          Log type : MINIMAL_LOG_ENTRY (0)
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+

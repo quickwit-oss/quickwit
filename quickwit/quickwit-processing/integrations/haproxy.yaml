@@ -1,0 +1,165 @@
+id: haproxy
+metric_id: haproxy
+backend_only: false
+facets:
+  - facetType: range
+    groups:
+      - Measure
+    name: Duration
+    path: duration
+    source: log
+    type: double
+    unit:
+      family: time
+      name: nanosecond
+  - groups:
+      - Web Access
+    name: Method
+    path: http.method
+    source: log
+  - groups:
+      - Web Access
+    name: Referer
+    path: http.referer
+    source: log
+  - groups:
+      - Web Access
+    name: Status Code
+    path: http.status_code
+    source: log
+  - groups:
+      - Web Access
+    name: URL Host
+    path: http.url_details.host
+    source: log
+  - groups:
+      - Web Access
+    name: URL Path
+    path: http.url_details.path
+    source: log
+  - groups:
+      - Web Access
+    name: URL Port
+    path: http.url_details.port
+    source: log
+  - groups:
+      - Web Access
+    name: URL scheme
+    path: http.url_details.scheme
+    source: log
+  - groups:
+      - Web Access
+    name: Browser
+    path: http.useragent_details.browser.family
+    source: log
+  - groups:
+      - Web Access
+    name: Device
+    path: http.useragent_details.device.family
+    source: log
+  - groups:
+      - Web Access
+    name: OS
+    path: http.useragent_details.os.family
+    source: log
+  - groups:
+      - Web Access
+    name: Client IP
+    path: network.client.ip
+    source: log
+pipeline:
+  type: pipeline
+  name: Haproxy
+  enabled: true
+  filter:
+    query: source:haproxy
+  processors:
+    - type: grok-parser
+      name: ''
+      enabled: true
+      source: message
+      samples:
+        - 10.0.1.2:33317 [06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 200 2750 - - ---- 1/1/1/1/0 0/0 {1wt.eu} {} "GET /index.html HTTP/1.1"
+        - 10.0.1.2:33313 [06/Feb/2009:12:12:51.443] fnt bck/srv1 34/56/5007 212 -- 1/3/6/8/13 15/17
+        - Connect from 10.0.1.2:33312 to 10.0.3.31:8012 (www/HTTP)
+      grok:
+        supportRules: |
+          _actconn %{integer:haproxy.actconn}
+          _backend_queue %{integer:haproxy.backend_queue}
+          _backend_name %{notSpace:haproxy.backend_name}
+          _beconn %{integer:haproxy.beconn}
+          _bytes_sent %{integer:network.bytes_written}
+          _captured_request_headers %{data:haproxy.captured_request_headers}
+          _captured_response_headers %{data:haproxy.captured_response_headers}
+          _captured_request_cookie %{data:haproxy.captured_request_cookie}
+          _captured_response_cookie %{data:haproxy.captured_response_cookie}
+          _client_ip %{ipOrHost:network.client.ip}
+          _client_port %{integer:network.client.port}
+          _date_haproxy \[%{date("dd/MMM/yyyy:HH:mm:ss.SSS"):date_access}\]
+          _destination_ip %{ip:network.destination.ip}
+          _destination_port %{integer:network.destination.port}
+          _feconn %{integer:haproxy.feconn}
+          _frontend_name %{notSpace:haproxy.frontend_name}
+          _ha_mode %{notSpace:haproxy.mode}
+          _http_version HTTP\/%{regex("\\d+\\.\\d+"):http.version}
+          _http_url %{notSpace:http.url}
+          _duration %{integer:duration:scale(1000000)}
+          _retries %{integer:haproxy.retries}
+          _server_name %{notSpace:load_balancer.service_name}
+          _srvconn %{integer:haproxy.srvconn}
+          _srv_queue %{integer:haproxy.srv_queue}
+          _status_code %{integer:http.status_code}
+          _termination_state %{notSpace:haproxy.termination_state}
+          _time_request %{integer:haproxy.time_request}
+          _time_queue %{integer:haproxy.time_queue}
+          _time_backend_connect %{integer:load_balancer.time_backend_connect}
+          _time_backend_response %{integer:haproxy.time_backend_response}
+          _method %{word:http.method}
+          _syslog_prefix (%{date("MMM dd HH:mm:ss"):syslog.date}|%{date("MMM  d HH:mm:ss"):syslog.date}|%{date("yyyy-MM-dd'T'HH:mm:ssZ"):syslog.date}) %{notSpace:syslog.host} haproxy\[%{number:haproxy.pid}\]:
+        matchRules: |
+          haproxy.http (%{_syslog_prefix}\s+)?%{_client_ip}:%{_client_port} %{_date_haproxy} %{_frontend_name} %{_backend_name}/%{_server_name} %{_time_request}/%{_time_queue}/%{_time_backend_connect}/%{_time_backend_response}/%{_duration} %{_status_code} %{_bytes_sent} %{_captured_request_cookie} %{_captured_response_cookie} %{_termination_state} %{_actconn}/%{_feconn}/%{_beconn}/%{_srvconn}/%{_retries} %{_srv_queue}/%{_backend_queue} (\{%{_captured_request_headers}\})?(\s)?(\{%{_captured_response_headers}\})?(\s)?"%{_method} %{_http_url}( %{_http_version})?"
+
+          haproxy.tcp (%{_syslog_prefix}\s+)?%{_client_ip}:%{_client_port} %{_date_haproxy} %{_frontend_name} %{_backend_name}/%{_server_name} %{_time_queue}/%{_time_backend_connect}/%{_duration} %{_bytes_sent} %{_termination_state} %{_actconn}/%{_feconn}/%{_beconn}/%{_srvconn}/%{_retries} %{_srv_queue}/%{_backend_queue}
+
+          haproxy.default (%{_syslog_prefix}\s+)?Connect from %{_client_ip}:%{_client_port} to %{_destination_ip}:%{_destination_port} \(%{_frontend_name}\/%{_ha_mode}\)
+
+    - type: url-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.url
+      target: http.url_details
+    - type: user-agent-parser
+      name: ''
+      enabled: true
+      sources:
+        - http.useragent
+      target: http.useragent_details
+      encoded: false
+    - type: date-remapper
+      name: Define `date_access` as the official date of the log
+      enabled: true
+      sources:
+        - date_access
+    - type: category-processor
+      name: Categorise status code
+      enabled: true
+      categories:
+        - filter:
+            query: '@http.status_code:[200 TO 299]'
+          name: OK
+        - filter:
+            query: '@http.status_code:[300 TO 399]'
+          name: notice
+        - filter:
+            query: '@http.status_code:[400 TO 499]'
+          name: warning
+        - filter:
+            query: '@http.status_code:[500 TO 599]'
+          name: error
+      target: http.status_category
+    - type: status-remapper
+      name: Define `http.status_category` as the official status of the log
+      enabled: true
+      sources:
+        - http.status_category

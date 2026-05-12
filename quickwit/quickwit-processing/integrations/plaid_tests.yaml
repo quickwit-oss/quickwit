@@ -1,0 +1,239 @@
+id: "plaid"
+tests:
+ -
+  sample: |-
+    {
+      "amount" : "12.34",
+      "authorization_id" : "3e77aebb-444e-9a71-4c70-9cde604c0689",
+      "created" : "2025-04-15T04:31:55.577677Z",
+      "description" : "posted",
+      "failure_reason" : {
+        "ach_return_code" : "R01",
+        "failure_code" : "R01",
+        "description" : "Insufficient funds"
+      },
+      "type" : "debit",
+      "cancellable" : false,
+      "network" : "ach",
+      "originator_client_id" : "66dec76ee40771001aff0759",
+      "sweep_status" : "unswept",
+      "account_id" : "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE",
+      "ach_class" : "ppd",
+      "iso_currency_code" : "USD",
+      "origination_account_id" : "",
+      "id" : "54ad77b7-b08b-06f1-3d2d-86d7a0c6e25e",
+      "ledger_id" : "2ec67c41-a3c6-4501-a31e-757b362fa0be",
+      "user" : {
+        "legal_name" : "Alberta Bobbeth Charleson"
+      },
+      "status" : "failed"
+    }
+  result:
+    custom:
+      account_id: "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE"
+      ach_class: "ppd"
+      amount: "12.34"
+      authorization_id: "3e77aebb-444e-9a71-4c70-9cde604c0689"
+      cancellable: false
+      created: "2025-04-15T04:31:55.577677Z"
+      description: "posted"
+      failure_reason:
+        ach_return_code: "R01"
+        description: "Insufficient funds"
+        failure_code: "R01"
+      id: "54ad77b7-b08b-06f1-3d2d-86d7a0c6e25e"
+      iso_currency_code: "USD"
+      ledger_id: "2ec67c41-a3c6-4501-a31e-757b362fa0be"
+      network: "ach"
+      origination_account_id: ""
+      originator_client_id: "66dec76ee40771001aff0759"
+      status: "failed"
+      sweep_status: "unswept"
+      timestamp: "2025-04-15T04:31:55.577677Z"
+      type: "debit"
+      user:
+        legal_name: "Alberta Bobbeth Charleson"
+    message: |-
+      {
+        "amount" : "12.34",
+        "authorization_id" : "3e77aebb-444e-9a71-4c70-9cde604c0689",
+        "created" : "2025-04-15T04:31:55.577677Z",
+        "description" : "posted",
+        "failure_reason" : {
+          "ach_return_code" : "R01",
+          "failure_code" : "R01",
+          "description" : "Insufficient funds"
+        },
+        "type" : "debit",
+        "cancellable" : false,
+        "network" : "ach",
+        "originator_client_id" : "66dec76ee40771001aff0759",
+        "sweep_status" : "unswept",
+        "account_id" : "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE",
+        "ach_class" : "ppd",
+        "iso_currency_code" : "USD",
+        "origination_account_id" : "",
+        "id" : "54ad77b7-b08b-06f1-3d2d-86d7a0c6e25e",
+        "ledger_id" : "2ec67c41-a3c6-4501-a31e-757b362fa0be",
+        "user" : {
+          "legal_name" : "Alberta Bobbeth Charleson"
+        },
+        "status" : "failed"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1744691515577
+ -
+  sample: |-
+    {
+      "amount" : "12.34",
+      "created" : "2025-04-15T07:10:31.960472Z",
+      "description" : "payment",
+      "type" : "credit",
+      "network" : "ach",
+      "funding_account_id" : "",
+      "schedule" : {
+        "end_date" : "2025-04-22",
+        "interval_count" : 1,
+        "interval_unit" : "week",
+        "interval_execution_day" : 5,
+        "start_date" : "2025-04-15"
+      },
+      "account_id" : "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE",
+      "ach_class" : "ppd",
+      "next_origination_date" : "2025-04-18",
+      "iso_currency_code" : "USD",
+      "origination_account_id" : "",
+      "recurring_transfer_id" : "fbba61d8-085a-0a9f-1bd1-2fe4efb4638e",
+      "user" : {
+        "address" : {
+          "country" : "US",
+          "city" : "San Francisco",
+          "street" : "123 Main St.",
+          "postal_code" : "94053",
+          "region" : "CA"
+        },
+        "email_address" : "acharleston@email.com",
+        "phone_number" : "510-555-0128",
+        "legal_name" : "Anne Charleston"
+      },
+      "status" : "active"
+    }
+  result:
+    custom:
+      account_id: "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE"
+      ach_class: "ppd"
+      amount: "12.34"
+      created: "2025-04-15T07:10:31.960472Z"
+      description: "payment"
+      funding_account_id: ""
+      iso_currency_code: "USD"
+      network: "ach"
+      next_origination_date: "2025-04-18"
+      origination_account_id: ""
+      recurring_transfer_id: "fbba61d8-085a-0a9f-1bd1-2fe4efb4638e"
+      schedule:
+        end_date: "2025-04-22"
+        interval_count: 1
+        interval_execution_day: 5
+        interval_unit: "week"
+        start_date: "2025-04-15"
+      status: "active"
+      timestamp: "2025-04-15T07:10:31.960472Z"
+      type: "credit"
+      user:
+        address:
+          city: "San Francisco"
+          country: "US"
+          postal_code: "94053"
+          region: "CA"
+          street: "123 Main St."
+        email_address: "acharleston@email.com"
+        legal_name: "Anne Charleston"
+        phone_number: "510-555-0128"
+    message: |-
+      {
+        "amount" : "12.34",
+        "created" : "2025-04-15T07:10:31.960472Z",
+        "description" : "payment",
+        "type" : "credit",
+        "network" : "ach",
+        "funding_account_id" : "",
+        "schedule" : {
+          "end_date" : "2025-04-22",
+          "interval_count" : 1,
+          "interval_unit" : "week",
+          "interval_execution_day" : 5,
+          "start_date" : "2025-04-15"
+        },
+        "account_id" : "yngxaDxQXXT8Eok5Aw7RIx3qwmXzjQF4RbrPE",
+        "ach_class" : "ppd",
+        "next_origination_date" : "2025-04-18",
+        "iso_currency_code" : "USD",
+        "origination_account_id" : "",
+        "recurring_transfer_id" : "fbba61d8-085a-0a9f-1bd1-2fe4efb4638e",
+        "user" : {
+          "address" : {
+            "country" : "US",
+            "city" : "San Francisco",
+            "street" : "123 Main St.",
+            "postal_code" : "94053",
+            "region" : "CA"
+          },
+          "email_address" : "acharleston@email.com",
+          "phone_number" : "510-555-0128",
+          "legal_name" : "Anne Charleston"
+        },
+        "status" : "active"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1744701031960
+ -
+  sample: |-
+    {
+      "date" : "2025-04-17",
+      "amount" : -2066.58,
+      "fees" : 0,
+      "account_id" : "6EPMwLMZ33UpbKq4zal9HRDm5rj7QAc87prQp",
+      "quantity" : -49.02909689729298,
+      "subtype" : "sell",
+      "investment_transaction_id" : "ln4LXJLrGGTWEXpnV8g9s8K5wxakjXcpAy6GB",
+      "price" : 41.62,
+      "iso_currency_code" : "USD",
+      "name" : "SELL iShares Inc MSCI Brazil",
+      "type" : "sell",
+      "security_id" : "abJamDazkgfvBkVGgnnLUWXoxnomp5up8llg4"
+    }
+  result:
+    custom:
+      account_id: "6EPMwLMZ33UpbKq4zal9HRDm5rj7QAc87prQp"
+      amount: -2066.58
+      date: "2025-04-17"
+      fees: 0
+      investment_transaction_id: "ln4LXJLrGGTWEXpnV8g9s8K5wxakjXcpAy6GB"
+      iso_currency_code: "USD"
+      name: "SELL iShares Inc MSCI Brazil"
+      price: 41.62
+      quantity: -49.02909689729298
+      security_id: "abJamDazkgfvBkVGgnnLUWXoxnomp5up8llg4"
+      subtype: "sell"
+      type: "sell"
+    message: |-
+      {
+        "date" : "2025-04-17",
+        "amount" : -2066.58,
+        "fees" : 0,
+        "account_id" : "6EPMwLMZ33UpbKq4zal9HRDm5rj7QAc87prQp",
+        "quantity" : -49.02909689729298,
+        "subtype" : "sell",
+        "investment_transaction_id" : "ln4LXJLrGGTWEXpnV8g9s8K5wxakjXcpAy6GB",
+        "price" : 41.62,
+        "iso_currency_code" : "USD",
+        "name" : "SELL iShares Inc MSCI Brazil",
+        "type" : "sell",
+        "security_id" : "abJamDazkgfvBkVGgnnLUWXoxnomp5up8llg4"
+      }
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1

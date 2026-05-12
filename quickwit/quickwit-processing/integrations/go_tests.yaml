@@ -1,0 +1,97 @@
+id: "go"
+tests:
+ -
+  sample: "time=\"2015-03-26T01:27:38-04:00\" level=debug msg=\"Started observing beach\" animal=walrus number=8"
+  result:
+    custom:
+      animal: "walrus"
+      level: "debug"
+      number: 8
+      time: "2015-03-26T01:27:38-04:00"
+    message: "Started observing beach"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: "[Oct 27 02:18:00] DEBUG main: started observing beach animal=walrus"
+  result:
+    custom:
+      animal: "walrus"
+      date: 25841880000
+      level: "DEBUG"
+      logger:
+        thread_name: "main"
+    message: "started observing beach animal=walrus"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 25841880000
+ -
+  sample: "2017/03/02 16:07:16 You cannot divide by 0"
+  result:
+    custom:
+      date: 1488470836000
+      error:
+        message: "You cannot divide by 0"
+    message: "2017/03/02 16:07:16 You cannot divide by 0"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1488470836000
+ -
+  sample: "dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
+  result:
+    custom:
+      dd:
+        service: "tracer.test"
+        span_id: "67890"
+    message: "dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
+    service: "tracer.test"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:testenv"
+     - "version:1.2.3"
+    timestamp: 1
+    trace_id: "123452345676543345654323456"
+ -
+  sample: "time=\"2015-03-26T01:27:38-04:00\" level=debug msg=\"Started observing beach\" animal=walrus number=8 dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
+  result:
+    custom:
+      animal: "walrus"
+      dd:
+        service: "tracer.test"
+        span_id: "67890"
+      level: "debug"
+      number: 8
+      time: "2015-03-26T01:27:38-04:00"
+    message: "Started observing beach"
+    service: "tracer.test"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:testenv"
+     - "version:1.2.3"
+    timestamp: 1
+    trace_id: "123452345676543345654323456"
+ -
+  sample: "[Oct 27 02:18:00] DEBUG main: started observing beach animal=walrus dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
+  result:
+    custom:
+      animal: "walrus"
+      date: 25841880000
+      dd:
+        service: "tracer.test"
+        span_id: "67890"
+      level: "DEBUG"
+      logger:
+        thread_name: "main"
+    message: "started observing beach animal=walrus dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
+    service: "tracer.test"
+    status: "debug"
+    tags:
+     - "source:LOGS_SOURCE"
+     - "env:testenv"
+     - "version:1.2.3"
+    timestamp: 25841880000
+    trace_id: "123452345676543345654323456"
+

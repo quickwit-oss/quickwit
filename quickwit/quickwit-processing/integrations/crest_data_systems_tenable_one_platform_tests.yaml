@@ -1,0 +1,1160 @@
+id: "crest_data_systems_tenable_one_platform"
+tests:
+ -
+  sample: |-
+    {
+      "plugin_modification_date" : "1685793600",
+      "modifiedTime" : "1685842251",
+      "copyright" : "This script is Copyright (C) 2023 and is owned by Tenable, Inc. or an Affiliate thereof.",
+      "plugin_version" : "1.0",
+      "description" : "The remote Redhat Enterprise Linux 8 host has packages installed that are affected by multiple vulnerabilities as referenced in the RHSA-2023:3382 advisory.\n\n  - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, by feeding specially crafted input to `git apply --reject`, a     path outside the working tree can be overwritten with partially controlled contents (corresponding to the     rejected hunk(s) from the given patch). A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8,     2.34.8, 2.35.8, 2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid using `git apply` with     `--reject` when applying patches from an untrusted source. Use `git apply --stat` to inspect a patch     before applying; avoid applying one that create a conflict where a link corresponding to the `*.rej` file     exists. (CVE-2023-25652)\n\n  - In Git for Windows, the Windows port of Git, no localized messages are shipped with the installer. As a     consequence, Git is expected not to localize messages at all, and skips the gettext initialization.\n    However, due to a change in MINGW-packages, the `gettext()` function's implicit initialization no longer     uses the runtime prefix but uses the hard-coded path `C:\\mingw64\\share\\locale` to look for localized     messages. And since any authenticated user has the permission to create folders in `C:\\` (and since     `C:\\mingw64` does not typically exist), it is possible for low-privilege users to place fake messages in     that location where `git.exe` will pick them up in version 2.40.1. This vulnerability is relatively hard     to exploit and requires social engineering. For example, a legitimate message at the end of a clone could     be maliciously modified to ask the user to direct their web browser to a malicious website, and the user     might think that the message comes from Git and is legitimate. It does require local write access by the     attacker, though, which makes this attack vector less likely. Version 2.40.1 contains a patch for this     issue. Some workarounds are available. Do not work on a Windows machine with shared accounts, or     alternatively create a `C:\\mingw64` folder and leave it empty. Users who have administrative rights may     remove the permission to create folders in `C:\\`. (CVE-2023-25815)\n\n  - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, a specially crafted `.gitmodules` file with submodule URLs     that are longer than 1024 characters can used to exploit a bug in     `config.c::git_config_copy_or_rename_section_in_file()`. This bug can be used to inject arbitrary     configuration into a user's `$GIT_DIR/config` when attempting to remove the configuration section     associated with that submodule. When the attacker injects configuration values which specify executables     to run (such as `core.pager`, `core.editor`, `core.sshCommand`, etc.) this can lead to a remote code     execution. A fix A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8, 2.36.6,     2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid running `git submodule deinit` on untrusted     repositories or without prior inspection of any submodule sections in `$GIT_DIR/config`. (CVE-2023-29007)\n\nNote that Nessus has not tested for these issues but has instead relied only on the application's self-reported version number.",
+      "baseScore" : "7.8",
+      "patchModDate" : "-1",
+      "sourceFile" : "redhat-RHSA-2023-3382.nasl",
+      "patch_publication_date" : "1685534400",
+      "seeAlso" : "https://access.redhat.com/security/cve/CVE-2023-25652\nhttps://access.redhat.com/security/cve/CVE-2023-25815\nhttps://access.redhat.com/security/cve/CVE-2023-29007\nhttps://access.redhat.com/errata/RHSA-2023:3382",
+      "requiredUDPPorts" : "",
+      "exploit_available" : "true",
+      "protocol" : "",
+      "solution" : "Update the affected packages.",
+      "vuln_publication_date" : "1682424000",
+      "vprContext" : "[{\"id\":\"age_of_vuln\",\"name\":\"Vulnerability Age\",\"type\":\"string\",\"value\":\"30 - 60 days\"},{\"id\":\"cvssV3_impactScore\",\"name\":\"CVSS v3 Impact Score\",\"type\":\"number\",\"value\":5.9},{\"id\":\"exploit_code_maturity\",\"name\":\"Exploit Code Maturity\",\"type\":\"string\",\"value\":\"PoC\"},{\"id\":\"product_coverage\",\"name\":\"Product Coverage\",\"type\":\"string\",\"value\":\"Low\"},{\"id\":\"threat_intensity_last_28\",\"name\":\"Threat Intensity\",\"type\":\"string\",\"value\":\"Very Low\"},{\"id\":\"threat_recency\",\"name\":\"Threat Recency\",\"type\":\"string\",\"value\":\"30 to 120 days\"},{\"id\":\"threat_sources_last_28\",\"name\":\"Threat Sources\",\"type\":\"string\",\"value\":\"No recorded events\"}]",
+      "host" : "sc.tenalab.online",
+      "cpe" : "cpe:/o:redhat:rhel_aus:8.2\np-cpe:/a:redhat:enterprise_linux:git\np-cpe:/a:redhat:enterprise_linux:git-all\np-cpe:/a:redhat:enterprise_linux:git-core\np-cpe:/a:redhat:enterprise_linux:git-core-doc\np-cpe:/a:redhat:enterprise_linux:git-daemon\np-cpe:/a:redhat:enterprise_linux:git-email\np-cpe:/a:redhat:enterprise_linux:git-gui\np-cpe:/a:redhat:enterprise_linux:git-instaweb\np-cpe:/a:redhat:enterprise_linux:git-subtree\np-cpe:/a:redhat:enterprise_linux:git-svn\np-cpe:/a:redhat:enterprise_linux:gitk\np-cpe:/a:redhat:enterprise_linux:gitweb\np-cpe:/a:redhat:enterprise_linux:perl-Git\np-cpe:/a:redhat:enterprise_linux:perl-Git-SVN",
+      "plugin_publication_date" : "1685793600",
+      "id" : "176654",
+      "checkType" : "local",
+      "cvssVectorBF" : "2165359204",
+      "temporalScore" : "6.1",
+      "exploitFrameworks" : "",
+      "xrefs" : "CVE:CVE-2023-25652, CVE:CVE-2023-25815, CVE:CVE-2023-29007, RHSA:2023:3382",
+      "risk_factor" : "High",
+      "synopsis" : "The remote Red Hat host is missing one or more security updates.",
+      "requiredPorts" : "",
+      "dependencies" : "ssh_get_info.nasl,redhat_repos.nasl",
+      "exploitability_ease" : "Exploits are available",
+      "cvssVector" : "AV:N/AC:L/Au:N/C:N/I:C/A:N/E:POC/RL:OF/RC:C",
+      "service" : "cds.tenable.one.platform.sc.plugin",
+      "vprScore" : "7.4",
+      "name" : "RHEL 8 : git (RHSA-2023:3382)",
+      "plugin_type" : "active",
+      "family" : {
+        "name" : "Red Hat Local Security Checks",
+        "id" : "1",
+        "type" : "active"
+      },
+      "md5" : "6d8a0399f23969cf883e2f43b734b8d4"
+    }
+  result:
+    custom:
+      baseScore: "7.8"
+      checkType: "local"
+      copyright: "This script is Copyright (C) 2023 and is owned by Tenable, Inc. or an Affiliate thereof."
+      cpe: |-
+        cpe:/o:redhat:rhel_aus:8.2
+        p-cpe:/a:redhat:enterprise_linux:git
+        p-cpe:/a:redhat:enterprise_linux:git-all
+        p-cpe:/a:redhat:enterprise_linux:git-core
+        p-cpe:/a:redhat:enterprise_linux:git-core-doc
+        p-cpe:/a:redhat:enterprise_linux:git-daemon
+        p-cpe:/a:redhat:enterprise_linux:git-email
+        p-cpe:/a:redhat:enterprise_linux:git-gui
+        p-cpe:/a:redhat:enterprise_linux:git-instaweb
+        p-cpe:/a:redhat:enterprise_linux:git-subtree
+        p-cpe:/a:redhat:enterprise_linux:git-svn
+        p-cpe:/a:redhat:enterprise_linux:gitk
+        p-cpe:/a:redhat:enterprise_linux:gitweb
+        p-cpe:/a:redhat:enterprise_linux:perl-Git
+        p-cpe:/a:redhat:enterprise_linux:perl-Git-SVN
+      cvssVector: "AV:N/AC:L/Au:N/C:N/I:C/A:N/E:POC/RL:OF/RC:C"
+      cvssVectorBF: "2165359204"
+      dependencies: "ssh_get_info.nasl,redhat_repos.nasl"
+      description: |-
+        The remote Redhat Enterprise Linux 8 host has packages installed that are affected by multiple vulnerabilities as referenced in the RHSA-2023:3382 advisory.
+
+          - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, by feeding specially crafted input to `git apply --reject`, a     path outside the working tree can be overwritten with partially controlled contents (corresponding to the     rejected hunk(s) from the given patch). A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8,     2.34.8, 2.35.8, 2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid using `git apply` with     `--reject` when applying patches from an untrusted source. Use `git apply --stat` to inspect a patch     before applying; avoid applying one that create a conflict where a link corresponding to the `*.rej` file     exists. (CVE-2023-25652)
+
+          - In Git for Windows, the Windows port of Git, no localized messages are shipped with the installer. As a     consequence, Git is expected not to localize messages at all, and skips the gettext initialization.
+            However, due to a change in MINGW-packages, the `gettext()` function's implicit initialization no longer     uses the runtime prefix but uses the hard-coded path `C:\mingw64\share\locale` to look for localized     messages. And since any authenticated user has the permission to create folders in `C:\` (and since     `C:\mingw64` does not typically exist), it is possible for low-privilege users to place fake messages in     that location where `git.exe` will pick them up in version 2.40.1. This vulnerability is relatively hard     to exploit and requires social engineering. For example, a legitimate message at the end of a clone could     be maliciously modified to ask the user to direct their web browser to a malicious website, and the user     might think that the message comes from Git and is legitimate. It does require local write access by the     attacker, though, which makes this attack vector less likely. Version 2.40.1 contains a patch for this     issue. Some workarounds are available. Do not work on a Windows machine with shared accounts, or     alternatively create a `C:\mingw64` folder and leave it empty. Users who have administrative rights may     remove the permission to create folders in `C:\`. (CVE-2023-25815)
+
+          - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, a specially crafted `.gitmodules` file with submodule URLs     that are longer than 1024 characters can used to exploit a bug in     `config.c::git_config_copy_or_rename_section_in_file()`. This bug can be used to inject arbitrary     configuration into a user's `$GIT_DIR/config` when attempting to remove the configuration section     associated with that submodule. When the attacker injects configuration values which specify executables     to run (such as `core.pager`, `core.editor`, `core.sshCommand`, etc.) this can lead to a remote code     execution. A fix A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8, 2.36.6,     2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid running `git submodule deinit` on untrusted     repositories or without prior inspection of any submodule sections in `$GIT_DIR/config`. (CVE-2023-29007)
+
+        Note that Nessus has not tested for these issues but has instead relied only on the application's self-reported version number.
+      exploitFrameworks: ""
+      exploit_available: "true"
+      exploitability_ease: "Exploits are available"
+      family:
+        id: "1"
+        name: "Red Hat Local Security Checks"
+        type: "active"
+      host: "sc.tenalab.online"
+      id: "176654"
+      md5: "6d8a0399f23969cf883e2f43b734b8d4"
+      modifiedTime: "1685842251"
+      name: "RHEL 8 : git (RHSA-2023:3382)"
+      patchModDate: "-1"
+      patch_publication_date: "1685534400"
+      plugin_modification_date: "1685793600"
+      plugin_publication_date: "1685793600"
+      plugin_type: "active"
+      plugin_version: "1.0"
+      protocol: ""
+      requiredPorts: ""
+      requiredUDPPorts: ""
+      risk_factor: "High"
+      seeAlso: |-
+        https://access.redhat.com/security/cve/CVE-2023-25652
+        https://access.redhat.com/security/cve/CVE-2023-25815
+        https://access.redhat.com/security/cve/CVE-2023-29007
+        https://access.redhat.com/errata/RHSA-2023:3382
+      service: "cds.tenable.one.platform.sc.plugin"
+      solution: "Update the affected packages."
+      sourceFile: "redhat-RHSA-2023-3382.nasl"
+      synopsis: "The remote Red Hat host is missing one or more security updates."
+      temporalScore: "6.1"
+      vprContext: "[{\"id\":\"age_of_vuln\",\"name\":\"Vulnerability Age\",\"type\":\"string\",\"value\":\"30 - 60 days\"},{\"id\":\"cvssV3_impactScore\",\"name\":\"CVSS v3 Impact Score\",\"type\":\"number\",\"value\":5.9},{\"id\":\"exploit_code_maturity\",\"name\":\"Exploit Code Maturity\",\"type\":\"string\",\"value\":\"PoC\"},{\"id\":\"product_coverage\",\"name\":\"Product Coverage\",\"type\":\"string\",\"value\":\"Low\"},{\"id\":\"threat_intensity_last_28\",\"name\":\"Threat Intensity\",\"type\":\"string\",\"value\":\"Very Low\"},{\"id\":\"threat_recency\",\"name\":\"Threat Recency\",\"type\":\"string\",\"value\":\"30 to 120 days\"},{\"id\":\"threat_sources_last_28\",\"name\":\"Threat Sources\",\"type\":\"string\",\"value\":\"No recorded events\"}]"
+      vprScore: "7.4"
+      vuln_publication_date: "1682424000"
+      xrefs: "CVE:CVE-2023-25652, CVE:CVE-2023-25815, CVE:CVE-2023-29007, RHSA:2023:3382"
+    message: |-
+      {
+        "plugin_modification_date" : "1685793600",
+        "modifiedTime" : "1685842251",
+        "copyright" : "This script is Copyright (C) 2023 and is owned by Tenable, Inc. or an Affiliate thereof.",
+        "plugin_version" : "1.0",
+        "description" : "The remote Redhat Enterprise Linux 8 host has packages installed that are affected by multiple vulnerabilities as referenced in the RHSA-2023:3382 advisory.\n\n  - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, by feeding specially crafted input to `git apply --reject`, a     path outside the working tree can be overwritten with partially controlled contents (corresponding to the     rejected hunk(s) from the given patch). A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8,     2.34.8, 2.35.8, 2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid using `git apply` with     `--reject` when applying patches from an untrusted source. Use `git apply --stat` to inspect a patch     before applying; avoid applying one that create a conflict where a link corresponding to the `*.rej` file     exists. (CVE-2023-25652)\n\n  - In Git for Windows, the Windows port of Git, no localized messages are shipped with the installer. As a     consequence, Git is expected not to localize messages at all, and skips the gettext initialization.\n    However, due to a change in MINGW-packages, the `gettext()` function's implicit initialization no longer     uses the runtime prefix but uses the hard-coded path `C:\\mingw64\\share\\locale` to look for localized     messages. And since any authenticated user has the permission to create folders in `C:\\` (and since     `C:\\mingw64` does not typically exist), it is possible for low-privilege users to place fake messages in     that location where `git.exe` will pick them up in version 2.40.1. This vulnerability is relatively hard     to exploit and requires social engineering. For example, a legitimate message at the end of a clone could     be maliciously modified to ask the user to direct their web browser to a malicious website, and the user     might think that the message comes from Git and is legitimate. It does require local write access by the     attacker, though, which makes this attack vector less likely. Version 2.40.1 contains a patch for this     issue. Some workarounds are available. Do not work on a Windows machine with shared accounts, or     alternatively create a `C:\\mingw64` folder and leave it empty. Users who have administrative rights may     remove the permission to create folders in `C:\\`. (CVE-2023-25815)\n\n  - Git is a revision control system. Prior to versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8,     2.36.6, 2.37.7, 2.38.5, 2.39.3, and 2.40.1, a specially crafted `.gitmodules` file with submodule URLs     that are longer than 1024 characters can used to exploit a bug in     `config.c::git_config_copy_or_rename_section_in_file()`. This bug can be used to inject arbitrary     configuration into a user's `$GIT_DIR/config` when attempting to remove the configuration section     associated with that submodule. When the attacker injects configuration values which specify executables     to run (such as `core.pager`, `core.editor`, `core.sshCommand`, etc.) this can lead to a remote code     execution. A fix A fix is available in versions 2.30.9, 2.31.8, 2.32.7, 2.33.8, 2.34.8, 2.35.8, 2.36.6,     2.37.7, 2.38.5, 2.39.3, and 2.40.1. As a workaround, avoid running `git submodule deinit` on untrusted     repositories or without prior inspection of any submodule sections in `$GIT_DIR/config`. (CVE-2023-29007)\n\nNote that Nessus has not tested for these issues but has instead relied only on the application's self-reported version number.",
+        "baseScore" : "7.8",
+        "patchModDate" : "-1",
+        "sourceFile" : "redhat-RHSA-2023-3382.nasl",
+        "patch_publication_date" : "1685534400",
+        "seeAlso" : "https://access.redhat.com/security/cve/CVE-2023-25652\nhttps://access.redhat.com/security/cve/CVE-2023-25815\nhttps://access.redhat.com/security/cve/CVE-2023-29007\nhttps://access.redhat.com/errata/RHSA-2023:3382",
+        "requiredUDPPorts" : "",
+        "exploit_available" : "true",
+        "protocol" : "",
+        "solution" : "Update the affected packages.",
+        "vuln_publication_date" : "1682424000",
+        "vprContext" : "[{\"id\":\"age_of_vuln\",\"name\":\"Vulnerability Age\",\"type\":\"string\",\"value\":\"30 - 60 days\"},{\"id\":\"cvssV3_impactScore\",\"name\":\"CVSS v3 Impact Score\",\"type\":\"number\",\"value\":5.9},{\"id\":\"exploit_code_maturity\",\"name\":\"Exploit Code Maturity\",\"type\":\"string\",\"value\":\"PoC\"},{\"id\":\"product_coverage\",\"name\":\"Product Coverage\",\"type\":\"string\",\"value\":\"Low\"},{\"id\":\"threat_intensity_last_28\",\"name\":\"Threat Intensity\",\"type\":\"string\",\"value\":\"Very Low\"},{\"id\":\"threat_recency\",\"name\":\"Threat Recency\",\"type\":\"string\",\"value\":\"30 to 120 days\"},{\"id\":\"threat_sources_last_28\",\"name\":\"Threat Sources\",\"type\":\"string\",\"value\":\"No recorded events\"}]",
+        "host" : "sc.tenalab.online",
+        "cpe" : "cpe:/o:redhat:rhel_aus:8.2\np-cpe:/a:redhat:enterprise_linux:git\np-cpe:/a:redhat:enterprise_linux:git-all\np-cpe:/a:redhat:enterprise_linux:git-core\np-cpe:/a:redhat:enterprise_linux:git-core-doc\np-cpe:/a:redhat:enterprise_linux:git-daemon\np-cpe:/a:redhat:enterprise_linux:git-email\np-cpe:/a:redhat:enterprise_linux:git-gui\np-cpe:/a:redhat:enterprise_linux:git-instaweb\np-cpe:/a:redhat:enterprise_linux:git-subtree\np-cpe:/a:redhat:enterprise_linux:git-svn\np-cpe:/a:redhat:enterprise_linux:gitk\np-cpe:/a:redhat:enterprise_linux:gitweb\np-cpe:/a:redhat:enterprise_linux:perl-Git\np-cpe:/a:redhat:enterprise_linux:perl-Git-SVN",
+        "plugin_publication_date" : "1685793600",
+        "id" : "176654",
+        "checkType" : "local",
+        "cvssVectorBF" : "2165359204",
+        "temporalScore" : "6.1",
+        "exploitFrameworks" : "",
+        "xrefs" : "CVE:CVE-2023-25652, CVE:CVE-2023-25815, CVE:CVE-2023-29007, RHSA:2023:3382",
+        "risk_factor" : "High",
+        "synopsis" : "The remote Red Hat host is missing one or more security updates.",
+        "requiredPorts" : "",
+        "dependencies" : "ssh_get_info.nasl,redhat_repos.nasl",
+        "exploitability_ease" : "Exploits are available",
+        "cvssVector" : "AV:N/AC:L/Au:N/C:N/I:C/A:N/E:POC/RL:OF/RC:C",
+        "service" : "cds.tenable.one.platform.sc.plugin",
+        "vprScore" : "7.4",
+        "name" : "RHEL 8 : git (RHSA-2023:3382)",
+        "plugin_type" : "active",
+        "family" : {
+          "name" : "Red Hat Local Security Checks",
+          "id" : "1",
+          "type" : "active"
+        },
+        "md5" : "6d8a0399f23969cf883e2f43b734b8d4"
+      }
+    service: "cds.tenable.one.platform.sc.plugin"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "cvssV3BaseScore" : "",
+      "exploitEase" : "",
+      "cvssV3Vector" : "",
+      "severity_description" : "Informative",
+      "repository" : {
+        "dataFormat" : "IPv4",
+        "name" : "Live",
+        "description" : "",
+        "id" : "1"
+      },
+      "uuid" : "",
+      "operatingSystem" : "Linux Kernel 2.6",
+      "protocol" : "TCP",
+      "solution" : "",
+      "vprContext" : "",
+      "host" : "sc.tenalab.online",
+      "cpe" : "",
+      "checkType" : "",
+      "temporalScore" : "",
+      "xref" : "",
+      "keyDrivers" : "",
+      "pluginID" : "1003420",
+      "firstSeen" : "1670087851",
+      "ip" : "10.238.64.238",
+      "recastRisk" : "0",
+      "acceptRisk" : "0",
+      "cvssV3TemporalScore" : "",
+      "version" : "",
+      "ips" : "10.238.64.238",
+      "vulnPubDate" : "",
+      "cvssVector" : "",
+      "macAddress" : "00:16:3e:11:f8:68",
+      "lastSeen" : "1685809097",
+      "hasBeenMitigated" : "0",
+      "port" : "0",
+      "pluginName" : "6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow",
+      "vprScore" : "",
+      "acrScore" : "",
+      "description" : "",
+      "dnsName" : "target-deb9.lxd",
+      "baseScore" : "",
+      "assetExposureScore" : "",
+      "seeAlso" : "https://workbench.cisecurity.org/files/2242",
+      "pluginPubDate" : "",
+      "stigSeverity" : "",
+      "cve" : "",
+      "patchPubDate" : "",
+      "riskFactor" : "",
+      "severity" : "Info",
+      "exploitFrameworks" : "",
+      "acceptRiskRuleComment" : "",
+      "recastRiskRuleComment" : "",
+      "pluginInfo" : "1003420 (0/6) 6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow",
+      "pluginModDate" : "",
+      "synopsis" : "",
+      "pluginText" : "<cm:compliance-check-name>6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow</cm:compliance-check-name>\n<cm:compliance-benchmark-version>1.0.0</cm:compliance-benchmark-version>\n<cm:compliance-actual-value>The file \"/etc/shadow\" does not contain \"^[\\s]*\\+:\"</cm:compliance-actual-value>\n<cm:compliance-source>custom</cm:compliance-source>\n<cm:compliance-audit-file>0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5728435-scfile_fsbHOF</cm:compliance-audit-file>\n<cm:compliance-check-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-check-id>\n<cm:compliance-policy-value>expect: ^[\\s]*\\+:\nfile: /etc/shadow\nregex: ^[\\s]*\\+:\nsystem: Linux</cm:compliance-policy-value>\n<cm:compliance-functional-id>c3e3e2a825</cm:compliance-functional-id>\n<cm:compliance-uname>Linux target-deb9 5.15.0-1028-aws #32~20.04.1-Ubuntu SMP Mon Jan 9 18:02:08 UTC 2023 x86_64 GNU/Linux</cm:compliance-uname>\n<cm:compliance-info>The character + in various files used to be markers for systems to insert data from NIS maps at a certain point in a system configuration file. These entries are no longer required on most systems, but may exist in files that have been imported from other platforms.\n      Rationale:\n      These entries may provide an avenue for attackers to gain privileged access on the system.</cm:compliance-info>\n<cm:compliance-result>PASSED</cm:compliance-result>\n<cm:compliance-informational-id>1b4fc0f02085c555c0fbace5da772ba09572521136a44e5260075a75667bd2d8</cm:compliance-informational-id>\n<cm:compliance-reference>800-171|3.5.1,800-53|IA-2,CN-L3|7.1.3.1(a),CN-L3|7.1.3.1(e),CSCv7|16.2,CSF|PR.AC-1,ITSG-33|IA-2,LEVEL|1S,NESA|T2.3.8,NESA|T5.3.1,NESA|T5.4.2,NESA|T5.5.1,NESA|T5.5.2,NESA|T5.5.3,NIAv2|AM14b,NIAv2|AM2,NIAv2|AM8</cm:compliance-reference>\n<cm:compliance-solution>Remove any legacy '+' entries from /etc/shadow if they exist.</cm:compliance-solution>\n<cm:compliance-benchmark-name>CIS Debian 9 Server L1</cm:compliance-benchmark-name>\n<cm:compliance-control-id>6116c31c89f0c94eee637bed87f4d05534b31f1ed701b80fb1b63fded3923d1b</cm:compliance-control-id>\n<cm:compliance-see-also>https://workbench.cisecurity.org/files/2242</cm:compliance-see-also>\n<cm:compliance-full-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-full-id>",
+      "uniqueness" : "repositoryID,ip,dnsName",
+      "service" : "cds.tenable.one.platform.sc.vuln",
+      "netbiosName" : "",
+      "hostUUID" : "",
+      "hostUniqueness" : "repositoryID,ip,dnsName",
+      "exploitAvailable" : "No",
+      "severity_id" : "0",
+      "bid" : "",
+      "family" : {
+        "name" : "N/A",
+        "id" : "0",
+        "type" : "compliance"
+      }
+    }
+  result:
+    custom:
+      acceptRisk: "0"
+      acceptRiskRuleComment: ""
+      acrScore: ""
+      assetExposureScore: ""
+      baseScore: ""
+      bid: ""
+      checkType: ""
+      cpe: ""
+      cve: ""
+      cvssV3BaseScore: ""
+      cvssV3TemporalScore: ""
+      cvssV3Vector: ""
+      cvssVector: ""
+      description: ""
+      dnsName: "target-deb9.lxd"
+      exploitAvailable: "No"
+      exploitEase: ""
+      exploitFrameworks: ""
+      family:
+        id: "0"
+        name: "N/A"
+        type: "compliance"
+      firstSeen: "1670087851"
+      hasBeenMitigated: "0"
+      host: "sc.tenalab.online"
+      hostUUID: ""
+      hostUniqueness: "repositoryID,ip,dnsName"
+      ip: "10.238.64.238"
+      ips: "10.238.64.238"
+      keyDrivers: ""
+      lastSeen: "1685809097"
+      macAddress: "00:16:3e:11:f8:68"
+      netbiosName: ""
+      operatingSystem: "Linux Kernel 2.6"
+      patchPubDate: ""
+      pluginID: "1003420"
+      pluginInfo: "1003420 (0/6) 6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow"
+      pluginModDate: ""
+      pluginName: "6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow"
+      pluginPubDate: ""
+      pluginText: |-
+        <cm:compliance-check-name>6.2.3 Ensure no legacy "+" entries exist in /etc/shadow</cm:compliance-check-name>
+        <cm:compliance-benchmark-version>1.0.0</cm:compliance-benchmark-version>
+        <cm:compliance-actual-value>The file "/etc/shadow" does not contain "^[\s]*\+:"</cm:compliance-actual-value>
+        <cm:compliance-source>custom</cm:compliance-source>
+        <cm:compliance-audit-file>0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5728435-scfile_fsbHOF</cm:compliance-audit-file>
+        <cm:compliance-check-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-check-id>
+        <cm:compliance-policy-value>expect: ^[\s]*\+:
+        file: /etc/shadow
+        regex: ^[\s]*\+:
+        system: Linux</cm:compliance-policy-value>
+        <cm:compliance-functional-id>c3e3e2a825</cm:compliance-functional-id>
+        <cm:compliance-uname>Linux target-deb9 5.15.0-1028-aws #32~20.04.1-Ubuntu SMP Mon Jan 9 18:02:08 UTC 2023 x86_64 GNU/Linux</cm:compliance-uname>
+        <cm:compliance-info>The character + in various files used to be markers for systems to insert data from NIS maps at a certain point in a system configuration file. These entries are no longer required on most systems, but may exist in files that have been imported from other platforms.
+              Rationale:
+              These entries may provide an avenue for attackers to gain privileged access on the system.</cm:compliance-info>
+        <cm:compliance-result>PASSED</cm:compliance-result>
+        <cm:compliance-informational-id>1b4fc0f02085c555c0fbace5da772ba09572521136a44e5260075a75667bd2d8</cm:compliance-informational-id>
+        <cm:compliance-reference>800-171|3.5.1,800-53|IA-2,CN-L3|7.1.3.1(a),CN-L3|7.1.3.1(e),CSCv7|16.2,CSF|PR.AC-1,ITSG-33|IA-2,LEVEL|1S,NESA|T2.3.8,NESA|T5.3.1,NESA|T5.4.2,NESA|T5.5.1,NESA|T5.5.2,NESA|T5.5.3,NIAv2|AM14b,NIAv2|AM2,NIAv2|AM8</cm:compliance-reference>
+        <cm:compliance-solution>Remove any legacy '+' entries from /etc/shadow if they exist.</cm:compliance-solution>
+        <cm:compliance-benchmark-name>CIS Debian 9 Server L1</cm:compliance-benchmark-name>
+        <cm:compliance-control-id>6116c31c89f0c94eee637bed87f4d05534b31f1ed701b80fb1b63fded3923d1b</cm:compliance-control-id>
+        <cm:compliance-see-also>https://workbench.cisecurity.org/files/2242</cm:compliance-see-also>
+        <cm:compliance-full-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-full-id>
+      port: "0"
+      protocol: "TCP"
+      recastRisk: "0"
+      recastRiskRuleComment: ""
+      repository:
+        dataFormat: "IPv4"
+        description: ""
+        id: "1"
+        name: "Live"
+      riskFactor: ""
+      seeAlso: "https://workbench.cisecurity.org/files/2242"
+      service: "cds.tenable.one.platform.sc.vuln"
+      severity: "Info"
+      severity_description: "Informative"
+      severity_id: "0"
+      solution: ""
+      stigSeverity: ""
+      synopsis: ""
+      temporalScore: ""
+      uniqueness: "repositoryID,ip,dnsName"
+      uuid: ""
+      version: ""
+      vprContext: ""
+      vprScore: ""
+      vulnPubDate: ""
+      xref: ""
+    message: |-
+      {
+        "cvssV3BaseScore" : "",
+        "exploitEase" : "",
+        "cvssV3Vector" : "",
+        "severity_description" : "Informative",
+        "repository" : {
+          "dataFormat" : "IPv4",
+          "name" : "Live",
+          "description" : "",
+          "id" : "1"
+        },
+        "uuid" : "",
+        "operatingSystem" : "Linux Kernel 2.6",
+        "protocol" : "TCP",
+        "solution" : "",
+        "vprContext" : "",
+        "host" : "sc.tenalab.online",
+        "cpe" : "",
+        "checkType" : "",
+        "temporalScore" : "",
+        "xref" : "",
+        "keyDrivers" : "",
+        "pluginID" : "1003420",
+        "firstSeen" : "1670087851",
+        "ip" : "10.238.64.238",
+        "recastRisk" : "0",
+        "acceptRisk" : "0",
+        "cvssV3TemporalScore" : "",
+        "version" : "",
+        "ips" : "10.238.64.238",
+        "vulnPubDate" : "",
+        "cvssVector" : "",
+        "macAddress" : "00:16:3e:11:f8:68",
+        "lastSeen" : "1685809097",
+        "hasBeenMitigated" : "0",
+        "port" : "0",
+        "pluginName" : "6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow",
+        "vprScore" : "",
+        "acrScore" : "",
+        "description" : "",
+        "dnsName" : "target-deb9.lxd",
+        "baseScore" : "",
+        "assetExposureScore" : "",
+        "seeAlso" : "https://workbench.cisecurity.org/files/2242",
+        "pluginPubDate" : "",
+        "stigSeverity" : "",
+        "cve" : "",
+        "patchPubDate" : "",
+        "riskFactor" : "",
+        "severity" : "Info",
+        "exploitFrameworks" : "",
+        "acceptRiskRuleComment" : "",
+        "recastRiskRuleComment" : "",
+        "pluginInfo" : "1003420 (0/6) 6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow",
+        "pluginModDate" : "",
+        "synopsis" : "",
+        "pluginText" : "<cm:compliance-check-name>6.2.3 Ensure no legacy \"+\" entries exist in /etc/shadow</cm:compliance-check-name>\n<cm:compliance-benchmark-version>1.0.0</cm:compliance-benchmark-version>\n<cm:compliance-actual-value>The file \"/etc/shadow\" does not contain \"^[\\s]*\\+:\"</cm:compliance-actual-value>\n<cm:compliance-source>custom</cm:compliance-source>\n<cm:compliance-audit-file>0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5728435-scfile_fsbHOF</cm:compliance-audit-file>\n<cm:compliance-check-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-check-id>\n<cm:compliance-policy-value>expect: ^[\\s]*\\+:\nfile: /etc/shadow\nregex: ^[\\s]*\\+:\nsystem: Linux</cm:compliance-policy-value>\n<cm:compliance-functional-id>c3e3e2a825</cm:compliance-functional-id>\n<cm:compliance-uname>Linux target-deb9 5.15.0-1028-aws #32~20.04.1-Ubuntu SMP Mon Jan 9 18:02:08 UTC 2023 x86_64 GNU/Linux</cm:compliance-uname>\n<cm:compliance-info>The character + in various files used to be markers for systems to insert data from NIS maps at a certain point in a system configuration file. These entries are no longer required on most systems, but may exist in files that have been imported from other platforms.\n      Rationale:\n      These entries may provide an avenue for attackers to gain privileged access on the system.</cm:compliance-info>\n<cm:compliance-result>PASSED</cm:compliance-result>\n<cm:compliance-informational-id>1b4fc0f02085c555c0fbace5da772ba09572521136a44e5260075a75667bd2d8</cm:compliance-informational-id>\n<cm:compliance-reference>800-171|3.5.1,800-53|IA-2,CN-L3|7.1.3.1(a),CN-L3|7.1.3.1(e),CSCv7|16.2,CSF|PR.AC-1,ITSG-33|IA-2,LEVEL|1S,NESA|T2.3.8,NESA|T5.3.1,NESA|T5.4.2,NESA|T5.5.1,NESA|T5.5.2,NESA|T5.5.3,NIAv2|AM14b,NIAv2|AM2,NIAv2|AM8</cm:compliance-reference>\n<cm:compliance-solution>Remove any legacy '+' entries from /etc/shadow if they exist.</cm:compliance-solution>\n<cm:compliance-benchmark-name>CIS Debian 9 Server L1</cm:compliance-benchmark-name>\n<cm:compliance-control-id>6116c31c89f0c94eee637bed87f4d05534b31f1ed701b80fb1b63fded3923d1b</cm:compliance-control-id>\n<cm:compliance-see-also>https://workbench.cisecurity.org/files/2242</cm:compliance-see-also>\n<cm:compliance-full-id>e2f369616646135128218c486f67e5c4dc0ed924b0ea4ca220e30c536f484fed</cm:compliance-full-id>",
+        "uniqueness" : "repositoryID,ip,dnsName",
+        "service" : "cds.tenable.one.platform.sc.vuln",
+        "netbiosName" : "",
+        "hostUUID" : "",
+        "hostUniqueness" : "repositoryID,ip,dnsName",
+        "exploitAvailable" : "No",
+        "severity_id" : "0",
+        "bid" : "",
+        "family" : {
+          "name" : "N/A",
+          "id" : "0",
+          "type" : "compliance"
+        }
+      }
+    service: "cds.tenable.one.platform.sc.vuln"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "acrScore" : "",
+      "osCPE" : "cpe:/o:linux:linux_kernel",
+      "pluginSet" : "202306100111",
+      "dnsName" : "target-deb9.lxd",
+      "lastAuthRun" : "1686413032",
+      "assetExposureScore" : "",
+      "repository" : {
+        "dataFormat" : "IPv4",
+        "name" : "Live",
+        "description" : "",
+        "id" : "1"
+      },
+      "uuid" : "",
+      "score" : "3",
+      "total" : "24",
+      "host" : "sc.tenalab.online",
+      "tpmID" : "",
+      "lastUnauthRun" : "1686499323",
+      "severityInfo" : "23",
+      "severityMedium" : "1",
+      "keyDrivers" : "",
+      "policyName" : "0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5745595/_Full Scan",
+      "ip" : "10.238.64.238",
+      "severityHigh" : "0",
+      "severityLow" : "0",
+      "macAddress" : "00:16:3e:11:f8:68",
+      "biosGUID" : "",
+      "uniqueness" : "repositoryID,ip,dnsName",
+      "service" : "cds.tenable.one.platform.sc.asset",
+      "netbiosName" : "",
+      "hostUUID" : "",
+      "mcafeeGUID" : "",
+      "hostUniqueness" : "repositoryID,ip,dnsName",
+      "severityCritical" : "0"
+    }
+  result:
+    custom:
+      acrScore: ""
+      assetExposureScore: ""
+      biosGUID: ""
+      dnsName: "target-deb9.lxd"
+      host: "sc.tenalab.online"
+      hostUUID: ""
+      hostUniqueness: "repositoryID,ip,dnsName"
+      ip: "10.238.64.238"
+      keyDrivers: ""
+      lastAuthRun: "1686413032"
+      lastUnauthRun: "1686499323"
+      macAddress: "00:16:3e:11:f8:68"
+      mcafeeGUID: ""
+      netbiosName: ""
+      osCPE: "cpe:/o:linux:linux_kernel"
+      pluginSet: "202306100111"
+      policyName: "0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5745595/_Full Scan"
+      repository:
+        dataFormat: "IPv4"
+        description: ""
+        id: "1"
+        name: "Live"
+      score: "3"
+      service: "cds.tenable.one.platform.sc.asset"
+      severityCritical: "0"
+      severityHigh: "0"
+      severityInfo: "23"
+      severityLow: "0"
+      severityMedium: "1"
+      total: "24"
+      tpmID: ""
+      uniqueness: "repositoryID,ip,dnsName"
+      uuid: ""
+    message: |-
+      {
+        "acrScore" : "",
+        "osCPE" : "cpe:/o:linux:linux_kernel",
+        "pluginSet" : "202306100111",
+        "dnsName" : "target-deb9.lxd",
+        "lastAuthRun" : "1686413032",
+        "assetExposureScore" : "",
+        "repository" : {
+          "dataFormat" : "IPv4",
+          "name" : "Live",
+          "description" : "",
+          "id" : "1"
+        },
+        "uuid" : "",
+        "score" : "3",
+        "total" : "24",
+        "host" : "sc.tenalab.online",
+        "tpmID" : "",
+        "lastUnauthRun" : "1686499323",
+        "severityInfo" : "23",
+        "severityMedium" : "1",
+        "keyDrivers" : "",
+        "policyName" : "0a4e3981-f50b-52ea-8eb0-1e674e3d9161-5745595/_Full Scan",
+        "ip" : "10.238.64.238",
+        "severityHigh" : "0",
+        "severityLow" : "0",
+        "macAddress" : "00:16:3e:11:f8:68",
+        "biosGUID" : "",
+        "uniqueness" : "repositoryID,ip,dnsName",
+        "service" : "cds.tenable.one.platform.sc.asset",
+        "netbiosName" : "",
+        "hostUUID" : "",
+        "mcafeeGUID" : "",
+        "hostUniqueness" : "repositoryID,ip,dnsName",
+        "severityCritical" : "0"
+      }
+    service: "cds.tenable.one.platform.sc.asset"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "tenable_severity" : "medium",
+      "indexed" : "2023-03-09T20:35:43.862Z",
+      "scan" : {
+        "completed_at" : "2023-03-09T20:24:51.772Z",
+        "schedule_uuid" : "32c7ad1b-b690-4107-b36a-aebfdf3495f6",
+        "started_at" : "2023-03-09T20:24:51.772Z",
+        "uuid" : "c930ea2e-78fd-7a4e-4e2e-375143c733cebb0d3100050016fe"
+      },
+      "last_found" : "2023-03-09T20:24:51.772Z",
+      "severity_modification_type" : "NONE",
+      "output" : "\n  - Package             : wayland\n    Installed version   : 1.19.0\n    Affected version(s) : < 1.19.0_1",
+      "first_found" : "2023-03-09T20:24:51.772Z",
+      "plugin" : {
+        "exploited_by_malware" : false,
+        "description" : "Tobias Stoeckmann reports :\n\nThe libXcursor fix for CVE-2013-2003 has never been imported into wayland, leaving it vulnerable to it.",
+        "unsupported_by_vendor" : false,
+        "cvss_temporal_score" : 5,
+        "type" : "local",
+        "patch_publication_date" : "2021-05-31T00:00:00Z",
+        "see_also" : [ "https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/133", "https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=256273", "http://www.nessus.org/u?60c9a498" ],
+        "checks_for_default_account" : false,
+        "checks_for_malware" : false,
+        "cvss_temporal_vector" : {
+          "report_confidence" : "Confirmed",
+          "raw" : "E:U/RL:OF/RC:C",
+          "exploitability" : "Unproven",
+          "remediation_level" : "Official-fix"
+        },
+        "exploit_available" : false,
+        "cve" : [ "CVE-2013-2003" ],
+        "exploit_framework_canvas" : false,
+        "cvss_base_score" : 6.8,
+        "solution" : "Update the affected package.",
+        "cvss_vector" : {
+          "availability_impact" : "Partial",
+          "integrity_impact" : "Partial",
+          "raw" : "AV:N/AC:M/Au:N/C:P/I:P/A:P",
+          "confidentiality_impact" : "Partial",
+          "access_vector" : "Network",
+          "access_complexity" : "Medium",
+          "authentication" : "None required"
+        },
+        "vuln_publication_date" : "2021-05-02T00:00:00Z",
+        "exploit_framework_exploithub" : false,
+        "modification_date" : "2021-06-03T00:00:00Z",
+        "cpe" : [ "p-cpe:/a:freebsd:freebsd:wayland", "cpe:/o:freebsd:freebsd" ],
+        "publication_date" : "2021-06-01T00:00:00Z",
+        "exploit_framework_core" : false,
+        "id" : 150105,
+        "family_id" : 13,
+        "in_the_news" : false,
+        "has_patch" : true,
+        "exploit_framework_d2_elliot" : false,
+        "risk_factor" : "Medium",
+        "synopsis" : "The remote FreeBSD host is missing a security-related update.",
+        "cvss3_temporal_score" : 0,
+        "version" : "1.2",
+        "exploited_by_nessus" : false,
+        "cvss3_base_score" : 0,
+        "exploitability_ease" : "No known exploits are available",
+        "exploit_framework_metasploit" : false,
+        "name" : "FreeBSD : wayland -- integer overflow (fd24a530-c202-11eb-b217-b42e99639323)",
+        "vpr" : {
+          "score" : 5.9,
+          "drivers" : {
+            "threat_intensity_last28" : "VERY_LOW",
+            "exploit_code_maturity" : "UNPROVEN",
+            "threat_sources_last28" : [ "No recorded events" ],
+            "cvss3_impact_score" : 5.9,
+            "cvss_impact_score_predicted" : true,
+            "product_coverage" : "LOW",
+            "age_of_vuln" : {
+              "lower_bound" : 731
+            }
+          },
+          "updated" : "2020-12-30T05:20:01Z"
+        },
+        "family" : "FreeBSD Local Security Checks"
+      },
+      "port" : {
+        "protocol" : "TCP",
+        "port" : 0
+      },
+      "service" : "cds.tenable.one.platform.io.vuln",
+      "host" : "cloud.tenable.com",
+      "severity_id" : 2,
+      "state" : "OPEN",
+      "asset" : {
+        "agent_uuid" : "764c831e09a3416fa94de4be4d21522d",
+        "hostname" : "172.26.48.25",
+        "last_authenticated_results" : "2023-03-08T17:15:58Z",
+        "network_id" : "00000000-0000-0000-0000-000000000000",
+        "ipv4" : "172.26.48.25",
+        "fqdn" : "freebsd13.target.tenablesecurity.com",
+        "mac_address" : "00:50:56:A6:9C:32",
+        "operating_system" : [ "FreeBSD 13.1_4" ],
+        "device_type" : "general-purpose",
+        "tracked" : true,
+        "uuid" : "00f3ea8b-094a-4f02-8409-f29fdd7176a4"
+      },
+      "severity_default_id" : 2,
+      "tenable_io_cve" : [ "CVE-2013-2003" ],
+      "synopsis" : "The remote FreeBSD host is missing a security-related update.",
+      "solution" : "Update the affected package."
+    }
+  result:
+    custom:
+      asset:
+        agent_uuid: "764c831e09a3416fa94de4be4d21522d"
+        device_type: "general-purpose"
+        fqdn: "freebsd13.target.tenablesecurity.com"
+        hostname: "172.26.48.25"
+        ipv4: "172.26.48.25"
+        last_authenticated_results: "2023-03-08T17:15:58Z"
+        mac_address: "00:50:56:A6:9C:32"
+        network_id: "00000000-0000-0000-0000-000000000000"
+        operating_system:
+         - "FreeBSD 13.1_4"
+        tracked: true
+        uuid: "00f3ea8b-094a-4f02-8409-f29fdd7176a4"
+      first_found: "2023-03-09T20:24:51.772Z"
+      host: "cloud.tenable.com"
+      indexed: "2023-03-09T20:35:43.862Z"
+      last_found: "2023-03-09T20:24:51.772Z"
+      output: |2-
+
+          - Package             : wayland
+            Installed version   : 1.19.0
+            Affected version(s) : < 1.19.0_1
+      plugin:
+        checks_for_default_account: false
+        checks_for_malware: false
+        cpe:
+         - "p-cpe:/a:freebsd:freebsd:wayland"
+         - "cpe:/o:freebsd:freebsd"
+        cve:
+         - "CVE-2013-2003"
+        cvss3_base_score: 0
+        cvss3_temporal_score: 0
+        cvss_base_score: 6.8
+        cvss_temporal_score: 5
+        cvss_temporal_vector:
+          exploitability: "Unproven"
+          raw: "E:U/RL:OF/RC:C"
+          remediation_level: "Official-fix"
+          report_confidence: "Confirmed"
+        cvss_vector:
+          access_complexity: "Medium"
+          access_vector: "Network"
+          authentication: "None required"
+          availability_impact: "Partial"
+          confidentiality_impact: "Partial"
+          integrity_impact: "Partial"
+          raw: "AV:N/AC:M/Au:N/C:P/I:P/A:P"
+        description: |-
+          Tobias Stoeckmann reports :
+
+          The libXcursor fix for CVE-2013-2003 has never been imported into wayland, leaving it vulnerable to it.
+        exploit_available: false
+        exploit_framework_canvas: false
+        exploit_framework_core: false
+        exploit_framework_d2_elliot: false
+        exploit_framework_exploithub: false
+        exploit_framework_metasploit: false
+        exploitability_ease: "No known exploits are available"
+        exploited_by_malware: false
+        exploited_by_nessus: false
+        family: "FreeBSD Local Security Checks"
+        family_id: 13
+        has_patch: true
+        id: 150105
+        in_the_news: false
+        modification_date: "2021-06-03T00:00:00Z"
+        name: "FreeBSD : wayland -- integer overflow (fd24a530-c202-11eb-b217-b42e99639323)"
+        patch_publication_date: "2021-05-31T00:00:00Z"
+        publication_date: "2021-06-01T00:00:00Z"
+        risk_factor: "Medium"
+        see_also:
+         - "https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/133"
+         - "https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=256273"
+         - "http://www.nessus.org/u?60c9a498"
+        solution: "Update the affected package."
+        synopsis: "The remote FreeBSD host is missing a security-related update."
+        type: "local"
+        unsupported_by_vendor: false
+        version: "1.2"
+        vpr:
+          drivers:
+            age_of_vuln:
+              lower_bound: 731
+            cvss3_impact_score: 5.9
+            cvss_impact_score_predicted: true
+            exploit_code_maturity: "UNPROVEN"
+            product_coverage: "LOW"
+            threat_intensity_last28: "VERY_LOW"
+            threat_sources_last28:
+             - "No recorded events"
+          score: 5.9
+          updated: "2020-12-30T05:20:01Z"
+        vuln_publication_date: "2021-05-02T00:00:00Z"
+      port:
+        port: 0
+        protocol: "TCP"
+      scan:
+        completed_at: "2023-03-09T20:24:51.772Z"
+        schedule_uuid: "32c7ad1b-b690-4107-b36a-aebfdf3495f6"
+        started_at: "2023-03-09T20:24:51.772Z"
+        uuid: "c930ea2e-78fd-7a4e-4e2e-375143c733cebb0d3100050016fe"
+      service: "cds.tenable.one.platform.io.vuln"
+      severity_default_id: 2
+      severity_id: 2
+      severity_modification_type: "NONE"
+      solution: "Update the affected package."
+      state: "OPEN"
+      status: "warning"
+      synopsis: "The remote FreeBSD host is missing a security-related update."
+      tenable_io_cve:
+        - "CVE-2013-2003"
+      tenable_severity: "medium"
+    message: |-
+      {
+        "indexed" : "2023-03-09T20:35:43.862Z",
+        "tenable_io_cve" : [ "CVE-2013-2003" ],
+        "scan" : {
+          "completed_at" : "2023-03-09T20:24:51.772Z",
+          "schedule_uuid" : "32c7ad1b-b690-4107-b36a-aebfdf3495f6",
+          "started_at" : "2023-03-09T20:24:51.772Z",
+          "uuid" : "c930ea2e-78fd-7a4e-4e2e-375143c733cebb0d3100050016fe"
+        },
+        "last_found" : "2023-03-09T20:24:51.772Z",
+        "severity_modification_type" : "NONE",
+        "synopsis" : "The remote FreeBSD host is missing a security-related update.",
+        "output" : "\n  - Package             : wayland\n    Installed version   : 1.19.0\n    Affected version(s) : < 1.19.0_1",
+        "tenable_severity" : "medium",
+        "first_found" : "2023-03-09T20:24:51.772Z",
+        "plugin" : {
+          "exploited_by_malware" : false,
+          "description" : "Tobias Stoeckmann reports :\n\nThe libXcursor fix for CVE-2013-2003 has never been imported into wayland, leaving it vulnerable to it.",
+          "unsupported_by_vendor" : false,
+          "cvss_temporal_score" : 5,
+          "type" : "local",
+          "patch_publication_date" : "2021-05-31T00:00:00Z",
+          "see_also" : [ "https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/133", "https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=256273", "http://www.nessus.org/u?60c9a498" ],
+          "checks_for_default_account" : false,
+          "checks_for_malware" : false,
+          "cvss_temporal_vector" : {
+            "report_confidence" : "Confirmed",
+            "raw" : "E:U/RL:OF/RC:C",
+            "exploitability" : "Unproven",
+            "remediation_level" : "Official-fix"
+          },
+          "exploit_available" : false,
+          "cve" : [ "CVE-2013-2003" ],
+          "exploit_framework_canvas" : false,
+          "cvss_base_score" : 6.8,
+          "solution" : "Update the affected package.",
+          "cvss_vector" : {
+            "availability_impact" : "Partial",
+            "integrity_impact" : "Partial",
+            "raw" : "AV:N/AC:M/Au:N/C:P/I:P/A:P",
+            "confidentiality_impact" : "Partial",
+            "access_vector" : "Network",
+            "access_complexity" : "Medium",
+            "authentication" : "None required"
+          },
+          "vuln_publication_date" : "2021-05-02T00:00:00Z",
+          "exploit_framework_exploithub" : false,
+          "modification_date" : "2021-06-03T00:00:00Z",
+          "cpe" : [ "p-cpe:/a:freebsd:freebsd:wayland", "cpe:/o:freebsd:freebsd" ],
+          "publication_date" : "2021-06-01T00:00:00Z",
+          "exploit_framework_core" : false,
+          "id" : 150105,
+          "family_id" : 13,
+          "in_the_news" : false,
+          "has_patch" : true,
+          "exploit_framework_d2_elliot" : false,
+          "risk_factor" : "Medium",
+          "synopsis" : "The remote FreeBSD host is missing a security-related update.",
+          "cvss3_temporal_score" : 0,
+          "version" : "1.2",
+          "exploited_by_nessus" : false,
+          "cvss3_base_score" : 0,
+          "exploitability_ease" : "No known exploits are available",
+          "exploit_framework_metasploit" : false,
+          "name" : "FreeBSD : wayland -- integer overflow (fd24a530-c202-11eb-b217-b42e99639323)",
+          "vpr" : {
+            "score" : 5.9,
+            "drivers" : {
+              "threat_intensity_last28" : "VERY_LOW",
+              "exploit_code_maturity" : "UNPROVEN",
+              "threat_sources_last28" : [ "No recorded events" ],
+              "cvss3_impact_score" : 5.9,
+              "cvss_impact_score_predicted" : true,
+              "product_coverage" : "LOW",
+              "age_of_vuln" : {
+                "lower_bound" : 731
+              }
+            },
+            "updated" : "2020-12-30T05:20:01Z"
+          },
+          "family" : "FreeBSD Local Security Checks"
+        },
+        "solution" : "Update the affected package.",
+        "port" : {
+          "protocol" : "TCP",
+          "port" : 0
+        },
+        "service" : "cds.tenable.one.platform.io.vuln",
+        "host" : "cloud.tenable.com",
+        "severity_id" : 2,
+        "state" : "OPEN",
+        "asset" : {
+          "agent_uuid" : "764c831e09a3416fa94de4be4d21522d",
+          "hostname" : "172.26.48.25",
+          "last_authenticated_results" : "2023-03-08T17:15:58Z",
+          "network_id" : "00000000-0000-0000-0000-000000000000",
+          "ipv4" : "172.26.48.25",
+          "fqdn" : "freebsd13.target.tenablesecurity.com",
+          "mac_address" : "00:50:56:A6:9C:32",
+          "operating_system" : [ "FreeBSD 13.1_4" ],
+          "device_type" : "general-purpose",
+          "tracked" : true,
+          "uuid" : "00f3ea8b-094a-4f02-8409-f29fdd7176a4"
+        },
+        "severity_default_id" : 2
+      }
+    service: "cds.tenable.one.platform.io.vuln"
+    status: "warn"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "plugin_modification_date" : "2023-06-05T00:00:00Z",
+      "plugin_version" : 1,
+      "description" : "Insertion of Sensitive Information into Log File vulnerability in ABB QCS 800xA, ABB QCS AC450, ABB Platform Engineering Tools. An attacker, who already has local access to the QCS nodes, could successfully obtain the password for a system user account. Using this information, the attacker could have the potential to exploit this vulnerability to gain control of system nodes. This issue affects QCS 800xA: from 1.0;0 through 6.1SP2; QCS AC450: from 1.0;0 through 5.1SP2; Platform Engineering Tools: from 1.0:0 through 2.3.0.\n\nThis plugin only works with Tenable.ot.\nPlease visit https://www.tenable.com/products/tenable-ot for more information.",
+      "see_also" : [ "http://www.nessus.org/u?5da108c6" ],
+      "patch_publication_date" : "2023-05-22T00:00:00Z",
+      "always_run" : false,
+      "exploit_available" : false,
+      "cve" : [ "CVE-2022-0010" ],
+      "solution" : "Refer to the vendor advisory.",
+      "vuln_publication_date" : "2023-05-22T00:00:00Z",
+      "host" : "cloud.tenable.com",
+      "cpe" : [ "cpe:/o:abb:qcs_800xa_firmware" ],
+      "id" : 501186,
+      "plugin_publication_date" : "2023-06-05T00:00:00Z",
+      "cvss3_vector" : {
+        "AttackComplexity" : "Low",
+        "Availability-Impact" : "None",
+        "AttackVector" : "Local",
+        "Scope" : "Unchanged",
+        "Integrity-Impact" : "None",
+        "Confidentiality-Impact" : "High",
+        "raw" : "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+        "UserInteraction" : "None",
+        "PrivilegesRequired" : "Low"
+      },
+      "intel_type" : "SENSOR",
+      "has_patch" : true,
+      "xref" : [ "CWE:532" ],
+      "xrefs" : [ {
+        "id" : "532",
+        "type" : "CWE"
+      } ],
+      "risk_factor" : "MEDIUM",
+      "synopsis" : "The remote OT asset is affected by a vulnerability.",
+      "cvss3_base_score" : 5.5,
+      "exploitability_ease" : "NOT_AVAILABLE",
+      "service" : "cds.tenable.one.platform.io.plugin",
+      "compliance" : false,
+      "name" : "ABB (CVE-2022-0010)",
+      "plugin_type" : "REMOTE",
+      "vpr" : {
+        "score" : 4.4,
+        "drivers" : {
+          "threat_intensity_last28" : "VERY_LOW",
+          "exploit_code_maturity" : "UNPROVEN",
+          "threat_sources_last28" : [ "No recorded events" ],
+          "cvss_impact_score_predicted" : false,
+          "product_coverage" : "MEDIUM",
+          "age_of_vuln" : {
+            "lower_bound" : 8,
+            "upper_bound" : 30
+          }
+        },
+        "updated" : "2023-06-03T06:00:38Z"
+      }
+    }
+  result:
+    custom:
+      always_run: false
+      compliance: false
+      cpe:
+       - "cpe:/o:abb:qcs_800xa_firmware"
+      cve:
+       - "CVE-2022-0010"
+      cvss3_base_score: 5.5
+      cvss3_vector:
+        AttackComplexity: "Low"
+        AttackVector: "Local"
+        Availability-Impact: "None"
+        Confidentiality-Impact: "High"
+        Integrity-Impact: "None"
+        PrivilegesRequired: "Low"
+        Scope: "Unchanged"
+        UserInteraction: "None"
+        raw: "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+      description: |-
+        Insertion of Sensitive Information into Log File vulnerability in ABB QCS 800xA, ABB QCS AC450, ABB Platform Engineering Tools. An attacker, who already has local access to the QCS nodes, could successfully obtain the password for a system user account. Using this information, the attacker could have the potential to exploit this vulnerability to gain control of system nodes. This issue affects QCS 800xA: from 1.0;0 through 6.1SP2; QCS AC450: from 1.0;0 through 5.1SP2; Platform Engineering Tools: from 1.0:0 through 2.3.0.
+
+        This plugin only works with Tenable.ot.
+        Please visit https://www.tenable.com/products/tenable-ot for more information.
+      exploit_available: false
+      exploitability_ease: "NOT_AVAILABLE"
+      has_patch: true
+      host: "cloud.tenable.com"
+      id: 501186
+      intel_type: "SENSOR"
+      name: "ABB (CVE-2022-0010)"
+      patch_publication_date: "2023-05-22T00:00:00Z"
+      plugin_modification_date: "2023-06-05T00:00:00Z"
+      plugin_publication_date: "2023-06-05T00:00:00Z"
+      plugin_type: "REMOTE"
+      plugin_version: 1
+      risk_factor: "MEDIUM"
+      see_also:
+       - "http://www.nessus.org/u?5da108c6"
+      service: "cds.tenable.one.platform.io.plugin"
+      solution: "Refer to the vendor advisory."
+      synopsis: "The remote OT asset is affected by a vulnerability."
+      vpr:
+        drivers:
+          age_of_vuln:
+            lower_bound: 8
+            upper_bound: 30
+          cvss_impact_score_predicted: false
+          exploit_code_maturity: "UNPROVEN"
+          product_coverage: "MEDIUM"
+          threat_intensity_last28: "VERY_LOW"
+          threat_sources_last28:
+           - "No recorded events"
+        score: 4.4
+        updated: "2023-06-03T06:00:38Z"
+      vuln_publication_date: "2023-05-22T00:00:00Z"
+      xref:
+       - "CWE:532"
+      xrefs:
+       -
+        id: "532"
+        type: "CWE"
+    message: |-
+      {
+        "plugin_modification_date" : "2023-06-05T00:00:00Z",
+        "plugin_version" : 1,
+        "description" : "Insertion of Sensitive Information into Log File vulnerability in ABB QCS 800xA, ABB QCS AC450, ABB Platform Engineering Tools. An attacker, who already has local access to the QCS nodes, could successfully obtain the password for a system user account. Using this information, the attacker could have the potential to exploit this vulnerability to gain control of system nodes. This issue affects QCS 800xA: from 1.0;0 through 6.1SP2; QCS AC450: from 1.0;0 through 5.1SP2; Platform Engineering Tools: from 1.0:0 through 2.3.0.\n\nThis plugin only works with Tenable.ot.\nPlease visit https://www.tenable.com/products/tenable-ot for more information.",
+        "see_also" : [ "http://www.nessus.org/u?5da108c6" ],
+        "patch_publication_date" : "2023-05-22T00:00:00Z",
+        "always_run" : false,
+        "exploit_available" : false,
+        "cve" : [ "CVE-2022-0010" ],
+        "solution" : "Refer to the vendor advisory.",
+        "vuln_publication_date" : "2023-05-22T00:00:00Z",
+        "host" : "cloud.tenable.com",
+        "cpe" : [ "cpe:/o:abb:qcs_800xa_firmware" ],
+        "id" : 501186,
+        "plugin_publication_date" : "2023-06-05T00:00:00Z",
+        "cvss3_vector" : {
+          "AttackComplexity" : "Low",
+          "Availability-Impact" : "None",
+          "AttackVector" : "Local",
+          "Scope" : "Unchanged",
+          "Integrity-Impact" : "None",
+          "Confidentiality-Impact" : "High",
+          "raw" : "AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+          "UserInteraction" : "None",
+          "PrivilegesRequired" : "Low"
+        },
+        "intel_type" : "SENSOR",
+        "has_patch" : true,
+        "xref" : [ "CWE:532" ],
+        "xrefs" : [ {
+          "id" : "532",
+          "type" : "CWE"
+        } ],
+        "risk_factor" : "MEDIUM",
+        "synopsis" : "The remote OT asset is affected by a vulnerability.",
+        "cvss3_base_score" : 5.5,
+        "exploitability_ease" : "NOT_AVAILABLE",
+        "service" : "cds.tenable.one.platform.io.plugin",
+        "compliance" : false,
+        "name" : "ABB (CVE-2022-0010)",
+        "plugin_type" : "REMOTE",
+        "vpr" : {
+          "score" : 4.4,
+          "drivers" : {
+            "threat_intensity_last28" : "VERY_LOW",
+            "exploit_code_maturity" : "UNPROVEN",
+            "threat_sources_last28" : [ "No recorded events" ],
+            "cvss_impact_score_predicted" : false,
+            "product_coverage" : "MEDIUM",
+            "age_of_vuln" : {
+              "lower_bound" : 8,
+              "upper_bound" : 30
+            }
+          },
+          "updated" : "2023-06-03T06:00:38Z"
+        }
+      }
+    service: "cds.tenable.one.platform.io.plugin"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |-
+    {
+      "first_seen" : "2023-01-13T20:46:36.218Z",
+      "last_seen" : "2023-06-11T20:45:28.279Z",
+      "sources" : [ {
+        "first_seen" : "2023-01-13T20:46:36.218Z",
+        "last_seen" : "2023-06-11T20:45:28.279Z",
+        "name" : "ServiceNow"
+      } ],
+      "network_name" : "Default",
+      "created_at" : "2023-01-13T20:46:36.559Z",
+      "servicenow_sysid" : "29d8cc6ddb42519008166c391396193e",
+      "netbios_names" : [ "Test Computer with IPv4 and IPv6" ],
+      "has_agent" : false,
+      "tags" : [ {
+        "added_at" : "2023-01-13T20:56:21.982Z",
+        "uuid" : "231557bb-4323-492c-9a2e-8bfc0ceb8cdb",
+        "value" : "ServicNow",
+        "key" : "Scan Group"
+      } ],
+      "network_interfaces" : [ {
+        "ipv6s" : [ "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd", "1234:1234:1234:1234:1234:1234:1234:1234" ],
+        "ipv4s" : [ "22.22.22.22" ],
+        "name" : "UNKNOWN",
+        "mac_addresses" : [ "ab:ab:ab:ab:ab:ab" ]
+      } ],
+      "ipv6s" : [ "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd", "1234:1234:1234:1234:1234:1234:1234:1234" ],
+      "network_id" : "00000000-0000-0000-0000-000000000000",
+      "ipv4s" : [ "22.22.22.22" ],
+      "updated_at" : "2023-06-11T20:45:37.262Z",
+      "service" : "cds.tenable.one.platform.io.asset",
+      "host" : "cloud.tenable.com",
+      "id" : "62dbce94-48af-4a4e-b4d0-bfb532be7e1b",
+      "mac_addresses" : [ "ab:ab:ab:ab:ab:ab" ],
+      "timestamp" : "2023-06-11T20:45:37.262Z"
+    }
+  result:
+    custom:
+      created_at: "2023-01-13T20:46:36.559Z"
+      first_seen: "2023-01-13T20:46:36.218Z"
+      has_agent: false
+      host: "cloud.tenable.com"
+      id: "62dbce94-48af-4a4e-b4d0-bfb532be7e1b"
+      ipv4s:
+       - "22.22.22.22"
+      ipv6s:
+       - "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd"
+       - "1234:1234:1234:1234:1234:1234:1234:1234"
+      last_seen: "2023-06-11T20:45:28.279Z"
+      mac_addresses:
+       - "ab:ab:ab:ab:ab:ab"
+      netbios_names:
+       - "Test Computer with IPv4 and IPv6"
+      network_id: "00000000-0000-0000-0000-000000000000"
+      network_interfaces:
+       -
+        ipv6s:
+         - "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd"
+         - "1234:1234:1234:1234:1234:1234:1234:1234"
+        ipv4s:
+         - "22.22.22.22"
+        name: "UNKNOWN"
+        mac_addresses:
+         - "ab:ab:ab:ab:ab:ab"
+      network_name: "Default"
+      service: "cds.tenable.one.platform.io.asset"
+      servicenow_sysid: "29d8cc6ddb42519008166c391396193e"
+      sources:
+       -
+        first_seen: "2023-01-13T20:46:36.218Z"
+        last_seen: "2023-06-11T20:45:28.279Z"
+        name: "ServiceNow"
+      tags:
+       -
+        added_at: "2023-01-13T20:56:21.982Z"
+        uuid: "231557bb-4323-492c-9a2e-8bfc0ceb8cdb"
+        value: "ServicNow"
+        key: "Scan Group"
+      timestamp: "2023-06-11T20:45:37.262Z"
+      updated_at: "2023-06-11T20:45:37.262Z"
+    message: |-
+      {
+        "first_seen" : "2023-01-13T20:46:36.218Z",
+        "last_seen" : "2023-06-11T20:45:28.279Z",
+        "sources" : [ {
+          "first_seen" : "2023-01-13T20:46:36.218Z",
+          "last_seen" : "2023-06-11T20:45:28.279Z",
+          "name" : "ServiceNow"
+        } ],
+        "network_name" : "Default",
+        "created_at" : "2023-01-13T20:46:36.559Z",
+        "servicenow_sysid" : "29d8cc6ddb42519008166c391396193e",
+        "netbios_names" : [ "Test Computer with IPv4 and IPv6" ],
+        "has_agent" : false,
+        "tags" : [ {
+          "added_at" : "2023-01-13T20:56:21.982Z",
+          "uuid" : "231557bb-4323-492c-9a2e-8bfc0ceb8cdb",
+          "value" : "ServicNow",
+          "key" : "Scan Group"
+        } ],
+        "network_interfaces" : [ {
+          "ipv6s" : [ "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd", "1234:1234:1234:1234:1234:1234:1234:1234" ],
+          "ipv4s" : [ "22.22.22.22" ],
+          "name" : "UNKNOWN",
+          "mac_addresses" : [ "ab:ab:ab:ab:ab:ab" ]
+        } ],
+        "ipv6s" : [ "abcd:abcd:abcd:abcd:abcd:abcd:abcd:abcd", "1234:1234:1234:1234:1234:1234:1234:1234" ],
+        "network_id" : "00000000-0000-0000-0000-000000000000",
+        "ipv4s" : [ "22.22.22.22" ],
+        "updated_at" : "2023-06-11T20:45:37.262Z",
+        "service" : "cds.tenable.one.platform.io.asset",
+        "host" : "cloud.tenable.com",
+        "id" : "62dbce94-48af-4a4e-b4d0-bfb532be7e1b",
+        "mac_addresses" : [ "ab:ab:ab:ab:ab:ab" ],
+        "timestamp" : "2023-06-11T20:45:37.262Z"
+      }
+    service: "cds.tenable.one.platform.io.asset"
+    tags:
+      - "source:LOGS_SOURCE"
+    timestamp: 1686516337262
+

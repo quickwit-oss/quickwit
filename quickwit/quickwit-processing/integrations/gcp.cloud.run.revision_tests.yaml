@@ -1,0 +1,322 @@
+id: "gcp.cloud.run.revision"
+tests:
+ -
+  sample: |-
+    {
+      "data" : {
+        "severity" : "WARNING",
+        "trace" : "c4fbcb27461e268ff56c9a691690763c",
+        "logName" : "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests",
+        "resource" : {
+          "type" : "cloud_run_revision",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "service_name" : "test-helloworld",
+            "revision_name" : "test-helloworld-00002",
+            "location" : "us-central1",
+            "configuration_name" : "test-helloworld"
+          }
+        },
+        "httpRequest" : {
+          "protocol" : "HTTP/1.1",
+          "remoteIp" : "38.122.226.210",
+          "requestUrl" : "/1231",
+          "requestMethod" : "GET",
+          "latency" : "0.005915284s",
+          "serverIp" : "216.239.36.53",
+          "responseSize" : "437",
+          "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36",
+          "requestSize" : "641",
+          "status" : 404
+        },
+        "receiveTimestamp" : "2019-05-08T18:37:01.773918623Z",
+        "insertId" : "5cd321cd000bb02013ef2ec7",
+        "timestamp" : "2019-05-08T18:37:01.765984Z",
+        "labels" : {
+          "instanceState" : "warm",
+          "instanceId" : "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+        }
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "5cd321cd000bb02013ef2ec7"
+        labels:
+          instanceId: "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+          instanceState: "warm"
+        logName: "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests"
+        receiveTimestamp: "2019-05-08T18:37:01.773918623Z"
+        resource:
+          labels:
+            configuration_name: "test-helloworld"
+            location: "us-central1"
+            project_id: "datadog-sandbox"
+            revision_name: "test-helloworld-00002"
+            service_name: "test-helloworld"
+          type: "cloud_run_revision"
+        severity: "WARNING"
+        timestamp: "2019-05-08T18:37:01.765984Z"
+        trace: "c4fbcb27461e268ff56c9a691690763c"
+      duration: 5915284.0
+      http:
+        latency: "0.005915284s"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        status_category: "warning"
+        status_code: 404
+        url: "/1231"
+        url_details:
+          path: "/1231"
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "73"
+            minor: "0"
+            patch: "3683"
+            patch_minor: "86"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "3"
+      network:
+        bytes_read: "641"
+        bytes_written: "437"
+        client:
+          ip: "38.122.226.210"
+        destination:
+          ip: "216.239.36.53"
+    message: |-
+      {
+        "data" : {
+          "severity" : "WARNING",
+          "trace" : "c4fbcb27461e268ff56c9a691690763c",
+          "logName" : "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests",
+          "resource" : {
+            "type" : "cloud_run_revision",
+            "labels" : {
+              "project_id" : "datadog-sandbox",
+              "service_name" : "test-helloworld",
+              "revision_name" : "test-helloworld-00002",
+              "location" : "us-central1",
+              "configuration_name" : "test-helloworld"
+            }
+          },
+          "httpRequest" : {
+            "protocol" : "HTTP/1.1",
+            "remoteIp" : "38.122.226.210",
+            "requestUrl" : "/1231",
+            "requestMethod" : "GET",
+            "latency" : "0.005915284s",
+            "serverIp" : "216.239.36.53",
+            "responseSize" : "437",
+            "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36",
+            "requestSize" : "641",
+            "status" : 404
+          },
+          "receiveTimestamp" : "2019-05-08T18:37:01.773918623Z",
+          "insertId" : "5cd321cd000bb02013ef2ec7",
+          "timestamp" : "2019-05-08T18:37:01.765984Z",
+          "labels" : {
+            "instanceState" : "warm",
+            "instanceId" : "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+          }
+        }
+      }
+    service: "test-helloworld"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1557340621765
+ -
+  sample: |-
+    {
+      "data" : {
+        "logName" : "projects/datadog-sandbox/logs/run.googleapis.com%2Fstderr",
+        "resource" : {
+          "type" : "cloud_run_revision",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "service_name" : "test-helloworld",
+            "revision_name" : "test-helloworld-00002",
+            "location" : "us-central1",
+            "configuration_name" : "test-helloworld"
+          }
+        },
+        "textPayload" : "169.254.8.129 - - [08/May/2019 18:37:01] \"GET /1231 HTTP/1.1\" 404 -",
+        "receiveTimestamp" : "2019-05-08T18:37:01.775293179Z",
+        "insertId" : "5cd321cd000ba919f2a2ca33",
+        "timestamp" : "2019-05-08T18:37:01.764185Z",
+        "labels" : {
+          "instanceId" : "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+        }
+      }
+    }
+  result:
+    custom:
+      data:
+        insertId: "5cd321cd000ba919f2a2ca33"
+        labels:
+          instanceId: "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+        logName: "projects/datadog-sandbox/logs/run.googleapis.com%2Fstderr"
+        receiveTimestamp: "2019-05-08T18:37:01.775293179Z"
+        resource:
+          labels:
+            configuration_name: "test-helloworld"
+            location: "us-central1"
+            project_id: "datadog-sandbox"
+            revision_name: "test-helloworld-00002"
+            service_name: "test-helloworld"
+          type: "cloud_run_revision"
+        timestamp: "2019-05-08T18:37:01.764185Z"
+      http:
+        method: "GET"
+        protocol: "HTTP/1.1"
+        status_category: "warning"
+        status_code: "404"
+        url: "/1231"
+        url_details:
+          path: "/1231"
+    message: "169.254.8.129 - - [08/May/2019 18:37:01] \"GET /1231 HTTP/1.1\" 404 -"
+    service: "test-helloworld"
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1557340621764
+ -
+  sample: |-
+    {
+      "severity" : "WARNING",
+      "trace" : "c4fbcb27461e268ff56c9a691690763c",
+      "logName" : "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests",
+      "resource" : {
+        "type" : "cloud_run_revision",
+        "labels" : {
+          "project_id" : "datadog-sandbox",
+          "service_name" : "test-helloworld",
+          "revision_name" : "test-helloworld-00002",
+          "location" : "us-central1",
+          "configuration_name" : "test-helloworld"
+        }
+      },
+      "httpRequest" : {
+        "protocol" : "HTTP/1.1",
+        "remoteIp" : "38.122.226.210",
+        "requestUrl" : "/1231",
+        "requestMethod" : "GET",
+        "latency" : "0.005915284s",
+        "serverIp" : "216.239.36.53",
+        "responseSize" : "437",
+        "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36",
+        "requestSize" : "641",
+        "status" : 404
+      },
+      "receiveTimestamp" : "2019-05-08T18:37:01.773918623Z",
+      "insertId" : "5cd321cd000bb02013ef2ec7",
+      "timestamp" : "2019-05-08T18:37:01.765984Z",
+      "labels" : {
+        "instanceState" : "warm",
+        "instanceId" : "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+      }
+    }
+  result:
+    custom:
+      duration: 5915284.0
+      http:
+        latency: "0.005915284s"
+        method: "GET"
+        protocol: "HTTP/1.1"
+        status_category: "warning"
+        status_code: 404
+        url: "/1231"
+        url_details:
+          path: "/1231"
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "73"
+            minor: "0"
+            patch: "3683"
+            patch_minor: "86"
+          device:
+            brand: "Apple"
+            category: "Desktop"
+            family: "Mac"
+            model: "Mac"
+          os:
+            family: "Mac OS X"
+            major: "10"
+            minor: "14"
+            patch: "3"
+      insertId: "5cd321cd000bb02013ef2ec7"
+      labels:
+        instanceId: "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+        instanceState: "warm"
+      logName: "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests"
+      network:
+        bytes_read: "641"
+        bytes_written: "437"
+        client:
+          ip: "38.122.226.210"
+        destination:
+          ip: "216.239.36.53"
+      receiveTimestamp: "2019-05-08T18:37:01.773918623Z"
+      resource:
+        labels:
+          configuration_name: "test-helloworld"
+          location: "us-central1"
+          project_id: "datadog-sandbox"
+          revision_name: "test-helloworld-00002"
+          service_name: "test-helloworld"
+        type: "cloud_run_revision"
+      severity: "WARNING"
+      timestamp: "2019-05-08T18:37:01.765984Z"
+      trace: "c4fbcb27461e268ff56c9a691690763c"
+    message: |-
+      {
+        "severity" : "WARNING",
+        "trace" : "c4fbcb27461e268ff56c9a691690763c",
+        "logName" : "projects/datadog-sandbox/logs/run.googleapis.com%2Frequests",
+        "resource" : {
+          "type" : "cloud_run_revision",
+          "labels" : {
+            "project_id" : "datadog-sandbox",
+            "service_name" : "test-helloworld",
+            "revision_name" : "test-helloworld-00002",
+            "location" : "us-central1",
+            "configuration_name" : "test-helloworld"
+          }
+        },
+        "httpRequest" : {
+          "protocol" : "HTTP/1.1",
+          "remoteIp" : "38.122.226.210",
+          "requestUrl" : "/1231",
+          "requestMethod" : "GET",
+          "latency" : "0.005915284s",
+          "serverIp" : "216.239.36.53",
+          "responseSize" : "437",
+          "userAgent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36",
+          "requestSize" : "641",
+          "status" : 404
+        },
+        "receiveTimestamp" : "2019-05-08T18:37:01.773918623Z",
+        "insertId" : "5cd321cd000bb02013ef2ec7",
+        "timestamp" : "2019-05-08T18:37:01.765984Z",
+        "labels" : {
+          "instanceState" : "warm",
+          "instanceId" : "00bf4bf02d58d62df0152a090387bb07f3e5500352de9875fe4baae6e226c57a6f47c4e9f413032389889cdd593e8ca0d89499d08ad812123958e65b7a94db5744aee5a1739edd4b"
+        }
+      }
+    status: "warn"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1557340621765
+

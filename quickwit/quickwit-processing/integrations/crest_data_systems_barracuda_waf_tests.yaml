@@ -1,0 +1,217 @@
+id: "crest_data_systems_barracuda_waf"
+tests:
+ -
+  sample: |+
+    <137>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2002|HA|1|cat=NF src=127.0.0.1 spt=37985 dst=127.0.0.1 dpt=8002 act=DENY start=Jun 27 2023 11:03:27 dvchost=barracuda proto=TCP rt=1687844007394 cs1=MGMT/LAN/WAN interface traffic:deny cs1Label=Details externalId=188fb57ade2-d2ce9c7
+
+  result:
+    custom:
+      Name: "HA"
+      act: "DENY"
+      cat: "NF"
+      cds:
+        barracuda:
+          waf:
+            proto: "TCP"
+      cs1: "MGMT/LAN/WAN interface traffic:deny"
+      cs1Label: "Details"
+      date: 46868607000
+      device_vendor: "Barracuda"
+      device_version: "1200"
+      dvchost: "barracuda"
+      externalId: "188fb57ade2-d2ce9c7"
+      host: "barracuda"
+      id: 137
+      network:
+        client:
+          geoip: {}
+          ip: "127.0.0.1"
+          port: 37985
+        destination:
+          geoip: {}
+          ip: "127.0.0.1"
+          port: 8002
+      product: "WAF"
+      proto: "TCP"
+      rt: 1687844007394
+      severityLevel: 1
+      signature_id: "2002"
+      start: "Jun 27 2023 11:03:27"
+    message: |+
+      <137>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2002|HA|1|cat=NF src=127.0.0.1 spt=37985 dst=127.0.0.1 dpt=8002 act=DENY start=Jun 27 2023 11:03:27 dvchost=barracuda proto=TCP rt=1687844007394 cs1=MGMT/LAN/WAN interface traffic:deny cs1Label=Details externalId=188fb57ade2-d2ce9c7
+
+    status: "alert"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687844007394
+ -
+  sample: |
+    <142>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|1000|GET|5|src=172.20.240.249 spt=52000 dst=10.50.7.87 dpt=80 app=HTTP request=/west.php in=1291 out=1822 requestMethod=GET httpStatus=404 host=10.50.7.87 query="-" referer="-" rt=1687265417668  logType=TR httpVersion=HTTP/1.1 timeTaken=2 serverTime=1 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+  result:
+    custom:
+      Name: "GET"
+      app: "HTTP"
+      date: 46868607000
+      device_vendor: "Barracuda"
+      device_version: "1200"
+      host: "10.50.7.87"
+      http:
+        method: "GET"
+        referer: "\"-\" rt=1687265417668  logType=TR httpVersion=HTTP/1.1 timeTaken=2 serverTime=1 userAgent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36\""
+        status_code: 404
+        url: "/west.php"
+      id: 142
+      in: 1291
+      network:
+        bytes_read: 1291
+        bytes_written: 1822
+        client:
+          geoip: {}
+          ip: "172.20.240.249"
+          port: 52000
+        destination:
+          geoip: {}
+          ip: "10.50.7.87"
+          port: 80
+      out: 1822
+      product: "WAF"
+      query: "-"
+      severityLevel: 5
+      signature_id: "1000"
+    message: |
+      <142>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|1000|GET|5|src=172.20.240.249 spt=52000 dst=10.50.7.87 dpt=80 app=HTTP request=/west.php in=1291 out=1822 requestMethod=GET httpStatus=404 host=10.50.7.87 query="-" referer="-" rt=1687265417668  logType=TR httpVersion=HTTP/1.1 timeTaken=2 serverTime=1 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1
+ -
+  sample: |
+    <137>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|61|RESPONSE_HEADER_SUPPRESSED|6|src=172.20.240.249 spt=52000 dst=10.50.7.87 dpt=80 actionTaken=CLOAK attackDescription=RESPONSE_HEADER_SUPPRESSED attackDetails=[header\="server"] attackGroup=Outbound Attacks attackId=29061 logType=WF app=HTTP request=/west.php requestMethod=GET rt=1687265417668  userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36" referer="-"
+  result:
+    custom:
+      Name: "RESPONSE_HEADER_SUPPRESSED"
+      actionTaken: "CLOAK"
+      app: "HTTP"
+      attackDescription: "RESPONSE_HEADER_SUPPRESSED"
+      attackGroup: "Outbound Attacks"
+      attackId: 29061
+      cds:
+        barracuda:
+          waf:
+            logType: "WF"
+      date: 46868607000
+      device_vendor: "Barracuda"
+      device_version: "1200"
+      host: "barracuda"
+      http:
+        method: "GET"
+        referer: "\"-\""
+        url: "/west.php"
+        useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        useragent_details:
+          browser:
+            family: "Chrome"
+            major: "114"
+            minor: "0"
+            patch: "0"
+            patch_minor: "0"
+          device:
+            category: "Desktop"
+            family: "Other"
+          os:
+            family: "Windows"
+            major: "10"
+      id: 137
+      logType: "WF"
+      network:
+        client:
+          geoip: {}
+          ip: "172.20.240.249"
+          port: 52000
+        destination:
+          geoip: {}
+          ip: "10.50.7.87"
+          port: 80
+      product: "WAF"
+      rt: 1687265417668
+      severityLevel: 6
+      signature_id: "61"
+      wf_dest_ip_port: "10.50.7.87:80"
+      wf_source_ip_port: "172.20.240.249:52000"
+    message: |
+      <137>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|61|RESPONSE_HEADER_SUPPRESSED|6|src=172.20.240.249 spt=52000 dst=10.50.7.87 dpt=80 actionTaken=CLOAK attackDescription=RESPONSE_HEADER_SUPPRESSED attackDetails=[header\="server"] attackGroup=Outbound Attacks attackId=29061 logType=WF app=HTTP request=/west.php requestMethod=GET rt=1687265417668  userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36" referer="-"
+    status: "info"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687265417668
+ -
+  sample: |
+    <141>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2000|STM_WRA|5|rt=1687500645326  logType=SYS modName=STM_WRA logLevel=NOTI cn1=45008 cn1Label=EventID msg=Saving configuration database snapshot, Reason : Non STM change from install config
+  result:
+    custom:
+      Name: "STM_WRA"
+      cds:
+        barracuda:
+          waf:
+            logType: "SYS"
+            msg: "Saving configuration database snapshot, Reason : Non STM change from install config"
+      cn1: 45008
+      cn1Label: "EventID"
+      date: 46868607000
+      device_vendor: "Barracuda"
+      device_version: "1200"
+      host: "barracuda"
+      id: 141
+      logLevel: "NOTI"
+      logType: "SYS"
+      modName: "STM_WRA"
+      msg: "Saving configuration database snapshot, Reason : Non STM change from install config"
+      product: "WAF"
+      rt: 1687500645326
+      severityLevel: 5
+      signature_id: "2000"
+    message: |
+      <141>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2000|STM_WRA|5|rt=1687500645326  logType=SYS modName=STM_WRA logLevel=NOTI cn1=45008 cn1Label=EventID msg=Saving configuration database snapshot, Reason : Non STM change from install config
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687500645326
+ -
+  sample: |
+    <142>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2005|CONFIG|5|duser=admin changeType=SET clientType=GUI commandName=config loginIp=172.20.13.97 loginPort=56534 transactionId=136 rt=1687338841442  logType=AUDIT objectType=syslog_server objectName=DD_Test variable=log_timestamp_hostname oldValue="No" newValue="Yes"
+  result:
+    custom:
+      Name: "CONFIG"
+      cds:
+        barracuda:
+          waf:
+            logType: "AUDIT"
+      changeType: "SET"
+      clientType: "GUI"
+      commandName: "config"
+      date: 46868607000
+      device_vendor: "Barracuda"
+      device_version: "1200"
+      duser: "admin"
+      host: "barracuda"
+      id: 142
+      logType: "AUDIT"
+      loginIp: "172.20.13.97"
+      loginPort: 56534
+      newValue: "Yes"
+      objectName: "DD_Test"
+      objectType: "syslog_server"
+      oldValue: "No"
+      product: "WAF"
+      rt: 1687338841442
+      severityLevel: 5
+      signature_id: "2005"
+      transactionId: 136
+      variable: "log_timestamp_hostname"
+    message: |
+      <142>Jun 27 11:03:27 barracuda CEF:0|Barracuda|WAF|1200|2005|CONFIG|5|duser=admin changeType=SET clientType=GUI commandName=config loginIp=172.20.13.97 loginPort=56534 transactionId=136 rt=1687338841442  logType=AUDIT objectType=syslog_server objectName=DD_Test variable=log_timestamp_hostname oldValue="No" newValue="Yes"
+    status: "notice"
+    tags:
+     - "source:LOGS_SOURCE"
+    timestamp: 1687338841442
+

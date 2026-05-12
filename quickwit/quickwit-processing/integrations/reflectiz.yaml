@@ -1,0 +1,49 @@
+id: reflectiz
+# See app_id in your integration's manifest.json file to learn more:
+# https://docs.datadoghq.com/developers/integrations/check_references/#manifest-file
+metric_id: reflectiz
+# If for some reason id must be different than app_id, add the app_id in this field instead.
+# If id and app_id already match, this field can be left blank.
+backend_only: true
+facets:
+  - description: "Describe the risk exposed "
+    facetType: list
+    groups:
+      - Reflectiz rating
+    name: reflectiz.rating.risk
+    path: reflectiz.rating.risk
+    source: tag
+    type: string
+  - description: Describe the alerts category
+    facetType: list
+    groups:
+      - Reflectiz Alerts
+    name: reflectiz.alert.category
+    path: reflectiz.alert.category
+    source: tag
+    type: string
+  - description: "Describe the severity of the alerts. It can be: critical, high,
+      medium, low"
+    facetType: list
+    groups:
+      - Reflectiz Alerts
+    name: reflectiz.alert.severity
+    path: reflectiz.alert.severity
+    source: tag
+    type: string
+  - description: "Describe the Alert Status. It can be: new, under_review, resolved,
+      auto_resolved, approved"
+    facetType: list
+    groups:
+      - Reflectiz Alerts
+    name: reflectiz.alert.status
+    path: reflectiz.alert.status
+    source: tag
+    type: string
+pipeline:
+  type: pipeline
+  name: reflectiz
+  enabled: true
+  filter:
+    query: source:reflectiz
+  processors: []

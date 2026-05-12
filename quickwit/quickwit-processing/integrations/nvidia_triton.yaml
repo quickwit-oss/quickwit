@@ -1,0 +1,48 @@
+id: nvidia_triton
+metric_id: nvidia-triton
+backend_only: false
+facets:
+pipeline:
+  type: pipeline
+  name: Nvidia Triton
+  enabled: true
+  filter:
+    query: source:nvidia_triton
+  processors:
+    - type: grok-parser
+      name: Parsing Nvidia Triton Logs
+      enabled: true
+      source: message
+      samples:
+        - "I1011 13:21:57.174321 1 cache_manager.cc:174] Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+        - '2023-10-11 13:21:57.768609: I tensorflow/core/util/port.cc:110] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.'
+        - "2023-10-1113:21:57 I 1 cache_manager.cc:174] Creating TritonCache with name: 'local', libpath: '/opt/tritonserver/caches/local/libtritoncache_local.so', cache_config: '{\"size\":\"1048576\"}'"
+      grok:
+        matchRules: |
+          # Nvidia Triton server logs by default don't contain the year.
+          # Datadog's grok parser can infer the year by using the time of parse.
+          # Except for a few edge-cases around New Year's Eve this is good enough.
+          tritonserver_default %{_triton_level}%{date("MMdd HH:mm:ss.SSSSSS"):timestamp} %{_triton_payload}
+          tritonserver_iso8601 %{date("yyyy-MM-ddHH:mm:ss"):timestamp} %{_triton_level} %{_triton_payload}
+          framework_log %{date("yyyy-MM-dd HH:mm:ss.SSSSSS"):timestamp}: %{word:level} %{_logger_and_msg}
+        supportRules: |
+          _triton_level %{regex("\\w"):level}
+          _msg %{data:msg}
+          _logger %{regex("[^\\:]+"):logger.name}:%{integer:logger.lineno}]
+          _logger_and_msg %{_logger}\s+%{_msg}
+          _triton_payload %{integer:pid} %{_logger_and_msg}
+    - type: date-remapper
+      name: Define `timestamp` as the official date of the log
+      enabled: true
+      sources:
+        - timestamp
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg

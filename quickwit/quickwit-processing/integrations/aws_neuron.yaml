@@ -1,0 +1,63 @@
+id: aws_neuron
+metric_id: aws-neuron
+backend_only: false
+facets: null
+pipeline:
+  type: pipeline
+  name: AWS Neuron
+  enabled: true
+  filter:
+    query: "source:aws_neuron"
+  processors:
+    - type: grok-parser
+      name: Operator compilation
+      enabled: true
+      source: message
+      samples:
+        - "INFO:Neuron: => aten::Int: 96"
+        - "INFO:Neuron: => aten::Int: 1 [supported]"
+        - "INFO:Neuron: => aten::embedding: 3 [not supported]"
+      grok:
+        supportRules: operator %{word:operator.library}::%{word:operator.type}
+        matchRules: "operator_rule INFO:Neuron: => %{operator}: %{integer:count}(
+          \\[%{data:not_compiled_msg}\\])?"
+    - type: grok-parser
+      name: Message separation
+      enabled: true
+      source: message
+      samples:
+        - INFO:Neuron:Number of arithmetic operators (pre-compilation) before =
+          565, fused = 548, percent fused = 96.99%
+        - "INFO:Neuron: => aten::layer_norm: 25"
+        - >
+          2024-11-15 10:38:24.000103:  4938  ERROR ||NEURON_CC_WRAPPER||:
+          Compilation failed for
+          /tmp/ubuntu/neuroncc_compile_workdir/cf6cf570-d889-4a0c-a821-719e225d9bc8/model.MODULE_16150394314145281873+d7517139.hlo_module.pb
+          after 0 retries.
+        - >
+          2024-Nov-15
+          13:35:03.0879  6475:6475  ERROR   NRT:nrt_allocate_neuron_cores               NeuronCore(s)
+          not available - Requested:16 Available:4
+      grok:
+        supportRules: ""
+        matchRules: >-
+          info_rule %{word:level}:Neuron:( => )?%{data:msg}
+
+          error_rule_1 %{date("yyyy-MM-dd' 'HH:mm:ss.SSSSSS"):date}:  %{integer:pid}  %{word:level} %{data:msg}
+
+          error_rule_2 %{date("yyyy-MMM-dd' 'HH:mm:ss.SSSS"):date}  %{integer:pid}:%{integer:tid}  %{word:level} %{data:msg}
+    - type: message-remapper
+      name: Define `msg` as the official message of the log
+      enabled: true
+      sources:
+        - msg
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
+    - type: status-remapper
+      name: Define `level` as the official status of the log
+      enabled: true
+      sources:
+        - level
