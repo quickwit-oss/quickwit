@@ -18,6 +18,7 @@
 mod compaction_pipeline;
 #[allow(dead_code)]
 mod compactor_supervisor;
+mod metrics;
 pub mod planner;
 
 pub type TaskId = String;
@@ -33,9 +34,13 @@ use quickwit_config::CompactorConfig;
 use quickwit_indexing::IndexingSplitCache;
 use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{IndexUid, NodeId, SourceId};
 use quickwit_storage::StorageResolver;
 use tracing::info;
+
+pub fn source_uid_metrics_label(index_uid: &IndexUid, source_id: &SourceId) -> String {
+    format!("{}-{}", index_uid, source_id)
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn start_compactor_service(

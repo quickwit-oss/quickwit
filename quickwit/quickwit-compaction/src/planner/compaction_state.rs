@@ -12,17 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use itertools::Itertools;
 use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, CompactionSuccess};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
-use crate::TaskId;
+use crate::planner::PendingOperations;
+use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
+use crate::{TaskId, source_uid_metrics_label};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -62,7 +66,7 @@ pub struct CompactionState {
     in_flight_split_ids: HashSet<SplitId>,
     /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key
     /// here.
-    pending_operations: VecDeque<(CompactionPartitionKey, MergeOperation)>,
+    pending_operations: PendingOperations,
 }
 
 impl CompactionState {
@@ -72,7 +76,7 @@ impl CompactionState {
             needs_compaction_split_ids: HashSet::new(),
             in_flight: HashMap::new(),
             in_flight_split_ids: HashSet::new(),
-            pending_operations: VecDeque::new(),
+            pending_operations: PendingOperations::new(),
         }
     }
 
@@ -111,7 +115,7 @@ impl CompactionState {
                     .insert(split.split_id().to_string());
             }
             self.pending_operations
-                .push_back((partition_key.clone(), operation));
+                .push(partition_key.clone(), operation);
         }
         if splits.is_empty() {
             self.needs_compaction.remove(partition_key);
@@ -177,6 +181,7 @@ impl CompactionState {
         for task_id in timed_out_task_ids {
             if let Some(inflight) = self.in_flight.remove(&task_id) {
                 error!(%task_id, node_id=%inflight.node_id, "compaction task timed out");
+                COMPACTION_PLANNER_METRICS.timed_out_operations.inc();
                 for split_id in &inflight.split_ids {
                     self.in_flight_split_ids.remove(split_id.as_str());
                 }
@@ -189,7 +194,7 @@ impl CompactionState {
         let count = count.min(self.pending_operations.len());
         let mut operations = Vec::with_capacity(count);
         for _ in 0..count {
-            operations.push(self.pending_operations.pop_front().unwrap());
+            operations.push(self.pending_operations.pop().unwrap());
         }
         operations
     }
@@ -205,6 +210,30 @@ impl CompactionState {
                 last_heartbeat: Instant::now(),
             },
         );
+    }
+
+    pub fn emit_metrics(&self) {
+        // total number of splits that need to be merged by compaction partition key
+        self.needs_compaction
+            .iter()
+            .map(|(compaction_partition_key, splits)| {
+                (
+                    source_uid_metrics_label(
+                        &compaction_partition_key.index_uid,
+                        &compaction_partition_key.source_id,
+                    ),
+                    splits.len() as i64,
+                )
+            })
+            .into_grouping_map()
+            .sum()
+            .iter()
+            .for_each(|(partition_key, &total_splits)| {
+                COMPACTION_PLANNER_METRICS
+                    .splits_needing_compaction
+                    .with_label_values([partition_key.as_str()])
+                    .set(total_splits)
+            });
     }
 }
 
@@ -289,7 +318,7 @@ mod tests {
 
         // Splits moved from needs_compaction to in_flight.
         assert!(!state.pending_operations.is_empty());
-        for (_, op) in &state.pending_operations {
+        for (_, op) in state.pending_operations.iter() {
             for split in op.splits_as_slice() {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
                 assert!(state.in_flight_split_ids.contains(split.split_id()));

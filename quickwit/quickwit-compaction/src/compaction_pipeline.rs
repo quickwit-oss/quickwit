@@ -30,9 +30,10 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
-use crate::TaskId;
+use crate::metrics::COMPACTOR_METRICS;
+use crate::{TaskId, source_uid_metrics_label};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PipelineStatus {
@@ -41,11 +42,21 @@ pub enum PipelineStatus {
     Failed { error: String },
 }
 
+impl PipelineStatus {
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            PipelineStatus::Completed | PipelineStatus::Failed { .. }
+        )
+    }
+}
+
 pub struct PipelineStatusUpdate {
     pub task_id: TaskId,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub split_ids: Vec<SplitId>,
+    pub merge_level: u64,
     pub status: PipelineStatus,
 }
 
@@ -94,6 +105,7 @@ pub struct CompactionPipeline {
     io_throughput_limiter: Option<Limiter>,
     max_concurrent_split_uploads: usize,
     event_broker: EventBroker,
+    pipeline_start: Option<Instant>,
 }
 
 impl CompactionPipeline {
@@ -128,6 +140,7 @@ impl CompactionPipeline {
             io_throughput_limiter,
             max_concurrent_split_uploads,
             event_broker,
+            pipeline_start: None,
         }
     }
 
@@ -193,14 +206,55 @@ impl CompactionPipeline {
         }
 
         if !failure_actor_names.is_empty() {
+            self.record_pipeline_duration();
             let error_msg = format!("failed actors: {:?}", failure_actor_names);
             error!(task_id=%self.task_id, "{error_msg}");
             self.status = PipelineStatus::Failed { error: error_msg };
+            self.record_terminal_metrics(false);
             return;
         }
         if !has_healthy {
-            debug!(task_id=%self.task_id, "all compaction pipeline actors completed");
+            self.record_pipeline_duration();
+            info!(task_id=%self.task_id, "all compaction pipeline actors completed");
             self.status = PipelineStatus::Completed;
+            self.record_terminal_metrics(true);
+        }
+    }
+
+    /// Fires once when the pipeline transitions from InProgress to a terminal state.
+    /// Pairs with the `compactions_in_progress.inc()` in `CompactorSupervisor::spawn_task`.
+    fn record_terminal_metrics(&self, succeeded: bool) {
+        let merge_level = self.merge_operation.merge_level();
+        let index_label =
+            source_uid_metrics_label(&self.pipeline_id.index_uid, &self.pipeline_id.source_id);
+        let label_values = [index_label.as_str(), &merge_level.to_string()];
+        COMPACTOR_METRICS
+            .compactions_in_progress
+            .with_label_values(label_values)
+            .dec();
+        if succeeded {
+            COMPACTOR_METRICS
+                .compactions_succeeded
+                .with_label_values(label_values)
+                .inc();
+        } else {
+            COMPACTOR_METRICS
+                .compactions_failed
+                .with_label_values(label_values)
+                .inc();
+        }
+    }
+
+    fn record_pipeline_duration(&self) {
+        if let Some(pipeline_start_time) = self.pipeline_start {
+            let elapsed = pipeline_start_time.elapsed().as_secs_f64();
+            let merge_level = self.merge_operation.merge_level();
+            let index_label =
+                source_uid_metrics_label(&self.pipeline_id.index_uid, &self.pipeline_id.source_id);
+            COMPACTOR_METRICS
+                .compaction_duration
+                .with_label_values([index_label.as_str(), &merge_level.to_string()])
+                .observe(elapsed);
         }
     }
 
@@ -216,6 +270,7 @@ impl CompactionPipeline {
                 .map(|split| split.split_id().to_string())
                 .collect(),
             status: self.status.clone(),
+            merge_level: self.merge_operation.merge_level() as u64,
         }
     }
 
@@ -295,6 +350,8 @@ impl CompactionPipeline {
             .set_kill_switch(self.kill_switch.child())
             .spawn(merge_split_downloader);
 
+        let now = Instant::now();
+        self.pipeline_start = Some(now);
         // Kick off the pipeline.
         merge_split_downloader_mailbox
             .try_send_message(self.merge_operation.clone())

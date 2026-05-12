@@ -250,11 +250,6 @@ impl IndexingService {
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
 
-        // The concurrent uploads budget is split in 2: 1/2 for the indexing pipeline, 1/2 for the
-        // merge pipeline. When there is no local merge pipeline, the indexing pipeline gets the
-        // full budget.
-        let max_concurrent_split_uploads_index = self.max_concurrent_split_uploads;
-
         let params_fingerprint =
             indexing_pipeline_params_fingerprint(&index_config, &source_config);
         if let Some(expected_params_fingerprint) = expected_params_fingerprint {
@@ -283,7 +278,7 @@ impl IndexingService {
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
             split_store,
-            max_concurrent_split_uploads_index,
+            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
             // The merge policy is needed in the uploader for determining split maturity
             merge_policy,

@@ -146,15 +146,6 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
-    /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
-    /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
-    /// does not starve indexing itself (as it is a latency sensitive operation).
-    #[serde(default)]
-    pub max_merge_write_throughput: Option<ByteSize>,
-    /// Maximum number of merge or delete operation that can be executed concurrently.
-    /// (defaults to num_cpu / 2).
-    #[serde(default = "IndexerConfig::default_merge_concurrency")]
-    pub merge_concurrency: NonZeroUsize,
     /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
@@ -202,10 +193,6 @@ impl IndexerConfig {
         1_000
     }
 
-    pub fn default_merge_concurrency() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
-    }
-
     fn default_cpu_capacity() -> CpuCapacity {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
@@ -220,8 +207,6 @@ impl IndexerConfig {
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
-            max_merge_write_throughput: None,
-            merge_concurrency: NonZeroUsize::new(3).unwrap(),
             enable_standalone_compactors: false,
         };
         Ok(indexer_config)
@@ -237,8 +222,6 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
-            merge_concurrency: Self::default_merge_concurrency(),
-            max_merge_write_throughput: None,
             enable_standalone_compactors: Self::default_enable_standalone_compactors(),
         }
     }
@@ -947,23 +930,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {

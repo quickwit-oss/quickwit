@@ -778,7 +778,19 @@ pub async fn serve_quickwit(
         let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
             .tempdir_in(&compaction_dir)
             .context("failed to create compaction temp directory")?;
-        let split_cache = Arc::new(quickwit_indexing::IndexingSplitCache::no_caching());
+        let split_store_quota = quickwit_indexing::SplitStoreQuota::try_new(
+            node_config.compactor_config.split_store_max_num_splits,
+            node_config.compactor_config.split_store_max_num_bytes,
+        )?;
+        let split_cache_dir = node_config
+            .data_dir_path
+            .join("compactor-split-cache")
+            .join("splits");
+        let split_cache = Arc::new(
+            quickwit_indexing::IndexingSplitCache::open(split_cache_dir, split_store_quota)
+                .await
+                .context("failed to open compactor split cache")?,
+        );
         let compaction_client = compaction_service_client_opt
             .clone()
             .expect("compactor service enabled but no compaction client available");

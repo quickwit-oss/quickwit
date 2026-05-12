@@ -462,7 +462,7 @@ impl IndexingPipeline {
             None,
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
-            self.params.max_concurrent_split_uploads_index,
+            self.params.max_concurrent_split_uploads,
             self.params.event_broker.clone(),
         );
         let (uploader_mailbox, uploader_handle) = ctx
@@ -628,7 +628,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             self.params.storage.clone(),
             SplitsUpdateMailbox::Sequencer(parquet_sequencer_mailbox),
-            self.params.max_concurrent_split_uploads_index,
+            self.params.max_concurrent_split_uploads,
         );
         let (parquet_uploader_mailbox, parquet_uploader_handle) = ctx
             .spawn_actor()
@@ -847,7 +847,7 @@ pub struct IndexingPipelineParams {
     pub indexing_directory: TempDirectory,
     pub indexing_settings: IndexingSettings,
     pub split_store: IndexingSplitStore,
-    pub max_concurrent_split_uploads_index: usize,
+    pub max_concurrent_split_uploads: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
 
     // Merge-related parameters
@@ -980,7 +980,7 @@ mod tests {
             split_store,
             merge_policy: default_merge_policy(),
             queues_dir_path: PathBuf::from("./queues"),
-            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads: 4,
             cooperative_indexing_permits: None,
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
@@ -1100,7 +1100,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
-            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads: 4,
             cooperative_indexing_permits: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1219,7 +1219,7 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
-            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads: 4,
             cooperative_indexing_permits: None,
             params_fingerprint: 42u64,
             event_broker: Default::default(),
