@@ -194,80 +194,146 @@ impl<'a> StreamDecoder<'a> {
     /// Pull and decode the next data page in storage order. Dictionary
     /// pages are absorbed silently (fed to the column reader for use by
     /// subsequent data pages). Returns `Ok(None)` at EOF.
+    ///
+    /// Maintains a **one-page lookahead** in the per-(rg, col) queues:
+    /// after the current data page is queued, one more page is pulled
+    /// from the stream and routed to its queue *before* `read_records`
+    /// runs. This makes `PageQueueReader::peek_next_page` return
+    /// accurate next-page metadata when parquet-rs's column reader
+    /// calls `at_record_boundary()` — required for V1 data pages with
+    /// repetition levels, where a list record can continue onto the
+    /// next page and parquet-rs needs the next page's metadata to
+    /// decide whether to flush partial rep-level state. Without the
+    /// lookahead, peek returns `None` at every page end and parquet-rs
+    /// treats it as the last page, which can split a list incorrectly.
     pub async fn decode_next_page(&mut self) -> Result<Option<DecodedPage>, PageDecodeError> {
-        if self.eof {
-            return Ok(None);
-        }
         loop {
-            let page = match self.stream.next_page().await? {
-                Some(p) => p,
+            // Prefer a state whose queue already has an unconsumed data
+            // page (left over from a previous call's lookahead, or
+            // queued during the loop below). At most one state has
+            // an unconsumed queued data page at any time, since each
+            // call pre-fetches exactly one page.
+            if let Some(key) = self.find_state_with_queued_data_page() {
+                return self.decode_state_head(key).await;
+            }
+
+            if self.eof {
+                return Ok(None);
+            }
+
+            match self.stream.next_page().await? {
+                Some(page) => self.route_page_to_queue(page)?,
                 None => {
                     self.eof = true;
-                    return Ok(None);
+                    // Loop once more to flush any state that may have
+                    // a queued data page from a prior call's lookahead.
+                    if self.find_state_with_queued_data_page().is_none() {
+                        return Ok(None);
+                    }
                 }
-            };
-
-            // INDEX_PAGE is the historical Thrift-schema variant that
-            // no production writer emits; PR-1's column / offset index
-            // lives outside the column chunk. Skip defensively.
-            if page.header.type_ == PageType::INDEX_PAGE {
-                continue;
             }
-
-            let key = (page.rg_idx, page.col_idx);
-            // Initialise per-(rg, col) state on first sight of the column.
-            if !self.columns.contains_key(&key) {
-                let state = init_column_state(&self.metadata, key)?;
-                self.columns.insert(key, state);
-            }
-
-            // Convert our `Page` (raw compressed bytes + parsed Thrift
-            // header) to parquet-rs's `column::page::Page`. Need the
-            // column's physical type for this — read it from metadata.
-            let col_meta = self.metadata.row_group(key.0).column(key.1);
-            let physical = col_meta.column_type();
-            let compression = col_meta.compression();
-            let col_page = convert_page(&page, physical, compression, key)?;
-
-            let is_data = matches!(
-                col_page,
-                ColumnPage::DataPage { .. } | ColumnPage::DataPageV2 { .. },
-            );
-            let num_values_in_page = col_page.num_values() as usize;
-
-            // Push to the queue so the column reader can consume it.
-            let state = self
-                .columns
-                .get_mut(&key)
-                .expect("just inserted above if missing");
-            state
-                .queue
-                .lock()
-                .expect("PageQueue mutex poisoned")
-                .push_back(col_page);
-
-            if !is_data {
-                // Dictionary page — the column reader picks it up on
-                // its next `read_records` call. Loop for the next
-                // input page.
-                continue;
-            }
-
-            // Data page: decode exactly its `num_values` records.
-            let array = decode_one_data_page_into_array(state, num_values_in_page)?;
-            let row_start = state.rows_decoded;
-            let page_idx_in_col = state.next_data_page_idx;
-            state.rows_decoded += array.len();
-            state.next_data_page_idx += 1;
-
-            return Ok(Some(DecodedPage {
-                rg_idx: key.0,
-                col_idx: key.1,
-                page_idx_in_col,
-                row_start,
-                array,
-            }));
         }
+    }
+
+    /// Scan column states for one whose queue front contains an
+    /// unconsumed data page. Returns the (rg, col) key, or `None`.
+    fn find_state_with_queued_data_page(&self) -> Option<(usize, usize)> {
+        for (&key, state) in self.columns.iter() {
+            let q = state.queue.lock().expect("PageQueue mutex poisoned");
+            if q.iter().any(|p| {
+                matches!(
+                    p,
+                    ColumnPage::DataPage { .. } | ColumnPage::DataPageV2 { .. }
+                )
+            }) {
+                return Some(key);
+            }
+        }
+        None
+    }
+
+    /// Decode the front data page from `key`'s state's queue.
+    /// Pre-fetches one more page from the stream (best effort) so
+    /// `peek_next_page` returns accurate metadata when the column
+    /// reader checks record boundaries.
+    async fn decode_state_head(
+        &mut self,
+        key: (usize, usize),
+    ) -> Result<Option<DecodedPage>, PageDecodeError> {
+        // Pre-fetch one page from the stream before driving read_records.
+        // If the pre-fetched page is for the same (rg, col) the column
+        // reader is about to decode, it sits in the same queue so
+        // `peek_next_page` returns real metadata (V1 record continuation
+        // is handled correctly). If it's for a different (rg, col), it
+        // goes into that state's queue — current state's `peek_next_page`
+        // returns `None`, which is correct because this column chunk's
+        // pages are now exhausted from the current state's perspective.
+        if !self.eof {
+            match self.stream.next_page().await? {
+                Some(page) => self.route_page_to_queue(page)?,
+                None => self.eof = true,
+            }
+        }
+
+        // Read num_values from the front data page (skipping any
+        // dictionary pages that may precede it in the queue).
+        let state = self
+            .columns
+            .get(&key)
+            .expect("caller's key must have a state");
+        let num_values_in_page = {
+            let q = state.queue.lock().expect("PageQueue mutex poisoned");
+            q.iter()
+                .find_map(|p| match p {
+                    ColumnPage::DataPage { num_values, .. }
+                    | ColumnPage::DataPageV2 { num_values, .. } => Some(*num_values as usize),
+                    _ => None,
+                })
+                .expect("caller's key has a queued data page")
+        };
+
+        let state = self
+            .columns
+            .get_mut(&key)
+            .expect("caller's key must have a state");
+        let array = decode_one_data_page_into_array(state, num_values_in_page)?;
+        let row_start = state.rows_decoded;
+        let page_idx_in_col = state.next_data_page_idx;
+        state.rows_decoded += array.len();
+        state.next_data_page_idx += 1;
+
+        Ok(Some(DecodedPage {
+            rg_idx: key.0,
+            col_idx: key.1,
+            page_idx_in_col,
+            row_start,
+            array,
+        }))
+    }
+
+    /// Convert a raw stream `Page` to a parquet-rs `ColumnPage` and
+    /// push it onto the appropriate (rg, col) state's queue. Skips
+    /// `INDEX_PAGE` defensively (no production writer emits it).
+    fn route_page_to_queue(&mut self, page: Page) -> Result<(), PageDecodeError> {
+        if page.header.type_ == PageType::INDEX_PAGE {
+            return Ok(());
+        }
+        let key = (page.rg_idx, page.col_idx);
+        if !self.columns.contains_key(&key) {
+            let state = init_column_state(&self.metadata, key)?;
+            self.columns.insert(key, state);
+        }
+        let col_meta = self.metadata.row_group(key.0).column(key.1);
+        let physical = col_meta.column_type();
+        let compression = col_meta.compression();
+        let col_page = convert_page(&page, physical, compression, key)?;
+        let state = self.columns.get_mut(&key).expect("just inserted above");
+        state
+            .queue
+            .lock()
+            .expect("PageQueue mutex poisoned")
+            .push_back(col_page);
+        Ok(())
     }
 
     /// File metadata. Schema, row-group layout, and KV `qh.*` metadata
@@ -1761,6 +1827,93 @@ mod tests {
                 .to_vec();
             assert_eq!(got_f64, *want, "row {row_idx} list mismatch");
         }
+    }
+
+    /// `List<UInt64>` records that span multiple V1 pages are decoded
+    /// without splitting. Regression test for the codex review on
+    /// PR-6407: prior to the one-page lookahead in `decode_next_page`,
+    /// `peek_next_page` returned `None` at every page boundary, which
+    /// parquet-rs treats as "last page" — it would flush partial
+    /// repetition-level state and emit incomplete records.
+    ///
+    /// We force the issue by writing a long list with a tiny
+    /// `data_page_size_limit`, so parquet-rs splits the single
+    /// list record across multiple V1 pages. With the lookahead in
+    /// place, the column reader sees `peek_next_page = Some(_)` and
+    /// continues consuming until the record completes.
+    #[tokio::test]
+    async fn test_list_record_spanning_pages_preserved() {
+        use arrow::array::{ListBuilder, UInt64Array, UInt64Builder};
+
+        let item_field = Arc::new(ArrowField::new("item", DataType::UInt64, false));
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "counts",
+            DataType::List(Arc::clone(&item_field)),
+            false,
+        )]));
+
+        // Two records: a 50-element list (forced to span several pages
+        // by the 20-byte page size limit) and a short 3-element list.
+        let row_long: Vec<u64> = (0..50u64).collect();
+        let row_short: Vec<u64> = vec![1, 2, 3];
+        let mut builder =
+            ListBuilder::new(UInt64Builder::new()).with_field(Arc::clone(&item_field));
+        for v in &row_long {
+            builder.values().append_value(*v);
+        }
+        builder.append(true);
+        for v in &row_short {
+            builder.values().append_value(*v);
+        }
+        builder.append(true);
+        let counts: ArrayRef = Arc::new(builder.finish());
+        let batch = RecordBatch::try_new(schema.clone(), vec![counts]).unwrap();
+
+        // 20-byte page-size limit forces V1 pages to split the
+        // 50-element list across several pages.
+        let props = WriterProperties::builder()
+            .set_compression(Compression::UNCOMPRESSED)
+            .set_data_page_size_limit(20)
+            .build();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        // Decode all pages and accumulate the lists.
+        let source = InMemorySource::new(buf);
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .unwrap();
+        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
+        let mut all_records: Vec<Vec<u64>> = Vec::new();
+        while let Some(dp) = decoder.decode_next_page().await.unwrap() {
+            let list = dp
+                .array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .expect("counts must decode to ListArray");
+            for i in 0..list.len() {
+                let inner = list.value(i);
+                let u64_arr = inner
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .expect("inner must be UInt64Array");
+                all_records.push(u64_arr.values().to_vec());
+            }
+        }
+
+        assert_eq!(
+            all_records.len(),
+            2,
+            "must emit exactly two records, got {}: {all_records:?}",
+            all_records.len()
+        );
+        assert_eq!(
+            all_records[0], row_long,
+            "first record (50 elements) must be preserved intact across page boundaries"
+        );
+        assert_eq!(all_records[1], row_short, "second record must be preserved",);
     }
 
     /// `wrap_inner_in_list` dispatches to `LargeListArray` (i64 offsets)
