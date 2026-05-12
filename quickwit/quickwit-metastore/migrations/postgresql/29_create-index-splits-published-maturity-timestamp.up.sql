@@ -1,3 +1,4 @@
+-- no-transaction
 -- Index for the compaction planner's scan, which on every tick reads up to
 -- LIMIT splits matching:
 --   split_state = 'Published'
@@ -14,6 +15,10 @@
 --
 -- The partial predicate is restricted to split_state = 'Published' because
 -- partial-index predicates must be IMMUTABLE; "now()" cannot appear here.
-CREATE INDEX IF NOT EXISTS splits_published_maturity_timestamp_idx
+--
+-- CONCURRENTLY avoids taking a SHARE lock on splits, which would block all
+-- writes for the duration of the build. CONCURRENTLY cannot run inside a
+-- transaction block, hence the `-- no-transaction` directive above.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS splits_published_maturity_timestamp_idx
     ON splits (maturity_timestamp, split_id)
     WHERE split_state = 'Published';

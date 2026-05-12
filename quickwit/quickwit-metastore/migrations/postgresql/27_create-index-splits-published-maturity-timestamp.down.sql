@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS splits_published_maturity_timestamp_idx;

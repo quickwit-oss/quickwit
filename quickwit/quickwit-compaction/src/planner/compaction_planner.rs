@@ -41,6 +41,7 @@ use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 /// exists. Splits beyond this cap aren't lost -- they bubble into range as the front of the queue
 /// is merged off.
 const SCAN_PAGE_SIZE: usize = 5_000;
+
 #[derive(Debug)]
 pub struct CompactionPlanner {
     state: CompactionState,
