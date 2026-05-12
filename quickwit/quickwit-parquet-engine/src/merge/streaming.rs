@@ -737,7 +737,7 @@ fn write_streaming_outputs(
     //    PR-6c.2 or later can revisit by gathering body-col cardinality during the streaming pass.
     let per_output_schemas: Vec<SchemaRef> = per_output_static
         .iter()
-        .map(|s| derive_output_schema(&full_union_schema, &s.sort_optimised))
+        .map(|s| derive_output_schema(&full_union_schema, sort_union_schema, &s.sort_optimised))
         .collect::<Result<Vec<_>>>()?;
 
     // 4. Open M writers, one per output. Writers + bookkeeping live in `writer_states`; the row
@@ -903,22 +903,40 @@ fn build_full_union_schema_from_arrow_schemas(
 ///
 /// We do still want to drop columns that are all-null *for this
 /// output* (e.g., a column only present in inputs that don't
-/// contribute any rows to this output's range). Detect this from the
-/// `sort_optimised` schema for sort cols; for body cols, leave them
-/// in the union for now (PR-6c.2 will track per-output body-col
-/// presence).
+/// contribute any rows to this output's range). The `sort_optimised`
+/// batch has already discarded all-null sort fields; we mirror that
+/// decision when building the per-output schema. Body cols are kept
+/// unconditionally — tracking per-output body-col presence would
+/// require pre-reading every body column for every output, which is
+/// exactly the column-chunk-bounded buffering the streaming path
+/// exists to avoid.
+///
+/// `sort_union_schema` is the union of every input's sort columns
+/// (before per-output optimisation). It's the only way to tell
+/// whether a given union-schema field is a sort field or a body
+/// field — `sort_optimised.schema()` alone can't disambiguate because
+/// it has dropped some sort fields by design. Without this
+/// distinction the function falls into the trap of using
+/// `full_union_schema.index_of(field.name())`, which is trivially
+/// true for every iterated field, and the all-null drop never
+/// happens.
 fn derive_output_schema(
     full_union_schema: &SchemaRef,
+    sort_union_schema: &SchemaRef,
     sort_optimised: &RecordBatch,
 ) -> Result<SchemaRef> {
-    let sort_schema = sort_optimised.schema();
+    let sort_optimised_schema = sort_optimised.schema();
     let mut fields: Vec<Arc<Field>> = Vec::with_capacity(full_union_schema.fields().len());
     for field in full_union_schema.fields() {
-        // If sort_optimised dropped this field entirely, the field was
-        // all-null in this output's sort cols — drop from output too.
-        // (Body cols are always retained.)
-        let is_sort_field = sort_schema.index_of(field.name()).is_ok();
-        if is_sort_field || full_union_schema.index_of(field.name()).is_ok() {
+        let is_sort_field = sort_union_schema.index_of(field.name()).is_ok();
+        if is_sort_field {
+            // Sort field: keep only if the per-output optimiser kept
+            // it (i.e., not all-null for this output's rows).
+            if sort_optimised_schema.index_of(field.name()).is_ok() {
+                fields.push(Arc::clone(field));
+            }
+        } else {
+            // Body field: always kept.
             fields.push(Arc::clone(field));
         }
     }
@@ -2315,6 +2333,66 @@ mod tests {
                 value.value(i),
             );
         }
+    }
+
+    /// Regression for Codex P2 on PR-6409: `derive_output_schema`
+    /// must drop sort fields that `optimize_output_batch` discarded as
+    /// all-null for a given output. Before the fix the check was
+    /// `sort_optimised.has(name) || full_union.has(name)`, where the
+    /// second disjunct is trivially true for every iterated field, so
+    /// all-null sort columns were never dropped. We exercise the
+    /// helper directly with a synthetic union + sort-optimised pair so
+    /// the regression doesn't depend on the merge plan creating an
+    /// all-null sort col (which requires a multi-input fixture with
+    /// divergent sort col presence).
+    #[test]
+    fn test_derive_output_schema_drops_all_null_sort_field() {
+        // Union covers sort fields {metric_name, env, timestamp_secs}
+        // plus body field {value}. `env` is a sort field declared in
+        // the sort union but `optimize_output_batch` dropped it from
+        // this output's `sort_optimised` (all-null for this output's
+        // rows). Body field `value` is NOT in the sort union — it
+        // must be preserved unconditionally.
+        let full_union = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("env", DataType::Utf8, true),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+        let sort_union = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("env", DataType::Utf8, true),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+        ]));
+        // sort_optimised has dropped `env` (all-null for this output).
+        let sort_optimised_schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+        ]));
+        let sort_optimised = RecordBatch::try_new(
+            sort_optimised_schema,
+            vec![
+                Arc::new(StringArray::from(vec!["cpu.usage"; 4])),
+                Arc::new(UInt64Array::from(vec![1u64, 2, 3, 4])),
+            ],
+        )
+        .expect("test batch");
+
+        let derived = derive_output_schema(&full_union, &sort_union, &sort_optimised).expect("ok");
+        let names: Vec<&str> = derived.fields().iter().map(|f| f.name().as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["metric_name", "timestamp_secs", "value"],
+            "all-null sort field 'env' must be dropped; body field 'value' preserved",
+        );
+
+        // Direct contrast: with the pre-fix logic (every field kept)
+        // the result would have included 'env'. Asserting the negative
+        // form makes the regression unambiguous.
+        assert!(
+            derived.index_of("env").is_err(),
+            "'env' must not appear in derived output schema",
+        );
     }
 
     /// Write a fixture parquet file where each body column is forced
