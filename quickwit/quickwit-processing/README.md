@@ -1,4 +1,4 @@
-# Pomchi
+# quickwit-processing (formerly known as Pomchi)
 
 Pomchi is a Rust library that tries to replicate Datadog-SaaS log processing pipelines. It provides:
 
