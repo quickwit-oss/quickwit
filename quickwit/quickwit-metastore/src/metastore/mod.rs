@@ -875,10 +875,21 @@ pub struct ListSplitsQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Ordering applied to the result of a [`ListSplitsQuery`].
 pub enum SortBy {
+    /// No ordering — the metastore may return splits in any order.
     None,
+    /// Order by `(delete_opstamp ASC, publish_timestamp ASC)`. Used by the
+    /// delete pipeline to process the splits with the most pending delete
+    /// work first.
     Staleness,
+    /// Order by `(index_uid ASC, split_id ASC)`, matching the splits-table
+    /// primary key. Used for stable pagination across all indexes.
     IndexUid,
+    /// Order by `(maturity_timestamp ASC, split_id ASC)`. Used by the
+    /// compaction planner so that under a backlog the splits closest to
+    /// becoming mature are processed first.
+    MaturityTimestamp,
 }
 
 impl SortBy {
@@ -898,6 +909,16 @@ impl SortBy {
                 .split_metadata
                 .index_uid
                 .cmp(&right_split.split_metadata.index_uid)
+                .then_with(|| {
+                    left_split
+                        .split_metadata
+                        .split_id
+                        .cmp(&right_split.split_metadata.split_id)
+                }),
+            SortBy::MaturityTimestamp => left_split
+                .split_metadata
+                .maturity_unix_timestamp()
+                .cmp(&right_split.split_metadata.maturity_unix_timestamp())
                 .then_with(|| {
                     left_split
                         .split_metadata
@@ -1151,6 +1172,12 @@ impl ListSplitsQuery {
     /// Sorts the splits by index_uid and split_id.
     pub fn sort_by_index_uid(mut self) -> Self {
         self.sort_by = SortBy::IndexUid;
+        self
+    }
+
+    /// Sorts the splits by maturity_timestamp ascending, with split_id as a tiebreaker.
+    pub fn sort_by_maturity_timestamp(mut self) -> Self {
+        self.sort_by = SortBy::MaturityTimestamp;
         self
     }
 

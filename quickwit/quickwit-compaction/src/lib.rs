@@ -23,15 +23,12 @@ pub mod planner;
 
 pub type TaskId = String;
 
-use std::sync::Arc;
-
 pub use compactor_supervisor::CompactorSupervisor;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::io;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::CompactorConfig;
-use quickwit_indexing::IndexingSplitCache;
 use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, NodeId, SourceId};
@@ -48,7 +45,6 @@ pub async fn start_compactor_service(
     node_id: NodeId,
     compaction_client: CompactionPlannerServiceClient,
     compactor_config: &CompactorConfig,
-    split_cache: Arc<IndexingSplitCache>,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
@@ -62,7 +58,6 @@ pub async fn start_compactor_service(
         compaction_client,
         compactor_config.max_concurrent_pipelines.get(),
         io_throughput_limiter,
-        split_cache,
         metastore,
         storage_resolver,
         compactor_config.max_concurrent_split_uploads,

@@ -31,6 +31,7 @@ use crate::source_uid_metrics_label;
 /// Queue of merge operations awaiting assignment, with the
 /// `pending_merge_operations` gauge maintained inline. Push/pop are the only
 /// mutation paths so the metric stays consistent with `len()`.
+#[derive(Debug)]
 struct PendingOperations {
     inner: VecDeque<(CompactionPartitionKey, MergeOperation)>,
 }

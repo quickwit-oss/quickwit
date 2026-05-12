@@ -7496,6 +7496,7 @@ dependencies = [
  "once_cell",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-doc-mapper",
  "quickwit-index-management",

@@ -218,6 +218,18 @@ impl SplitMetadata {
         }
     }
 
+    /// Returns the unix timestamp at which the split becomes mature, or 0 if
+    /// the split is already mature (matching the metastore's stored
+    /// `maturity_timestamp` column).
+    pub fn maturity_unix_timestamp(&self) -> i64 {
+        match self.maturity {
+            SplitMaturity::Mature => 0,
+            SplitMaturity::Immature { maturation_period } => {
+                self.create_timestamp + maturation_period.as_secs() as i64
+            }
+        }
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
     pub fn for_test(split_id: SplitId) -> SplitMetadata {
