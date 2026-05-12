@@ -103,6 +103,35 @@ use crate::zonemap::{self, ZonemapOptions};
 /// [`write_next_column_arrays`]: crate::storage::streaming_writer::RowGroupBuilder::write_next_column_arrays
 const OUTPUT_PAGE_ROWS: usize = 1024;
 
+/// Test-only peak observed length of any input's `body_col_page_cache`
+/// since the last reset. Used by the MS-7 page-bounded-memory test to
+/// assert that the cache stays bounded by a small constant regardless
+/// of input column size. Set unconditionally inside the merge so the
+/// invariant is observable in any test build; reset on each merge entry.
+#[cfg(test)]
+pub(crate) static PEAK_BODY_COL_PAGE_CACHE_LEN: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+fn record_body_col_page_cache_len(len: usize) {
+    use std::sync::atomic::Ordering;
+    let mut prev = PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed);
+    while len > prev {
+        match PEAK_BODY_COL_PAGE_CACHE_LEN.compare_exchange_weak(
+            prev,
+            len,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(observed) => prev = observed,
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn record_body_col_page_cache_len(_len: usize) {}
+
 /// Streaming N-input → M-output column-major merge.
 ///
 /// See module docs for the four phases. Returns one
@@ -1760,6 +1789,7 @@ fn advance_decoder_to_row(
         }
         let end = page.row_start + page.array.len();
         state.body_col_page_cache.push(page);
+        record_body_col_page_cache_len(state.body_col_page_cache.len());
         if target_row < end {
             return Ok(());
         }
@@ -2413,9 +2443,17 @@ mod tests {
         data_page_row_count_limit: usize,
     ) -> Bytes {
         let schema = batches[0].schema();
+        // Lower `write_batch_size` and `data_page_size` so the arrow
+        // writer actually flushes pages at the row-count boundary.
+        // With the defaults (`write_batch_size = 64 KiB`,
+        // `data_page_size = 1 MiB`) the byte-size threshold doesn't
+        // trip for our small fixtures and the writer emits one page
+        // per column regardless of `data_page_row_count_limit`.
         let cfg = ParquetWriterConfig {
             compression: Compression::Snappy,
             data_page_row_count_limit,
+            data_page_size: data_page_row_count_limit * 16,
+            write_batch_size: data_page_row_count_limit,
             ..ParquetWriterConfig::default()
         };
         let sort_fields = "metric_name|-timestamp_secs/V2";
@@ -3200,5 +3238,92 @@ mod tests {
                 "body-col tuple mismatch for sorted_series {key:?}: got {got}, want {want}",
             );
         }
+    }
+
+    // ============================================================================
+    // MS-7: page-cache bounded-memory contract. The streaming engine's
+    // raison d'être is that body-col memory stays bounded by ~constant
+    // (page size × small) regardless of how big the input column gets.
+    // Concretely, `body_col_page_cache` length per input must stay ≤ a
+    // small constant — never scale with row count.
+    // ============================================================================
+
+    /// Build a fixture that forces many input body-col pages with a
+    /// pinned `data_page_row_count_limit`, then merge it through the
+    /// streaming engine and read back the peak cache length. Used by
+    /// the MS-7 test below across multiple sizes.
+    async fn merge_and_observe_peak_page_cache(num_rows: usize, page_rows: usize) -> usize {
+        use std::sync::atomic::Ordering;
+
+        PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
+
+        let batch = make_sorted_batch(num_rows, 0);
+        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), page_rows);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, num_rows);
+
+        PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed)
+    }
+
+    /// MS-7: peak `body_col_page_cache` length is bounded by the
+    /// ratio of output-page rows to input-page rows — NOT by input
+    /// column size. Each `assemble_one_output_page` call must read
+    /// enough input pages to cover `OUTPUT_PAGE_ROWS` rows, then
+    /// evict everything below the new cursor. So the peak per advance
+    /// loop is bounded by `ceil(OUTPUT_PAGE_ROWS / page_rows) + small
+    /// slack` regardless of how many output pages we produce.
+    ///
+    /// Without the per-output-page eviction, the peak would scale with
+    /// the total number of input pages — which scales with input size.
+    /// A regression that dropped the eviction loop would push the peak
+    /// past the ceiling for the 30 000-row fixture but not the 3 000-
+    /// row fixture, breaking both assertions below.
+    #[tokio::test]
+    async fn test_ms7_body_col_page_cache_bounded_regardless_of_input_size() {
+        const PAGE_ROWS: usize = 50;
+        // ceil(1024 / 50) = 21 in-flight pages needed for one output
+        // page. Allow 3 slack: decoder lookahead, transient between
+        // push and check, dict-page-as-data-page corner cases.
+        const MAX_RESIDENT_PAGES: usize = 24;
+
+        let peak_small = merge_and_observe_peak_page_cache(300, PAGE_ROWS).await;
+        let peak_medium = merge_and_observe_peak_page_cache(3_000, PAGE_ROWS).await;
+        let peak_large = merge_and_observe_peak_page_cache(30_000, PAGE_ROWS).await;
+
+        // 300-row fixture has only 6 input pages, so its peak can't
+        // exceed 6; verifying that the assembler doesn't somehow
+        // accumulate ghost entries past the input itself.
+        assert!(
+            peak_small <= 6 + 1,
+            "300-row fixture: peak cache len {peak_small} > 7",
+        );
+        // Medium / large fixtures share the same OUTPUT_PAGE_ROWS /
+        // PAGE_ROWS ratio, so they must share the same peak ceiling.
+        assert!(
+            peak_medium <= MAX_RESIDENT_PAGES,
+            "3 000-row fixture: peak cache len {peak_medium} > {MAX_RESIDENT_PAGES}",
+        );
+        assert!(
+            peak_large <= MAX_RESIDENT_PAGES,
+            "30 000-row fixture: peak cache len {peak_large} > {MAX_RESIDENT_PAGES} — body col \
+             write is no longer page-bounded; likely buffering whole column chunks",
+        );
+
+        // The headline MS-7 claim: peak DOES NOT grow proportionally
+        // with input size. Going from 3 000 to 30 000 rows multiplies
+        // total input pages by 10, but peak resident cache should
+        // stay essentially flat. Allow a 2-page slack for transients.
+        let growth = peak_large.saturating_sub(peak_medium);
+        assert!(
+            growth <= 2,
+            "peak grows with input size: medium={peak_medium}, large={peak_large} — 10× more \
+             input pages produced {growth} more resident pages, body-col path is not page-bounded",
+        );
     }
 }
