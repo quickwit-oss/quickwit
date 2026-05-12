@@ -14,10 +14,11 @@
 
 //! Streaming column-major merge engine with page-bounded body cols.
 //!
-//! Architecture (Husky multi-input → multi-output sorted merge):
+//! Architecture (multi-input → multi-output sorted merge with sort-cols-first
+//! column ordering):
 //!
-//! 1. **Phase 0 (async): drain sort cols** from each input. With Husky column ordering, sort cols +
-//!    `sorted_series` are the prefix of each row group's body bytes, so we can stop the decoder
+//! 1. **Phase 0 (async): drain sort cols** from each input. With the storage convention that sort
+//!    cols + `sorted_series` precede all body cols within each row group, we can stop the decoder
 //!    after those are fully decoded. The remaining body col pages stay un-read in the input stream,
 //!    ready for phase 3.
 //! 2. **Phase 1: compute merge order** via the existing k-way merge on `(sorted_series,
@@ -27,7 +28,7 @@
 //!    `sorted_series` transitions so each output file's key range is non-overlapping with adjacent
 //!    files.
 //! 4. **Phase 3 (blocking + block_on bridges): streaming write**. All output writers are alive for
-//!    the duration. For each column in Husky order, every output's col K is written in turn:
+//!    the duration. For each column in storage order, every output's col K is written in turn:
 //!    - Sort col / `sorted_series`: applied via `take` from the already-buffered phase 0 data.
 //!    - Body col: each output page is assembled via [`arrow::compute::interleave`] from input page
 //!      slices, with decoders advanced page-by-page via `Handle::block_on` from inside a sync
@@ -491,9 +492,9 @@ fn drain_sort_cols_one_input(
     }
 
     // Drain pages into per-col buffers until all sort cols are fully
-    // decoded. With Husky storage ordering, sort col pages come before
-    // any body col page within the row group, so we should never see a
-    // non-sort page while sort cols are incomplete.
+    // decoded. The storage convention places all sort col pages
+    // before any body col page within a row group, so we should never
+    // see a non-sort page while sort cols are incomplete.
     let mut per_col_pages: HashMap<usize, Vec<ArrayRef>> = HashMap::new();
     let mut rows_done_per_col: HashMap<usize, usize> =
         sort_col_parquet_indices.keys().map(|&i| (i, 0)).collect();
@@ -515,7 +516,7 @@ fn drain_sort_cols_one_input(
         if !sort_col_parquet_indices.contains_key(&page.col_idx) {
             bail!(
                 "input {input_idx} returned a non-sort page (col {}) before all sort cols were \
-                 drained — this violates Husky storage ordering",
+                 drained — sort-cols-first storage ordering violated",
                 page.col_idx,
             );
         }
@@ -528,7 +529,9 @@ fn drain_sort_cols_one_input(
         }
 
         let array_len = page.array.len();
-        let rows_done = rows_done_per_col.get_mut(&page.col_idx).unwrap();
+        let rows_done = rows_done_per_col
+            .get_mut(&page.col_idx)
+            .expect("sort_col_parquet_indices.contains_key check above guarantees presence");
         *rows_done += array_len;
         per_col_pages
             .entry(page.col_idx)
@@ -881,8 +884,8 @@ fn build_full_union_schema_from_arrow_schemas(
     sort_fields_str: &str,
 ) -> Result<(SchemaRef, ())> {
     // Build zero-row batches with the right schemas; that lets us
-    // reuse `align_inputs_to_union_schema`'s field-merge / Husky-order
-    // logic unchanged.
+    // reuse `align_inputs_to_union_schema`'s field-merge / storage-
+    // ordering logic unchanged.
     let empty_batches: Vec<RecordBatch> = arrow_schemas
         .iter()
         .map(|s| RecordBatch::new_empty(Arc::clone(s)))
@@ -1009,10 +1012,11 @@ fn write_all_columns(
     per_output_schemas: &[SchemaRef],
 ) -> Result<()> {
     // Iterate cols in the union (per-output) schema order. We need
-    // ONE pass through Husky-ordered cols of an output to feed its
-    // writer. The writer's expected col order is each output's own
-    // schema. All outputs share Husky col order with possible
-    // per-output drops of all-null columns.
+    // ONE pass through each output's cols in storage order to feed
+    // its writer. The writer's expected col order is each output's
+    // own schema. All outputs share the same col order (sort cols
+    // first, then body cols lexicographically) with possible per-
+    // output drops of all-null columns.
     //
     // Strategy: process the FULL union schema's cols in order. For
     // each col K in the union schema, for each output:
@@ -1064,11 +1068,12 @@ fn write_all_columns(
 }
 
 fn build_parent_union_schema(per_output_schemas: &[SchemaRef]) -> SchemaRef {
-    // All per-output schemas have the same column order (Husky), with
-    // some cols possibly missing per output (all-null drops). Pick the
-    // schema with the most fields as the parent driver, ties broken by
-    // first occurrence. This is safe because all schemas share Husky
-    // ordering as a subsequence.
+    // All per-output schemas share the same column order (sort cols
+    // first, then body cols lexicographic), with some cols possibly
+    // missing per output (all-null drops). Pick the schema with the
+    // most fields as the parent driver, ties broken by first
+    // occurrence. This is safe because all schemas share the same
+    // column ordering as a subsequence.
     let mut best = Arc::clone(&per_output_schemas[0]);
     for s in per_output_schemas.iter().skip(1) {
         if s.fields().len() > best.fields().len() {
@@ -1831,7 +1836,7 @@ mod tests {
     // -------- Fixtures --------
 
     /// Build a sorted metrics RecordBatch with `num_rows` rows in
-    /// **Husky column order**: sort cols (metric_name, timestamp_secs)
+    /// the **storage column order**: sort cols (metric_name, timestamp_secs)
     /// → sorted_series → remaining body cols lexicographic
     /// (metric_type, service, timeseries_id, value). All rows share
     /// the single metric_name "cpu.usage". `sorted_series` is monotonic
@@ -2663,5 +2668,537 @@ mod tests {
             s.contains("single-row-group"),
             "expected 'single-row-group' error, got: {s}",
         );
+    }
+
+    // ============================================================================
+    // MC-2 round-trip: every parquet physical type the decoder supports must
+    // survive the streaming merge unchanged.
+    // ============================================================================
+
+    /// Build a batch covering every primitive type the page decoder
+    /// supports, plus byte arrays, dictionary encoding, and list types.
+    /// Each row's `sorted_series` key uniquely identifies the row so
+    /// callers can build a `(key → tuple)` map for output comparison.
+    fn make_typed_round_trip_batch(num_rows: usize, key_offset: u64) -> RecordBatch {
+        use arrow::array::{
+            BooleanArray, Float32Array, Int8Array, Int16Array, Int32Array, LargeBinaryArray,
+            ListArray, UInt16Array, UInt32Array,
+        };
+        use arrow::buffer::OffsetBuffer;
+
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        // Body cols MUST be in lexicographic order — that's the
+        // storage convention the streaming engine assumes when
+        // iterating columns. Inputs that ship body cols in a
+        // different order trip "column ordering violated" mid-merge.
+        let schema = Arc::new(ArrowSchema::new(vec![
+            // sort cols
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            // body cols, all nullable, in lexicographic order. Null
+            // every 7th row to exercise the null-mask path.
+            Field::new("body_bool", DataType::Boolean, true),
+            Field::new("body_dict", dict_type, true),
+            Field::new("body_float32", DataType::Float32, true),
+            Field::new("body_float64", DataType::Float64, true),
+            Field::new("body_int16", DataType::Int16, true),
+            Field::new("body_int32", DataType::Int32, true),
+            Field::new("body_int64", DataType::Int64, true),
+            Field::new("body_int8", DataType::Int8, true),
+            Field::new("body_largebinary", DataType::LargeBinary, true),
+            // `List<Float64>` covers production-shaped histogram bucket
+            // columns. Outer + inner both non-nullable to match the
+            // decoder's PR-6a.2 contract.
+            Field::new(
+                "body_list_f64",
+                DataType::List(Arc::new(Field::new("item", DataType::Float64, false))),
+                false,
+            ),
+            Field::new("body_string", DataType::Utf8, true),
+            Field::new("body_uint16", DataType::UInt16, true),
+            Field::new("body_uint32", DataType::UInt32, true),
+            Field::new("body_uint64", DataType::UInt64, true),
+            Field::new("body_uint8", DataType::UInt8, true),
+        ]));
+
+        let is_null = |i: usize| i.is_multiple_of(7);
+
+        let metric_keys: Vec<i32> = vec![0; num_rows];
+        let metric_values = StringArray::from(vec!["cpu.usage"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .expect("metric dict"),
+        );
+
+        // Timestamps DESC within the run so the input is pre-sorted on
+        // (metric_name ASC, timestamp DESC) per the sort schema.
+        let timestamps: Vec<u64> = (0..num_rows as u64)
+            .map(|i| 1_700_000_000 + (num_rows as u64 - i))
+            .collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+
+        let key_bytes: Vec<Vec<u8>> = (0..num_rows as u64)
+            .map(|i| (key_offset + i).to_be_bytes().to_vec())
+            .collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            key_bytes.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+        ));
+
+        // Primitive value generators chosen to span each type's range
+        // including signed/unsigned boundaries.
+        let mk_opt = |i: usize, v: i64| if is_null(i) { None } else { Some(v) };
+        let body_int8: ArrayRef = Arc::new(Int8Array::from(
+            (0..num_rows)
+                .map(|i| mk_opt(i, (i as i64 % 251) - 125).map(|v| v as i8))
+                .collect::<Vec<_>>(),
+        ));
+        let body_uint8: ArrayRef = Arc::new(UInt8Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some((i % 255) as u8)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_int16: ArrayRef = Arc::new(Int16Array::from(
+            (0..num_rows)
+                .map(|i| mk_opt(i, (i as i64 % 30001) - 15000).map(|v| v as i16))
+                .collect::<Vec<_>>(),
+        ));
+        let body_uint16: ArrayRef = Arc::new(UInt16Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some((i % 60000) as u16)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_int32: ArrayRef = Arc::new(Int32Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    mk_opt(
+                        i,
+                        i as i64 * 0x100_0000i64 - i64::from(i32::MIN.unsigned_abs() / 2),
+                    )
+                    .map(|v| v as i32)
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_uint32: ArrayRef = Arc::new(UInt32Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some((i as u32).wrapping_mul(0xDEAD_BEEF))
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_int64: ArrayRef = Arc::new(Int64Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some((i as i64).wrapping_mul(0x0123_4567_89AB_CDEF))
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_uint64: ArrayRef = Arc::new(UInt64Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some((i as u64).wrapping_mul(0xFEDC_BA98_7654_3210))
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_float32: ArrayRef = Arc::new(Float32Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some(i as f32 * 0.25 - 100.0)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_float64: ArrayRef = Arc::new(Float64Array::from(
+            (0..num_rows)
+                .map(|i| {
+                    if is_null(i) {
+                        None
+                    } else {
+                        Some(i as f64 * 0.5 - 1e6)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let body_bool: ArrayRef = Arc::new(BooleanArray::from(
+            (0..num_rows)
+                .map(|i| if is_null(i) { None } else { Some(i % 3 == 0) })
+                .collect::<Vec<_>>(),
+        ));
+
+        let body_string_vals: Vec<Option<String>> = (0..num_rows)
+            .map(|i| {
+                if is_null(i) {
+                    None
+                } else {
+                    Some(format!("row-{i:08}-payload"))
+                }
+            })
+            .collect();
+        let body_string: ArrayRef = Arc::new(StringArray::from(body_string_vals));
+
+        let body_largebinary_vals: Vec<Option<Vec<u8>>> = (0..num_rows)
+            .map(|i| {
+                if is_null(i) {
+                    None
+                } else {
+                    Some(vec![(i & 0xFF) as u8; 1 + (i % 5)])
+                }
+            })
+            .collect();
+        let body_largebinary: ArrayRef = Arc::new(LargeBinaryArray::from_opt_vec(
+            body_largebinary_vals
+                .iter()
+                .map(|opt| opt.as_deref())
+                .collect(),
+        ));
+
+        // Dict body col cycles through a small set so the dict-encoding
+        // path is exercised end-to-end.
+        let dict_pool = ["api", "db", "cache", "auth", "billing"];
+        let dict_keys: Vec<Option<i32>> = (0..num_rows as i32)
+            .map(|i| {
+                if is_null(i as usize) {
+                    None
+                } else {
+                    Some(i % (dict_pool.len() as i32))
+                }
+            })
+            .collect();
+        let body_dict: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(dict_keys),
+                Arc::new(StringArray::from(dict_pool.to_vec())),
+            )
+            .expect("body_dict"),
+        );
+
+        // List<f64>: row i has a list of length (i % 4) with f64
+        // values derived from i and j. Outer + inner non-null (the
+        // decoder's PR-6a.2 list path requires both). Empty lists are
+        // still exercised on rows where (i % 4) == 0.
+        let mut list_offsets: Vec<i32> = Vec::with_capacity(num_rows + 1);
+        let mut list_values: Vec<f64> = Vec::new();
+        list_offsets.push(0);
+        for i in 0..num_rows {
+            for j in 0..(i % 4) {
+                list_values.push((i * 10 + j) as f64 + 0.125);
+            }
+            list_offsets.push(list_values.len() as i32);
+        }
+        let list_inner_field = Arc::new(Field::new("item", DataType::Float64, false));
+        let list_inner: ArrayRef = Arc::new(Float64Array::from(list_values));
+        let body_list_f64: ArrayRef = Arc::new(ListArray::new(
+            list_inner_field,
+            OffsetBuffer::new(arrow::buffer::ScalarBuffer::from(list_offsets)),
+            list_inner,
+            None,
+        ));
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                body_bool,
+                body_dict,
+                body_float32,
+                body_float64,
+                body_int16,
+                body_int32,
+                body_int64,
+                body_int8,
+                body_largebinary,
+                body_list_f64,
+                body_string,
+                body_uint16,
+                body_uint32,
+                body_uint64,
+                body_uint8,
+            ],
+        )
+        .expect("typed round-trip batch")
+    }
+
+    /// Render a single row's body-col cell to a comparable string.
+    /// Used by the round-trip test to compare logical values across
+    /// the merge. MC-2 (row contents preservation) is about logical
+    /// values, not internal storage layout: `Dictionary<i32, Utf8>`,
+    /// `Utf8`, and `LargeUtf8` carrying the same string are the same
+    /// row content; similarly for `Binary` / `LargeBinary`. The
+    /// streaming engine normalizes string-flavoured types to `Utf8`
+    /// via `normalize_type` in the union schema, and parquet has only
+    /// one byte-array physical type so `LargeBinary` round-trips as
+    /// `Binary`. Both transformations are storage-encoding changes,
+    /// not value changes — the comparison must see them as equal.
+    fn render_cell(arr: &dyn arrow::array::Array, row: usize) -> String {
+        use arrow::array::AsArray;
+        use arrow::datatypes::Int32Type as DictKeyInt32;
+
+        if !arr.is_valid(row) {
+            return "<null>".to_string();
+        }
+        match arr.data_type() {
+            DataType::Int8 => format!(
+                "i8:{}",
+                arr.as_primitive::<arrow::datatypes::Int8Type>().value(row)
+            ),
+            DataType::Int16 => format!(
+                "i16:{}",
+                arr.as_primitive::<arrow::datatypes::Int16Type>().value(row)
+            ),
+            DataType::Int32 => format!(
+                "i32:{}",
+                arr.as_primitive::<arrow::datatypes::Int32Type>().value(row)
+            ),
+            DataType::Int64 => format!(
+                "i64:{}",
+                arr.as_primitive::<arrow::datatypes::Int64Type>().value(row)
+            ),
+            DataType::UInt8 => format!(
+                "u8:{}",
+                arr.as_primitive::<arrow::datatypes::UInt8Type>().value(row)
+            ),
+            DataType::UInt16 => format!(
+                "u16:{}",
+                arr.as_primitive::<arrow::datatypes::UInt16Type>()
+                    .value(row)
+            ),
+            DataType::UInt32 => format!(
+                "u32:{}",
+                arr.as_primitive::<arrow::datatypes::UInt32Type>()
+                    .value(row)
+            ),
+            DataType::UInt64 => format!(
+                "u64:{}",
+                arr.as_primitive::<arrow::datatypes::UInt64Type>()
+                    .value(row)
+            ),
+            DataType::Float32 => {
+                format!(
+                    "f32:{:#x}",
+                    arr.as_primitive::<arrow::datatypes::Float32Type>()
+                        .value(row)
+                        .to_bits()
+                )
+            }
+            DataType::Float64 => {
+                format!(
+                    "f64:{:#x}",
+                    arr.as_primitive::<arrow::datatypes::Float64Type>()
+                        .value(row)
+                        .to_bits()
+                )
+            }
+            DataType::Boolean => format!("bool:{}", arr.as_boolean().value(row)),
+            // String flavours collapse to one rendering — Dict<i32,
+            // Utf8>, Utf8, LargeUtf8 are interchangeable by value.
+            DataType::Utf8 => format!("str:{}", arr.as_string::<i32>().value(row)),
+            DataType::LargeUtf8 => format!("str:{}", arr.as_string::<i64>().value(row)),
+            DataType::Dictionary(_, _) => {
+                let d = arr.as_dictionary::<DictKeyInt32>();
+                let key = d.keys().value(row);
+                let values = d
+                    .values()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("dict values Utf8");
+                format!("str:{}", values.value(key as usize))
+            }
+            // Byte arrays collapse similarly — parquet has only one
+            // BYTE_ARRAY physical type.
+            DataType::Binary => format!("bin:{:?}", arr.as_binary::<i32>().value(row)),
+            DataType::LargeBinary => format!("bin:{:?}", arr.as_binary::<i64>().value(row)),
+            DataType::List(_) => {
+                let list = arr.as_list::<i32>();
+                let inner = list.value(row);
+                let inner_f64 = inner.as_primitive::<arrow::datatypes::Float64Type>();
+                let cells: Vec<String> = (0..inner_f64.len())
+                    .map(|j| {
+                        if inner_f64.is_valid(j) {
+                            format!("{:#x}", inner_f64.value(j).to_bits())
+                        } else {
+                            "null".to_string()
+                        }
+                    })
+                    .collect();
+                format!("list_f64:[{}]", cells.join(","))
+            }
+            DataType::LargeList(_) => {
+                let list = arr.as_list::<i64>();
+                let inner = list.value(row);
+                let inner_f64 = inner.as_primitive::<arrow::datatypes::Float64Type>();
+                let cells: Vec<String> = (0..inner_f64.len())
+                    .map(|j| {
+                        if inner_f64.is_valid(j) {
+                            format!("{:#x}", inner_f64.value(j).to_bits())
+                        } else {
+                            "null".to_string()
+                        }
+                    })
+                    .collect();
+                format!("ll_f64:[{}]", cells.join(","))
+            }
+            other => panic!("unexpected body-col data type in round-trip: {other:?}"),
+        }
+    }
+
+    /// MC-2: row contents do not change during compaction. Build two
+    /// inputs that together cover every parquet physical type the
+    /// decoder supports, merge them via the streaming engine, then
+    /// build a `(sorted_series_key → rendered tuple)` map from both
+    /// inputs and from the output. The two maps must be byte-equal —
+    /// no row added, removed, or mutated. Catches silent type-
+    /// dispatch bugs (the class that the recent List<Float64>
+    /// flattening regression was in).
+    #[tokio::test]
+    async fn test_mc2_all_types_round_trip_through_streaming_merge() {
+        let batch_a = make_typed_round_trip_batch(120, 0);
+        let batch_b = make_typed_round_trip_batch(120, 10_000);
+        let bytes_a = write_input_parquet(std::slice::from_ref(&batch_a), &[]);
+        let bytes_b = write_input_parquet(std::slice::from_ref(&batch_b), &[]);
+
+        let inputs: Vec<Box<dyn ColumnPageStream>> =
+            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 240);
+
+        // Build the expected (sorted_series → rendered tuple) map from
+        // both inputs. Body cols are everything past `sorted_series`.
+        let mut expected: HashMap<Vec<u8>, String> = HashMap::new();
+        for batch in [&batch_a, &batch_b] {
+            let series_idx = batch.schema().index_of("sorted_series").expect("series");
+            let series_col = batch
+                .column(series_idx)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .expect("series Binary");
+            let body_indices: Vec<usize> =
+                (series_idx + 1..batch.schema().fields().len()).collect();
+            for row in 0..batch.num_rows() {
+                let mut tuple = String::new();
+                for (n, &col_idx) in body_indices.iter().enumerate() {
+                    if n > 0 {
+                        tuple.push('|');
+                    }
+                    tuple.push_str(&render_cell(batch.column(col_idx).as_ref(), row));
+                }
+                let key = series_col.value(row).to_vec();
+                let prior = expected.insert(key.clone(), tuple);
+                assert!(
+                    prior.is_none(),
+                    "input batches share a sorted_series key {key:?} — fixture bug",
+                );
+            }
+        }
+        assert_eq!(expected.len(), 240);
+
+        // Build the observed map from the merged output. Note arrow
+        // type coercions: Utf8 may come back as Dictionary because of
+        // per-output schema optimisation, and Int32-keyed Dict may
+        // come back with a different key width. Cast both sides to
+        // Utf8 / Float64 / etc. via the same `render_cell` helper so
+        // the comparison is type-insensitive.
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let merged_schema = merged.schema();
+        let series_idx = merged_schema.index_of("sorted_series").expect("series");
+        let series_col = merged
+            .column(series_idx)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("merged series Binary");
+
+        // Map each body-col name in the inputs to its column index in
+        // the merged output (positions can shift if output schema
+        // dropped an all-null sort col).
+        let input_body_cols: Vec<String> = batch_a
+            .schema()
+            .fields()
+            .iter()
+            .skip(batch_a.schema().index_of("sorted_series").unwrap() + 1)
+            .map(|f| f.name().clone())
+            .collect();
+        let merged_body_indices: Vec<usize> = input_body_cols
+            .iter()
+            .map(|name| {
+                merged_schema.index_of(name).unwrap_or_else(|_| {
+                    panic!(
+                        "merged output is missing body col '{name}' — MC-4 column union violated"
+                    )
+                })
+            })
+            .collect();
+
+        let mut observed: HashMap<Vec<u8>, String> = HashMap::with_capacity(merged.num_rows());
+        for row in 0..merged.num_rows() {
+            let mut tuple = String::new();
+            for (n, &col_idx) in merged_body_indices.iter().enumerate() {
+                if n > 0 {
+                    tuple.push('|');
+                }
+                tuple.push_str(&render_cell(merged.column(col_idx).as_ref(), row));
+            }
+            let key = series_col.value(row).to_vec();
+            let prior = observed.insert(key.clone(), tuple);
+            assert!(
+                prior.is_none(),
+                "merged output has duplicate sorted_series key {key:?} — MC-1 violated",
+            );
+        }
+
+        // MC-1: same set of keys.
+        assert_eq!(
+            observed.len(),
+            expected.len(),
+            "row count mismatch input vs output",
+        );
+        for (key, want) in &expected {
+            let got = observed.get(key).unwrap_or_else(|| {
+                panic!(
+                    "merged output is missing input key {:?} (first body cell expected: {})",
+                    key,
+                    want.split('|').next().unwrap_or("?")
+                )
+            });
+            assert_eq!(
+                got, want,
+                "body-col tuple mismatch for sorted_series {key:?}: got {got}, want {want}",
+            );
+        }
     }
 }
