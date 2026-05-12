@@ -33,6 +33,8 @@ tonic = { workspace = true, features = [
     "server",
     "channel",
 ] }
+tantivy-common = { workspace = true }
+tantivy-sstable = { workspace = true }
 tonic-prost = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }

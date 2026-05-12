@@ -25,16 +25,18 @@ use quickwit_common::rate_limited_warn;
 use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FILE_NAME};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
+use quickwit_directories::StorageDirectory;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    LeafListFieldsRequest, ListFields, ListFieldsEntryResponse, ListFieldsRequest,
-    ListFieldsResponse, SplitIdAndFooterOffsets, deserialize_split_fields,
+    LeafListFieldsRequest, ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse,
+    SplitFieldsReader, SplitIdAndFooterOffsets, deserialize_split_fields,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::Storage;
+use tantivy::Directory;
 
 use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
@@ -64,25 +66,12 @@ async fn get_fields_from_split(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<Vec<ListFieldsEntryResponse>> {
-    if let Some(list_fields) = searcher_context
-        .list_fields_cache
-        .get(split_and_footer_offsets.clone())
-    {
-        return Ok(list_fields.fields);
-    }
     let (_, split_bundle) =
         open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
 
-    let serialized_split_fields = split_bundle
-        .get_all(Path::new(SPLIT_FIELDS_FILE_NAME))
-        .await?;
-    let serialized_split_fields_len = serialized_split_fields.len();
-    let list_fields_proto =
-        deserialize_split_fields(serialized_split_fields).with_context(|| {
-            format!("could not read split fields (serialized len: {serialized_split_fields_len})",)
-        })?;
-
-    let mut list_fields = list_fields_proto.fields;
+    let split_bundle_storage: Arc<dyn Storage> = Arc::new(split_bundle);
+    let split_fields_path = Path::new(SPLIT_FIELDS_FILE_NAME);
+    let mut list_fields = read_split_fields(&split_bundle_storage, split_fields_path).await?;
     list_fields.retain(|list_field_entry| list_field_entry.field_name != FIELD_PRESENCE_FIELD_NAME);
 
     for list_field_entry in list_fields.iter_mut() {
@@ -102,15 +91,44 @@ async fn get_fields_from_split(
     // of order. We also defensively make sure there are no duplicates here.
     make_sorted_and_dedup(&mut list_fields);
 
-    // Put result into cache
-    searcher_context.list_fields_cache.put(
-        split_and_footer_offsets.clone(),
-        ListFields {
-            fields: list_fields.clone(),
-        },
-    );
-
     Ok(list_fields)
+}
+
+/// Reads the split fields entries from the given path inside the bundle.
+///
+/// Dispatches on the format version byte:
+/// - v3 (current): byte-range fetches via `SplitFieldsReader`. Footer + index are pre-warmed in 2
+///   async fetches; data blocks are fetched lazily during streaming.
+/// - v2 (legacy): downloads the whole file and runs the eager zstd + prost deserializer.
+async fn read_split_fields(
+    bundle_storage: &Arc<dyn Storage>,
+    path: &Path,
+) -> anyhow::Result<Vec<ListFieldsEntryResponse>> {
+    let total_len = bundle_storage.file_num_bytes(path).await? as usize;
+    // Peek the format version byte. It's a 1-byte range fetch; for v3 SplitFieldsReader will
+    // re-fetch it (storage layers typically coalesce/cache, and this is a one-shot dispatch).
+    let version_byte = bundle_storage.get_slice(path, 0..1).await?;
+    if version_byte.is_empty() {
+        anyhow::bail!("split fields file is empty");
+    }
+    match version_byte[0] {
+        3 => {
+            let storage_directory = StorageDirectory::new(bundle_storage.clone());
+            let file_handle = storage_directory
+                .get_file_handle(path)
+                .map_err(|err| anyhow::anyhow!("could not open split fields file: {err}"))?;
+            let reader = SplitFieldsReader::open(file_handle, total_len).await?;
+            Ok(reader.read_all_async().await?)
+        }
+        2 => {
+            let bytes = bundle_storage.get_all(path).await?;
+            let list_fields = deserialize_split_fields(bytes).with_context(|| {
+                format!("could not read legacy v2 split fields (len={total_len})")
+            })?;
+            Ok(list_fields.fields)
+        }
+        other => anyhow::bail!("unsupported split fields format version: {other}"),
+    }
 }
 
 fn field_order(

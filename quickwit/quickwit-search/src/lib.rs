@@ -29,7 +29,6 @@ mod invoker;
 pub mod leaf;
 mod leaf_cache;
 mod list_fields;
-mod list_fields_cache;
 mod list_terms;
 mod metrics_trackers;
 mod retry;

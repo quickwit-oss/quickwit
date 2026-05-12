@@ -392,7 +392,11 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b", d
   "zstd-compression",
   "columnar-zstd-compression",
 ] }
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b" }
 tantivy-fst = "0.5"
+tantivy-sstable = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b", default-features = false, features = [
+  "zstd-compression",
+] }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.

@@ -37,7 +37,6 @@ use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
-use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
@@ -414,8 +413,6 @@ pub struct SearcherContext {
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
-    /// List fields cache. Caches the list fields response for a given split.
-    pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
     /// This object is shared across all request.
     pub aggregation_limit: AggregationLimitsGuard,
@@ -469,7 +466,6 @@ impl SearcherContext {
             Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
-        let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
         let aggregation_limit = AggregationLimitsGuard::new(
             Some(searcher_config.aggregation_memory_limit.as_u64()),
             Some(searcher_config.aggregation_bucket_limit),
@@ -485,7 +481,6 @@ impl SearcherContext {
             search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             leaf_search_cache,
-            list_fields_cache,
             split_cache_opt,
             aggregation_limit,
             lambda_invoker,
