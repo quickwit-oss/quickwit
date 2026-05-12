@@ -824,6 +824,7 @@ fn write_streaming_outputs(
         decoders_state,
         aligned_sort_batches,
         sort_union_schema,
+        &full_union_schema,
         merge_order,
         boundaries,
         destinations,
@@ -1035,33 +1036,33 @@ fn write_all_columns(
     decoders_state: &mut [InputDecoderState],
     aligned_sort_batches: &[RecordBatch],
     sort_union_schema: &SchemaRef,
+    full_union_schema: &SchemaRef,
     merge_order: &[MergeRun],
     boundaries: &[Range<usize>],
     destinations: &InputRowDestinations,
     per_output_schemas: &[SchemaRef],
 ) -> Result<()> {
-    // Iterate cols in the union (per-output) schema order. We need
-    // ONE pass through each output's cols in storage order to feed
-    // its writer. The writer's expected col order is each output's
-    // own schema. All outputs share the same col order (sort cols
-    // first, then body cols lexicographically) with possible per-
-    // output drops of all-null columns.
-    //
-    // Strategy: process the FULL union schema's cols in order. For
-    // each col K in the union schema, for each output:
+    // Iterate cols in the **full union schema** order. The union
+    // covers every column that appears in ANY output. For each col K
+    // and each output:
     //   - If output's schema includes col K: write col K's data (sort col → from buffer, body col →
     //     from decoder).
-    //   - Else: skip (col was dropped as all-null for this output).
-    // This keeps decoder advancement in lockstep across outputs: a
-    // body col K's pages are consumed once across all outputs in turn.
+    //   - Else: skip — that output dropped col K as all-null for its row range; the next output's
+    //     col K still gets written.
+    //
+    // It's tempting to drive from one per-output schema, since all
+    // per-output schemas share the same column ordering as a
+    // subsequence. But two outputs may drop *different* all-null
+    // fields and end up with the same field count — then picking
+    // either misses a field the other output still needs, and the
+    // writer for the latter output writes subsequent columns into
+    // the wrong slot. The full union schema is the only choice that
+    // covers every column every output may need, in the canonical
+    // storage order.
 
-    // We need the parent union schema to drive iteration. Recompute
-    // here (cheap) from the per-output schemas + sort union schema.
-    let parent_union_schema = build_parent_union_schema(per_output_schemas);
-
-    // For each union-schema col K:
-    for parent_col_idx in 0..parent_union_schema.fields().len() {
-        let parent_field = parent_union_schema.field(parent_col_idx);
+    // For each full-union-schema col K:
+    for parent_col_idx in 0..full_union_schema.fields().len() {
+        let parent_field = full_union_schema.field(parent_col_idx);
         let parent_name = parent_field.name();
 
         // Is this a sort col (in memory) or a body col (streamed)?
@@ -1094,22 +1095,6 @@ fn write_all_columns(
     }
 
     Ok(())
-}
-
-fn build_parent_union_schema(per_output_schemas: &[SchemaRef]) -> SchemaRef {
-    // All per-output schemas share the same column order (sort cols
-    // first, then body cols lexicographic), with some cols possibly
-    // missing per output (all-null drops). Pick the schema with the
-    // most fields as the parent driver, ties broken by first
-    // occurrence. This is safe because all schemas share the same
-    // column ordering as a subsequence.
-    let mut best = Arc::clone(&per_output_schemas[0]);
-    for s in per_output_schemas.iter().skip(1) {
-        if s.fields().len() > best.fields().len() {
-            best = Arc::clone(s);
-        }
-    }
-    best
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1804,7 +1789,7 @@ fn finalize_output_writer(
         output_idx,
         output_path,
         writer,
-        service_names,
+        mut service_names,
         num_rows,
     } = state;
 
@@ -1817,6 +1802,22 @@ fn finalize_output_writer(
         .len();
 
     let static_meta = &per_output_static[output_idx];
+
+    // If `service` is a sort column for this schema, it took the
+    // sort-col write path and `service_names` (populated by the body-
+    // col `track_service` branch) never saw it. Fold in the names
+    // from the per-output sort batch so the `TAG_SERVICE` low-
+    // cardinality metadata stays accurate regardless of which path
+    // wrote the column.
+    if let Ok(service_col_idx) = static_meta.sort_optimised.schema().index_of("service") {
+        collect_service_names_from_page(
+            static_meta.sort_optimised.column(service_col_idx).as_ref(),
+            &mut service_names,
+        )
+        .with_context(|| {
+            format!("collecting service names from sort col for output {output_idx}")
+        })?;
+    }
 
     let mut low_cardinality_tags: HashMap<String, HashSet<String>> = HashMap::new();
     if !service_names.is_empty() {
@@ -3324,6 +3325,310 @@ mod tests {
             growth <= 2,
             "peak grows with input size: medium={peak_medium}, large={peak_large} — 10× more \
              input pages produced {growth} more resident pages, body-col path is not page-bounded",
+        );
+    }
+
+    // ============================================================================
+    // Heterogeneous-output regressions (Codex P2 batch on PR-6409)
+    // ============================================================================
+
+    /// Regression for "Use the full union schema when driving column
+    /// writes": two outputs with the **same field count** that drop
+    /// *different* all-null sort fields. The previous
+    /// `build_parent_union_schema` heuristic picked the first such
+    /// schema and used it to drive the column loop — silently
+    /// skipping any column it dropped, even if another output still
+    /// needed it. The fix drives iteration from `full_union_schema`
+    /// directly.
+    ///
+    /// Setup: two inputs declaring an extended sort schema
+    /// `metric_name|tag_a|tag_b|-timestamp_secs/V2`. Input A has only
+    /// `tag_a` populated, input B has only `tag_b` populated. Merge
+    /// with `num_outputs=2` so each input's rows land in its own
+    /// output. After the per-output optimiser, output 0's schema
+    /// drops `tag_b` (all-null) and output 1's schema drops `tag_a`
+    /// — same field count, different dropped fields. Both outputs
+    /// must still write their kept tag column.
+    #[tokio::test]
+    async fn test_heterogeneous_dropped_fields_drive_from_full_union_schema() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        // Schema for input A: metric_name, tag_a (non-null), tag_b
+        // absent. Schema for input B: metric_name, tag_b (non-null),
+        // tag_a absent. The merge engine's union schema makes both
+        // tag fields nullable in the combined view.
+        let mk_schema = |with_a: bool, with_b: bool| -> SchemaRef {
+            let mut fields = vec![
+                Field::new("metric_name", dict_type.clone(), false),
+                Field::new("timestamp_secs", DataType::UInt64, false),
+                Field::new("sorted_series", DataType::Binary, false),
+            ];
+            // Body cols in lexicographic order.
+            if with_a {
+                fields.push(Field::new("tag_a", DataType::Utf8, false));
+            }
+            if with_b {
+                fields.push(Field::new("tag_b", DataType::Utf8, false));
+            }
+            fields.push(Field::new("value", DataType::Float64, false));
+            Arc::new(ArrowSchema::new(fields))
+        };
+
+        let make_batch = |metric: &str,
+                          schema: SchemaRef,
+                          tag_a_val: Option<&str>,
+                          tag_b_val: Option<&str>,
+                          row_count: usize,
+                          base_series: u64|
+         -> RecordBatch {
+            let metric_keys: Vec<i32> = vec![0; row_count];
+            let metric_values = StringArray::from(vec![metric]);
+            let metric_name: ArrayRef = Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(metric_keys),
+                    Arc::new(metric_values),
+                )
+                .expect("dict"),
+            );
+            let timestamps: Vec<u64> = (0..row_count as u64)
+                .map(|i| 1_700_000_000 + (row_count as u64 - i))
+                .collect();
+            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+            let series: Vec<Vec<u8>> = (0..row_count as u64)
+                .map(|i| (base_series + i).to_be_bytes().to_vec())
+                .collect();
+            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+                series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+            ));
+            let value: ArrayRef = Arc::new(Float64Array::from(
+                (0..row_count).map(|i| i as f64).collect::<Vec<_>>(),
+            ));
+            let mut columns: Vec<ArrayRef> = vec![metric_name, timestamp_secs, sorted_series];
+            if let Some(v) = tag_a_val {
+                columns.push(Arc::new(StringArray::from(vec![v; row_count])) as ArrayRef);
+            }
+            if let Some(v) = tag_b_val {
+                columns.push(Arc::new(StringArray::from(vec![v; row_count])) as ArrayRef);
+            }
+            columns.push(value);
+            RecordBatch::try_new(schema, columns).expect("batch")
+        };
+
+        // Input A has tag_a populated, sort key "aaa.metric" (sorts
+        // before "zzz.metric"). Input B has tag_b populated, sort key
+        // "zzz.metric". With num_outputs=2 the merge splits at the
+        // metric boundary so each input's rows land in its own output.
+        let schema_a = mk_schema(true, false);
+        let schema_b = mk_schema(false, true);
+        let batch_a = make_batch("aaa.metric", schema_a, Some("alpha"), None, 12, 0);
+        let batch_b = make_batch("zzz.metric", schema_b, None, Some("beta"), 12, 1000);
+
+        let sort_fields_str = "metric_name|tag_a|tag_b|-timestamp_secs/V2";
+        let make_input_bytes = |batch: &RecordBatch| -> Bytes {
+            let cfg = ParquetWriterConfig {
+                compression: Compression::Snappy,
+                ..ParquetWriterConfig::default()
+            };
+            let kvs = vec![
+                KeyValue::new(
+                    PARQUET_META_SORT_FIELDS.to_string(),
+                    sort_fields_str.to_string(),
+                ),
+                KeyValue::new(
+                    PARQUET_META_WINDOW_START.to_string(),
+                    "1700000000".to_string(),
+                ),
+                KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+                KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            ];
+            let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+                &batch.schema(),
+                Vec::new(),
+                Some(kvs),
+                &[
+                    "metric_name".to_string(),
+                    "tag_a".to_string(),
+                    "tag_b".to_string(),
+                    "timestamp_secs".to_string(),
+                ],
+            );
+            let mut buf: Vec<u8> = Vec::new();
+            let mut writer =
+                ArrowWriter::try_new(&mut buf, batch.schema(), Some(props)).expect("arrow writer");
+            writer.write(batch).expect("write");
+            writer.close().expect("close");
+            Bytes::from(buf)
+        };
+        let bytes_a = make_input_bytes(&batch_a);
+        let bytes_b = make_input_bytes(&batch_b);
+
+        let inputs: Vec<Box<dyn ColumnPageStream>> =
+            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(2))
+            .await
+            .expect("merge with heterogeneous dropped fields");
+        assert_eq!(outputs.len(), 2, "two metric names → two outputs");
+
+        // The output whose rows came from input A must carry tag_a
+        // values; the output whose rows came from input B must carry
+        // tag_b values. Before the fix, one of them was silently
+        // missing its kept tag column because the parent driver
+        // skipped it.
+        let mut saw_alpha = false;
+        let mut saw_beta = false;
+        for out in &outputs {
+            let merged = read_output_to_record_batch(&out.path);
+            let schema = merged.schema();
+            if let Ok(tag_a_idx) = schema.index_of("tag_a") {
+                let col = merged.column(tag_a_idx);
+                for i in 0..col.len() {
+                    if col.is_valid(i) {
+                        let s = render_cell(col.as_ref(), i);
+                        if s.ends_with("alpha") {
+                            saw_alpha = true;
+                        }
+                    }
+                }
+            }
+            if let Ok(tag_b_idx) = schema.index_of("tag_b") {
+                let col = merged.column(tag_b_idx);
+                for i in 0..col.len() {
+                    if col.is_valid(i) {
+                        let s = render_cell(col.as_ref(), i);
+                        if s.ends_with("beta") {
+                            saw_beta = true;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_alpha,
+            "expected to find tag_a='alpha' in some output — the full-union-schema-driven column \
+             loop must visit tag_a even when another output dropped it",
+        );
+        assert!(
+            saw_beta,
+            "expected to find tag_b='beta' in some output — the full-union-schema-driven column \
+             loop must visit tag_b even when another output dropped it",
+        );
+    }
+
+    /// Regression for "Preserve service tags when service is a sort
+    /// column". If the sort schema places `service` in the sort key
+    /// (e.g., `metric_name|service|...`), the streaming engine writes
+    /// it via the sort-col path and the body-col `track_service`
+    /// branch never runs — so `MergeOutputFile.low_cardinality_tags`
+    /// historically came back empty even though every row in the
+    /// output has a service value. The fix folds in service names
+    /// from the per-output sort batch at finalize time.
+    #[tokio::test]
+    async fn test_service_as_sort_column_still_populates_low_cardinality_tags() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            // Sort cols in sort schema order: metric_name, service,
+            // timestamp_secs (timestamp comes last per the sort
+            // validator's requirement).
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("service", DataType::Utf8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let row_count = 30usize;
+        let metric_keys: Vec<i32> = vec![0; row_count];
+        let metric_values = StringArray::from(vec!["cpu.usage"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .expect("dict"),
+        );
+        // service grouped in ASC order so the input is genuinely
+        // sorted by (metric ASC, service ASC, timestamp DESC) and the
+        // engine's MC-3 sort verifier accepts it.
+        let mut services_sorted: Vec<&str> = Vec::with_capacity(row_count);
+        for s in ["api", "cache", "db"] {
+            for _ in 0..(row_count / 3) {
+                services_sorted.push(s);
+            }
+        }
+        let service: ArrayRef = Arc::new(StringArray::from(services_sorted));
+        let timestamps: Vec<u64> = (0..row_count as u64)
+            .map(|i| 1_700_000_000 + (row_count as u64 - (i % 10)))
+            .collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_bytes: Vec<Vec<u8>> = (0..row_count as u64)
+            .map(|i| i.to_be_bytes().to_vec())
+            .collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            series_bytes
+                .iter()
+                .map(|v| v.as_slice())
+                .collect::<Vec<_>>(),
+        ));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..row_count).map(|i| i as f64).collect::<Vec<_>>(),
+        ));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![metric_name, service, timestamp_secs, sorted_series, value],
+        )
+        .expect("batch");
+
+        let sort_fields_str = "metric_name|service|-timestamp_secs/V2";
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                sort_fields_str.to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            Vec::new(),
+            Some(kvs),
+            &[
+                "metric_name".to_string(),
+                "service".to_string(),
+                "timestamp_secs".to_string(),
+            ],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer =
+            ArrowWriter::try_new(&mut buf, schema.clone(), Some(props)).expect("writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(Bytes::from(buf)).await];
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        let svc_tags = outputs[0].low_cardinality_tags.get(TAG_SERVICE).expect(
+            "MergeOutputFile.low_cardinality_tags must contain TAG_SERVICE even when service is a \
+             sort column",
+        );
+        let mut got: Vec<String> = svc_tags.iter().cloned().collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["api".to_string(), "cache".to_string(), "db".to_string()],
+            "service-name set must cover every distinct value in the sort col",
         );
     }
 }
