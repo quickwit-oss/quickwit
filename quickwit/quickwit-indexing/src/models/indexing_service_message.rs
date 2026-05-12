@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use quickwit_config::SourceConfig;
-use quickwit_proto::indexing::{IndexingPipelineId, MergePipelineId};
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{IndexId, PipelineUid};
 
 #[derive(Clone, Debug)]
@@ -29,14 +29,6 @@ pub struct SpawnPipeline {
 #[derive(Debug)]
 pub struct DetachIndexingPipeline {
     pub pipeline_id: IndexingPipelineId,
-}
-
-/// Detaches a merge pipeline from the indexing service. The pipeline is no longer managed by the
-/// server. This is mostly useful for preventing the server killing an existing merge pipeline
-/// if a indexing pipeline is detached.
-#[derive(Debug)]
-pub struct DetachMergePipeline {
-    pub pipeline_id: MergePipelineId,
 }
 
 #[derive(Debug)]

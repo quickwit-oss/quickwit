@@ -24,7 +24,7 @@ use anyhow::{Context, bail};
 use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
-use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
+use quickwit_actors::{ActorHandle, Universe};
 use quickwit_cluster::{
     ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_grpc_config,
 };
@@ -34,28 +34,26 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
-    TransformConfig, VecSourceParams,
+    TransformConfig,
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::IndexingPipeline;
-use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
-use quickwit_indexing::models::{
-    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
-};
+use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
-use quickwit_proto::types::{IndexId, PipelineUid, SourceId, SplitId};
+use quickwit_proto::types::{IndexId, PipelineUid, SplitId};
 use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
@@ -202,13 +200,6 @@ pub struct GarbageCollectIndexArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct MergeArgs {
-    pub config_uri: Uri,
-    pub index_id: IndexId,
-    pub source_id: SourceId,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
     pub config_uri: Uri,
     pub index_id: IndexId,
@@ -221,7 +212,6 @@ pub enum ToolCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
     LocalSearch(LocalSearchArgs),
-    Merge(MergeArgs),
     ExtractSplit(ExtractSplitArgs),
 }
 
@@ -234,7 +224,6 @@ impl ToolCliCommand {
             "gc" => Self::parse_garbage_collect_args(submatches),
             "local-ingest" => Self::parse_local_ingest_args(submatches),
             "local-search" => Self::parse_local_search_args(submatches),
-            "merge" => Self::parse_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
             _ => bail!("unknown tool subcommand `{subcommand}`"),
         }
@@ -324,24 +313,6 @@ impl ToolCliCommand {
         }))
     }
 
-    fn parse_merge_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
-        let config_uri = matches
-            .remove_one::<String>("config")
-            .map(|uri_str| Uri::from_str(&uri_str))
-            .expect("`config` should be a required arg.")?;
-        let index_id = matches
-            .remove_one::<String>("index")
-            .expect("'index-id' should be a required arg.");
-        let source_id = matches
-            .remove_one::<String>("source")
-            .expect("'source-id' should be a required arg.");
-        Ok(Self::Merge(MergeArgs {
-            index_id,
-            source_id,
-            config_uri,
-        }))
-    }
-
     fn parse_garbage_collect_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .get_one("config")
@@ -391,7 +362,6 @@ impl ToolCliCommand {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::LocalIngest(args) => local_ingest_docs_cli(args).await,
             Self::LocalSearch(args) => local_search_cli(args).await,
-            Self::Merge(args) => merge_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
         }
     }
@@ -447,7 +417,6 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
     let universe = Universe::new();
-    let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -456,7 +425,6 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
-        Some(merge_scheduler_service_mailbox),
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
@@ -469,11 +437,6 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
             index_id: args.index_id.clone(),
             source_config,
             pipeline_uid: PipelineUid::random(),
-        })
-        .await?;
-    let merge_pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachMergePipeline {
-            pipeline_id: pipeline_id.merge_pipeline_id(),
         })
         .await?;
     let indexing_pipeline_handle = indexing_server_mailbox
@@ -493,11 +456,6 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let statistics =
         start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
             .await?;
-    merge_pipeline_handle
-        .mailbox()
-        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
-        .await?;
-    merge_pipeline_handle.join().await;
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -562,92 +520,6 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     let search_response_json = serde_json::to_string_pretty(&search_response_rest)?;
     println!("{search_response_json}");
-    Ok(())
-}
-
-pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "run-merge-operations");
-    println!("❯ Merging splits locally...");
-    let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) =
-        get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-    run_index_checklist(&mut metastore, &storage_resolver, &args.index_id, None).await?;
-    // The indexing service needs to update its cluster chitchat state so that the control plane is
-    // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
-    // and avoid impacting potential control plane running on the cluster.
-    let cluster = create_empty_cluster(&config).await?;
-    let runtimes_config = RuntimesConfig::default();
-    start_actor_runtimes(
-        runtimes_config,
-        &HashSet::from_iter([QuickwitService::Indexer]),
-    )?;
-    let indexer_config = IndexerConfig::default();
-    let universe = Universe::new();
-    let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
-    let indexing_server = IndexingService::new(
-        config.node_id,
-        config.data_dir_path,
-        indexer_config,
-        runtimes_config.num_threads_blocking,
-        cluster,
-        metastore,
-        None,
-        Some(merge_scheduler_service),
-        IngesterPool::default(),
-        storage_resolver,
-        EventBroker::default(),
-    )
-    .await?;
-    let (indexing_service_mailbox, indexing_service_handle) =
-        universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = indexing_service_mailbox
-        .ask_for_res(SpawnPipeline {
-            index_id: args.index_id,
-            source_config: SourceConfig {
-                source_id: args.source_id,
-                num_pipelines: NonZeroUsize::MIN,
-                enabled: true,
-                source_params: SourceParams::Vec(VecSourceParams::default()),
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-            pipeline_uid: PipelineUid::random(),
-        })
-        .await?;
-    let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox
-        .ask_for_res(DetachMergePipeline {
-            pipeline_id: pipeline_id.merge_pipeline_id(),
-        })
-        .await?;
-
-    let mut check_interval = tokio::time::interval(Duration::from_secs(1));
-    loop {
-        check_interval.tick().await;
-
-        pipeline_handle.refresh_observe();
-        let observation = pipeline_handle.last_observation();
-
-        if observation.num_ongoing_merges == 0 {
-            info!("merge pipeline has no more ongoing merges, exiting");
-            break;
-        }
-
-        if pipeline_handle.state().is_exit() {
-            info!("merge pipeline has exited, exiting");
-            break;
-        }
-    }
-
-    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.quit().await;
-    indexing_service_handle.quit().await;
-    if !matches!(
-        pipeline_exit_status,
-        ActorExitStatus::Success | ActorExitStatus::Quit
-    ) {
-        bail!(pipeline_exit_status);
-    }
-    println!("{} Merge successful.", "✔".color(GREEN_COLOR));
     Ok(())
 }
 

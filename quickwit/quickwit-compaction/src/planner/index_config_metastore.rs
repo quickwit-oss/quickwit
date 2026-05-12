@@ -23,7 +23,6 @@ use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, Metastor
 use quickwit_proto::types::{DocMappingUid, IndexUid};
 
 /// Everything the planner needs to know about a single index.
-#[derive(Clone)]
 pub struct IndexEntry {
     config: IndexConfig,
     merge_policy: Arc<dyn MergePolicy>,
@@ -74,16 +73,16 @@ impl IndexEntry {
 /// Caches per-index configuration, merge policies, and doc mappers.
 /// Fetches from the metastore on demand. All accessors panic if called
 /// for an index that hasn't been loaded.
-pub struct IndexConfigStore {
+pub struct IndexConfigMetastore {
     indexes: HashMap<IndexUid, IndexEntry>,
-    metastore: MetastoreServiceClient,
+    metastore_client: MetastoreServiceClient,
 }
 
-impl IndexConfigStore {
-    pub fn new(metastore: MetastoreServiceClient) -> Self {
-        IndexConfigStore {
+impl IndexConfigMetastore {
+    pub fn new(metastore_client: MetastoreServiceClient) -> Self {
+        IndexConfigMetastore {
             indexes: HashMap::new(),
-            metastore,
+            metastore_client,
         }
     }
 
@@ -95,7 +94,7 @@ impl IndexConfigStore {
         doc_mapping_uid: &DocMappingUid,
     ) -> anyhow::Result<()> {
         let response = self
-            .metastore
+            .metastore_client
             .index_metadata(IndexMetadataRequest {
                 index_uid: Some(index_uid.clone()),
                 index_id: None,
@@ -171,7 +170,7 @@ mod tests {
             .times(1)
             .returning(move |_| Ok(response.clone()));
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
 
         // First call fetches from metastore.
         let entry = store
@@ -200,7 +199,7 @@ mod tests {
             })
         });
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         let result = store
             .get_or_fetch(&IndexUid::for_test("missing", 0), &DocMappingUid::default())
             .await;
@@ -210,7 +209,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_returns_none_before_fetch() {
         let mock = MockMetastoreService::new();
-        let store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         assert!(store.get(&IndexUid::for_test("test-index", 0)).is_none());
     }
 
@@ -224,7 +223,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         store
             .get_or_fetch(&index_uid, &DocMappingUid::default())
             .await
@@ -243,7 +242,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         let split = SplitMetadata {
             split_id: "split-1".to_string(),
             index_uid: index_uid.clone(),
@@ -264,7 +263,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         let entry = store
             .get_or_fetch(&index_uid, &DocMappingUid::default())
             .await
@@ -295,7 +294,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
+        let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         let entry = store
             .get_or_fetch(&index_uid, &DocMappingUid::default())
             .await

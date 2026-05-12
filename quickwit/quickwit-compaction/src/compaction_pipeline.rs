@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use std::sync::Arc;
+use std::time::Instant;
 
-use quickwit_actors::{ActorHandle, Health, SpawnContext, Supervisable};
+use quickwit_actors::{ActorHandle, HEARTBEAT, Health, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
@@ -31,6 +32,8 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
 use tracing::{debug, error, info};
 
+use crate::TaskId;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum PipelineStatus {
     InProgress,
@@ -39,11 +42,10 @@ pub enum PipelineStatus {
 }
 
 pub struct PipelineStatusUpdate {
-    pub task_id: String,
+    pub task_id: TaskId,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub split_ids: Vec<SplitId>,
-    pub merged_split_id: SplitId,
     pub status: PipelineStatus,
 }
 
@@ -53,6 +55,22 @@ struct CompactionPipelineHandles {
     merge_packager: ActorHandle<Packager>,
     merge_uploader: ActorHandle<Uploader>,
     merge_publisher: ActorHandle<Publisher>,
+    next_check_for_progress: Instant,
+}
+
+impl CompactionPipelineHandles {
+    /// Returns true once per HEARTBEAT interval. Between heartbeats we only
+    /// check whether actors are alive, not whether they are making progress.
+    /// This gives CPU-intensive actors (like the packager) up to 30s to
+    /// complete before being declared unhealthy.
+    fn should_check_for_progress(&mut self) -> bool {
+        let now = Instant::now();
+        let check_for_progress = now > self.next_check_for_progress;
+        if check_for_progress {
+            self.next_check_for_progress = now + *HEARTBEAT;
+        }
+        check_for_progress
+    }
 }
 
 /// A single-use compaction pipeline. Processes one merge task and terminates.
@@ -61,7 +79,7 @@ struct CompactionPipelineHandles {
 /// `check_actor_health()` to collect status updates. The pipeline manages
 /// its own retry logic internally.
 pub struct CompactionPipeline {
-    task_id: String,
+    task_id: TaskId,
     merge_operation: MergeOperation,
     pipeline_id: MergePipelineId,
     status: PipelineStatus,
@@ -81,7 +99,7 @@ pub struct CompactionPipeline {
 impl CompactionPipeline {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        task_id: String,
+        task_id: TaskId,
         scratch_directory: TempDirectory,
         merge_operation: MergeOperation,
         pipeline_id: MergePipelineId,
@@ -149,16 +167,21 @@ impl CompactionPipeline {
         ) {
             return;
         }
-        // Pipeline is not initialized yet.
-        if self.handles.is_none() {
+        let Some(handles) = self.handles.as_mut() else {
             return;
-        }
+        };
+
+        // We check whether actors are alive on every tick (1s), but only
+        // check whether they are making progress once per HEARTBEAT (30s).
+        // This gives CPU-intensive actors like the packager time to finish
+        // without being falsely declared unhealthy.
+        let check_for_progress = handles.should_check_for_progress();
 
         let mut has_healthy = false;
         let mut failure_actor_names: Vec<String> = Vec::new();
 
         for supervisable in self.supervisables() {
-            match supervisable.check_health(true) {
+            match supervisable.check_health(check_for_progress) {
                 Health::Healthy => {
                     has_healthy = true;
                 }
@@ -192,7 +215,6 @@ impl CompactionPipeline {
                 .iter()
                 .map(|split| split.split_id().to_string())
                 .collect(),
-            merged_split_id: self.merge_operation.merge_split_id.clone(),
             status: self.status.clone(),
         }
     }
@@ -286,6 +308,7 @@ impl CompactionPipeline {
             merge_packager: merge_packager_handle,
             merge_uploader: merge_uploader_handle,
             merge_publisher: merge_publisher_handle,
+            next_check_for_progress: Instant::now() + *HEARTBEAT,
         });
 
         Ok(())

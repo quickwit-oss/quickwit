@@ -22,6 +22,8 @@ use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, Compac
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
+use crate::TaskId;
+
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -44,7 +46,7 @@ impl CompactionPartitionKey {
 }
 
 struct InFlightCompaction {
-    task_id: String,
+    task_id: TaskId,
     split_ids: Vec<SplitId>,
     node_id: NodeId,
     last_heartbeat: Instant,
@@ -56,7 +58,7 @@ struct InFlightCompaction {
 pub struct CompactionState {
     needs_compaction: HashMap<CompactionPartitionKey, Vec<SplitMetadata>>,
     needs_compaction_split_ids: HashSet<SplitId>,
-    in_flight: HashMap<String, InFlightCompaction>,
+    in_flight: HashMap<TaskId, InFlightCompaction>,
     in_flight_split_ids: HashSet<SplitId>,
     /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key
     /// here.
@@ -75,7 +77,7 @@ impl CompactionState {
     }
 
     /// Returns true if the split is already tracked (either awaiting compaction or in-flight).
-    pub fn is_split_known(&self, split_id: &str) -> bool {
+    pub fn is_split_tracked(&self, split_id: &str) -> bool {
         self.needs_compaction_split_ids.contains(split_id)
             || self.in_flight_split_ids.contains(split_id)
     }
@@ -165,7 +167,7 @@ impl CompactionState {
 
     pub fn check_heartbeat_timeouts(&mut self) {
         let now = Instant::now();
-        let timed_out_task_ids: Vec<String> = self
+        let timed_out_task_ids: Vec<TaskId> = self
             .in_flight
             .iter()
             .filter(|(_, inflight)| now.duration_since(inflight.last_heartbeat) > HEARTBEAT_TIMEOUT)
@@ -174,7 +176,7 @@ impl CompactionState {
 
         for task_id in timed_out_task_ids {
             if let Some(inflight) = self.in_flight.remove(&task_id) {
-                error!(task_id=%task_id, node_id=%inflight.node_id, "compaction task timed out");
+                error!(%task_id, node_id=%inflight.node_id, "compaction task timed out");
                 for split_id in &inflight.split_ids {
                     self.in_flight_split_ids.remove(split_id.as_str());
                 }
@@ -193,7 +195,7 @@ impl CompactionState {
     }
 
     /// Records that an operation has been assigned to a worker.
-    pub fn record_assignment(&mut self, task_id: String, split_ids: Vec<SplitId>, node_id: NodeId) {
+    pub fn record_assignment(&mut self, task_id: TaskId, split_ids: Vec<SplitId>, node_id: NodeId) {
         self.in_flight.insert(
             task_id.clone(),
             InFlightCompaction {
@@ -253,11 +255,11 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let mut state = CompactionState::new();
 
-        assert!(!state.is_split_known("s1"));
+        assert!(!state.is_split_tracked("s1"));
 
         state.track_split(test_split("s1", &index_uid));
-        assert!(state.is_split_known("s1"));
-        assert!(!state.is_split_known("s2"));
+        assert!(state.is_split_tracked("s1"));
+        assert!(!state.is_split_tracked("s2"));
     }
 
     #[test]
@@ -313,21 +315,20 @@ mod tests {
         state.in_flight_split_ids.insert("s3".to_string());
         state.record_assignment("task-2".to_string(), vec!["s3".to_string()], node_id);
 
-        assert!(state.is_split_known("s1"));
-        assert!(state.is_split_known("s3"));
+        assert!(state.is_split_tracked("s1"));
+        assert!(state.is_split_tracked("s3"));
 
         state.process_successes(&[CompactionSuccess {
             task_id: "task-1".to_string(),
-            merged_split_id: "merged-1".to_string(),
         }]);
-        assert!(!state.is_split_known("s1"));
-        assert!(!state.is_split_known("s2"));
+        assert!(!state.is_split_tracked("s1"));
+        assert!(!state.is_split_tracked("s2"));
 
         state.process_failures(&[CompactionFailure {
             task_id: "task-2".to_string(),
             error_message: "boom".to_string(),
         }]);
-        assert!(!state.is_split_known("s3"));
+        assert!(!state.is_split_tracked("s3"));
     }
 
     #[test]
@@ -382,7 +383,7 @@ mod tests {
         state.record_assignment("task-1".to_string(), split_ids.clone(), NodeId::from("w1"));
 
         for split_id in &split_ids {
-            assert!(state.is_split_known(split_id));
+            assert!(state.is_split_tracked(split_id));
         }
     }
 

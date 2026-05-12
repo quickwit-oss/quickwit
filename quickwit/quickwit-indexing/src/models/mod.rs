@@ -34,9 +34,7 @@ pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
     IndexedSplitBuilder,
 };
-pub use indexing_service_message::{
-    DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline,
-};
+pub use indexing_service_message::{DetachIndexingPipeline, ObservePipeline, SpawnPipeline};
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::NewSplits;
 pub use merge_scratch::MergeScratch;

@@ -24,7 +24,6 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
-use crate::actors::MergeSchedulerService;
 pub use crate::actors::{
     FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
     IndexingPipelineParams, IndexingService, PublisherType, Sequencer, SplitsUpdateMailbox,
@@ -71,7 +70,6 @@ pub async fn start_indexing_service(
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
-    merge_scheduler_mailbox: Option<Mailbox<MergeSchedulerService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
@@ -83,7 +81,6 @@ pub async fn start_indexing_service(
         cluster,
         metastore.clone(),
         ingest_api_service_mailbox,
-        merge_scheduler_mailbox,
         ingester_pool,
         storage_resolver,
         event_broker,

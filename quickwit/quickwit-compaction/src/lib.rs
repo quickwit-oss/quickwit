@@ -20,6 +20,8 @@ mod compaction_pipeline;
 mod compactor_supervisor;
 pub mod planner;
 
+pub type TaskId = String;
+
 use std::sync::Arc;
 
 pub use compactor_supervisor::CompactorSupervisor;
