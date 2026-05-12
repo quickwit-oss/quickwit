@@ -253,22 +253,35 @@ impl<'a> StreamDecoder<'a> {
     }
 
     /// Decode the front data page from `key`'s state's queue.
-    /// Pre-fetches one more page from the stream (best effort) so
-    /// `peek_next_page` returns accurate metadata when the column
-    /// reader checks record boundaries.
+    ///
+    /// For columns with repetition (max_rep_level > 0, i.e. List<T> /
+    /// LargeList<T>), pre-fetches one more page from the stream before
+    /// driving `read_records` so `PageQueueReader::peek_next_page`
+    /// returns accurate metadata when parquet-rs's column reader
+    /// checks `at_record_boundary` for V1 record continuation.
+    ///
+    /// For flat columns (max_rep_level == 0), the pre-fetch is skipped:
+    /// flat values have no record-spanning concern (each value = one
+    /// record), and pre-fetching would advance the underlying stream
+    /// past the current column chunk — which is unsafe if a caller
+    /// drops this decoder mid-traversal (e.g., the merge engine's
+    /// phase 0 sort-col drain followed by a separate phase 3 body-col
+    /// streaming pass that constructs a fresh decoder over the same
+    /// `ColumnPageStream`). The lookahead's only benefit is the V1
+    /// list-record-spanning correctness, which doesn't apply to flat
+    /// columns.
     async fn decode_state_head(
         &mut self,
         key: (usize, usize),
     ) -> Result<Option<DecodedPage>, PageDecodeError> {
-        // Pre-fetch one page from the stream before driving read_records.
-        // If the pre-fetched page is for the same (rg, col) the column
-        // reader is about to decode, it sits in the same queue so
-        // `peek_next_page` returns real metadata (V1 record continuation
-        // is handled correctly). If it's for a different (rg, col), it
-        // goes into that state's queue — current state's `peek_next_page`
-        // returns `None`, which is correct because this column chunk's
-        // pages are now exhausted from the current state's perspective.
-        if !self.eof {
+        // Decide whether the current column needs the lookahead.
+        let needs_lookahead = {
+            let parquet_schema = self.metadata.file_metadata().schema_descr();
+            let col_descr = parquet_schema.column(key.1);
+            col_descr.max_rep_level() > 0
+        };
+
+        if needs_lookahead && !self.eof {
             match self.stream.next_page().await? {
                 Some(page) => self.route_page_to_queue(page)?,
                 None => self.eof = true,
