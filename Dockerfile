@@ -61,16 +61,20 @@ COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quick
 WORKDIR /quickwit
 
 # Mint dd-octo-sts tokens via OIDC secret and configure git URL rewrites.
-# The OIDC token is mounted only for this RUN; minted tokens are written to the
-# bin-builder layer's gitconfig but bin-builder is intermediate (not exported).
-RUN --mount=type=secret,id=ddoctosts_oidc \
-    DDOCTOSTS_ID_TOKEN=$(cat /run/secrets/ddoctosts_oidc) \
-    && export DDOCTOSTS_ID_TOKEN \
-    && POMCHI_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/PomChi --policy access_pomsky_gitlab) \
-    && EVENT_PERCOLATION_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/event-percolation --policy access_pomsky_gitlab) \
-    && git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi" \
-    && git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation" \
-    && git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"
+# Optional: if no OIDC secret is provided (e.g. local image-tool.sh invocation),
+# the mint is skipped and cargo will fall back to SSH for the private repos.
+RUN --mount=type=secret,id=ddoctosts_oidc,required=false \
+    if [ -s /run/secrets/ddoctosts_oidc ]; then \
+      export DDOCTOSTS_ID_TOKEN=$(cat /run/secrets/ddoctosts_oidc) \
+      && POMCHI_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/PomChi --policy access_pomsky_gitlab) \
+      && EVENT_PERCOLATION_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/event-percolation --policy access_pomsky_gitlab) \
+      && git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi" \
+      && git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"; \
+    fi
+# Fall back to CI_JOB_TOKEN via GitLab mirror for remaining DataDog repos
+RUN if [ -n "$CI_JOB_TOKEN" ]; then \
+      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"; \
+    fi
 
 RUN rustup toolchain install
 
