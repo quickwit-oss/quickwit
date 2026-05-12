@@ -1147,21 +1147,21 @@ fn write_body_col_for_all_outputs(
     per_output_schemas: &[SchemaRef],
 ) -> Result<()> {
     // Find this col's per-input parquet leaf index (one per input).
-    // Inputs whose schema doesn't have this col contribute null rows
-    // and don't advance their decoder for this col.
+    // Inputs whose schema doesn't have this col OR which have zero
+    // row groups (legal — phase 0 explicitly accepts empty inputs and
+    // returns an empty sort batch for them) contribute null rows and
+    // don't advance their decoder for this col. Looking up
+    // `row_group(0)` on a zero-RG input would panic, so guard up
+    // front.
     let mut input_col_indices: Vec<Option<usize>> = Vec::with_capacity(decoders_state.len());
-    let mut input_target_rows: Vec<usize> = Vec::with_capacity(decoders_state.len());
     for state in decoders_state.iter() {
+        if state.metadata.num_row_groups() == 0 {
+            input_col_indices.push(None);
+            continue;
+        }
         match state.arrow_schema.index_of(col_name) {
-            Ok(idx) => {
-                input_col_indices.push(Some(idx));
-                let rg = state.metadata.row_group(0);
-                input_target_rows.push(rg.column(idx).num_values() as usize);
-            }
-            Err(_) => {
-                input_col_indices.push(None);
-                input_target_rows.push(state.metadata.row_group(0).num_rows() as usize);
-            }
+            Ok(idx) => input_col_indices.push(Some(idx)),
+            Err(_) => input_col_indices.push(None),
         }
     }
 
@@ -2273,6 +2273,48 @@ mod tests {
             "expected output 'value' col to span multiple pages (got {value_pages}); body col \
              writes should respect data_page_size",
         );
+    }
+
+    /// Regression for Codex P1 on PR-6409: a zero-row-group input
+    /// must not panic the body-column path. Phase 0 explicitly accepts
+    /// empty inputs (returning a zero-row sort batch), so the body-col
+    /// loop has to defend against `row_group(0)` lookups on inputs
+    /// with `num_row_groups() == 0`.
+    #[tokio::test]
+    async fn test_zero_row_input_mixed_with_non_empty() {
+        let empty = make_sorted_batch(0, 0);
+        let populated = make_sorted_batch(50, 0);
+        let bytes_empty = write_input_parquet(std::slice::from_ref(&empty), &[]);
+        let bytes_populated = write_input_parquet(std::slice::from_ref(&populated), &[]);
+
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![
+            open_stream(bytes_empty).await,
+            open_stream(bytes_populated).await,
+        ];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge with mixed empty + populated inputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 50);
+
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let value = merged
+            .column(merged.schema().index_of("value").expect("value col"))
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .expect("Float64");
+        // All 50 values from the populated input should round-trip in
+        // input row order (timestamps descend in input row order to
+        // match the sort key).
+        for i in 0..50 {
+            assert!(
+                (value.value(i) - i as f64).abs() < 1e-9,
+                "row {i}: expected {i}, got {}",
+                value.value(i),
+            );
+        }
     }
 
     /// Write a fixture parquet file where each body column is forced
