@@ -184,6 +184,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     // Search service.
+    //
+    // Unlike the other services above, search goes through `tonic_prost_build` directly
+    // (not through `quickwit_codegen::Codegen`, which emits `cargo:rerun-if-changed` for
+    // every proto it compiles). `prost_build` 0.14 has a TODO acknowledging it does not
+    // emit those directives itself, and `tonic_prost_build` 0.14.5 exposes an
+    // `emit_rerun_if_changed` setter but never forwards it to the underlying `Config`.
+    // Without the explicit hint below, edits to `search.proto` do not retrigger build.rs
+    // (because the other `Codegen` calls have already narrowed cargo's watch list).
+    println!("cargo:rerun-if-changed=protos/quickwit/search.proto");
+
     let mut prost_config = prost_build::Config::default();
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
@@ -199,6 +209,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
         .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
+        // The `Response` variant carries a `LeafSearchResponse` which now
+        // embeds `LeafResourceStats`.
+        .type_attribute(
+            "LambdaSingleSplitResult.outcome",
+            "#[allow(clippy::large_enum_variant)]",
+        )
         .out_dir("src/codegen/quickwit")
         .compile_with_config(
             prost_config,

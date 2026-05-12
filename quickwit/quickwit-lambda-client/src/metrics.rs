@@ -46,14 +46,14 @@ impl Default for LambdaMetrics {
                 "Total number of Lambda leaf search invocations.",
                 "lambda",
                 &[],
-                ["status"],
+                ["outcome"],
             ),
             leaf_search_duration_seconds: new_histogram_vec(
                 "leaf_search_duration_seconds",
                 "Duration of Lambda leaf search invocations in seconds.",
                 "lambda",
                 &[],
-                ["status"],
+                ["outcome"],
                 duration_buckets(),
             ),
             leaf_search_request_payload_size_bytes: new_histogram(

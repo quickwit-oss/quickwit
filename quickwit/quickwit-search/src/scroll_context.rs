@@ -25,7 +25,9 @@ use base64::prelude::BASE64_STANDARD;
 use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
+use quickwit_proto::search::{
+    LeafSearchResponse, PartialHit, RootResourceStats, SearchRequest, SplitSearchError,
+};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -99,15 +101,21 @@ impl ScrollContext {
 
     /// Loads in the `ScrollContext` cache all the
     /// hits in range [start_offset..start_offset + SCROLL_BATCH_LEN).
+    ///
+    /// Returns the per-search `RootResourceStats`, if any, so the caller can
+    /// surface them on the scroll response.
     pub async fn load_batch_starting_at(
         &mut self,
         start_offset: u64,
         previous_last_hit: PartialHit,
         cluster_client: &ClusterClient,
         searcher_context: &SearcherContext,
-    ) -> crate::Result<bool> {
+    ) -> crate::Result<Option<RootResourceStats>> {
         self.search_request.search_after = Some(previous_last_hit);
-        let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
+        let (leaf_search_response, root_resource_stats): (
+            LeafSearchResponse,
+            Option<RootResourceStats>,
+        ) = crate::root::search_partial_hits_phase(
             searcher_context,
             &self.indexes_metas_for_leaf_search,
             &self.search_request,
@@ -117,7 +125,7 @@ impl ScrollContext {
         .await?;
         self.cached_partial_hits_start_offset = start_offset;
         self.cached_partial_hits = leaf_search_response.partial_hits;
-        Ok(true)
+        Ok(root_resource_stats)
     }
 }
 
