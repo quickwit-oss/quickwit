@@ -857,6 +857,59 @@ async fn test_shutdown_indexer_first() {
         .unwrap();
 }
 
+/// Tests that the graceful shutdown sequence works correctly in a single-indexer
+/// cluster: the decomissioning indexer publishes the splits and commits the shards before quitting,
+/// even if we shut it down without waiting for the splits to be published.
+#[tokio::test]
+async fn test_graceful_shutdown_single_node() {
+    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
+    let index_id = "test_graceful_shutdown_single_node";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 5
+        "#
+    );
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    let ingest_resp = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .ingest(
+            index_id,
+            ingest_json!({"body": "decomissioning test"}),
+            None,
+            None,
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ingest_resp,
+        RestIngestResponse {
+            num_docs_for_processing: 1,
+            num_ingested_docs: Some(1),
+            num_rejected_docs: Some(0),
+            parse_failures: None,
+        },
+    );
+
+    // shutdown without waiting for the splits to be published.
+    // the single decomissioning indexer will publish the splits without timing out.
+    sandbox.shutdown().await.unwrap();
+}
+
 /// Tests that the graceful shutdown sequence works correctly in a multi-indexer
 /// cluster: shutting down one indexer does NOT cause 500 errors or data loss,
 /// and the cluster eventually rebalances. see #6158

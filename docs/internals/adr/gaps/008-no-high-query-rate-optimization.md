@@ -2,7 +2,7 @@
 
 **Status**: Open
 **Discovered**: 2026-02-19
-**Context**: Cloud-native storage characteristics analysis ([ADR-004](../004-cloud-native-storage-characteristics.md), characteristic C13)
+**Context**: Cloud-native storage characteristics analysis (high query rate optimization)
 
 ## Problem
 
@@ -52,6 +52,5 @@ ADR-003 explicitly acknowledges the PostgreSQL scalability concern: "At high ing
 
 ## References
 
-- [ADR-004: Cloud-Native Storage Characteristics](../004-cloud-native-storage-characteristics.md)
 - [GAP-004: Incomplete Split Metadata](./004-incomplete-split-metadata.md)
 - [ADR-003: Time-Windowed Sorted Compaction](../003-time-windowed-sorted-compaction.md) — PostgreSQL scalability note

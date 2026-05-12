@@ -196,6 +196,7 @@ mod tests {
             num_merge_ops,
             row_keys_proto: None,
             zonemap_regexes: Default::default(),
+            rg_partition_prefix_len: 0,
         }
     }
 

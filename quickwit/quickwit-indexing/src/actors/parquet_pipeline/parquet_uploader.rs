@@ -26,6 +26,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::spawn_named_task;
+use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
@@ -335,6 +336,29 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                         file_size = file_size,
                         "uploaded parquet file to storage"
                     );
+                }
+
+                // For merge outputs (replaced_split_ids non-empty), emit
+                // an UploadMergeOutput trace event per output split. This
+                // is the moment between the blob existing in object
+                // storage and the metastore replace running — a crash
+                // here orphans the upload (the failure mode TLA+ models
+                // as orphan_outputs).
+                if !replaced_split_ids.is_empty() {
+                    let index_uid_str = index_uid.to_string();
+                    for split in &splits {
+                        let window = split.window.clone().unwrap_or(
+                            split.time_range.start_secs as i64..split.time_range.end_secs as i64,
+                        );
+                        record_merge_pipeline_event(&MergePipelineEvent::UploadMergeOutput {
+                            index_uid: index_uid_str.clone(),
+                            merge_id: split.split_id.as_str().to_string(),
+                            output_split_id: split.split_id.as_str().to_string(),
+                            output_num_rows: split.num_rows,
+                            output_window: window,
+                            output_merge_ops: split.num_merge_ops,
+                        });
+                    }
                 }
 
                 // Create ParquetSplitsUpdate and send downstream.
