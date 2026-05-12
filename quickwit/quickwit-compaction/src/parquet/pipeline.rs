@@ -29,7 +29,7 @@ use quickwit_indexing::actors::{
 };
 use quickwit_indexing::models::PublishLock;
 use quickwit_parquet_engine::merge::metadata_aggregation::merge_parquet_split_metadata;
-use quickwit_parquet_engine::merge::policy::ParquetMergeOperation;
+use quickwit_parquet_engine::merge::policy::{ParquetMergeOperation, ParquetMergePolicy};
 use quickwit_parquet_engine::merge::{MergeConfig, MergeOutputFile, merge_sorted_parquet_files};
 use quickwit_parquet_engine::storage::ParquetWriterConfig;
 use quickwit_proto::compaction::CompactionTaskKind;
@@ -231,6 +231,7 @@ pub(crate) struct ParquetCompactionPipeline {
     metastore: MetastoreServiceClient,
     max_concurrent_split_uploads: usize,
     writer_config: ParquetWriterConfig,
+    merge_policy: Arc<dyn ParquetMergePolicy>,
     handles: Option<ParquetCompactionPipelineHandles>,
 }
 
@@ -244,6 +245,7 @@ impl ParquetCompactionPipeline {
         metastore: MetastoreServiceClient,
         max_concurrent_split_uploads: usize,
         writer_config: ParquetWriterConfig,
+        merge_policy: Arc<dyn ParquetMergePolicy>,
     ) -> Self {
         Self {
             task_id,
@@ -256,6 +258,7 @@ impl ParquetCompactionPipeline {
             metastore,
             max_concurrent_split_uploads,
             writer_config,
+            merge_policy,
             handles: None,
         }
     }
@@ -364,6 +367,7 @@ impl ParquetCompactionPipeline {
             self.storage.clone(),
             sequencer_mailbox,
             self.max_concurrent_split_uploads,
+            self.merge_policy.clone(),
         );
         let (uploader_mailbox, uploader_handle) = spawn_ctx
             .spawn_builder()
@@ -403,6 +407,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::SystemTime;
 
+    use quickwit_parquet_engine::merge::policy::{
+        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
+    };
     use quickwit_parquet_engine::split::{
         ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TimeRange,
     };
@@ -424,6 +431,7 @@ mod tests {
             low_cardinality_tags: Default::default(),
             high_cardinality_tag_keys: Default::default(),
             created_at: SystemTime::now(),
+            maturity: ParquetSplitMaturity::Mature,
             parquet_file: format!("{split_id}.parquet"),
             window: Some(0..3600),
             sort_fields: "metric_name|host|timestamp_secs/V2".to_string(),
@@ -437,6 +445,9 @@ mod tests {
     fn test_status_update_unspawned_pipeline() {
         let index_uid = IndexUid::for_test("datadog-metrics", 0);
         let operation = ParquetMergeOperation::new(vec![test_split("s1"), test_split("s2")]);
+        let merge_policy: Arc<dyn ParquetMergePolicy> = Arc::new(
+            ConstWriteAmplificationParquetMergePolicy::new(ParquetMergePolicyConfig::default()),
+        );
         let mut pipeline = ParquetCompactionPipeline::new(
             "task-1".to_string(),
             TempDirectory::for_test(),
@@ -446,6 +457,7 @@ mod tests {
             MetastoreServiceClient::from_mock(MockMetastoreService::new()),
             2,
             ParquetWriterConfig::default(),
+            merge_policy,
         );
 
         let update = pipeline.pipeline_status_update();

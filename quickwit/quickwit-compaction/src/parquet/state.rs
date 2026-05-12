@@ -185,7 +185,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use quickwit_parquet_engine::merge::policy::{
-        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
     };
     use quickwit_parquet_engine::split::{
         ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TimeRange,
@@ -219,6 +219,7 @@ mod tests {
             low_cardinality_tags: Default::default(),
             high_cardinality_tag_keys: Default::default(),
             created_at: SystemTime::now(),
+            maturity: ParquetSplitMaturity::Mature,
             parquet_file: format!("{split_id}.parquet"),
             window: None,
             sort_fields: "metric_name|host|timestamp_secs/V2".to_string(),

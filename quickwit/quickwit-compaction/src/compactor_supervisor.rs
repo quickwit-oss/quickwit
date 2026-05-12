@@ -24,6 +24,8 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SearchSettings, build_doc_mapper};
 use quickwit_doc_mapper::DocMapping;
+#[cfg(feature = "metrics")]
+use quickwit_indexing::merge_policy::parquet_merge_policy_from_settings;
 use quickwit_indexing::merge_policy::{MergeOperation, merge_policy_from_settings};
 use quickwit_indexing::{IndexingSplitCache, IndexingSplitStore};
 use quickwit_metastore::SplitMetadata;

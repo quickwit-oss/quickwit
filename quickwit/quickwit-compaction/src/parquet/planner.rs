@@ -21,20 +21,19 @@ use anyhow::Result;
 use quickwit_common::{is_parquet_pipeline_index, is_sketches_index};
 use quickwit_indexing::merge_policy::parquet_merge_policy_from_settings;
 use quickwit_metastore::{
-    IndexMetadata, ListIndexesMetadataResponseExt, ListParquetSplitsQuery,
-    ListParquetSplitsRequestExt, ListParquetSplitsResponseExt, ParquetSplitRecord,
+    IndexMetadata, ListIndexesMetadataResponseExt, ListParquetSplitsQuery, ParquetSplitRecord,
+    list_parquet_splits_paginated,
 };
 use quickwit_parquet_engine::merge::policy::{
     ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
 };
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::compaction::{
     CompactionFailure, CompactionInProgress, CompactionSuccess, CompactionTaskKind,
     MergeTaskAssignment,
 };
 use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, ListMetricsSplitsRequest, ListSketchSplitsRequest,
-    MetastoreService, MetastoreServiceClient,
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, NodeId};
 use time::OffsetDateTime;
@@ -106,7 +105,7 @@ pub(crate) struct ParquetCompactionPlanner {
     metastore: MetastoreServiceClient,
 }
 
-const STARTUP_LOOKBACK: Duration = Duration::from_secs(24 * 60 * 60);
+const STARTUP_LOOKBACK: Duration = Duration::from_secs(15 * 60);
 
 impl ParquetCompactionPlanner {
     pub fn new(metastore: MetastoreServiceClient) -> Self {
@@ -219,19 +218,16 @@ impl ParquetCompactionPlanner {
         index_uid: &IndexUid,
         query: &ListParquetSplitsQuery,
     ) -> Result<Vec<ParquetSplitRecord>> {
-        let records = if is_sketches_index(&index_uid.index_id) {
-            let request = ListSketchSplitsRequest::try_from_query(index_uid.clone(), query)?;
-            self.metastore
-                .list_sketch_splits(request)
-                .await?
-                .deserialize_splits()?
+        // Page through results — the metastore gRPC response is capped at
+        // 20 MiB and a single un-paginated list can blow past that as soon
+        // as a few thousand splits accumulate.
+        let kind = if is_sketches_index(&index_uid.index_id) {
+            ParquetSplitKind::Sketches
         } else {
-            let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), query)?;
-            self.metastore
-                .list_metrics_splits(request)
-                .await?
-                .deserialize_splits()?
+            ParquetSplitKind::Metrics
         };
+        let records = list_parquet_splits_paginated(self.metastore.clone(), kind, query.clone())
+            .await?;
         Ok(records)
     }
 
@@ -344,6 +340,7 @@ mod tests {
             low_cardinality_tags: Default::default(),
             high_cardinality_tag_keys: Default::default(),
             created_at: SystemTime::now(),
+            maturity: ParquetSplitMaturity::Mature,
             parquet_file: format!("{split_id}.parquet"),
             window: Some(0..3600),
             sort_fields: "metric_name|host|timestamp_secs/V2".to_string(),
