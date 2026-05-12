@@ -35,6 +35,25 @@ Traces:
 | 8384 | HTTP | OTLP |
 | 8585 | TCP | Agent CollectorConnections (APM metrics) |
 | 8686 | HTTP | Vector API (health check) |
+| 8787 | HTTP | Agent v5 host metadata (`POST /intake`) — forwarded to `https://{dd_site}/intake` |
+| 8788 | HTTP | Agent inventory host metadata (`POST /api/v1/metadata`) — forwarded to `https://{dd_site}/api/v1/metadata` |
+
+### Host metadata passthrough
+
+The agent submits two host metadata payloads on the same `dd_url` as regular telemetry but on
+dedicated paths:
+
+- `POST /intake` — legacy v5 host metadata (host tags, host aliases, EC2 metadata, ...)
+- `POST /api/v1/metadata` — inventory host metadata (powers host map / infra list / DDSQL)
+
+BYOC has no processor for either payload — both must land in the SaaS intake. pomsky-intake
+exposes the two endpoints on dedicated ports (8787, 8788) and forwards the request body
+verbatim to `https://{dd_site}{path}` with the configured `DD_API_KEY`. No parsing or
+transformation happens in pomsky-intake; the request body is captured as raw bytes and re-sent
+with `Content-Type: application/json` and `Content-Encoding: gzip`.
+
+Ingress in front of pomsky-intake must route `/intake` to port 8787 and `/api/v1/metadata` to
+port 8788 (the rest of the agent traffic continues to hit 8181).
 
 ## Configuration
 

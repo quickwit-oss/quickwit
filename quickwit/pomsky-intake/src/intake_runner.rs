@@ -94,6 +94,29 @@ sources:
     type: connections
     address: "0.0.0.0:8585"
 
+  # Receives the agent's legacy v5 host metadata payload (POST /intake).
+  # Body is captured as raw bytes so the sink can forward it verbatim to
+  # the configured DD_SITE — BYOC has no processor for this payload, it
+  # must land in the SaaS intake.
+  host_metadata_in:
+    type: http_server
+    address: "0.0.0.0:8787"
+    path: "/intake"
+    strict_path: true
+    method: POST
+    encoding: binary
+
+  # Receives the agent's inventory host metadata payload
+  # (POST /api/v1/metadata). Same raw-passthrough rationale as
+  # host_metadata_in.
+  inventory_metadata_in:
+    type: http_server
+    address: "0.0.0.0:8788"
+    path: "/api/v1/metadata"
+    strict_path: true
+    method: POST
+    encoding: binary
+
 transforms:
   preprocess_logs:
     type: preprocess_log
@@ -211,6 +234,42 @@ sinks:
       codec: json
     framing:
       method: newline_delimited
+
+  # Forward the agent's v5 host metadata payload verbatim to SaaS.
+  # batch.max_events=1 keeps one outgoing request per inbound request so
+  # the body bytes captured by host_metadata_in are not concatenated.
+  host_metadata_out:
+    type: http
+    inputs:
+      - host_metadata_in
+    uri: "https://{dd_site}/intake"
+    method: post
+    compression: gzip
+    encoding:
+      codec: raw_message
+    batch:
+      max_events: 1
+    request:
+      headers:
+        DD-API-KEY: "${{DD_API_KEY}}"
+        Content-Type: "application/json"
+
+  # Forward the agent's inventory host metadata payload verbatim to SaaS.
+  inventory_metadata_out:
+    type: http
+    inputs:
+      - inventory_metadata_in
+    uri: "https://{dd_site}/api/v1/metadata"
+    method: post
+    compression: gzip
+    encoding:
+      codec: raw_message
+    batch:
+      max_events: 1
+    request:
+      headers:
+        DD-API-KEY: "${{DD_API_KEY}}"
+        Content-Type: "application/json"
 {print_sink}
 "#
     )
