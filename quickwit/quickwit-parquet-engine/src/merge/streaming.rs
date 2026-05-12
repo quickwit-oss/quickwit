@@ -224,18 +224,49 @@ pub async fn streaming_merge_sorted_parquet_files(
 }
 
 /// Per-input state held across phase 0 → phase 3 inside the blocking
-/// task. The decoder borrows mutably from its input stream; both live
-/// here so the borrow checker is happy with one struct per input.
+/// task. The decoder owns its stream so it persists across phases and
+/// across all output writes for a given input — critical for body
+/// columns whose pages may need to be visited multiple times (one page
+/// can supply rows for more than one output, or one output may need
+/// rows from more than one page). Reconstructing the decoder mid-pass
+/// would reset the per-column `rows_decoded` counter (so `row_start`
+/// becomes wrong) and discard cached dictionary / queued pages.
 struct InputDecoderState {
-    /// Owned stream (so the decoder's `&mut dyn ColumnPageStream` borrow
-    /// is anchored to a stable address inside this struct).
-    stream: Box<dyn ColumnPageStream>,
+    decoder: StreamDecoder<'static>,
     metadata: Arc<ParquetMetaData>,
     /// Arrow schema of this input (from parquet → arrow conversion).
     arrow_schema: SchemaRef,
+    /// Per-input page cache for the *currently active* body column.
+    /// Pages are appended as the decoder produces them and evicted from
+    /// the front once their last row is below `body_col_cursor`. The
+    /// cache must persist across all outputs that consume rows from
+    /// this column so that a page whose range straddles two outputs is
+    /// not re-decoded (the stream has already advanced past it). At
+    /// the start of each body column [`reset_body_col_state`] clears
+    /// this cache and zeroes the cursor.
+    body_col_page_cache: Vec<DecodedPage>,
+    /// Next unconsumed input row for the active body column. Advances
+    /// monotonically across outputs because the merge plan assigns each
+    /// input's rows to outputs in input-row order.
+    body_col_cursor: usize,
 }
 
-/// Build per-input state. The streams are moved in from the caller.
+impl InputDecoderState {
+    /// Clear the per-input body-column cache. Called at the start of
+    /// each new body column so leftover pages from the previous column
+    /// (which have a different `col_idx`) don't poison the new column's
+    /// row-start arithmetic. The decoder itself is *not* reset — its
+    /// per-(rg, col) `rows_decoded` counters and queued pages must
+    /// survive so subsequent decode calls return correct row offsets.
+    fn reset_body_col_state(&mut self) {
+        self.body_col_page_cache.clear();
+        self.body_col_cursor = 0;
+    }
+}
+
+/// Build per-input state. The streams are moved in from the caller and
+/// installed in long-lived [`StreamDecoder`]s so per-column state
+/// survives every phase of the merge.
 fn build_input_decoders_state(
     inputs: &mut Vec<Box<dyn ColumnPageStream>>,
 ) -> Result<Vec<InputDecoderState>> {
@@ -245,10 +276,13 @@ fn build_input_decoders_state(
         let parquet_schema = metadata.file_metadata().schema_descr();
         let arrow_schema = parquet::arrow::parquet_to_arrow_schema(parquet_schema, None)
             .context("converting parquet schema → arrow")?;
+        let decoder = StreamDecoder::from_owned(stream);
         states.push(InputDecoderState {
-            stream,
+            decoder,
             metadata,
             arrow_schema: Arc::new(arrow_schema),
+            body_col_page_cache: Vec::new(),
+            body_col_cursor: 0,
         });
     }
     Ok(states)
@@ -466,11 +500,9 @@ fn drain_sort_cols_one_input(
     let mut sort_cols_finished = 0usize;
     let sort_col_target = sort_col_parquet_indices.len();
 
-    let mut decoder = StreamDecoder::new(&mut *state.stream);
-
     while sort_cols_finished < sort_col_target {
         let decoded = handle
-            .block_on(decoder.decode_next_page())
+            .block_on(state.decoder.decode_next_page())
             .with_context(|| format!("decoding sort col page (input {input_idx})"))?;
         let page = match decoded {
             Some(p) => p,
@@ -1133,7 +1165,25 @@ fn write_body_col_for_all_outputs(
         }
     }
 
-    // For each output sequentially: build output pages, feed to writer.
+    // Reset each input's body-col cache + cursor at the start of this
+    // column. The persistent `StreamDecoder` retains its per-(rg, col)
+    // state for *every* column it has touched so the next page from
+    // this column has the correct `row_start`; only the cached pages
+    // (which belong to the previous column) need to be discarded.
+    for state in decoders_state.iter_mut() {
+        state.reset_body_col_state();
+    }
+
+    // Track service names while streaming the service col.
+    let track_service = col_name == "service";
+
+    // For each output sequentially: build output pages, feed to writer
+    // one page at a time. We must NOT collect the whole column into a
+    // Vec — that would defeat the page-bounded merge path and scale
+    // memory with column-chunk size on production splits. Instead we
+    // hand `write_next_column_arrays` a streaming iterator that
+    // captures the first error in a side cell so the writer stops as
+    // soon as assembly fails.
     let mut storage_idx = 0;
     for (out_idx, &row_count) in destinations.rows_per_output.iter().enumerate() {
         if row_count == 0 {
@@ -1149,8 +1199,6 @@ fn write_body_col_for_all_outputs(
         let out_field_idx = out_schema.index_of(col_name)?;
         let out_field = out_schema.field(out_field_idx);
 
-        // Build per-output assembler. Feeds one output page per
-        // `Iterator::next()` call.
         let assembler = BodyColOutputPageAssembler::new(
             handle,
             decoders_state,
@@ -1161,33 +1209,76 @@ fn write_body_col_for_all_outputs(
             out_field,
         );
 
-        // Track service names while streaming the service col.
-        let track_service = col_name == "service";
+        let mut error_slot: Option<anyhow::Error> = None;
+        let service_collector: Option<&mut HashSet<String>> = if track_service {
+            Some(&mut service_names_per_output[storage_idx])
+        } else {
+            None
+        };
 
-        // Drive the assembler via a sync iterator. We must `?`-propagate
-        // assembly errors out of the iterator; collect into a Vec and
-        // return on first error.
-        let pages: Vec<ArrayRef> = assembler
-            .into_iter()
-            .collect::<Result<Vec<_>>>()
-            .with_context(|| format!("assembling body col '{col_name}' for output {out_idx}"))?;
+        let stream_iter = StreamingBodyColIter {
+            inner: assembler.into_iter(),
+            error_slot: &mut error_slot,
+            service_collector,
+        };
 
-        if track_service {
-            for page in &pages {
-                collect_service_names_from_page(
-                    page.as_ref(),
-                    &mut service_names_per_output[storage_idx],
-                )?;
-            }
+        let write_result = row_groups[storage_idx].write_next_column_arrays(stream_iter);
+
+        // Assembly errors are reported via `error_slot`; surface them
+        // first because a downstream write error is usually a
+        // consequence (the writer stops on `None` and reports a
+        // row-count mismatch otherwise).
+        if let Some(err) = error_slot {
+            return Err(err)
+                .with_context(|| format!("assembling body col '{col_name}' for output {out_idx}"));
         }
-
-        row_groups[storage_idx]
-            .write_next_column_arrays(pages.into_iter())
+        write_result
             .with_context(|| format!("writing body col '{col_name}' to output {out_idx}"))?;
         storage_idx += 1;
     }
 
     Ok(())
+}
+
+/// Adapts a `Result<ArrayRef>` page assembler into the
+/// `Iterator<Item = ArrayRef>` shape `write_next_column_arrays` expects.
+/// The first assembly error is captured in `error_slot` and iteration
+/// ends; the caller MUST check the slot after the writer returns. If
+/// `service_collector` is `Some`, every yielded page is scanned for
+/// service names and added to the set; collection failures also stop
+/// the iterator and populate `error_slot`.
+struct StreamingBodyColIter<'a, I> {
+    inner: I,
+    error_slot: &'a mut Option<anyhow::Error>,
+    service_collector: Option<&'a mut HashSet<String>>,
+}
+
+impl<I> Iterator for StreamingBodyColIter<'_, I>
+where I: Iterator<Item = Result<ArrayRef>>
+{
+    type Item = ArrayRef;
+
+    fn next(&mut self) -> Option<ArrayRef> {
+        if self.error_slot.is_some() {
+            return None;
+        }
+        match self.inner.next() {
+            Some(Ok(arr)) => {
+                if let Some(out) = self.service_collector.as_deref_mut()
+                    && let Err(e) = collect_service_names_from_page(arr.as_ref(), out)
+                {
+                    *self.error_slot = Some(e);
+                    return None;
+                }
+                Some(arr)
+            }
+            Some(Err(e)) => {
+                *self.error_slot = Some(e);
+                None
+            }
+            None => None,
+        }
+    }
 }
 
 /// Per-page service name collector. Used during the streaming write
@@ -1323,6 +1414,14 @@ fn collect_service_names_from_page(arr: &dyn Array, out: &mut HashSet<String>) -
 /// Memory per `next()` call: one in-progress output page (P rows) +
 /// up to ~2 in-flight decoded pages per input (kept until all their
 /// rows are consumed). Bounded by page sizes, not column-chunk sizes.
+///
+/// **Cross-output state**: the per-input `body_col_page_cache` and
+/// `body_col_cursor` live on [`InputDecoderState`], not the assembler.
+/// They must persist across all outputs that consume rows from the
+/// active body column — a page whose row range straddles two outputs
+/// would otherwise be dropped when the first output's assembler ends,
+/// even though the stream has already advanced past it and the next
+/// output still needs rows from inside that page.
 struct BodyColOutputPageAssembler<'a> {
     handle: &'a Handle,
     decoders_state: &'a mut [InputDecoderState],
@@ -1331,12 +1430,6 @@ struct BodyColOutputPageAssembler<'a> {
     out_idx: usize,
     col_name: &'a str,
     out_field: &'a Field,
-    /// Cursor into `destinations.per_input[*]` — next input row index per input.
-    input_cursors: Vec<usize>,
-    /// Per-input decoded page cache. Pages are kept in order; the
-    /// front page's `row_start` is the smallest input row we still
-    /// have decoded.
-    page_cache: Vec<Vec<DecodedPage>>,
     /// Total rows written so far for this output's col.
     rows_emitted: usize,
     /// Total rows expected = destinations.rows_per_output[out_idx].
@@ -1356,11 +1449,6 @@ impl<'a> BodyColOutputPageAssembler<'a> {
         col_name: &'a str,
         out_field: &'a Field,
     ) -> Self {
-        let num_inputs = decoders_state.len();
-        let mut page_cache: Vec<Vec<DecodedPage>> = Vec::with_capacity(num_inputs);
-        for _ in 0..num_inputs {
-            page_cache.push(Vec::new());
-        }
         Self {
             handle,
             decoders_state,
@@ -1369,8 +1457,6 @@ impl<'a> BodyColOutputPageAssembler<'a> {
             out_idx,
             col_name,
             out_field,
-            input_cursors: vec![0; num_inputs],
-            page_cache,
             rows_emitted: 0,
             expected_rows: destinations.rows_per_output[out_idx],
             done: false,
@@ -1458,7 +1544,7 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
         let target_pos = s.rows_emitted + total_picked;
         let mut found = false;
         for (input_idx, dests) in s.destinations.per_input.iter().enumerate() {
-            let cursor = s.input_cursors[input_idx];
+            let cursor = s.decoders_state[input_idx].body_col_cursor;
             for (input_row, dest) in dests.iter().enumerate().skip(cursor) {
                 match dest {
                     Some((o, p)) if *o == s.out_idx => {
@@ -1511,7 +1597,6 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
         advance_decoder_to_row(
             s.handle,
             &mut s.decoders_state[input_idx],
-            &mut s.page_cache[input_idx],
             col_parquet_idx,
             max_needed_row,
         )?;
@@ -1531,7 +1616,7 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
     for input_idx in 0..s.decoders_state.len() {
         match s.input_col_indices[input_idx] {
             Some(_) => {
-                let pages = &s.page_cache[input_idx];
+                let pages = &s.decoders_state[input_idx].body_col_page_cache;
                 if pages.is_empty() {
                     // No pages decoded for this input (no rows from this input go to this output).
                     // Use a zero-row placeholder; we won't index into it.
@@ -1580,20 +1665,23 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
     })?;
 
     // Bump input cursors past rows we just consumed and drop pages
-    // whose rows are fully consumed.
+    // whose rows are fully consumed. Both the cursor and the cache
+    // live on InputDecoderState so they persist across outputs that
+    // share this column.
     for (input_idx, input_rows) in indices_per_input.iter().enumerate() {
         if input_rows.is_empty() {
             continue;
         }
         let max_row = *input_rows.iter().max().expect("non-empty");
-        s.input_cursors[input_idx] = max_row + 1;
+        let state = &mut s.decoders_state[input_idx];
+        state.body_col_cursor = max_row + 1;
 
         // Drop pages whose last row is < cursor.
         if s.input_col_indices[input_idx].is_some() {
-            let pages = &mut s.page_cache[input_idx];
+            let pages = &mut state.body_col_page_cache;
             while let Some(front) = pages.first() {
                 let front_end = front.row_start + front.array.len();
-                if front_end <= s.input_cursors[input_idx] {
+                if front_end <= state.body_col_cursor {
                     pages.remove(0);
                 } else {
                     break;
@@ -1606,29 +1694,34 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
     Ok(Some(assembled))
 }
 
-/// Drive `state.stream`'s decoder forward via `block_on` until the
-/// cached pages for `col_parquet_idx` cover up through `target_row`
+/// Drive the input's persistent decoder forward via `block_on` until
+/// the cached pages for `col_parquet_idx` cover up through `target_row`
 /// (inclusive). Stops as soon as the latest cached page ends past
 /// `target_row`.
+///
+/// The decoder MUST be the long-lived [`InputDecoderState::decoder`]:
+/// it preserves the per-(rg, col) `rows_decoded` counter so successive
+/// `DecodedPage::row_start` values are absolute input row indices,
+/// not page-local zeros. Likewise, the cache lives on the state so
+/// pages whose row range spans an output boundary survive into the
+/// next output's assembler.
 fn advance_decoder_to_row(
     handle: &Handle,
     state: &mut InputDecoderState,
-    page_cache: &mut Vec<DecodedPage>,
     col_parquet_idx: usize,
     target_row: usize,
 ) -> Result<()> {
     // If cache already covers target_row, nothing to do.
-    if let Some(last) = page_cache.last() {
+    if let Some(last) = state.body_col_page_cache.last() {
         let last_end = last.row_start + last.array.len();
         if target_row < last_end {
             return Ok(());
         }
     }
 
-    let mut decoder = StreamDecoder::new(&mut *state.stream);
     loop {
         let decoded = handle
-            .block_on(decoder.decode_next_page())
+            .block_on(state.decoder.decode_next_page())
             .context("decoding body col page")?;
         let page = match decoded {
             Some(p) => p,
@@ -1638,12 +1731,12 @@ fn advance_decoder_to_row(
         };
         if page.col_idx != col_parquet_idx {
             bail!(
-                "expected col {col_parquet_idx} page, got col {} — Husky col ordering violated",
+                "expected col {col_parquet_idx} page, got col {} — column ordering violated",
                 page.col_idx,
             );
         }
         let end = page.row_start + page.array.len();
-        page_cache.push(page);
+        state.body_col_page_cache.push(page);
         if target_row < end {
             return Ok(());
         }
@@ -2179,6 +2272,225 @@ mod tests {
             value_pages >= 2,
             "expected output 'value' col to span multiple pages (got {value_pages}); body col \
              writes should respect data_page_size",
+        );
+    }
+
+    /// Write a fixture parquet file where each body column is forced
+    /// to span multiple parquet data pages by pinning a small
+    /// `data_page_row_count_limit`. The merge engine must read those
+    /// pages back via a single persistent `StreamDecoder` per input —
+    /// reconstructing the decoder for each `advance_decoder_to_row`
+    /// call (the pre-fix behaviour) would reset the per-column
+    /// `rows_decoded` counter, making `DecodedPage::row_start` reset
+    /// to zero on every page after the first.
+    fn write_input_parquet_with_small_pages(
+        batches: &[RecordBatch],
+        data_page_row_count_limit: usize,
+    ) -> Bytes {
+        let schema = batches[0].schema();
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            data_page_row_count_limit,
+            ..ParquetWriterConfig::default()
+        };
+        let sort_fields = "metric_name|-timestamp_secs/V2";
+        let sort_field_names = vec!["metric_name".to_string(), "timestamp_secs".to_string()];
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                sort_fields.to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+        ];
+        let sorting_cols = vec![
+            parquet::file::metadata::SortingColumn {
+                column_idx: schema.index_of("metric_name").expect("test schema") as i32,
+                descending: false,
+                nulls_first: false,
+            },
+            parquet::file::metadata::SortingColumn {
+                column_idx: schema.index_of("timestamp_secs").expect("test schema") as i32,
+                descending: true,
+                nulls_first: false,
+            },
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &sort_field_names,
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        for b in batches {
+            writer.write(b).expect("test write");
+        }
+        writer.close().expect("test close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P1 on PR-6409: when a body column spans
+    /// multiple input pages, every page-fetch must come from the same
+    /// long-lived `StreamDecoder` so its per-column `rows_decoded`
+    /// counter keeps producing absolute row offsets. Before the fix,
+    /// each `advance_decoder_to_row` call instantiated a fresh decoder
+    /// whose counter started at zero — the *second* decoded page
+    /// reported `row_start = 0` and the page cache's
+    /// `(input_row - cache_start)` indexing landed on the wrong rows
+    /// (or panicked on out-of-bounds).
+    #[tokio::test]
+    async fn test_body_col_multi_input_page_preserves_row_start() {
+        // The bug only surfaces when `assemble_one_output_page` is
+        // called more than once per output (so `advance_decoder_to_row`
+        // is invoked repeatedly with a non-empty cache). That means we
+        // need more than `OUTPUT_PAGE_ROWS` (=1024) total input rows
+        // for a single output. 2500 rows × 50-row input pages =
+        // 50 body-col pages per column chunk; three output pages of
+        // 1024+1024+452 each trigger a separate decoder advance.
+        let total_rows = 2500;
+        let batch = make_sorted_batch(total_rows, 0);
+        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), 50);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, total_rows);
+
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let value_idx = merged.schema().index_of("value").expect("value col");
+        let value = merged
+            .column(value_idx)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .expect("value col is Float64");
+
+        // `make_sorted_batch` fills `value` with `i as f64` (see the
+        // fixture). Timestamps descend in input row order, matching the
+        // sort key (timestamp_secs DESC), so the merge with a single
+        // input is the identity permutation.
+        for i in 0..total_rows {
+            let expected = i as f64;
+            let got = value.value(i);
+            assert!(
+                (expected - got).abs() < 1e-9,
+                "row {i}: expected value {expected}, got {got} — body col page cache reported \
+                 wrong row_start",
+            );
+        }
+    }
+
+    /// Regression for Codex P1 on PR-6409 (the multi-output half): when
+    /// a body column is consumed by more than one output, the per-input
+    /// page cache and decoder must outlive each output's assembler. The
+    /// stream cannot be rewound, so dropping a partially-consumed page
+    /// when output K ends would leave output K+1 unable to read rows
+    /// that physically live inside that same page.
+    #[tokio::test]
+    async fn test_body_col_cache_persists_across_outputs() {
+        // Two metric names so the engine splits the merge into two
+        // outputs at the metric_name boundary. Each input has 200
+        // rows of cpu.usage then 200 rows of memory.used — small
+        // 50-row pages mean some pages span the boundary.
+        let schema = make_sorted_batch(0, 0).schema();
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let metric_values = StringArray::from(vec!["cpu.usage", "memory.used"]);
+        let keys: Vec<i32> = (0..400).map(|i| if i < 200 { 0 } else { 1 }).collect();
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(keys),
+                Arc::new(metric_values),
+            )
+            .expect("dict"),
+        );
+
+        // Timestamps descend within each metric_name run so the file
+        // is sorted by (metric_name ASC, timestamp DESC) — matching
+        // the sort schema declared in write_input_parquet_with_small_pages.
+        let timestamps: Vec<u64> = (0..400)
+            .map(|i| {
+                let run_pos = if i < 200 { i } else { i - 200 };
+                1_700_000_000u64 + (199 - run_pos as u64)
+            })
+            .collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+
+        let series: Vec<Vec<u8>> = (0..400u64).map(|i| i.to_be_bytes().to_vec()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+        ));
+
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![1u8; 400]));
+        let service_keys: Vec<i32> = (0..400i32).map(|_| 0).collect();
+        let service_values = StringArray::from(vec!["svc-a"]);
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(service_keys),
+                Arc::new(service_values),
+            )
+            .expect("svc dict"),
+        );
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from((0..400i64).collect::<Vec<_>>()));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..400).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
+        ));
+        // Confirm the schema we hand-build still matches make_sorted_batch's:
+        let _ = dict_type;
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                metric_type,
+                service,
+                timeseries_id,
+                value,
+            ],
+        )
+        .expect("test batch");
+
+        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), 50);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(2))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 2, "two metric names → two outputs");
+
+        let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(total, 400);
+
+        // Concatenate the two outputs' value columns in output order
+        // and verify every original value is present. The merge is
+        // sort-stable, so values within each output appear in input
+        // row order (timestamps descend within each metric run).
+        let mut seen_values: HashSet<u64> = HashSet::new();
+        for out in &outputs {
+            let merged = read_output_to_record_batch(&out.path);
+            let v = merged
+                .column(merged.schema().index_of("value").expect("value col"))
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("Float64");
+            for i in 0..v.len() {
+                // Encode as integer bits to dedupe; original values
+                // are i * 0.5 for i in 0..400, all distinct.
+                seen_values.insert(v.value(i).to_bits());
+            }
+        }
+        assert_eq!(
+            seen_values.len(),
+            400,
+            "every input value should round-trip through the merge across both outputs",
         );
     }
 
