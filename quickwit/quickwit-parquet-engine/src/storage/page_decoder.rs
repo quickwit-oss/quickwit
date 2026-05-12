@@ -67,8 +67,8 @@ use std::sync::{Arc, Mutex};
 
 use arrow::array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, LargeBinaryArray, LargeStringArray, ListArray, StringArray, UInt8Array,
-    UInt16Array, UInt32Array, UInt64Array,
+    Int64Array, LargeBinaryArray, LargeListArray, LargeStringArray, ListArray, StringArray,
+    UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow::datatypes::{DataType, Field};
@@ -604,12 +604,12 @@ fn decode_one_data_page_into_array(
             build_int64_array(&state.field, records, &defs, &reps, &values)
         }
         ColumnReader::FloatColumnReader(r) => {
-            let (records, defs, _reps, values) = read_typed::<FloatType>(r, num_values)?;
-            build_float32_array(&state.field, records, &defs, &values)
+            let (records, defs, reps, values) = read_typed::<FloatType>(r, num_values)?;
+            build_float32_array(&state.field, records, &defs, &reps, &values)
         }
         ColumnReader::DoubleColumnReader(r) => {
-            let (records, defs, _reps, values) = read_typed::<DoubleType>(r, num_values)?;
-            build_float64_array(&state.field, records, &defs, &values)
+            let (records, defs, reps, values) = read_typed::<DoubleType>(r, num_values)?;
+            build_float64_array(&state.field, records, &defs, &reps, &values)
         }
         ColumnReader::ByteArrayColumnReader(r) => {
             let (records, defs, _reps, values) = read_typed::<ByteArrayType>(r, num_values)?;
@@ -795,8 +795,15 @@ fn build_float32_array(
     field: &Field,
     records: usize,
     defs: &[i16],
+    reps: &[i16],
     values: &[f32],
 ) -> Result<ArrayRef, PageDecodeError> {
+    if matches!(
+        field.data_type(),
+        DataType::List(_) | DataType::LargeList(_)
+    ) {
+        return build_list_f32_array(field, defs, reps, values);
+    }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
     let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
@@ -807,8 +814,15 @@ fn build_float64_array(
     field: &Field,
     records: usize,
     defs: &[i16],
+    reps: &[i16],
     values: &[f64],
 ) -> Result<ArrayRef, PageDecodeError> {
+    if matches!(
+        field.data_type(),
+        DataType::List(_) | DataType::LargeList(_)
+    ) {
+        return build_list_f64_array(field, defs, reps, values);
+    }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
     let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
@@ -1010,13 +1024,17 @@ where
 /// `def == 1` is a present element; `def == 0` is an empty list slot
 /// (no element). `rep == 0` starts a new row; `rep == 1` continues the
 /// current list.
-fn list_offsets_from_levels(defs: &[i16], reps: &[i16]) -> Vec<i32> {
+fn list_offsets_from_levels(defs: &[i16], reps: &[i16]) -> Vec<i64> {
+    // Compute as `i64` so the same offset buffer can back either a
+    // `ListArray` (truncated to i32 by `wrap_inner_in_list`) or a
+    // `LargeListArray`. For our `max_def = 1, max_rep = 1` shape
+    // there's no risk of overflow in either width.
     if defs.is_empty() {
         return vec![0];
     }
-    let mut offsets: Vec<i32> = Vec::with_capacity(defs.len() + 1);
+    let mut offsets: Vec<i64> = Vec::with_capacity(defs.len() + 1);
     offsets.push(0);
-    let mut current_len: i32 = 0;
+    let mut current_len: i64 = 0;
     for i in 0..defs.len() {
         if i > 0 && reps[i] == 0 {
             // Boundary between rows: close the previous row's list.
@@ -1039,10 +1057,7 @@ fn build_list_i32_array(
     reps: &[i16],
     values: &[i32],
 ) -> Result<ArrayRef, PageDecodeError> {
-    let inner_field = match field.data_type() {
-        DataType::List(inner) | DataType::LargeList(inner) => Arc::clone(inner),
-        _ => unreachable!("caller guards on List/LargeList"),
-    };
+    let inner_field = list_inner_field(field);
     if field.is_nullable() || inner_field.is_nullable() {
         return Err(PageDecodeError::UnsupportedColumnType {
             name: field.name().to_string(),
@@ -1082,13 +1097,7 @@ fn build_list_i32_array(
             });
         }
     };
-    let offsets = OffsetBuffer::new(ScalarBuffer::from(list_offsets_from_levels(defs, reps)));
-    Ok(Arc::new(ListArray::new(
-        inner_field,
-        offsets,
-        inner_array,
-        None,
-    )))
+    wrap_inner_in_list(field, inner_field, inner_array, defs, reps)
 }
 
 /// Build a `ListArray` over Int64-physical values (parquet inner type
@@ -1100,10 +1109,7 @@ fn build_list_i64_array(
     reps: &[i16],
     values: &[i64],
 ) -> Result<ArrayRef, PageDecodeError> {
-    let inner_field = match field.data_type() {
-        DataType::List(inner) | DataType::LargeList(inner) => Arc::clone(inner),
-        _ => unreachable!("caller guards on List/LargeList"),
-    };
+    let inner_field = list_inner_field(field);
     if field.is_nullable() || inner_field.is_nullable() {
         return Err(PageDecodeError::UnsupportedColumnType {
             name: field.name().to_string(),
@@ -1125,13 +1131,114 @@ fn build_list_i64_array(
             });
         }
     };
-    let offsets = OffsetBuffer::new(ScalarBuffer::from(list_offsets_from_levels(defs, reps)));
-    Ok(Arc::new(ListArray::new(
-        inner_field,
-        offsets,
-        inner_array,
-        None,
-    )))
+    wrap_inner_in_list(field, inner_field, inner_array, defs, reps)
+}
+
+/// Build a `ListArray` / `LargeListArray` over `Float32` (parquet
+/// inner type `Float32`). Outer + inner must be non-nullable.
+fn build_list_f32_array(
+    field: &Field,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[f32],
+) -> Result<ArrayRef, PageDecodeError> {
+    let inner_field = list_inner_field(field);
+    if field.is_nullable() || inner_field.is_nullable() {
+        return Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::FLOAT,
+            arrow: field.data_type().clone(),
+        });
+    }
+    let inner_array: ArrayRef = match inner_field.data_type() {
+        DataType::Float32 => Arc::new(Float32Array::from(values.to_vec())),
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::FLOAT,
+                arrow: other.clone(),
+            });
+        }
+    };
+    wrap_inner_in_list(field, inner_field, inner_array, defs, reps)
+}
+
+/// Build a `ListArray` / `LargeListArray` over `Float64` (parquet
+/// inner type `Double`). Outer + inner must be non-nullable.
+fn build_list_f64_array(
+    field: &Field,
+    defs: &[i16],
+    reps: &[i16],
+    values: &[f64],
+) -> Result<ArrayRef, PageDecodeError> {
+    let inner_field = list_inner_field(field);
+    if field.is_nullable() || inner_field.is_nullable() {
+        return Err(PageDecodeError::UnsupportedColumnType {
+            name: field.name().to_string(),
+            physical: PhysicalType::DOUBLE,
+            arrow: field.data_type().clone(),
+        });
+    }
+    let inner_array: ArrayRef = match inner_field.data_type() {
+        DataType::Float64 => Arc::new(Float64Array::from(values.to_vec())),
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::DOUBLE,
+                arrow: other.clone(),
+            });
+        }
+    };
+    wrap_inner_in_list(field, inner_field, inner_array, defs, reps)
+}
+
+/// Extract the inner field from a `List<T>` or `LargeList<T>`
+/// outer field. Callers must already have checked the outer type.
+fn list_inner_field(field: &Field) -> Arc<Field> {
+    match field.data_type() {
+        DataType::List(inner) | DataType::LargeList(inner) => Arc::clone(inner),
+        _ => unreachable!("caller guards on List/LargeList"),
+    }
+}
+
+/// Wrap a decoded inner array in `ListArray` (i32 offsets) or
+/// `LargeListArray` (i64 offsets) according to the outer field's
+/// `DataType`. This preserves the schema's list flavour through the
+/// page decoder — `LargeList<T>` inputs round-trip to `LargeListArray`,
+/// not `ListArray`, so downstream schema validation sees the right
+/// type. Reps + defs are interpreted under `max_def = 1, max_rep = 1`
+/// (the writer's contract for non-nullable outer + non-nullable inner
+/// lists).
+fn wrap_inner_in_list(
+    field: &Field,
+    inner_field: Arc<Field>,
+    inner_array: ArrayRef,
+    defs: &[i16],
+    reps: &[i16],
+) -> Result<ArrayRef, PageDecodeError> {
+    let i64_offsets = list_offsets_from_levels(defs, reps);
+    match field.data_type() {
+        DataType::LargeList(_) => {
+            let offsets = OffsetBuffer::new(ScalarBuffer::from(i64_offsets));
+            Ok(Arc::new(LargeListArray::new(
+                inner_field,
+                offsets,
+                inner_array,
+                None,
+            )))
+        }
+        DataType::List(_) => {
+            let i32_offsets: Vec<i32> = i64_offsets.iter().map(|&o| o as i32).collect();
+            let offsets = OffsetBuffer::new(ScalarBuffer::from(i32_offsets));
+            Ok(Arc::new(ListArray::new(
+                inner_field,
+                offsets,
+                inner_array,
+                None,
+            )))
+        }
+        _ => unreachable!("caller guards on List/LargeList"),
+    }
 }
 
 fn max_def_for(field: &Field) -> i16 {
@@ -1587,6 +1694,144 @@ mod tests {
                 .to_vec();
             assert_eq!(got_u64, *want, "row {row_idx} list mismatch");
         }
+    }
+
+    /// `List<Float64>` round-trips through the decoder as a `ListArray`
+    /// with a `Float64Array` inner — NOT as a flat `Float64Array`. The
+    /// type/row shape must match what the streaming writer advertises
+    /// for `List<Float64>` columns. Regression test for the codex
+    /// review on PR-6407.
+    #[tokio::test]
+    async fn test_list_float64_round_trip() {
+        use arrow::array::ListBuilder;
+
+        let item_field = Arc::new(ArrowField::new("item", DataType::Float64, false));
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "samples",
+            DataType::List(Arc::clone(&item_field)),
+            false,
+        )]));
+
+        let rows: Vec<Vec<f64>> = vec![
+            vec![1.0, 2.5, -7.5],
+            vec![],
+            vec![f64::MAX, f64::MIN, 0.0],
+            vec![42.42],
+        ];
+        let mut builder = ListBuilder::new(arrow::array::Float64Builder::new())
+            .with_field(Arc::clone(&item_field));
+        for row in &rows {
+            for &v in row {
+                builder.values().append_value(v);
+            }
+            builder.append(true);
+        }
+        let samples: ArrayRef = Arc::new(builder.finish());
+        let batch = RecordBatch::try_new(schema.clone(), vec![samples]).unwrap();
+        let bytes = write_parquet(
+            std::slice::from_ref(&batch),
+            None,
+            None,
+            Compression::SNAPPY,
+        );
+
+        let source = InMemorySource::new(bytes);
+        let mut reader = StreamingParquetReader::try_open(source, dummy_path())
+            .await
+            .unwrap();
+        let mut decoder = StreamDecoder::new(&mut reader as &mut dyn ColumnPageStream);
+        let dp = decoder
+            .decode_next_page()
+            .await
+            .unwrap()
+            .expect("at least one page");
+        let got_list = dp
+            .array
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .expect("samples must decode to ListArray, not flat Float64Array");
+        assert_eq!(got_list.len(), rows.len());
+        for (row_idx, want) in rows.iter().enumerate() {
+            let got = got_list.value(row_idx);
+            let got_f64: Vec<f64> = got
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("inner must be Float64Array")
+                .values()
+                .to_vec();
+            assert_eq!(got_f64, *want, "row {row_idx} list mismatch");
+        }
+    }
+
+    /// `wrap_inner_in_list` dispatches to `LargeListArray` (i64 offsets)
+    /// when the outer field is `LargeList<>`, and to `ListArray` (i32
+    /// offsets) when it's `List<>`. Regression for codex review on
+    /// PR-6407: the builders accept either outer flavour but
+    /// previously always constructed `ListArray`.
+    ///
+    /// Tested at the helper level rather than via parquet round-trip:
+    /// `init_column_state` derives fields from
+    /// `parquet_to_arrow_schema(_, None)`, which only produces
+    /// `List<>` (parquet's native schema doesn't distinguish list
+    /// offset widths). The `LargeList<>` branch is reachable only
+    /// when callers construct fields directly, so we exercise it
+    /// directly.
+    #[test]
+    fn test_wrap_inner_in_list_dispatches_on_outer_flavour() {
+        use arrow::array::UInt64Array;
+
+        let inner_field = Arc::new(ArrowField::new("item", DataType::UInt64, false));
+        let inner_array: ArrayRef = Arc::new(UInt64Array::from(vec![1u64, 2, 3, 42, 100, 200]));
+        // Three rows: [1,2,3], [42], [100,200] → defs/reps that
+        // `list_offsets_from_levels` translates to offsets [0,3,4,6].
+        let defs = vec![1, 1, 1, 1, 1, 1];
+        let reps = vec![0, 1, 1, 0, 0, 1];
+
+        // List<UInt64> path → ListArray with i32 offsets.
+        let list_field = ArrowField::new(
+            "list_field",
+            DataType::List(Arc::clone(&inner_field)),
+            false,
+        );
+        let got_list = wrap_inner_in_list(
+            &list_field,
+            Arc::clone(&inner_field),
+            Arc::clone(&inner_array),
+            &defs,
+            &reps,
+        )
+        .expect("list dispatch");
+        let list_arr = got_list
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .expect("list field must produce ListArray");
+        assert_eq!(list_arr.len(), 3);
+        assert_eq!(list_arr.value(0).len(), 3);
+        assert_eq!(list_arr.value(1).len(), 1);
+        assert_eq!(list_arr.value(2).len(), 2);
+
+        // LargeList<UInt64> path → LargeListArray with i64 offsets.
+        let large_field = ArrowField::new(
+            "large_field",
+            DataType::LargeList(Arc::clone(&inner_field)),
+            false,
+        );
+        let got_large = wrap_inner_in_list(
+            &large_field,
+            Arc::clone(&inner_field),
+            Arc::clone(&inner_array),
+            &defs,
+            &reps,
+        )
+        .expect("large list dispatch");
+        let large_arr = got_large
+            .as_any()
+            .downcast_ref::<LargeListArray>()
+            .expect("LargeList field must produce LargeListArray, not ListArray");
+        assert_eq!(large_arr.len(), 3);
+        assert_eq!(large_arr.value(0).len(), 3);
+        assert_eq!(large_arr.value(1).len(), 1);
+        assert_eq!(large_arr.value(2).len(), 2);
     }
 
     /// I/O failures from the page stream surface as
