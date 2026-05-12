@@ -25,7 +25,6 @@ use quickwit_actors::{
     Observation,
 };
 use quickwit_cluster::Cluster;
-use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir;
 use quickwit_config::{
@@ -56,7 +55,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::models::{DetachIndexingPipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
-use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
+use crate::split_store::IndexingSplitCache;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
@@ -94,7 +93,7 @@ pub struct IndexingService {
     storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
     counters: IndexingServiceCounters,
-    local_split_store: Arc<IndexingSplitCache>,
+    split_cache: Arc<IndexingSplitCache>,
     max_concurrent_split_uploads: usize,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     event_broker: EventBroker,
@@ -124,14 +123,8 @@ impl IndexingService {
         ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
+        split_cache: Arc<IndexingSplitCache>,
     ) -> anyhow::Result<IndexingService> {
-        let split_store_space_quota = SplitStoreQuota::try_new(
-            indexer_config.split_store_max_num_splits,
-            indexer_config.split_store_max_num_bytes,
-        )?;
-        let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
-        let local_split_store =
-            IndexingSplitCache::open(split_cache_dir_path, split_store_space_quota).await?;
         let indexing_root_directory =
             temp_dir::create_or_purge_directory(&data_dir_path.join(INDEXING_DIR_NAME)).await?;
         let queue_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
@@ -149,7 +142,7 @@ impl IndexingService {
             ingest_api_service_opt,
             ingester_pool,
             storage_resolver,
-            local_split_store: Arc::new(local_split_store),
+            split_cache,
             indexing_pipelines: Default::default(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
@@ -245,7 +238,7 @@ impl IndexingService {
             })?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
-        let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
+        let split_store = IndexingSplitStore::new(storage.clone(), self.split_cache.clone());
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
@@ -828,6 +821,7 @@ mod tests {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            Arc::new(IndexingSplitCache::no_caching()),
         )
         .await
         .unwrap();
@@ -1435,6 +1429,7 @@ mod tests {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            Arc::new(IndexingSplitCache::no_caching()),
         )
         .await
         .unwrap();

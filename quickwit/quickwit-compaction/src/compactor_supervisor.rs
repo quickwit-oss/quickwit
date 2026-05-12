@@ -59,6 +59,7 @@ pub struct CompactorSupervisor {
     io_throughput_limiter: Option<Limiter>,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
+    split_cache: Arc<IndexingSplitCache>,
     max_concurrent_split_uploads: usize,
     event_broker: EventBroker,
 
@@ -75,6 +76,7 @@ impl CompactorSupervisor {
         io_throughput_limiter: Option<Limiter>,
         metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
+        split_cache: Arc<IndexingSplitCache>,
         max_concurrent_split_uploads: usize,
         event_broker: EventBroker,
         compaction_root_directory: TempDirectory,
@@ -87,6 +89,7 @@ impl CompactorSupervisor {
             io_throughput_limiter,
             metastore,
             storage_resolver,
+            split_cache,
             max_concurrent_split_uploads,
             event_broker,
             compaction_root_directory,
@@ -182,8 +185,7 @@ impl CompactorSupervisor {
 
         let index_storage_uri = Uri::from_str(&assignment.index_storage_uri)?;
         let index_storage = self.storage_resolver.resolve(&index_storage_uri).await?;
-        let split_cache = Arc::new(IndexingSplitCache::no_caching());
-        let split_store = IndexingSplitStore::new(index_storage, split_cache);
+        let split_store = IndexingSplitStore::new(index_storage, self.split_cache.clone());
 
         let doc_mapper = build_doc_mapper(&doc_mapping, &search_settings)?;
         let merge_policy = merge_policy_from_settings(&indexing_settings);
@@ -332,6 +334,7 @@ mod tests {
             None,
             metastore,
             StorageResolver::for_test(),
+            Arc::new(IndexingSplitCache::no_caching()),
             2,
             EventBroker::default(),
             TempDirectory::for_test(),
@@ -541,6 +544,7 @@ mod tests {
             None,
             metastore,
             StorageResolver::for_test(),
+            Arc::new(IndexingSplitCache::no_caching()),
             2,
             EventBroker::default(),
             TempDirectory::for_test(),
@@ -581,7 +585,6 @@ mod tests {
                 source_id: "src".to_string(),
                 split_ids: vec!["s1".to_string(), "s2".to_string()],
                 status: PipelineStatus::InProgress,
-                merge_level: 1,
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
@@ -589,7 +592,6 @@ mod tests {
                 source_id: "src".to_string(),
                 split_ids: vec!["s3".to_string()],
                 status: PipelineStatus::Completed,
-                merge_level: 1,
             },
             PipelineStatusUpdate {
                 task_id: "task-3".to_string(),
@@ -599,7 +601,6 @@ mod tests {
                 status: PipelineStatus::Failed {
                     error: "boom".to_string(),
                 },
-                merge_level: 1,
             },
         ];
 

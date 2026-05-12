@@ -230,7 +230,7 @@ impl Default for IndexerConfig {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompactorConfig {
-    /// Maximum number of concurrent merge pipelines. Defaults to 2/3 of CPU count.
+    /// Maximum number of concurrent merge pipelines. Defaults to CPU count.
     #[serde(default = "CompactorConfig::default_max_concurrent_pipelines")]
     pub max_concurrent_pipelines: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.
