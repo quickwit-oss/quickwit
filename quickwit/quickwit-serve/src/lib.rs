@@ -1271,6 +1271,16 @@ fn setup_indexer_pool(
                     );
                     Some(change)
                 }
+                ClusterChange::Update { previous, updated } if updated.is_indexer()
+                    && previous.ingester_status() != updated.ingester_status() =>
+                {
+                    let change = build_indexer_insert_change(
+                        &updated,
+                        indexing_service_clone_opt,
+                        grpc_max_message_size,
+                    );
+                    Some(change)
+                }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let change = build_indexer_remove_change(&node);
                     Some(change)
@@ -1305,6 +1315,7 @@ fn build_indexer_insert_change(
             client,
             indexing_tasks: node.indexing_tasks().to_vec(),
             indexing_capacity: node.indexing_capacity(),
+            ingester_status: node.ingester_status(),
         },
     )
 }
