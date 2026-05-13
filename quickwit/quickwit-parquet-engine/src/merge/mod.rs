@@ -65,7 +65,7 @@ pub struct MergeConfig {
 /// Metadata extracted from input files' Parquet KV metadata.
 /// All inputs must agree on sort_fields, window_start, window_duration,
 /// and rg_partition_prefix_len.
-struct InputMetadata {
+pub(crate) struct InputMetadata {
     sort_fields: String,
     window_start_secs: Option<i64>,
     window_duration_secs: u32,

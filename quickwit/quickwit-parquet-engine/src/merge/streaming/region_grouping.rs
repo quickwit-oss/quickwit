@@ -28,7 +28,11 @@
 //! mid-merge.
 //!
 //! The encoding rules per parquet physical type:
-//! - `ByteArray` / `FixedLenByteArray`: 4-byte BE length prefix + bytes.
+//! - `ByteArray` / `FixedLenByteArray`: byte-stuffed escape encoding — each `0x00` byte in the
+//!   value becomes `0x00 0x01`, and a `0x00 0x00` terminator is appended. This preserves
+//!   lexicographic order both for single columns (`"aa"` < `"b"`) and across concatenated composite
+//!   keys (the `0x00 0x00` terminator is the smallest possible 2-byte sequence under escaping, so
+//!   shorter values sort before longer values when prefixes match).
 //! - `Int32` / `Int64`: sign-flipped big-endian so byte order matches numeric order across the full
 //!   signed range.
 //! - `Boolean`: single 0/1 byte.
@@ -36,7 +40,7 @@
 //!   *larger*.
 //! - `Float` / `Double` / `Int96`: rejected with a clear error.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
 use parquet::file::metadata::ParquetMetaData;
@@ -289,13 +293,25 @@ fn extract_aligned_prefix_value(
     }
 }
 
-/// Length-prefix a variable-width value so the resulting bytes
-/// concatenate unambiguously and lex-order matches column order even
-/// when adjacent columns have different lengths.
+/// Byte-stuffed escape encoding for a variable-width value: every
+/// `0x00` byte becomes `0x00 0x01`, and a `0x00 0x00` terminator is
+/// appended. This preserves lex order for single columns (`"aa"` <
+/// `"b"`) AND lets multiple values concatenate unambiguously — the
+/// terminator is the smallest possible 2-byte sequence after
+/// escaping, so a shorter value sorts before any longer value sharing
+/// its prefix.
 pub(crate) fn encode_byte_array_prefix(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + bytes.len());
-    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-    out.extend_from_slice(bytes);
+    let mut out = Vec::with_capacity(bytes.len() + 2);
+    for &b in bytes {
+        if b == 0x00 {
+            out.push(0x00);
+            out.push(0x01);
+        } else {
+            out.push(b);
+        }
+    }
+    out.push(0x00);
+    out.push(0x00);
     out
 }
 
@@ -380,6 +396,20 @@ pub(crate) fn extract_regions_from_metadata(
     // Prefix_len >= 1: build regions by composite prefix key from
     // per-RG stats. See `extract_rg_composite_prefix_key` for the
     // per-type encoding.
+    //
+    // **Strong invariant** (enforced here on the merge read path, and
+    // mirrored on both write paths — see `assert_unique_rg_prefix_keys`):
+    // no single input may have two row groups sharing the same composite
+    // prefix key. The streaming engine pairs at most one RG per input
+    // per region (`process_region` keys `sort_col_batches` by
+    // `input_idx`), so a duplicate prefix would silently overwrite the
+    // first RG's sort batch while `Region::total_rows` still counts both
+    // — dropping rows and corrupting body-col / sort-col alignment.
+    //
+    // Cross-input duplicates are fine (and expected — that's the whole
+    // point of region merging). The constraint is **same input, same
+    // prefix key, multiple RGs**: producers must ensure prefix
+    // transitions align with RG boundaries.
     let mut by_prefix: BTreeMap<Vec<u8>, Vec<(usize, usize, usize)>> = BTreeMap::new();
     let prefix_len = input_meta.rg_partition_prefix_len as usize;
 
@@ -394,9 +424,20 @@ pub(crate) fn extract_regions_from_metadata(
             input_idx,
         )
         .with_context(|| format!("resolving prefix cols for input {input_idx}"))?;
+        let mut seen_for_input: HashSet<Vec<u8>> = HashSet::new();
         for rg_idx in 0..state.metadata.num_row_groups() {
             let prefix_key =
                 extract_rg_composite_prefix_key(&state.metadata, rg_idx, &prefix_cols, input_idx)?;
+            if !seen_for_input.insert(prefix_key.clone()) {
+                bail!(
+                    "input {input_idx} has rg {rg_idx} sharing a prefix key with an earlier RG in \
+                     the same file. The streaming merge engine requires at-most-one-RG-per-input \
+                     per prefix value (rg_partition_prefix_len = {prefix_len}); the producer must \
+                     ensure prefix transitions align with RG boundaries. Either lower \
+                     rg_partition_prefix_len to include fewer columns, or rewrite the producer to \
+                     start a new RG at every prefix-value change."
+                );
+            }
             let num_rows = state.metadata.row_group(rg_idx).num_rows() as usize;
             by_prefix
                 .entry(prefix_key)
@@ -412,6 +453,55 @@ pub(crate) fn extract_regions_from_metadata(
             contributing,
         })
         .collect())
+}
+
+/// Post-write check: verify the parquet file at `metadata` has no two
+/// row groups sharing the same composite prefix key, for the first
+/// `prefix_len` sort columns. Returns `Ok(())` immediately if
+/// `prefix_len == 0` (no alignment claim).
+///
+/// This is the writer-side mirror of the read-side check in
+/// `extract_regions_from_metadata` — both indexing and the compaction
+/// merge output writer call this after sealing a parquet file so a
+/// producer bug never lets a duplicate-prefix file land on disk. See
+/// the doc-comment on `extract_regions_from_metadata` for why
+/// at-most-one-RG-per-prefix is load-bearing for the streaming
+/// engine.
+///
+/// `context` is included in the error message — e.g.,
+/// `"indexing write at <path>"` or `"merge output <split_id>"`.
+pub(crate) fn assert_unique_rg_prefix_keys(
+    metadata: &ParquetMetaData,
+    sort_fields_str: &str,
+    prefix_len: u32,
+    context: &str,
+) -> Result<()> {
+    if prefix_len == 0 {
+        return Ok(());
+    }
+    let num_rgs = metadata.num_row_groups();
+    if num_rgs <= 1 {
+        // Single-RG (or zero-RG) files vacuously satisfy the invariant.
+        return Ok(());
+    }
+    let prefix_cols =
+        find_prefix_parquet_col_indices(metadata, sort_fields_str, prefix_len as usize, 0)
+            .with_context(|| format!("resolving prefix cols for {context}"))?;
+    let mut seen: HashSet<Vec<u8>> = HashSet::with_capacity(num_rgs);
+    for rg_idx in 0..num_rgs {
+        let key = extract_rg_composite_prefix_key(metadata, rg_idx, &prefix_cols, 0)
+            .with_context(|| format!("extracting prefix key at {context} rg {rg_idx}"))?;
+        if !seen.insert(key) {
+            bail!(
+                "{context}: rg {rg_idx} shares a prefix key with an earlier row group. \
+                 rg_partition_prefix_len = {prefix_len} requires prefix transitions to align with \
+                 row group boundaries. Either lower the prefix length to include fewer columns, \
+                 or change the writer so each RG carries a unique value of the first {prefix_len} \
+                 sort columns."
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Assign each region to an output file index.

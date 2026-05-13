@@ -75,7 +75,7 @@ use super::{InputMetadata, MergeConfig, MergeOutputFile};
 
 mod body_assembler;
 mod output;
-mod region_grouping;
+pub(crate) mod region_grouping;
 
 use body_assembler::{BodyColOutputPageAssembler, StreamingBodyColIter};
 use output::{
@@ -1680,13 +1680,16 @@ mod tests {
              'host-b')",
         );
 
-        // Encoded representation: each byte-array column is 4-byte BE
-        // length + bytes, concatenated. So the first 4 bytes are the
-        // length of "cpu.usage" (9) in BE.
-        assert_eq!(&key_rg0[0..4], &9u32.to_be_bytes());
-        assert_eq!(&key_rg0[4..13], b"cpu.usage");
-        assert_eq!(&key_rg0[13..17], &6u32.to_be_bytes());
-        assert_eq!(&key_rg0[17..23], b"host-a");
+        // Encoded representation: each byte-array column is the raw
+        // bytes (no null bytes in these test values, so escape-pass
+        // is a no-op) followed by a `0x00 0x00` terminator,
+        // concatenated. "cpu.usage" → 9 bytes + 2-byte terminator;
+        // "host-a" → 6 bytes + 2-byte terminator. Total = 19 bytes.
+        assert_eq!(&key_rg0[0..9], b"cpu.usage");
+        assert_eq!(&key_rg0[9..11], &[0x00, 0x00]);
+        assert_eq!(&key_rg0[11..17], b"host-a");
+        assert_eq!(&key_rg0[17..19], &[0x00, 0x00]);
+        assert_eq!(key_rg0.len(), 19);
     }
 
     /// Regression for Codex P1 on PR-6410 (positive coverage of the
@@ -1726,6 +1729,46 @@ mod tests {
             "three distinct (metric_name, service) pairs must produce three output RGs",
         );
         assert_eq!(outputs[0].num_row_groups, 3);
+    }
+
+    /// Regression for Codex finding #1 on PR-6410: when one input
+    /// file has two RGs sharing the same composite prefix key, the
+    /// streaming engine must reject up-front. Without the check,
+    /// `process_region` keys `sort_col_batches` by input_idx, so the
+    /// second RG silently overwrites the first while
+    /// `Region::total_rows` keeps counting both — rows would be
+    /// dropped and the body-col / sort-col mapping would be off by a
+    /// full RG.
+    ///
+    /// The fixture passes `("cpu.usage", "host-a")` twice, producing
+    /// an input with two RGs that have identical (metric_name,
+    /// service) statistics. The merge must bail with a clear error
+    /// pointing at the duplicate.
+    #[tokio::test]
+    async fn test_streaming_merge_rejects_duplicate_prefix_rgs_in_one_input() {
+        let bytes = make_prefix_len_two_input(
+            &[
+                ("cpu.usage", "host-a"),
+                ("cpu.usage", "host-a"), // duplicate prefix key
+                ("memory.used", "host-a"),
+            ],
+            20,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("must reject input with duplicate prefix RGs");
+        let s = err.to_string();
+        assert!(
+            s.contains("sharing a prefix key with an earlier RG"),
+            "expected duplicate-prefix error, got: {s}",
+        );
+        assert!(
+            s.contains("input 0"),
+            "error should identify which input is bad, got: {s}",
+        );
     }
 
     /// Build a multi-RG fixture where each RG has a single
@@ -1815,7 +1858,7 @@ mod tests {
     /// the lex order of two byte strings, so a DESC-encoded value's
     /// lex position equals its reversed sort position. Covers the
     /// equal-length case and the variable-length case (where the
-    /// length prefix's complement does the work).
+    /// escape encoding's `0x00 0x00` terminator does the work).
     #[test]
     fn test_invert_for_descending_reverses_lex_order() {
         // Same length: per-byte order is reversed.
@@ -1829,8 +1872,10 @@ mod tests {
             "DESC encoding must reverse order: 'host-b' DESC < 'host-a' DESC",
         );
 
-        // Variable length: "ab" vs "abc". In ASC the shorter sorts
-        // first (length prefix 2 < 3); DESC must put the longer first.
+        // Variable length: "ab" vs "abc". Under escape encoding the
+        // terminator `0x00 0x00` after "ab" makes its third byte 0x00,
+        // which sorts before 'c' (0x63), so "ab" < "abc"; DESC must
+        // reverse to put the longer first.
         let ab = encode_byte_array_prefix(b"ab");
         let abc = encode_byte_array_prefix(b"abc");
         assert!(ab < abc, "ASC: 'ab' < 'abc'");
@@ -1839,6 +1884,44 @@ mod tests {
         assert!(
             abc_desc < ab_desc,
             "DESC: 'abc' DESC < 'ab' DESC (so iteration yields 'abc' before 'ab')",
+        );
+    }
+
+    /// Regression for Codex finding #2 on PR-6410: the previous
+    /// 4-byte length-prefix encoding made the encoded `"b"` (length=1)
+    /// sort BEFORE the encoded `"aa"` (length=2), violating the
+    /// declared ASC sort order on the byte-array column. Escape
+    /// encoding fixes this by emitting raw bytes with a 0x00 0x00
+    /// terminator — so `"aa"` ([0x61, 0x61, 0x00, 0x00]) correctly
+    /// sorts before `"b"` ([0x62, 0x00, 0x00]).
+    #[test]
+    fn test_byte_array_prefix_preserves_lex_order_across_lengths() {
+        let aa = encode_byte_array_prefix(b"aa");
+        let b = encode_byte_array_prefix(b"b");
+        assert!(
+            aa < b,
+            "ASC: 'aa' must encode lex-before 'b' (was broken under length-prefix encoding). got \
+             aa={aa:?} b={b:?}",
+        );
+
+        // Empty value sorts before any non-empty value sharing no prefix.
+        let empty = encode_byte_array_prefix(b"");
+        assert!(empty < aa, "ASC: '' must encode lex-before 'aa'");
+
+        // Same prefix, shorter sorts before longer (key property for
+        // composite keys with multiple variable-length columns).
+        let a = encode_byte_array_prefix(b"a");
+        let ab = encode_byte_array_prefix(b"ab");
+        assert!(a < ab, "ASC: 'a' must encode lex-before 'ab'");
+
+        // Null bytes inside the value are escaped, preserving order
+        // around the terminator.
+        let null_inside = encode_byte_array_prefix(b"\x00a");
+        let a_alone = encode_byte_array_prefix(b"a");
+        assert!(
+            null_inside < a_alone,
+            "ASC: '\\0a' (encoded as 0x00 0x01 0x61 0x00 0x00) must sort before 'a' (encoded as \
+             0x61 0x00 0x00)",
         );
     }
 
