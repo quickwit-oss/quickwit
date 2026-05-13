@@ -106,6 +106,11 @@ zip = { workspace = true, default-features = false, features=["deflate"] }
 to
 zip = "2"
 
+Do not write Cargo.lock yourself.
+Instead, just may run `cargo check`, if you have edited Cargo.toml.
+It will update `Cargo.lock` with as little changes as possible.
+You may also run `cargo update` to update dependencies provide you were explicitly asked to update dependencies.
+
 ## Code Formatting
 ### Quick Fix
 
