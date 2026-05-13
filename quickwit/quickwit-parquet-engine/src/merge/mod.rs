@@ -95,14 +95,21 @@ pub struct MergeOutputFile {
     /// Number of rows in this output file.
     pub num_rows: usize,
 
-    /// Number of row groups the writer produced for this file. Used by
-    /// `merge_parquet_split_metadata` to decide whether the input prefix
-    /// alignment claim (`rg_partition_prefix_len`) can be propagated to
-    /// the output: a single-RG file vacuously satisfies any claim, so
-    /// we keep the inputs' prefix; a multi-RG file with arbitrary
-    /// boundaries (the only kind the current writer can produce) must
-    /// reset the claim to 0.
+    /// Number of row groups the writer produced for this file.
     pub num_row_groups: usize,
+
+    /// `qh.rg_partition_prefix_len` value the writer embedded in this
+    /// file's KV metadata. The legacy `merge/writer.rs` writer demotes
+    /// to 0 when it produces multi-RG output (its RG boundaries are
+    /// row-count-driven, not prefix-aligned). The streaming writer
+    /// (`merge/streaming/output.rs`) propagates the inputs' prefix
+    /// unchanged because it splits at prefix transitions AND
+    /// `assert_unique_rg_prefix_keys` verifies the file. Carrying the
+    /// value here lets `merge_parquet_split_metadata` (CS-1: metastore
+    /// == KV) propagate it directly to `ParquetSplitMetadata` instead
+    /// of re-deriving — preventing the metastore from disagreeing with
+    /// the on-disk KV when both engines coexist.
+    pub output_rg_partition_prefix_len: u32,
 
     /// File size in bytes.
     pub size_bytes: u64,
