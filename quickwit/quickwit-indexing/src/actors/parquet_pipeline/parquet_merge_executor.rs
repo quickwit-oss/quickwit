@@ -231,11 +231,23 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             return Ok(());
         }
 
+        // `mixed_prefix_ok` matches the operation's promotion mode:
+        // promote-legacy operations bundle inputs from different
+        // `rg_partition_prefix_len` buckets (the adapter normalizes
+        // them at read time), so the input-side equality check in
+        // `merge_parquet_split_metadata` would spuriously fail. Regular
+        // merges keep the strict check.
+        let mixed_prefix_ok = scratch
+            .merge_operation
+            .target_prefix_len_override
+            .is_some();
+
         let mut merged_splits = Vec::with_capacity(outputs.len());
         for output in &outputs {
-            let mut metadata = merge_parquet_split_metadata(input_splits, output)
-                .context("failed to build merge output metadata")
-                .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
+            let mut metadata =
+                merge_parquet_split_metadata(input_splits, output, mixed_prefix_ok)
+                    .context("failed to build merge output metadata")
+                    .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
             // Use the split ID that was assigned when the merge operation was
             // planned, rather than the one generated inside

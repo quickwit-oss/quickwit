@@ -580,14 +580,15 @@ fn write_array_via_serialized_column_writer(
                 &materialized_ref,
             );
         }
-        // `List<T>` / `LargeList<T>` with non-nullable outer + inner.
-        // The DDSketch `keys` (`List<Int16>`) and `counts`
-        // (`List<UInt64>`) columns are this shape. We compute Dremel
-        // def/rep levels from each input array and write them through
-        // the same `SerializedColumnWriter::write_batch` call the flat
+        // `List<T>` / `LargeList<T>` with non-nullable inner. The outer
+        // may be either nullable (schema-evolution case where the col
+        // is present in only some inputs) or non-nullable (e.g.
+        // DDSketch `keys` / `counts`). We compute Dremel def/rep
+        // levels from each input array and write them through the
+        // same `SerializedColumnWriter::write_batch` call the flat
         // path uses, so memory stays bounded by one in-flight page.
         DataType::List(_) | DataType::LargeList(_) => {
-            write_non_nullable_list_via_serialized_column_writer(col_writer, field, array)?;
+            write_list_via_serialized_column_writer(col_writer, field, array)?;
         }
         // Multi-leaf nested (Struct, Map) and other unsupported types.
         // Single-leaf multi-child Structs are rejected at
@@ -607,37 +608,24 @@ fn write_array_via_serialized_column_writer(
     Ok(())
 }
 
-/// Page-bounded write for `List<T>` / `LargeList<T>` where the outer
-/// field is non-nullable and the inner field is non-nullable. Computes
-/// Dremel def/rep levels (max_def = 1, max_rep = 1) and dispatches the
-/// flat inner values through the same typed `write_batch` call the flat
-/// arms use. Pages flush as the writer's
-/// `data_page_size_limit` / `data_page_row_count_limit` thresholds are
-/// reached — same memory-bound contract as the flat path.
-fn write_non_nullable_list_via_serialized_column_writer(
-    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
-    field: &arrow::datatypes::Field,
-    array: &arrow::array::ArrayRef,
-) -> Result<(), ParquetWriteError> {
-    use arrow::array::{Array, LargeListArray, ListArray};
-    use arrow::datatypes::DataType;
-
-    if field.is_nullable() {
-        return Err(ParquetWriteError::SchemaValidation(format!(
-            "field '{}' is a nullable List; only non-nullable List is supported on the streaming \
-             write path",
-            field.name(),
-        )));
-    }
-
-    // Resolve inner field + values + per-row offsets uniformly across
-    // List<T> and LargeList<T>. Offsets coerce to i64 so a single
-    // function body handles both representations.
-    let (inner_field, inner_values, offsets): (
-        &arrow::datatypes::Field,
-        &arrow::array::ArrayRef,
+/// Resolve a `ListArray` or `LargeListArray` into a unified
+/// `(inner_field, inner_values, offsets)` triple. Offsets always coerce
+/// to `i64` so the caller doesn't need to branch on `List` vs
+/// `LargeList`.
+fn resolve_list_components<'a>(
+    field: &'a arrow::datatypes::Field,
+    array: &'a arrow::array::ArrayRef,
+) -> Result<
+    (
+        &'a arrow::datatypes::Field,
+        &'a arrow::array::ArrayRef,
         Vec<i64>,
-    ) = match field.data_type() {
+    ),
+    ParquetWriteError,
+> {
+    use arrow::array::{LargeListArray, ListArray};
+    use arrow::datatypes::DataType;
+    match field.data_type() {
         DataType::List(inner_field_ref) => {
             let arr = array.as_any().downcast_ref::<ListArray>().ok_or_else(|| {
                 ParquetWriteError::SchemaValidation(format!(
@@ -646,7 +634,7 @@ fn write_non_nullable_list_via_serialized_column_writer(
                 ))
             })?;
             let offsets: Vec<i64> = arr.value_offsets().iter().map(|&o| o as i64).collect();
-            (inner_field_ref.as_ref(), arr.values(), offsets)
+            Ok((inner_field_ref.as_ref(), arr.values(), offsets))
         }
         DataType::LargeList(inner_field_ref) => {
             let arr = array
@@ -659,14 +647,42 @@ fn write_non_nullable_list_via_serialized_column_writer(
                     ))
                 })?;
             let offsets: Vec<i64> = arr.value_offsets().to_vec();
-            (inner_field_ref.as_ref(), arr.values(), offsets)
+            Ok((inner_field_ref.as_ref(), arr.values(), offsets))
         }
-        other => {
-            return Err(ParquetWriteError::SchemaValidation(format!(
-                "internal: write_non_nullable_list called with non-list type {other:?}",
-            )));
-        }
-    };
+        other => Err(ParquetWriteError::SchemaValidation(format!(
+            "internal: resolve_list_components called with non-list type {other:?}",
+        ))),
+    }
+}
+
+/// Page-bounded write for `List<T>` / `LargeList<T>` with non-nullable
+/// inner element. Handles both nullable and non-nullable outer fields:
+///
+/// - **Non-nullable outer** (e.g. DDSketch `keys` / `counts`): max_def = 1, max_rep = 1.
+///   - Empty list at row → def=0, rep=0, no value.
+///   - N-element list at row → N×(def=1, rep=[0,1,1,…]) plus N values.
+/// - **Nullable outer** (schema-evolution case where the col is missing from some inputs): max_def
+///   = 2, max_rep = 1.
+///   - Outer is null at row → def=0, rep=0, no value.
+///   - Empty list at row → def=1, rep=0, no value.
+///   - N-element list at row → N×(def=2, rep=[0,1,1,…]) plus N values.
+///
+/// Pages flush as the writer's `data_page_size_limit` /
+/// `data_page_row_count_limit` thresholds are reached — same
+/// memory-bound contract as the flat path.
+fn write_list_via_serialized_column_writer(
+    col_writer: &mut parquet::file::writer::SerializedColumnWriter<'_>,
+    field: &arrow::datatypes::Field,
+    array: &arrow::array::ArrayRef,
+) -> Result<(), ParquetWriteError> {
+    use arrow::array::Array;
+
+    let outer_nullable = field.is_nullable();
+
+    // Resolve inner field + values + per-row offsets uniformly across
+    // List<T> and LargeList<T>. Offsets coerce to i64 so a single
+    // function body handles both representations.
+    let (inner_field, inner_values, offsets) = resolve_list_components(field, array)?;
 
     if inner_field.is_nullable() {
         return Err(ParquetWriteError::SchemaValidation(format!(
@@ -676,49 +692,53 @@ fn write_non_nullable_list_via_serialized_column_writer(
         )));
     }
 
-    // Walk per-row to build Dremel levels.
-    //
-    // Path: required outer group → repeated `list` → required `element`.
-    // - max_rep_level = 1 (only `list` is repeated).
-    // - max_def_level = 1 (the repeated `list` group can occur 0 times, which is how parquet
-    //   encodes an empty list; 1 marks "element present").
-    //
-    // Per row:
-    //  - empty list: emit one slot with def = 0, rep = 0, no value
-    //  - list of N elements: emit N slots, def = 1 each, rep = 0 for the first and rep = 1 for the
-    //    rest, plus N values.
+    let empty_list_def: i16 = if outer_nullable { 1 } else { 0 };
+    let element_present_def: i16 = if outer_nullable { 2 } else { 1 };
+
     let num_rows = array.len();
-    let total_present: usize = (0..num_rows)
-        .map(|row| (offsets[row + 1] - offsets[row]).max(0) as usize)
-        .sum();
-    // Each row contributes either 1 level (empty) or list_len levels.
-    let total_levels = (0..num_rows)
-        .map(|row| {
-            let len = (offsets[row + 1] - offsets[row]).max(0) as usize;
-            if len == 0 { 1 } else { len }
-        })
-        .sum::<usize>();
-    let mut def_levels: Vec<i16> = Vec::with_capacity(total_levels);
-    let mut rep_levels: Vec<i16> = Vec::with_capacity(total_levels);
+    // A null outer at row R contributes one def=0 level and no value.
+    // The inner-values gather (in `write_list_inner_values`) skips
+    // null rows entirely via this mask.
+    let null_rows: Option<Vec<bool>> = if outer_nullable {
+        Some((0..num_rows).map(|row| array.is_null(row)).collect())
+    } else {
+        None
+    };
+
+    let mut def_levels: Vec<i16> = Vec::new();
+    let mut rep_levels: Vec<i16> = Vec::new();
+    let mut total_present: usize = 0;
     for row in 0..num_rows {
-        let start = offsets[row];
-        let end = offsets[row + 1];
-        let len = (end - start).max(0) as usize;
-        if len == 0 {
+        let is_null = match null_rows.as_ref() {
+            Some(n) => n[row],
+            None => false,
+        };
+        if is_null {
+            // Null outer: one def=0 level, no value.
             def_levels.push(0);
+            rep_levels.push(0);
+            continue;
+        }
+        let len = (offsets[row + 1] - offsets[row]).max(0) as usize;
+        if len == 0 {
+            def_levels.push(empty_list_def);
             rep_levels.push(0);
         } else {
             for i in 0..len {
-                def_levels.push(1);
+                def_levels.push(element_present_def);
                 rep_levels.push(if i == 0 { 0 } else { 1 });
             }
+            total_present += len;
         }
     }
 
-    // Dispatch the inner primitive through the appropriate typed
-    // writer. Indexing iterates only the present (non-empty-list) rows
-    // — start..end ranges, walked once for the whole array — so we
-    // emit exactly `total_present` values.
+    // The inner-values dispatcher walks `start..end` per row and
+    // gathers into a contiguous vec. To do that against the original
+    // inner_values (which is shared across all rows including the
+    // null ones), we hand it the ORIGINAL per-row offsets plus a
+    // `null_rows` mask. Non-null rows contribute their full range;
+    // null rows are skipped. The dispatcher emits exactly
+    // `total_present` values.
     write_list_inner_values(
         col_writer,
         field,
@@ -728,6 +748,7 @@ fn write_non_nullable_list_via_serialized_column_writer(
         total_present,
         &def_levels,
         &rep_levels,
+        null_rows.as_deref(),
     )
 }
 
@@ -746,6 +767,11 @@ fn write_list_inner_values(
     total_present: usize,
     def_levels: &[i16],
     rep_levels: &[i16],
+    // Present for nullable-outer lists: `null_rows[row]` is true when
+    // row is null on the outer (no inner values to emit). Indexed by
+    // the same row range as `offsets`. None means "no nullable outer"
+    // (all rows are present), so the per-row check is skipped.
+    null_rows: Option<&[bool]>,
 ) -> Result<(), ParquetWriteError> {
     use arrow::array::{
         Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, UInt8Array,
@@ -756,9 +782,19 @@ fn write_list_inner_values(
 
     // Walk the per-row [start, end) ranges once and gather the
     // present-only values into a contiguous Vec for `write_batch`.
+    // Null outer rows are skipped — their inner range is not emitted.
+    let is_null_row = |row: usize| -> bool {
+        match null_rows {
+            Some(n) => n[row],
+            None => false,
+        }
+    };
     let collect_i32 = |extract: &dyn Fn(usize) -> i32| -> Vec<i32> {
         let mut out = Vec::with_capacity(total_present);
         for row in 0..(offsets.len() - 1) {
+            if is_null_row(row) {
+                continue;
+            }
             let start = offsets[row].max(0) as usize;
             let end = offsets[row + 1].max(0) as usize;
             for i in start..end {
@@ -770,6 +806,9 @@ fn write_list_inner_values(
     let collect_i64 = |extract: &dyn Fn(usize) -> i64| -> Vec<i64> {
         let mut out = Vec::with_capacity(total_present);
         for row in 0..(offsets.len() - 1) {
+            if is_null_row(row) {
+                continue;
+            }
             let start = offsets[row].max(0) as usize;
             let end = offsets[row + 1].max(0) as usize;
             for i in start..end {
@@ -861,6 +900,9 @@ fn write_list_inner_values(
                 .unwrap();
             let mut values = Vec::with_capacity(total_present);
             for row in 0..(offsets.len() - 1) {
+                if is_null_row(row) {
+                    continue;
+                }
                 let start = offsets[row].max(0) as usize;
                 let end = offsets[row + 1].max(0) as usize;
                 for i in start..end {
@@ -880,6 +922,9 @@ fn write_list_inner_values(
                 .unwrap();
             let mut values = Vec::with_capacity(total_present);
             for row in 0..(offsets.len() - 1) {
+                if is_null_row(row) {
+                    continue;
+                }
                 let start = offsets[row].max(0) as usize;
                 let end = offsets[row + 1].max(0) as usize;
                 for i in start..end {
