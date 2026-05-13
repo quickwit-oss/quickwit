@@ -739,8 +739,8 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
 /// Build a `RootResourceStats` from the per-leaf responses captured before
 /// they are merged.
 ///
-/// `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
-/// `leaf_resources_sum` is a field-wise sum of every leaf's stats.
+/// `leaf_resources_worsts` is the top-2 leaves by `wall_time_microsecs`, largest
+/// first. `leaf_resources_sum` is a field-wise sum of every leaf's stats.
 fn compute_root_resource_stats(
     leaf_responses: &[LeafSearchResponse],
     leaf_num_calls: u64,
@@ -755,11 +755,13 @@ fn compute_root_resource_stats(
         return None;
     }
 
-    let leaf_resources_worst = leaf_stats
-        .iter()
-        .copied()
-        .max_by_key(|stats| stats.wall_time_microsecs)
-        .cloned();
+    // Top-2 leaves by `wall_time_microsecs`, largest first. Sort all candidates
+    // and truncate — leaf counts are small (typically dozens), so this is
+    // simpler than a hand-rolled single-pass top-N selector.
+    let mut leaf_resources_worsts: Vec<LeafResourceStats> =
+        leaf_stats.iter().map(|stats| (*stats).clone()).collect();
+    leaf_resources_worsts.sort_by_key(|stats| std::cmp::Reverse(stats.wall_time_microsecs));
+    leaf_resources_worsts.truncate(crate::NUM_WORST_KEPT);
 
     let mut leaf_resources_sum = LeafResourceStats::default();
     for stats in &leaf_stats {
@@ -767,7 +769,7 @@ fn compute_root_resource_stats(
     }
 
     Some(RootResourceStats {
-        leaf_resources_worst,
+        leaf_resources_worsts,
         leaf_resources_sum: Some(leaf_resources_sum),
         leaf_num_calls,
         leaf_num_calls_including_retries,
@@ -2956,7 +2958,7 @@ mod tests {
                 localexec_num_docs: 10,
                 lambda_bottleneck: 0,
                 split_resources_sum: Some(split_a),
-                split_resources_worst: Some(split_a),
+                split_resources_worsts: vec![split_a],
                 wall_time_microsecs: 1_000,
                 ..Default::default()
             }),
@@ -2968,7 +2970,7 @@ mod tests {
                 localexec_num_docs: 20,
                 lambda_bottleneck: 1,
                 split_resources_sum: Some(split_b),
-                split_resources_worst: Some(split_b),
+                split_resources_worsts: vec![split_b],
                 wall_time_microsecs: 2_500,
                 ..Default::default()
             }),
@@ -2988,12 +2990,15 @@ mod tests {
         assert_eq!(root_stats.leaf_num_calls_including_retries, 3);
         assert_eq!(root_stats.num_failed_splits, 1);
 
-        // `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
-        let worst = root_stats
-            .leaf_resources_worst
-            .expect("worst leaf should be set");
+        // `leaf_resources_worsts` keeps the top-2 leaves by `wall_time_microsecs`,
+        // largest first.
+        assert_eq!(root_stats.leaf_resources_worsts.len(), 2);
+        let worst = &root_stats.leaf_resources_worsts[0];
         assert_eq!(worst.wall_time_microsecs, 2_500);
         assert_eq!(worst.localexec_num_docs, 20);
+        let second_worst = &root_stats.leaf_resources_worsts[1];
+        assert_eq!(second_worst.wall_time_microsecs, 1_000);
+        assert_eq!(second_worst.localexec_num_docs, 10);
 
         // `leaf_resources_sum` field-wise sums every numeric counter, including
         // `wall_time_microsecs` and `lambda_bottleneck` (post-`add_leaf_stats`
@@ -3034,7 +3039,7 @@ mod tests {
                     localexec_num_splits: 1,
                     localexec_num_docs: 7,
                     split_resources_sum: Some(split),
-                    split_resources_worst: Some(split),
+                    split_resources_worsts: vec![split],
                     wall_time_microsecs: 500,
                     ..Default::default()
                 }),
@@ -3094,7 +3099,7 @@ mod tests {
 
         // The two leaves report distinct stats so we can verify that root
         // aggregation produces a meaningful `leaf_resources_sum` and selects
-        // the longer-running leaf as `leaf_resources_worst`.
+        // the longer-running leaf as `leaf_resources_worsts`.
         let split1_stats = SplitResourceStats {
             split_num_docs: 10,
             input_memory_bytes: 1_024,
@@ -3119,7 +3124,7 @@ mod tests {
             localexec_num_splits: 1,
             localexec_num_docs: 10,
             split_resources_sum: Some(split1_stats),
-            split_resources_worst: Some(split1_stats),
+            split_resources_worsts: vec![split1_stats],
             wall_time_microsecs: 1_000,
             ..Default::default()
         };
@@ -3127,7 +3132,7 @@ mod tests {
             localexec_num_splits: 1,
             localexec_num_docs: 20,
             split_resources_sum: Some(split2_stats),
-            split_resources_worst: Some(split2_stats),
+            split_resources_worsts: vec![split2_stats],
             wall_time_microsecs: 2_500,
             ..Default::default()
         };
@@ -3144,7 +3149,7 @@ mod tests {
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                     num_successful_splits: 1,
-                    resource_stats: Some(leaf_stats_1),
+                    resource_stats: Some(leaf_stats_1.clone()),
                     ..Default::default()
                 })
             },
@@ -3165,7 +3170,7 @@ mod tests {
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                     num_successful_splits: 1,
-                    resource_stats: Some(leaf_stats_2),
+                    resource_stats: Some(leaf_stats_2.clone()),
                     ..Default::default()
                 })
             },
@@ -3201,12 +3206,15 @@ mod tests {
         assert_eq!(root_stats.leaf_num_calls_including_retries, 2);
         assert_eq!(root_stats.num_failed_splits, 0);
 
-        // `leaf_resources_worst` is the leaf with the largest wall_time.
-        let worst = root_stats
-            .leaf_resources_worst
-            .expect("leaf_resources_worst should be set");
+        // `leaf_resources_worsts` keeps the top-2 leaves by wall_time, largest
+        // first.
+        assert_eq!(root_stats.leaf_resources_worsts.len(), 2);
+        let worst = &root_stats.leaf_resources_worsts[0];
         assert_eq!(worst.wall_time_microsecs, 2_500);
         assert_eq!(worst.localexec_num_splits, 1);
+        let second_worst = &root_stats.leaf_resources_worsts[1];
+        assert_eq!(second_worst.wall_time_microsecs, 1_000);
+        assert_eq!(second_worst.localexec_num_splits, 1);
 
         // `leaf_resources_sum` field-wise sums every numeric counter across
         // leaves; `wall_time_microsecs` is summed too after the recent
