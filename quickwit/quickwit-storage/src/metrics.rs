@@ -30,7 +30,6 @@ pub struct StorageMetrics {
     pub predicate_cache: CacheMetrics,
     pub fd_cache_metrics: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
-    pub datafusion_parquet_range_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
     pub get_slice_timeout_successes: [IntCounter; 3],
@@ -95,7 +94,6 @@ impl Default for StorageMetrics {
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
-            datafusion_parquet_range_cache: CacheMetrics::for_component("datafusion_parquet_range"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
             predicate_cache: CacheMetrics::for_component("predicate"),
@@ -166,7 +164,9 @@ impl Default for StorageMetrics {
 
 /// Counters associated to a cache.
 pub struct CacheMetrics {
+    /// Value used for the `component_name` metric label.
     pub component_name: String,
+    /// Counters for the primary cache instance.
     pub cache_metrics: SingleCacheMetrics,
     virtual_caches_metrics: RwLock<HashMap<CacheConfig, SingleCacheMetrics>>,
 }
@@ -183,6 +183,7 @@ pub struct SingleCacheMetrics {
 }
 
 impl CacheMetrics {
+    /// Creates cache counters labelled with the given component name.
     pub fn for_component(component_name: &str) -> Self {
         const CACHE_METRICS_NAMESPACE: &str = "cache";
         let labels = [("component_name", component_name)];
@@ -236,6 +237,7 @@ impl CacheMetrics {
         }
     }
 
+    /// Returns counters for a virtual cache with the given configuration.
     pub fn virtual_cache(&self, config: &CacheConfig) -> SingleCacheMetrics {
         if let Some(virtual_cache_metrics) = self.virtual_caches_metrics.read().unwrap().get(config)
         {

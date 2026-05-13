@@ -20,30 +20,23 @@ tokio::task_local! {
     static STORAGE_CACHE_METRICS: Arc<StorageCacheMetrics>;
 }
 
-/// Accumulates storage cache activity for the current observed operation.
 #[derive(Debug, Default)]
-pub struct StorageCacheMetrics {
+pub(crate) struct StorageCacheMetrics {
     hit_bytes: AtomicUsize,
     miss_bytes: AtomicUsize,
     hit_count: AtomicUsize,
     miss_count: AtomicUsize,
 }
 
-/// Point-in-time storage cache activity counters.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct StorageCacheMetricsSnapshot {
-    /// Number of bytes returned by the cache.
+pub(crate) struct StorageCacheMetricsSnapshot {
     pub hit_bytes: usize,
-    /// Number of bytes fetched from the backing storage after cache misses.
     pub miss_bytes: usize,
-    /// Number of cache reads that returned bytes.
     pub hit_count: usize,
-    /// Number of cache reads that fell through to backing storage.
     pub miss_count: usize,
 }
 
 impl StorageCacheMetrics {
-    /// Returns the current cache activity counters.
     pub fn snapshot(&self) -> StorageCacheMetricsSnapshot {
         StorageCacheMetricsSnapshot {
             hit_bytes: self.hit_bytes.load(Ordering::Relaxed),
@@ -58,14 +51,16 @@ impl StorageCacheMetrics {
         self.hit_bytes.fetch_add(num_bytes, Ordering::Relaxed);
     }
 
-    fn record_miss(&self, num_bytes: usize) {
+    fn record_miss(&self) {
         self.miss_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_miss_bytes(&self, num_bytes: usize) {
         self.miss_bytes.fetch_add(num_bytes, Ordering::Relaxed);
     }
 }
 
 impl StorageCacheMetricsSnapshot {
-    /// Returns the non-negative delta between this snapshot and an earlier one.
     pub fn saturating_delta_since(self, before: Self) -> Self {
         Self {
             hit_bytes: self.hit_bytes.saturating_sub(before.hit_bytes),
@@ -76,9 +71,13 @@ impl StorageCacheMetricsSnapshot {
     }
 }
 
-/// Runs `future` with storage cache activity recorded into `metrics`.
-pub async fn with_storage_cache_metrics<F, T>(metrics: Arc<StorageCacheMetrics>, future: F) -> T
-where F: Future<Output = T> {
+pub(crate) async fn with_storage_cache_metrics<F, T>(
+    metrics: Arc<StorageCacheMetrics>,
+    future: F,
+) -> T
+where
+    F: Future<Output = T>,
+{
     STORAGE_CACHE_METRICS.scope(metrics, future).await
 }
 
@@ -86,6 +85,10 @@ pub(crate) fn record_storage_cache_hit(num_bytes: usize) {
     let _ = STORAGE_CACHE_METRICS.try_with(|metrics| metrics.record_hit(num_bytes));
 }
 
-pub(crate) fn record_storage_cache_miss(num_bytes: usize) {
-    let _ = STORAGE_CACHE_METRICS.try_with(|metrics| metrics.record_miss(num_bytes));
+pub(crate) fn record_storage_cache_miss() {
+    let _ = STORAGE_CACHE_METRICS.try_with(|metrics| metrics.record_miss());
+}
+
+pub(crate) fn record_storage_cache_miss_bytes(num_bytes: usize) {
+    let _ = STORAGE_CACHE_METRICS.try_with(|metrics| metrics.record_miss_bytes(num_bytes));
 }

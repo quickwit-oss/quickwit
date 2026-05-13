@@ -50,6 +50,10 @@ use quickwit_storage::{
 };
 use tokio::sync::OnceCell;
 
+use crate::storage_cache_metrics::{
+    record_storage_cache_hit, record_storage_cache_miss, record_storage_cache_miss_bytes,
+};
+
 /// Adapts Quickwit's `Storage` trait to DataFusion's `ObjectStore` interface.
 ///
 /// Construction is sync and cheap: a `Uri` plus a `StorageResolver` handle
@@ -123,20 +127,34 @@ impl ScopedStorageCache {
 #[async_trait]
 impl StorageCache for ScopedStorageCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        self.inner.get(&self.scoped_path(path), byte_range).await
+        let bytes = self.inner.get(&self.scoped_path(path), byte_range).await;
+        if let Some(bytes) = &bytes {
+            record_storage_cache_hit(bytes.len());
+        } else {
+            record_storage_cache_miss();
+        }
+        bytes
     }
 
     async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
-        self.inner.get_all(&self.scoped_path(path)).await
+        let bytes = self.inner.get_all(&self.scoped_path(path)).await;
+        if let Some(bytes) = &bytes {
+            record_storage_cache_hit(bytes.len());
+        } else {
+            record_storage_cache_miss();
+        }
+        bytes
     }
 
     async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+        record_storage_cache_miss_bytes(bytes.len());
         self.inner
             .put(self.scoped_path(&path), byte_range, bytes)
             .await
     }
 
     async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
+        record_storage_cache_miss_bytes(bytes.len());
         self.inner.put_all(self.scoped_path(&path), bytes).await
     }
 }
@@ -325,13 +343,18 @@ impl ObjectStore for QuickwitObjectStore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Mutex;
 
     use super::*;
+    use crate::storage_cache_metrics::{
+        StorageCacheMetrics, StorageCacheMetricsSnapshot, with_storage_cache_metrics,
+    };
 
     #[derive(Default)]
     struct RecordingStorageCache {
         paths: Mutex<Vec<PathBuf>>,
+        bytes: Mutex<HashMap<PathBuf, OwnedBytes>>,
     }
 
     impl RecordingStorageCache {
@@ -348,20 +371,22 @@ mod tests {
     impl StorageCache for RecordingStorageCache {
         async fn get(&self, path: &Path, _byte_range: Range<usize>) -> Option<OwnedBytes> {
             self.record(path);
-            None
+            self.bytes.lock().unwrap().get(path).cloned()
         }
 
         async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
             self.record(path);
-            None
+            self.bytes.lock().unwrap().get(path).cloned()
         }
 
-        async fn put(&self, path: PathBuf, _byte_range: Range<usize>, _bytes: OwnedBytes) {
+        async fn put(&self, path: PathBuf, _byte_range: Range<usize>, bytes: OwnedBytes) {
             self.record(&path);
+            self.bytes.lock().unwrap().insert(path, bytes);
         }
 
-        async fn put_all(&self, path: PathBuf, _bytes: OwnedBytes) {
+        async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
             self.record(&path);
+            self.bytes.lock().unwrap().insert(path, bytes);
         }
     }
 
@@ -389,6 +414,46 @@ mod tests {
                 PathBuf::from("s3://metrics-bucket#indexes/metrics.parquet"),
                 PathBuf::from("s3://metrics-bucket#indexes/metrics.parquet"),
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn scoped_storage_cache_records_task_local_cache_activity() {
+        let inner = Arc::new(RecordingStorageCache::default());
+        let inner_cache: Arc<dyn StorageCache> = inner;
+        let cache = ScopedStorageCache::new("s3://metrics-bucket".to_string(), inner_cache);
+        let metrics = Arc::new(StorageCacheMetrics::default());
+
+        with_storage_cache_metrics(Arc::clone(&metrics), async {
+            assert!(
+                cache
+                    .get(Path::new("indexes/metrics.parquet"), 10..15)
+                    .await
+                    .is_none()
+            );
+            cache
+                .put(
+                    Path::new("indexes/metrics.parquet").to_path_buf(),
+                    10..15,
+                    OwnedBytes::new(&b"bytes"[..]),
+                )
+                .await;
+            let bytes = cache
+                .get(Path::new("indexes/metrics.parquet"), 10..15)
+                .await
+                .expect("cache hit");
+            assert_eq!(bytes.len(), 5);
+        })
+        .await;
+
+        assert_eq!(
+            metrics.snapshot(),
+            StorageCacheMetricsSnapshot {
+                hit_bytes: 5,
+                miss_bytes: 5,
+                hit_count: 1,
+                miss_count: 1,
+            }
         );
     }
 }

@@ -34,7 +34,7 @@ mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
-pub use self::metrics::STORAGE_METRICS;
+pub use self::metrics::{CacheMetrics, STORAGE_METRICS};
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 
@@ -64,8 +64,7 @@ pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, StorageCacheMetrics,
-    StorageCacheMetricsSnapshot, with_storage_cache_metrics, wrap_storage_with_cache,
+    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]

@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -46,7 +46,7 @@ use quickwit_datafusion::{
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{SearchServiceClient, SearcherPool, create_search_client_from_grpc_addr};
-use quickwit_storage::{MemorySizedCache, OwnedBytes, StorageCache, StorageResolver};
+use quickwit_storage::{CacheMetrics, MemorySizedCache, OwnedBytes, StorageCache, StorageResolver};
 use tokio::time::timeout;
 use tonic::transport::server::Router;
 use tonic_reflection::pb::v1::ServerReflectionRequest;
@@ -59,6 +59,8 @@ use crate::QuickwitServices;
 const DATAFUSION_PARQUET_RANGE_CACHE_CAPACITY_ENV: &str =
     "QW_DATAFUSION_PARQUET_RANGE_CACHE_CAPACITY";
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
+static DATAFUSION_PARQUET_RANGE_CACHE_METRICS: LazyLock<CacheMetrics> =
+    LazyLock::new(|| CacheMetrics::for_component("datafusion_parquet_range"));
 
 /// Build the generic DataFusion session builder for this node.
 ///
@@ -130,7 +132,7 @@ impl DataFusionParquetRangeCache {
         Self {
             inner: MemorySizedCache::from_config(
                 cache_config,
-                &quickwit_storage::STORAGE_METRICS.datafusion_parquet_range_cache,
+                &DATAFUSION_PARQUET_RANGE_CACHE_METRICS,
             ),
         }
     }

@@ -35,10 +35,11 @@ use datafusion_physical_plan::metrics::{
 };
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use quickwit_storage::{
+use tracing::warn;
+
+use crate::storage_cache_metrics::{
     StorageCacheMetrics, StorageCacheMetricsSnapshot, with_storage_cache_metrics,
 };
-use tracing::warn;
 
 pub(super) fn instrument_parquet_file_reader_factory(
     inner: Arc<dyn ParquetFileReaderFactory>,
