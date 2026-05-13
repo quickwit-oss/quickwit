@@ -388,7 +388,19 @@ impl IndexingScheduler {
     }
 
     fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
-        self.indexer_pool.values()
+        let (ready, not_ready): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) =
+            self.indexer_pool.values().into_iter().partition(|indexer| {
+                indexer.ingester_status == IngesterStatus::Ready
+            });
+
+        if ready.is_empty() {
+            // Allow scheduling on retiring indexers to drain shards
+            // and avoid decommission timeouts (e.g. single-node cluster).
+            warn!("no ready indexer available, falling back to retiring indexers for shard draining");
+            not_ready
+        } else {
+            ready
+        }
     }
 
     fn apply_physical_indexing_plan(
