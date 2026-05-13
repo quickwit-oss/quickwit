@@ -19,7 +19,6 @@ use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
-use bytesize::ByteSize;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -316,7 +315,6 @@ fn create_packaged_split(
     ctx.record_progress();
 
     let serialized_split_fields = serialize_field_metadata(&fields_metadata);
-    info!(split_id = split.split_id(), "field metadata size: {} KiB", ByteSize::b(serialized_split_fields.len() as u64).as_kib());
 
     let packaged_split = PackagedSplit {
         serialized_split_fields,
