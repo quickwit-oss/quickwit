@@ -202,6 +202,25 @@ pub fn validate_node_id(node_id: &NodeIdRef) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn validate_cluster_id(cluster_id: &str) -> anyhow::Result<()> {
+    const MAX_CLUSTER_ID_LEN: usize = 256;
+    static CLUSTER_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^[a-z]([a-z0-9]|-[a-z0-9])*$").expect("regular expression should compile")
+    });
+    if cluster_id.len() > MAX_CLUSTER_ID_LEN {
+        bail!(
+            "cluster ID `{cluster_id}` is invalid: must be at most {MAX_CLUSTER_ID_LEN} characters"
+        );
+    }
+    if !CLUSTER_ID_REGEX.is_match(cluster_id) {
+        bail!(
+            "cluster ID `{cluster_id}` is invalid: must start with a lowercase letter and only \
+             contain lowercase letters, numbers, and single dashes"
+        );
+    }
+    Ok(())
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConfigFormat {
     Json,
@@ -305,7 +324,7 @@ pub fn indexing_pipeline_params_fingerprint(
 #[cfg(test)]
 mod tests {
     use super::validate_identifier;
-    use crate::validate_index_id_pattern;
+    use crate::{validate_cluster_id, validate_index_id_pattern};
 
     #[test]
     fn test_validate_identifier() {
@@ -344,5 +363,21 @@ mod tests {
         );
         validate_index_id_pattern("-abc", true).unwrap();
         validate_index_id_pattern("-abc", false).unwrap_err();
+    }
+
+    #[test]
+    fn test_validate_cluster_id() {
+        validate_cluster_id("my-test-cluster-1").unwrap();
+        validate_cluster_id("").unwrap_err();
+        validate_cluster_id("UPPERCASE").unwrap_err();
+        validate_cluster_id("trailing-dash-").unwrap_err();
+        validate_cluster_id("-leading-dash").unwrap_err();
+        validate_cluster_id("1-leading-digit").unwrap_err();
+        validate_cluster_id("double--dash").unwrap_err();
+        validate_cluster_id("contains.dot").unwrap_err();
+        validate_cluster_id("contains_underscore").unwrap_err();
+        validate_cluster_id("contains space").unwrap_err();
+        validate_cluster_id(&"a".repeat(256)).unwrap();
+        validate_cluster_id(&"a".repeat(257)).unwrap_err();
     }
 }

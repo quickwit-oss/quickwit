@@ -173,7 +173,7 @@ impl ClusterSandboxBuilder {
     /// - `default_index_root_uri` defined by `root_data_dir/indexes`.
     /// - `peers` defined by others nodes `gossip_advertise_addr`.
     pub async fn build_config(self) -> ResolvedClusterConfig {
-        let cluster_id = new_coolid("test-cluster");
+        let cluster_id = new_coolid("test-cluster").to_lowercase();
         let mut resolved_node_configs = Vec::new();
         let mut peers: Vec<String> = Vec::new();
         let unique_dir_name = new_coolid("test-dir");

@@ -37,7 +37,7 @@ use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
     ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
-    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    SearcherConfig, TlsConfig, validate_cluster_id, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -360,7 +360,7 @@ impl NodeConfigBuilder {
 }
 
 fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
-    validate_identifier("cluster", &node_config.cluster_id)?;
+    validate_cluster_id(&node_config.cluster_id)?;
     validate_node_id(&node_config.node_id)?;
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
