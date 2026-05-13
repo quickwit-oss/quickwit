@@ -312,6 +312,13 @@ pub(crate) fn finalize_output(
         path: output_path,
         num_rows: accumulator.num_rows,
         num_row_groups,
+        // The streaming engine stamps `input_meta.rg_partition_prefix_len`
+        // unconditionally in the file's KV (see
+        // `open_output_writer_for_streaming`) and verifies the claim with
+        // `assert_unique_rg_prefix_keys`. CS-1 requires the metastore-
+        // recorded value to match the on-disk KV, so propagate the same
+        // value here.
+        output_rg_partition_prefix_len: input_meta.rg_partition_prefix_len,
         size_bytes,
         row_keys_proto,
         zonemap_regexes,
