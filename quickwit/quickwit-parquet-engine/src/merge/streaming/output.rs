@@ -265,6 +265,22 @@ pub(crate) fn finalize_output(
         footer_metadata.num_row_groups(),
     );
 
+    // Strong invariant: the streaming engine pairs at most one input
+    // RG per region (`process_region` keys `sort_col_batches` by
+    // input_idx), and the read-path check in
+    // `extract_regions_from_metadata` enforces unique prefix keys per
+    // input. The output writer assigns one new RG per region in
+    // `process_region`, so the output should never violate the
+    // invariant either — but verifying here catches any future
+    // regression (e.g., a finalize-time rewrite that splits a region
+    // across RGs) before the file lands.
+    super::region_grouping::assert_unique_rg_prefix_keys(
+        &footer_metadata,
+        &input_meta.sort_fields,
+        input_meta.rg_partition_prefix_len,
+        &format!("merge output {}", output_path.display()),
+    )?;
+
     let size_bytes = std::fs::metadata(&output_path)
         .with_context(|| format!("stat output file: {}", output_path.display()))?
         .len();
