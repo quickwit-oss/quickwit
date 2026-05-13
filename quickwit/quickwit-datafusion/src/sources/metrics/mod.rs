@@ -24,6 +24,7 @@ pub(crate) mod factory;
 pub(crate) mod index_resolver;
 pub(crate) mod metastore_provider;
 pub(crate) mod optimizer;
+pub(crate) mod parquet_cache_metrics;
 pub(crate) mod predicate;
 pub(crate) mod sketch_udf;
 pub(crate) mod table_provider;
@@ -50,6 +51,7 @@ use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory, SKETCHES_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
 use self::optimizer::SortedSeriesStreamingAggregateRule;
+pub use self::parquet_cache_metrics::instrument_parquet_range_cache_metrics;
 use self::sketch_udf::{create_dd_quantile_udf, create_dd_sketch_udaf};
 use self::table_provider::MetricsTableProvider;
 

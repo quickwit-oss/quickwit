@@ -22,6 +22,7 @@
 pub mod object_store_registry;
 pub mod sources;
 pub(crate) mod storage_bridge;
+pub(crate) mod storage_cache_metrics;
 pub mod worker_resolver;
 
 pub use object_store_registry::QuickwitObjectStoreRegistry;

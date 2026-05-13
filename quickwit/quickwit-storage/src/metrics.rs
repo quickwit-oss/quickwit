@@ -164,7 +164,9 @@ impl Default for StorageMetrics {
 
 /// Counters associated to a cache.
 pub struct CacheMetrics {
+    /// Value used for the `component_name` metric label.
     pub component_name: String,
+    /// Counters for the primary cache instance.
     pub cache_metrics: SingleCacheMetrics,
     virtual_caches_metrics: RwLock<HashMap<CacheConfig, SingleCacheMetrics>>,
 }
@@ -181,6 +183,7 @@ pub struct SingleCacheMetrics {
 }
 
 impl CacheMetrics {
+    /// Creates cache counters labelled with the given component name.
     pub fn for_component(component_name: &str) -> Self {
         const CACHE_METRICS_NAMESPACE: &str = "cache";
         let labels = [("component_name", component_name)];
@@ -234,6 +237,7 @@ impl CacheMetrics {
         }
     }
 
+    /// Returns counters for a virtual cache with the given configuration.
     pub fn virtual_cache(&self, config: &CacheConfig) -> SingleCacheMetrics {
         if let Some(virtual_cache_metrics) = self.virtual_caches_metrics.read().unwrap().get(config)
         {

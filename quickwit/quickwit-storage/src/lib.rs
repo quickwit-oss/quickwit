@@ -34,7 +34,7 @@ mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
-pub use self::metrics::STORAGE_METRICS;
+pub use self::metrics::{CacheMetrics, STORAGE_METRICS};
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 

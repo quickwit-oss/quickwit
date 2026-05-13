@@ -20,28 +20,33 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
+use async_trait::async_trait;
 use bytesize::ByteSize;
 use futures::{StreamExt, stream};
 use quickwit_cluster::{ClusterChange, ClusterChangeStream, ClusterNode};
 use quickwit_common::tower::Change;
-use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{CacheConfig, NodeConfig};
 use quickwit_datafusion::grpc::DataFusionServiceGrpcImpl;
 use quickwit_datafusion::proto::data_fusion_service_server::{
     DataFusionServiceServer, SERVICE_NAME as DATAFUSION_SERVICE_NAME,
 };
-use quickwit_datafusion::sources::metrics::MetricsDataSource;
+use quickwit_datafusion::sources::metrics::{
+    MetricsDataSource, instrument_parquet_range_cache_metrics,
+};
 use quickwit_datafusion::{
     DataFusionService, DataFusionSessionBuilder, QuickwitObjectStoreRegistry,
     QuickwitWorkerResolver, build_worker,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{SearchServiceClient, SearcherPool, create_search_client_from_grpc_addr};
-use quickwit_storage::StorageResolver;
+use quickwit_storage::{CacheMetrics, MemorySizedCache, OwnedBytes, StorageCache, StorageResolver};
 use tokio::time::timeout;
 use tonic::transport::server::Router;
 use tonic_reflection::pb::v1::ServerReflectionRequest;
@@ -50,6 +55,12 @@ use tonic_reflection::pb::v1::server_reflection_request::MessageRequest;
 use tonic_reflection::pb::v1::server_reflection_response::MessageResponse;
 
 use crate::QuickwitServices;
+
+const DATAFUSION_PARQUET_RANGE_CACHE_CAPACITY_ENV: &str =
+    "QW_DATAFUSION_PARQUET_RANGE_CACHE_CAPACITY";
+const FULL_SLICE: Range<usize> = 0..usize::MAX;
+static DATAFUSION_PARQUET_RANGE_CACHE_METRICS: LazyLock<CacheMetrics> =
+    LazyLock::new(|| CacheMetrics::for_component("datafusion_parquet_range"));
 
 /// Build the generic DataFusion session builder for this node.
 ///
@@ -84,7 +95,13 @@ pub(crate) fn build_datafusion_session_builder(
     );
     let worker_resolver = QuickwitWorkerResolver::new(datafusion_worker_pool)
         .with_tls(node_config.grpc_config.tls.is_some());
-    let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
+    let datafusion_parquet_range_cache = datafusion_parquet_range_cache_config();
+    let datafusion_storage_cache =
+        DataFusionParquetRangeCache::from_config(&datafusion_parquet_range_cache);
+    let registry = Arc::new(
+        QuickwitObjectStoreRegistry::new(storage_resolver)
+            .with_storage_cache(Arc::new(datafusion_storage_cache)),
+    );
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .context("failed to install DataFusion object store registry")?
@@ -95,6 +112,49 @@ pub(crate) fn build_datafusion_session_builder(
         })
         .with_worker_resolver(worker_resolver);
     Ok(Some(Arc::new(builder)))
+}
+
+fn datafusion_parquet_range_cache_config() -> CacheConfig {
+    let capacity = quickwit_common::get_from_env(
+        DATAFUSION_PARQUET_RANGE_CACHE_CAPACITY_ENV,
+        ByteSize::gb(4),
+        false,
+    );
+    CacheConfig::default_with_capacity(capacity)
+}
+
+struct DataFusionParquetRangeCache {
+    inner: MemorySizedCache,
+}
+
+impl DataFusionParquetRangeCache {
+    fn from_config(cache_config: &CacheConfig) -> Self {
+        Self {
+            inner: MemorySizedCache::from_config(
+                cache_config,
+                &DATAFUSION_PARQUET_RANGE_CACHE_METRICS,
+            ),
+        }
+    }
+}
+
+#[async_trait]
+impl StorageCache for DataFusionParquetRangeCache {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        self.inner.get_slice(path, byte_range)
+    }
+
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
+        self.inner.get_slice(path, FULL_SLICE)
+    }
+
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+        self.inner.put_slice(path, byte_range, bytes);
+    }
+
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
+        self.inner.put_slice(path, FULL_SLICE, bytes);
+    }
 }
 
 fn setup_datafusion_worker_pool(
@@ -209,7 +269,8 @@ impl DataFusionMount {
         .max_decoding_message_size(self.max_message_size_bytes)
         .max_encoding_message_size(self.max_message_size_bytes);
 
-        let worker = build_worker(session_builder);
+        let mut worker = build_worker(session_builder);
+        worker.add_on_plan_hook(instrument_parquet_range_cache_metrics);
 
         router
             .add_service(query_server)
