@@ -10650,6 +10650,7 @@ dependencies = [
  "tantivy",
  "tantivy-fst",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tower 0.5.3",
  "tracing 0.1.44",

@@ -233,6 +233,7 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: count_hits.into(),
             ignore_missing_indexes: false,
             skip_aggregation_finalization: false,
+            enable_request_batching: request.enable_request_batching,
         };
 
         let response = self
@@ -322,6 +323,7 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: CountHits::Underestimate.into(),
             ignore_missing_indexes: false,
             skip_aggregation_finalization: false,
+            enable_request_batching: false,
         };
 
         let search_response: SearchResponse =
@@ -415,6 +417,7 @@ impl CloudPremService for CloudPremServiceImpl {
             count_hits: CountHits::CountAll.into(),
             ignore_missing_indexes: false,
             skip_aggregation_finalization: true,
+            enable_request_batching: request.enable_request_batching,
         };
 
         let response = self

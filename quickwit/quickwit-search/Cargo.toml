@@ -30,6 +30,7 @@ serde_json = { workspace = true }
 tantivy = { workspace = true }
 tantivy-fst = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true, features = ["timeout"] }
 tracing = { workspace = true }

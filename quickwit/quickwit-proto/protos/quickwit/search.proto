@@ -254,6 +254,11 @@ message SearchRequest {
   // When true, skip finalization of aggregation results and return
   // the raw IntermediateAggregationResults bytes instead.
   bool skip_aggregation_finalization = 19;
+
+  // When true, the BatchingSearchService may batch this request with
+  // other concurrent requests sharing the same query predicate.
+  // Propagated from CloudPrem ListRequest/AggregationRequest.enable_request_batching.
+  bool enable_request_batching = 20;
 }
 
 enum CountHits {

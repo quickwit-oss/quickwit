@@ -266,6 +266,7 @@ pub fn search_request_from_api_request(
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
         skip_aggregation_finalization: false,
+        enable_request_batching: false,
     };
     Ok(search_request)
 }

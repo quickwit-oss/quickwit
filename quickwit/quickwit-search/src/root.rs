@@ -373,6 +373,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
         skip_aggregation_finalization: false,
+        enable_request_batching: false,
     })
 }
 

@@ -72,6 +72,7 @@ impl FacetInfoRequest {
             count_hits: CountHits::CountAll as i32,
             ignore_missing_indexes: false,
             skip_aggregation_finalization: false,
+            enable_request_batching: false,
         };
         Ok(search_request)
     }

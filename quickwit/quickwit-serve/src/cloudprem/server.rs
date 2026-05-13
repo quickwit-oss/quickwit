@@ -79,7 +79,23 @@ pub(crate) async fn start_cloudprem_server(
         file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_FILE_DESCRIPTOR_SET);
         file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_METRICS_FILE_DESCRIPTOR_SET);
 
-        let search_service = services.search_service.clone();
+        let search_service: std::sync::Arc<dyn quickwit_search::SearchService> = {
+            let inner = services.search_service.clone();
+            let batch_window_ms =
+                quickwit_common::get_from_env("CP_BATCH_WINDOW_MS", 200u64, false);
+            if batch_window_ms > 0 {
+                tracing::info!(
+                    batch_window_ms,
+                    "request batching enabled for CloudPrem searches"
+                );
+                quickwit_search::batch::BatchingSearchService::new(
+                    inner,
+                    std::time::Duration::from_millis(batch_window_ms),
+                )
+            } else {
+                inner
+            }
+        };
         let cloudprem_service_impl = CloudPremServiceImpl::new(
             search_service,
             services.metastore_client.clone(),

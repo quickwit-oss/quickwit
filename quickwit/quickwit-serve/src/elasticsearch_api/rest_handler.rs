@@ -575,6 +575,7 @@ fn build_request_for_es_api(
             count_hits,
             ignore_missing_indexes,
             skip_aggregation_finalization: false,
+            enable_request_batching: false,
         },
         has_doc_id_field,
     ))

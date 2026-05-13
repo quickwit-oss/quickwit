@@ -54,6 +54,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         org_id: 2,
         scope: Default::default(),
         index_id_patterns: Vec::new(),
+        enable_request_batching: false,
     }
 }
 
@@ -73,6 +74,7 @@ fn build_aggregation_request(
         org_id: 2,
         scope: Default::default(),
         index_id_patterns: Vec::new(),
+        enable_request_batching: false,
     }
 }
 
@@ -208,6 +210,17 @@ async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
     sandbox.wait_for_indexing_pipelines(1).await.unwrap();
     sandbox.local_ingest("datadog", docs).await.unwrap();
 
+    sandbox
+}
+
+async fn setup_env_with_batching(docs: &mut [Value]) -> ClusterSandbox {
+    unsafe {
+        std::env::set_var("CP_BATCH_WINDOW_MS", "200");
+    }
+    let sandbox = setup_env(docs).await;
+    unsafe {
+        std::env::set_var("CP_BATCH_WINDOW_MS", "0");
+    }
     sandbox
 }
 
@@ -1082,4 +1095,137 @@ async fn test_extra_fts_indexing_and_search() {
         .await;
 
     sandbox.shutdown().await.unwrap();
+}
+
+/// Parity test: runs the same 1 list + 2 aggregation requests against two
+/// sandboxes — one without batching, one with BatchingSearchService enabled —
+/// and asserts the results are identical.
+#[tokio::test]
+async fn test_batched_parity_with_independent() {
+    // --- run without batching ---
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox_no_batch = setup_env(&mut data).await;
+
+    let query_node = QueryNode {
+        node: Some(query_node::Node::All(MatchAllQueryNode {})),
+    };
+
+    let list_request = build_list_request(&query_node);
+    let count_agg = agg_computes(&[agg_count("count:count")]);
+    let count_request = build_aggregation_request(&query_node, count_agg.clone());
+    let group_by_agg = agg_group_by(
+        expression_field("status"),
+        agg_computes(&[agg_count("count:count")]),
+    );
+    let group_by_request = build_aggregation_request(&query_node, group_by_agg.clone());
+
+    let mut client = sandbox_no_batch.cloudprem_client();
+    let mut client2 = sandbox_no_batch.cloudprem_client();
+    let mut client3 = sandbox_no_batch.cloudprem_client();
+
+    let (indep_list, indep_count, indep_group_by) = tokio::join!(
+        client.list(authenticated_request(list_request.clone())),
+        client2.aggregate(authenticated_request(count_request.clone())),
+        client3.aggregate(authenticated_request(group_by_request.clone())),
+    );
+
+    let indep_list = indep_list.unwrap().into_inner();
+    let indep_count = indep_count.unwrap().into_inner();
+    let indep_group_by = indep_group_by.unwrap().into_inner();
+
+    sandbox_no_batch.shutdown().await.unwrap();
+
+    // --- run with batching ---
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox_batched = setup_env_with_batching(&mut data).await;
+
+    let mut client = sandbox_batched.cloudprem_client();
+    let mut client2 = sandbox_batched.cloudprem_client();
+    let mut client3 = sandbox_batched.cloudprem_client();
+
+    let (batched_list, batched_count, batched_group_by) = tokio::join!(
+        client.list(authenticated_request(list_request)),
+        client2.aggregate(authenticated_request(count_request)),
+        client3.aggregate(authenticated_request(group_by_request)),
+    );
+
+    let batched_list = batched_list.unwrap().into_inner();
+    let batched_count = batched_count.unwrap().into_inner();
+    let batched_group_by = batched_group_by.unwrap().into_inner();
+
+    sandbox_batched.shutdown().await.unwrap();
+
+    // --- compare parity ---
+
+    // list: same count, same events
+    assert_eq!(indep_list.count, batched_list.count, "list count mismatch");
+    assert_eq!(
+        indep_list.streams[0].events.len(),
+        batched_list.streams[0].events.len(),
+        "list events count mismatch"
+    );
+    // compare stable fields only — discovery_timestamp, id, tiebreaker are
+    // generated at ingest time and differ between sandboxes
+    for (indep_event, batched_event) in indep_list.streams[0]
+        .events
+        .iter()
+        .zip(batched_list.streams[0].events.iter())
+    {
+        let indep_json: Value = serde_json::from_str(&indep_event.content_json).unwrap();
+        let batched_json: Value = serde_json::from_str(&batched_event.content_json).unwrap();
+        assert_eq!(
+            indep_json.get("custom"),
+            batched_json.get("custom"),
+            "list event custom field mismatch"
+        );
+        assert_eq!(
+            indep_json.get("service"),
+            batched_json.get("service"),
+            "list event service field mismatch"
+        );
+        assert_eq!(
+            indep_json.get("status"),
+            batched_json.get("status"),
+            "list event status field mismatch"
+        );
+        assert_eq!(
+            indep_json.get("timestamp"),
+            batched_json.get("timestamp"),
+            "list event timestamp field mismatch"
+        );
+    }
+
+    // count aggregation: same result
+    assert_eq!(
+        indep_count.result.len(),
+        batched_count.result.len(),
+        "count result len mismatch"
+    );
+    assert_eq!(
+        indep_count.result[0].value, batched_count.result[0].value,
+        "count value mismatch"
+    );
+
+    // group by aggregation: same buckets
+    assert_eq!(
+        indep_group_by.result.len(),
+        batched_group_by.result.len(),
+        "group_by result len mismatch"
+    );
+    // sort both by key for stable comparison
+    let mut indep_buckets = indep_group_by.result.clone();
+    indep_buckets.sort_by(|a, b| a.key.cmp(&b.key));
+    let mut batched_buckets = batched_group_by.result.clone();
+    batched_buckets.sort_by(|a, b| a.key.cmp(&b.key));
+    for (indep_bucket, batched_bucket) in indep_buckets.iter().zip(batched_buckets.iter()) {
+        assert_eq!(
+            indep_bucket.key, batched_bucket.key,
+            "group_by bucket key mismatch"
+        );
+        assert_eq!(
+            indep_bucket.value, batched_bucket.value,
+            "group_by bucket value mismatch for key {:?}",
+            indep_bucket.key
+        );
+    }
 }

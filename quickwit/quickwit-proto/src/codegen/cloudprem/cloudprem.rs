@@ -337,6 +337,11 @@ pub struct ListRequest {
     /// If empty, defaults to "datadog\*" for backward compatibility.
     #[prost(string, repeated, tag = "10")]
     pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// When true, pomsky may batch this request with other concurrent requests that
+    /// share the same query predicate. Set by cloudprem-bridge when the
+    /// logs-cloudprem-search-request-batching feature flag is enabled for the org.
+    #[prost(bool, tag = "11")]
+    pub enable_request_batching: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortKv {
@@ -435,6 +440,11 @@ pub struct AggregationRequest {
     /// If empty, defaults to "datadog\*" for backward compatibility.
     #[prost(string, repeated, tag = "5")]
     pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// When true, pomsky may batch this request with other concurrent requests that
+    /// share the same query predicate. Set by cloudprem-bridge when the
+    /// logs-cloudprem-search-request-batching feature flag is enabled for the org.
+    #[prost(bool, tag = "6")]
+    pub enable_request_batching: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Aggregation {

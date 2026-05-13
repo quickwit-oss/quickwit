@@ -295,6 +295,10 @@ message ListRequest {
   // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
   // If empty, defaults to "datadog*" for backward compatibility.
   repeated string index_id_patterns = 10;
+  // When true, pomsky may batch this request with other concurrent requests that
+  // share the same query predicate. Set by cloudprem-bridge when the
+  // logs-cloudprem-search-request-batching feature flag is enabled for the org.
+  bool enable_request_batching = 11;
 }
 
 message SortKV {
@@ -367,6 +371,10 @@ message AggregationRequest {
   // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
   // If empty, defaults to "datadog*" for backward compatibility.
   repeated string index_id_patterns = 5;
+  // When true, pomsky may batch this request with other concurrent requests that
+  // share the same query predicate. Set by cloudprem-bridge when the
+  // logs-cloudprem-search-request-batching feature flag is enabled for the org.
+  bool enable_request_batching = 6;
 }
 
 message Aggregation {

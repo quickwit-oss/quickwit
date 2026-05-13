@@ -17,6 +17,7 @@
 #![allow(clippy::bool_assert_comparison)]
 #![deny(clippy::disallowed_methods)]
 
+pub mod batch;
 mod client;
 mod cluster_client;
 mod collector;

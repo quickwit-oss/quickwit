@@ -193,6 +193,11 @@ pub struct SearchRequest {
     /// the raw IntermediateAggregationResults bytes instead.
     #[prost(bool, tag = "19")]
     pub skip_aggregation_finalization: bool,
+    /// When true, the BatchingSearchService may batch this request with
+    /// other concurrent requests sharing the same query predicate.
+    /// Propagated from CloudPrem ListRequest/AggregationRequest.enable_request_batching.
+    #[prost(bool, tag = "20")]
+    pub enable_request_batching: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
