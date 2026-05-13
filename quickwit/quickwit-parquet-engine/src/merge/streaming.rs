@@ -1258,8 +1258,8 @@ mod tests {
     use tokio::io::AsyncRead;
 
     use super::region_grouping::{
-        encode_byte_array_prefix, extract_rg_composite_prefix_key, find_prefix_parquet_col_indices,
-        invert_for_descending,
+        assert_unique_rg_prefix_keys, encode_byte_array_prefix, extract_rg_composite_prefix_key,
+        find_prefix_parquet_col_indices, invert_for_descending,
     };
     use super::*;
     use crate::split::TAG_SERVICE;
@@ -1768,6 +1768,17 @@ mod tests {
             outputs[0].num_row_groups, 2,
             "MergeOutputFile.num_row_groups should match physical row group count",
         );
+
+        // F2 chunk-level verification: confirm each output RG actually
+        // carries a single distinct metric_name (PA-1 + PA-3 read
+        // straight off the column-chunk statistics).
+        assert_unique_rg_prefix_keys(
+            reader.metadata(),
+            "metric_name|-timestamp_secs/V2",
+            1,
+            "test_multi_rg_metric_aligned_input_produces_multi_rg_output output",
+        )
+        .expect("streaming engine output must satisfy PA-1 + PA-3 on metric_name");
     }
 
     /// Regression for Codex P2 on PR-6410: a streaming merge output
@@ -1943,6 +1954,20 @@ mod tests {
             "three distinct (metric_name, service) pairs must produce three output RGs",
         );
         assert_eq!(outputs[0].num_row_groups, 3);
+
+        // F2 chunk-level verification: counting RGs and stamping a KV
+        // is not enough — the OUTPUT's row groups must actually be
+        // aligned on the composite (metric_name, service) prefix.
+        // `assert_unique_rg_prefix_keys` enforces PA-1 (intra-RG
+        // constancy) + PA-3 (inter-RG uniqueness) by reading the
+        // chunk-level statistics.
+        assert_unique_rg_prefix_keys(
+            reader.metadata(),
+            "metric_name|service|-timestamp_secs/V2",
+            2,
+            "test_streaming_merge_with_prefix_len_two output",
+        )
+        .expect("streaming engine output must satisfy PA-1 + PA-3 on the prefix columns");
     }
 
     /// Regression for Codex finding #1 on PR-6410: when one input
@@ -2475,6 +2500,16 @@ mod tests {
             (third_block - 1.0).abs() < 1e-9,
             "third output RG should be 'dev' (marker 1.0), got {third_block}",
         );
+
+        // F2 chunk-level verification: each output RG must be aligned
+        // on (metric_name, -env). PA-1 + PA-3 read from chunk stats.
+        assert_unique_rg_prefix_keys(
+            reader.metadata(),
+            "metric_name|-env|-timestamp_secs/V2",
+            2,
+            "test_streaming_merge_with_desc_prefix_col output",
+        )
+        .expect("DESC prefix output must satisfy PA-1 + PA-3");
     }
 
     /// Regression for the composite-key encoding when ASC and DESC
@@ -2496,7 +2531,10 @@ mod tests {
                 .expect("resolve");
         // Sanity: the second prefix column must be flagged DESC.
         assert!(
-            prefix_cols[1].descending,
+            prefix_cols[1]
+                .as_ref()
+                .expect("env present in this fixture")
+                .descending,
             "env must be parsed as DESC from sort schema",
         );
 

@@ -112,14 +112,25 @@ pub(crate) struct PrefixColumn {
 
 /// Resolve the first `prefix_len` sort columns to parquet leaf
 /// indices. Honours the legacy `timestamp` → `timestamp_secs` alias.
-/// Errors if the sort schema has fewer columns than `prefix_len` or
-/// if any column is missing from the parquet schema.
+///
+/// Returns one entry per requested prefix column. `Some(PrefixColumn)`
+/// when the column is present in the parquet schema; `None` when the
+/// column is named in `sort_fields_str` but absent from the parquet
+/// schema. Per SS-3 the missing column is treated as constant null at
+/// every row of the file — [`extract_rg_composite_prefix_key`]
+/// synthesizes a fixed byte sequence in that slot so ordering is
+/// driven entirely by the present columns.
+///
+/// Errors only when the sort schema declares fewer columns than
+/// requested — that means we don't have a *name* for one of the
+/// prefix columns and can't claim alignment on something we can't
+/// identify.
 pub(crate) fn find_prefix_parquet_col_indices(
     metadata: &ParquetMetaData,
     sort_fields_str: &str,
     prefix_len: usize,
-    input_idx: usize,
-) -> Result<Vec<PrefixColumn>> {
+    _input_idx: usize,
+) -> Result<Vec<Option<PrefixColumn>>> {
     let sort_field_schema = parse_sort_fields(sort_fields_str)?;
     if sort_field_schema.column.len() < prefix_len {
         bail!(
@@ -129,7 +140,7 @@ pub(crate) fn find_prefix_parquet_col_indices(
     }
     let parquet_schema = metadata.file_metadata().schema_descr();
     let mut prefix_cols = Vec::with_capacity(prefix_len);
-    for (pos, sort_col) in sort_field_schema.column.iter().take(prefix_len).enumerate() {
+    for sort_col in sort_field_schema.column.iter().take(prefix_len) {
         // Apply the same `timestamp` / `timestamp_secs` alias the rest
         // of the engine uses.
         let resolved = if is_timestamp_column_name(&sort_col.name)
@@ -139,6 +150,8 @@ pub(crate) fn find_prefix_parquet_col_indices(
         } else {
             sort_col.name.as_str()
         };
+        let descending = sort_col.sort_direction
+            == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
         let mut found = None;
         for (col_idx, col) in parquet_schema.columns().iter().enumerate() {
             if col.path().parts()[0] == resolved {
@@ -146,20 +159,14 @@ pub(crate) fn find_prefix_parquet_col_indices(
                 break;
             }
         }
-        let parquet_col_idx = found.ok_or_else(|| {
-            anyhow!(
-                "input {input_idx} parquet schema is missing prefix sort column '{}' (position \
-                 {pos})",
-                sort_col.name,
-            )
-        })?;
-        let descending = sort_col.sort_direction
-            == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
-        prefix_cols.push(PrefixColumn {
+        // SS-3: missing column → None. Caller treats it as constant
+        // null at every row, which trivially satisfies alignment on
+        // that column.
+        prefix_cols.push(found.map(|parquet_col_idx| PrefixColumn {
             name: sort_col.name.clone(),
             parquet_col_idx,
             descending,
-        });
+        }));
     }
     Ok(prefix_cols)
 }
@@ -179,17 +186,33 @@ fn parquet_has_column(
 /// prefix column's value bytes in declared order, with each column's
 /// encoding chosen so that lexicographic order on the composite
 /// matches the sort schema's order across the prefix columns. Each
-/// column is required to have `min == max` statistics on this RG (the
-/// "metric-aligned" invariant declared by `rg_partition_prefix_len`).
+/// present column is required to have `min == max` statistics on
+/// this RG (PA-1).
+///
+/// A `None` slot in `prefix_cols` represents an SS-3 case: the
+/// column is declared in `qh.sort_fields` but absent from the
+/// parquet schema. Per SS-3 every row's value in that column is
+/// implicitly null. Since the value is constant across all RGs in
+/// the file, we contribute a fixed byte sequence (the encoded
+/// empty value) in that slot — ordering on this column does no
+/// work, and ordering on the other prefix columns picks the region
+/// boundaries.
 pub(crate) fn extract_rg_composite_prefix_key(
     metadata: &ParquetMetaData,
     rg_idx: usize,
-    prefix_cols: &[PrefixColumn],
+    prefix_cols: &[Option<PrefixColumn>],
     input_idx: usize,
 ) -> Result<Vec<u8>> {
     let rg_meta = metadata.row_group(rg_idx);
     let mut key = Vec::new();
-    for col in prefix_cols {
+    for col_opt in prefix_cols {
+        let Some(col) = col_opt else {
+            // SS-3 implicit null: constant for every RG, so any fixed
+            // marker works. Use the encoded empty byte string so the
+            // contribution is byte-recognizable in dumps.
+            key.extend_from_slice(&encode_byte_array_prefix(&[]));
+            continue;
+        };
         let chunk = rg_meta.column(col.parquet_col_idx);
         let stats = chunk.statistics().ok_or_else(|| {
             anyhow!(
@@ -500,10 +523,22 @@ pub(crate) fn extract_regions_from_metadata(
         .collect())
 }
 
-/// Post-write check: verify the parquet file at `metadata` has no two
-/// row groups sharing the same composite prefix key, for the first
-/// `prefix_len` sort columns. Returns `Ok(())` immediately if
-/// `prefix_len == 0` (no alignment claim).
+/// Post-write check: verify every row group in `metadata` satisfies
+/// the prefix-alignment claim declared by `prefix_len`.
+///
+/// Enforces both halves of the prefix-alignment contract in one pass:
+/// - **PA-1 (intra-RG constancy):** within each RG, each of the first `prefix_len` sort columns has
+///   `min == max` (the column is constant across the RG). This is checked transitively by
+///   [`extract_rg_composite_prefix_key`] — it returns an error when any prefix column's chunk stats
+///   show `min != max`.
+/// - **PA-3 (inter-RG uniqueness):** no two RGs share the same composite prefix value. The
+///   streaming engine pairs at most one input RG per region per prefix value, so a duplicate would
+///   silently drop rows or corrupt the body-col / sort-col mapping.
+///
+/// Returns `Ok(())` immediately when `prefix_len == 0` (no claim to
+/// verify) or `num_rgs == 0` (no RGs to check). Single-RG files are
+/// NOT short-circuited — they still go through PA-1 because an
+/// unsorted single-RG file CAN have `min != max` on a prefix column.
 ///
 /// This is the writer-side mirror of the read-side check in
 /// `extract_regions_from_metadata` — both indexing and the compaction
@@ -525,8 +560,8 @@ pub(crate) fn assert_unique_rg_prefix_keys(
         return Ok(());
     }
     let num_rgs = metadata.num_row_groups();
-    if num_rgs <= 1 {
-        // Single-RG (or zero-RG) files vacuously satisfy the invariant.
+    if num_rgs == 0 {
+        // Zero-RG files vacuously satisfy both halves of the claim.
         return Ok(());
     }
     let prefix_cols =

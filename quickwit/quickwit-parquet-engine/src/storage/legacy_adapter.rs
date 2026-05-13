@@ -57,6 +57,7 @@
 // deprecated items at module scope keeps that lookup direct.
 #![allow(deprecated)]
 
+use std::collections::HashMap;
 use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -141,6 +142,26 @@ pub enum LegacyAdapterError {
          enough sort information to safely synthesize prefix-aligned row groups)"
     )]
     PrefixUnresolvable { target: u32, reason: String },
+
+    /// The legacy file's rows are not sorted by its declared sort schema
+    /// (SS-1 violation): two row regions in the file carry the same
+    /// composite prefix value with other prefix values in between. The
+    /// adapter walks rows in physical order and emits one RG per
+    /// prefix-value run, so an unsorted input produces multiple RGs
+    /// sharing a prefix key — which violates PA-3 (per-input uniqueness).
+    /// Bail upfront instead of producing a file the downstream merge
+    /// engine will reject mid-merge.
+    #[error(
+        "legacy input is not sorted by its declared sort schema: rows at offset {first_offset} \
+         and offset {second_offset} share composite prefix value (target_prefix_len = {target}). \
+         The adapter relies on the file being sorted per SS-1; an unsorted file would synthesize \
+         multiple row groups with the same prefix key (PA-3 violation)."
+    )]
+    InputNotSorted {
+        target: u32,
+        first_offset: usize,
+        second_offset: usize,
+    },
 }
 
 /// 4 GiB upper bound on the input file size we will buffer into RAM.
@@ -290,7 +311,7 @@ fn reencode_prefix_aligned(
     let slices = if consolidated_batch.num_rows() == 0 {
         Vec::new()
     } else {
-        compute_prefix_value_slices(&consolidated_batch, &prefix_col_indices)?
+        compute_prefix_value_slices(&consolidated_batch, &prefix_col_indices, target_prefix_len)?
     };
     let kv_with_prefix = inject_prefix_len_kv(original_kv, target_prefix_len);
     let props = build_writer_properties(
@@ -376,9 +397,19 @@ fn resolve_prefix_sort_cols(
 /// constant and contributes no transitions to the composite key —
 /// equivalent to skipping it, but kept explicit so the resulting
 /// alignment claim matches the caller's requested `target_prefix_len`.
+///
+/// Detects SS-1 violations (unsorted input) up-front: each emitted
+/// slice's composite prefix-value bytes must be unique. If two
+/// non-adjacent slices carry the same prefix value (e.g., rows
+/// `[A,A,B,B,A,A]`), the input is not sorted by its declared sort
+/// schema, so we'd synthesize a file with two RGs sharing the prefix
+/// — a PA-3 violation the downstream merge engine would reject
+/// mid-merge. Bailing here with `InputNotSorted` keeps that bad file
+/// from ever landing on disk.
 fn compute_prefix_value_slices(
     batch: &RecordBatch,
     prefix_col_indices: &[Option<usize>],
+    target_prefix_len: u32,
 ) -> Result<Vec<(usize, usize)>, LegacyAdapterError> {
     let n = batch.num_rows();
     let cols: Vec<ArrayRef> = prefix_col_indices
@@ -400,15 +431,35 @@ fn compute_prefix_value_slices(
     if n_rows == 0 {
         return Ok(Vec::new());
     }
+    // Track each emitted slice's starting prefix-value bytes; any
+    // repeat signals SS-1 violation on the input.
+    let mut seen: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut slices = Vec::new();
     let mut start = 0;
+    let record_slice = |slices: &mut Vec<(usize, usize)>,
+                        seen: &mut HashMap<Vec<u8>, usize>,
+                        slice_start: usize,
+                        slice_len: usize|
+     -> Result<(), LegacyAdapterError> {
+        let key = rows.row(slice_start).as_ref().to_vec();
+        if let Some(&first_offset) = seen.get(&key) {
+            return Err(LegacyAdapterError::InputNotSorted {
+                target: target_prefix_len,
+                first_offset,
+                second_offset: slice_start,
+            });
+        }
+        seen.insert(key, slice_start);
+        slices.push((slice_start, slice_len));
+        Ok(())
+    };
     for i in 1..n_rows {
         if rows.row(i) != rows.row(i - 1) {
-            slices.push((start, i - start));
+            record_slice(&mut slices, &mut seen, start, i - start)?;
             start = i;
         }
     }
-    slices.push((start, n_rows - start));
+    record_slice(&mut slices, &mut seen, start, n_rows - start)?;
     Ok(slices)
 }
 
@@ -1335,6 +1386,19 @@ mod tests {
             Some("1"),
             "re-encoded file must declare rg_partition_prefix_len=1",
         );
+
+        // F9 chunk-level verification: the count + KV checks above
+        // would still pass if `compute_prefix_value_slices` had an
+        // off-by-one in its boundary detection. PA-1 + PA-3 on chunk
+        // statistics nail down that each RG's metric_name column is
+        // actually constant and no two RGs share a value.
+        crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+            adapter.metadata(),
+            "metric_name|-timestamp_secs/V2",
+            1,
+            "test_legacy_input_with_sort_fields_produces_prefix_aligned_multi_rg adapter output",
+        )
+        .expect("adapter output must satisfy PA-1 + PA-3 on metric_name");
     }
 
     /// Single-metric legacy file: only one prefix value, so the
@@ -1519,6 +1583,19 @@ mod tests {
             Some("2"),
             "stamped prefix_len must match caller's request",
         );
+
+        // F9 chunk-level verification: a `compute_prefix_value_slices`
+        // bug splitting on only the first prefix col (or off by one)
+        // would still yield 4 RGs of [20,20,20,20] but with the wrong
+        // CONTENTS. PA-1 + PA-3 on the composite (metric, service)
+        // composite key verifies content alignment directly.
+        crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+            adapter.metadata(),
+            "metric_name|service|-timestamp_secs/V2",
+            2,
+            "test_target_prefix_len_two_splits_by_metric_and_service adapter output",
+        )
+        .expect("composite prefix output must satisfy PA-1 + PA-3");
     }
 
     /// SS-3: a sort column named in `qh.sort_fields` but missing from
@@ -1573,6 +1650,77 @@ mod tests {
             Some("2"),
             "stamped prefix_len must match caller's request even when one col is implicitly null",
         );
+
+        // F10 + F12 chunk-level verification: SS-3 is now honored on
+        // BOTH sides — `find_prefix_parquet_col_indices` returns
+        // `Option<PrefixColumn>` (None for "named in sort schema but
+        // missing from parquet schema"), and
+        // `extract_rg_composite_prefix_key` emits a constant null
+        // marker for those slots. So the adapter's output (which
+        // stamps prefix_len = 2 but omits `env` from the schema)
+        // passes the unified PA-1 + PA-3 verifier: each RG's
+        // metric_name min == max, and the constant null contribution
+        // for `env` makes RG composite keys differ only by
+        // metric_name.
+        crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+            adapter.metadata(),
+            "metric_name|env|-timestamp_secs/V2",
+            2,
+            "test_missing_prefix_col_treated_as_null_satisfies_alignment adapter output",
+        )
+        .expect("SS-3 null col must satisfy PA-1 + PA-3 (null is constant across all RGs)");
+    }
+
+    /// F8 regression: an unsorted legacy input (rows
+    /// `[A,A,B,B,A,A]` on `metric_name`) violates SS-1. Walking
+    /// row-by-row to find prefix transitions would emit three slices —
+    /// `A`, `B`, `A` — and synthesize a file with two RGs sharing the
+    /// prefix value `A`, violating PA-3. The downstream streaming
+    /// merge engine would catch this later, but only once the bad
+    /// file had been built and possibly archived. The adapter must
+    /// bail upfront with `InputNotSorted` so no PA-3-violating file
+    /// ever lands on disk.
+    #[tokio::test]
+    async fn test_unsorted_legacy_input_rejected_by_adapter() {
+        // metric_name in row order: cpu.usage, memory.used, cpu.usage.
+        // That's an SS-1 violation under sort schema `metric_name ASC`.
+        let bad_metrics = [
+            ("cpu.usage", 20usize),
+            ("memory.used", 20),
+            ("cpu.usage", 20),
+        ];
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&bad_metrics, "metric_name|-timestamp_secs/V2", 20);
+
+        let source = CountingInMemorySource::new(bytes);
+        let result = LegacyInputAdapter::try_open(source, dummy_path(), 1).await;
+        let Err(err) = result else {
+            panic!(
+                "unsorted legacy input must surface as InputNotSorted, got Ok(...) — the adapter \
+                 would have written a PA-3-violating file"
+            );
+        };
+        match err {
+            LegacyAdapterError::InputNotSorted {
+                target,
+                first_offset,
+                second_offset,
+            } => {
+                assert_eq!(target, 1);
+                // First `cpu.usage` run is at offset 0; second is at
+                // offset 40 (after the 20-row `cpu.usage` then 20-row
+                // `memory.used` runs).
+                assert_eq!(
+                    first_offset, 0,
+                    "first duplicate prefix offset should point at the first cpu.usage run",
+                );
+                assert_eq!(
+                    second_offset, 40,
+                    "second duplicate prefix offset should point at the second cpu.usage run",
+                );
+            }
+            other => panic!("expected InputNotSorted, got: {other}"),
+        }
     }
 
     /// Composite-prefix fixture: rows grouped by `(metric, service)`
