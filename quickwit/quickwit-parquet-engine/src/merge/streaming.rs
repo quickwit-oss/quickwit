@@ -350,14 +350,181 @@ pub async fn streaming_merge_sorted_parquet_files(
                 vec![region.clone()]
             };
 
-            for sub_region in &sub_regions {
-                let sub_rows = sub_region.total_rows();
+            if needs_split {
+                // Multi-output sub-region path: hoist the col loop OUT
+                // of the sub-region loop via `process_split_region_col_outer`
+                // so each parquet col chunk is fully consumed across
+                // all sub-regions before the next col starts (F14).
+                //
+                // Group consecutive sub-regions that share an output
+                // writer into one "writer chunk" — each chunk writes
+                // one RG containing all its sub-regions' rows. The
+                // group boundaries are where the running row count
+                // crosses `target_per_output` and there's still
+                // budget for another output.
+                let prefetched_batches = prefetched
+                    .as_deref()
+                    .expect("needs_split path always drains prefetched sort batches");
 
-                // Advance to the next output file BEFORE this sub-
-                // region if the current output already met the
-                // target and we still have outputs to fill. The
-                // very first sub-region is exempt so we don't open
-                // an empty writer.
+                // Build writer chunks: pre-decide writer transitions
+                // for this region's sub-regions and coalesce
+                // consecutive sub-regions assigned to the same
+                // writer into one Region. Each writer-chunk needs a
+                // distinct OutputWriterStorage (one RG per chunk;
+                // RGs must be sequential per writer so two
+                // sub-regions on the same writer would need
+                // sequential RGs — but we coalesce them into one
+                // RG to keep the col-outer loop simple).
+                let mut chunk_assignments: Vec<(usize, Vec<&Region>)> = Vec::new();
+                let mut active_output_idx = current_output_idx;
+                let mut active_rows = current_output_rows;
+                for sub_region in &sub_regions {
+                    let sub_rows = sub_region.total_rows();
+                    let needs_new_writer = !chunk_assignments.is_empty()
+                        && active_rows >= target_per_output
+                        && active_output_idx + 1 < num_outputs;
+                    if needs_new_writer {
+                        active_output_idx += 1;
+                        active_rows = 0;
+                    }
+                    let same_writer_as_last = match chunk_assignments.last() {
+                        Some((o, _)) => *o == active_output_idx,
+                        None => false,
+                    };
+                    if same_writer_as_last {
+                        chunk_assignments
+                            .last_mut()
+                            .expect("non-empty checked above")
+                            .1
+                            .push(sub_region);
+                    } else {
+                        chunk_assignments.push((active_output_idx, vec![sub_region]));
+                    }
+                    active_rows += sub_rows;
+                }
+
+                // Open writers for any new output indices in this
+                // region's chunk assignments. The first chunk reuses
+                // the existing current_writer if it matches.
+                // Materialize concrete writer/accumulator storage in
+                // a Vec so we can take &mut to each.
+                struct ChunkStorage {
+                    writer: OutputWriterStorage,
+                    accumulator: OutputAccumulator,
+                    region: Region,
+                }
+                let mut chunk_storage: Vec<ChunkStorage> =
+                    Vec::with_capacity(chunk_assignments.len());
+                for (idx_in_region, (output_idx, sub_regions_for_chunk)) in
+                    chunk_assignments.iter().enumerate()
+                {
+                    // First chunk: try to reuse current_writer / current_accumulator
+                    // if they match the output_idx; otherwise finalize them and open new.
+                    let can_reuse_current = idx_in_region == 0
+                        && match current_writer.as_ref() {
+                            Some(w) => w.output_idx == *output_idx,
+                            None => false,
+                        };
+                    let (writer, accumulator) = if can_reuse_current {
+                        (
+                            current_writer.take().expect("matched above"),
+                            current_accumulator.take().expect("matched above"),
+                        )
+                    } else {
+                        // Need to advance: finalize current if it's
+                        // not for this output, then open a fresh
+                        // writer at output_idx.
+                        if let (Some(w), Some(acc)) =
+                            (current_writer.take(), current_accumulator.take())
+                        {
+                            outputs.push(finalize_output(w, acc, &input_meta)?);
+                        }
+                        let writer = open_output_writer_for_streaming(
+                            *output_idx,
+                            &output_dir,
+                            &union_schema,
+                            &input_meta,
+                            &writer_config,
+                        )?;
+                        (writer, OutputAccumulator::new(*output_idx))
+                    };
+
+                    // Coalesce sub-regions into one Region by summing
+                    // contributions per (input_idx, rg_idx).
+                    let mut by_input: std::collections::BTreeMap<(usize, usize), (usize, usize)> =
+                        std::collections::BTreeMap::new();
+                    for sr in sub_regions_for_chunk {
+                        for c in &sr.contributing {
+                            by_input
+                                .entry((c.input_idx, c.rg_idx))
+                                .and_modify(|(min_start, total)| {
+                                    *min_start = (*min_start).min(c.start_row);
+                                    *total += c.num_rows;
+                                })
+                                .or_insert((c.start_row, c.num_rows));
+                        }
+                    }
+                    let contributing: Vec<region_grouping::RegionContribution> = by_input
+                        .into_iter()
+                        .map(|((input_idx, rg_idx), (start_row, num_rows))| {
+                            region_grouping::RegionContribution {
+                                input_idx,
+                                rg_idx,
+                                start_row,
+                                num_rows,
+                            }
+                        })
+                        .collect();
+                    let combined = Region {
+                        prefix_key: sub_regions_for_chunk[0].prefix_key.clone(),
+                        contributing,
+                    };
+                    chunk_storage.push(ChunkStorage {
+                        writer,
+                        accumulator,
+                        region: combined,
+                    });
+                }
+
+                // Build &mut chunks for the col-outer processor.
+                let chunks: Vec<SplitRegionChunk<'_>> = chunk_storage
+                    .iter_mut()
+                    .map(|s| SplitRegionChunk {
+                        writer_state: &mut s.writer,
+                        accumulator: &mut s.accumulator,
+                        region: s.region.clone(),
+                    })
+                    .collect();
+                process_split_region_col_outer(
+                    &handle,
+                    &mut decoders_state,
+                    chunks,
+                    &union_schema,
+                    &input_meta,
+                    prefetched_batches,
+                )?;
+
+                // Hand chunk storage back to main-loop state: the
+                // last chunk becomes the new current writer; all
+                // earlier chunks finalize now.
+                let last_chunk_storage = chunk_storage
+                    .pop()
+                    .expect("chunk_assignments is non-empty so storage is non-empty");
+                for finished in chunk_storage {
+                    outputs.push(finalize_output(
+                        finished.writer,
+                        finished.accumulator,
+                        &input_meta,
+                    )?);
+                }
+                current_writer = Some(last_chunk_storage.writer);
+                current_accumulator = Some(last_chunk_storage.accumulator);
+                current_output_idx = active_output_idx;
+                current_output_rows = active_rows;
+            } else {
+                // No split needed: ensure a writer is open at the
+                // current output index, then process the single
+                // region via the existing per-region path.
                 if current_writer.is_some()
                     && current_output_rows >= target_per_output
                     && current_output_idx + 1 < num_outputs
@@ -388,16 +555,16 @@ pub async fn streaming_merge_sorted_parquet_files(
                     &mut decoders_state,
                     current_writer
                         .as_mut()
-                        .expect("writer opened above for this sub-region"),
+                        .expect("writer opened above for this region"),
                     current_accumulator
                         .as_mut()
-                        .expect("accumulator opened above for this sub-region"),
-                    sub_region,
+                        .expect("accumulator opened above for this region"),
+                    region,
                     &union_schema,
                     &input_meta,
                     prefetched.as_deref(),
                 )?;
-                current_output_rows += sub_rows;
+                current_output_rows += region.total_rows();
             }
         }
 
@@ -1008,6 +1175,286 @@ fn process_region(
     // 7. Accumulate this region's contribution to the output.
     accumulator.append_sort_batch(region_sort_batch)?;
     accumulator.num_rows += region_rows;
+
+    Ok(())
+}
+
+/// One writer-chunk handed to [`process_split_region_col_outer`].
+///
+/// `region` is the combined region for this chunk: one or more
+/// adjacent sub-regions of a single top-level region that share an
+/// output writer. Coalescing adjacent sub-regions into one Region
+/// lets each chunk's RG cover all the rows that this writer-chunk
+/// owns in one shot, so we open exactly one RG per chunk and the
+/// col-outer body-col loop can interleave writes across N chunks
+/// holding N concurrent RGs (one per writer).
+pub(crate) struct SplitRegionChunk<'a> {
+    pub(crate) writer_state: &'a mut OutputWriterStorage,
+    pub(crate) accumulator: &'a mut OutputAccumulator,
+    pub(crate) region: Region,
+}
+
+/// Per-chunk pre-computed state built up in phase 1 of
+/// [`process_split_region_col_outer`] before any body cols are
+/// written. Persisted across the col-outer loop so each iteration of
+/// the inner loop has the destinations / cursors / row counts it
+/// needs without re-computing.
+struct ChunkPrep {
+    sort_union_schema: SchemaRef,
+    region_sort_batch: RecordBatch,
+    region_destinations: InputRowDestinations,
+    region_rows: usize,
+    input_start_rows: Vec<usize>,
+}
+
+/// Col-outer processor for the prefix_len=0 multi-output sub-region
+/// case. Same per-region work as [`process_region`] (merge order,
+/// permutation, sort cols, body cols), but with the col loop hoisted
+/// OUT of the sub-region loop so each parquet col chunk is fully
+/// consumed from the page stream before the next col starts.
+///
+/// Why: the parquet stream emits pages in column-major order. The
+/// previous sub-region-outer / col-inner ordering meant that while
+/// processing sub-region 0's col K, the stream emitted cols 0..K-1's
+/// remaining pages first (they had to be skipped past to reach col
+/// K). Those skipped pages were cached under their own col_idx for
+/// later sub-regions to consume — and the cache scaled with input
+/// row count (more rows = more leftover pages per col chunk).
+/// Col-outer fully drains col K's chunk across all sub-regions
+/// before reading any col K+1 pages, so cache[col K] empties before
+/// col K+1's pages start arriving. Peak total cache returns to
+/// O(K × num_body_cols × num_chunks) where K is the per-col output-
+/// page bound — bounded independent of row count. See the MS-7
+/// sub-region test for the regression guard.
+///
+/// Each chunk holds one RG concurrently; chunks correspond to
+/// distinct output writers, so the parquet writers' single-active-RG
+/// constraint is respected. Sub-regions belonging to the same writer
+/// are pre-coalesced into one Region by the caller.
+fn process_split_region_col_outer(
+    handle: &Handle,
+    decoders_state: &mut [InputDecoderState],
+    chunks: Vec<SplitRegionChunk<'_>>,
+    union_schema: &SchemaRef,
+    input_meta: &InputMetadata,
+    prefetched_sort_batches: &[RecordBatch],
+) -> Result<()> {
+    if chunks.is_empty() {
+        return Ok(());
+    }
+    let num_inputs = decoders_state.len();
+
+    // Phase 1: per-chunk prep — sort batches, merge order, permutation,
+    // destinations. No I/O against the body-col stream yet.
+    let mut preps: Vec<ChunkPrep> = Vec::with_capacity(chunks.len());
+    for chunk in &chunks {
+        let mut sort_col_batches: Vec<Option<RecordBatch>> =
+            (0..num_inputs).map(|_| None).collect();
+        for c in &chunk.region.contributing {
+            // Slice the prefetched (already-drained for the whole top-
+            // level region) sort batch by this chunk's row range for
+            // each contributing input.
+            sort_col_batches[c.input_idx] =
+                Some(prefetched_sort_batches[c.input_idx].slice(c.start_row, c.num_rows));
+        }
+        let mut sort_batch_vec: Vec<RecordBatch> = Vec::with_capacity(num_inputs);
+        for (idx, slot) in sort_col_batches.into_iter().enumerate() {
+            let batch = match slot {
+                Some(b) => b,
+                None => empty_sort_col_record_batch(&decoders_state[idx], &input_meta.sort_fields)?,
+            };
+            sort_batch_vec.push(batch);
+        }
+
+        let mut input_start_rows: Vec<usize> = vec![0; num_inputs];
+        for c in &chunk.region.contributing {
+            input_start_rows[c.input_idx] = c.start_row;
+        }
+
+        let (sort_union_schema, aligned_sort_batches) =
+            align_inputs_to_union_schema(&sort_batch_vec, &input_meta.sort_fields)?;
+        let merge_order = compute_merge_order(&aligned_sort_batches, &input_meta.sort_fields)?;
+        let region_rows: usize = merge_order.iter().map(|r| r.row_count).sum();
+        let region_sort_batch =
+            apply_merge_permutation(&aligned_sort_batches, &sort_union_schema, &merge_order)
+                .context("applying merge permutation for split-region chunk")?;
+        verify_sort_order(&region_sort_batch, &input_meta.sort_fields);
+
+        let mut destinations: Vec<Vec<Option<(usize, usize)>>> = aligned_sort_batches
+            .iter()
+            .enumerate()
+            .map(|(idx, b)| vec![None; input_start_rows[idx] + b.num_rows()])
+            .collect();
+        let mut pos = 0usize;
+        for run in &merge_order {
+            for r in 0..run.row_count {
+                let absolute_row = input_start_rows[run.input_index] + run.start_row + r;
+                destinations[run.input_index][absolute_row] = Some((0, pos));
+                pos += 1;
+            }
+        }
+        let region_destinations = InputRowDestinations {
+            per_input: destinations,
+            rows_per_output: vec![region_rows],
+        };
+
+        preps.push(ChunkPrep {
+            sort_union_schema,
+            region_sort_batch,
+            region_destinations,
+            region_rows,
+            input_start_rows,
+        });
+    }
+
+    // Phase 2: open one RG per chunk and bundle the per-chunk
+    // resources (rg + accumulator + num_row_groups ref + prep) into a
+    // single Vec. Consuming `chunks` in one pass avoids the
+    // borrow-checker conflict of holding rg-borrows of chunks while
+    // re-borrowing chunks for the body col loop.
+    struct ActiveChunk<'a> {
+        rg: crate::storage::streaming_writer::RowGroupBuilder<'a, std::fs::File>,
+        accumulator: &'a mut OutputAccumulator,
+        num_row_groups: &'a mut usize,
+        output_idx: usize,
+        prep: ChunkPrep,
+    }
+
+    let mut actives: Vec<ActiveChunk<'_>> = Vec::with_capacity(chunks.len());
+    for (chunk, prep) in chunks.into_iter().zip(preps.into_iter()) {
+        let SplitRegionChunk {
+            writer_state,
+            accumulator,
+            region: _,
+        } = chunk;
+        let output_idx = writer_state.output_idx;
+        // Split writer_state into the writer field (consumed by rg)
+        // and the num_row_groups field (held separately): disjoint
+        // field borrows through a &mut OutputWriterStorage are
+        // allowed.
+        let OutputWriterStorage {
+            writer,
+            num_row_groups,
+            ..
+        } = writer_state;
+        let rg = writer.start_row_group().with_context(|| {
+            format!("opening row group for split-region chunk output {output_idx}")
+        })?;
+        actives.push(ActiveChunk {
+            rg,
+            accumulator,
+            num_row_groups,
+            output_idx,
+            prep,
+        });
+    }
+
+    // Phase 3: write all columns in union-schema order. For each col,
+    // every chunk writes that col to its RG before any chunk moves
+    // on to the next col. Sort cols write from each chunk's
+    // already-sorted region_sort_batch (no stream involvement).
+    // Body cols stream through the per-input page cache; col-outer
+    // ordering ensures col K's chunk pages are fully consumed before
+    // col K+1's pages enter the stream.
+    let sort_field_names: Vec<String> = actives[0]
+        .prep
+        .sort_union_schema
+        .fields()
+        .iter()
+        .map(|f| f.name().clone())
+        .collect();
+    for (col_idx, field) in union_schema.fields().iter().enumerate() {
+        let col_name = field.name();
+        let is_sort_col = sort_field_names.iter().any(|n| n == col_name);
+
+        if is_sort_col {
+            for (chunk_idx, active) in actives.iter_mut().enumerate() {
+                let arrays = build_sort_col_pages_from_sorted_batch(
+                    &active.prep.region_sort_batch,
+                    col_name,
+                )?;
+                active
+                    .rg
+                    .write_next_column_arrays(arrays.into_iter())
+                    .with_context(|| {
+                        format!(
+                            "writing sort col '{col_name}' (col_idx {col_idx}) to split-region \
+                             chunk {chunk_idx}",
+                        )
+                    })?;
+            }
+        } else {
+            let mut input_col_indices: Vec<Option<usize>> = Vec::with_capacity(num_inputs);
+            for state in decoders_state.iter() {
+                input_col_indices.push(state.arrow_schema.index_of(col_name).ok());
+            }
+            let track_service = col_name == "service";
+
+            for (chunk_idx, active) in actives.iter_mut().enumerate() {
+                for (idx, state) in decoders_state.iter_mut().enumerate() {
+                    if let Some(col_parquet_idx) = input_col_indices[idx] {
+                        state.set_body_col_cursor(
+                            col_parquet_idx,
+                            active.prep.input_start_rows[idx],
+                        );
+                    }
+                }
+
+                let assembler = BodyColOutputPageAssembler::new(
+                    handle,
+                    decoders_state,
+                    &input_col_indices,
+                    &active.prep.region_destinations,
+                    0,
+                    col_name,
+                    field.as_ref(),
+                );
+
+                let mut error_slot: Option<anyhow::Error> = None;
+                let service_collector: Option<&mut HashSet<String>> = if track_service {
+                    Some(&mut active.accumulator.service_names)
+                } else {
+                    None
+                };
+                let stream_iter = StreamingBodyColIter {
+                    inner: assembler.into_iter(),
+                    error_slot: &mut error_slot,
+                    service_collector,
+                };
+                let write_result = active.rg.write_next_column_arrays(stream_iter);
+
+                if let Some(err) = error_slot {
+                    return Err(err).with_context(|| {
+                        format!(
+                            "assembling body col '{col_name}' for split-region chunk {chunk_idx}",
+                        )
+                    });
+                }
+                write_result.with_context(|| {
+                    format!("writing body col '{col_name}' to split-region chunk {chunk_idx}",)
+                })?;
+            }
+        }
+    }
+
+    // Phase 4: finalize each chunk's RG and accumulate per-output
+    // metadata. RG finish must precede num_row_groups bump (MS-3:
+    // they have to agree).
+    for active in actives.into_iter() {
+        let ActiveChunk {
+            rg,
+            accumulator,
+            num_row_groups,
+            output_idx,
+            prep,
+        } = active;
+        rg.finish().with_context(|| {
+            format!("finishing row group for split-region chunk output {output_idx}",)
+        })?;
+        *num_row_groups += 1;
+        accumulator.append_sort_batch(prep.region_sort_batch)?;
+        accumulator.num_rows += prep.region_rows;
+    }
 
     Ok(())
 }
@@ -4273,25 +4720,84 @@ mod tests {
     // small constant — never scale with row count.
     // ============================================================================
 
+    /// `PEAK_BODY_COL_PAGE_CACHE_LEN` is a process-global atomic, so
+    /// concurrent MS-7 tests would pollute each other's readings.
+    /// Every MS-7 test must acquire this lock for the duration of its
+    /// merge + read sequence. The static guarantees there's only one
+    /// MS-7 merge in flight at a time across the whole test binary.
+    ///
+    /// Held across `.await` points in the MS-7 tests — that's why
+    /// each test allows `clippy::await_holding_lock`. In production
+    /// code we'd use an async-aware mutex, but this is test-only
+    /// process-wide serialization for a global atomic that has no
+    /// async-safe alternative; `tokio::sync::Mutex` is also banned
+    /// by GAP-002 (cancel-correctness). The lock is `std::sync::Mutex`
+    /// and the executor is `tokio::test`'s single-threaded runtime,
+    /// so holding the guard across await won't deadlock another
+    /// thread.
+    fn ms7_serial_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        // Poisoning is fine — a previous test panicking shouldn't
+        // prevent the next one from acquiring; just unwrap the inner.
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Build a fixture that forces many input body-col pages with a
     /// pinned `data_page_row_count_limit`, then merge it through the
     /// streaming engine and read back the peak cache length. Used by
     /// the MS-7 test below across multiple sizes.
+    ///
+    /// Caller must hold [`ms7_serial_lock`] across this call.
     async fn merge_and_observe_peak_page_cache(num_rows: usize, page_rows: usize) -> usize {
+        merge_n_inputs_and_observe_peak_page_cache(1, num_rows, page_rows).await
+    }
+
+    /// Run the same merge through `num_inputs` identical small-pages
+    /// fixtures and return the peak per-input cache length observed.
+    ///
+    /// `PEAK_BODY_COL_PAGE_CACHE_LEN` is set per-input by the body
+    /// assembler — it tracks `body_col_caches_total_len` (sum across
+    /// body cols for a single `InputDecoderState`). The atomic stores
+    /// `max(per-input)`, NOT the sum, so the bound should hold flat
+    /// regardless of `num_inputs`. Each input's body-col cache is
+    /// independent; adding more inputs adds parallel caches but
+    /// doesn't push any one input's cache size up. The MS-7
+    /// per-input invariant must hold in the multi-input case the
+    /// same way it does in single-input.
+    ///
+    /// The fixture writes `num_inputs` distinct files (each with a
+    /// unique sort-key offset so the merge engine genuinely
+    /// interleaves them — using identical files would let the engine
+    /// take shortcuts). Each input has `num_rows_per_input` rows on
+    /// the same single metric_name, so all rows fall in one region.
+    async fn merge_n_inputs_and_observe_peak_page_cache(
+        num_inputs: usize,
+        num_rows_per_input: usize,
+        page_rows: usize,
+    ) -> usize {
         use std::sync::atomic::Ordering;
 
         PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
 
-        let batch = make_sorted_batch(num_rows, 0);
-        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), page_rows);
-        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+        let mut inputs: Vec<Box<dyn ColumnPageStream>> = Vec::with_capacity(num_inputs);
+        for i in 0..num_inputs {
+            // Stagger sort-key offsets so each input has a disjoint
+            // sorted_series range. Without this the merge engine
+            // would compare row-equal keys and the interleaving
+            // pattern wouldn't exercise per-input page caches.
+            let key_offset = i as u64 * (num_rows_per_input as u64);
+            let batch = make_sorted_batch(num_rows_per_input, key_offset);
+            let bytes =
+                write_input_parquet_with_small_pages(std::slice::from_ref(&batch), page_rows);
+            inputs.push(open_stream(bytes).await);
+        }
 
         let tmp = TempDir::new().expect("tmpdir");
         let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
             .await
             .expect("merge");
         assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0].num_rows, num_rows);
+        assert_eq!(outputs[0].num_rows, num_rows_per_input * num_inputs);
 
         PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed)
     }
@@ -4309,8 +4815,10 @@ mod tests {
     /// A regression that dropped the eviction loop would push the peak
     /// past the ceiling for the 30 000-row fixture but not the 3 000-
     /// row fixture, breaking both assertions below.
+    #[allow(clippy::await_holding_lock, reason = "see ms7_serial_lock docs")]
     #[tokio::test]
     async fn test_ms7_body_col_page_cache_bounded_regardless_of_input_size() {
+        let _guard = ms7_serial_lock();
         const PAGE_ROWS: usize = 50;
         // ceil(1024 / 50) = 21 in-flight pages needed for one output
         // page. Allow 3 slack: decoder lookahead, transient between
@@ -4422,6 +4930,228 @@ mod tests {
             "expected Husky-order error mentioning 'value', got: {err_str}",
         );
     }
+
+    /// MS-7 multi-input dimension: the per-input page-cache bound must
+    /// hold across `num_inputs ∈ {1, 3, 8}` independent inputs being
+    /// merged together. Each input has its own `InputDecoderState` and
+    /// therefore its own per-col page cache; the atomic
+    /// `PEAK_BODY_COL_PAGE_CACHE_LEN` stores
+    /// `max(body_col_caches_total_len)` over all inputs, so the bound
+    /// being checked is per-input, not summed across inputs.
+    ///
+    /// The motivation: production merges combine many splits at once.
+    /// A regression that, say, shared a buffer across input states (so
+    /// pages from N inputs piled into the same cache) would push the
+    /// observed peak to roughly N × the single-input peak. The current
+    /// design keeps caches independent — this test pins that invariant.
+    ///
+    /// Sweep over `num_inputs ∈ {1, 3, 8}` AND
+    /// `rows_per_input ∈ {3_000, 30_000}` so a "peak grows with
+    /// num_inputs" regression and a "peak grows with rows" regression
+    /// would each surface separately.
+    #[allow(clippy::await_holding_lock, reason = "see ms7_serial_lock docs")]
+    #[tokio::test]
+    async fn test_ms7_per_input_bound_across_num_inputs() {
+        let _guard = ms7_serial_lock();
+        const PAGE_ROWS: usize = 50;
+        // Same constant as the single-input MS-7 test:
+        // ceil(OUTPUT_PAGE_ROWS / PAGE_ROWS) + slack.
+        const MAX_RESIDENT_PAGES_PER_INPUT: usize = 24;
+
+        for &num_inputs in &[1usize, 3, 8] {
+            for &rows_per_input in &[3_000usize, 30_000] {
+                let peak = merge_n_inputs_and_observe_peak_page_cache(
+                    num_inputs,
+                    rows_per_input,
+                    PAGE_ROWS,
+                )
+                .await;
+                assert!(
+                    peak <= MAX_RESIDENT_PAGES_PER_INPUT,
+                    "num_inputs={num_inputs}, rows_per_input={rows_per_input}: per-input peak \
+                     cache len {peak} > {MAX_RESIDENT_PAGES_PER_INPUT} — body-col caches are no \
+                     longer per-input-independent",
+                );
+            }
+        }
+
+        // Cross-axis growth: 1→8 inputs at the same row count must
+        // not push peak up. The atomic tracks max-per-input, so a
+        // value increase between (1 input, 30 000 rows) and (8 inputs,
+        // 30 000 rows) would indicate caches bleeding across inputs.
+        let peak_1in = merge_n_inputs_and_observe_peak_page_cache(1, 30_000, PAGE_ROWS).await;
+        let peak_8in = merge_n_inputs_and_observe_peak_page_cache(8, 30_000, PAGE_ROWS).await;
+        let growth = peak_8in.saturating_sub(peak_1in);
+        assert!(
+            growth <= 2,
+            "peak grows with num_inputs: 1in={peak_1in}, 8in={peak_8in} — caches likely shared \
+             across inputs",
+        );
+    }
+
+    /// MS-7 sub-region dimension: when `prefix_len = 0` +
+    /// `num_outputs > 1` triggers `split_region_at_sorted_series`,
+    /// the per-input page cache survives across sub-region boundaries
+    /// within one top-level region (the engine reads col K once and
+    /// re-uses it across sub-regions). The headline MS-7 claim must
+    /// still hold: peak DOES NOT scale with input row count.
+    ///
+    /// This test guards the F14 fix: `process_split_region_col_outer`
+    /// inverts the col/sub-region loop nesting so each parquet col
+    /// chunk is fully consumed from the page stream before the next
+    /// col starts. Before that fix, peak scaled ~linearly with row
+    /// count (3 000 rows → 140 cached pages; 30 000 rows → 1 200
+    /// pages, ~9× growth for 10× rows). With the fix, the per-input
+    /// peak stays bounded by `K × num_body_cols × num_chunks` where
+    /// K is the per-col output-page bound — independent of row
+    /// count.
+    ///
+    /// Fixture: single multi-metric single-RG input (prefix_len = 0)
+    /// with 6 distinct metric_names. `num_outputs = 3` forces the
+    /// engine into the drain-and-align-then-split path. Two row-count
+    /// regimes (small + large): peak at the large size must be within
+    /// a small additive slack of the small size's peak.
+    #[allow(clippy::await_holding_lock, reason = "see ms7_serial_lock docs")]
+    #[tokio::test]
+    async fn test_ms7_per_input_bound_across_sub_regions_does_not_scale_with_rows() {
+        let _guard = ms7_serial_lock();
+        use std::sync::atomic::Ordering;
+
+        const PAGE_ROWS: usize = 50;
+        // Slack covers: page-decoder lookahead, transient between
+        // push and check across body cols, the inter-col handoff
+        // where col K's cache hasn't drained before col K+1's first
+        // page arrives.
+        const SCALING_SLACK_PAGES: usize = 4;
+
+        async fn run(rows_per_metric: usize) -> usize {
+            PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
+            let metrics: Vec<(&str, usize)> = vec![
+                ("aaa.alpha", rows_per_metric),
+                ("bbb.beta", rows_per_metric),
+                ("ccc.gamma", rows_per_metric),
+                ("ddd.delta", rows_per_metric),
+                ("eee.epsilon", rows_per_metric),
+                ("fff.zeta", rows_per_metric),
+            ];
+            let bytes = make_multi_metric_single_rg_input_with_small_pages(&metrics, PAGE_ROWS);
+            let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+            let tmp = TempDir::new().expect("tmpdir");
+            let outputs =
+                streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+                    .await
+                    .expect("merge");
+            assert_eq!(outputs.len(), 3, "sub-region split must honor num_outputs");
+            let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+            assert_eq!(total, rows_per_metric * 6);
+            PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed)
+        }
+
+        // Small: 6 × 500 = 3 000 rows = 60 input pages per col chunk.
+        let peak_small = run(500).await;
+        // Large: 6 × 5 000 = 30 000 rows = 600 input pages per col chunk.
+        let peak_large = run(5_000).await;
+
+        // The MS-7 invariant: peak does not grow proportionally with
+        // input row count. 10× more rows must produce roughly the
+        // same peak — any growth beyond `SCALING_SLACK_PAGES` means
+        // the cache is no longer page-bounded in the sub-region
+        // path.
+        let growth = peak_large.saturating_sub(peak_small);
+        assert!(
+            growth <= SCALING_SLACK_PAGES,
+            "sub-region path violates MS-7 scaling: small (3 000 rows)={peak_small}, large (30 \
+             000 rows)={peak_large} — 10× more rows produced {growth} more resident pages, \
+             body-col path is not page-bounded across sub-regions",
+        );
+    }
+
+    /// Like `make_multi_metric_single_rg_input` but writes the file
+    /// with a pinned `data_page_row_count_limit` so the body-col path
+    /// actually spans many parquet pages. Otherwise the default
+    /// `data_page_size` byte threshold dominates and small fixtures
+    /// emit one page per col chunk — no opportunity to observe the
+    /// page-cache bound.
+    fn make_multi_metric_single_rg_input_with_small_pages(
+        metrics: &[(&str, usize)],
+        page_rows: usize,
+    ) -> Bytes {
+        // Build the same arrow batch shape as
+        // `make_multi_metric_single_rg_input`, then route through the
+        // small-pages writer instead of the default-config writer.
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("service", dict_type, true),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let total_rows: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total_rows);
+        let mut metric_values_vec: Vec<&str> = Vec::with_capacity(metrics.len());
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total_rows);
+        let mut series_bytes: Vec<Vec<u8>> = Vec::with_capacity(total_rows);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total_rows);
+        let mut values: Vec<f64> = Vec::with_capacity(total_rows);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (name, num)) in metrics.iter().enumerate() {
+            metric_values_vec.push(name);
+            for r in 0..*num {
+                metric_keys.push(metric_idx as i32);
+                timestamps.push(1_700_000_000 + ((*num - r) as u64));
+                series_bytes.push(row_idx.to_be_bytes().to_vec());
+                tsids.push(1000 + row_idx as i64);
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_names_arr = StringArray::from(metric_values_vec);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_names_arr),
+            )
+            .expect("dict"),
+        );
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total_rows]));
+        let service: ArrayRef = {
+            let svc_keys: Vec<Option<i32>> = (0..total_rows as i32).map(|i| Some(i % 3)).collect();
+            let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+            Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(svc_keys),
+                    Arc::new(svc_values),
+                )
+                .expect("svc dict"),
+            )
+        };
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                metric_type,
+                service,
+                timeseries_id,
+                value,
+            ],
+        )
+        .expect("batch");
+
+        write_input_parquet_with_small_pages(&[batch], page_rows)
+    }
+
 
     // ============================================================================
     // Heterogeneous-output regressions (Codex P2 batch on PR-6409)
@@ -4710,5 +5440,614 @@ mod tests {
             msg.contains("sources.len()") && msg.contains("op.splits.len()"),
             "error should explain the mismatch, got: {msg}",
         );
+    }
+
+    // ============================================================================
+    // F5: prefix-aware proptest (varies the new prefix machinery to surface
+    //     regressions the hand-picked fixtures miss).
+    // ============================================================================
+
+    /// F7 — production-shape integration test for the streaming
+    /// engine. The "compact many already-aligned splits" scenario:
+    ///
+    /// - 5 inputs, each prefix_len=1 multi-RG (one RG per metric_name).
+    /// - 15 distinct metric_names total across all inputs, with overlap (every metric appears in
+    ///   2-3 of the 5 inputs).
+    /// - `num_outputs = 4` so the engine has to split by region group while keeping every output
+    ///   prefix-aligned.
+    ///
+    /// Asserts the full "production-shape" invariant bundle:
+    /// - **MC-1**: total rows preserved.
+    /// - **MS-3**: every `MergeOutputFile.num_row_groups` matches its footer.
+    /// - **PA-1 + PA-3**: every output passes `assert_unique_rg_prefix_keys` with prefix_len = 1.
+    /// - **MS-5**: across adjacent output files, sorted_series is monotone non-decreasing — output
+    ///   K's last row's sorted_series ≤ output K+1's first row's sorted_series. A single metric CAN
+    ///   span output boundaries (the engine splits at sorted_series transitions inside an
+    ///   overflowing metric region), so the cross-output invariant is sorted_series monotonicity,
+    ///   not "each metric in one output".
+    /// - **CS-1**: each output's `MergeOutputFile.output_rg_partition_prefix_len` matches the
+    ///   on-disk KV.
+    ///
+    /// This is the corner the original adversarial review flagged as
+    /// "untested production case": multi-input × multi-RG ×
+    /// multi-output × prefix_len > 0. Every piece is tested in
+    /// isolation by hand-picked fixtures elsewhere; this test
+    /// exercises them together.
+    #[tokio::test]
+    async fn test_f7_production_shape_multi_input_multi_rg_multi_output() {
+        // Six metric pool. Each input picks 4-5 from this pool so
+        // there's overlap (the merge has to combine same-metric RGs
+        // across inputs).
+        let pool = [
+            "aaa.alpha",
+            "bbb.beta",
+            "ccc.gamma",
+            "ddd.delta",
+            "eee.epsilon",
+            "fff.zeta",
+        ];
+        // Each input is a sorted prefix of the pool with a specific
+        // row count per metric. Different starts/lengths so the
+        // inputs aren't identical.
+        let inputs_spec: Vec<Vec<(&str, usize)>> = vec![
+            // input 0: aaa, bbb, ccc, ddd
+            vec![(pool[0], 40), (pool[1], 30), (pool[2], 50), (pool[3], 20)],
+            // input 1: aaa, bbb, eee, fff
+            vec![(pool[0], 25), (pool[1], 35), (pool[4], 45), (pool[5], 30)],
+            // input 2: bbb, ccc, ddd, eee
+            vec![(pool[1], 20), (pool[2], 40), (pool[3], 30), (pool[4], 25)],
+            // input 3: aaa, ccc, fff
+            vec![(pool[0], 35), (pool[2], 30), (pool[5], 40)],
+            // input 4: ddd, eee, fff
+            vec![(pool[3], 25), (pool[4], 35), (pool[5], 20)],
+        ];
+        let total_input_rows: usize = inputs_spec
+            .iter()
+            .flat_map(|i| i.iter().map(|(_, r)| *r))
+            .sum();
+
+        let mut streams: Vec<Box<dyn ColumnPageStream>> = Vec::with_capacity(inputs_spec.len());
+        for spec in &inputs_spec {
+            let bytes = make_prefix_len_one_input(spec);
+            streams.push(open_stream(bytes).await);
+        }
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(streams, tmp.path(), &merge_config(4))
+            .await
+            .expect("production-shape merge");
+
+        // MC-1: rows preserved.
+        let total_output_rows: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(
+            total_output_rows, total_input_rows,
+            "MC-1: input total {total_input_rows} != output total {total_output_rows}",
+        );
+
+        // Per-output checks. Capture each output's first and last
+        // sorted_series bytes for the MS-5 cross-output monotone check.
+        let mut last_ss_per_output: Vec<Vec<u8>> = Vec::with_capacity(outputs.len());
+        let mut first_ss_per_output: Vec<Vec<u8>> = Vec::with_capacity(outputs.len());
+
+        for (out_idx, output) in outputs.iter().enumerate() {
+            let bytes_out = std::fs::read(&output.path).expect("read");
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+            let metadata = reader.metadata();
+
+            // MS-3: reported num_row_groups matches footer.
+            assert_eq!(
+                output.num_row_groups,
+                metadata.num_row_groups(),
+                "MS-3 violated for output {out_idx}: reported {} vs footer {}",
+                output.num_row_groups,
+                metadata.num_row_groups(),
+            );
+
+            // PA-1 + PA-3 chunk-level: each RG has constant + unique metric_name.
+            assert_unique_rg_prefix_keys(
+                metadata,
+                "metric_name|-timestamp_secs/V2",
+                1,
+                "test_f7_production_shape output",
+            )
+            .unwrap_or_else(|e| panic!("PA-1/PA-3 violated for output {out_idx}: {e}"));
+
+            // CS-1: MergeOutputFile reports the same prefix_len as the on-disk KV.
+            let kv_prefix_len: u32 = metadata
+                .file_metadata()
+                .key_value_metadata()
+                .and_then(|kvs| {
+                    kvs.iter()
+                        .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                        .and_then(|k| k.value.as_deref())
+                })
+                .map(|s| s.parse().unwrap_or(0))
+                .unwrap_or(0);
+            assert_eq!(
+                output.output_rg_partition_prefix_len, kv_prefix_len,
+                "CS-1 violated for output {out_idx}: MergeOutputFile reports {} vs KV {}",
+                output.output_rg_partition_prefix_len, kv_prefix_len,
+            );
+
+            // MC-3 within-file: sorted_series monotone across the
+            // whole output. Capture first/last sorted_series for the
+            // cross-output MS-5 check below.
+            let merged = read_output_to_record_batch(&output.path);
+            let ss_idx = merged.schema().index_of("sorted_series").expect("series");
+            let ss = merged
+                .column(ss_idx)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .expect("Binary");
+            for i in 0..merged.num_rows().saturating_sub(1) {
+                assert!(
+                    ss.value(i) <= ss.value(i + 1),
+                    "MC-3 within output {out_idx}: sorted_series decreased at row {i}",
+                );
+            }
+            first_ss_per_output.push(ss.value(0).to_vec());
+            last_ss_per_output.push(ss.value(merged.num_rows() - 1).to_vec());
+        }
+
+        // MS-5: across adjacent output files, sorted_series is
+        // monotone non-decreasing. Output K's last row's sorted_series
+        // must be ≤ output K+1's first row's sorted_series. A single
+        // metric CAN span outputs (engine splits at sorted_series
+        // transitions inside an overflowing region), so this is the
+        // cross-output ordering invariant — not "each metric in one
+        // output".
+        for i in 0..outputs.len().saturating_sub(1) {
+            assert!(
+                last_ss_per_output[i].as_slice() <= first_ss_per_output[i + 1].as_slice(),
+                "MS-5 violated: output {i}'s last sorted_series {:?} > output {}'s first \
+                 sorted_series {:?}",
+                last_ss_per_output[i],
+                i + 1,
+                first_ss_per_output[i + 1],
+            );
+        }
+    }
+
+    /// Focused unit test on the minimal proptest failure case — used
+    /// as a fast iteration channel for debugging.
+    #[tokio::test]
+    async fn test_f5_single_input_two_metrics_minimal() {
+        let bytes = make_prefix_len_one_input(&[("aaa.alpha", 10), ("bbb.beta", 11)]);
+        let streams: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(streams, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 21);
+
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let ss_idx = merged.schema().index_of("sorted_series").expect("series");
+        let ts_idx = merged
+            .schema()
+            .index_of("timestamp_secs")
+            .expect("timestamp");
+        let metric_idx = merged.schema().index_of("metric_name").expect("metric");
+        let ss = merged
+            .column(ss_idx)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("Binary");
+        let ts = merged
+            .column(ts_idx)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .expect("UInt64");
+        let metric = merged.column(metric_idx);
+
+        for i in 0..merged.num_rows() {
+            let metric_str = match metric.data_type() {
+                DataType::Utf8 => metric
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .map(|a| a.value(i).to_string()),
+                DataType::Dictionary(_, _) => {
+                    use arrow::array::AsArray;
+                    let dict = metric.as_dictionary::<Int32Type>();
+                    let key = dict.keys().value(i);
+                    dict.values()
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .map(|a| a.value(key as usize).to_string())
+                }
+                _ => None,
+            };
+            eprintln!(
+                "row {i}: metric={metric_str:?} ss={:?} ts={}",
+                ss.value(i),
+                ts.value(i),
+            );
+        }
+
+        for i in 0..merged.num_rows().saturating_sub(1) {
+            assert!(
+                ss.value(i) <= ss.value(i + 1),
+                "sorted_series decreased at row {i}: {:?} > {:?}",
+                ss.value(i),
+                ss.value(i + 1),
+            );
+        }
+    }
+
+    /// Per-metric `sorted_series` base. In production the
+    /// `sorted_series` column is the order-preserving storekey
+    /// encoding of `(sort cols before timeseries_id, timeseries_id)`
+    /// — a concatenation, not a hash. Byte-level ordering matches
+    /// the logical (sort cols ASC, timeseries_id ASC) ordering, so
+    /// rows from different metric_names produce sorted_series
+    /// values from non-overlapping byte ranges: every "aaa.alpha"
+    /// row's sorted_series sorts before every "bbb.beta" row's.
+    /// The proptest fixture mirrors that property by giving each
+    /// metric a numeric base so its (base + row_offset) range
+    /// doesn't overlap the next metric's range.
+    fn proptest_metric_sorted_series_base(metric: &str) -> u64 {
+        match metric {
+            "aaa.alpha" => 0,
+            "bbb.beta" => 1_000_000,
+            "ccc.gamma" => 2_000_000,
+            "ddd.delta" => 3_000_000,
+            "eee.epsilon" => 4_000_000,
+            "fff.zeta" => 5_000_000,
+            other => panic!("unknown metric in proptest pool: {other}"),
+        }
+    }
+
+    /// Build a multi-RG fixture with prefix_len=1: one RG per
+    /// (metric_name, rows_per_rg) entry. Caller guarantees the
+    /// metric names are sorted ascending and unique within this file
+    /// (the streaming engine enforces both — duplicate prefix keys
+    /// are rejected as PA-3 violations, mis-sorted physical RG order
+    /// is rejected as MS-2). `sorted_series` is computed as
+    /// `metric_base + row_offset_within_metric`. Because the storekey
+    /// encoding of production `sorted_series` puts metric_name bytes
+    /// before tsid bytes, different metric_names yield non-overlapping
+    /// sorted_series ranges; this fixture preserves that property via
+    /// the per-metric base table. The same `(metric_name, row_offset)`
+    /// across two inputs gets the SAME sorted_series — that's the
+    /// realistic case where the same series appears in multiple
+    /// splits. Used by the F5 proptest.
+    fn make_prefix_len_one_input(rgs: &[(&str, usize)]) -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("service", dict_type, true),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let make_batch = |metric: &str, start_series: u64, rows: usize| -> RecordBatch {
+            let metric_keys: Vec<i32> = vec![0; rows];
+            let metric_values = StringArray::from(vec![metric]);
+            let metric_name: ArrayRef = Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(metric_keys),
+                    Arc::new(metric_values),
+                )
+                .expect("dict"),
+            );
+            let timestamps: Vec<u64> = (0..rows as u64)
+                .map(|i| 1_700_000_000 + (rows as u64 - i))
+                .collect();
+            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+            let series_bytes: Vec<Vec<u8>> = (0..rows as u64)
+                .map(|i| (start_series + i).to_be_bytes().to_vec())
+                .collect();
+            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+                series_bytes
+                    .iter()
+                    .map(|v| v.as_slice())
+                    .collect::<Vec<_>>(),
+            ));
+            let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; rows]));
+            let svc_keys: Vec<Option<i32>> = (0..rows as i32).map(|i| Some(i % 3)).collect();
+            let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+            let service: ArrayRef = Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(svc_keys),
+                    Arc::new(svc_values),
+                )
+                .expect("svc dict"),
+            );
+            let tsids: Vec<i64> = (0..rows as i64).map(|i| 1000 + i).collect();
+            let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+            let values: Vec<f64> = (0..rows).map(|i| i as f64).collect();
+            let value: ArrayRef = Arc::new(Float64Array::from(values));
+
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    metric_name,
+                    timestamp_secs,
+                    sorted_series,
+                    metric_type,
+                    service,
+                    timeseries_id,
+                    value,
+                ],
+            )
+            .expect("prefix-len-1 batch")
+        };
+
+        // Make every batch land in its own RG by setting row_group_size
+        // larger than any single batch and calling flush() after each
+        // write — ArrowWriter rolls over the open RG on flush.
+        let max_rows = rgs.iter().map(|(_, n)| *n).max().unwrap_or(1);
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: max_rows.saturating_add(1),
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "1".to_string(),
+            ),
+        ];
+        let sorting_cols = vec![
+            parquet::file::metadata::SortingColumn {
+                column_idx: 0,
+                descending: false,
+                nulls_first: false,
+            },
+            parquet::file::metadata::SortingColumn {
+                column_idx: 1,
+                descending: true,
+                nulls_first: false,
+            },
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string(), "timestamp_secs".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer =
+            ArrowWriter::try_new(&mut buf, schema.clone(), Some(props)).expect("arrow writer");
+        for (metric, rows) in rgs {
+            let start_series = proptest_metric_sorted_series_base(metric);
+            let batch = make_batch(metric, start_series, *rows);
+            writer.write(&batch).expect("write");
+            // Force a fresh RG for the next batch so each (metric,
+            // rows) entry maps to exactly one RG.
+            writer.flush().expect("flush rg");
+        }
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// F5 — prefix-aware proptest over the streaming engine.
+    ///
+    /// Sweeps `(num_inputs, per-input RG specs, num_outputs)` with
+    /// `prefix_len = 1` and asserts the merger's load-bearing
+    /// invariants on every generated case:
+    ///
+    /// - **MC-1**: total row count preserved across inputs → outputs.
+    /// - **MC-3**: each output is sorted on `(sorted_series ASC, timestamp DESC)`.
+    /// - **MS-3**: every output's `MergeOutputFile.num_row_groups` matches the on-disk footer.
+    /// - **PA-1 + PA-3**: every output's row groups pass `assert_unique_rg_prefix_keys`
+    ///   (intra-RG constancy + inter-RG uniqueness).
+    /// - **CS-1**: the metastore-recorded `rg_partition_prefix_len` matches the on-disk KV via
+    ///   the writer-stamped `MergeOutputFile.output_rg_partition_prefix_len`.
+    ///
+    /// Strategy:
+    /// - `num_inputs ∈ 1..=3`.
+    /// - Each input: 1..=4 RGs, each `(metric_name, rows)` where metric names come from a
+    ///   small pool, sorted-and-deduped within each input (so prefix_len=1's MS-2 + PA-3
+    ///   hold).
+    /// - `num_outputs ∈ 1..=3`.
+    ///
+    /// Cases capped at 32 so the proptest completes well under 30s
+    /// (each case opens streams + runs an async merge).
+    use proptest::test_runner::TestCaseError;
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig {
+            cases: 32,
+            ..proptest::prelude::ProptestConfig::default()
+        })]
+
+        #[test]
+        fn prop_merge_prefix_aligned_streaming(
+            per_input_specs in proptest::collection::vec(
+                prefix_one_input_strategy(),
+                1usize..=3,
+            ),
+            num_outputs in 1usize..=3,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio rt");
+            let outcome: std::result::Result<(), TestCaseError> =
+                rt.block_on(async move {
+                    run_prefix_aligned_case(per_input_specs, num_outputs).await
+                });
+            outcome?;
+        }
+    }
+
+    /// Per-input strategy: 1..=4 RGs, each `(metric_name, rows)`, then
+    /// dedup-by-metric and sort-by-metric so the resulting list
+    /// satisfies SS-1 (sorted) and PA-3 (unique prefixes within the
+    /// input).
+    fn prefix_one_input_strategy() -> impl proptest::strategy::Strategy<Value = Vec<(String, usize)>>
+    {
+        use proptest::prelude::*;
+        let metric_pool: &[&'static str] = &[
+            "aaa.alpha",
+            "bbb.beta",
+            "ccc.gamma",
+            "ddd.delta",
+            "eee.epsilon",
+            "fff.zeta",
+        ];
+        let metric_strat =
+            proptest::sample::select(metric_pool.to_vec()).prop_map(|s| s.to_string());
+        let row_count_strat = 10usize..=80;
+        let entry_strat = (metric_strat, row_count_strat);
+        proptest::collection::vec(entry_strat, 1usize..=4).prop_map(|mut rgs| {
+            rgs.sort_by(|a, b| a.0.cmp(&b.0));
+            rgs.dedup_by(|a, b| a.0 == b.0);
+            rgs
+        })
+    }
+
+    async fn run_prefix_aligned_case(
+        per_input_specs: Vec<Vec<(String, usize)>>,
+        num_outputs: usize,
+    ) -> std::result::Result<(), proptest::test_runner::TestCaseError> {
+        use proptest::prelude::*;
+
+        // Build each input's bytes via the prefix_len=1 fixture.
+        // Sorted_series numbering starts at 0 per input — production
+        // inputs can legitimately share sorted_series values across
+        // splits (sorted_series is a (sort cols + timeseries_id)
+        // hash, and the same series appears in multiple splits when
+        // the time window spans more than one ingest interval). The
+        // merger must handle this correctly; the MC-3 check below
+        // exercises that invariant.
+        let mut input_bytes: Vec<Bytes> = Vec::with_capacity(per_input_specs.len());
+        let mut total_input_rows: usize = 0;
+        for spec in &per_input_specs {
+            let rgs_borrowed: Vec<(&str, usize)> =
+                spec.iter().map(|(m, n)| (m.as_str(), *n)).collect();
+            total_input_rows += rgs_borrowed.iter().map(|(_, n)| *n).sum::<usize>();
+            input_bytes.push(make_prefix_len_one_input(&rgs_borrowed));
+        }
+
+        let mut streams: Vec<Box<dyn ColumnPageStream>> = Vec::with_capacity(input_bytes.len());
+        for bytes in input_bytes {
+            streams.push(open_stream(bytes).await);
+        }
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs =
+            streaming_merge_sorted_parquet_files(streams, tmp.path(), &merge_config(num_outputs))
+                .await
+                .map_err(|e| {
+                    proptest::test_runner::TestCaseError::fail(format!(
+                        "streaming merge failed: {e}"
+                    ))
+                })?;
+
+        // MC-1: total rows preserved.
+        let output_total: usize = outputs.iter().map(|o| o.num_rows).sum();
+        prop_assert_eq!(
+            output_total,
+            total_input_rows,
+            "MC-1 violated: input total = {}, output total = {}",
+            total_input_rows,
+            output_total
+        );
+
+        for (out_idx, output) in outputs.iter().enumerate() {
+            let bytes_out = std::fs::read(&output.path)
+                .map_err(|e| proptest::test_runner::TestCaseError::fail(e.to_string()))?;
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out))
+                .map_err(|e| proptest::test_runner::TestCaseError::fail(e.to_string()))?;
+            let metadata = reader.metadata();
+
+            // MS-3: MergeOutputFile.num_row_groups == footer's RG count.
+            prop_assert_eq!(
+                output.num_row_groups,
+                metadata.num_row_groups(),
+                "MS-3 violated for output {}: MergeOutputFile.num_row_groups = {}, footer = {}",
+                out_idx,
+                output.num_row_groups,
+                metadata.num_row_groups()
+            );
+
+            // PA-1 + PA-3 chunk-level: every RG has constant metric_name AND unique across RGs.
+            assert_unique_rg_prefix_keys(
+                metadata,
+                "metric_name|-timestamp_secs/V2",
+                1,
+                "prop_merge_prefix_aligned_streaming output",
+            )
+            .map_err(|e| {
+                proptest::test_runner::TestCaseError::fail(format!(
+                    "PA-1/PA-3 violated for output {out_idx}: {e}"
+                ))
+            })?;
+
+            // CS-1: metastore-side prefix_len (output.output_rg_partition_prefix_len)
+            // matches on-disk KV.
+            let kv_prefix_len: u32 = metadata
+                .file_metadata()
+                .key_value_metadata()
+                .and_then(|kvs| {
+                    kvs.iter()
+                        .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                        .and_then(|k| k.value.as_deref())
+                })
+                .map(|s| s.parse().unwrap_or(0))
+                .unwrap_or(0);
+            prop_assert_eq!(
+                output.output_rg_partition_prefix_len,
+                kv_prefix_len,
+                "CS-1 violated for output {}: MergeOutputFile reports {}, KV reports {}",
+                out_idx,
+                output.output_rg_partition_prefix_len,
+                kv_prefix_len
+            );
+
+            // MC-3: row-by-row sort check on (sorted_series ASC, timestamp DESC within same
+            // series).
+            let merged = read_output_to_record_batch(&output.path);
+            let ss_idx = merged.schema().index_of("sorted_series").expect("series");
+            let ts_idx = merged
+                .schema()
+                .index_of("timestamp_secs")
+                .expect("timestamp");
+            let ss = merged
+                .column(ss_idx)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .expect("Binary");
+            let ts = merged
+                .column(ts_idx)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .expect("UInt64");
+            for i in 0..merged.num_rows().saturating_sub(1) {
+                let a = ss.value(i);
+                let b = ss.value(i + 1);
+                prop_assert!(
+                    a <= b,
+                    "MC-3 violated in output {}: sorted_series decreased at row {}",
+                    out_idx,
+                    i
+                );
+                if a == b {
+                    prop_assert!(
+                        ts.value(i) >= ts.value(i + 1),
+                        "MC-3 violated in output {}: timestamp not descending within series at \
+                         row {}",
+                        out_idx,
+                        i
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
