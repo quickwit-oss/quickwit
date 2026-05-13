@@ -89,16 +89,19 @@ impl FromStr for OtlpProtocol {
     fn from_str(protocol_str: &str) -> anyhow::Result<Self> {
         const OTLP_PROTOCOL_GRPC: &str = "grpc";
         const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
+        const OTLP_PROTOCOL_HTTP_PROTO: &str = "http/proto";
         const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
 
         match protocol_str {
             OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
-            OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
+            OTLP_PROTOCOL_HTTP_PROTOBUF | OTLP_PROTOCOL_HTTP_PROTO => {
+                Ok(OtlpProtocol::HttpProtobuf)
+            }
             OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
             other => anyhow::bail!(
                 "unsupported OTLP protocol `{other}`, supported values are \
-                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and \
-                 `{OTLP_PROTOCOL_HTTP_JSON}`"
+                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}`, \
+                 `{OTLP_PROTOCOL_HTTP_PROTO}` and `{OTLP_PROTOCOL_HTTP_JSON}`"
             ),
         }
     }
@@ -512,6 +515,10 @@ mod tests {
         assert_eq!(OtlpProtocol::from_str("grpc").unwrap(), OtlpProtocol::Grpc);
         assert_eq!(
             OtlpProtocol::from_str("http/protobuf").unwrap(),
+            OtlpProtocol::HttpProtobuf
+        );
+        assert_eq!(
+            OtlpProtocol::from_str("http/proto").unwrap(),
             OtlpProtocol::HttpProtobuf
         );
         assert_eq!(
