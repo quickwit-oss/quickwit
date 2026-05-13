@@ -37,8 +37,8 @@ use super::source_resource::{
     reset_source_checkpoint_handler, toggle_source_handler, update_source_handler,
 };
 use super::split_resource::{
-    __path_list_splits, __path_mark_splits_for_deletion, SplitsForDeletion, list_splits_handler,
-    mark_splits_for_deletion_handler,
+    __path_list_splits, __path_mark_splits_for_deletion, __path_add_split, SplitsForDeletion, AddSplitRequest, list_splits_handler,
+    mark_splits_for_deletion_handler, add_split_handler,
 };
 use crate::format::extract_format_from_qs;
 use crate::rest::recover_fn;
@@ -56,13 +56,14 @@ use crate::simple_list::from_simple_list;
         list_splits,
         describe_index,
         mark_splits_for_deletion,
+        add_split,
         create_source,
         update_source,
         reset_source_checkpoint,
         toggle_source,
         delete_source,
     ),
-    components(schemas(ToggleSource, SplitsForDeletion, IndexStats))
+    components(schemas(ToggleSource, SplitsForDeletion, AddSplitRequest, IndexStats))
 )]
 pub struct IndexApi;
 
@@ -101,6 +102,7 @@ pub fn index_management_handlers(
         .or(list_splits_handler(index_service.metastore()))
         .or(describe_index_handler(index_service.metastore()))
         .or(mark_splits_for_deletion_handler(index_service.metastore()))
+        .or(add_split_handler(index_service.metastore()))
         .boxed()
         // Sources handlers.
         .or(reset_source_checkpoint_handler(index_service.metastore()))
