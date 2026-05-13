@@ -15,6 +15,7 @@
 mod chinese_compatible;
 mod code_tokenizer;
 mod tokenizer_manager;
+mod truncate_tokenizer;
 
 use std::sync::LazyLock;
 
@@ -26,8 +27,9 @@ use tantivy::tokenizer::{
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
 pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
-
+pub use self::truncate_tokenizer::TruncateLongFilter;
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
+pub const DEFAULT_TRUNCATE_TOKEN_LENGTH: usize = 255;
 
 /// Quickwit's tokenizer/analyzer manager.
 pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
@@ -85,11 +87,11 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
 
 fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .filter(TruncateLongFilter::limit(DEFAULT_TRUNCATE_TOKEN_LENGTH))
         .build();
     let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(LowerCaser)
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .filter(TruncateLongFilter::limit(DEFAULT_TRUNCATE_TOKEN_LENGTH))
         .build();
     let tokenizer_manager = TokenizerManager::new();
     tokenizer_manager.register("raw", raw_tokenizer, false);
@@ -165,5 +167,19 @@ mod tests {
         // there are non letter, so we can't check for all lowercase directly
         assert!(stream.token().text.chars().all(|c| !c.is_uppercase()));
         assert!(!stream.advance());
+    }
+
+    #[test]
+    fn test_truncate_tokenizer() {
+        let tokenizer_manager = super::create_quickwit_fastfield_normalizer_manager();
+        let very_long_text = "a text, that is just too long, no one will type it, no one will like \
+                            it, no one shall find it. I just need some more chars, now you may \
+                            not pass.".repeat(3);
+        
+        let mut truncate_tokenizer = tokenizer_manager.get_tokenizer("raw").unwrap();
+        let mut truncate_stream = truncate_tokenizer.token_stream(&very_long_text);
+        assert!(truncate_stream.advance());
+        assert!(!truncate_stream.advance());
+        assert!(truncate_stream.token().text.len() <= super::DEFAULT_TRUNCATE_TOKEN_LENGTH);
     }
 }
