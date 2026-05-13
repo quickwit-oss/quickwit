@@ -83,7 +83,7 @@ use output::{
 };
 use region_grouping::{
     Region, assign_regions_to_output_files, extract_regions_from_metadata,
-    validate_region_order_matches_physical_rg_order,
+    synthesize_prefix_regions, validate_region_order_matches_physical_rg_order,
 };
 
 use crate::sort_fields::{
@@ -204,13 +204,29 @@ pub async fn streaming_merge_sorted_parquet_files(
         // each region is one sort-prefix value across inputs (each
         // contributing input has exactly one RG in that region). With
         // prefix_len == 0 (validated single-RG above) there is one
-        // region covering all inputs.
+        // region covering all inputs — we'll subdivide it below by
+        // walking the merge order to find first-sort-col transitions.
         let regions = extract_regions_from_metadata(&decoders_state, &input_meta)?;
 
         if regions.is_empty() {
             info!("all inputs empty, producing no output");
             return Ok(Vec::new());
         }
+
+        // Prefix_len=0 unified path: drain sort cols across all
+        // inputs upfront, compute a global merge order, and
+        // synthesize one region per first-sort-col value. The output
+        // becomes prefix-aligned (each output RG has a constant first
+        // sort col value) and `num_outputs > 1` naturally splits at
+        // those synthesized region boundaries.
+        //
+        // The synthesized regions reference the same `(input_idx,
+        // rg_idx=0)` with disjoint row ranges. `process_region`
+        // slices the prefetched sort batches for each region and the
+        // body col assembler advances monotonically across regions
+        // sharing the same RG.
+        let (regions, prefetched_sort_batches, synthesized_prefix_len) =
+            maybe_synthesize_prefix_regions(&handle, &mut decoders_state, &input_meta, regions)?;
 
         // MS-2: validate that the BTreeMap-driven region order
         // agrees with each input's physical RG order. The streaming
@@ -223,6 +239,20 @@ pub async fn streaming_merge_sorted_parquet_files(
         // declares (e.g., metric_name written DESC on disk but the
         // sort schema says ASC). Reject upfront with a clear error.
         validate_region_order_matches_physical_rg_order(&regions, decoders_state.len())?;
+
+        // Build an effective `InputMetadata` that reflects the
+        // synthesized prefix alignment (if any). The output writer
+        // reads `rg_partition_prefix_len` to populate the
+        // `qh.rg_partition_prefix_len` KV; bumping it here means
+        // future compactions can take the streaming fast path on the
+        // output we just produced.
+        let effective_input_meta = if let Some(prefix_len) = synthesized_prefix_len {
+            let mut m = input_meta.clone();
+            m.rg_partition_prefix_len = prefix_len;
+            m
+        } else {
+            input_meta.clone()
+        };
 
         let total_rows: usize = regions.iter().map(|r| r.total_rows()).sum();
         let assignments = assign_regions_to_output_files(&regions, num_outputs);
@@ -249,8 +279,10 @@ pub async fn streaming_merge_sorted_parquet_files(
             .iter()
             .map(|s| Arc::clone(&s.arrow_schema))
             .collect();
-        let union_schema =
-            build_full_union_schema_from_arrow_schemas(&arrow_schemas, &input_meta.sort_fields)?;
+        let union_schema = build_full_union_schema_from_arrow_schemas(
+            &arrow_schemas,
+            &effective_input_meta.sort_fields,
+        )?;
 
         // Per-region processing loop. We hold AT MOST ONE writer open
         // at a time (the current output file being written). Each
@@ -269,14 +301,14 @@ pub async fn streaming_merge_sorted_parquet_files(
             if current_output_idx != Some(target_output_idx) {
                 // Close the previous writer if any.
                 if let (Some(w), Some(acc)) = (current_writer.take(), current_accumulator.take()) {
-                    outputs.push(finalize_output(w, acc, &input_meta)?);
+                    outputs.push(finalize_output(w, acc, &effective_input_meta)?);
                 }
                 // Open a new writer for `target_output_idx`.
                 let writer = open_output_writer_for_streaming(
                     target_output_idx,
                     &output_dir,
                     &union_schema,
-                    &input_meta,
+                    &effective_input_meta,
                     &writer_config,
                 )?;
                 current_writer = Some(writer);
@@ -296,13 +328,14 @@ pub async fn streaming_merge_sorted_parquet_files(
                     .expect("accumulator opened above for this region"),
                 region,
                 &union_schema,
-                &input_meta,
+                &effective_input_meta,
+                prefetched_sort_batches.as_deref(),
             )?;
         }
 
         // Close the last writer.
         if let (Some(w), Some(acc)) = (current_writer.take(), current_accumulator.take()) {
-            outputs.push(finalize_output(w, acc, &input_meta)?);
+            outputs.push(finalize_output(w, acc, &effective_input_meta)?);
         }
 
         // MC-1: total row count preserved.
@@ -336,31 +369,73 @@ pub(crate) struct InputDecoderState {
     pub(crate) metadata: Arc<ParquetMetaData>,
     /// Arrow schema of this input (from parquet → arrow conversion).
     pub(crate) arrow_schema: SchemaRef,
-    /// Per-input page cache for the *currently active* body column.
-    /// Pages are appended as the decoder produces them and evicted from
-    /// the front once their last row is below `body_col_cursor`. The
-    /// cache must persist across all outputs that consume rows from
-    /// this column so that a page whose range straddles two outputs is
-    /// not re-decoded (the stream has already advanced past it). At
-    /// the start of each body column [`InputDecoderState::reset_body_col_state`]
-    /// clears this cache and zeroes the cursor.
-    pub(crate) body_col_page_cache: Vec<DecodedPage>,
-    /// Next unconsumed input row for the active body column. Advances
-    /// monotonically across outputs because the merge plan assigns each
-    /// input's rows to outputs in input-row order.
-    pub(crate) body_col_cursor: usize,
+    /// Per-input, per-parquet-col page cache. Pages emitted by the
+    /// decoder are stored under their actual `col_idx`, not the col
+    /// the caller was asking about — this lets `advance_decoder_to_row`
+    /// pull pages of col B during a col A advance (Husky storage
+    /// order: col A pages all stream before col B pages within an RG,
+    /// so to get any col B pages we may have to consume leftover col
+    /// A pages first). The synthesized-prefix path relies on this:
+    /// adjacent regions sharing one RG re-read col A from this cache
+    /// when region 2 starts, and the cache has already been filled in
+    /// by region 1's reads.
+    ///
+    /// Pages are evicted (per col) when the col's cursor advances
+    /// past their last row.
+    pub(crate) body_col_page_caches: HashMap<usize, Vec<DecodedPage>>,
+    /// Per-parquet-col cursor: the next unconsumed input row for that
+    /// col. Advances monotonically as outputs are written; survives
+    /// across regions of the same input so the body col assembler can
+    /// resume mid-RG for synthesized regions.
+    pub(crate) body_col_cursors: HashMap<usize, usize>,
 }
 
 impl InputDecoderState {
-    /// Clear the per-input body-column cache. Called at the start of
-    /// each new body column so leftover pages from the previous column
-    /// (which have a different `col_idx`) don't poison the new column's
-    /// row-start arithmetic. The decoder itself is *not* reset — its
-    /// per-(rg, col) `rows_decoded` counters and queued pages must
-    /// survive so subsequent decode calls return correct row offsets.
-    pub(crate) fn reset_body_col_state(&mut self) {
-        self.body_col_page_cache.clear();
-        self.body_col_cursor = 0;
+    /// Position the cursor for `col_idx` to `start_row` and drop any
+    /// cached pages strictly below it. Used at the start of each
+    /// (region, body col) write: for whole-RG regions this is a no-op
+    /// (cursor was already 0 and cache empty); for synthesized
+    /// regions that share an RG with earlier regions, this skips the
+    /// rows the previous region consumed without clearing the rest of
+    /// the cache.
+    pub(crate) fn set_body_col_cursor(&mut self, col_idx: usize, start_row: usize) {
+        self.body_col_cursors.insert(col_idx, start_row);
+        if let Some(pages) = self.body_col_page_caches.get_mut(&col_idx) {
+            while let Some(front) = pages.first() {
+                let front_end = front.row_start + front.array.len();
+                if front_end <= start_row {
+                    pages.remove(0);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Look up the cached pages for the given col, returning an empty
+    /// slice if none have been decoded yet.
+    pub(crate) fn body_col_cache(&self, col_idx: usize) -> &[DecodedPage] {
+        match self.body_col_page_caches.get(&col_idx) {
+            Some(v) => v.as_slice(),
+            None => &[],
+        }
+    }
+
+    /// Mutable handle to the cache for `col_idx`, creating an empty
+    /// entry if none exists.
+    pub(crate) fn body_col_cache_mut(&mut self, col_idx: usize) -> &mut Vec<DecodedPage> {
+        self.body_col_page_caches.entry(col_idx).or_default()
+    }
+
+    /// Current cursor for `col_idx`; defaults to 0 if untouched.
+    pub(crate) fn body_col_cursor(&self, col_idx: usize) -> usize {
+        self.body_col_cursors.get(&col_idx).copied().unwrap_or(0)
+    }
+
+    /// Sum of cached pages across all cols. Used by the MS-7 peak-
+    /// length probe in tests.
+    pub(crate) fn body_col_caches_total_len(&self) -> usize {
+        self.body_col_page_caches.values().map(|v| v.len()).sum()
     }
 }
 
@@ -381,8 +456,8 @@ fn build_input_decoders_state(
             decoder,
             metadata,
             arrow_schema: Arc::new(arrow_schema),
-            body_col_page_cache: Vec::new(),
-            body_col_cursor: 0,
+            body_col_page_caches: HashMap::new(),
+            body_col_cursors: HashMap::new(),
         });
     }
     Ok(states)
@@ -513,6 +588,85 @@ fn extract_and_validate_input_metadata(
     })
 }
 
+/// Return value of [`maybe_synthesize_prefix_regions`]: the (possibly
+/// synthesized) region list, the prefetched & union-aligned sort
+/// batches the synthesis produced (`None` on the pass-through path),
+/// and the effective output `rg_partition_prefix_len` to advertise on
+/// the produced parquet files (also `None` on pass-through).
+type SynthesizedRegionsOutput = (Vec<Region>, Option<Vec<RecordBatch>>, Option<u32>);
+
+/// For the prefix_len=0 path, drain each input's sort cols, run the
+/// k-way merge across them, and synthesize one region per first-sort-
+/// col value. Returns the new region list, the per-input pre-drained
+/// (aligned) sort batches, and the output's effective
+/// `rg_partition_prefix_len`. For the prefix_len>0 path this is a
+/// passthrough (returns the input regions and no prefetch).
+///
+/// Wrapping the synthesis here keeps `streaming_merge_sorted_parquet_files`
+/// clean: a single call site picks the right path based on input
+/// metadata, and `process_region` accepts the prefetched sort batches
+/// uniformly.
+fn maybe_synthesize_prefix_regions(
+    handle: &Handle,
+    decoders_state: &mut [InputDecoderState],
+    input_meta: &InputMetadata,
+    regions: Vec<Region>,
+) -> Result<SynthesizedRegionsOutput> {
+    if input_meta.rg_partition_prefix_len != 0 {
+        return Ok((regions, None, None));
+    }
+
+    let sort_field_schema = parse_sort_fields(&input_meta.sort_fields)?;
+    let Some(first_sort_field) = sort_field_schema.column.first() else {
+        // No sort columns declared → nothing to synthesize on. Fall
+        // back to the single-region pass-through.
+        return Ok((regions, None, None));
+    };
+    let first_sort_col_name = first_sort_field.name.clone();
+
+    // Drain all inputs' sort cols (one RG each — prefix_len=0 inputs
+    // are validated to be single-RG upstream).
+    let sort_batches = drain_sort_cols_all_inputs(handle, decoders_state, &input_meta.sort_fields)?;
+    let (_sort_union_schema, aligned_sort_batches) =
+        align_inputs_to_union_schema(&sort_batches, &input_meta.sort_fields)?;
+
+    // Compute the global merge order — runs are contiguous, single-
+    // input slices each with constant sorted_series (and therefore
+    // constant first sort col).
+    let global_merge_order = compute_merge_order(&aligned_sort_batches, &input_meta.sort_fields)?;
+
+    // Resolve the column name in the aligned sort batches (handles the
+    // `timestamp` / `timestamp_secs` alias the rest of the engine uses).
+    let resolved_first_sort_col = if is_timestamp_column_name(&first_sort_col_name)
+        && aligned_sort_batches
+            .iter()
+            .any(|b| b.schema().index_of("timestamp_secs").is_ok())
+    {
+        "timestamp_secs".to_string()
+    } else {
+        first_sort_col_name
+    };
+
+    let synthesized = synthesize_prefix_regions(
+        &global_merge_order,
+        &aligned_sort_batches,
+        &resolved_first_sort_col,
+    )?;
+
+    // We split output RGs at every first-sort-col value transition,
+    // so each produced output RG carries a single value of the first
+    // sort column — `rg_partition_prefix_len = 1` describes the
+    // output. Future compactions of these outputs take the streaming
+    // fast path.
+    let output_prefix_len: u32 = 1;
+
+    Ok((
+        synthesized,
+        Some(aligned_sort_batches),
+        Some(output_prefix_len),
+    ))
+}
+
 // ============================================================================
 // Phase 0: drain sort cols from each input
 // ============================================================================
@@ -545,11 +699,20 @@ fn drain_sort_cols_all_inputs(
     Ok(batches)
 }
 
-/// Process one merge region: drain sort cols of contributing inputs'
-/// current RGs, compute the region's merge order, open a new output
-/// RG in the writer, write all cols (sort cols via interleave, body
-/// cols via the page-bounded assembler), close the RG, accumulate
-/// per-output static metadata.
+/// Process one merge region: obtain the contributing inputs' sort col
+/// batches (drain them fresh from the streaming decoder when
+/// `prefetched_sort_batches` is `None`; otherwise slice the
+/// pre-drained batches by each contribution's row range — used by the
+/// synthesized prefix-region path), compute the region's merge order,
+/// open a new output RG in the writer, write all cols (sort cols via
+/// interleave, body cols via the page-bounded assembler), close the
+/// RG, accumulate per-output static metadata.
+///
+/// When `prefetched_sort_batches` is provided, each contribution's
+/// `start_row` determines where the body col assembler starts inside
+/// the contributing input's RG. The body col stream is shared with
+/// adjacent synthesized regions of the same input, so its cache /
+/// cursor must advance monotonically — see `reset_body_col_state`.
 #[allow(clippy::too_many_arguments)]
 fn process_region(
     handle: &Handle,
@@ -559,20 +722,29 @@ fn process_region(
     region: &Region,
     union_schema: &SchemaRef,
     input_meta: &InputMetadata,
+    prefetched_sort_batches: Option<&[RecordBatch]>,
 ) -> Result<()> {
-    // 1. Drain sort cols of contributing inputs' RGs. The result is a Vec<RecordBatch>, indexed BY
-    //    GLOBAL INPUT INDEX (with zero-row placeholders for non-contributing inputs) so the
-    //    BodyColOutputPageAssembler can use global input indices.
+    // 1. Obtain sort col batches for this region's contributing inputs. When prefetched batches are
+    //    supplied (synthesized path), slice them by the contribution's row range so a single RG
+    //    drained once can feed multiple adjacent regions. Otherwise drain a fresh whole-RG batch
+    //    from the streaming decoder. The result is indexed BY GLOBAL INPUT INDEX, with zero-row
+    //    placeholders for non-contributing inputs so the BodyColOutputPageAssembler sees a uniform
+    //    input-count.
     let num_inputs = decoders_state.len();
     let mut sort_col_batches: Vec<Option<RecordBatch>> = (0..num_inputs).map(|_| None).collect();
-    for &(input_idx, rg_idx, _num_rows) in &region.contributing {
-        let batch = drain_sort_cols_one_input(
-            handle,
-            &mut decoders_state[input_idx],
-            &input_meta.sort_fields,
-            input_idx,
-            rg_idx,
-        )?;
+    for c in &region.contributing {
+        let input_idx = c.input_idx;
+        let rg_idx = c.rg_idx;
+        let batch = match prefetched_sort_batches {
+            Some(prefetched) => prefetched[input_idx].slice(c.start_row, c.num_rows),
+            None => drain_sort_cols_one_input(
+                handle,
+                &mut decoders_state[input_idx],
+                &input_meta.sort_fields,
+                input_idx,
+                rg_idx,
+            )?,
+        };
         if batch.num_columns() > 0 && batch.schema().index_of(SORTED_SERIES_COLUMN).is_err() {
             bail!(
                 "input {input_idx} rg {rg_idx} is missing the '{}' column required for merge",
@@ -593,6 +765,16 @@ fn process_region(
             None => empty_sort_col_record_batch(&decoders_state[idx], &input_meta.sort_fields)?,
         };
         sort_batch_vec.push(batch);
+    }
+
+    // Per-input cursor offsets to feed to the body col reset hook
+    // below. For whole-RG regions this is 0 everywhere; for
+    // synthesized regions it is `c.start_row` of the contributing
+    // input so the body col assembler walks rows starting at the
+    // region's first input row instead of restarting at 0.
+    let mut input_start_rows: Vec<usize> = vec![0; num_inputs];
+    for c in &region.contributing {
+        input_start_rows[c.input_idx] = c.start_row;
     }
 
     // 2. Align to union sort schema for the merge-order comparator.
@@ -619,14 +801,28 @@ fn process_region(
     // 5. Build per-region destinations: maps (input_idx, input_row) → (output_idx=0,
     //    position_in_region). The body col assembler walks this to find which (input, row)
     //    contributes each output position.
+    //
+    //    The destinations array is indexed by row *within the sort
+    //    batch* — which for whole-RG regions equals "row within the
+    //    RG" and for synthesized regions equals "row within the
+    //    region's slice". In both cases that index lines up with what
+    //    the body col decoder's `row_start` reports for the current
+    //    RG, modulo the per-input `start_row` offset added below.
     let mut destinations: Vec<Vec<Option<(usize, usize)>>> = aligned_sort_batches
         .iter()
-        .map(|b| vec![None; b.num_rows()])
+        .enumerate()
+        .map(|(idx, b)| {
+            // For the synthesized path the body col assembler walks
+            // absolute input rows; pad the destinations array so the
+            // index space matches what the page decoder reports.
+            vec![None; input_start_rows[idx] + b.num_rows()]
+        })
         .collect();
     let mut pos = 0usize;
     for run in &merge_order {
         for r in 0..run.row_count {
-            destinations[run.input_index][run.start_row + r] = Some((0, pos));
+            let absolute_row = input_start_rows[run.input_index] + run.start_row + r;
+            destinations[run.input_index][absolute_row] = Some((0, pos));
             pos += 1;
         }
     }
@@ -658,21 +854,24 @@ fn process_region(
                     )
                 })?;
         } else {
-            // Body col: stream via the page-bounded assembler. Reset
-            // each input's body-col cache + cursor before the column
-            // starts. The cursor counts row positions in the *current*
-            // region's destinations table (which is region-local), so
-            // it must restart at 0 for every (region, col) pair; the
-            // decoder itself is NOT reset because parquet's per-(rg,
-            // col) state lives in `state.decoder.columns` keyed by
-            // both indices.
-            for state in decoders_state.iter_mut() {
-                state.reset_body_col_state();
-            }
-
+            // Body col: stream via the page-bounded assembler. Resolve
+            // each input's parquet col_idx for this union-schema col
+            // first, then position the per-col cursor at the region's
+            // `start_row` for that input. For whole-RG regions
+            // `start_row == 0` (no-op for first region); for synthesized
+            // regions sharing an RG with earlier regions the cursor
+            // jumps past already-emitted rows so we don't re-emit them.
+            // The decoder itself is never reset — its per-(rg, col)
+            // `rows_decoded` counters and queued pages must survive so
+            // subsequent decode calls return correct row offsets.
             let mut input_col_indices: Vec<Option<usize>> = Vec::with_capacity(num_inputs);
             for state in decoders_state.iter() {
                 input_col_indices.push(state.arrow_schema.index_of(col_name).ok());
+            }
+            for (idx, state) in decoders_state.iter_mut().enumerate() {
+                if let Some(col_parquet_idx) = input_col_indices[idx] {
+                    state.set_body_col_cursor(col_parquet_idx, input_start_rows[idx]);
+                }
             }
 
             let track_service = col_name == "service";
@@ -1771,6 +1970,228 @@ mod tests {
         );
     }
 
+    /// Build a single-RG fixture with multiple metric_names sorted
+    /// by metric_name then timestamp. The file has
+    /// `rg_partition_prefix_len = 0` (legacy) so the streaming merge
+    /// synthesizes prefix-aligned regions during the merge.
+    ///
+    /// `metrics` = list of (metric_name, num_rows). Rows are emitted
+    /// in order so the resulting batch is already sorted by
+    /// metric_name; each row gets a unique sorted_series identifier
+    /// derived from its position so the k-way merge has a well-
+    /// defined order even when other tag dimensions are degenerate.
+    fn make_multi_metric_single_rg_input(metrics: &[(&str, usize)]) -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("service", dict_type, true),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let total_rows: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total_rows);
+        let mut metric_values_vec: Vec<&str> = Vec::with_capacity(metrics.len());
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total_rows);
+        let mut series_bytes: Vec<Vec<u8>> = Vec::with_capacity(total_rows);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total_rows);
+        let mut values: Vec<f64> = Vec::with_capacity(total_rows);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (name, num)) in metrics.iter().enumerate() {
+            metric_values_vec.push(name);
+            // -timestamp_secs/V2 in the sort schema means timestamps
+            // DESC within a metric.
+            for r in 0..*num {
+                metric_keys.push(metric_idx as i32);
+                timestamps.push(1_700_000_000 + ((*num - r) as u64));
+                series_bytes.push(row_idx.to_be_bytes().to_vec());
+                tsids.push(1000 + row_idx as i64);
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_names_arr = StringArray::from(metric_values_vec);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_names_arr),
+            )
+            .expect("dict array"),
+        );
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total_rows]));
+        let service: ArrayRef = {
+            let svc_keys: Vec<Option<i32>> = (0..total_rows as i32).map(|i| Some(i % 3)).collect();
+            let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+            Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(svc_keys),
+                    Arc::new(svc_values),
+                )
+                .expect("svc dict"),
+            )
+        };
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                metric_type,
+                service,
+                timeseries_id,
+                value,
+            ],
+        )
+        .expect("batch");
+
+        // Write as a single-RG legacy file (prefix_len absent → 0).
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            ..ParquetWriterConfig::default()
+        };
+        let sort_fields = "metric_name|-timestamp_secs/V2";
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                sort_fields.to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+        ];
+        let sort_field_names = vec!["metric_name".to_string(), "timestamp_secs".to_string()];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            Vec::new(),
+            Some(kvs),
+            &sort_field_names,
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P2 on PR-6410: prefix_len=0 inputs +
+    /// `num_outputs > 1` previously folded into a single oversized
+    /// output. The unified streaming path synthesizes prefix-aligned
+    /// regions from the global merge order and the assigner spreads
+    /// them across the requested output count.
+    #[tokio::test]
+    async fn test_prefix_len_zero_multi_output_splits_at_prefix_transitions() {
+        // 6 distinct metric_names, 50 rows each → 300 rows total.
+        // Request 3 outputs: each should get ~2 metric_names = ~100 rows.
+        let metrics = [
+            ("aaa.alpha", 50usize),
+            ("bbb.beta", 50),
+            ("ccc.gamma", 50),
+            ("ddd.delta", 50),
+            ("eee.epsilon", 50),
+            ("fff.zeta", 50),
+        ];
+        let bytes = make_multi_metric_single_rg_input(&metrics);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+            .await
+            .expect("merge");
+
+        assert_eq!(
+            outputs.len(),
+            3,
+            "prefix_len=0 input + num_outputs=3 must produce 3 output files; got {} ({} rows \
+             total)",
+            outputs.len(),
+            outputs.iter().map(|o| o.num_rows).sum::<usize>(),
+        );
+        let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(total, 300, "rows preserved (MC-1)");
+
+        // Each output's KV metadata must declare rg_partition_prefix_len=1
+        // — the synthesized path produces prefix-aligned output.
+        for out in &outputs {
+            let bytes_out = std::fs::read(&out.path).expect("read");
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+            let kv = reader
+                .metadata()
+                .file_metadata()
+                .key_value_metadata()
+                .expect("kv metadata");
+            let prefix_kv = kv
+                .iter()
+                .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                .and_then(|k| k.value.clone());
+            assert_eq!(
+                prefix_kv.as_deref(),
+                Some("1"),
+                "synthesized output must declare prefix_len=1; got {prefix_kv:?}",
+            );
+            // Multi-RG output: one RG per metric_name landing in this
+            // output. Each output should have at least 1 RG (some
+            // metric_name) and at most 6 (all metrics if M=1).
+            assert!(
+                reader.metadata().num_row_groups() >= 1,
+                "expected at least one RG per output, got {}",
+                reader.metadata().num_row_groups(),
+            );
+        }
+    }
+
+    /// Synthesis path also splits single-output files into multiple
+    /// RGs at metric_name boundaries — even when `num_outputs == 1`,
+    /// the output should be prefix-aligned for future merges.
+    #[tokio::test]
+    async fn test_prefix_len_zero_single_output_is_prefix_aligned_multi_rg() {
+        let metrics = [
+            ("cpu.usage", 40usize),
+            ("memory.used", 40),
+            ("net.bytes", 40),
+        ];
+        let bytes = make_multi_metric_single_rg_input(&metrics);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 120);
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            3,
+            "three distinct metric_names must each get their own output RG",
+        );
+        assert_eq!(outputs[0].num_row_groups, 3);
+
+        let kv = reader
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .expect("kv");
+        let prefix_kv = kv
+            .iter()
+            .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+            .and_then(|k| k.value.clone());
+        assert_eq!(prefix_kv.as_deref(), Some("1"));
+    }
+
     /// Build a multi-RG fixture where each RG has a single
     /// (metric_name, service) tuple. `rg_partition_prefix_len = 2`
     /// declares the alignment.
@@ -2070,7 +2491,7 @@ mod tests {
             .expect_err("region order vs physical RG order mismatch must be rejected");
         let s = err.to_string();
         assert!(
-            s.contains("disagrees with input") && s.contains("physical RG order"),
+            s.contains("disagrees with input") && s.contains("physical row order"),
             "expected MS-2 rejection message, got: {s}",
         );
     }

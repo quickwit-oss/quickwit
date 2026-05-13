@@ -41,11 +41,15 @@
 //! - `Float` / `Double` / `Int96`: rejected with a clear error.
 
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail};
+use arrow::array::RecordBatch;
+use arrow::row::{RowConverter, Rows, SortField};
 use parquet::file::metadata::ParquetMetaData;
 
 use super::super::InputMetadata;
+use super::super::merge_order::MergeRun;
 use super::InputDecoderState;
 use crate::sort_fields::{is_timestamp_column_name, parse_sort_fields};
 
@@ -53,23 +57,44 @@ use crate::sort_fields::{is_timestamp_column_name, parse_sort_fields};
 /// contributing inputs share the same sort-prefix value (e.g., one
 /// `metric_name` when `rg_partition_prefix_len == 1`).
 ///
-/// For multi-RG metric-aligned inputs, each region corresponds to **at
-/// most one row group per input** — the property that makes per-region
-/// streaming work without column-chunk-bounded buffering.
+/// A region pairs with **at most one row group per input** — the
+/// property that makes per-region streaming work without
+/// column-chunk-bounded buffering. The `start_row` field on each
+/// contribution allows a single row group to be split across multiple
+/// adjacent regions, which is what the prefix_len=0 synthesis path
+/// does: it slices a single-RG input's data into one synthesized
+/// region per first-sort-col value.
 #[derive(Debug, Clone)]
 pub(crate) struct Region {
     /// Sort-prefix value identifying this region (e.g., `metric_name`
     /// bytes for `prefix_len == 1`). Used only for ordering and
     /// diagnostics; the merge engine doesn't decode this value.
     pub(crate) prefix_key: Vec<u8>,
-    /// `(input_idx, rg_idx, num_rows)` for each input that contributes
+    /// Per contributing input: which slice of which row group belongs
     /// to this region. Ordered by `input_idx`.
-    pub(crate) contributing: Vec<(usize, usize, usize)>,
+    pub(crate) contributing: Vec<RegionContribution>,
+}
+
+/// One input's contribution to a region: the input index, the row
+/// group within that input, and the row range within that row group
+/// that belongs to the region.
+///
+/// For metric-aligned inputs (`rg_partition_prefix_len > 0`) each
+/// contribution covers a whole RG: `start_row == 0` and
+/// `num_rows == rg.num_rows()`. For inputs that the prefix_len=0
+/// synthesis path slices, multiple regions reference the same
+/// `(input_idx, rg_idx)` with disjoint contiguous row ranges.
+#[derive(Debug, Clone)]
+pub(crate) struct RegionContribution {
+    pub(crate) input_idx: usize,
+    pub(crate) rg_idx: usize,
+    pub(crate) start_row: usize,
+    pub(crate) num_rows: usize,
 }
 
 impl Region {
     pub(crate) fn total_rows(&self) -> usize {
-        self.contributing.iter().map(|(_, _, n)| *n).sum()
+        self.contributing.iter().map(|c| c.num_rows).sum()
     }
 }
 
@@ -339,21 +364,27 @@ pub(crate) fn validate_region_order_matches_physical_rg_order(
     regions: &[Region],
     num_inputs: usize,
 ) -> Result<()> {
-    let mut last_rg_per_input: Vec<Option<usize>> = vec![None; num_inputs];
+    let mut last_position_per_input: Vec<Option<(usize, usize)>> = vec![None; num_inputs];
     for (region_idx, region) in regions.iter().enumerate() {
-        for &(input_idx, rg_idx, _) in &region.contributing {
-            if let Some(prev_rg) = last_rg_per_input[input_idx]
-                && rg_idx <= prev_rg
+        for c in &region.contributing {
+            let position = (c.rg_idx, c.start_row);
+            if let Some(prev) = last_position_per_input[c.input_idx]
+                && position < prev
             {
                 bail!(
-                    "region iteration disagrees with input {input_idx}'s physical RG order: \
-                     region {region_idx} wants rg {rg_idx} but a previous region already used rg \
-                     {prev_rg}. The composite prefix key encoding does not match the input's \
-                     physical layout — check that the sort schema's direction matches how the \
-                     file is actually sorted on disk."
+                    "region iteration disagrees with input {}'s physical row order: region \
+                     {region_idx} wants rg {} row {} but a previous region already passed \
+                     position rg {} row {}. The composite prefix key encoding does not match the \
+                     input's physical layout — check that the sort schema's direction matches how \
+                     the file is actually sorted on disk.",
+                    c.input_idx,
+                    c.rg_idx,
+                    c.start_row,
+                    prev.0,
+                    prev.1,
                 );
             }
-            last_rg_per_input[input_idx] = Some(rg_idx);
+            last_position_per_input[c.input_idx] = Some((c.rg_idx, c.start_row + c.num_rows));
         }
     }
     Ok(())
@@ -376,13 +407,22 @@ pub(crate) fn extract_regions_from_metadata(
         // No alignment claim: single region covering each input's only RG.
         // Multi-RG inputs with prefix_len == 0 are rejected earlier; here
         // each input is single-RG (or zero-RG).
+        //
+        // The caller (`run_synthesized_prefix_path`) will split this
+        // region further once it has read the merge order and can see
+        // where the first sort col's value transitions.
         let mut contributing = Vec::new();
         for (idx, state) in decoders_state.iter().enumerate() {
             if state.metadata.num_row_groups() == 0 {
                 continue;
             }
             let rg_meta = state.metadata.row_group(0);
-            contributing.push((idx, 0, rg_meta.num_rows() as usize));
+            contributing.push(RegionContribution {
+                input_idx: idx,
+                rg_idx: 0,
+                start_row: 0,
+                num_rows: rg_meta.num_rows() as usize,
+            });
         }
         if contributing.is_empty() {
             return Ok(Vec::new());
@@ -410,7 +450,7 @@ pub(crate) fn extract_regions_from_metadata(
     // point of region merging). The constraint is **same input, same
     // prefix key, multiple RGs**: producers must ensure prefix
     // transitions align with RG boundaries.
-    let mut by_prefix: BTreeMap<Vec<u8>, Vec<(usize, usize, usize)>> = BTreeMap::new();
+    let mut by_prefix: BTreeMap<Vec<u8>, Vec<RegionContribution>> = BTreeMap::new();
     let prefix_len = input_meta.rg_partition_prefix_len as usize;
 
     for (input_idx, state) in decoders_state.iter().enumerate() {
@@ -442,7 +482,12 @@ pub(crate) fn extract_regions_from_metadata(
             by_prefix
                 .entry(prefix_key)
                 .or_default()
-                .push((input_idx, rg_idx, num_rows));
+                .push(RegionContribution {
+                    input_idx,
+                    rg_idx,
+                    start_row: 0,
+                    num_rows,
+                });
         }
     }
 
@@ -502,6 +547,136 @@ pub(crate) fn assert_unique_rg_prefix_keys(
         }
     }
     Ok(())
+}
+
+/// Synthesize prefix-aligned regions from a global k-way merge order.
+///
+/// Used by the prefix_len=0 path: each input is single-RG and not
+/// prefix-aligned at the producer side, so the engine drains all sort
+/// cols, computes a global merge order, and walks that merge order
+/// here to find prefix-value (first sort column, typically
+/// `metric_name`) transitions. Each run in the merge order has a
+/// constant `sorted_series` (built that way by `compute_merge_order`),
+/// which in turn implies a constant value of every sort col including
+/// the first — so prefix transitions only happen at run boundaries.
+///
+/// For each prefix value we emit one [`Region`] whose `contributing`
+/// records, for each input that participated, a contiguous row range
+/// of that input's RG. The output writer materialises this range as
+/// one output row group, making the produced parquet file prefix-
+/// aligned (the caller sets the output's `rg_partition_prefix_len` to
+/// reflect that — see `streaming_merge_sorted_parquet_files`).
+///
+/// Returns regions in merge-order (which is sort order: the order
+/// matches the merge engine's monotonic consumption of each input's
+/// rows).
+pub(crate) fn synthesize_prefix_regions(
+    global_merge_order: &[MergeRun],
+    aligned_sort_batches: &[RecordBatch],
+    first_sort_col_name: &str,
+) -> Result<Vec<Region>> {
+    if global_merge_order.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build a per-input row encoding of the first sort column so that
+    // bytewise comparison gives the same answer the merge order's
+    // comparator does. RowConverter handles dictionary / utf8 /
+    // primitive uniformly.
+    let mut rows_per_input: Vec<Option<Rows>> = Vec::with_capacity(aligned_sort_batches.len());
+    for batch in aligned_sort_batches {
+        let rows = match batch.schema().index_of(first_sort_col_name) {
+            Ok(idx) => {
+                let col = batch.column(idx);
+                let conv = RowConverter::new(vec![SortField::new(col.data_type().clone())])
+                    .with_context(|| {
+                        format!("building row converter for prefix col '{first_sort_col_name}'")
+                    })?;
+                let rows = conv.convert_columns(&[Arc::clone(col)]).with_context(|| {
+                    format!("encoding prefix col '{first_sort_col_name}' for region synthesis")
+                })?;
+                Some(rows)
+            }
+            Err(_) => None,
+        };
+        rows_per_input.push(rows);
+    }
+
+    let prefix_bytes_for_run = |run: &MergeRun| -> Result<Vec<u8>> {
+        let rows = rows_per_input[run.input_index].as_ref().ok_or_else(|| {
+            anyhow!(
+                "input {} is missing prefix col '{first_sort_col_name}' — prefix_len=0 synthesis \
+                 requires every input to carry the first sort col",
+                run.input_index,
+            )
+        })?;
+        Ok(rows.row(run.start_row).as_ref().to_vec())
+    };
+
+    let mut regions: Vec<Region> = Vec::new();
+    let mut current_prefix: Option<Vec<u8>> = None;
+    // Per-input (start_row, end_row) accumulated for the current region.
+    let mut current_ranges: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+    let mut current_rg_idx: BTreeMap<usize, usize> = BTreeMap::new();
+
+    let flush = |prefix: Vec<u8>,
+                 ranges: BTreeMap<usize, (usize, usize)>,
+                 rg_indices: &BTreeMap<usize, usize>,
+                 regions: &mut Vec<Region>| {
+        if ranges.is_empty() {
+            return;
+        }
+        let contributing: Vec<RegionContribution> = ranges
+            .into_iter()
+            .map(|(input_idx, (start, end))| RegionContribution {
+                input_idx,
+                rg_idx: *rg_indices
+                    .get(&input_idx)
+                    .expect("rg_idx set when range was opened"),
+                start_row: start,
+                num_rows: end - start,
+            })
+            .collect();
+        regions.push(Region {
+            prefix_key: prefix,
+            contributing,
+        });
+    };
+
+    for run in global_merge_order {
+        let p = prefix_bytes_for_run(run)?;
+        if current_prefix.as_deref() != Some(p.as_slice()) {
+            // Close the prior region (if any) and start a fresh one.
+            if let Some(prev) = current_prefix.take() {
+                flush(
+                    prev,
+                    std::mem::take(&mut current_ranges),
+                    &current_rg_idx,
+                    &mut regions,
+                );
+                current_rg_idx.clear();
+            }
+            current_prefix = Some(p);
+        }
+
+        // Extend the current region's range for this input. The merge
+        // engine ingests each input's rows in increasing row order
+        // within a single RG, so consecutive contributions for the
+        // same input within a region form one contiguous range.
+        let entry = current_ranges
+            .entry(run.input_index)
+            .or_insert((run.start_row, run.start_row));
+        entry.0 = entry.0.min(run.start_row);
+        entry.1 = entry.1.max(run.start_row + run.row_count);
+        current_rg_idx.insert(run.input_index, 0);
+    }
+
+    // Final region.
+    if let Some(prev) = current_prefix.take() {
+        flush(prev, current_ranges, &current_rg_idx, &mut regions);
+    }
+
+    Ok(regions)
 }
 
 /// Assign each region to an output file index.

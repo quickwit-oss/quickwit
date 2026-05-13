@@ -305,7 +305,12 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
         let target_pos = s.rows_emitted + total_picked;
         let mut found = false;
         for (input_idx, dests) in s.destinations.per_input.iter().enumerate() {
-            let cursor = s.decoders_state[input_idx].body_col_cursor;
+            let cursor = match s.input_col_indices[input_idx] {
+                Some(col_parquet_idx) => {
+                    s.decoders_state[input_idx].body_col_cursor(col_parquet_idx)
+                }
+                None => 0,
+            };
             for (input_row, dest) in dests.iter().enumerate().skip(cursor) {
                 match dest {
                     Some((o, p)) if *o == s.out_idx => {
@@ -362,8 +367,8 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
 
     for input_idx in 0..s.decoders_state.len() {
         match s.input_col_indices[input_idx] {
-            Some(_) => {
-                let pages = &s.decoders_state[input_idx].body_col_page_cache;
+            Some(col_parquet_idx) => {
+                let pages = s.decoders_state[input_idx].body_col_cache(col_parquet_idx);
                 if pages.is_empty() {
                     input_array_refs.push(new_null_array(s.out_field.data_type(), 0));
                     input_cache_starts.push(0);
@@ -405,27 +410,19 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
     })?;
 
     // Bump cursors past consumed rows and evict pages whose last row
-    // falls below the cursor. Both live on InputDecoderState so they
-    // persist across outputs that share this column.
+    // falls below the cursor. Both live on InputDecoderState (per
+    // col) so they persist across regions/outputs that share this
+    // column.
     for (input_idx, input_rows) in indices_per_input.iter().enumerate() {
         if input_rows.is_empty() {
             continue;
         }
         let max_row = *input_rows.iter().max().expect("non-empty");
         let state = &mut s.decoders_state[input_idx];
-        state.body_col_cursor = max_row + 1;
-
-        if s.input_col_indices[input_idx].is_some() {
-            let pages = &mut state.body_col_page_cache;
-            while let Some(front) = pages.first() {
-                let front_end = front.row_start + front.array.len();
-                if front_end <= state.body_col_cursor {
-                    pages.remove(0);
-                } else {
-                    break;
-                }
-            }
-        }
+        let Some(col_parquet_idx) = s.input_col_indices[input_idx] else {
+            continue;
+        };
+        state.set_body_col_cursor(col_parquet_idx, max_row + 1);
     }
 
     s.rows_emitted += page_size;
@@ -449,14 +446,20 @@ fn advance_decoder_to_row(
     col_parquet_idx: usize,
     target_row: usize,
 ) -> Result<()> {
-    // If cache already covers target_row, nothing to do.
-    if let Some(last) = state.body_col_page_cache.last() {
+    // Already covered by what's cached for this col?
+    if let Some(last) = state.body_col_cache(col_parquet_idx).last() {
         let last_end = last.row_start + last.array.len();
         if target_row < last_end {
             return Ok(());
         }
     }
 
+    // Drain pages from the stream until either the target is covered
+    // for `col_parquet_idx` or the stream runs out. Pages emitted for
+    // a different col_idx still get cached under their own col so a
+    // later request for that col can find them without re-fetching —
+    // critical for the synthesized-prefix path, which re-reads earlier
+    // cols across multiple regions after the stream has moved on.
     loop {
         let decoded = handle
             .block_on(state.decoder.decode_next_page())
@@ -467,16 +470,11 @@ fn advance_decoder_to_row(
                 "stream EOF while advancing to row {target_row} for parquet col {col_parquet_idx}",
             ),
         };
-        if page.col_idx != col_parquet_idx {
-            bail!(
-                "expected col {col_parquet_idx} page, got col {} — column ordering violated",
-                page.col_idx,
-            );
-        }
+        let page_col = page.col_idx;
         let end = page.row_start + page.array.len();
-        state.body_col_page_cache.push(page);
-        record_body_col_page_cache_len(state.body_col_page_cache.len());
-        if target_row < end {
+        state.body_col_cache_mut(page_col).push(page);
+        record_body_col_page_cache_len(state.body_col_caches_total_len());
+        if page_col == col_parquet_idx && target_row < end {
             return Ok(());
         }
     }

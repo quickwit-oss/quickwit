@@ -65,6 +65,7 @@ pub struct MergeConfig {
 /// Metadata extracted from input files' Parquet KV metadata.
 /// All inputs must agree on sort_fields, window_start, window_duration,
 /// and rg_partition_prefix_len.
+#[derive(Clone)]
 pub(crate) struct InputMetadata {
     sort_fields: String,
     window_start_secs: Option<i64>,
@@ -72,12 +73,11 @@ pub(crate) struct InputMetadata {
     num_merge_ops: u32,
     /// Number of leading sort columns whose transitions align with row
     /// group boundaries. All input files must agree on this value (it's
-    /// part of the compaction scope key). Splitting row groups at the
-    /// claimed prefix boundary is not implemented by the current merge
-    /// writer — it lands in PR-6 (streaming column-major merge engine).
-    /// Until then, the *output* file is written with prefix 0 regardless
-    /// of this value.
-    #[allow(dead_code)] // wired for PR-6 streaming engine; PR-1 only validates.
+    /// part of the compaction scope key). The streaming merge engine
+    /// (PR-6c.2) honours this on input AND produces prefix-aligned
+    /// output: when inputs have `prefix_len == 0`, the engine
+    /// synthesizes prefix-aligned regions from the merge order and
+    /// promotes the output's `rg_partition_prefix_len` accordingly.
     rg_partition_prefix_len: u32,
 }
 
