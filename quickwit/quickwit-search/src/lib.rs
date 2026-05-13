@@ -347,10 +347,12 @@ pub fn searcher_pool_for_test(
     )
 }
 
-/// Sum of the per-phase microsecond fields used to rank `split_resources_worsts`.
-/// Intentionally excludes `wait_for_search_permit_microsecs`.
+/// Sum of the per-phase microsecond fields used to rank `split_resources_worst`.
+/// Intentionally excludes the two waiting phases (`wait_for_search_permit_microsecs`
+/// and `wait_for_cpu_pool_microsecs`) so the ranking reflects "how much work this
+/// split actually did" rather than "how long this split queued behind other work".
 pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
-    stats.warmup_microsecs + stats.wait_for_cpu_pool_microsecs + stats.cpu_search_microsecs
+    stats.warmup_microsecs + stats.cpu_search_microsecs
 }
 
 /// Field-wise sum of two `SplitResourceStats` (every field is extensive).
@@ -376,33 +378,11 @@ pub(crate) fn min_opt(left: Option<u64>, right: Option<u64>) -> Option<u64> {
     }
 }
 
-/// How many entries we keep in the `*_worsts` ranked lists (`split_resources_worsts`,
-/// `leaf_resources_worsts`): the worst and the second worst.
-pub(crate) const NUM_WORST_KEPT: usize = 2;
-
-/// Merge two ranked top-N lists (each already ordered largest-first by `key_fn`)
-/// into a single ranked top-N list, keeping at most `NUM_WORST_KEPT` entries.
-/// Ties are broken by the order in which entries were seen (`acc` first, then `other`).
-pub(crate) fn merge_top_n_by_key<T, K>(acc: &[T], other: &[T], key_fn: impl Fn(&T) -> K) -> Vec<T>
-where
-    T: Clone,
-    K: Ord,
-{
-    let mut merged: Vec<T> = Vec::with_capacity(acc.len() + other.len());
-    merged.extend(acc.iter().cloned());
-    merged.extend(other.iter().cloned());
-    // `sort_by_key` is stable, so equal keys retain `acc`-before-`other` order;
-    // `Reverse` flips ascending into descending so the largest ends up first.
-    merged.sort_by_key(|entry| std::cmp::Reverse(key_fn(entry)));
-    merged.truncate(NUM_WORST_KEPT);
-    merged
-}
-
 /// Merge another `LeafResourceStats` into `acc`.
 ///
 /// Every numeric field is summed, with two exceptions:
-/// - `split_resources_worsts` keeps the top-2 worst splits across the inputs, ranked by
-///   `split_phase_sum_microsecs` (largest first). `split_resources_sum` is field-wise summed.
+/// - `split_resources_worst` is selected by `split_phase_sum_microsecs`; `split_resources_sum` is
+///   field-wise summed.
 /// - `min_wait_for_search_permit_microsecs` and `min_wait_for_cpu_pool_microsecs` are merged with
 ///   `min_opt` (treating `None` as "no contribution"), so the merged value is the minimum across
 ///   every locally-executed split that contributed.
@@ -434,11 +414,10 @@ pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceSt
             .get_or_insert_with(SplitResourceStats::default);
         add_split_stats(acc_split, other_split);
     }
-    acc.split_resources_worsts = merge_top_n_by_key(
-        &acc.split_resources_worsts,
-        &other.split_resources_worsts,
-        split_phase_sum_microsecs,
-    );
+    acc.split_resources_worst = [acc.split_resources_worst, other.split_resources_worst]
+        .into_iter()
+        .flatten()
+        .max_by_key(split_phase_sum_microsecs);
 }
 
 /// Merge an iterator of `Option<LeafResourceStats>` into a single `Option<LeafResourceStats>`.
@@ -477,7 +456,7 @@ mod stats_merge_tests {
             localexec_num_splits: 1,
             localexec_num_docs: split.split_num_docs,
             split_resources_sum: Some(split),
-            split_resources_worsts: vec![split],
+            split_resources_worst: Some(split),
             ..Default::default()
         }
     }
@@ -580,7 +559,7 @@ mod stats_merge_tests {
             lambda_bottleneck: 0,
             localexec_num_splits: 1_000_000,
             localexec_num_docs: 10_000_000,
-            split_resources_worsts: vec![split_a],
+            split_resources_worst: Some(split_a),
             split_resources_sum: Some(split_a),
             min_wait_for_search_permit_microsecs: Some(100),
             min_wait_for_cpu_pool_microsecs: Some(2_000),
@@ -596,7 +575,7 @@ mod stats_merge_tests {
             lambda_bottleneck: 1,
             localexec_num_splits: 2_000_000,
             localexec_num_docs: 20_000_000,
-            split_resources_worsts: vec![split_b],
+            split_resources_worst: Some(split_b),
             split_resources_sum: Some(split_b),
             min_wait_for_search_permit_microsecs: Some(50),
             min_wait_for_cpu_pool_microsecs: Some(1_000),
@@ -629,36 +608,10 @@ mod stats_merge_tests {
         assert_eq!(summed.split_num_docs, 3);
         assert_eq!(summed.cpu_search_microsecs, 300);
 
-        // `split_resources_worsts` keeps the top-2 worst splits, largest first.
-        // split_b (cpu_search 200) > split_a (cpu_search 100).
-        assert_eq!(acc.split_resources_worsts.len(), 2);
-        assert_eq!(acc.split_resources_worsts[0].split_num_docs, 2);
-        assert_eq!(acc.split_resources_worsts[1].split_num_docs, 1);
-    }
-
-    /// `split_resources_worsts` keeps the top-2 splits across an arbitrary
-    /// number of contributors, ranked by `split_phase_sum_microsecs`.
-    #[test]
-    fn test_add_leaf_stats_split_resources_worsts_keeps_top_2() {
-        // cpu_search values pick the phase-sum ordering: 200 > 100 > 50 > 25.
-        let split_top = split_stats(1, 0, 200);
-        let split_2nd = split_stats(2, 0, 100);
-        let split_3rd = split_stats(3, 0, 50);
-        let split_4th = split_stats(4, 0, 25);
-
-        let mut acc = LeafResourceStats {
-            split_resources_worsts: vec![split_2nd, split_4th],
-            ..Default::default()
-        };
-        let other = LeafResourceStats {
-            split_resources_worsts: vec![split_top, split_3rd],
-            ..Default::default()
-        };
-        add_leaf_stats(&mut acc, &other);
-        assert_eq!(acc.split_resources_worsts.len(), 2);
-        // Largest first, second-largest next.
-        assert_eq!(acc.split_resources_worsts[0].split_num_docs, 1);
-        assert_eq!(acc.split_resources_worsts[1].split_num_docs, 2);
+        // `split_resources_worst` is the split with the larger phase-sum:
+        // split_b (cpu_search 200) beats split_a (cpu_search 100).
+        let worst = acc.split_resources_worst.unwrap();
+        assert_eq!(worst.split_num_docs, 2);
     }
 
     /// When the accumulator already has `split_resources_*` and the other
@@ -670,7 +623,7 @@ mod stats_merge_tests {
         let other = LeafResourceStats {
             localexec_num_splits: 1,
             localexec_num_docs: 7,
-            // No split_resources_sum / split_resources_worsts.
+            // No split_resources_sum / split_resources_worst.
             ..Default::default()
         };
         add_leaf_stats(&mut acc, &other);
@@ -678,8 +631,7 @@ mod stats_merge_tests {
         assert_eq!(acc.localexec_num_docs, 12);
         // Both fields must still point at split_a.
         assert_eq!(acc.split_resources_sum.unwrap().split_num_docs, 5);
-        assert_eq!(acc.split_resources_worsts.len(), 1);
-        assert_eq!(acc.split_resources_worsts[0].split_num_docs, 5);
+        assert_eq!(acc.split_resources_worst.unwrap().split_num_docs, 5);
     }
 
     /// When the accumulator has no `split_resources_*` and the other side
@@ -692,8 +644,7 @@ mod stats_merge_tests {
         add_leaf_stats(&mut acc, &other);
         assert_eq!(acc.localexec_num_splits, 1);
         assert_eq!(acc.split_resources_sum.unwrap().split_num_docs, 9);
-        assert_eq!(acc.split_resources_worsts.len(), 1);
-        assert_eq!(acc.split_resources_worsts[0].split_num_docs, 9);
+        assert_eq!(acc.split_resources_worst.unwrap().split_num_docs, 9);
     }
 
     /// Adding a default `LeafResourceStats` should be an identity operation
@@ -708,7 +659,7 @@ mod stats_merge_tests {
             localexec_num_splits: 1,
             localexec_num_docs: 3,
             split_resources_sum: Some(split),
-            split_resources_worsts: vec![split],
+            split_resources_worst: Some(split),
             // Set the min fields explicitly so this test verifies that
             // `min_opt(Some(x), None) = Some(x)` keeps them unchanged.
             min_wait_for_search_permit_microsecs: Some(7),
@@ -716,7 +667,7 @@ mod stats_merge_tests {
             wall_time_microsecs: 42,
             ..Default::default()
         };
-        let snapshot = acc.clone();
+        let snapshot = acc;
         add_leaf_stats(&mut acc, &LeafResourceStats::default());
         assert_eq!(acc, snapshot);
     }

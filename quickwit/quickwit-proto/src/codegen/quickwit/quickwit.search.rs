@@ -327,19 +327,18 @@ pub struct SplitResourceStats {
 /// If the configuration allows it, leaf nodes can offload part of their computation to
 /// lambdas.
 ///
-/// `split_resources_worsts` / `split_resources_sum` aggregations on
+/// `split_resources_worst` / `split_resources_sum` aggregations on
 /// `LeafResourceStats` are only computed for locally-executed splits.
 ///
 /// All numeric fields are extensive (summed when merging across leaves).
-/// `split_resources_worsts` is the exception — it is the top-2 worst single-split
-/// contributions selected by ranking (largest first), not summed.
-/// `lambda_bottleneck` is 0 or 1 at the source and becomes a count of leaves
-/// where lambda was the bottleneck once aggregated.
+/// `split_resources_worst` is the exception — it is selected by ranking, not
+/// summed. `lambda_bottleneck` is 0 or 1 at the source and becomes a count of
+/// leaves where lambda was the bottleneck once aggregated.
 /// `min_wait_for_search_permit_microsecs` and `min_wait_for_cpu_pool_microsecs`
 /// are also exceptions — they are merged with `min` rather than `sum` (see
 /// their per-field doc below).
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LeafResourceStats {
     /// Number of splits whose results came from the partial result cache.
     #[prost(uint64, tag = "1")]
@@ -353,13 +352,12 @@ pub struct LeafResourceStats {
     /// Sum of `split.num_docs` across locally-executed splits.
     #[prost(uint64, tag = "9")]
     pub localexec_num_docs: u64,
-    /// Top-2 worst single-split contributions, ranked by
-    /// `warmup + wait_for_cpu_pool + cpu_predicate + cpu_collection + cpu_harvest`
-    /// (intentionally excludes `wait_for_search_permit`). Largest first: index
-    /// 0 is the absolute worst, index 1 is the second worst (or absent if only
-    /// one local split contributed).
-    #[prost(message, repeated, tag = "10")]
-    pub split_resources_worsts: ::prost::alloc::vec::Vec<SplitResourceStats>,
+    /// The worst single-split contribution, ranked by `warmup + cpu_search`
+    /// (intentionally excludes the queueing phases `wait_for_search_permit`
+    /// and `wait_for_cpu_pool` so the ranking reflects "how much work this
+    /// split actually did").
+    #[prost(message, optional, tag = "10")]
+    pub split_resources_worst: ::core::option::Option<SplitResourceStats>,
     /// Field-wise sum of `SplitResourceStats` across all locally-executed splits.
     /// If you want to compute averages, divide by localexec_num_splits.
     #[prost(message, optional, tag = "11")]
@@ -403,15 +401,11 @@ pub struct LeafResourceStats {
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RootResourceStats {
-    /// Top-2 leaves by `wall_time_microsecs`, largest first: index 0 is the
-    /// absolute worst leaf, index 1 is the second worst (or absent if only
-    /// one leaf contributed stats). Useful to tell whether a single
-    /// straggler dominated a query or whether several leaves were
-    /// comparably slow.
-    #[prost(message, repeated, tag = "1")]
-    pub leaf_resources_worsts: ::prost::alloc::vec::Vec<LeafResourceStats>,
+    /// The leaf with the largest `wall_time_microsecs`.
+    #[prost(message, optional, tag = "1")]
+    pub leaf_resources_worst: ::core::option::Option<LeafResourceStats>,
     /// Field-wise sum of all leaf stats. `wall_time_microsecs` is summed even though
     /// it is not strictly extensive — the sum still gives a useful view of total leaf time.
     /// If you want to compute averages, divide by leaf_num_calls: failed leaf attempts

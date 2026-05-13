@@ -653,7 +653,7 @@ async fn leaf_search_single_split(
                     // Running inside an AWS Lambda runtime: this split was
                     // dispatched here via lambda offload. Per the proto
                     // contract, lambda-executed splits do not contribute
-                    // to `split_resources_worsts` / `split_resources_sum` — those
+                    // to `split_resources_worst` / `split_resources_sum` — those
                     // aggregates are reserved for locally-executed splits.
                     //
                     // Only the success counters are set here. The
@@ -671,7 +671,7 @@ async fn leaf_search_single_split(
                         localexec_num_splits: 1,
                         localexec_num_docs: split_num_docs,
                         split_resources_sum: Some(split_stats),
-                        split_resources_worsts: vec![split_stats],
+                        split_resources_worst: Some(split_stats),
                         min_wait_for_search_permit_microsecs: Some(
                             split_stats.wait_for_search_permit_microsecs,
                         ),

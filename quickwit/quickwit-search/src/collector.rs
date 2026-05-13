@@ -1973,10 +1973,10 @@ mod tests {
                             cpu_search_microsecs: 100,
                             ..Default::default()
                         }),
-                        split_resources_worsts: vec![SplitResourceStats {
+                        split_resources_worst: Some(SplitResourceStats {
                             cpu_search_microsecs: 100,
                             ..Default::default()
-                        }],
+                        }),
                         localexec_num_splits: 1,
                         ..Default::default()
                     }),
@@ -2003,10 +2003,10 @@ mod tests {
                             cpu_search_microsecs: 50,
                             ..Default::default()
                         }),
-                        split_resources_worsts: vec![SplitResourceStats {
+                        split_resources_worst: Some(SplitResourceStats {
                             cpu_search_microsecs: 50,
                             ..Default::default()
-                        }],
+                        }),
                         localexec_num_splits: 1,
                         ..Default::default()
                     }),
@@ -2047,16 +2047,10 @@ mod tests {
                         cpu_search_microsecs: 150,
                         ..Default::default()
                     }),
-                    split_resources_worsts: vec![
-                        SplitResourceStats {
-                            cpu_search_microsecs: 100,
-                            ..Default::default()
-                        },
-                        SplitResourceStats {
-                            cpu_search_microsecs: 50,
-                            ..Default::default()
-                        },
-                    ],
+                    split_resources_worst: Some(SplitResourceStats {
+                        cpu_search_microsecs: 100,
+                        ..Default::default()
+                    }),
                     localexec_num_splits: 2,
                     ..Default::default()
                 }),
