@@ -16,13 +16,13 @@ QW_COMMIT_HASH := $(shell git rev-parse HEAD)
 QW_COMMIT_TAGS := $(shell git tag --points-at HEAD | tr '\n' ',')
 
 docker-build:
-	@docker build \
+	@CI_JOB_TOKEN=$(shell ddtool auth gitlab token) docker buildx build \
 		--build-arg QW_COMMIT_DATE=$(QW_COMMIT_DATE) \
 		--build-arg QW_COMMIT_HASH=$(QW_COMMIT_HASH) \
 		--build-arg QW_COMMIT_TAGS=$(QW_COMMIT_TAGS) \
-		--build-arg CI_JOB_TOKEN=$(shell ddtool auth gitlab token) \
 		--build-arg CLOUDPREM_UI_ENV=$(CLOUDPREM_UI_ENV) \
 		--build-arg CLOUDPREM_UI_VERSION=$(CLOUDPREM_UI_VERSION) \
+		--secret id=ci_job_token,env=CI_JOB_TOKEN \
 		-t quickwit/quickwit:$(IMAGE_TAG) .
 
 # Usage:

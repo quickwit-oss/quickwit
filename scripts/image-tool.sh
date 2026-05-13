@@ -18,6 +18,9 @@ DO_BUILD=false
 DO_PUSH=false
 DO_SIGN=false
 METADATA_FILE=""
+CARGO_PROFILE="release"
+INCLUDE_POMSKY_INTAKE=true
+INCLUDE_QUICKWIT_METRICS=true
 
 usage() {
     echo "Usage: $0 [options]"
@@ -28,6 +31,9 @@ usage() {
     echo "  --target-env <env>             Target environment (default: $DEFAULT_TARGET_ENV)"
     echo "  --platform <platform>          Build platform (default: $DEFAULT_PLATFORM)"
     echo "  --metadata-file <file>         Path to save metadata file (optional)"
+    echo "  --no-pomsky-intake             Exclude the pomsky-intake binary from the image"
+    echo "  --no-quickwit-metrics          Exclude the quickwit-metrics binary from the image"
+    echo "  --debug                        Compile binaries in debug mode (CARGO_PROFILE=dev)"
     echo "  --build                        Build the image"
     echo "  --push                         Build and push the image"
     echo "  --sign                         Sign the image"
@@ -93,6 +99,18 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             ;;
+        --no-pomsky-intake)
+            INCLUDE_POMSKY_INTAKE=false
+            shift
+            ;;
+        --no-quickwit-metrics)
+            INCLUDE_QUICKWIT_METRICS=false
+            shift
+            ;;
+        --debug)
+            CARGO_PROFILE="dev"
+            shift
+            ;;
         --build)
             DO_BUILD=true
             shift
@@ -138,34 +156,54 @@ QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H
 QW_COMMIT_HASH=$(git rev-parse HEAD)
 QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')
 
+echo "Build configuration:"
+echo "  Registry:                $REGISTRY"
+echo "  Repository:              $REPO"
+echo "  Tag:                     $TAG"
+echo "  Target Environment:      $TARGET_ENV"
+echo "  Platform:                $PLATFORM"
+echo "  Metadata File:           $METADATA_FILE"
+echo "  Cargo profile:           $CARGO_PROFILE"
+echo "  Include pomsky-intake:   $INCLUDE_POMSKY_INTAKE"
+echo "  Include quickwit-metrics: $INCLUDE_QUICKWIT_METRICS"
+echo
+
 # Function to build the image
 build_image() {
-    local push_flag=""
+    local extra_args=()
+
     if [ "$DO_PUSH" = true ]; then
-        push_flag="--push"
+        extra_args+=(--push)
+    fi
+    if [ -n "${CARGO_FEATURES:-}" ]; then
+        extra_args+=(--build-arg "CARGO_FEATURES=$CARGO_FEATURES")
+    fi
+    if [ -n "${CARGO_FEATURES_METRICS:-}" ]; then
+        extra_args+=(--build-arg "CARGO_FEATURES_METRICS=$CARGO_FEATURES_METRICS")
+    fi
+    if [ -n "${CI_JOB_TOKEN:-}" ]; then
+        extra_args+=(--secret "id=ci_job_token,env=CI_JOB_TOKEN")
+    fi
+    if [ -n "${DDOCTOSTS_ID_TOKEN:-}" ]; then
+        extra_args+=(--secret "id=ddoctosts_oidc,env=DDOCTOSTS_ID_TOKEN")
     fi
 
     echo "Building Docker image..."
-    echo "Registry: $REGISTRY"
-    echo "Repository: $REPO"
-    echo "Tag: $TAG"
-    echo "Target Environment: $TARGET_ENV"
-    echo "Platform: $PLATFORM"
-    echo "Metadata File: $METADATA_FILE"
 
     docker buildx build \
         -f Dockerfile \
         -t "$DOCKER_IMAGE" \
-        --build-arg QW_COMMIT_DATE="$QW_COMMIT_DATE" \
-        --build-arg QW_COMMIT_HASH="$QW_COMMIT_HASH" \
-        --build-arg QW_COMMIT_TAGS="$QW_COMMIT_TAGS" \
-        ${CARGO_FEATURES:+--build-arg CARGO_FEATURES="$CARGO_FEATURES"} \
-        ${CI_JOB_TOKEN:+--build-arg CI_JOB_TOKEN="$CI_JOB_TOKEN"} \
-        ${DDOCTOSTS_ID_TOKEN:+--secret id=ddoctosts_oidc,env=DDOCTOSTS_ID_TOKEN} \
+        --build-arg "QW_COMMIT_DATE=$QW_COMMIT_DATE" \
+        --build-arg "QW_COMMIT_HASH=$QW_COMMIT_HASH" \
+        --build-arg "QW_COMMIT_TAGS=$QW_COMMIT_TAGS" \
+        --build-arg "CARGO_PROFILE=$CARGO_PROFILE" \
+        --build-arg "INCLUDE_POMSKY_INTAKE=$INCLUDE_POMSKY_INTAKE" \
+        --build-arg "INCLUDE_QUICKWIT_METRICS=$INCLUDE_QUICKWIT_METRICS" \
         --platform "$PLATFORM" \
-        --label target="$TARGET_ENV" \
+        --label "target=$TARGET_ENV" \
         --metadata-file "$METADATA_FILE" \
-        $push_flag .
+        ${extra_args[@]+"${extra_args[@]}"} \
+        .
 }
 
 # Function to sign the image

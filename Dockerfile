@@ -22,12 +22,15 @@ RUN touch .gitignore_for_build_directory \
 FROM registry.ddbuild.io/images/pomsky/rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
+ARG CARGO_FEATURES_METRICS=release-feature-set-metrics
 ARG CARGO_PROFILE=release
+
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
-# it's dangerous to expose tokens in ARGs like this, but this is an intermediate build container, so its arguments are not stored in the final image
-ARG CI_JOB_TOKEN
+
+ARG INCLUDE_POMSKY_INTAKE=true
+ARG INCLUDE_QUICKWIT_METRICS=true
 
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
@@ -66,36 +69,50 @@ WORKDIR /quickwit
 RUN --mount=type=secret,id=ddoctosts_oidc,required=false \
     if [ -s /run/secrets/ddoctosts_oidc ]; then \
       export DDOCTOSTS_ID_TOKEN=$(cat /run/secrets/ddoctosts_oidc) \
-      && POMCHI_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/PomChi --policy access_pomsky_gitlab) \
       && EVENT_PERCOLATION_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/event-percolation --policy access_pomsky_gitlab) \
-      && git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi" \
       && git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"; \
     fi
 # Fall back to CI_JOB_TOKEN via GitLab mirror for remaining DataDog repos
-RUN if [ -n "$CI_JOB_TOKEN" ]; then \
-      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"; \
+RUN --mount=type=secret,id=ci_job_token,required=false \
+    if [ -s /run/secrets/ci_job_token ]; then \
+      CI_JOB_TOKEN=$(cat /run/secrets/ci_job_token) \
+      && git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"; \
     fi
 
 RUN rustup toolchain install
 
-RUN echo "Building binaries with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
-    && echo "Building pomsky" \
-    && RUSTFLAGS="--cfg tokio_unstable" \
-    cargo build \
-    -p quickwit-cli \
-    --features $CARGO_FEATURES \
-    --bin quickwit \
-    $(test "$CARGO_PROFILE" = "release" && echo "--release") \
-    && echo "Building pomsky-intake" \
-    && RUSTFLAGS="--cfg tokio_unstable" \
-    cargo build \
-    -p pomsky-intake \
-    --bin pomsky-intake \
-    $(test "$CARGO_PROFILE" = "release" && echo "--release") \
-    && echo "Copying binaries to /quickwit/bin" \
-    && mkdir -p /quickwit/bin \
-    && TARGET_DIR=$(test "$CARGO_PROFILE" = "dev" && echo "debug" || echo "$CARGO_PROFILE") \
-    && find target/$TARGET_DIR -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
+RUN set -eux; \
+    \
+    echo "Building binaries with profile '$CARGO_PROFILE'"; \
+    mkdir -p /quickwit/bin; \
+    \
+    if [ "$CARGO_PROFILE" = "dev" ]; then \
+        TARGET_DIR="debug"; \
+        RELEASE_FLAG=""; \
+    else \
+        TARGET_DIR="$CARGO_PROFILE"; \
+        RELEASE_FLAG="--release"; \
+    fi; \
+    \
+    export RUSTFLAGS="--cfg tokio_unstable"; \
+    \
+    echo "Building quickwit with feature(s) '$CARGO_FEATURES'"; \
+    cargo build -p quickwit-cli --features "$CARGO_FEATURES" --bin quickwit $RELEASE_FLAG; \
+    mv "target/$TARGET_DIR/quickwit" /quickwit/bin/quickwit; \
+    \
+    if [ "$INCLUDE_QUICKWIT_METRICS" = "true" ]; then \
+        echo "Building quickwit-metrics with feature(s) '$CARGO_FEATURES_METRICS'"; \
+        cargo build -p quickwit-cli --features "$CARGO_FEATURES_METRICS" --bin quickwit $RELEASE_FLAG; \
+        mv "target/$TARGET_DIR/quickwit" /quickwit/bin/quickwit-metrics; \
+    fi; \
+    \
+    if [ "$INCLUDE_POMSKY_INTAKE" = "true" ]; then \
+        echo "Building pomsky-intake"; \
+        cargo build -p pomsky-intake --bin pomsky-intake $RELEASE_FLAG; \
+        mv "target/$TARGET_DIR/pomsky-intake" /quickwit/bin/pomsky-intake; \
+    fi; \
+    \
+    rm -f /root/.gitconfig
 
 FROM registry.ddbuild.io/images/base/gbi-ubuntu_2404:latest AS quickwit
 
@@ -120,8 +137,7 @@ RUN apt-get -y update \
 
 WORKDIR /quickwit
 RUN mkdir config qwdata
-COPY --from=bin-builder /quickwit/bin/pomsky-intake /usr/local/bin/pomsky-intake
-COPY --from=bin-builder /quickwit/bin/quickwit /usr/local/bin/quickwit
+COPY --from=bin-builder /quickwit/bin/ /usr/local/bin/
 COPY --from=bin-builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yaml
 
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
@@ -130,7 +146,8 @@ ENV QW_LISTEN_ADDRESS=0.0.0.0
 
 USER dog
 
-RUN pomsky-intake --help > /dev/null
 RUN quickwit --version
+RUN if [ -x /usr/local/bin/quickwit-metrics ]; then quickwit-metrics --version; fi
+RUN if [ -x /usr/local/bin/pomsky-intake ]; then pomsky-intake --help > /dev/null; fi
 
 ENTRYPOINT ["quickwit"]
