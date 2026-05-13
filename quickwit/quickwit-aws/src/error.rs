@@ -35,7 +35,7 @@ where E: AwsRetryable
         match self {
             SdkError::ConstructionFailure(_) => false,
             SdkError::TimeoutError(_) => true,
-            SdkError::DispatchFailure(_) => false,
+            SdkError::DispatchFailure(_) => true,
             SdkError::ResponseError(_) => true,
             SdkError::ServiceError(error) => error.err().is_retryable(),
             _ => false,
