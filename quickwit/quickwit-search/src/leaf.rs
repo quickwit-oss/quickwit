@@ -649,33 +649,33 @@ async fn leaf_search_single_split(
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
                 };
-                leaf_search_response.resource_stats =
-                    Some(if quickwit_common::is_running_in_lambda() {
-                        // Running inside an AWS Lambda runtime: this split was
-                        // dispatched here via lambda offload. Per the proto
-                        // contract, lambda-executed splits do not contribute
-                        // to `split_resources_worst` / `split_resources_sum` — those
-                        // aggregates are reserved for locally-executed splits.
-                        //
-                        // Only the success counters are set here. The
-                        // `lambda_num_*` totals (success + failure) are
-                        // injected once by the caller in
-                        // `run_offloaded_search_tasks` so they reflect every
-                        // dispatched split, not just the ones that came back.
-                        LeafResourceStats {
-                            lambda_success_num_splits: 1,
-                            lambda_success_num_docs: split_num_docs,
-                            ..Default::default()
-                        }
-                    } else {
-                        LeafResourceStats {
-                            localexec_num_splits: 1,
-                            localexec_num_docs: split_num_docs,
-                            split_resources_sum: Some(split_stats),
-                            split_resources_worst: Some(split_stats),
-                            ..Default::default()
-                        }
-                    });
+                let resource_stats = if quickwit_common::is_running_in_lambda() {
+                    // Running inside an AWS Lambda runtime: this split was
+                    // dispatched here via lambda offload. Per the proto
+                    // contract, lambda-executed splits do not contribute
+                    // to `split_resources_worst` / `split_resources_sum` — those
+                    // aggregates are reserved for locally-executed splits.
+                    //
+                    // Only the success counters are set here. The
+                    // `lambda_num_*` totals (success + failure) are
+                    // injected once by the caller in
+                    // `run_offloaded_search_tasks` so they reflect every
+                    // dispatched split, not just the ones that came back.
+                    LeafResourceStats {
+                        lambda_success_num_splits: 1,
+                        lambda_success_num_docs: split_num_docs,
+                        ..Default::default()
+                    }
+                } else {
+                    LeafResourceStats {
+                        localexec_num_splits: 1,
+                        localexec_num_docs: split_num_docs,
+                        split_resources_sum: Some(split_stats),
+                        split_resources_worst: Some(split_stats),
+                        ..Default::default()
+                    }
+                };
+                leaf_search_response.resource_stats = Some(resource_stats);
                 leaf_search_state_guard.set_state(SplitSearchState::Success);
                 Result::<_, TantivyError>::Ok(Some((
                     simplified_search_request,
@@ -1742,16 +1742,14 @@ pub async fn single_doc_mapping_leaf_search(
     // local → false). The load after `tokio::join!` therefore observes the
     // value written by whichever future finished last: lambda was the
     // bottleneck iff the offloaded path is the last one to write.
-    let offloaded_is_bottleneck = Arc::new(AtomicBool::new(false));
-    let flag_local_writer = offloaded_is_bottleneck.clone();
-    let flag_offloaded_writer = offloaded_is_bottleneck.clone();
-    let timed_local_fut = async move {
+    let offloaded_is_bottleneck = AtomicBool::new(false);
+    let timed_local_fut = async {
         run_local_search_tasks_fut.await;
-        flag_local_writer.store(false, Ordering::Relaxed);
+        offloaded_is_bottleneck.store(false, Ordering::Relaxed);
     };
-    let timed_offloaded_fut = async move {
+    let timed_offloaded_fut = async {
         let result = run_offloaded_search_tasks_fut.await;
-        flag_offloaded_writer.store(true, Ordering::Relaxed);
+        offloaded_is_bottleneck.store(true, Ordering::Relaxed);
         result
     };
     let (offloaded_res, ()) = tokio::join!(timed_offloaded_fut, timed_local_fut);

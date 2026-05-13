@@ -93,36 +93,13 @@ impl Storage for CountingStorage {
         self.inner.put(path, payload).await
     }
 
-    fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
-        &'life0 self,
-        path: &'life1 Path,
-        output: &'life2 mut dyn SendableAsync,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = StorageResult<()>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        'life2: 'async_trait,
-        Self: 'async_trait,
-    {
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         // We do not know the final byte count without intercepting the writer,
         // so we conservatively count the request only. `copy_to` is not on the
         // hot path of leaf search (only `get_slice` is), so this approximation
         // is acceptable.
-        let counters = self.counters.clone();
-        let inner_fut = self.inner.copy_to(path, output);
-        Box::pin(async move {
-            let result = inner_fut.await;
-            if result.is_ok() {
-                counters.requests.fetch_add(1, Ordering::Relaxed);
-            }
-            result
-        })
+        self.counters.requests.fetch_add(1, Ordering::Relaxed);
+        self.inner.copy_to(path, output).await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {

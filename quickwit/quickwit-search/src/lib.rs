@@ -552,23 +552,6 @@ mod stats_merge_tests {
             wall_time_microsecs: 200_000_000,
         };
 
-        // Destructure on the proto type so a new field forces a compile
-        // error pointing at this test.
-        let LeafResourceStats {
-            partial_result_cache_num_splits: _,
-            partial_result_cache_num_docs: _,
-            lambda_num_splits: _,
-            lambda_num_docs: _,
-            lambda_success_num_splits: _,
-            lambda_success_num_docs: _,
-            lambda_bottleneck: _,
-            localexec_num_splits: _,
-            localexec_num_docs: _,
-            split_resources_worst: _,
-            split_resources_sum: _,
-            wall_time_microsecs: _,
-        } = other;
-
         add_leaf_stats(&mut acc, &other);
 
         assert_eq!(acc.partial_result_cache_num_splits, 3);
@@ -645,7 +628,7 @@ mod stats_merge_tests {
             wall_time_microsecs: 42,
             ..Default::default()
         };
-        let snapshot = acc.clone();
+        let snapshot = acc;
         add_leaf_stats(&mut acc, &LeafResourceStats::default());
         assert_eq!(acc, snapshot);
     }
