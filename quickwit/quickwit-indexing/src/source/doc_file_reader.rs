@@ -22,7 +22,7 @@ use quickwit_common::Progress;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::Position;
+use quickwit_proto::types::{Offset, Position};
 use quickwit_storage::StorageResolver;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
@@ -146,8 +146,13 @@ impl DocFileReader {
 pub struct ObjectUriBatchReader {
     partition_id: PartitionId,
     reader: DocFileReader,
-    current_offset: usize,
-    is_eof: bool,
+    current_position: Position,
+}
+
+fn parse_offset(offset: &Offset) -> anyhow::Result<usize> {
+    offset
+        .as_usize()
+        .context("file offset should be stored as usize")
 }
 
 impl ObjectUriBatchReader {
@@ -157,26 +162,22 @@ impl ObjectUriBatchReader {
         uri: &Uri,
         position: Position,
     ) -> anyhow::Result<Self> {
-        let current_offset = match position {
-            Position::Beginning => 0,
-            Position::Offset(offset) => offset
-                .as_usize()
-                .context("file offset should be stored as usize")?,
+        let current_offset = match &position {
             Position::Eof(_) => {
                 return Ok(ObjectUriBatchReader {
                     partition_id,
                     reader: DocFileReader::empty(),
-                    current_offset: 0,
-                    is_eof: true,
+                    current_position: position,
                 });
             }
+            Position::Beginning => 0,
+            Position::Offset(offset) => parse_offset(offset)?,
         };
         let reader = DocFileReader::from_uri(storage_resolver, uri, current_offset).await?;
         Ok(ObjectUriBatchReader {
             partition_id,
             reader,
-            current_offset,
-            is_eof: false,
+            current_position: position,
         })
     }
 
@@ -186,11 +187,15 @@ impl ObjectUriBatchReader {
         source_type: SourceType,
     ) -> anyhow::Result<BatchBuilder> {
         let mut batch_builder = BatchBuilder::new(source_type);
-        if self.is_eof {
-            return Ok(batch_builder);
-        }
-        let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
-        let mut new_offset = self.current_offset;
+        let current_offset = match &self.current_position {
+            Position::Eof(_) => return Ok(batch_builder),
+            Position::Beginning => 0,
+            Position::Offset(offset) => parse_offset(offset)?,
+        };
+
+        let limit_num_bytes = current_offset + BATCH_NUM_BYTES_LIMIT as usize;
+        let mut new_offset = current_offset;
+        let mut eof_position: Option<Position> = None;
         while new_offset < limit_num_bytes {
             if let Some(record) = source_progress
                 .protect_future(self.reader.next_record())
@@ -199,30 +204,26 @@ impl ObjectUriBatchReader {
                 new_offset = record.next_offset as usize;
                 batch_builder.add_doc(record.doc);
                 if record.is_last {
-                    self.is_eof = true;
+                    eof_position = Some(Position::eof(new_offset));
                     break;
                 }
             } else {
-                self.is_eof = true;
+                eof_position = Some(Position::eof(new_offset));
                 break;
             }
         }
-        let to_position = if self.is_eof {
-            Position::eof(new_offset)
-        } else {
-            Position::offset(new_offset)
-        };
+        let to_position = eof_position.unwrap_or(Position::offset(new_offset));
         batch_builder.checkpoint_delta.record_partition_delta(
             self.partition_id.clone(),
-            Position::offset(self.current_offset),
-            to_position,
+            self.current_position.clone(),
+            to_position.clone(),
         )?;
-        self.current_offset = new_offset;
+        self.current_position = to_position;
         Ok(batch_builder)
     }
 
     pub fn is_eof(&self) -> bool {
-        self.is_eof
+        self.current_position.is_eof()
     }
 }
 

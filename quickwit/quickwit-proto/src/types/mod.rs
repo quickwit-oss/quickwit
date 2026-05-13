@@ -34,7 +34,7 @@ pub use doc_mapping_uid::DocMappingUid;
 pub use doc_uid::{DocUid, DocUidGenerator};
 pub use index_uid::IndexUid;
 pub use pipeline_uid::PipelineUid;
-pub use position::Position;
+pub use position::{Offset, Position};
 pub use shard_id::ShardId;
 
 /// The size of an ULID in bytes. Use `ULID_LEN` for the length of Base32 encoded ULID strings.
