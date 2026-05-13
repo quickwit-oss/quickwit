@@ -30,7 +30,7 @@ use crate::{BulkDeleteError, PutPayload, Storage, StorageErrorKind, StorageResul
 /// takes too long.
 ///
 /// This is useful in order to ensure a low latency on S3.
-/// Retrying agressively is recommended for S3.
+/// Retrying aggressively is recommended for S3.
 ///
 /// <https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/timeouts-and-retries-for-latency-sensitive-applications.html>
 #[derive(Clone, Debug)]
