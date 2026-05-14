@@ -642,7 +642,7 @@ pub async fn serve_quickwit(
         };
 
     // Initialize Lambda invoker if enabled and searcher service is running
-    let searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
+    let mut searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
         if let Some(lambda_config) = &node_config.searcher_config.lambda {
             #[cfg(feature = "lambda")]
             {
@@ -650,11 +650,11 @@ pub async fn serve_quickwit(
                 warn!("offloading to lambda is EXPERIMENTAL. Use at your own risk");
                 let invoker =
                     quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
-                Arc::new(SearcherContext::new(
+                SearcherContext::new(
                     node_config.searcher_config.clone(),
                     split_cache_opt,
                     Some(invoker),
-                ))
+                )
             }
             #[cfg(not(feature = "lambda"))]
             {
@@ -662,17 +662,30 @@ pub async fn serve_quickwit(
                 bail!("lambda support is statically disabled, but enabled in configuration");
             }
         } else {
-            Arc::new(SearcherContext::new_without_invoker(
+            SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
                 split_cache_opt,
-            ))
+            )
         }
     } else {
-        Arc::new(SearcherContext::new_without_invoker(
-            node_config.searcher_config.clone(),
-            split_cache_opt,
-        ))
+        SearcherContext::new_without_invoker(node_config.searcher_config.clone(), split_cache_opt)
     };
+
+    // Upgrade individual caches to hybrid (memory + foyer NVMe disk) when their
+    // corresponding `*_disk_cache_capacity` is set. No-op when all three knobs
+    // are zero.
+    let searcher_cfg = &node_config.searcher_config;
+    let any_disk_cache_enabled = searcher_cfg.fast_field_disk_cache_capacity.as_u64() > 0
+        || searcher_cfg.split_footer_disk_cache_capacity.as_u64() > 0
+        || searcher_cfg.partial_request_disk_cache_capacity.as_u64() > 0;
+    if any_disk_cache_enabled {
+        let disk_cache_path = node_config.data_dir_path.join("search-cache");
+        searcher_context
+            .enable_hybrid_caches(&disk_cache_path)
+            .await?;
+    }
+
+    let searcher_context = Arc::new(searcher_context);
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,

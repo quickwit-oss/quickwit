@@ -28,14 +28,12 @@ use quickwit_proto::search::{
     ReportSplitsRequest, ReportSplitsResponse, RootResourceStats, ScrollRequest,
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
-use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
-};
+use quickwit_storage::{QuickwitCache, SplitCache, StorageCache, StorageResolver};
 use tantivy::aggregation::AggregationLimitsGuard;
 
 use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
-use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
+use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl, SplitFooterCache};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
@@ -412,7 +410,7 @@ pub struct SearcherContext {
     /// Counting semaphore to limit concurrent leaf search split requests.
     pub search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
-    pub split_footer_cache: MemorySizedCache<String>,
+    pub split_footer_cache: SplitFooterCache,
     /// Per-split and per-query cache.
     pub leaf_search_cache: LeafSearchCache,
     /// Per-split and per-predicate cache.
@@ -462,10 +460,7 @@ impl SearcherContext {
         split_cache_opt: Option<Arc<SplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
-        let global_split_footer_cache = MemorySizedCache::from_config(
-            &searcher_config.split_footer_cache,
-            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
-        );
+        let global_split_footer_cache = SplitFooterCache::new(&searcher_config.split_footer_cache);
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
@@ -495,6 +490,54 @@ impl SearcherContext {
             aggregation_limit,
             lambda_invoker,
         }
+    }
+
+    /// Upgrades selected caches to hybrid memory + disk using foyer.
+    ///
+    /// Each cache is upgraded only if its corresponding `*_disk_cache_capacity`
+    /// in `SearcherConfig` is non-zero. This is separate from `new()` to keep
+    /// construction synchronous (many call sites, including tests, create
+    /// `SearcherContext` synchronously).
+    ///
+    /// The `predicate_cache` is intentionally not upgraded — its access trait
+    /// `quickwit_query::query_ast::PredicateCache` is synchronous and is called
+    /// inside scoring hot paths, so a disk tier would regress those queries.
+    pub async fn enable_hybrid_caches(
+        &mut self,
+        disk_cache_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let partial_request_disk = self.searcher_config.partial_request_disk_cache_capacity;
+        if partial_request_disk.as_u64() > 0 {
+            self.leaf_search_cache = LeafSearchCache::new_hybrid(
+                &self.searcher_config.partial_request_cache,
+                &disk_cache_path.join("partial-request"),
+                partial_request_disk,
+            )
+            .await?;
+        }
+
+        let fast_field_disk = self.searcher_config.fast_field_disk_cache_capacity;
+        if fast_field_disk.as_u64() > 0 {
+            let storage_cache = QuickwitCache::with_foyer(
+                &self.searcher_config.fast_field_cache,
+                &disk_cache_path.join("fast-field"),
+                fast_field_disk,
+            )
+            .await?;
+            self.fast_fields_cache = Arc::new(storage_cache);
+        }
+
+        let split_footer_disk = self.searcher_config.split_footer_disk_cache_capacity;
+        if split_footer_disk.as_u64() > 0 {
+            self.split_footer_cache = SplitFooterCache::new_hybrid(
+                &self.searcher_config.split_footer_cache,
+                &disk_cache_path.join("split-footer"),
+                split_footer_disk,
+            )
+            .await?;
+        }
+
+        Ok(())
     }
 
     /// Returns the shared instance to track the aggregation memory usage.

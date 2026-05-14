@@ -302,6 +302,20 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+
+    /// Per-cache foyer disk tier capacities. Disabled (0) by default.
+    /// Set any of these to a non-zero value to enable an NVMe-backed disk tier
+    /// for that cache; evicted in-memory entries spill to local disk under
+    /// `{data_dir}/search-cache/` instead of being lost. Use a local NVMe mount
+    /// (EBS contention will mask the benefit). The `predicate_cache` has no
+    /// disk tier because its access trait is synchronous.
+    #[serde(default)]
+    pub fast_field_disk_cache_capacity: ByteSize,
+    #[serde(default)]
+    pub split_footer_disk_cache_capacity: ByteSize,
+    #[serde(default)]
+    pub partial_request_disk_cache_capacity: ByteSize,
+
     /// Lambda configuration for serverless leaf search execution.
     /// If set, enables Lambda execution for leaf search.
     ///
@@ -525,6 +539,9 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
+            fast_field_disk_cache_capacity: ByteSize(0),
+            split_footer_disk_cache_capacity: ByteSize(0),
+            partial_request_disk_cache_capacity: ByteSize(0),
             lambda: None,
         }
     }

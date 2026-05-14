@@ -17,16 +17,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use quickwit_config::CacheConfig;
 
 use crate::OwnedBytes;
+use crate::cache::foyer_cache::FoyerStorageCache;
 use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
 /// Quickwit storage cache with a size limit.
-/// It is used currently by to cache only fast fields data.
+/// Routes cached data by file extension to separate caches.
+/// Currently caches `.fast` files (fast fields).
 pub struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn StorageCache>)>,
 }
@@ -38,7 +41,8 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 }
 
 impl QuickwitCache {
-    /// Creates a [`QuickwitCache`] with a cache on fast fields.
+    /// Creates a [`QuickwitCache`] with a cache on fast fields only
+    /// (backward-compatible).
     pub fn new(cache_config: &CacheConfig) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
         let fast_field_cache_counters: &'static CacheMetrics =
@@ -51,6 +55,29 @@ impl QuickwitCache {
             )),
         );
         quickwit_cache
+    }
+
+    /// Creates a [`QuickwitCache`] with a foyer hybrid (memory + disk) cache
+    /// on the fast field route.
+    pub async fn with_foyer(
+        fast_field_config: &CacheConfig,
+        disk_base_path: &std::path::Path,
+        disk_capacity: ByteSize,
+    ) -> anyhow::Result<Self> {
+        let mut quickwit_cache = QuickwitCache::empty();
+        let fast_dir = disk_base_path.join("fast");
+        let fast_cache = FoyerStorageCache::build(
+            fast_field_config.capacity().as_u64() as usize,
+            &fast_dir,
+            disk_capacity.as_u64() as usize,
+            crate::STORAGE_METRICS
+                .fast_field_cache
+                .cache_metrics
+                .clone(),
+        )
+        .await?;
+        quickwit_cache.add_route(".fast", Arc::new(fast_cache));
+        Ok(quickwit_cache)
     }
 
     /// Empties cache.
