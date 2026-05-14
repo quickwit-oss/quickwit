@@ -15,8 +15,9 @@
 use std::time::Duration;
 
 use quickwit_common::metrics::MEMORY_METRICS;
+use quickwit_common::rate_limited_warn;
 use tikv_jemallocator::Jemalloc;
-use tracing::{error, warn};
+use tracing::error;
 
 #[cfg(feature = "jemalloc-profiled")]
 #[global_allocator]
@@ -39,28 +40,32 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     let resident_mib = tikv_jemalloc_ctl::stats::resident::mib()?;
 
     let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         poll_interval.tick().await;
 
-        // Many statistics are cached and only updated when the epoch is advanced. A transient
-        // failure here would not be expected, but we log and retry on the next tick rather than
-        // exiting the loop and leaving the metrics frozen forever.
         if let Err(error) = epoch_mib.advance() {
-            warn!(%error, "failed to advance jemalloc epoch");
+            rate_limited_warn!(limit_per_min = 1, %error, "failed to advance jemalloc epoch");
             continue;
         }
         match active_mib.read() {
             Ok(active) => memory_metrics.active_bytes.set(active as i64),
-            Err(error) => warn!(%error, "failed to read jemalloc stats.active"),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.active");
+            }
         }
         match allocated_mib.read() {
             Ok(allocated) => memory_metrics.allocated_bytes.set(allocated as i64),
-            Err(error) => warn!(%error, "failed to read jemalloc stats.allocated"),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.allocated");
+            }
         }
         match resident_mib.read() {
             Ok(resident) => memory_metrics.resident_bytes.set(resident as i64),
-            Err(error) => warn!(%error, "failed to read jemalloc stats.resident"),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.resident");
+            }
         }
     }
 }

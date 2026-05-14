@@ -19,7 +19,7 @@ mod fetch;
 mod helpers;
 mod idle;
 mod ingester;
-mod metrics;
+pub(crate) mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
