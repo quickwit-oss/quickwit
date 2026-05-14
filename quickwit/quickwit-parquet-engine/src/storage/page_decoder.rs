@@ -67,11 +67,15 @@ use std::sync::{Arc, Mutex};
 
 use arrow::array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, LargeBinaryArray, LargeListArray, LargeStringArray, ListArray, StringArray,
-    UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    Int64Array, LargeBinaryArray, LargeListArray, LargeStringArray, ListArray, PrimitiveArray,
+    StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
-use arrow::datatypes::{DataType, Field};
+use arrow::datatypes::{
+    ArrowPrimitiveType, DataType, Field, Float32Type, Float64Type, Int8Type, Int16Type,
+    Int32Type as ArrowInt32Type, Int64Type as ArrowInt64Type, UInt8Type, UInt16Type, UInt32Type,
+    UInt64Type,
+};
 use bytes::Bytes;
 use parquet::basic::{Encoding as BasicEncoding, Type as PhysicalType};
 use parquet::column::page::Page as ColumnPage;
@@ -160,6 +164,25 @@ pub struct DecodedPage {
 /// Memory is bounded by ~one in-flight page per decoder, plus one
 /// cached dictionary page per (rg, col) for dictionary-encoded columns.
 /// Does not buffer the row group.
+///
+/// # Single-consumer invariant
+///
+/// [`Self::decode_next_page`] takes `&mut self`, so only one task ever
+/// observes or mutates `self.columns`. The per-(rg, col) queue is
+/// wrapped in `Arc<Mutex<_>>` (see `ColumnState::queue`) *not* to
+/// guard against concurrent consumers, but because parquet-rs's
+/// [`PageReader`] trait requires `Send` + interior mutability so the
+/// queue handle can live both here (we push) and inside the boxed
+/// `dyn PageReader` the [`ColumnReader`] consumes from (it pops). All
+/// pushes (`route_page_to_queue`) happen synchronously from
+/// `decode_next_page`; all pops happen synchronously from inside
+/// `decode_one_data_page_into_array` driven by the same call.
+/// Consequently every lock/unlock/lock sequence within the decoder
+/// operates against a queue that no other thread is touching, and
+/// captured fields (e.g. "front data page's `num_values`") remain valid
+/// across the gap.
+///
+/// [`PageReader`]: parquet::column::page::PageReader
 pub struct StreamDecoder<'a> {
     stream: &'a mut dyn ColumnPageStream,
     metadata: Arc<ParquetMetaData>,
@@ -213,8 +236,8 @@ impl<'a> StreamDecoder<'a> {
             // queued during the loop below). At most one state has
             // an unconsumed queued data page at any time, since each
             // call pre-fetches exactly one page.
-            if let Some(key) = self.find_state_with_queued_data_page() {
-                return self.decode_state_head(key).await;
+            if let Some((key, num_values_in_page)) = self.next_decodable_head() {
+                return self.decode_head(key, num_values_in_page).await;
             }
 
             if self.eof {
@@ -227,7 +250,7 @@ impl<'a> StreamDecoder<'a> {
                     self.eof = true;
                     // Loop once more to flush any state that may have
                     // a queued data page from a prior call's lookahead.
-                    if self.find_state_with_queued_data_page().is_none() {
+                    if self.next_decodable_head().is_none() {
                         return Ok(None);
                     }
                 }
@@ -235,30 +258,46 @@ impl<'a> StreamDecoder<'a> {
         }
     }
 
-    /// Scan column states for one whose queue front contains an
-    /// unconsumed data page. Returns the (rg, col) key, or `None`.
-    fn find_state_with_queued_data_page(&self) -> Option<(usize, usize)> {
+    /// Find the next (rg, col) whose queue contains an unconsumed data
+    /// page, and capture that page's `num_values` count in the same
+    /// lock acquisition.
+    ///
+    /// Returning `((rg, col), num_values)` together — rather than the
+    /// key alone followed by a second `state.queue.lock()` in a
+    /// downstream method — collapses what would otherwise look like a
+    /// TOCTOU shape (lock-find-unlock, then re-lock and re-find) into
+    /// a single peek. The single-consumer invariant on `StreamDecoder`
+    /// (see type docs) already guarantees the second lookup would
+    /// observe the same front data page, but capturing both fields
+    /// under one lock makes that guarantee visible at the call site
+    /// instead of forcing the reader to reconstruct it globally.
+    fn next_decodable_head(&self) -> Option<((usize, usize), usize)> {
         for (&key, state) in self.columns.iter() {
             let q = state.queue.lock().expect("PageQueue mutex poisoned");
-            if q.iter().any(|p| {
-                matches!(
-                    p,
-                    ColumnPage::DataPage { .. } | ColumnPage::DataPageV2 { .. }
-                )
-            }) {
-                return Some(key);
+            let num_values = q.iter().find_map(|p| match p {
+                ColumnPage::DataPage { num_values, .. }
+                | ColumnPage::DataPageV2 { num_values, .. } => Some(*num_values as usize),
+                _ => None,
+            });
+            if let Some(n) = num_values {
+                return Some((key, n));
             }
         }
         None
     }
 
-    /// Decode the front data page from `key`'s state's queue.
+    /// Decode the front data page on `key`'s state's queue, consuming
+    /// the `num_values_in_page` records captured by
+    /// [`Self::next_decodable_head`].
     ///
     /// For columns with repetition (max_rep_level > 0, i.e. List<T> /
     /// LargeList<T>), pre-fetches one more page from the stream before
     /// driving `read_records` so `PageQueueReader::peek_next_page`
     /// returns accurate metadata when parquet-rs's column reader
-    /// checks `at_record_boundary` for V1 record continuation.
+    /// checks `at_record_boundary` for V1 record continuation. The
+    /// pre-fetch only `push_back`s onto a queue; it cannot displace
+    /// the front data page that `num_values_in_page` was captured
+    /// from, so the captured value remains valid across the await.
     ///
     /// For flat columns (max_rep_level == 0), the pre-fetch is skipped:
     /// flat values have no record-spanning concern (each value = one
@@ -270,9 +309,10 @@ impl<'a> StreamDecoder<'a> {
     /// `ColumnPageStream`). The lookahead's only benefit is the V1
     /// list-record-spanning correctness, which doesn't apply to flat
     /// columns.
-    async fn decode_state_head(
+    async fn decode_head(
         &mut self,
         key: (usize, usize),
+        num_values_in_page: usize,
     ) -> Result<Option<DecodedPage>, PageDecodeError> {
         // Decide whether the current column needs the lookahead.
         let needs_lookahead = {
@@ -287,23 +327,6 @@ impl<'a> StreamDecoder<'a> {
                 None => self.eof = true,
             }
         }
-
-        // Read num_values from the front data page (skipping any
-        // dictionary pages that may precede it in the queue).
-        let state = self
-            .columns
-            .get(&key)
-            .expect("caller's key must have a state");
-        let num_values_in_page = {
-            let q = state.queue.lock().expect("PageQueue mutex poisoned");
-            q.iter()
-                .find_map(|p| match p {
-                    ColumnPage::DataPage { num_values, .. }
-                    | ColumnPage::DataPageV2 { num_values, .. } => Some(*num_values as usize),
-                    _ => None,
-                })
-                .expect("caller's key has a queued data page")
-        };
 
         let state = self
             .columns
@@ -744,6 +767,24 @@ where
 
 // -------- Array builders, parquet physical type → arrow ArrayRef --------
 
+// ----------------------------------------------------------------------
+// Arrow array construction from (def_levels, rep_levels, raw values).
+//
+// The `build_*` family below mirrors
+// `parquet::arrow::array_reader::PrimitiveArrayReader::consume_batch` and
+// the `coerce_i32` / `coerce_i64` widening helpers in parquet-rs, plus
+// `make_byte_array_reader` / `ListArrayReader` for the byte and list
+// branches. We re-implement instead of importing because that module is
+// `#[doc(hidden)]` and gated by parquet-rs's `experimental` Cargo
+// feature, which we don't enable — parquet-rs explicitly reserves the
+// right to break that surface across versions. If `array_reader` is
+// ever stabilised, this whole section becomes a thin adapter.
+//
+// `build_primitive` factors out the def-levels → null-buffer + gather-
+// and-cast → typed-array path shared by every fixed-width numeric
+// builder, mirroring parquet-rs's coercion table.
+// ----------------------------------------------------------------------
+
 fn null_buffer_from_defs(num_records: usize, defs: &[i16], max_def: i16) -> Option<NullBuffer> {
     if defs.is_empty() || max_def == 0 {
         return None;
@@ -781,6 +822,34 @@ fn build_bool_array(
     Ok(Arc::new(arr))
 }
 
+/// Build a nullable Arrow primitive array of marker type `P` from the
+/// physical `values` buffer plus a precomputed null buffer.
+///
+/// Gathers raw values into present slots according to `defs` (using
+/// [`scalar_buffer_from_present`]) and casts each through `cast`. This
+/// is the same shape parquet-rs uses internally — see
+/// `parquet::arrow::array_reader::PrimitiveArrayReader::consume_batch`
+/// plus the `coerce_i32` / `coerce_i64` helpers — but factored out of
+/// each per-physical-type builder so the cast-and-construct lines stay
+/// readable.
+fn build_primitive<P, T, F>(
+    nulls: Option<NullBuffer>,
+    records: usize,
+    defs: &[i16],
+    max_def: i16,
+    values: &[T],
+    cast: F,
+) -> ArrayRef
+where
+    P: ArrowPrimitiveType,
+    T: Copy,
+    F: Fn(T) -> P::Native,
+{
+    let scalars =
+        scalar_buffer_from_present::<T, P::Native, _>(records, defs, max_def, values, cast);
+    Arc::new(PrimitiveArray::<P>::new(scalars, nulls))
+}
+
 fn build_int32_array(
     field: &Field,
     records: usize,
@@ -796,46 +865,37 @@ fn build_int32_array(
     }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
-    match field.data_type() {
+    // Parquet stores u8/u16/u32 as INT32 physical with an unsigned
+    // logical annotation; the on-wire i32 maps to u{8,16,32} by
+    // reinterpreting bits via `as`.
+    let arr = match field.data_type() {
         DataType::Int8 => {
-            let nulls_clone = nulls.clone();
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as i8);
-            Ok(Arc::new(arrow::array::Int8Array::new(scalars, nulls_clone)))
+            build_primitive::<Int8Type, _, _>(nulls, records, defs, max_def, values, |v| v as i8)
         }
         DataType::Int16 => {
-            let nulls_clone = nulls.clone();
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as i16);
-            Ok(Arc::new(Int16Array::new(scalars, nulls_clone)))
+            build_primitive::<Int16Type, _, _>(nulls, records, defs, max_def, values, |v| v as i16)
         }
         DataType::Int32 => {
-            let nulls_clone = nulls.clone();
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
-            Ok(Arc::new(Int32Array::new(scalars, nulls_clone)))
+            build_primitive::<ArrowInt32Type, _, _>(nulls, records, defs, max_def, values, |v| v)
         }
         DataType::UInt8 => {
-            let nulls_clone = nulls.clone();
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u8);
-            Ok(Arc::new(UInt8Array::new(scalars, nulls_clone)))
+            build_primitive::<UInt8Type, _, _>(nulls, records, defs, max_def, values, |v| v as u8)
         }
         DataType::UInt16 => {
-            let nulls_clone = nulls.clone();
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u16);
-            Ok(Arc::new(UInt16Array::new(scalars, nulls_clone)))
+            build_primitive::<UInt16Type, _, _>(nulls, records, defs, max_def, values, |v| v as u16)
         }
         DataType::UInt32 => {
-            let nulls_clone = nulls.clone();
-            // Bit-reinterpret: parquet stores u32 as INT32 physical with
-            // unsigned logical annotation. The on-wire i32 maps to u32
-            // by reinterpreting bits.
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u32);
-            Ok(Arc::new(UInt32Array::new(scalars, nulls_clone)))
+            build_primitive::<UInt32Type, _, _>(nulls, records, defs, max_def, values, |v| v as u32)
         }
-        other => Err(PageDecodeError::UnsupportedColumnType {
-            name: field.name().to_string(),
-            physical: PhysicalType::INT32,
-            arrow: other.clone(),
-        }),
-    }
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::INT32,
+                arrow: other.clone(),
+            });
+        }
+    };
+    Ok(arr)
 }
 
 fn build_int64_array(
@@ -853,21 +913,22 @@ fn build_int64_array(
     }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
-    match field.data_type() {
+    let arr = match field.data_type() {
         DataType::Int64 => {
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
-            Ok(Arc::new(Int64Array::new(scalars, nulls)))
+            build_primitive::<ArrowInt64Type, _, _>(nulls, records, defs, max_def, values, |v| v)
         }
         DataType::UInt64 => {
-            let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v as u64);
-            Ok(Arc::new(UInt64Array::new(scalars, nulls)))
+            build_primitive::<UInt64Type, _, _>(nulls, records, defs, max_def, values, |v| v as u64)
         }
-        other => Err(PageDecodeError::UnsupportedColumnType {
-            name: field.name().to_string(),
-            physical: PhysicalType::INT64,
-            arrow: other.clone(),
-        }),
-    }
+        other => {
+            return Err(PageDecodeError::UnsupportedColumnType {
+                name: field.name().to_string(),
+                physical: PhysicalType::INT64,
+                arrow: other.clone(),
+            });
+        }
+    };
+    Ok(arr)
 }
 
 fn build_float32_array(
@@ -885,8 +946,14 @@ fn build_float32_array(
     }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
-    let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
-    Ok(Arc::new(Float32Array::new(scalars, nulls)))
+    Ok(build_primitive::<Float32Type, _, _>(
+        nulls,
+        records,
+        defs,
+        max_def,
+        values,
+        |v| v,
+    ))
 }
 
 fn build_float64_array(
@@ -904,8 +971,14 @@ fn build_float64_array(
     }
     let max_def = max_def_for(field);
     let nulls = null_buffer_from_defs(records, defs, max_def);
-    let scalars = scalar_buffer_from_present(records, defs, max_def, values, |v| v);
-    Ok(Arc::new(Float64Array::new(scalars, nulls)))
+    Ok(build_primitive::<Float64Type, _, _>(
+        nulls,
+        records,
+        defs,
+        max_def,
+        values,
+        |v| v,
+    ))
 }
 
 fn build_byte_array(
