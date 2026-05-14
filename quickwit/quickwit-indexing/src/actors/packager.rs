@@ -27,9 +27,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::NamedField;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
-use quickwit_proto::search::{
-    ListFieldType, ListFields, ListFieldsEntryResponse, serialize_split_fields,
-};
+use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata, ListFieldsType};
 use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
@@ -314,7 +312,7 @@ fn create_packaged_split(
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
 
-    let serialized_split_fields = serialize_field_metadata(&fields_metadata);
+    let serialized_split_fields = serialize_fields_metadata(&fields_metadata);
 
     let packaged_split = PackagedSplit {
         serialized_split_fields,
@@ -327,37 +325,19 @@ fn create_packaged_split(
     Ok(packaged_split)
 }
 
-/// Serializes the Split fields.
-///
-/// `fields_metadata` has to be sorted.
-fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
-    let fields = fields_metadata
+/// Serializes the fields metadata from a split sorted by (name, type).
+fn serialize_fields_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+    let entries = fields_metadata
         .iter()
-        .map(field_metadata_to_list_field_serialized)
+        .map(field_metadata_to_list_fields_entry)
+        .sorted_unstable_by(|left, right| left.cmp_by_name_and_type(right))
         .collect::<Vec<_>>();
 
-    serialize_split_fields(ListFields { fields })
+    ListFieldsMetadata { entries }.serialize()
 }
 
-fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldType {
-    match typ {
-        Type::Str => ListFieldType::Str,
-        Type::U64 => ListFieldType::U64,
-        Type::I64 => ListFieldType::I64,
-        Type::F64 => ListFieldType::F64,
-        Type::Bool => ListFieldType::Bool,
-        Type::Date => ListFieldType::Date,
-        Type::Facet => ListFieldType::Facet,
-        Type::Bytes => ListFieldType::Bytes,
-        Type::Json => ListFieldType::Json,
-        Type::IpAddr => ListFieldType::IpAddr,
-    }
-}
-
-fn field_metadata_to_list_field_serialized(
-    field_metadata: &FieldMetadata,
-) -> ListFieldsEntryResponse {
-    ListFieldsEntryResponse {
+fn field_metadata_to_list_fields_entry(field_metadata: &FieldMetadata) -> ListFieldsEntry {
+    ListFieldsEntry {
         field_name: field_metadata.field_name.to_string(),
         field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
         searchable: field_metadata.is_indexed(),
@@ -365,6 +345,21 @@ fn field_metadata_to_list_field_serialized(
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
+    }
+}
+
+fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldsType {
+    match typ {
+        Type::Bool => ListFieldsType::Bool,
+        Type::Bytes => ListFieldsType::Bytes,
+        Type::Date => ListFieldsType::Date,
+        Type::F64 => ListFieldsType::F64,
+        Type::Facet => ListFieldsType::Facet,
+        Type::I64 => ListFieldsType::I64,
+        Type::IpAddr => ListFieldsType::IpAddr,
+        Type::Json => ListFieldsType::Json,
+        Type::Str => ListFieldsType::Str,
+        Type::U64 => ListFieldsType::U64,
     }
 }
 
@@ -382,7 +377,7 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_proto::search::{ListFieldsEntryResponse, deserialize_split_fields};
+    use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata};
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
@@ -424,24 +419,24 @@ mod tests {
             },
         ];
 
-        let out = serialize_field_metadata(&fields_metadata);
+        let out = serialize_fields_metadata(&fields_metadata);
 
-        let deserialized: Vec<ListFieldsEntryResponse> =
-            deserialize_split_fields(&mut &out[..]).unwrap().fields;
+        let deserialized: Vec<ListFieldsEntry> =
+            ListFieldsMetadata::deserialize(&out[..]).unwrap().entries;
 
         assert_eq!(fields_metadata.len(), deserialized.len());
         assert_eq!(deserialized[0].field_name, "test");
-        assert_eq!(deserialized[0].field_type, ListFieldType::Str as i32);
+        assert_eq!(deserialized[0].field_type, ListFieldsType::Str as i32);
         assert!(deserialized[0].searchable);
         assert!(deserialized[0].aggregatable);
 
         assert_eq!(deserialized[1].field_name, "test2");
-        assert_eq!(deserialized[1].field_type, ListFieldType::Str as i32);
+        assert_eq!(deserialized[1].field_type, ListFieldsType::Str as i32);
         assert!(deserialized[1].searchable);
         assert!(!deserialized[1].aggregatable);
 
         assert_eq!(deserialized[2].field_name, "test3");
-        assert_eq!(deserialized[2].field_type, ListFieldType::U64 as i32);
+        assert_eq!(deserialized[2].field_type, ListFieldsType::U64 as i32);
         assert!(deserialized[2].searchable);
         assert!(deserialized[2].aggregatable);
     }

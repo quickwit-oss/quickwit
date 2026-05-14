@@ -229,48 +229,116 @@ impl PartialHit {
     }
 }
 
-/// Serializes the Split fields.
-///
-/// `fields_metadata` has to be sorted.
-pub fn serialize_split_fields(list_fields: ListFields) -> Vec<u8> {
-    let payload = list_fields.encode_to_vec();
-    let compression_level = 3;
-    let payload_compressed = zstd::stream::encode_all(&mut &payload[..], compression_level)
-        .expect("zstd encoding failed");
-    let mut out = Vec::new();
-    // Write Header -- Format Version 2
-    let format_version = 2u8;
-    out.push(format_version);
-    // Write Payload
-    out.extend_from_slice(&payload_compressed);
-    out
-}
+/// On-disk format version for serialized [`ListFieldsMetadata`]. Bumped whenever the wire format
+/// produced by [`ListFieldsMetadata::serialize`] changes in a way readers can't tolerate.
+const SPLIT_FIELDS_FORMAT_VERSION: u8 = 2;
 
-/// Reads a fixed number of bytes into an array and returns the array.
-fn read_exact_array<const N: usize>(reader: &mut impl Read) -> io::Result<[u8; N]> {
-    let mut buffer = [0u8; N];
-    reader.read_exact(&mut buffer)?;
-    Ok(buffer)
-}
+/// Zstd compression level used when writing split fields.
+const SPLIT_FIELDS_COMPRESSION_LEVEL: i32 = 3;
 
-/// Reads the Split fields from a zstd compressed stream of bytes
-pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields> {
-    let format_version = read_exact_array::<1>(&mut reader)?[0];
-    if format_version != 2 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Unsupported split field format version: {format_version}"),
-        ));
+impl ListFieldsMetadata {
+    /// Serializes the entries: one version byte followed by the zstd-compressed protobuf
+    /// encoding of `Self`.
+    pub fn serialize(&self) -> Vec<u8> {
+        let payload = self.encode_to_vec();
+        let mut out = vec![SPLIT_FIELDS_FORMAT_VERSION];
+        zstd::stream::copy_encode(&payload[..], &mut out, SPLIT_FIELDS_COMPRESSION_LEVEL)
+            .expect("zstd encoding into `Vec<u8>` should not fail");
+        out
     }
-    let reader = zstd::Decoder::new(reader)?;
-    read_split_fields_from_zstd(reader)
+
+    /// Reads the format produced by [`Self::serialize`].
+    pub fn deserialize<R: Read>(mut reader: R) -> io::Result<Self> {
+        let mut version_byte = [0u8; 1];
+        reader.read_exact(&mut version_byte)?;
+
+        if version_byte[0] != SPLIT_FIELDS_FORMAT_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported split fields format version: {}",
+                    version_byte[0]
+                ),
+            ));
+        }
+        let mut zstd_decoder = zstd::stream::read::Decoder::new(reader)?;
+        let mut decompressed = Vec::new();
+        zstd_decoder.read_to_end(&mut decompressed)?;
+
+        Self::decode(&decompressed[..])
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    }
 }
 
-/// Reads the Split fields from a stream of bytes
-#[allow(clippy::unbuffered_bytes)]
-fn read_split_fields_from_zstd<R: Read>(reader: R) -> io::Result<ListFields> {
-    let all_bytes: Vec<_> = reader.bytes().collect::<io::Result<_>>()?;
-    let serialized_list_fields: ListFields = prost::Message::decode(&all_bytes[..])?;
+impl ListFieldsEntry {
+    pub fn cmp_by_name_and_type(&self, other: &Self) -> Ordering {
+        self.field_name
+            .cmp(&other.field_name)
+            .then_with(|| self.field_type.cmp(&other.field_type))
+    }
+}
 
-    Ok(serialized_list_fields)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(field_name: &str) -> ListFieldsEntry {
+        ListFieldsEntry {
+            field_name: field_name.to_string(),
+            field_type: ListFieldsType::Str as i32,
+            searchable: true,
+            aggregatable: true,
+            index_ids: vec!["index-1".to_string()],
+            non_searchable_index_ids: Vec::new(),
+            non_aggregatable_index_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn list_fields_entries_roundtrip() {
+        let entries = ListFieldsMetadata {
+            entries: vec![entry("a"), entry("b"), entry("c")],
+        };
+        let buf = entries.serialize();
+        let decoded = ListFieldsMetadata::deserialize(&buf[..]).unwrap();
+        assert_eq!(decoded, entries);
+    }
+
+    #[test]
+    fn list_fields_entries_empty_roundtrip() {
+        let entries = ListFieldsMetadata {
+            entries: Vec::new(),
+        };
+        let buf = entries.serialize();
+        // Just the version byte plus an (essentially empty) zstd frame.
+        assert_eq!(buf[0], SPLIT_FIELDS_FORMAT_VERSION);
+        let decoded = ListFieldsMetadata::deserialize(&buf[..]).unwrap();
+        assert_eq!(decoded, entries);
+    }
+
+    #[test]
+    fn list_fields_entries_wire_compatible_with_encode() {
+        // `serialize` must produce the same compressed payload as a one-shot `encode_to_vec`,
+        // so existing readers / on-disk snapshots stay compatible.
+        let entries = ListFieldsMetadata {
+            entries: vec![entry("a"), entry("b")],
+        };
+        let actual = entries.serialize();
+
+        let one_shot_encoded = entries.encode_to_vec();
+        let mut expected = vec![SPLIT_FIELDS_FORMAT_VERSION];
+        let compressed =
+            zstd::stream::encode_all(&one_shot_encoded[..], SPLIT_FIELDS_COMPRESSION_LEVEL)
+                .unwrap();
+        expected.extend_from_slice(&compressed);
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn list_fields_entries_rejects_unknown_version() {
+        let buf = [0xFFu8];
+        let err = ListFieldsMetadata::deserialize(&buf[..]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
 }
