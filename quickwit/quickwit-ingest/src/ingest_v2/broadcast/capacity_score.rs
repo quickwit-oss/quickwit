@@ -23,7 +23,7 @@ use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::{NodeId, SourceUid};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::OpenShardCounts;
@@ -40,15 +40,19 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
+    /// Sources broadcast on the previous tick. Carried across iterations so we
+    /// can detect sources that disappeared and clear their Chitchat keys.
+    previous_sources: BTreeSet<SourceUid>,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
     pub fn spawn(cluster: Cluster, weak_state: WeakIngesterState) -> JoinHandle<()> {
-        let mut broadcaster = Self {
+        let broadcaster = Self {
             cluster,
             weak_state,
+            previous_sources: BTreeSet::new(),
         };
-        tokio::spawn(async move { broadcaster.run().await })
+        tokio::spawn(broadcaster.run())
     }
 
     async fn snapshot(&self) -> Result<Option<(usize, OpenShardCounts)>> {
@@ -79,26 +83,34 @@ impl BroadcastIngesterCapacityScoreTask {
         Ok(Some((capacity_score, open_shard_counts)))
     }
 
-    async fn run(&mut self) {
+    async fn run(mut self) {
         let mut interval = tokio::time::interval(BROADCAST_INTERVAL_PERIOD);
-        let mut previous_sources: BTreeSet<SourceUid> = BTreeSet::new();
 
         loop {
             interval.tick().await;
 
-            let (capacity_score, open_shard_counts) = match self.snapshot().await {
-                Ok(Some(snapshot)) => snapshot,
-                Ok(None) => continue,
-                Err(error) => {
-                    info!("stopping ingester capacity broadcast: {error}");
-                    return;
-                }
-            };
-
-            previous_sources = self
-                .broadcast_capacity(capacity_score, &open_shard_counts, &previous_sources)
-                .await;
+            if !self.run_once().await {
+                return;
+            }
         }
+    }
+
+    /// Single iteration of the capacity-score broadcast loop. Returns `false`
+    /// when the task should stop.
+    #[instrument(name = "broadcast_capacity_score.tick", skip_all)]
+    async fn run_once(&mut self) -> bool {
+        let (capacity_score, open_shard_counts) = match self.snapshot().await {
+            Ok(Some(snapshot)) => snapshot,
+            Ok(None) => return true,
+            Err(error) => {
+                info!("stopping ingester capacity broadcast: {error}");
+                return false;
+            }
+        };
+        self.previous_sources = self
+            .broadcast_capacity(capacity_score, &open_shard_counts, &self.previous_sources)
+            .await;
+        true
     }
 
     async fn broadcast_capacity(
@@ -206,6 +218,7 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
+            previous_sources: BTreeSet::new(),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -242,6 +255,7 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
+            previous_sources: BTreeSet::new(),
         };
 
         let update_counter = Arc::new(AtomicUsize::new(0));
@@ -287,6 +301,7 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
+            previous_sources: BTreeSet::new(),
         };
 
         let index_uid = IndexUid::for_test("test-index", 0);

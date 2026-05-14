@@ -31,7 +31,7 @@ use quickwit_proto::types::{NodeId, QueueId};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{error, warn};
+use tracing::{error, instrument, warn};
 
 use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
@@ -413,7 +413,7 @@ impl ReplicationTask {
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
     ) -> ReplicationTaskHandle {
-        let mut replication_task = Self {
+        let replication_task = Self {
             leader_id,
             follower_id,
             state,
@@ -423,10 +423,11 @@ impl ReplicationTask {
             disk_capacity,
             memory_capacity,
         };
-        let join_handle = tokio::spawn(async move { replication_task.run().await });
+        let join_handle = tokio::spawn(replication_task.run());
         ReplicationTaskHandle { join_handle }
     }
 
+    #[instrument(name = "replication.init_replica", skip_all)]
     async fn init_replica(
         &mut self,
         init_replica_request: InitReplicaRequest,
@@ -479,6 +480,7 @@ impl ReplicationTask {
         Ok(init_replica_response)
     }
 
+    #[instrument(name = "replication.replicate", skip_all)]
     async fn replicate(
         &mut self,
         replicate_request: ReplicateRequest,
@@ -715,7 +717,7 @@ impl ReplicationTask {
         Ok(replicate_response)
     }
 
-    async fn run(&mut self) -> IngestV2Result<()> {
+    async fn run(mut self) -> IngestV2Result<()> {
         while let Some(syn_replication_message) = self.syn_replication_stream.next().await {
             let ack_replication_message = match syn_replication_message.message {
                 Some(syn_replication_message::Message::OpenRequest(_)) => {

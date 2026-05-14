@@ -1312,258 +1312,301 @@ impl MetastoreServiceClient {
 }
 #[async_trait::async_trait]
 impl MetastoreService for MetastoreServiceClient {
+    #[tracing::instrument(skip_all, name = "metastore.create_index")]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
         self.inner.0.create_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.update_index")]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.inner.0.update_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.index_metadata")]
     async fn index_metadata(
         &self,
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.inner.0.index_metadata(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.indexes_metadata")]
     async fn indexes_metadata(
         &self,
         request: IndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
         self.inner.0.indexes_metadata(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_indexes_metadata")]
     async fn list_indexes_metadata(
         &self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
         self.inner.0.list_indexes_metadata(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_index")]
     async fn delete_index(
         &self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_index_stats")]
     async fn list_index_stats(
         &self,
         request: ListIndexStatsRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
         self.inner.0.list_index_stats(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_splits")]
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.inner.0.list_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.stage_splits")]
     async fn stage_splits(
         &self,
         request: StageSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.stage_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.publish_splits")]
     async fn publish_splits(
         &self,
         request: PublishSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.publish_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.mark_splits_for_deletion")]
     async fn mark_splits_for_deletion(
         &self,
         request: MarkSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.mark_splits_for_deletion(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_splits")]
     async fn delete_splits(
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.add_source")]
     async fn add_source(
         &self,
         request: AddSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.add_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.update_source")]
     async fn update_source(
         &self,
         request: UpdateSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.update_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.toggle_source")]
     async fn toggle_source(
         &self,
         request: ToggleSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.toggle_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_source")]
     async fn delete_source(
         &self,
         request: DeleteSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.reset_source_checkpoint")]
     async fn reset_source_checkpoint(
         &self,
         request: ResetSourceCheckpointRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.reset_source_checkpoint(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.last_delete_opstamp")]
     async fn last_delete_opstamp(
         &self,
         request: LastDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<LastDeleteOpstampResponse> {
         self.inner.0.last_delete_opstamp(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.create_delete_task")]
     async fn create_delete_task(
         &self,
         request: DeleteQuery,
     ) -> crate::metastore::MetastoreResult<DeleteTask> {
         self.inner.0.create_delete_task(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.update_splits_delete_opstamp")]
     async fn update_splits_delete_opstamp(
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
         self.inner.0.update_splits_delete_opstamp(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_delete_tasks")]
     async fn list_delete_tasks(
         &self,
         request: ListDeleteTasksRequest,
     ) -> crate::metastore::MetastoreResult<ListDeleteTasksResponse> {
         self.inner.0.list_delete_tasks(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_stale_splits")]
     async fn list_stale_splits(
         &self,
         request: ListStaleSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
         self.inner.0.list_stale_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.open_shards")]
     async fn open_shards(
         &self,
         request: OpenShardsRequest,
     ) -> crate::metastore::MetastoreResult<OpenShardsResponse> {
         self.inner.0.open_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.acquire_shards")]
     async fn acquire_shards(
         &self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
         self.inner.0.acquire_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_shards")]
     async fn delete_shards(
         &self,
         request: DeleteShardsRequest,
     ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
         self.inner.0.delete_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.prune_shards")]
     async fn prune_shards(
         &self,
         request: PruneShardsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.prune_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_shards")]
     async fn list_shards(
         &self,
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
         self.inner.0.list_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.create_index_template")]
     async fn create_index_template(
         &self,
         request: CreateIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.create_index_template(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.get_index_template")]
     async fn get_index_template(
         &self,
         request: GetIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
         self.inner.0.get_index_template(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.find_index_template_matches")]
     async fn find_index_template_matches(
         &self,
         request: FindIndexTemplateMatchesRequest,
     ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
         self.inner.0.find_index_template_matches(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_index_templates")]
     async fn list_index_templates(
         &self,
         request: ListIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
         self.inner.0.list_index_templates(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_index_templates")]
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_index_templates(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.get_cluster_identity")]
     async fn get_cluster_identity(
         &self,
         request: GetClusterIdentityRequest,
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
         self.inner.0.get_cluster_identity(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.stage_metrics_splits")]
     async fn stage_metrics_splits(
         &self,
         request: StageMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.stage_metrics_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.publish_metrics_splits")]
     async fn publish_metrics_splits(
         &self,
         request: PublishMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.publish_metrics_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_metrics_splits")]
     async fn list_metrics_splits(
         &self,
         request: ListMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListMetricsSplitsResponse> {
         self.inner.0.list_metrics_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.mark_metrics_splits_for_deletion")]
     async fn mark_metrics_splits_for_deletion(
         &self,
         request: MarkMetricsSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.mark_metrics_splits_for_deletion(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_metrics_splits")]
     async fn delete_metrics_splits(
         &self,
         request: DeleteMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_metrics_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.stage_sketch_splits")]
     async fn stage_sketch_splits(
         &self,
         request: StageSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.stage_sketch_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.publish_sketch_splits")]
     async fn publish_sketch_splits(
         &self,
         request: PublishSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.publish_sketch_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.list_sketch_splits")]
     async fn list_sketch_splits(
         &self,
         request: ListSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSketchSplitsResponse> {
         self.inner.0.list_sketch_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.mark_sketch_splits_for_deletion")]
     async fn mark_sketch_splits_for_deletion(
         &self,
         request: MarkSketchSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.mark_sketch_splits_for_deletion(request).await
     }
+    #[tracing::instrument(skip_all, name = "metastore.delete_sketch_splits")]
     async fn delete_sketch_splits(
         &self,
         request: DeleteSketchSplitsRequest,
@@ -6715,9 +6758,13 @@ where
         &self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .create_index(request)
+            .create_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6729,9 +6776,13 @@ where
         &self,
         request: UpdateIndexRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_index(request)
+            .update_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6743,9 +6794,13 @@ where
         &self,
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .index_metadata(request)
+            .index_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6757,9 +6812,13 @@ where
         &self,
         request: IndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexesMetadataResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .indexes_metadata(request)
+            .indexes_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6771,9 +6830,13 @@ where
         &self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_indexes_metadata(request)
+            .list_indexes_metadata(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6785,9 +6848,13 @@ where
         &self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_index(request)
+            .delete_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6799,9 +6866,13 @@ where
         &self,
         request: ListIndexStatsRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_index_stats(request)
+            .list_index_stats(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6813,9 +6884,13 @@ where
         &self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_splits(request)
+            .list_splits(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -6835,9 +6910,13 @@ where
         &self,
         request: StageSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .stage_splits(request)
+            .stage_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6849,9 +6928,13 @@ where
         &self,
         request: PublishSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .publish_splits(request)
+            .publish_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6863,9 +6946,13 @@ where
         &self,
         request: MarkSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .mark_splits_for_deletion(request)
+            .mark_splits_for_deletion(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6877,9 +6964,13 @@ where
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_splits(request)
+            .delete_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6891,9 +6982,13 @@ where
         &self,
         request: AddSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .add_source(request)
+            .add_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6905,9 +7000,13 @@ where
         &self,
         request: UpdateSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_source(request)
+            .update_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6919,9 +7018,13 @@ where
         &self,
         request: ToggleSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .toggle_source(request)
+            .toggle_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6933,9 +7036,13 @@ where
         &self,
         request: DeleteSourceRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_source(request)
+            .delete_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6947,9 +7054,13 @@ where
         &self,
         request: ResetSourceCheckpointRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .reset_source_checkpoint(request)
+            .reset_source_checkpoint(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6961,9 +7072,13 @@ where
         &self,
         request: LastDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<LastDeleteOpstampResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .last_delete_opstamp(request)
+            .last_delete_opstamp(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6975,9 +7090,13 @@ where
         &self,
         request: DeleteQuery,
     ) -> crate::metastore::MetastoreResult<DeleteTask> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .create_delete_task(request)
+            .create_delete_task(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -6989,9 +7108,13 @@ where
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> crate::metastore::MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_splits_delete_opstamp(request)
+            .update_splits_delete_opstamp(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7003,9 +7126,13 @@ where
         &self,
         request: ListDeleteTasksRequest,
     ) -> crate::metastore::MetastoreResult<ListDeleteTasksResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_delete_tasks(request)
+            .list_delete_tasks(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7017,9 +7144,13 @@ where
         &self,
         request: ListStaleSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_stale_splits(request)
+            .list_stale_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7031,9 +7162,13 @@ where
         &self,
         request: OpenShardsRequest,
     ) -> crate::metastore::MetastoreResult<OpenShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .open_shards(request)
+            .open_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7045,9 +7180,13 @@ where
         &self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .acquire_shards(request)
+            .acquire_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7059,9 +7198,13 @@ where
         &self,
         request: DeleteShardsRequest,
     ) -> crate::metastore::MetastoreResult<DeleteShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_shards(request)
+            .delete_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7073,9 +7216,13 @@ where
         &self,
         request: PruneShardsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .prune_shards(request)
+            .prune_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7087,9 +7234,13 @@ where
         &self,
         request: ListShardsRequest,
     ) -> crate::metastore::MetastoreResult<ListShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_shards(request)
+            .list_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7101,9 +7252,13 @@ where
         &self,
         request: CreateIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .create_index_template(request)
+            .create_index_template(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7115,9 +7270,13 @@ where
         &self,
         request: GetIndexTemplateRequest,
     ) -> crate::metastore::MetastoreResult<GetIndexTemplateResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_index_template(request)
+            .get_index_template(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7129,9 +7288,13 @@ where
         &self,
         request: FindIndexTemplateMatchesRequest,
     ) -> crate::metastore::MetastoreResult<FindIndexTemplateMatchesResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .find_index_template_matches(request)
+            .find_index_template_matches(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7143,9 +7306,13 @@ where
         &self,
         request: ListIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexTemplatesResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_index_templates(request)
+            .list_index_templates(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7157,9 +7324,13 @@ where
         &self,
         request: DeleteIndexTemplatesRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_index_templates(request)
+            .delete_index_templates(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7171,9 +7342,13 @@ where
         &self,
         request: GetClusterIdentityRequest,
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_cluster_identity(request)
+            .get_cluster_identity(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7185,9 +7360,13 @@ where
         &self,
         request: StageMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .stage_metrics_splits(request)
+            .stage_metrics_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7199,9 +7378,13 @@ where
         &self,
         request: PublishMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .publish_metrics_splits(request)
+            .publish_metrics_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7213,9 +7396,13 @@ where
         &self,
         request: ListMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListMetricsSplitsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_metrics_splits(request)
+            .list_metrics_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7227,9 +7414,13 @@ where
         &self,
         request: MarkMetricsSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .mark_metrics_splits_for_deletion(request)
+            .mark_metrics_splits_for_deletion(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7241,9 +7432,13 @@ where
         &self,
         request: DeleteMetricsSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_metrics_splits(request)
+            .delete_metrics_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7255,9 +7450,13 @@ where
         &self,
         request: StageSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .stage_sketch_splits(request)
+            .stage_sketch_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7269,9 +7468,13 @@ where
         &self,
         request: PublishSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .publish_sketch_splits(request)
+            .publish_sketch_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7283,9 +7486,13 @@ where
         &self,
         request: ListSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSketchSplitsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_sketch_splits(request)
+            .list_sketch_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7297,9 +7504,13 @@ where
         &self,
         request: MarkSketchSplitsForDeletionRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .mark_sketch_splits_for_deletion(request)
+            .mark_sketch_splits_for_deletion(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7311,9 +7522,13 @@ where
         &self,
         request: DeleteSketchSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_sketch_splits(request)
+            .delete_sketch_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -7356,481 +7571,997 @@ impl metastore_service_grpc_server::MetastoreServiceGrpc
 for MetastoreServiceGrpcServerAdapter {
     async fn create_index(
         &self,
-        request: tonic::Request<CreateIndexRequest>,
+        tonic_request: tonic::Request<CreateIndexRequest>,
     ) -> Result<tonic::Response<CreateIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .create_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.create_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .create_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_index(
         &self,
-        request: tonic::Request<UpdateIndexRequest>,
+        tonic_request: tonic::Request<UpdateIndexRequest>,
     ) -> Result<tonic::Response<IndexMetadataResponse>, tonic::Status> {
-        self.inner
-            .0
-            .update_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.update_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn index_metadata(
         &self,
-        request: tonic::Request<IndexMetadataRequest>,
+        tonic_request: tonic::Request<IndexMetadataRequest>,
     ) -> Result<tonic::Response<IndexMetadataResponse>, tonic::Status> {
-        self.inner
-            .0
-            .index_metadata(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.index_metadata");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .index_metadata(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn indexes_metadata(
         &self,
-        request: tonic::Request<IndexesMetadataRequest>,
+        tonic_request: tonic::Request<IndexesMetadataRequest>,
     ) -> Result<tonic::Response<IndexesMetadataResponse>, tonic::Status> {
-        self.inner
-            .0
-            .indexes_metadata(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.indexes_metadata");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .indexes_metadata(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_indexes_metadata(
         &self,
-        request: tonic::Request<ListIndexesMetadataRequest>,
+        tonic_request: tonic::Request<ListIndexesMetadataRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadataResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_indexes_metadata(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_indexes_metadata");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_indexes_metadata(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_index(
         &self,
-        request: tonic::Request<DeleteIndexRequest>,
+        tonic_request: tonic::Request<DeleteIndexRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_index_stats(
         &self,
-        request: tonic::Request<ListIndexStatsRequest>,
+        tonic_request: tonic::Request<ListIndexStatsRequest>,
     ) -> Result<tonic::Response<ListIndexStatsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_index_stats(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_index_stats");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_index_stats(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type ListSplitsStream = quickwit_common::ServiceStream<
         tonic::Result<ListSplitsResponse>,
     >;
     async fn list_splits(
         &self,
-        request: tonic::Request<ListSplitsRequest>,
+        tonic_request: tonic::Request<ListSplitsRequest>,
     ) -> Result<tonic::Response<Self::ListSplitsStream>, tonic::Status> {
-        self.inner
-            .0
-            .list_splits(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_splits(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn stage_splits(
         &self,
-        request: tonic::Request<StageSplitsRequest>,
+        tonic_request: tonic::Request<StageSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .stage_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.stage_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .stage_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn publish_splits(
         &self,
-        request: tonic::Request<PublishSplitsRequest>,
+        tonic_request: tonic::Request<PublishSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .publish_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.publish_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .publish_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn mark_splits_for_deletion(
         &self,
-        request: tonic::Request<MarkSplitsForDeletionRequest>,
+        tonic_request: tonic::Request<MarkSplitsForDeletionRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .mark_splits_for_deletion(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.mark_splits_for_deletion");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .mark_splits_for_deletion(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_splits(
         &self,
-        request: tonic::Request<DeleteSplitsRequest>,
+        tonic_request: tonic::Request<DeleteSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn add_source(
         &self,
-        request: tonic::Request<AddSourceRequest>,
+        tonic_request: tonic::Request<AddSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .add_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.add_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .add_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_source(
         &self,
-        request: tonic::Request<UpdateSourceRequest>,
+        tonic_request: tonic::Request<UpdateSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .update_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.update_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn toggle_source(
         &self,
-        request: tonic::Request<ToggleSourceRequest>,
+        tonic_request: tonic::Request<ToggleSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .toggle_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.toggle_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .toggle_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_source(
         &self,
-        request: tonic::Request<DeleteSourceRequest>,
+        tonic_request: tonic::Request<DeleteSourceRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn reset_source_checkpoint(
         &self,
-        request: tonic::Request<ResetSourceCheckpointRequest>,
+        tonic_request: tonic::Request<ResetSourceCheckpointRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .reset_source_checkpoint(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.reset_source_checkpoint");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .reset_source_checkpoint(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn last_delete_opstamp(
         &self,
-        request: tonic::Request<LastDeleteOpstampRequest>,
+        tonic_request: tonic::Request<LastDeleteOpstampRequest>,
     ) -> Result<tonic::Response<LastDeleteOpstampResponse>, tonic::Status> {
-        self.inner
-            .0
-            .last_delete_opstamp(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.last_delete_opstamp");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .last_delete_opstamp(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn create_delete_task(
         &self,
-        request: tonic::Request<DeleteQuery>,
+        tonic_request: tonic::Request<DeleteQuery>,
     ) -> Result<tonic::Response<DeleteTask>, tonic::Status> {
-        self.inner
-            .0
-            .create_delete_task(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.create_delete_task");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .create_delete_task(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_splits_delete_opstamp(
         &self,
-        request: tonic::Request<UpdateSplitsDeleteOpstampRequest>,
+        tonic_request: tonic::Request<UpdateSplitsDeleteOpstampRequest>,
     ) -> Result<tonic::Response<UpdateSplitsDeleteOpstampResponse>, tonic::Status> {
-        self.inner
-            .0
-            .update_splits_delete_opstamp(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.update_splits_delete_opstamp");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_splits_delete_opstamp(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_delete_tasks(
         &self,
-        request: tonic::Request<ListDeleteTasksRequest>,
+        tonic_request: tonic::Request<ListDeleteTasksRequest>,
     ) -> Result<tonic::Response<ListDeleteTasksResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_delete_tasks(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_delete_tasks");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_delete_tasks(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_stale_splits(
         &self,
-        request: tonic::Request<ListStaleSplitsRequest>,
+        tonic_request: tonic::Request<ListStaleSplitsRequest>,
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_stale_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_stale_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_stale_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn open_shards(
         &self,
-        request: tonic::Request<OpenShardsRequest>,
+        tonic_request: tonic::Request<OpenShardsRequest>,
     ) -> Result<tonic::Response<OpenShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .open_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.open_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .open_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn acquire_shards(
         &self,
-        request: tonic::Request<AcquireShardsRequest>,
+        tonic_request: tonic::Request<AcquireShardsRequest>,
     ) -> Result<tonic::Response<AcquireShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .acquire_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.acquire_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .acquire_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_shards(
         &self,
-        request: tonic::Request<DeleteShardsRequest>,
+        tonic_request: tonic::Request<DeleteShardsRequest>,
     ) -> Result<tonic::Response<DeleteShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn prune_shards(
         &self,
-        request: tonic::Request<PruneShardsRequest>,
+        tonic_request: tonic::Request<PruneShardsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .prune_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.prune_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .prune_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_shards(
         &self,
-        request: tonic::Request<ListShardsRequest>,
+        tonic_request: tonic::Request<ListShardsRequest>,
     ) -> Result<tonic::Response<ListShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn create_index_template(
         &self,
-        request: tonic::Request<CreateIndexTemplateRequest>,
+        tonic_request: tonic::Request<CreateIndexTemplateRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .create_index_template(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.create_index_template");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .create_index_template(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_index_template(
         &self,
-        request: tonic::Request<GetIndexTemplateRequest>,
+        tonic_request: tonic::Request<GetIndexTemplateRequest>,
     ) -> Result<tonic::Response<GetIndexTemplateResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_index_template(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.get_index_template");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_index_template(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn find_index_template_matches(
         &self,
-        request: tonic::Request<FindIndexTemplateMatchesRequest>,
+        tonic_request: tonic::Request<FindIndexTemplateMatchesRequest>,
     ) -> Result<tonic::Response<FindIndexTemplateMatchesResponse>, tonic::Status> {
-        self.inner
-            .0
-            .find_index_template_matches(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.find_index_template_matches");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .find_index_template_matches(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_index_templates(
         &self,
-        request: tonic::Request<ListIndexTemplatesRequest>,
+        tonic_request: tonic::Request<ListIndexTemplatesRequest>,
     ) -> Result<tonic::Response<ListIndexTemplatesResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_index_templates(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_index_templates");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_index_templates(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_index_templates(
         &self,
-        request: tonic::Request<DeleteIndexTemplatesRequest>,
+        tonic_request: tonic::Request<DeleteIndexTemplatesRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_index_templates(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_index_templates");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_index_templates(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_cluster_identity(
         &self,
-        request: tonic::Request<GetClusterIdentityRequest>,
+        tonic_request: tonic::Request<GetClusterIdentityRequest>,
     ) -> Result<tonic::Response<GetClusterIdentityResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_cluster_identity(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.get_cluster_identity");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_cluster_identity(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn stage_metrics_splits(
         &self,
-        request: tonic::Request<StageMetricsSplitsRequest>,
+        tonic_request: tonic::Request<StageMetricsSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .stage_metrics_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.stage_metrics_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .stage_metrics_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn publish_metrics_splits(
         &self,
-        request: tonic::Request<PublishMetricsSplitsRequest>,
+        tonic_request: tonic::Request<PublishMetricsSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .publish_metrics_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.publish_metrics_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .publish_metrics_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_metrics_splits(
         &self,
-        request: tonic::Request<ListMetricsSplitsRequest>,
+        tonic_request: tonic::Request<ListMetricsSplitsRequest>,
     ) -> Result<tonic::Response<ListMetricsSplitsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_metrics_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_metrics_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_metrics_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn mark_metrics_splits_for_deletion(
         &self,
-        request: tonic::Request<MarkMetricsSplitsForDeletionRequest>,
+        tonic_request: tonic::Request<MarkMetricsSplitsForDeletionRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .mark_metrics_splits_for_deletion(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.mark_metrics_splits_for_deletion");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .mark_metrics_splits_for_deletion(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_metrics_splits(
         &self,
-        request: tonic::Request<DeleteMetricsSplitsRequest>,
+        tonic_request: tonic::Request<DeleteMetricsSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_metrics_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_metrics_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_metrics_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn stage_sketch_splits(
         &self,
-        request: tonic::Request<StageSketchSplitsRequest>,
+        tonic_request: tonic::Request<StageSketchSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .stage_sketch_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.stage_sketch_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .stage_sketch_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn publish_sketch_splits(
         &self,
-        request: tonic::Request<PublishSketchSplitsRequest>,
+        tonic_request: tonic::Request<PublishSketchSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .publish_sketch_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.publish_sketch_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .publish_sketch_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_sketch_splits(
         &self,
-        request: tonic::Request<ListSketchSplitsRequest>,
+        tonic_request: tonic::Request<ListSketchSplitsRequest>,
     ) -> Result<tonic::Response<ListSketchSplitsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_sketch_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.list_sketch_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_sketch_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn mark_sketch_splits_for_deletion(
         &self,
-        request: tonic::Request<MarkSketchSplitsForDeletionRequest>,
+        tonic_request: tonic::Request<MarkSketchSplitsForDeletionRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .mark_sketch_splits_for_deletion(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.mark_sketch_splits_for_deletion");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .mark_sketch_splits_for_deletion(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_sketch_splits(
         &self,
-        request: tonic::Request<DeleteSketchSplitsRequest>,
+        tonic_request: tonic::Request<DeleteSketchSplitsRequest>,
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_sketch_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("metastore.delete_sketch_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_sketch_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

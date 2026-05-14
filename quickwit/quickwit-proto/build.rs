@@ -180,6 +180,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
         .generate_rpc_name_impls()
+        // Surface a couple of top-level scalar fields on the generated tracing
+        // spans so traces are immediately filterable by leader / commit type.
+        // `leader_id` is `String` (Display ok); `commit_type` is the prost
+        // enum `CommitTypeV2` which only derives `Debug`.
+        .with_traced_request_field_debug("IngestRequestV2", "commit_type")
+        .with_traced_request_field("PersistRequest", "leader_id")
+        .with_traced_request_field_debug("PersistRequest", "commit_type")
         .run()
         .unwrap();
 

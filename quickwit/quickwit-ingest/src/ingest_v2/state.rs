@@ -32,7 +32,7 @@ use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
@@ -310,6 +310,7 @@ impl IngesterState {
             .expect("channel should be open");
     }
 
+    #[instrument(name = "ingester.lock_partially", skip_all, fields(operation))]
     pub async fn lock_partially(
         &self,
         operation: &'static str,
@@ -335,6 +336,7 @@ impl IngesterState {
         Ok(partially_locked_state)
     }
 
+    #[instrument(name = "ingester.lock_fully", skip_all, fields(operation))]
     pub async fn lock_fully(
         &self,
         operation: &'static str,
@@ -525,6 +527,7 @@ where
 impl FullyLockedIngesterState<'_> {
     /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
     /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
+    #[instrument(name = "ingester.delete_shard", skip_all, fields(queue_id, initiator))]
     pub async fn delete_shard(&mut self, queue_id: &QueueId, initiator: &'static str) {
         match self.mrecordlog.delete_queue(queue_id).await {
             Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
@@ -554,6 +557,11 @@ impl FullyLockedIngesterState<'_> {
 
     /// Truncates the shard identified by `queue_id` up to `truncate_up_to_position_inclusive` only
     /// if the current truncation position of the shard is smaller.
+    #[instrument(
+        name = "ingester.truncate_shard",
+        skip_all,
+        fields(queue_id, truncate_up_to_position_inclusive, initiator)
+    )]
     pub async fn truncate_shard(
         &mut self,
         queue_id: &QueueId,

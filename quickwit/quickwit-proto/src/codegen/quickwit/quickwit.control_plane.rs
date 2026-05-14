@@ -288,6 +288,7 @@ impl ControlPlaneServiceClient {
 }
 #[async_trait::async_trait]
 impl ControlPlaneService for ControlPlaneServiceClient {
+    #[tracing::instrument(skip_all, name = "control_plane.create_index")]
     async fn create_index(
         &self,
         request: super::metastore::CreateIndexRequest,
@@ -296,6 +297,7 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     > {
         self.inner.0.create_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.update_index")]
     async fn update_index(
         &self,
         request: super::metastore::UpdateIndexRequest,
@@ -304,48 +306,56 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     > {
         self.inner.0.update_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.delete_index")]
     async fn delete_index(
         &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.delete_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.add_source")]
     async fn add_source(
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.add_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.update_source")]
     async fn update_source(
         &self,
         request: super::metastore::UpdateSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.update_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.toggle_source")]
     async fn toggle_source(
         &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.toggle_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.delete_source")]
     async fn delete_source(
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.delete_source(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.get_or_create_open_shards")]
     async fn get_or_create_open_shards(
         &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.inner.0.get_or_create_open_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.advise_reset_shards")]
     async fn advise_reset_shards(
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
         self.inner.0.advise_reset_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "control_plane.prune_shards")]
     async fn prune_shards(
         &self,
         request: super::metastore::PruneShardsRequest,
@@ -1780,9 +1790,13 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .create_index(request)
+            .create_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1796,9 +1810,13 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_index(request)
+            .update_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1810,9 +1828,13 @@ where
         &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_index(request)
+            .delete_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1824,9 +1846,13 @@ where
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .add_source(request)
+            .add_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1838,9 +1864,13 @@ where
         &self,
         request: super::metastore::UpdateSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_source(request)
+            .update_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1852,9 +1882,13 @@ where
         &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .toggle_source(request)
+            .toggle_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1866,9 +1900,13 @@ where
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_source(request)
+            .delete_source(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1880,9 +1918,13 @@ where
         &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_or_create_open_shards(request)
+            .get_or_create_open_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1894,9 +1936,13 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .advise_reset_shards(request)
+            .advise_reset_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1908,9 +1954,13 @@ where
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .prune_shards(request)
+            .prune_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -1938,116 +1988,236 @@ impl control_plane_service_grpc_server::ControlPlaneServiceGrpc
 for ControlPlaneServiceGrpcServerAdapter {
     async fn create_index(
         &self,
-        request: tonic::Request<super::metastore::CreateIndexRequest>,
+        tonic_request: tonic::Request<super::metastore::CreateIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::CreateIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .create_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.create_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .create_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_index(
         &self,
-        request: tonic::Request<super::metastore::UpdateIndexRequest>,
+        tonic_request: tonic::Request<super::metastore::UpdateIndexRequest>,
     ) -> Result<
         tonic::Response<super::metastore::IndexMetadataResponse>,
         tonic::Status,
     > {
-        self.inner
-            .0
-            .update_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.update_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_index(
         &self,
-        request: tonic::Request<super::metastore::DeleteIndexRequest>,
+        tonic_request: tonic::Request<super::metastore::DeleteIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.delete_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn add_source(
         &self,
-        request: tonic::Request<super::metastore::AddSourceRequest>,
+        tonic_request: tonic::Request<super::metastore::AddSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .add_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.add_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .add_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_source(
         &self,
-        request: tonic::Request<super::metastore::UpdateSourceRequest>,
+        tonic_request: tonic::Request<super::metastore::UpdateSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .update_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.update_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn toggle_source(
         &self,
-        request: tonic::Request<super::metastore::ToggleSourceRequest>,
+        tonic_request: tonic::Request<super::metastore::ToggleSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .toggle_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.toggle_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .toggle_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_source(
         &self,
-        request: tonic::Request<super::metastore::DeleteSourceRequest>,
+        tonic_request: tonic::Request<super::metastore::DeleteSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_source(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.delete_source");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_source(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_or_create_open_shards(
         &self,
-        request: tonic::Request<GetOrCreateOpenShardsRequest>,
+        tonic_request: tonic::Request<GetOrCreateOpenShardsRequest>,
     ) -> Result<tonic::Response<GetOrCreateOpenShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_or_create_open_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.get_or_create_open_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_or_create_open_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn advise_reset_shards(
         &self,
-        request: tonic::Request<AdviseResetShardsRequest>,
+        tonic_request: tonic::Request<AdviseResetShardsRequest>,
     ) -> Result<tonic::Response<AdviseResetShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .advise_reset_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.advise_reset_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .advise_reset_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn prune_shards(
         &self,
-        request: tonic::Request<super::metastore::PruneShardsRequest>,
+        tonic_request: tonic::Request<super::metastore::PruneShardsRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .0
-            .prune_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("control_plane.prune_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .prune_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.
