@@ -190,6 +190,11 @@ pub async fn streaming_merge_sorted_parquet_files(
         let mut inputs = inputs;
         let mut decoders_state = build_input_decoders_state(&mut inputs)?;
 
+        // Cross-input precondition for the body-col memory bound. See
+        // the function doc and the `body_col_page_cache` field doc for
+        // the load-bearing argument.
+        assert_inputs_in_husky_body_col_order(&decoders_state, &input_meta.sort_fields)?;
+
         // Phase 0
         let sort_col_batches =
             drain_sort_cols_all_inputs(&handle, &mut decoders_state, &input_meta.sort_fields)?;
@@ -637,6 +642,60 @@ fn drain_sort_cols_one_input(
 }
 
 /// Set of column names treated as "sort cols" for phase 0 drain.
+/// Verify that every input's body cols (everything after the sort
+/// cols and `sorted_series`) are in lexicographic order by name —
+/// the same "Husky order" the union schema uses.
+///
+/// **Why this is a hard contract, not a nicety.** Phase 3 iterates
+/// the union schema's body cols alphabetically and asks each input's
+/// decoder to advance to that col via [`fill_page_cache_to_row`].
+/// Parquet emits column chunks in declared schema order, so the
+/// decoder reads pages in *the input's* storage order. If an input's
+/// body cols aren't in the same order as the union iteration, the
+/// decoder has to drain whatever cols precede the requested one on
+/// the wire — those pages get cached under their own `col_idx`,
+/// growing the cache to a full column-chunk's worth for the
+/// misaligned input. Streaming becomes vertical-per-column instead
+/// of horizontal-per-input-page, defeating the O(N × constant)
+/// memory bound documented on
+/// [`InputDecoderState::body_col_page_cache`].
+///
+/// Bails on the first violation with the offending input index and
+/// the offending pair of column names. Returning `Ok(())` here is
+/// the precondition that lets the body-col memory-bound argument
+/// hold across the merge.
+fn assert_inputs_in_husky_body_col_order(
+    decoders_state: &[InputDecoderState],
+    sort_fields_str: &str,
+) -> Result<()> {
+    let sort_field_schema = parse_sort_fields(sort_fields_str)?;
+    for (input_idx, state) in decoders_state.iter().enumerate() {
+        let sort_or_structural =
+            sort_col_names_for_input(&sort_field_schema, state.arrow_schema.as_ref());
+        let body_cols: Vec<&str> = state
+            .arrow_schema
+            .fields()
+            .iter()
+            .map(|f| f.name().as_str())
+            .filter(|n| !sort_or_structural.contains(*n))
+            .collect();
+        for window in body_cols.windows(2) {
+            if window[0] >= window[1] {
+                bail!(
+                    "input {input_idx} body cols not in Husky (alphabetical) order: '{}' precedes \
+                     '{}' in storage order. Streaming-merge memory bound requires body cols to be \
+                     emitted lexicographically by name within each input so the union schema's \
+                     iteration order matches storage order on the wire. Full body-col storage \
+                     order observed: {body_cols:?}",
+                    window[0],
+                    window[1],
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn sort_col_names_for_input(
     sort_field_schema: &quickwit_proto::sortschema::SortSchema,
     arrow_schema: &ArrowSchema,
@@ -3361,6 +3420,77 @@ mod tests {
             growth <= 2,
             "peak grows with input size: medium={peak_medium}, large={peak_large} — 10× more \
              input pages produced {growth} more resident pages, body-col path is not page-bounded",
+        );
+    }
+
+    /// MS-7 cross-input precondition: the body-col page cache bound
+    /// holds only if every input emits body cols lexicographically
+    /// (Husky order). A misaligned input would force
+    /// `fill_page_cache_to_row` to drain every body col preceding the
+    /// requested one in storage order — those pages stay cached under
+    /// their own col_idx until that col's turn comes up in the union
+    /// iteration, growing the cache to a full column chunk per
+    /// misaligned col. `assert_inputs_in_husky_body_col_order` rejects
+    /// such inputs at merge entry. This test constructs an input with
+    /// body cols `[value, metric_type]` (alphabetical would be
+    /// `[metric_type, value]`) and verifies the merge bails before
+    /// phase 3 runs.
+    #[tokio::test]
+    async fn test_assert_inputs_in_husky_body_col_order_rejects_misaligned_input() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            // Body cols out of order — 'value' precedes 'metric_type'
+            // in storage, but alphabetical would be metric_type then
+            // value.
+            Field::new("value", DataType::Float64, false),
+            Field::new("metric_type", DataType::UInt8, false),
+        ]));
+
+        let metric_keys: Vec<i32> = vec![0, 0, 0];
+        let metric_values = StringArray::from(vec!["cpu.usage"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .expect("test dict"),
+        );
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![
+            1_700_000_003u64,
+            1_700_000_002,
+            1_700_000_001,
+        ]));
+        let series: Vec<Vec<u8>> = (0u64..3).map(|i| i.to_be_bytes().to_vec()).collect();
+        let series_refs: Vec<&[u8]> = series.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let value: ArrayRef = Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0]));
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8, 0, 0]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                value,
+                metric_type,
+            ],
+        )
+        .expect("test batch");
+        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), 100);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("must reject misaligned body cols");
+        let err_str = format!("{err:#}");
+        assert!(
+            err_str.contains("not in Husky") && err_str.contains("'value'"),
+            "expected Husky-order error mentioning 'value', got: {err_str}",
         );
     }
 
