@@ -59,45 +59,74 @@ pub fn align_inputs_to_union_schema(
         bail!("no inputs to align");
     }
 
-    // Collect all fields across all inputs, checking for type conflicts.
-    // String-like types are normalized to Utf8 for internal alignment.
-    let mut field_map: BTreeMap<String, Arc<Field>> = BTreeMap::new();
+    // Track each field's normalized type, whether any input declared
+    // it nullable, and how many of the input batches contain it. The
+    // union field is nullable iff some input observed it as nullable
+    // OR some input is missing the field entirely (a row from a
+    // missing-the-field input will be null in the merged output).
+    // The previous version always defaulted new fields to nullable on
+    // first sight, which broke columns whose nullability must be
+    // preserved (e.g. `List<Float64>` — the writer's non-nullable-
+    // list contract requires the union field to stay non-nullable).
+    struct FieldInfo {
+        normalized_type: DataType,
+        any_nullable: bool,
+        appears_in: usize,
+    }
+    let mut field_map: BTreeMap<String, FieldInfo> = BTreeMap::new();
 
     for (input_idx, batch) in inputs.iter().enumerate() {
         for field in batch.schema().fields() {
             let normalized_type = normalize_type(field.data_type());
 
-            match field_map.get(field.name().as_str()) {
+            match field_map.get_mut(field.name().as_str()) {
                 Some(existing) => {
-                    if *existing.data_type() != normalized_type {
+                    if existing.normalized_type != normalized_type {
                         bail!(
                             "type conflict for column '{}': input 0 has {:?}, input {} has {:?} \
                              (normalized: {:?} vs {:?})",
                             field.name(),
-                            existing.data_type(),
+                            existing.normalized_type,
                             input_idx,
                             field.data_type(),
-                            existing.data_type(),
+                            existing.normalized_type,
                             normalized_type,
                         );
                     }
-                    // If either side is nullable, the union must be too.
-                    if field.is_nullable() && !existing.is_nullable() {
-                        let nullable_field =
-                            Arc::new(Field::new(field.name(), normalized_type, true));
-                        field_map.insert(field.name().clone(), nullable_field);
+                    if field.is_nullable() {
+                        existing.any_nullable = true;
                     }
+                    existing.appears_in += 1;
                 }
                 None => {
-                    // Columns that don't appear in every input must be nullable.
-                    let nullable_field = Arc::new(Field::new(field.name(), normalized_type, true));
-                    field_map.insert(field.name().clone(), nullable_field);
+                    field_map.insert(
+                        field.name().clone(),
+                        FieldInfo {
+                            normalized_type,
+                            any_nullable: field.is_nullable(),
+                            appears_in: 1,
+                        },
+                    );
                 }
             }
         }
     }
 
-    // Build the union schema in Husky column order.
+    // Materialise `Arc<Field>` per the rule above. Keep
+    // `BTreeMap<String, Arc<Field>>` so `build_husky_ordered_schema`
+    // is unchanged.
+    let total_inputs = inputs.len();
+    let field_map: BTreeMap<String, Arc<Field>> = field_map
+        .into_iter()
+        .map(|(name, info)| {
+            let nullable = info.any_nullable || info.appears_in < total_inputs;
+            let field = Arc::new(Field::new(&name, info.normalized_type, nullable));
+            (name, field)
+        })
+        .collect();
+
+    // Build the union schema in storage column order (sort cols first,
+    // then body cols lexicographic).
     let union_schema = build_husky_ordered_schema(&field_map, sort_fields_str)?;
     let union_schema_ref = Arc::new(union_schema);
 
