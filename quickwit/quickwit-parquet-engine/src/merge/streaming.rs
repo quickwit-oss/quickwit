@@ -274,6 +274,20 @@ struct InputDecoderState {
     /// not re-decoded (the stream has already advanced past it). At
     /// the start of each body column [`reset_body_col_state`] clears
     /// this cache and zeroes the cursor.
+    ///
+    /// **Memory bound (horizontal, not vertical).** This cache is
+    /// per-input: total memory across inputs is
+    /// `N_inputs × per_input_peak`. The per-input peak is bounded by
+    /// `ceil(OUTPUT_PAGE_ROWS / input_page_rows) + small_slack` —
+    /// driven by [`fill_page_cache_to_row`], which fetches only enough
+    /// pages to cover the rows from *this* input that contribute to
+    /// the *current output page* (a 1024-row slice), and by the
+    /// eviction loop in [`assemble_one_output_page`], which drops any
+    /// page whose last row falls below the cursor after each output
+    /// page emits. The cache never holds an input column-chunk's worth
+    /// of pages — a regression that ever did would break the MS-7
+    /// invariant asserted by
+    /// `test_ms7_body_col_page_cache_bounded_regardless_of_input_size`.
     body_col_page_cache: Vec<DecodedPage>,
     /// Next unconsumed input row for the active body column. Advances
     /// monotonically across outputs because the merge plan assigns each
@@ -434,6 +448,14 @@ fn extract_and_validate_input_metadata(
         None => bail!("at least one input is required"),
     };
 
+    // `rg_partition_prefix_len` is intentionally optional in the data
+    // model. Splits written before the prefix-aligned-RG era (and any
+    // split not written by the streaming engine) simply lack the KV.
+    // Inputs that *do* declare a value all had to agree above (else we
+    // already bailed), so falling through to 0 here means "none of the
+    // inputs claimed a prefix" rather than "we lost the value." The
+    // legacy-promotion path in PR-6423 handles mixing 0 with non-zero
+    // prefixes via the `mixed_prefix_ok` escape hatch.
     Ok(InputMetadata {
         sort_fields,
         window_start_secs: consensus_window_start.unwrap_or(None),
@@ -521,9 +543,15 @@ fn drain_sort_cols_one_input(
     }
 
     // Drain pages into per-col buffers until all sort cols are fully
-    // decoded. The storage convention places all sort col pages
-    // before any body col page within a row group, so we should never
-    // see a non-sort page while sort cols are incomplete.
+    // decoded. The streaming engine relies on a hard storage-ordering
+    // contract: within a row group, parquet emits column chunks in
+    // schema order (sort cols are declared first in our schema, body
+    // cols after), so all sort col pages appear before any body col
+    // page. Cross-file we don't require identical body-col ordering —
+    // the body-col loop drives from the union schema and looks each
+    // column up by name. The contract we DO require cross-file is
+    // "sort cols come first." A page from a body col arriving here
+    // means a producer violated that contract; bail rather than guess.
     let mut per_col_pages: HashMap<usize, Vec<ArrayRef>> = HashMap::new();
     let mut rows_done_per_col: HashMap<usize, usize> =
         sort_col_parquet_indices.keys().map(|&i| (i, 0)).collect();
@@ -550,6 +578,10 @@ fn drain_sort_cols_one_input(
             );
         }
         if page.rg_idx != 0 {
+            // PR-6b.2 (this PR) only supports single-RG inputs. The
+            // multi-RG path with prefix-aligned row groups is added
+            // in PR-6c.2 (#6424) along with `process_region` /
+            // composite-key encoding.
             bail!(
                 "input {input_idx} returned a page from rg {} during sort col drain — only \
                  single-RG inputs are supported in PR-6b.2",
@@ -689,13 +721,15 @@ fn build_input_row_destinations(
 
     for (out_idx, boundary) in boundaries.iter().enumerate() {
         let runs = &merge_order[boundary.clone()];
+        let mut rows_for_current_output = 0usize;
         for run in runs {
             for r in 0..run.row_count {
                 let input_row = run.start_row + r;
-                per_input[run.input_index][input_row] = Some((out_idx, rows_per_output[out_idx]));
-                rows_per_output[out_idx] += 1;
+                per_input[run.input_index][input_row] = Some((out_idx, rows_for_current_output));
+                rows_for_current_output += 1;
             }
         }
+        rows_per_output[out_idx] = rows_for_current_output;
     }
 
     InputRowDestinations {
@@ -1631,7 +1665,7 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
             }
         };
         let max_needed_row = *input_rows.iter().max().expect("non-empty");
-        advance_decoder_to_row(
+        fill_page_cache_to_row(
             s.handle,
             &mut s.decoders_state[input_idx],
             col_parquet_idx,
@@ -1731,10 +1765,12 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
     Ok(Some(assembled))
 }
 
-/// Drive the input's persistent decoder forward via `block_on` until
+/// Pull pages from the input's persistent decoder via `block_on` until
 /// the cached pages for `col_parquet_idx` cover up through `target_row`
 /// (inclusive). Stops as soon as the latest cached page ends past
-/// `target_row`.
+/// `target_row`. The function's effect on the world is *adding pages
+/// to the cache* — it does not skip data and does not consume any
+/// rows on its own.
 ///
 /// The decoder MUST be the long-lived [`InputDecoderState::decoder`]:
 /// it preserves the per-(rg, col) `rows_decoded` counter so successive
@@ -1742,7 +1778,7 @@ fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option
 /// not page-local zeros. Likewise, the cache lives on the state so
 /// pages whose row range spans an output boundary survive into the
 /// next output's assembler.
-fn advance_decoder_to_row(
+fn fill_page_cache_to_row(
     handle: &Handle,
     state: &mut InputDecoderState,
     col_parquet_idx: usize,
@@ -2435,7 +2471,7 @@ mod tests {
     /// to span multiple parquet data pages by pinning a small
     /// `data_page_row_count_limit`. The merge engine must read those
     /// pages back via a single persistent `StreamDecoder` per input —
-    /// reconstructing the decoder for each `advance_decoder_to_row`
+    /// reconstructing the decoder for each `fill_page_cache_to_row`
     /// call (the pre-fix behaviour) would reset the per-column
     /// `rows_decoded` counter, making `DecodedPage::row_start` reset
     /// to zero on every page after the first.
@@ -2502,7 +2538,7 @@ mod tests {
     /// multiple input pages, every page-fetch must come from the same
     /// long-lived `StreamDecoder` so its per-column `rows_decoded`
     /// counter keeps producing absolute row offsets. Before the fix,
-    /// each `advance_decoder_to_row` call instantiated a fresh decoder
+    /// each `fill_page_cache_to_row` call instantiated a fresh decoder
     /// whose counter started at zero — the *second* decoded page
     /// reported `row_start = 0` and the page cache's
     /// `(input_row - cache_start)` indexing landed on the wrong rows
@@ -2510,7 +2546,7 @@ mod tests {
     #[tokio::test]
     async fn test_body_col_multi_input_page_preserves_row_start() {
         // The bug only surfaces when `assemble_one_output_page` is
-        // called more than once per output (so `advance_decoder_to_row`
+        // called more than once per output (so `fill_page_cache_to_row`
         // is invoked repeatedly with a non-empty cache). That means we
         // need more than `OUTPUT_PAGE_ROWS` (=1024) total input rows
         // for a single output. 2500 rows × 50-row input pages =
