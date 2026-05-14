@@ -155,12 +155,18 @@ pub enum ParquetReadError {
 
 /// One Parquet page yielded by [`StreamingParquetReader::next_page`].
 ///
-/// Carries the Thrift-decoded `PageHeader` plus the raw compressed
-/// bytes (`bytes.len() == header.compressed_page_size`). Caller can
-/// inspect the page type (`Dictionary` / `DataPage` / `DataPageV2` /
-/// `Index`) via `header.type_`, and either copy `bytes` straight to
-/// an output writer (PR-6's direct page copy) or decompress + decode
-/// for sort-column inspection.
+/// Carries the Thrift-decoded `PageHeader`, the original Thrift-compact
+/// bytes for that header (`header_bytes`), and the raw compressed page
+/// bytes (`bytes.len() == header.compressed_page_size`). Caller can:
+///
+/// - Inspect the page type (`Dictionary` / `DataPage` / `DataPageV2` / `Index`) via `header.type_`.
+/// - Copy `bytes` straight to an output writer (PR-6's direct page copy).
+/// - Reconstruct the original column-chunk byte stream by concatenating `header_bytes ++ bytes` for
+///   every page in storage order — what PR-6a's page decoder uses to feed pages back into the
+///   standard parquet record-batch reader without re-encoding (re-encoding is deterministic for
+///   Thrift compact, but byte-exact passthrough avoids any encoder-version drift inside the
+///   compactor).
+/// - Decompress + decode `bytes` for sort-column inspection.
 #[derive(Debug)]
 pub struct Page {
     /// Row group this page belongs to.
@@ -172,6 +178,10 @@ pub struct Page {
     pub page_idx_in_col: usize,
     /// Thrift-decoded page header.
     pub header: PageHeader,
+    /// Original Thrift-compact bytes for `header`, exactly as they
+    /// appeared on the wire. `header_bytes.len()` equals the number of
+    /// bytes the parser consumed to decode `header`.
+    pub header_bytes: Bytes,
     /// Raw compressed page bytes; length equals
     /// `header.compressed_page_size`. Cheap to clone (ref-counted).
     pub bytes: Bytes,
@@ -426,7 +436,7 @@ async fn read_one_page(
     // protocol. Header is variable-length; iterate until we have
     // enough buffered to parse, capped at `max_page_header_bytes`.
     let header_offset = state.cursor;
-    let (header, header_len) =
+    let (header, header_len, header_bytes) =
         parse_page_header_streaming(state, config.max_page_header_bytes, header_offset).await?;
 
     // Header was consumed from `pending`; `cursor` and `bytes_consumed_in_col`
@@ -464,6 +474,7 @@ async fn read_one_page(
         col_idx,
         page_idx_in_col,
         header,
+        header_bytes,
         bytes: Bytes::from(body_bytes),
     })
 }
@@ -471,12 +482,15 @@ async fn read_one_page(
 /// Read the next Thrift `PageHeader` by trying to decode from
 /// progressively-larger buffer sizes. Drains the consumed bytes from
 /// `state.pending` and advances `state.cursor` and
-/// `state.bytes_consumed_in_col`.
+/// `state.bytes_consumed_in_col`. Returns the parsed header plus the
+/// raw Thrift-compact bytes that backed it, so callers (e.g. the
+/// page-stream → record-batch decoder) can reconstruct the original
+/// column-chunk byte layout without re-encoding.
 async fn parse_page_header_streaming(
     state: &mut ReadingState,
     max_header_bytes: usize,
     file_offset_for_error: u64,
-) -> Result<(PageHeader, usize), ParquetReadError> {
+) -> Result<(PageHeader, usize, Bytes), ParquetReadError> {
     // Start small; grow geometrically up to the configured cap.
     let mut target = 256.min(max_header_bytes);
     loop {
@@ -490,10 +504,10 @@ async fn parse_page_header_streaming(
         fill_pending_best_effort(state, target).await?;
         match try_parse_page_header(&state.pending) {
             Ok((header, consumed)) => {
-                state.pending.drain(..consumed);
+                let header_bytes: Vec<u8> = state.pending.drain(..consumed).collect();
                 state.cursor += consumed as u64;
                 state.bytes_consumed_in_col += consumed as u64;
-                return Ok((header, consumed));
+                return Ok((header, consumed, Bytes::from(header_bytes)));
             }
             Err(thrift_err) => {
                 // Some thrift errors are recoverable by reading more
