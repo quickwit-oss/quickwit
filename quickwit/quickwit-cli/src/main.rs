@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     unsafe {
         // SAFETY: this is done before spawning any thread, it trivially isn't done concurrently
         // with any other enviromnent read/write operations
-        openssl_probe::init_openssl_env_vars()
+        openssl_probe::try_init_openssl_env_vars();
     };
 
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
