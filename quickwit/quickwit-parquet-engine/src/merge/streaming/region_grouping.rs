@@ -24,8 +24,8 @@
 //! preserving across multiple columns / per-type encoding rules) and
 //! the BTreeMap-based region grouping. It also enforces MS-2: the
 //! BTreeMap iteration order must agree with each input's physical
-//! row-group order, otherwise the streaming engine would crash
-//! mid-merge.
+//! row-group order, otherwise the streaming engine would `bail!`
+//! mid-merge when a page arrives from an unexpected row group.
 //!
 //! The encoding rules per parquet physical type:
 //! - `ByteArray` / `FixedLenByteArray`: byte-stuffed escape encoding — each `0x00` byte in the
@@ -358,8 +358,10 @@ pub(crate) fn invert_for_descending(bytes: &[u8]) -> Vec<u8> {
 /// declared one way but the data was written the other — e.g., the
 /// sort schema says `metric_name ASC` but the file has RG 0 with
 /// metric `z` and RG 1 with metric `a`. Reject upfront with a clear
-/// message rather than letting `process_region` crash mid-merge
-/// with "page from rg X while draining rg Y".
+/// message rather than letting `process_region` bail mid-merge with
+/// "page from rg X while draining rg Y" — same error class, but
+/// caught at a point where we can report the offending input and
+/// region instead of the lower-level page mismatch.
 pub(crate) fn validate_region_order_matches_physical_rg_order(
     regions: &[Region],
     num_inputs: usize,

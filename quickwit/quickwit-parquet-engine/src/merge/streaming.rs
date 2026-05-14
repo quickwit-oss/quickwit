@@ -223,11 +223,13 @@ pub async fn streaming_merge_sorted_parquet_files(
         // engine reads inputs sequentially — it cannot rewind. If
         // region K's contributing RG for input I is physically AFTER
         // a later region L's contributing RG for the same input, the
-        // engine would crash mid-merge with "page from rg X while
-        // draining rg Y". This typically means the input was sorted
+        // engine would bail mid-merge with "page from rg X while
+        // draining rg Y" (Err returned up the spawn_blocking task,
+        // not a panic). This typically means the input was sorted
         // in the opposite direction from what the sort schema
         // declares (e.g., metric_name written DESC on disk but the
-        // sort schema says ASC). Reject upfront with a clear error.
+        // sort schema says ASC). Reject upfront with a clearer
+        // error that names the offending input and region.
         validate_region_order_matches_physical_rg_order(&regions, decoders_state.len())?;
 
         let total_rows: usize = regions.iter().map(|r| r.total_rows()).sum();
@@ -2504,7 +2506,7 @@ mod tests {
     /// staging → prod → dev. Without the `invert_for_descending`
     /// step the BTreeMap would emit dev → prod → staging, which
     /// would disagree with the physical RG order and the engine
-    /// would crash with "page from rg 0 while draining sort cols of
+    /// would bail with "page from rg 0 while draining sort cols of
     /// rg 2".
     #[tokio::test]
     async fn test_streaming_merge_with_desc_prefix_col() {
@@ -2602,7 +2604,8 @@ mod tests {
 
     /// MS-2: a file whose physical RG order disagrees with the
     /// composite-key encoding's derived order must be rejected
-    /// upfront, not crash mid-merge. Construct an input that declares
+    /// upfront at `extract_regions_from_metadata` time, not bail
+    /// later from inside `process_region`. Construct an input that declares
     /// env DESC but physically writes RGs in ASC env order — the
     /// BTreeMap region iteration will visit RG 2 (env DESC = "dev",
     /// largest in DESC encoding ... wait, no — DESC means largest
