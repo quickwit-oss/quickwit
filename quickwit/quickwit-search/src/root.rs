@@ -112,7 +112,7 @@ impl<'a> From<&'a SplitMetadata> for SearchJob {
     fn from(split_metadata: &'a SplitMetadata) -> Self {
         SearchJob {
             index_uid: split_metadata.index_uid.clone(),
-            cost: compute_split_cost(split_metadata),
+            cost: compute_split_cost(split_metadata.num_docs as u64),
             offsets: extract_split_and_footer_offsets(split_metadata),
         }
     }
@@ -1674,18 +1674,19 @@ async fn assign_client_fetch_docs_jobs(
         fetch_docs_req_jobs.push(fetch_docs_job);
     }
 
+    // don't do a second call to GetLoad to place fetch_docs jobs
     let assigned_jobs = client_pool
-        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
+        .assign_jobs_ignoring_load(fetch_docs_req_jobs, &HashSet::new())
         .await?;
 
     Ok(assigned_jobs)
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(split_metadata: &SplitMetadata) -> usize {
+pub(crate) fn compute_split_cost(num_docs: u64) -> usize {
     // TODO this formula could be tuned a lot more. The general idea is that there is a fixed
     // cost to searching a split, plus a somewhat-linear cost depending on the size of the split
-    5 + split_metadata.num_docs / 100_000
+    5 + (num_docs / 100_000) as usize
 }
 
 /// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].

@@ -17,8 +17,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_proto::error::convert_to_grpc_result;
 use quickwit_proto::search::{
-    GetKvRequest, GetKvResponse, LeafListFieldsRequest, ListFieldsRequest, ListFieldsResponse,
-    ReportSplitsRequest, ReportSplitsResponse, search_service_server as grpc,
+    GetKvRequest, GetKvResponse, GetLoadRequest, GetLoadResponse, LeafListFieldsRequest,
+    ListFieldsRequest, ListFieldsResponse, ReportSplitsRequest, ReportSplitsResponse,
+    search_service_server as grpc,
 };
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use quickwit_search::SearchService;
@@ -163,5 +164,13 @@ impl grpc::SearchService for GrpcSearchAdapter {
         let search_request = request.into_inner();
         let search_result = self.0.search_plan(search_request).await;
         convert_to_grpc_result(search_result)
+    }
+
+    async fn get_load(
+        &self,
+        _request: tonic::Request<GetLoadRequest>,
+    ) -> Result<tonic::Response<GetLoadResponse>, tonic::Status> {
+        let load_job_cost = self.0.get_load().await as u64;
+        Ok(tonic::Response::new(GetLoadResponse { load_job_cost }))
     }
 }
