@@ -467,7 +467,7 @@ impl Default for IoMetrics {
                 "read_bytes_total",
                 "Cumulative bytes read from storage by the process, as reported by \
                  `/proc/self/io` `read_bytes`. Reflects block-layer I/O after page cache absorbs \
-                 reads served from RAM",
+                 reads served from memory",
                 "io",
                 &[],
             ),
@@ -475,7 +475,7 @@ impl Default for IoMetrics {
                 "write_bytes_total",
                 "Cumulative bytes written to storage by the process, as reported by \
                  `/proc/self/io` `write_bytes`. Reflects block-layer I/O after page cache \
-                 coalescing — what EBS `VolumeWriteOps` ultimately bills",
+                 coalescing",
                 "io",
                 &[],
             ),

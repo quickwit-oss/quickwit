@@ -17,7 +17,8 @@ use std::time::Duration;
 use procfs::ProcResult;
 use procfs::process::Process;
 use quickwit_common::metrics::{IO_METRICS, IntCounter};
-use tracing::{error, warn};
+use quickwit_common::rate_limited_tracing::rate_limited_warn;
+use tracing::error;
 
 const PROC_IO_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -36,6 +37,7 @@ async fn proc_io_metrics_loop() -> ProcResult<()> {
     let mut previous_write_syscalls: u64 = 0;
 
     let mut poll_interval = tokio::time::interval(PROC_IO_METRICS_POLLING_INTERVAL);
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         poll_interval.tick().await;
@@ -43,27 +45,30 @@ async fn proc_io_metrics_loop() -> ProcResult<()> {
         let io = match process.io() {
             Ok(io) => io,
             Err(error) => {
-                warn!(%error, "failed to read /proc/self/io");
+                rate_limited_warn!(
+                    limit_per_min = 1,
+                    %error,
+                    "failed to read /proc/self/io"
+                );
                 continue;
             }
         };
-
-        increment_counter_by_delta(
+        increment_counter(
             &IO_METRICS.read_bytes_total,
             io.read_bytes,
             &mut previous_read_bytes,
         );
-        increment_counter_by_delta(
+        increment_counter(
             &IO_METRICS.write_bytes_total,
             io.write_bytes,
             &mut previous_write_bytes,
         );
-        increment_counter_by_delta(
+        increment_counter(
             &IO_METRICS.read_syscalls_total,
             io.syscr,
             &mut previous_read_syscalls,
         );
-        increment_counter_by_delta(
+        increment_counter(
             &IO_METRICS.write_syscalls_total,
             io.syscw,
             &mut previous_write_syscalls,
@@ -71,7 +76,11 @@ async fn proc_io_metrics_loop() -> ProcResult<()> {
     }
 }
 
-fn increment_counter_by_delta(counter: &IntCounter, current: u64, previous: &mut u64) {
+fn increment_counter(counter: &IntCounter, current: u64, previous: &mut u64) {
+    debug_assert!(
+        current >= *previous,
+        "/proc/self/io counters should be monotonic for a given PID"
+    );
     if current >= *previous {
         counter.inc_by(current - *previous);
     }

@@ -72,7 +72,7 @@ impl Default for IngestResultMetrics {
     }
 }
 
-pub(super) struct IngestV2Metrics {
+pub(crate) struct IngestV2Metrics {
     pub reset_shards_operations_total: IntCounterVec<1>,
     pub open_shards: IntGauge,
     pub closed_shards: IntGauge,
@@ -83,6 +83,7 @@ pub(super) struct IngestV2Metrics {
     pub wal_lock_hold_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
+    pub wal_bytes_written_total: IntCounterVec<1>,
     pub ingest_results: IngestResultMetrics,
     pub ingest_attempts: IntCounterVec<1>,
 }
@@ -164,6 +165,15 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[],
             ),
+            wal_bytes_written_total: new_counter_vec(
+                "wal_bytes_written_total",
+                "Total number of bytes written to the WAL by write operations (create_queue, \
+                 append_records, truncate_queue, delete_queue), including frame headers and \
+                 end-of-block padding.",
+                "ingest",
+                &[],
+                ["operation"],
+            ),
         }
     }
 }
@@ -181,5 +191,5 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .set(wal_usage.memory_used_bytes as i64);
 }
 
-pub(super) static INGEST_V2_METRICS: LazyLock<IngestV2Metrics> =
+pub(crate) static INGEST_V2_METRICS: LazyLock<IngestV2Metrics> =
     LazyLock::new(IngestV2Metrics::default);

@@ -162,7 +162,7 @@ md5 = "0.8"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
