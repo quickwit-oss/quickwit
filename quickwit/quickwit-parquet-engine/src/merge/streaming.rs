@@ -294,9 +294,37 @@ pub async fn streaming_merge_sorted_parquet_files(
             // and find sorted_series transitions; if no split is
             // needed we let `process_region` drain internally to
             // preserve the existing per-region memory bound.
-            let outputs_remaining = num_outputs - current_output_idx;
-            let remaining_in_current = target_per_output.saturating_sub(current_output_rows);
-            let needs_split = outputs_remaining > 1 && region.total_rows() > remaining_in_current;
+            //
+            // If the current output is already at-or-past target,
+            // the sub-region loop below will roll over to a fresh
+            // output BEFORE writing this region's first sub-region.
+            // The split decision must be made against that fresh
+            // output's full budget — not the current (zero) remainder
+            // — otherwise `split_region_at_sorted_series` would cut
+            // after the very first sorted_series run, and the small
+            // leftover plus the large continuation (both inheriting
+            // the region's prefix key) would land in the same new
+            // output, tripping the PA-3 duplicate-prefix-RG check in
+            // `finalize_output`. Same for `outputs_remaining`: after
+            // the rollover one fewer output is left to fill.
+            let outputs_remaining_raw = num_outputs - current_output_idx;
+            let remaining_in_current_raw =
+                target_per_output.saturating_sub(current_output_rows);
+            let will_roll_over = current_writer.is_some()
+                && current_output_rows >= target_per_output
+                && current_output_idx + 1 < num_outputs;
+            let effective_first_target = if will_roll_over {
+                target_per_output
+            } else {
+                remaining_in_current_raw
+            };
+            let effective_outputs_remaining = if will_roll_over {
+                outputs_remaining_raw.saturating_sub(1)
+            } else {
+                outputs_remaining_raw
+            };
+            let needs_split = effective_outputs_remaining > 1
+                && region.total_rows() > effective_first_target;
 
             let prefetched: Option<Vec<RecordBatch>> = if needs_split {
                 Some(drain_and_align_region(
@@ -315,9 +343,9 @@ pub async fn streaming_merge_sorted_parquet_files(
                     region,
                     &merge_order,
                     prefetched_batches,
-                    remaining_in_current,
+                    effective_first_target,
                     target_per_output,
-                    outputs_remaining,
+                    effective_outputs_remaining,
                 )?
             } else {
                 vec![region.clone()]
@@ -1356,8 +1384,8 @@ mod tests {
     use tokio::io::AsyncRead;
 
     use super::region_grouping::{
-        encode_byte_array_prefix, extract_rg_composite_prefix_key, find_prefix_parquet_col_indices,
-        invert_for_descending,
+        assert_unique_rg_prefix_keys, encode_byte_array_prefix, extract_rg_composite_prefix_key,
+        find_prefix_parquet_col_indices, invert_for_descending,
     };
     use super::*;
     use crate::split::TAG_SERVICE;
@@ -2081,6 +2109,61 @@ mod tests {
             s.contains("input 0"),
             "error should identify which input is bad, got: {s}",
         );
+    }
+
+    /// Regression for Codex P1 on PR #6424: when a top-level region
+    /// exactly fills the current output (so `remaining_in_current == 0`)
+    /// AND the following prefix-aligned region needs splitting, the
+    /// split's first-sub-region budget must be computed against the
+    /// rolled-over fresh output's full target — NOT the stale zero
+    /// remainder. Before the fix, `split_region_at_sorted_series` cut
+    /// after the first sorted_series run, producing a tiny leftover
+    /// plus a large continuation that both shared the parent region's
+    /// prefix key and landed in the same new output, tripping the
+    /// PA-3 duplicate-prefix-RG check in `finalize_output`.
+    ///
+    /// Setup: three RGs of 50 rows each, distinct (metric, service)
+    /// prefixes, num_outputs = 3 → target_per_output = 50. Each region
+    /// should land cleanly in its own output with a single RG.
+    #[tokio::test]
+    async fn test_region_exactly_fills_output_does_not_split_next_aligned_region() {
+        let bytes = make_prefix_len_two_input(
+            &[
+                ("cpu.usage", "host-a"),
+                ("cpu.usage", "host-b"),
+                ("memory.used", "host-a"),
+            ],
+            50,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+            .await
+            .expect("merge must succeed; pre-fix this tripped PA-3 on output 1");
+
+        assert_eq!(outputs.len(), 3, "three regions → three outputs");
+        for (i, out) in outputs.iter().enumerate() {
+            assert_eq!(out.num_rows, 50, "output {i} should have exactly 50 rows");
+            assert_eq!(
+                out.num_row_groups, 1,
+                "output {i} should have a single RG (no spurious split)",
+            );
+        }
+
+        // PA-3 verification: each output's single RG carries a
+        // unique composite prefix key.
+        for (i, out) in outputs.iter().enumerate() {
+            let bytes_out = std::fs::read(&out.path).expect("read");
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+            assert_unique_rg_prefix_keys(
+                reader.metadata(),
+                "metric_name|service|-timestamp_secs/V2",
+                2,
+                &format!("output {i}"),
+            )
+            .expect("each output RG must satisfy PA-1 + PA-3 on prefix");
+        }
     }
 
     /// Build a single-RG fixture with multiple metric_names sorted
