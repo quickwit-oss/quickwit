@@ -70,7 +70,8 @@ use quickwit_metastore::{
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::search::{
-    PartialHit, ResourceStats, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    SplitResourceStats,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::StorageResolver;
@@ -346,125 +347,354 @@ pub fn searcher_pool_for_test(
     )
 }
 
-pub(crate) fn merge_resource_stats_it<'a>(
-    stats_it: impl IntoIterator<Item = &'a Option<ResourceStats>>,
-) -> Option<ResourceStats> {
-    let mut acc_stats: Option<ResourceStats> = None;
-    for new_stats in stats_it {
-        merge_resource_stats(new_stats, &mut acc_stats);
-    }
-    acc_stats
+/// Sum of the per-phase microsecond fields used to rank `split_resources_worst`.
+/// Intentionally excludes the two waiting phases (`wait_for_search_permit_microsecs`
+/// and `wait_for_cpu_pool_microsecs`) so the ranking reflects "how much work this
+/// split actually did" rather than "how long this split queued behind other work".
+pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
+    stats.warmup_microsecs + stats.cpu_search_microsecs
 }
 
-fn merge_resource_stats(
-    new_stats_opt: &Option<ResourceStats>,
-    stat_accs_opt: &mut Option<ResourceStats>,
-) {
-    if let Some(new_stats) = new_stats_opt {
-        if let Some(stat_accs) = stat_accs_opt {
-            stat_accs.short_lived_cache_num_bytes += new_stats.short_lived_cache_num_bytes;
-            stat_accs.split_num_docs += new_stats.split_num_docs;
-            stat_accs.warmup_microsecs += new_stats.warmup_microsecs;
-            stat_accs.cpu_thread_pool_wait_microsecs += new_stats.cpu_thread_pool_wait_microsecs;
-            stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
-        } else {
-            *stat_accs_opt = Some(*new_stats);
-        }
+/// Field-wise sum of two `SplitResourceStats` (every field is extensive).
+pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourceStats) {
+    acc.split_num_docs += other.split_num_docs;
+    acc.input_memory_bytes += other.input_memory_bytes;
+    acc.download_num_bytes += other.download_num_bytes;
+    acc.download_num_requests += other.download_num_requests;
+    acc.matched_num_docs += other.matched_num_docs;
+    acc.wait_for_search_permit_microsecs += other.wait_for_search_permit_microsecs;
+    acc.warmup_microsecs += other.warmup_microsecs;
+    acc.wait_for_cpu_pool_microsecs += other.wait_for_cpu_pool_microsecs;
+    acc.cpu_search_microsecs += other.cpu_search_microsecs;
+}
+
+/// Min of two `Option<u64>`, treating `None` as "no contribution":
+/// `min(None, x) = x`, `min(None, None) = None`.
+#[inline]
+pub(crate) fn min_opt(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (None, value) | (value, None) => value,
+        (Some(left), Some(right)) => Some(left.min(right)),
     }
 }
+
+/// Merge another `LeafResourceStats` into `acc`.
+///
+/// Every numeric field is summed, with two exceptions:
+/// - `split_resources_worst` is selected by `split_phase_sum_microsecs`; `split_resources_sum` is
+///   field-wise summed.
+/// - `min_wait_for_search_permit_microsecs` and `min_wait_for_cpu_pool_microsecs` are merged with
+///   `min_opt` (treating `None` as "no contribution"), so the merged value is the minimum across
+///   every locally-executed split that contributed.
+///
+/// `lambda_bottleneck` is 0 or 1 at the source (a single leaf call) and becomes
+/// a count of leaves where lambda was the bottleneck once aggregated.
+pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceStats) {
+    acc.partial_result_cache_num_splits += other.partial_result_cache_num_splits;
+    acc.partial_result_cache_num_docs += other.partial_result_cache_num_docs;
+    acc.lambda_num_splits += other.lambda_num_splits;
+    acc.lambda_num_docs += other.lambda_num_docs;
+    acc.lambda_success_num_splits += other.lambda_success_num_splits;
+    acc.lambda_success_num_docs += other.lambda_success_num_docs;
+    acc.lambda_bottleneck += other.lambda_bottleneck;
+    acc.localexec_num_splits += other.localexec_num_splits;
+    acc.localexec_num_docs += other.localexec_num_docs;
+    acc.wall_time_microsecs += other.wall_time_microsecs;
+    acc.min_wait_for_search_permit_microsecs = min_opt(
+        acc.min_wait_for_search_permit_microsecs,
+        other.min_wait_for_search_permit_microsecs,
+    );
+    acc.min_wait_for_cpu_pool_microsecs = min_opt(
+        acc.min_wait_for_cpu_pool_microsecs,
+        other.min_wait_for_cpu_pool_microsecs,
+    );
+    if let Some(other_split) = &other.split_resources_sum {
+        let acc_split = acc
+            .split_resources_sum
+            .get_or_insert_with(SplitResourceStats::default);
+        add_split_stats(acc_split, other_split);
+    }
+    acc.split_resources_worst = [acc.split_resources_worst, other.split_resources_worst]
+        .into_iter()
+        .flatten()
+        .max_by_key(split_phase_sum_microsecs);
+}
+
+/// Merge an iterator of `Option<LeafResourceStats>` into a single `Option<LeafResourceStats>`.
+///
+/// `None` entries are skipped. The accumulator is materialized lazily on the first
+/// non-`None` entry so a fully-empty iterator still returns `None`.
+pub(crate) fn merge_leaf_stats_it<'a>(
+    stats_it: impl IntoIterator<Item = &'a Option<LeafResourceStats>>,
+) -> Option<LeafResourceStats> {
+    let mut acc: Option<LeafResourceStats> = None;
+    for new_stats in stats_it {
+        let Some(new_stats) = new_stats else {
+            continue;
+        };
+        let acc = acc.get_or_insert_with(LeafResourceStats::default);
+        add_leaf_stats(acc, new_stats);
+    }
+    acc
+}
+
 #[cfg(test)]
 mod stats_merge_tests {
     use super::*;
 
+    fn split_stats(num_docs: u64, warmup: u64, search: u64) -> SplitResourceStats {
+        SplitResourceStats {
+            split_num_docs: num_docs,
+            warmup_microsecs: warmup,
+            cpu_search_microsecs: search,
+            ..Default::default()
+        }
+    }
+
+    fn leaf_stats_one_split(split: SplitResourceStats) -> LeafResourceStats {
+        LeafResourceStats {
+            localexec_num_splits: 1,
+            localexec_num_docs: split.split_num_docs,
+            split_resources_sum: Some(split),
+            split_resources_worst: Some(split),
+            ..Default::default()
+        }
+    }
+
+    /// `add_split_stats` is an "every field is extensive" merger. Adding a
+    /// new field to the proto without summing it in `add_split_stats` should
+    /// fail this test: the `let SplitResourceStats { ... } = other;`
+    /// destructure forces the test to be updated whenever a field is added.
     #[test]
-    fn test_merge_resource_stats() {
-        let mut acc_stats = None;
+    fn test_add_split_stats_sums_every_field() {
+        let mut acc = SplitResourceStats {
+            split_num_docs: 1,
+            input_memory_bytes: 10,
+            download_num_bytes: 100,
+            download_num_requests: 1_000,
+            matched_num_docs: 10_000,
+            wait_for_search_permit_microsecs: 100_000,
+            warmup_microsecs: 1_000_000,
+            wait_for_cpu_pool_microsecs: 10_000_000,
+            cpu_search_microsecs: 100_000_000,
+        };
+        let other = SplitResourceStats {
+            split_num_docs: 2,
+            input_memory_bytes: 20,
+            download_num_bytes: 200,
+            download_num_requests: 2_000,
+            matched_num_docs: 20_000,
+            wait_for_search_permit_microsecs: 200_000,
+            warmup_microsecs: 2_000_000,
+            wait_for_cpu_pool_microsecs: 20_000_000,
+            cpu_search_microsecs: 200_000_000,
+        };
+        // Destructure on the proto type itself so a newly-added field forces
+        // an update to this test (otherwise the assertion below would silently
+        // miss it).
+        let SplitResourceStats {
+            split_num_docs: _,
+            input_memory_bytes: _,
+            download_num_bytes: _,
+            download_num_requests: _,
+            matched_num_docs: _,
+            wait_for_search_permit_microsecs: _,
+            warmup_microsecs: _,
+            wait_for_cpu_pool_microsecs: _,
+            cpu_search_microsecs: _,
+        } = other;
 
-        merge_resource_stats(&None, &mut acc_stats);
+        add_split_stats(&mut acc, &other);
 
-        assert_eq!(acc_stats, None);
-
-        let stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 100,
-            split_num_docs: 200,
-            warmup_microsecs: 300,
-            cpu_thread_pool_wait_microsecs: 400,
-            cpu_microsecs: 500,
-        });
-
-        merge_resource_stats(&stats, &mut acc_stats);
-
-        assert_eq!(acc_stats, stats);
-
-        let new_stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 50,
-            split_num_docs: 100,
-            warmup_microsecs: 150,
-            cpu_thread_pool_wait_microsecs: 200,
-            cpu_microsecs: 250,
-        });
-
-        merge_resource_stats(&new_stats, &mut acc_stats);
-
-        let stats_plus_new_stats = Some(ResourceStats {
-            short_lived_cache_num_bytes: 150,
-            split_num_docs: 300,
-            warmup_microsecs: 450,
-            cpu_thread_pool_wait_microsecs: 600,
-            cpu_microsecs: 750,
-        });
-
-        assert_eq!(acc_stats, stats_plus_new_stats);
-
-        merge_resource_stats(&None, &mut acc_stats);
-
-        assert_eq!(acc_stats, stats_plus_new_stats);
+        assert_eq!(acc.split_num_docs, 3);
+        assert_eq!(acc.input_memory_bytes, 30);
+        assert_eq!(acc.download_num_bytes, 300);
+        assert_eq!(acc.download_num_requests, 3_000);
+        assert_eq!(acc.matched_num_docs, 30_000);
+        assert_eq!(acc.wait_for_search_permit_microsecs, 300_000);
+        assert_eq!(acc.warmup_microsecs, 3_000_000);
+        assert_eq!(acc.wait_for_cpu_pool_microsecs, 30_000_000);
+        assert_eq!(acc.cpu_search_microsecs, 300_000_000);
     }
 
     #[test]
-    fn test_merge_resource_stats_it() {
-        let merged_stats = merge_resource_stats_it(Vec::<&Option<ResourceStats>>::new());
-        assert_eq!(merged_stats, None);
+    fn test_add_split_stats_with_zero_is_identity() {
+        let mut acc = SplitResourceStats {
+            split_num_docs: 42,
+            download_num_bytes: 1_024,
+            cpu_search_microsecs: 1_000,
+            ..Default::default()
+        };
+        let snapshot = acc;
+        add_split_stats(&mut acc, &SplitResourceStats::default());
+        assert_eq!(acc, snapshot);
+    }
 
-        let stats1 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 100,
-            split_num_docs: 200,
-            warmup_microsecs: 300,
-            cpu_thread_pool_wait_microsecs: 400,
-            cpu_microsecs: 500,
-        });
+    /// `add_leaf_stats` is "every numeric field is extensive" with the
+    /// exception of `min_wait_for_*_microsecs` (merged with `min_opt`).
+    /// The fully-enumerated `LeafResourceStats { ... }` literal (no
+    /// `..Default::default()`) forces this test to be updated whenever a
+    /// field is added — and the per-field assertions below document each
+    /// field's aggregation behavior.
+    #[test]
+    fn test_add_leaf_stats_sums_every_field() {
+        let split_a = SplitResourceStats {
+            split_num_docs: 1,
+            cpu_search_microsecs: 100,
+            ..Default::default()
+        };
+        let split_b = SplitResourceStats {
+            split_num_docs: 2,
+            cpu_search_microsecs: 200,
+            ..Default::default()
+        };
 
-        let merged_stats = merge_resource_stats_it(vec![&None, &stats1, &None]);
+        let mut acc = LeafResourceStats {
+            partial_result_cache_num_splits: 1,
+            partial_result_cache_num_docs: 10,
+            lambda_num_splits: 100,
+            lambda_num_docs: 1_000,
+            lambda_success_num_splits: 10_000,
+            lambda_success_num_docs: 100_000,
+            lambda_bottleneck: 0,
+            localexec_num_splits: 1_000_000,
+            localexec_num_docs: 10_000_000,
+            split_resources_worst: Some(split_a),
+            split_resources_sum: Some(split_a),
+            min_wait_for_search_permit_microsecs: Some(100),
+            min_wait_for_cpu_pool_microsecs: Some(2_000),
+            wall_time_microsecs: 100_000_000,
+        };
+        let other = LeafResourceStats {
+            partial_result_cache_num_splits: 2,
+            partial_result_cache_num_docs: 20,
+            lambda_num_splits: 200,
+            lambda_num_docs: 2_000,
+            lambda_success_num_splits: 20_000,
+            lambda_success_num_docs: 200_000,
+            lambda_bottleneck: 1,
+            localexec_num_splits: 2_000_000,
+            localexec_num_docs: 20_000_000,
+            split_resources_worst: Some(split_b),
+            split_resources_sum: Some(split_b),
+            min_wait_for_search_permit_microsecs: Some(50),
+            min_wait_for_cpu_pool_microsecs: Some(1_000),
+            wall_time_microsecs: 200_000_000,
+        };
 
-        assert_eq!(merged_stats, stats1);
+        add_leaf_stats(&mut acc, &other);
 
-        let stats2 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 50,
-            split_num_docs: 100,
-            warmup_microsecs: 150,
-            cpu_thread_pool_wait_microsecs: 200,
-            cpu_microsecs: 250,
-        });
+        assert_eq!(acc.partial_result_cache_num_splits, 3);
+        assert_eq!(acc.partial_result_cache_num_docs, 30);
+        assert_eq!(acc.lambda_num_splits, 300);
+        assert_eq!(acc.lambda_num_docs, 3_000);
+        assert_eq!(acc.lambda_success_num_splits, 30_000);
+        assert_eq!(acc.lambda_success_num_docs, 300_000);
+        // `lambda_bottleneck` is summed post-refactor (a count at aggregate
+        // levels), not maxed.
+        assert_eq!(acc.lambda_bottleneck, 1);
+        assert_eq!(acc.localexec_num_splits, 3_000_000);
+        assert_eq!(acc.localexec_num_docs, 30_000_000);
+        // `wall_time_microsecs` is summed post-refactor, not maxed.
+        assert_eq!(acc.wall_time_microsecs, 300_000_000);
 
-        let stats3 = Some(ResourceStats {
-            short_lived_cache_num_bytes: 25,
-            split_num_docs: 50,
-            warmup_microsecs: 75,
-            cpu_thread_pool_wait_microsecs: 100,
-            cpu_microsecs: 125,
-        });
+        // `min_wait_for_*_microsecs` is MIN, not sum — the exception to the
+        // extensive-sum rule.
+        assert_eq!(acc.min_wait_for_search_permit_microsecs, Some(50));
+        assert_eq!(acc.min_wait_for_cpu_pool_microsecs, Some(1_000));
 
-        let merged_stats = merge_resource_stats_it(vec![&stats1, &stats2, &stats3]);
+        // `split_resources_sum` field-wise sums every contributing split.
+        let summed = acc.split_resources_sum.unwrap();
+        assert_eq!(summed.split_num_docs, 3);
+        assert_eq!(summed.cpu_search_microsecs, 300);
 
-        assert_eq!(
-            merged_stats,
-            Some(ResourceStats {
-                short_lived_cache_num_bytes: 175,
-                split_num_docs: 350,
-                warmup_microsecs: 525,
-                cpu_thread_pool_wait_microsecs: 700,
-                cpu_microsecs: 875,
-            })
-        );
+        // `split_resources_worst` is the split with the larger phase-sum:
+        // split_b (cpu_search 200) beats split_a (cpu_search 100).
+        let worst = acc.split_resources_worst.unwrap();
+        assert_eq!(worst.split_num_docs, 2);
+    }
+
+    /// When the accumulator already has `split_resources_*` and the other
+    /// side has none, the accumulator's values must be preserved.
+    #[test]
+    fn test_add_leaf_stats_other_with_no_split_resources_keeps_acc() {
+        let split = split_stats(5, 10, 20);
+        let mut acc = leaf_stats_one_split(split);
+        let other = LeafResourceStats {
+            localexec_num_splits: 1,
+            localexec_num_docs: 7,
+            // No split_resources_sum / split_resources_worst.
+            ..Default::default()
+        };
+        add_leaf_stats(&mut acc, &other);
+        assert_eq!(acc.localexec_num_splits, 2);
+        assert_eq!(acc.localexec_num_docs, 12);
+        // Both fields must still point at split_a.
+        assert_eq!(acc.split_resources_sum.unwrap().split_num_docs, 5);
+        assert_eq!(acc.split_resources_worst.unwrap().split_num_docs, 5);
+    }
+
+    /// When the accumulator has no `split_resources_*` and the other side
+    /// does, the result must adopt the other side's values.
+    #[test]
+    fn test_add_leaf_stats_acc_empty_adopts_other_split_resources() {
+        let mut acc = LeafResourceStats::default();
+        let split = split_stats(9, 11, 13);
+        let other = leaf_stats_one_split(split);
+        add_leaf_stats(&mut acc, &other);
+        assert_eq!(acc.localexec_num_splits, 1);
+        assert_eq!(acc.split_resources_sum.unwrap().split_num_docs, 9);
+        assert_eq!(acc.split_resources_worst.unwrap().split_num_docs, 9);
+    }
+
+    /// Adding a default `LeafResourceStats` should be an identity operation
+    /// on every field.
+    #[test]
+    fn test_add_leaf_stats_with_default_is_identity() {
+        let split = split_stats(3, 4, 5);
+        let mut acc = LeafResourceStats {
+            partial_result_cache_num_splits: 1,
+            lambda_num_splits: 2,
+            lambda_bottleneck: 1,
+            localexec_num_splits: 1,
+            localexec_num_docs: 3,
+            split_resources_sum: Some(split),
+            split_resources_worst: Some(split),
+            // Set the min fields explicitly so this test verifies that
+            // `min_opt(Some(x), None) = Some(x)` keeps them unchanged.
+            min_wait_for_search_permit_microsecs: Some(7),
+            min_wait_for_cpu_pool_microsecs: Some(11),
+            wall_time_microsecs: 42,
+            ..Default::default()
+        };
+        let snapshot = acc;
+        add_leaf_stats(&mut acc, &LeafResourceStats::default());
+        assert_eq!(acc, snapshot);
+    }
+
+    #[test]
+    fn test_min_opt() {
+        assert_eq!(min_opt(None, None), None);
+        assert_eq!(min_opt(Some(5), None), Some(5));
+        assert_eq!(min_opt(None, Some(7)), Some(7));
+        assert_eq!(min_opt(Some(5), Some(7)), Some(5));
+        assert_eq!(min_opt(Some(7), Some(5)), Some(5));
+        // 0 is a real value, not a sentinel.
+        assert_eq!(min_opt(Some(0), Some(5)), Some(0));
+        assert_eq!(min_opt(Some(0), None), Some(0));
+    }
+
+    #[test]
+    fn test_merge_leaf_stats_it() {
+        let merged = merge_leaf_stats_it(Vec::<&Option<LeafResourceStats>>::new());
+        assert_eq!(merged, None);
+
+        let leaf_a = Some(leaf_stats_one_split(split_stats(10, 1, 2)));
+        let leaf_b = Some(leaf_stats_one_split(split_stats(20, 3, 4)));
+
+        let merged = merge_leaf_stats_it(vec![&None, &leaf_a, &None, &leaf_b]);
+        let merged = merged.unwrap();
+        assert_eq!(merged.localexec_num_splits, 2);
+        assert_eq!(merged.localexec_num_docs, 30);
     }
 }

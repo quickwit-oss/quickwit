@@ -18,6 +18,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
@@ -168,6 +169,7 @@ struct SearchPermitActor {
 struct SingleSplitPermitRequest {
     permit_sender: oneshot::Sender<SearchPermit>,
     permit_size: u64,
+    requested_at: Instant,
 }
 
 struct LeafPermitRequest {
@@ -205,6 +207,10 @@ impl LeafPermitRequest {
     // `permit_sizes` must not be empty.
     fn from_estimated_costs(permit_sizes: Vec<u64>) -> (Self, Vec<SearchPermitFuture>) {
         assert!(!permit_sizes.is_empty(), "permit_sizes must not be empty");
+        // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
+        // The actor will compute `requested_at.elapsed()` at grant time to
+        // report the permit's acquisition latency.
+        let requested_at = Instant::now();
         let mut permits = Vec::with_capacity(permit_sizes.len());
         let mut single_split_permit_requests = Vec::with_capacity(permit_sizes.len());
         for permit_size in permit_sizes {
@@ -215,6 +221,7 @@ impl LeafPermitRequest {
             single_split_permit_requests.push(SingleSplitPermitRequest {
                 permit_sender: tx,
                 permit_size,
+                requested_at,
             });
             permits.push(SearchPermitFuture(rx));
         }
@@ -345,6 +352,7 @@ impl SearchPermitActor {
                     msg_sender: self.msg_sender.clone(),
                     memory_allocation: permit_request.permit_size,
                     warmup_slot_freed: false,
+                    wait_for_acquisition: permit_request.requested_at.elapsed(),
                 })
                 // if the requester dropped its receiver, we drop the newly
                 // created SearchPermit which releases the resources
@@ -361,9 +369,16 @@ pub struct SearchPermit {
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
     warmup_slot_freed: bool,
+    /// Time the request spent in the permit queue.
+    wait_for_acquisition: Duration,
 }
 
 impl SearchPermit {
+    /// Time spent acquiring this permit (request → grant).
+    pub fn wait_for_acquisition(&self) -> Duration {
+        self.wait_for_acquisition
+    }
+
     /// Update the memory usage attached to this permit.
     ///
     /// This will increase or decrease the available memory in the [`SearchPermitProvider`].
