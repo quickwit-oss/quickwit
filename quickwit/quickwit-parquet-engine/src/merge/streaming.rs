@@ -162,9 +162,16 @@ pub async fn streaming_merge_sorted_parquet_files(
     // so RG boundaries are arbitrary row counts that may split a
     // single sort-key value across two RGs. The streaming engine
     // cannot determine merge regions without column-chunk-bounded
-    // buffering; such inputs must go through PR-5's
-    // `LegacyMultiRGAdapter`, which presents them as one synthetic
-    // single-RG stream.
+    // buffering; such inputs must go through `LegacyInputAdapter`
+    // (from PR-5, see `storage::legacy_adapter`), which presents
+    // them as one synthetic single-RG stream.
+    //
+    // This guard catches caller bugs — production code always routes
+    // legacy splits through the adapter (see `merge::execute_merge_operation`
+    // in `merge/mod.rs`), so a raw legacy `StreamingParquetReader`
+    // arriving here is a wiring mistake, not a supported input shape.
+    // Bail with a clear pointer rather than wading further into the
+    // streaming pipeline with mis-aligned RGs.
     if input_meta.rg_partition_prefix_len == 0 {
         for (idx, stream) in inputs.iter().enumerate() {
             let num_rgs = stream.metadata().num_row_groups();
@@ -3111,7 +3118,7 @@ mod tests {
     }
 
     /// Legacy multi-RG input (prefix_len=0, num_RGs>1) is rejected —
-    /// these must route through PR-5's `LegacyMultiRGAdapter`.
+    /// these must route through `LegacyInputAdapter` (PR-5).
     #[tokio::test]
     async fn test_legacy_multi_rg_input_rejected() {
         // Force a 2-RG file by writing two batches with row_group_size = 1
