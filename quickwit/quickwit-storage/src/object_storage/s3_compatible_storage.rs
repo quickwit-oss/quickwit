@@ -409,6 +409,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
+    #[tracing::instrument(skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,

@@ -19,8 +19,8 @@ use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
+    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, exponential_buckets, new_counter,
+    new_counter_vec, new_gauge, new_histogram_vec,
 };
 use quickwit_config::CacheConfig;
 
@@ -48,6 +48,9 @@ pub struct StorageMetrics {
     pub object_storage_bulk_delete_requests_total: IntCounter,
     pub object_storage_delete_request_duration: Histogram,
     pub object_storage_bulk_delete_request_duration: Histogram,
+    pub object_storage_get_object_duration: Histogram,
+    pub object_storage_put_object_duration: Histogram,
+    pub object_storage_upload_part_duration: Histogram,
 }
 
 impl Default for StorageMetrics {
@@ -86,12 +89,19 @@ impl Default for StorageMetrics {
             "storage",
             &[],
             ["action"],
-            vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
+            exponential_buckets(0.001, 2.0, 18)
+                .expect("object storage duration buckets should be valid"),
         );
         let object_storage_delete_request_duration =
             object_storage_request_duration.with_label_values(["delete_object"]);
         let object_storage_bulk_delete_request_duration =
             object_storage_request_duration.with_label_values(["delete_objects"]);
+        let object_storage_get_object_duration =
+            object_storage_request_duration.with_label_values(["get_object"]);
+        let object_storage_put_object_duration =
+            object_storage_request_duration.with_label_values(["put_object"]);
+        let object_storage_upload_part_duration =
+            object_storage_request_duration.with_label_values(["upload_part"]);
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
@@ -159,6 +169,9 @@ impl Default for StorageMetrics {
             object_storage_bulk_delete_requests_total,
             object_storage_delete_request_duration,
             object_storage_bulk_delete_request_duration,
+            object_storage_get_object_duration,
+            object_storage_put_object_duration,
+            object_storage_upload_part_duration,
         }
     }
 }
