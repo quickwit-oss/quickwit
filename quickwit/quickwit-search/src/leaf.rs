@@ -1533,6 +1533,7 @@ async fn run_offloaded_search_tasks(
                 for split_result in split_results {
                     match split_result.outcome {
                         Some(Outcome::Response(response)) => {
+                            let response = *response;
                             if let Some((split_info, single_split_search_req)) =
                                 split_lookup.remove(&split_result.split_id)
                             {

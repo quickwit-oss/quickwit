@@ -610,13 +610,12 @@ pub struct LambdaSingleSplitResult {
 /// Nested message and enum types in `LambdaSingleSplitResult`.
 pub mod lambda_single_split_result {
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-    #[allow(clippy::large_enum_variant)]
     #[serde(rename_all = "snake_case")]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Outcome {
         /// On success, the leaf search response for this split.
         #[prost(message, tag = "2")]
-        Response(super::LeafSearchResponse),
+        Response(::prost::alloc::boxed::Box<super::LeafSearchResponse>),
         /// On failure, the error message.
         #[prost(string, tag = "3")]
         Error(::prost::alloc::string::String),

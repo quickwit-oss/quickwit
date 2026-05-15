@@ -204,7 +204,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
-        .protoc_arg("--experimental_allow_proto3_optional");
+        .protoc_arg("--experimental_allow_proto3_optional")
+        // Box the large `LeafSearchResponse` variant so the oneof stays small
+        // (the `Error` variant only carries a `String`).
+        .boxed("LambdaSingleSplitResult.outcome.response");
 
     tonic_prost_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
@@ -216,12 +219,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
         .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
-        // The `Response` variant carries a `LeafSearchResponse` which now
-        // embeds `LeafResourceStats`.
-        .type_attribute(
-            "LambdaSingleSplitResult.outcome",
-            "#[allow(clippy::large_enum_variant)]",
-        )
         .out_dir("src/codegen/quickwit")
         .compile_with_config(
             prost_config,

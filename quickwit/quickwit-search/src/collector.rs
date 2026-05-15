@@ -466,10 +466,9 @@ fn get_score_extractor(
     })
 }
 
-#[allow(clippy::large_enum_variant)]
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
-    TantivyAggregationSegmentCollector(AggregationSegmentCollector),
+    TantivyAggregationSegmentCollector(Box<AggregationSegmentCollector>),
 }
 
 /// Quickwit collector working at the scale of the segment.
@@ -781,14 +780,14 @@ impl Collector for QuickwitCollector {
                 ))
             }
             Some(QuickwitAggregations::TantivyAggregations(aggs)) => Some(
-                AggregationSegmentCollectors::TantivyAggregationSegmentCollector(
+                AggregationSegmentCollectors::TantivyAggregationSegmentCollector(Box::new(
                     AggregationSegmentCollector::from_agg_req_and_reader(
                         aggs,
                         segment_reader,
                         segment_ord,
                         &self.agg_context_params,
                     )?,
-                ),
+                )),
             ),
             None => None,
         };
