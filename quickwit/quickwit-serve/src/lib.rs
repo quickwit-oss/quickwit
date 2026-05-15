@@ -1671,6 +1671,33 @@ mod tests {
 
         assert_eq!(indexer_pool.len(), 1);
 
+        // changing the ingester status of an indexer node refreshes the indexer pool
+        let updated_indexer_node = ClusterNode::for_test(
+            "test-indexer-node",
+            1,
+            true,
+            &["indexer"],
+            &[],
+            IngesterStatus::Retiring,
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: new_indexer_node.clone(),
+                updated: updated_indexer_node.clone(),
+            })
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(indexer_pool.len(), 1);
+        assert_eq!(
+            indexer_pool
+                .get(&NodeId::from("test-indexer-node"))
+                .expect("indexer node should be in the pool")
+                .ingester_status,
+            IngesterStatus::Retiring
+        );
+
         // removing an indexer node refreshes the indexer pool
         cluster_change_stream_tx
             .send(ClusterChange::Remove(new_indexer_node))
