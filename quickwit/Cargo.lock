@@ -8248,6 +8248,8 @@ dependencies = [
  "tonic 0.14.5",
  "tonic-prost",
  "tower 0.5.3",
+ "tracing",
+ "tracing-opentelemetry",
  "utoipa",
 ]
 
@@ -8272,6 +8274,8 @@ dependencies = [
  "hyper 1.9.0",
  "hyper-util",
  "itertools 0.14.0",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "pin-project",
  "pnet",
  "prometheus",
@@ -8293,6 +8297,7 @@ dependencies = [
  "tonic 0.14.5",
  "tower 0.5.3",
  "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
@@ -8608,6 +8613,7 @@ dependencies = [
  "tonic-prost",
  "tower 0.5.3",
  "tracing",
+ "tracing-opentelemetry",
  "ulid",
  "utoipa",
 ]
@@ -8887,7 +8893,6 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "mockall",
- "opentelemetry",
  "prost 0.14.3",
  "prost-build 0.14.3",
  "prost-types 0.14.3",

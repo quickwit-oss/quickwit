@@ -26,7 +26,7 @@ use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, instrument, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::RateMibPerSec;
@@ -152,6 +152,9 @@ pub struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
     shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
+    /// Snapshot broadcast on the previous tick. Carried across iterations so
+    /// we can diff against the new snapshot and only broadcast changes.
+    previous_snapshot: LocalShardsSnapshot,
 }
 
 const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
@@ -248,12 +251,13 @@ impl ShardThroughputTimeSeries {
 
 impl BroadcastLocalShardsTask {
     pub fn spawn(cluster: Cluster, weak_state: WeakIngesterState) -> JoinHandle<()> {
-        let mut broadcaster = Self {
+        let broadcaster = Self {
             cluster,
             weak_state,
             shard_throughput_time_series_map: Default::default(),
+            previous_snapshot: LocalShardsSnapshot::default(),
         };
-        tokio::spawn(async move { broadcaster.run().await })
+        tokio::spawn(broadcaster.run())
     }
 
     async fn snapshot_local_shards(&mut self) -> Option<LocalShardsSnapshot> {
@@ -335,23 +339,31 @@ impl BroadcastLocalShardsTask {
         }
     }
 
-    async fn run(&mut self) {
+    async fn run(mut self) {
         let mut interval = tokio::time::interval(BROADCAST_INTERVAL_PERIOD);
-        let mut previous_snapshot = LocalShardsSnapshot::default();
 
         loop {
             interval.tick().await;
 
-            let Some(new_snapshot) = self.snapshot_local_shards().await else {
+            if !self.run_once().await {
                 // The state has been dropped, we can stop the task.
                 debug!("stopping local shards broadcast task");
                 return;
-            };
-            self.broadcast_local_shards(&previous_snapshot, &new_snapshot)
-                .await;
-
-            previous_snapshot = new_snapshot;
+            }
         }
+    }
+
+    /// Single iteration of the broadcast loop. Returns `false` when the task
+    /// should stop.
+    #[instrument(name = "broadcast_local_shards.tick", skip_all)]
+    async fn run_once(&mut self) -> bool {
+        let Some(new_snapshot) = self.snapshot_local_shards().await else {
+            return false;
+        };
+        self.broadcast_local_shards(&self.previous_snapshot, &new_snapshot)
+            .await;
+        self.previous_snapshot = new_snapshot;
+        true
     }
 }
 
@@ -533,14 +545,12 @@ mod tests {
             .await
             .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
-        let weak_state = state.weak();
         let mut task = BroadcastLocalShardsTask {
             cluster,
-            weak_state,
+            weak_state: state.weak(),
             shard_throughput_time_series_map: Default::default(),
+            previous_snapshot: LocalShardsSnapshot::default(),
         };
-        let previous_snapshot = task.snapshot_local_shards().await.unwrap();
-        assert!(previous_snapshot.per_source_shard_infos.is_empty());
 
         let mut state_guard = state.lock_partially("test").await.unwrap();
 
@@ -560,7 +570,8 @@ mod tests {
         )
         .advertisable()
         .build();
-        state_guard.shards.insert(shard_01.queue_id(), shard_01);
+        let queue_id_01 = shard_01.queue_id();
+        state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
         let shard_02 = IngesterShard::new_replica(
             index_uid.clone(),
@@ -573,11 +584,10 @@ mod tests {
         state_guard.shards.insert(shard_02.queue_id(), shard_02);
         drop(state_guard);
 
-        let new_snapshot = task.snapshot_local_shards().await.unwrap();
-        assert_eq!(new_snapshot.per_source_shard_infos.len(), 1);
-
-        task.broadcast_local_shards(&previous_snapshot, &new_snapshot)
-            .await;
+        // First tick: shard_01 (advertisable, non-replica) is the only one
+        // contributing to the snapshot — broadcast publishes it.
+        assert!(task.run_once().await);
+        assert_eq!(task.previous_snapshot.per_source_shard_infos.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -587,8 +597,14 @@ mod tests {
         );
         task.cluster.get_self_key_value(&key).await.unwrap();
 
-        task.broadcast_local_shards(&new_snapshot, &previous_snapshot)
-            .await;
+        // Remove the only advertisable shard, run again: snapshot empty,
+        // broadcast clears the chitchat key.
+        let mut state_guard = state.lock_partially("test").await.unwrap();
+        state_guard.shards.remove(&queue_id_01);
+        drop(state_guard);
+
+        assert!(task.run_once().await);
+        assert!(task.previous_snapshot.per_source_shard_infos.is_empty());
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 

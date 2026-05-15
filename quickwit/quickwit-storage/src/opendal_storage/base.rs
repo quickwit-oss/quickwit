@@ -22,6 +22,7 @@ use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
+use tracing::instrument;
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
@@ -79,6 +80,7 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.gcs.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         crate::STORAGE_METRICS.object_storage_put_total.inc();
         let path = path.as_os_str().to_string_lossy();
@@ -99,6 +101,7 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.gcs.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         let mut storage_reader = self
@@ -116,6 +119,7 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.gcs.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
         let size = range.len();
@@ -131,6 +135,7 @@ impl Storage for OpendalStorage {
         Ok(into_owned_bytes(storage_content))
     }
 
+    #[instrument(name = "storage.gcs.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -148,12 +153,14 @@ impl Storage for OpendalStorage {
         Ok(Box::new(storage_reader))
     }
 
+    #[instrument(name = "storage.gcs.get_all", level = "debug", skip(self))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
         let storage_content = self.op.read(&path).await?.to_bytes();
         Ok(into_owned_bytes(storage_content))
     }
 
+    #[instrument(name = "storage.gcs.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         crate::STORAGE_METRICS
@@ -166,6 +173,7 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.gcs.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         // The mock service we used in integration testsuite doesn't support bulk delete.
         // Let's fallback to delete one by one in this case.
@@ -225,6 +233,7 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.gcs.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let path = path.as_os_str().to_string_lossy();
         let meta = self.op.stat(&path).await?;

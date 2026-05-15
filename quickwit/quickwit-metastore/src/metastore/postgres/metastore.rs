@@ -390,7 +390,7 @@ impl MetastoreService for PostgresqlMetastore {
     // - `indexes_metadata`
     // - `list_indexes_metadata`
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.create_index", skip(self))]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
@@ -422,6 +422,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.update_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
@@ -449,7 +450,7 @@ impl MetastoreService for PostgresqlMetastore {
         IndexMetadataResponse::try_from_index_metadata(&updated_index_metadata)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.index_metadata", skip(self))]
     async fn index_metadata(
         &self,
         request: IndexMetadataRequest,
@@ -476,7 +477,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.indexes_metadata", skip(self))]
     async fn indexes_metadata(
         &self,
         request: IndexesMetadataRequest,
@@ -550,7 +551,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_indexes_metadata", skip(self))]
     async fn list_indexes_metadata(
         &self,
         request: ListIndexesMetadataRequest,
@@ -574,7 +575,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip_all, fields(index_id=%request.index_uid()))]
+    #[instrument(name = "metastore.postgres.delete_index", skip_all, fields(index_id=%request.index_uid()))]
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let delete_result = sqlx::query("DELETE FROM indexes WHERE index_uid = $1")
@@ -591,7 +592,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip_all, fields(split_ids))]
+    #[instrument(name = "metastore.postgres.stage_splits", skip_all, fields(split_ids))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let splits_metadata = request.deserialize_splits_metadata()?;
@@ -696,7 +697,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.publish_splits", skip(self))]
     async fn publish_splits(
         &self,
         request: PublishSplitsRequest,
@@ -864,7 +865,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_splits", skip(self))]
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
@@ -914,6 +915,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(service_stream)
     }
 
+    #[instrument(name = "metastore.postgres.list_index_stats", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_index_stats(
         &self,
         request: ListIndexStatsRequest,
@@ -990,7 +992,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.mark_splits_for_deletion", skip(self))]
     async fn mark_splits_for_deletion(
         &self,
         request: MarkSplitsForDeletionRequest,
@@ -1066,7 +1068,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.delete_splits", skip(self))]
     async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let split_ids = request.split_ids;
@@ -1152,7 +1154,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.add_source", skip(self))]
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
@@ -1167,7 +1169,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.update_source", skip(self))]
     async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
@@ -1182,7 +1184,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.toggle_source", skip(self))]
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, "toggle source", {
@@ -1199,7 +1201,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.delete_source", skip(self))]
     async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
@@ -1226,7 +1228,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.reset_source_checkpoint", skip(self))]
     async fn reset_source_checkpoint(
         &self,
         request: ResetSourceCheckpointRequest,
@@ -1247,7 +1249,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Retrieves the last delete opstamp for a given `index_id`.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.last_delete_opstamp", skip(self))]
     async fn last_delete_opstamp(
         &self,
         request: LastDeleteOpstampRequest,
@@ -1270,7 +1272,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Creates a delete task from a delete query.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.create_delete_task", skip(self))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         let delete_query_json = serde_utils::to_json_str(&delete_query)?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
@@ -1294,7 +1296,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Update splits delete opstamps.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.update_splits_delete_opstamp", skip(self))]
     async fn update_splits_delete_opstamp(
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
@@ -1339,7 +1341,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Lists the delete tasks with opstamp > `opstamp_start`.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_delete_tasks", skip(self))]
     async fn list_delete_tasks(
         &self,
         request: ListDeleteTasksRequest,
@@ -1367,7 +1369,7 @@ impl MetastoreService for PostgresqlMetastore {
     /// Returns `num_splits` published splits with `split.delete_opstamp` < `delete_opstamp`.
     /// Results are ordered by ascending `split.delete_opstamp` and `split.publish_timestamp`
     /// values.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_stale_splits", skip(self))]
     async fn list_stale_splits(
         &self,
         request: ListStaleSplitsRequest,
@@ -1402,6 +1404,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     // TODO: Issue a single SQL query.
+    #[instrument(name = "metastore.postgres.open_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
@@ -1416,6 +1419,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(OpenShardsResponse { subresponses })
     }
 
+    #[instrument(name = "metastore.postgres.acquire_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn acquire_shards(
         &self,
         request: AcquireShardsRequest,
@@ -1440,6 +1444,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.list_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
         if request.subrequests.is_empty() {
             return Ok(Default::default());
@@ -1512,6 +1517,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.delete_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_shards(
         &self,
         request: DeleteShardsRequest,
@@ -1584,6 +1590,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.prune_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         const PRUNE_AGE_SHARDS_QUERY: &str = include_str!("queries/shards/prune_age.sql");
         const PRUNE_COUNT_SHARDS_QUERY: &str = include_str!("queries/shards/prune_count.sql");
@@ -1612,6 +1619,7 @@ impl MetastoreService for PostgresqlMetastore {
 
     // Index Template API
 
+    #[instrument(name = "metastore.postgres.create_index_template", skip(self))]
     async fn create_index_template(
         &self,
         request: CreateIndexTemplateRequest,
@@ -1672,6 +1680,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.postgres.get_index_template", skip(self))]
     async fn get_index_template(
         &self,
         request: GetIndexTemplateRequest,
@@ -1692,6 +1701,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.find_index_template_matches", skip(self))]
     async fn find_index_template_matches(
         &self,
         request: FindIndexTemplateMatchesRequest,
@@ -1722,6 +1732,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.list_index_templates", skip_all)]
     async fn list_index_templates(
         &self,
         _request: ListIndexTemplatesRequest,
@@ -1741,6 +1752,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.delete_index_templates", skip(self))]
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
@@ -1752,6 +1764,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.postgres.get_cluster_identity", skip_all)]
     async fn get_cluster_identity(
         &self,
         _: GetClusterIdentityRequest,
@@ -1774,6 +1787,7 @@ impl MetastoreService for PostgresqlMetastore {
 
     // Metrics Splits API
 
+    #[instrument(name = "metastore.postgres.stage_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_metrics_splits(
         &self,
         request: StageMetricsSplitsRequest,
@@ -1784,7 +1798,7 @@ impl MetastoreService for PostgresqlMetastore {
             .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.publish_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_metrics_splits(
         &self,
         request: PublishMetricsSplitsRequest,
@@ -1802,7 +1816,7 @@ impl MetastoreService for PostgresqlMetastore {
         .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.list_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_metrics_splits(
         &self,
         request: ListMetricsSplitsRequest,
@@ -1814,7 +1828,7 @@ impl MetastoreService for PostgresqlMetastore {
         ListMetricsSplitsResponse::try_from_splits(&splits)
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.mark_metrics_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_metrics_splits_for_deletion(
         &self,
         request: MarkMetricsSplitsForDeletionRequest,
@@ -1827,7 +1841,7 @@ impl MetastoreService for PostgresqlMetastore {
         .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.delete_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_metrics_splits(
         &self,
         request: DeleteMetricsSplitsRequest,
@@ -1840,6 +1854,7 @@ impl MetastoreService for PostgresqlMetastore {
         .await
     }
 
+    #[instrument(name = "metastore.postgres.stage_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_sketch_splits(
         &self,
         request: StageSketchSplitsRequest,
@@ -1850,7 +1865,7 @@ impl MetastoreService for PostgresqlMetastore {
             .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.publish_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_sketch_splits(
         &self,
         request: PublishSketchSplitsRequest,
@@ -1868,7 +1883,7 @@ impl MetastoreService for PostgresqlMetastore {
         .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.list_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_sketch_splits(
         &self,
         request: ListSketchSplitsRequest,
@@ -1880,7 +1895,7 @@ impl MetastoreService for PostgresqlMetastore {
         ListSketchSplitsResponse::try_from_splits(&splits)
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.mark_sketch_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_sketch_splits_for_deletion(
         &self,
         request: MarkSketchSplitsForDeletionRequest,
@@ -1893,7 +1908,7 @@ impl MetastoreService for PostgresqlMetastore {
         .await
     }
 
-    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    #[instrument(name = "metastore.postgres.delete_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_sketch_splits(
         &self,
         request: DeleteSketchSplitsRequest,

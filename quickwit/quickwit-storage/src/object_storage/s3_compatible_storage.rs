@@ -769,6 +769,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
@@ -788,6 +789,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let get_object_output =
@@ -801,6 +803,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
@@ -828,6 +831,7 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
+    #[instrument(name = "storage.s3.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         if self.disable_multi_object_delete {
             self.bulk_delete_single(paths).await
@@ -836,7 +840,7 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         self.get_to_bytes(path, Some(range.clone()))
@@ -852,7 +856,7 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -869,7 +873,12 @@ impl Storage for S3CompatibleObjectStorage {
         }))
     }
 
-    #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
+    #[instrument(
+        name = "storage.s3.get_all",
+        level = "debug",
+        skip(self),
+        fields(num_bytes_fetched)
+    )]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bytes = self
@@ -887,6 +896,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(bytes)
     }
 
+    #[instrument(name = "storage.s3.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
