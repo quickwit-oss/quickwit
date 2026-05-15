@@ -189,7 +189,7 @@ fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
-    let mut index_files = vec![scratch_directory.path().join("meta.json")];
+    let mut split_files = vec![scratch_directory.path().join("meta.json")];
 
     // list the segment files
     for segment_meta in segment_metas {
@@ -199,12 +199,12 @@ fn list_split_files(
                 // If the file is missing, this is fine.
                 // segment_meta.list_files() may actually returns files that
                 // may not exist.
-                index_files.push(filepath);
+                split_files.push(filepath);
             }
         }
     }
-    index_files.sort();
-    Ok(index_files)
+    split_files.sort();
+    Ok(split_files)
 }
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {

@@ -22,6 +22,8 @@ use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceU
 use tokio::task::JoinError;
 use tracing::{Span, error, info_span, instrument};
 
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
+
 /// A light wrapper to allow async operation in mrecordlog.
 pub struct MultiRecordLogAsync {
     mrecordlog_opt: Option<MultiRecordLog>,
@@ -87,9 +89,9 @@ impl MultiRecordLogAsync {
                 self.mrecordlog_opt = Some(mrecordlog);
                 operation_result
             }
-            Err(join_error) => {
+            Err(error) => {
                 // This could be caused by a panic
-                error!(error=?join_error, "failed to run mrecordlog operation");
+                error!(%error, "failed to run mrecordlog operation");
                 panic!("failed to run mrecordlog operation");
             }
         }
@@ -99,16 +101,36 @@ impl MultiRecordLogAsync {
     pub async fn create_queue(&mut self, queue: &str) -> Result<(), CreateQueueError> {
         let span = info_span!("mrecordlog.create_queue", queue);
         let queue = queue.to_string();
-        self.run_operation(span, move |mrecordlog| mrecordlog.create_queue(&queue))
-            .await
+        self.run_operation(span, move |mrecordlog| {
+            mrecordlog
+                .create_queue(&queue)
+                .inspect(|outcome| {
+                    INGEST_V2_METRICS
+                        .wal_bytes_written_total
+                        .with_label_values(["create_queue"])
+                        .inc_by(outcome.wal_bytes_written);
+                })
+                .map(|_| ())
+        })
+        .await
     }
 
     #[instrument(name = "mrecordlog.delete_queue_async", skip_all, fields(queue))]
     pub async fn delete_queue(&mut self, queue: &str) -> Result<(), DeleteQueueError> {
         let span = info_span!("mrecordlog.delete_queue", queue);
         let queue = queue.to_string();
-        self.run_operation(span, move |mrecordlog| mrecordlog.delete_queue(&queue))
-            .await
+        self.run_operation(span, move |mrecordlog| {
+            mrecordlog
+                .delete_queue(&queue)
+                .inspect(|outcome| {
+                    INGEST_V2_METRICS
+                        .wal_bytes_written_total
+                        .with_label_values(["delete_queue"])
+                        .inc_by(outcome.wal_bytes_written);
+                })
+                .map(|_| ())
+        })
+        .await
     }
 
     #[instrument(name = "mrecordlog.append_records_async", skip_all, fields(queue))]
@@ -121,7 +143,15 @@ impl MultiRecordLogAsync {
         let span = info_span!("mrecordlog.append_records", queue);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
-            mrecordlog.append_records(&queue, position_opt, payloads)
+            mrecordlog
+                .append_records(&queue, position_opt, payloads)
+                .inspect(|outcome| {
+                    INGEST_V2_METRICS
+                        .wal_bytes_written_total
+                        .with_label_values(["append"])
+                        .inc_by(outcome.wal_bytes_written);
+                })
+                .map(|outcome| outcome.last_position)
         })
         .await
     }
@@ -131,7 +161,15 @@ impl MultiRecordLogAsync {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
-            mrecordlog.truncate(&queue, position)
+            mrecordlog
+                .truncate(&queue, ..=position)
+                .inspect(|outcome| {
+                    INGEST_V2_METRICS
+                        .wal_bytes_written_total
+                        .with_label_values(["truncate"])
+                        .inc_by(outcome.wal_bytes_written);
+                })
+                .map(|outcome| outcome.evicted_records)
         })
         .await
     }

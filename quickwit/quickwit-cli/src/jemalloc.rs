@@ -15,6 +15,7 @@
 use std::time::Duration;
 
 use quickwit_common::metrics::MEMORY_METRICS;
+use quickwit_common::rate_limited_warn;
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
@@ -39,22 +40,33 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     let resident_mib = tikv_jemalloc_ctl::stats::resident::mib()?;
 
     let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         poll_interval.tick().await;
 
-        // Many statistics are cached and only updated when the epoch is advanced:
-        epoch_mib.advance()?;
-
-        // Read statistics using MIB keys:
-        let active = active_mib.read()?;
-        memory_metrics.active_bytes.set(active as i64);
-
-        let allocated = allocated_mib.read()?;
-        memory_metrics.allocated_bytes.set(allocated as i64);
-
-        let resident = resident_mib.read()?;
-        memory_metrics.resident_bytes.set(resident as i64);
+        if let Err(error) = epoch_mib.advance() {
+            rate_limited_warn!(limit_per_min = 1, %error, "failed to advance jemalloc epoch");
+            continue;
+        }
+        match active_mib.read() {
+            Ok(active) => memory_metrics.active_bytes.set(active as i64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.active");
+            }
+        }
+        match allocated_mib.read() {
+            Ok(allocated) => memory_metrics.allocated_bytes.set(allocated as i64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.allocated");
+            }
+        }
+        match resident_mib.read() {
+            Ok(resident) => memory_metrics.resident_bytes.set(resident as i64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.resident");
+            }
+        }
     }
 }
 
