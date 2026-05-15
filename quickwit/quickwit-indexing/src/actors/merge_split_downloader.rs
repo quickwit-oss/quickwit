@@ -126,32 +126,30 @@ impl MergeSplitDownloader {
         download_directory: &Path,
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<Box<dyn Directory>>, quickwit_actors::ActorExitStatus> {
-        // we download all of the split files in the scratch directory.
-        let mut tantivy_dirs = Vec::new();
-        for split in splits {
-            if ctx.kill_switch().is_dead() {
-                debug!(
-                    split_id = split.split_id(),
-                    "Kill switch was activated. Cancelling download."
-                );
-                return Err(ActorExitStatus::Killed);
-            }
-            let io_controls = self
-                .io_controls
-                .clone()
-                .set_progress(ctx.progress().clone())
-                .set_kill_switch(ctx.kill_switch().clone());
-            let _protect_guard = ctx.protect_zone();
-            let tantivy_dir = self
-                .split_store
-                .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
-                .await
-                .map_err(|error| {
-                    let split_id = split.split_id();
-                    anyhow::anyhow!(error).context(format!("failed to download split `{split_id}`"))
-                })?;
-            tantivy_dirs.push(tantivy_dir);
+        if ctx.kill_switch().is_dead() {
+            debug!("kill switch was activated, cancelling download");
+            return Err(ActorExitStatus::Killed);
         }
+        let io_controls = self
+            .io_controls
+            .clone()
+            .set_progress(ctx.progress().clone())
+            .set_kill_switch(ctx.kill_switch().clone());
+        let _protect_guard = ctx.protect_zone();
+        let download_futures = splits.iter().map(|split| {
+            let io_controls = io_controls.clone();
+            async move {
+                self.split_store
+                    .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
+                    .await
+                    .map_err(|error| {
+                        let split_id = split.split_id();
+                        anyhow::anyhow!(error)
+                            .context(format!("failed to download split `{split_id}`"))
+                    })
+            }
+        });
+        let tantivy_dirs = futures::future::try_join_all(download_futures).await?;
         Ok(tantivy_dirs)
     }
 }

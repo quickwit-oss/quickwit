@@ -124,6 +124,8 @@ impl CompactorSupervisor {
                 error!(%task_id, %error, "failed to spawn compaction task");
             }
         }
+        let available_slots = self.pipelines.iter().filter(|pipeline_opt| pipeline_opt.is_none()).count();
+        COMPACTOR_METRICS.available_slots.set(available_slots as i64);
     }
 
     async fn spawn_task(
@@ -221,7 +223,6 @@ impl CompactorSupervisor {
             .filter(|s| matches!(s.status, PipelineStatus::InProgress))
             .count();
         let available_slots = (self.pipelines.len() - in_progress_count) as i64;
-        COMPACTOR_METRICS.available_slots.set(available_slots);
 
         let mut in_progress = Vec::new();
         let mut successes = Vec::new();

@@ -115,7 +115,7 @@ impl CompactionState {
                 break;
             }
             for operation in operations {
-                for split in operation.splits_as_slice() {
+                for split in &operation.splits {
                     self.needs_compaction_split_ids.remove(split.split_id());
                     self.in_flight_split_ids
                         .insert(split.split_id().to_string());
