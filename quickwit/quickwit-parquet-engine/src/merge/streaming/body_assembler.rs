@@ -267,7 +267,20 @@ impl Iterator for BodyColOutputPageIter<'_> {
     type Item = Result<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.inner.done || self.inner.rows_emitted >= self.inner.expected_rows {
+        // `assemble_one_output_page` only advances `rows_emitted` by
+        // `page_size = remaining.min(OUTPUT_PAGE_ROWS)` where
+        // `remaining = expected_rows - rows_emitted`, so the increment
+        // never overshoots. `emitted > expected` would mean a real
+        // accounting bug — surface it loudly rather than silently
+        // terminating one iteration too late.
+        debug_assert!(
+            self.inner.rows_emitted <= self.inner.expected_rows,
+            "rows_emitted {} > expected_rows {} for output {}",
+            self.inner.rows_emitted,
+            self.inner.expected_rows,
+            self.inner.out_idx,
+        );
+        if self.inner.done || self.inner.rows_emitted == self.inner.expected_rows {
             self.inner.done = true;
             return None;
         }
