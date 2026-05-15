@@ -761,6 +761,12 @@ fn compute_root_resource_stats(
         .max_by_key(|stats| stats.wall_time_microsecs)
         .cloned();
 
+    let mut leaf_wall_times_microsecs: Vec<u64> = leaf_stats
+        .iter()
+        .map(|stats| stats.wall_time_microsecs)
+        .collect();
+    leaf_wall_times_microsecs.sort_by_key(|time| std::cmp::Reverse(*time));
+
     let mut leaf_resources_sum = LeafResourceStats::default();
     for stats in &leaf_stats {
         crate::add_leaf_stats(&mut leaf_resources_sum, stats);
@@ -772,6 +778,7 @@ fn compute_root_resource_stats(
         leaf_num_calls,
         leaf_num_calls_including_retries,
         num_failed_splits,
+        leaf_wall_times_microsecs,
     })
 }
 
@@ -2994,6 +3001,9 @@ mod tests {
             .expect("worst leaf should be set");
         assert_eq!(worst.wall_time_microsecs, 2_500);
         assert_eq!(worst.localexec_num_docs, 20);
+
+        // `leaf_wall_times_microsecs` lists every leaf's wall time, largest first.
+        assert_eq!(&root_stats.leaf_wall_times_microsecs, &[2_500, 1_000]);
 
         // `leaf_resources_sum` field-wise sums every numeric counter, including
         // `wall_time_microsecs` and `lambda_bottleneck` (post-`add_leaf_stats`

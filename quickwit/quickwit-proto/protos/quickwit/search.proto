@@ -466,6 +466,11 @@ message RootResourceStats {
     uint64 leaf_num_calls_including_retries = 4;
     // Number of failed splits across all leaves.
     uint64 num_failed_splits = 5;
+    // Per-leaf `wall_time_microsecs`, one entry per leaf that contributed
+    // stats, sorted in descending order (largest first). Useful for
+    // distinguishing "one straggler" from "all leaves comparably slow"
+    // without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
+    repeated uint64 leaf_wall_times_microsecs = 6;
 }
 
 // LeafRequestRef references data in LeafSearchRequest to deduplicate data.

@@ -401,7 +401,7 @@ pub struct LeafResourceStats {
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RootResourceStats {
     /// The leaf with the largest `wall_time_microsecs`.
     #[prost(message, optional, tag = "1")]
@@ -421,6 +421,12 @@ pub struct RootResourceStats {
     /// Number of failed splits across all leaves.
     #[prost(uint64, tag = "5")]
     pub num_failed_splits: u64,
+    /// Per-leaf `wall_time_microsecs`, one entry per leaf that contributed
+    /// stats, sorted in descending order (largest first). Useful for
+    /// distinguishing "one straggler" from "all leaves comparably slow"
+    /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
+    #[prost(uint64, repeated, tag = "6")]
+    pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
