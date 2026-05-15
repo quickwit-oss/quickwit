@@ -409,17 +409,17 @@ message LeafResourceStats {
     uint64 partial_result_cache_num_docs = 2;
 
     // Number of splits executed locally (excluding cache hits and lambda).
-    uint64 localexec_num_splits = 8;
+    uint64 localexec_num_splits = 3;
     // Sum of `split.num_docs` across locally-executed splits.
-    uint64 localexec_num_docs = 9;
+    uint64 localexec_num_docs = 4;
     // The worst single-split contribution, ranked by `warmup + cpu_search`
     // (intentionally excludes the queueing phases `wait_for_search_permit`
     // and `wait_for_cpu_pool` so the ranking reflects "how much work this
     // split actually did").
-    SplitResourceStats split_resources_worst = 10;
+    SplitResourceStats split_resources_worst = 5;
     // Field-wise sum of `SplitResourceStats` across all locally-executed splits.
     // If you want to compute averages, divide by localexec_num_splits.
-    SplitResourceStats split_resources_sum = 11;
+    SplitResourceStats split_resources_sum = 6;
     // Minimum `wait_for_search_permit_microsecs` across the locally-executed
     // splits represented by this stats record. Useful to detect a busy leaf:
     // if even the luckiest split waited long, the node was already saturated
@@ -429,26 +429,26 @@ message LeafResourceStats {
     // Aggregation is MIN everywhere (not extensive sum like most fields).
     // `add_leaf_stats` takes the min of two `Option<u64>` with
     // `min(None, x) = x`.
-    optional uint64 min_wait_for_search_permit_microsecs = 13;
+    optional uint64 min_wait_for_search_permit_microsecs = 7;
     // Same as above, but for `wait_for_cpu_pool_microsecs`.
-    optional uint64 min_wait_for_cpu_pool_microsecs = 14;
+    optional uint64 min_wait_for_cpu_pool_microsecs = 8;
     // Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
-    uint64 wall_time_microsecs = 12;
+    uint64 wall_time_microsecs = 9;
 
     // Number of splits dispatched to lambda (offloaded execution).
-    uint64 lambda_num_splits = 3;
+    uint64 lambda_num_splits = 10;
     // Sum of `split.num_docs` across lambda-dispatched splits.
-    uint64 lambda_num_docs = 4;
+    uint64 lambda_num_docs = 11;
     // Number of lambda-dispatched splits that succeeded.
-    uint64 lambda_success_num_splits = 5;
+    uint64 lambda_success_num_splits = 12;
     // Sum of `split.num_docs` across successful lambda-dispatched splits.
-    uint64 lambda_success_num_docs = 6;
+    uint64 lambda_success_num_docs = 13;
     // At the source (a single leaf call) this is 1 if the offloaded path
     // finished after the local path (lambda was the bottleneck), 0 otherwise.
     // Forced to 0 when `lambda_num_splits == 0`. At aggregate levels (merged
     // across leaves) it is the count of leaves where lambda was the
     // bottleneck. Voluntarily a uint64 (not a bool) for summability.
-    uint64 lambda_bottleneck = 7;
+    uint64 lambda_bottleneck = 14;
 }
 
 // Resource statistics for a root search.

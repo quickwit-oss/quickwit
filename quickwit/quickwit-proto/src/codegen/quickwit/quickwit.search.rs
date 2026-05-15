@@ -347,20 +347,20 @@ pub struct LeafResourceStats {
     #[prost(uint64, tag = "2")]
     pub partial_result_cache_num_docs: u64,
     /// Number of splits executed locally (excluding cache hits and lambda).
-    #[prost(uint64, tag = "8")]
+    #[prost(uint64, tag = "3")]
     pub localexec_num_splits: u64,
     /// Sum of `split.num_docs` across locally-executed splits.
-    #[prost(uint64, tag = "9")]
+    #[prost(uint64, tag = "4")]
     pub localexec_num_docs: u64,
     /// The worst single-split contribution, ranked by `warmup + cpu_search`
     /// (intentionally excludes the queueing phases `wait_for_search_permit`
     /// and `wait_for_cpu_pool` so the ranking reflects "how much work this
     /// split actually did").
-    #[prost(message, optional, tag = "10")]
+    #[prost(message, optional, tag = "5")]
     pub split_resources_worst: ::core::option::Option<SplitResourceStats>,
     /// Field-wise sum of `SplitResourceStats` across all locally-executed splits.
     /// If you want to compute averages, divide by localexec_num_splits.
-    #[prost(message, optional, tag = "11")]
+    #[prost(message, optional, tag = "6")]
     pub split_resources_sum: ::core::option::Option<SplitResourceStats>,
     /// Minimum `wait_for_search_permit_microsecs` across the locally-executed
     /// splits represented by this stats record. Useful to detect a busy leaf:
@@ -371,32 +371,32 @@ pub struct LeafResourceStats {
     /// Aggregation is MIN everywhere (not extensive sum like most fields).
     /// `add_leaf_stats` takes the min of two `Option<u64>` with
     /// `min(None, x) = x`.
-    #[prost(uint64, optional, tag = "13")]
+    #[prost(uint64, optional, tag = "7")]
     pub min_wait_for_search_permit_microsecs: ::core::option::Option<u64>,
     /// Same as above, but for `wait_for_cpu_pool_microsecs`.
-    #[prost(uint64, optional, tag = "14")]
+    #[prost(uint64, optional, tag = "8")]
     pub min_wait_for_cpu_pool_microsecs: ::core::option::Option<u64>,
     /// Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
-    #[prost(uint64, tag = "12")]
+    #[prost(uint64, tag = "9")]
     pub wall_time_microsecs: u64,
     /// Number of splits dispatched to lambda (offloaded execution).
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "10")]
     pub lambda_num_splits: u64,
     /// Sum of `split.num_docs` across lambda-dispatched splits.
-    #[prost(uint64, tag = "4")]
+    #[prost(uint64, tag = "11")]
     pub lambda_num_docs: u64,
     /// Number of lambda-dispatched splits that succeeded.
-    #[prost(uint64, tag = "5")]
+    #[prost(uint64, tag = "12")]
     pub lambda_success_num_splits: u64,
     /// Sum of `split.num_docs` across successful lambda-dispatched splits.
-    #[prost(uint64, tag = "6")]
+    #[prost(uint64, tag = "13")]
     pub lambda_success_num_docs: u64,
     /// At the source (a single leaf call) this is 1 if the offloaded path
     /// finished after the local path (lambda was the bottleneck), 0 otherwise.
     /// Forced to 0 when `lambda_num_splits == 0`. At aggregate levels (merged
     /// across leaves) it is the count of leaves where lambda was the
     /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
-    #[prost(uint64, tag = "7")]
+    #[prost(uint64, tag = "14")]
     pub lambda_bottleneck: u64,
 }
 /// Resource statistics for a root search.
