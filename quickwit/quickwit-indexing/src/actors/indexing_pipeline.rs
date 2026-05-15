@@ -305,7 +305,7 @@ impl IndexingPipeline {
             super::PUBLISHER_NAME,
             QueueCapacity::Bounded(1),
             self.params.metastore.clone(),
-            Some(self.params.merge_planner_mailbox.clone()),
+            self.params.merge_planner_mailbox_opt.clone(),
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handle) = ctx
@@ -551,7 +551,7 @@ pub struct IndexingPipelineParams {
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
     pub retention_policy: Option<RetentionPolicy>,
-    pub merge_planner_mailbox: Mailbox<MergePlanner>,
+    pub merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     pub max_concurrent_split_uploads_merge: usize,
 
     // Source-related parameters
@@ -689,7 +689,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
         };
@@ -813,7 +813,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -914,7 +914,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox: merge_planner_mailbox.clone(),
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -1042,7 +1042,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),
         };

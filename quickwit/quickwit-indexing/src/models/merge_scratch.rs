@@ -15,14 +15,15 @@
 use quickwit_common::temp_dir::TempDirectory;
 use tantivy::Directory;
 
-use crate::merge_policy::MergeTask;
+use crate::merge_policy::{MergeOperation, MergeTask};
 
 #[derive(Debug)]
 pub struct MergeScratch {
-    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
-    /// See planners docs to understand the usage.
-    pub merge_task: MergeTask,
-    /// Scratch directory for computing the merge.
+    /// The merge operation data (splits, merge_split_id, operation type).
+    pub merge_operation: MergeOperation,
+    // TODO: remove once the old MergePipeline is deleted and the
+    // DeleteTaskPipeline no longer routes through MergeSchedulerService.
+    pub merge_task: Option<MergeTask>,
     pub merge_scratch_directory: TempDirectory,
     pub downloaded_splits_directory: TempDirectory,
     pub tantivy_dirs: Vec<Box<dyn Directory>>,

@@ -123,7 +123,7 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
-            merge_scheduler_mailbox,
+            Some(merge_scheduler_mailbox),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),

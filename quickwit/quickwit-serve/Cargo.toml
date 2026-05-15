@@ -67,6 +67,7 @@ quickwit-datafusion = { workspace = true, optional = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
+quickwit-compaction = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
@@ -112,6 +113,10 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 datafusion = ["dep:quickwit-datafusion"]
+metrics = [
+  "quickwit-compaction/metrics",
+  "quickwit-indexing/metrics",
+]
 pprof = [
   "dep:pprof"
 ]

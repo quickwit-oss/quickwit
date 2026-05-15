@@ -67,19 +67,23 @@ impl IndexingService {
             IndexingError::Internal(format!("failed to parse partition_key: {error}"))
         })?;
 
-        // Spawn the Parquet merge pipeline (or reuse an existing one for this
-        // index). The planner mailbox is wired into the MetricsPipeline's
-        // Publisher so newly ingested splits are fed back for merging.
-        let merge_planner_mailbox = self.get_or_create_parquet_merge_pipeline(
-            indexing_pipeline_id.index_uid.clone(),
-            &index_config,
-            storage.clone(),
-            indexing_directory.clone(),
-            // None here means the pipeline's fetch_immature_splits() will
-            // query the metastore on first spawn (same path as respawn).
-            None,
-            ctx,
-        )?;
+        // Spawn the Parquet merge pipeline only when this indexer owns a local
+        // merge scheduler. In split-compaction deployments, compaction is run
+        // by the dedicated compaction service instead.
+        let parquet_merge_planner_mailbox_opt = if self.merge_scheduler_service_opt.is_some() {
+            Some(self.get_or_create_parquet_merge_pipeline(
+                indexing_pipeline_id.index_uid.clone(),
+                &index_config,
+                storage.clone(),
+                indexing_directory.clone(),
+                // None here means the pipeline's fetch_immature_splits() will
+                // query the metastore on first spawn (same path as respawn).
+                None,
+                ctx,
+            )?)
+        } else {
+            None
+        };
 
         let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
@@ -97,7 +101,7 @@ impl IndexingService {
             use_sketch_processors,
             partition_key,
             max_num_partitions: index_config.doc_mapping.max_num_partitions,
-            parquet_merge_planner_mailbox_opt: Some(merge_planner_mailbox),
+            parquet_merge_planner_mailbox_opt,
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
