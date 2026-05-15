@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,9 +58,9 @@ use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, IndexMappingQueryParams,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+    ScrollQueryParams, SearchBody, SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
@@ -199,8 +199,49 @@ async fn get_index_metadata(
     Ok(index_metadata)
 }
 
+/// Parses the `fields` URL query parameter. Returns `None` when the
+/// parameter is absent, empty, or contains only whitespace and commas.
+/// Otherwise returns the trimmed, non-empty tokens.
+fn parse_field_hints(params: &IndexMappingQueryParams) -> Option<Vec<String>> {
+    let raw = params.fields.as_deref()?;
+    let tokens: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens)
+    }
+}
+
+/// Collects the set of declared top-level field names across every index
+/// in `indexes_metadata`. Used by the column-hints handler to decide
+/// whether a `?fields=…` request can be served directly from `doc_mapping`
+/// without going to the splits.
+fn collect_declared_top_level_names(indexes_metadata: &[IndexMetadata]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for metadata in indexes_metadata {
+        for entry in &metadata.index_config.doc_mapping.field_mappings {
+            names.insert(entry.name.clone());
+        }
+    }
+    names
+}
+
+/// `_mapping?fields=…` column-hints fast path.
+///
+/// When every requested name is a flat literal (no `*`, no `?`, no `.`)
+/// declared in the union of the indexes' `doc_mapping`, we can serve the
+/// response purely from the declared mapping — no `list_fields` call,
+/// no split I/O. Anything else (wildcards, dotted paths, names that
+/// aren't declared) falls through to the full-mapping path, which lists
+/// all fields from the splits in the time range and returns the
+/// unfiltered mapping.
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
+    params: IndexMappingQueryParams,
     mut metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
@@ -214,22 +255,46 @@ pub(crate) async fn es_compat_index_mapping(
         .iter()
         .map(|m| m.index_id().to_string())
         .collect();
+
+    // Take the fast path when `?fields=…` is present and every requested
+    // name is a flat declared field on some index. In that case the
+    // declared mapping is authoritative and we skip `list_fields`.
+    if let Some(requested_fields) = parse_field_hints(&params) {
+        let declared_top: HashSet<String> = collect_declared_top_level_names(&indexes_metadata);
+        let all_declared = requested_fields.iter().all(|requested| {
+            !requested.contains('*')
+                && !requested.contains('?')
+                && !requested.contains('.')
+                && declared_top.contains(requested.as_str())
+        });
+        if all_declared {
+            return Ok(ElasticsearchMappingsResponse::from_doc_mapping_filtered(
+                indexes_metadata,
+                None,
+                &requested_fields,
+            ));
+        }
+    }
+
+    // Full-mapping fallback (no `?fields=`, or some requested name needs
+    // split-side discovery): list all fields from the splits in the time
+    // range and return the full mapping. Same shape as the pre-PR route,
+    // just with the timestamp-pushdown optimization applied.
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
         fields: Vec::new(),
-        start_timestamp: None,
-        end_timestamp: None,
+        start_timestamp: params.start_timestamp,
+        end_timestamp: params.end_timestamp,
         query_ast: None,
     };
     let list_fields_response = search_service
         .root_list_fields(list_fields_request)
         .await
         .ok();
-    let response = ElasticsearchMappingsResponse::from_doc_mapping(
+    Ok(ElasticsearchMappingsResponse::from_doc_mapping(
         indexes_metadata,
         list_fields_response.as_ref(),
-    );
-    Ok(response)
+    ))
 }
 
 /// GET or POST _elastic/_search

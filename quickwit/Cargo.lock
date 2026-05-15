@@ -9055,6 +9055,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_qs 0.15.0",
+ "serde_urlencoded",
  "serde_with",
  "tempfile",
  "thiserror 2.0.18",
