@@ -302,7 +302,7 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model);
 
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
@@ -367,7 +367,7 @@ impl IndexingScheduler {
         {
             return;
         }
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
             .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
@@ -387,7 +387,7 @@ impl IndexingScheduler {
         }
     }
 
-    fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
+    fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
         let (ready, not_ready): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
             .indexer_pool
             .values()
@@ -1106,8 +1106,81 @@ mod tests {
     }
 
     use quickwit_config::SourceInputFormat;
-    use quickwit_proto::indexing::mcpu;
+    use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, MockIndexingService, mcpu};
     use quickwit_proto::ingest::{Shard, ShardState};
+
+    fn mock_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+        let mock_indexer = MockIndexingService::new();
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from(node_id.to_string()),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_only_ready_when_available() {
+        let indexer_pool = IndexerPool::default();
+        let ready_indexer = mock_indexer_node_info("indexer-ready-1", IngesterStatus::Ready);
+        let ready_indexer_2 = mock_indexer_node_info("indexer-ready-2", IngesterStatus::Ready);
+        let retiring_indexer = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
+        indexer_pool.insert(ready_indexer.node_id.clone(), ready_indexer);
+        indexer_pool.insert(ready_indexer_2.node_id.clone(), ready_indexer_2);
+        indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from("control-plane".to_string()),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Ready)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_falls_back_to_retiring_when_no_ready() {
+        let indexer_pool = IndexerPool::default();
+        let retiring_1 = mock_indexer_node_info("indexer-retiring-1", IngesterStatus::Retiring);
+        let retiring_2 = mock_indexer_node_info("indexer-retiring-2", IngesterStatus::Retiring);
+        indexer_pool.insert(retiring_1.node_id.clone(), retiring_1);
+        indexer_pool.insert(retiring_2.node_id.clone(), retiring_2);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from("control-plane".to_string()),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Retiring)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_empty_when_pool_is_empty() {
+        let indexer_pool = IndexerPool::default();
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from("control-plane".to_string()),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+        assert!(selected.is_empty());
+    }
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {
