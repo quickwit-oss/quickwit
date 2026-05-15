@@ -356,6 +356,19 @@ fn resolve_prefix_sort_cols(
         // null at every row is constant, which trivially satisfies
         // alignment on that column. The transition computation
         // synthesizes a NullArray in its place.
+        //
+        // Adapter-vs-reader consistency note (Codex P2 on PR #6425):
+        // we record `None` here and the caller stamps
+        // `rg_partition_prefix_len = target_prefix_len` on the output.
+        // The matching reader-side handling — `find_prefix_parquet_col_indices`
+        // returning `Vec<Option<PrefixColumn>>` and synthesizing a
+        // constant `[0x00, 0x00]` byte sequence for `None` slots —
+        // lands in the next slice (PR #6426, the hardening PR; F12
+        // from the adversarial review). The only caller of this
+        // adapter is `execute_merge_operation` introduced in
+        // PR #6423, which sits above #6426 in the stack, so there is
+        // no production caller that can produce a missing-column
+        // prefix until the reader fix is in place.
         indices.push(arrow_schema.index_of(resolved).ok());
     }
     Ok(indices)
