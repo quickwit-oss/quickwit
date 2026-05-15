@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quickwit_doc_mapper::{FieldMappingEntry, FieldMappingType};
 use quickwit_metastore::IndexMetadata;
@@ -62,15 +62,43 @@ enum FieldMapping {
 }
 
 impl ElasticsearchMappingsResponse {
+    /// Builds the full mapping response for every requested index. Includes
+    /// every declared field plus any dynamic fields the search service
+    /// returned. This is the legacy code path used when the caller did not
+    /// opt into column hints.
     pub fn from_doc_mapping(
         indexes_metadata: Vec<IndexMetadata>,
         list_fields_response: Option<&ListFieldsResponse>,
     ) -> Self {
+        Self::from_doc_mapping_filtered(indexes_metadata, list_fields_response, &[])
+    }
+
+    /// Builds the mapping response, optionally filtered to a set of
+    /// caller-requested column names. Matching is by exact equality on the
+    /// declared top-level field name.
+    ///
+    /// The caller (the column-hints fast path in `rest_handler.rs`) is
+    /// responsible for ensuring `requested_fields` only contains flat
+    /// literal names that exist in some index's `doc_mapping` — wildcards
+    /// and dotted paths are rejected upstream because the static
+    /// `doc_mapping` never declares them.
+    ///
+    /// An empty `requested_fields` slice means "no filter" and behaves
+    /// identically to [`Self::from_doc_mapping`].
+    pub fn from_doc_mapping_filtered(
+        indexes_metadata: Vec<IndexMetadata>,
+        list_fields_response: Option<&ListFieldsResponse>,
+        requested_fields: &[String],
+    ) -> Self {
+        let filter: HashSet<&str> = requested_fields.iter().map(String::as_str).collect();
         let indices = indexes_metadata
             .into_iter()
             .map(|index_metadata| {
                 let field_mappings = &index_metadata.index_config.doc_mapping.field_mappings;
                 let mut properties = build_properties(field_mappings);
+                if !filter.is_empty() {
+                    properties.retain(|name, _| filter.contains(name.as_str()));
+                }
                 if let Some(list_fields) = list_fields_response {
                     merge_dynamic_fields(&mut properties, list_fields);
                 }
@@ -126,7 +154,9 @@ fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
 /// Merges dynamic fields from a `ListFieldsResponse` into the properties map.
 ///
 /// Fields already present in the map (from explicit doc mappings) are skipped,
-/// as are internal fields (prefixed with `_`).
+/// as are internal fields (prefixed with `_`). When the same `field_name`
+/// appears multiple times in the response (e.g. observed in two splits with
+/// different types) the first mappable observation wins.
 fn merge_dynamic_fields(
     properties: &mut HashMap<String, FieldMapping>,
     list_fields_response: &ListFieldsResponse,
@@ -272,10 +302,10 @@ mod tests {
         assert_eq!(meta["properties"]["source"]["type"], "keyword");
     }
 
+    use quickwit_proto::search::ListFieldsEntryResponse;
+
     #[test]
     fn test_merge_dynamic_fields_skips_existing_and_internal() {
-        use quickwit_proto::search::ListFieldsEntryResponse;
-
         let mut properties = HashMap::new();
         properties.insert("title".to_string(), FieldMapping::Leaf { typ: "text" });
 
@@ -305,5 +335,90 @@ mod tests {
         assert!(properties.contains_key("title"));
         assert!(properties.contains_key("dynamic_field"));
         assert!(!properties.contains_key("_timestamp"));
+    }
+
+    fn make_index_metadata(field_mappings: serde_json::Value) -> IndexMetadata {
+        let entries: Vec<FieldMappingEntry> = serde_json::from_value(field_mappings).unwrap();
+        let mut metadata = IndexMetadata::for_test("test", "ram:///indexes/test");
+        metadata.index_config.doc_mapping.field_mappings = entries;
+        metadata
+    }
+
+    fn properties_of(response: &ElasticsearchMappingsResponse) -> &HashMap<String, FieldMapping> {
+        &response.indices["test"].mappings.properties
+    }
+
+    #[test]
+    fn from_doc_mapping_filtered_keeps_only_requested() {
+        let index_metadata = make_index_metadata(serde_json::json!([
+            { "name": "host", "type": "text" },
+            { "name": "message", "type": "text" },
+            { "name": "status", "type": "i64" },
+            { "name": "service", "type": "text" },
+            { "name": "trace_id", "type": "text" },
+        ]));
+        let requested = vec!["host".to_string(), "message".to_string()];
+        let response = ElasticsearchMappingsResponse::from_doc_mapping_filtered(
+            vec![index_metadata],
+            None,
+            &requested,
+        );
+        let props = properties_of(&response);
+        assert_eq!(props.len(), 2);
+        assert!(props.contains_key("host"));
+        assert!(props.contains_key("message"));
+        assert!(!props.contains_key("status"));
+        assert!(!props.contains_key("service"));
+        assert!(!props.contains_key("trace_id"));
+    }
+
+    #[test]
+    fn from_doc_mapping_filtered_includes_object_subtree_for_top_level_match() {
+        let index_metadata = make_index_metadata(serde_json::json!([
+            {
+                "name": "host",
+                "type": "object",
+                "field_mappings": [
+                    { "name": "region", "type": "text" },
+                    { "name": "name", "type": "text" }
+                ]
+            },
+            { "name": "message", "type": "text" }
+        ]));
+        let requested = vec!["host".to_string()];
+        let response = ElasticsearchMappingsResponse::from_doc_mapping_filtered(
+            vec![index_metadata],
+            None,
+            &requested,
+        );
+        let serialized = serde_json::to_value(&response).unwrap();
+        // The `host` object subtree is preserved verbatim — both nested fields stay.
+        let host_props = &serialized["test"]["mappings"]["properties"]["host"]["properties"];
+        assert_eq!(host_props["region"]["type"], "keyword");
+        assert_eq!(host_props["name"]["type"], "keyword");
+        // `message` is filtered out.
+        assert!(
+            serialized["test"]["mappings"]["properties"]
+                .get("message")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn from_doc_mapping_filtered_empty_request_returns_all() {
+        let index_metadata = make_index_metadata(serde_json::json!([
+            { "name": "host", "type": "text" },
+            { "name": "message", "type": "text" }
+        ]));
+        let response_all =
+            ElasticsearchMappingsResponse::from_doc_mapping(vec![index_metadata.clone()], None);
+        let response_filtered = ElasticsearchMappingsResponse::from_doc_mapping_filtered(
+            vec![index_metadata],
+            None,
+            &[],
+        );
+        let serialized_all = serde_json::to_value(&response_all).unwrap();
+        let serialized_filtered = serde_json::to_value(&response_filtered).unwrap();
+        assert_eq!(serialized_all, serialized_filtered);
     }
 }
