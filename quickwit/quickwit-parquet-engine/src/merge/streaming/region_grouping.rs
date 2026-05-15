@@ -179,8 +179,10 @@ fn parquet_has_column(
 /// prefix column's value bytes in declared order, with each column's
 /// encoding chosen so that lexicographic order on the composite
 /// matches the sort schema's order across the prefix columns. Each
-/// column is required to have `min == max` statistics on this RG (the
-/// "metric-aligned" invariant declared by `rg_partition_prefix_len`).
+/// column is required to be **constant within the RG** — either
+/// `min == max` on the non-null cells with zero nulls, or all rows
+/// null. A mix of nulls and non-nulls in the same RG breaks the
+/// at-most-one-prefix-value-per-RG invariant (PA-1) and is rejected.
 pub(crate) fn extract_rg_composite_prefix_key(
     metadata: &ParquetMetaData,
     rg_idx: usize,
@@ -198,7 +200,7 @@ pub(crate) fn extract_rg_composite_prefix_key(
                 col.name,
             )
         })?;
-        let value_bytes = extract_aligned_prefix_value(stats, &col.name, rg_idx, input_idx)?;
+        let value_bytes = extract_aligned_prefix_value(chunk, stats, &col.name, rg_idx, input_idx)?;
         let encoded = if col.descending {
             invert_for_descending(&value_bytes)
         } else {
@@ -209,16 +211,81 @@ pub(crate) fn extract_rg_composite_prefix_key(
     Ok(key)
 }
 
-/// Verify min == max for the column chunk and return the value
-/// encoded as order-preserving big-endian bytes (without applying any
-/// direction inversion — that's the caller's job).
+/// Verify the column chunk carries a single prefix value within this
+/// RG (either `min == max` on the non-null cells with zero nulls, or
+/// all rows null) and return the value encoded as order-preserving
+/// big-endian bytes (without applying any direction inversion —
+/// that's the caller's job).
+///
+/// **Null handling.** Parquet's `min` / `max` statistics cover only
+/// the non-null cells, so the existing `min == max` check alone is
+/// not sufficient: a row group of 99 nulls + 1 non-null cell has
+/// `min == max == non_null_value` even though it carries two
+/// distinct prefix keys (null and the value). Without inspecting
+/// `null_count` such an RG would be silently accepted and grouped
+/// under the non-null key, breaking the at-most-one-prefix-value-
+/// per-RG invariant (PA-1). Conversely, an all-null RG is a *valid*
+/// aligned input (the constant value is "null"), but Parquet records
+/// no `min` / `max` for it — the legacy check would have bailed.
+///
+/// Therefore the function:
+/// 1. Reads `null_count` from the stats and `num_values` from the chunk metadata.
+/// 2. All-null (`null_count == num_values > 0`): emit the null marker. For byte-array types this is
+///    `[0x00, 0x00]` (the same byte sequence the missing-column path uses, so the consumer side
+///    stays consistent across "column absent" vs "column present but all-null"). For fixed-width
+///    types (Int32/Int64/ Boolean) we don't yet have an encoding that won't collide with a real
+///    value — bail with a clear pointer until the encoding is extended.
+/// 3. Mixed null + non-null (`0 < null_count < num_values`): bail with the PA-1 violation.
+/// 4. No nulls: the existing `min == max` check.
 fn extract_aligned_prefix_value(
+    chunk: &parquet::file::metadata::ColumnChunkMetaData,
     stats: &parquet::file::statistics::Statistics,
     sort_col_name: &str,
     rg_idx: usize,
     input_idx: usize,
 ) -> Result<Vec<u8>> {
     use parquet::file::statistics::Statistics;
+
+    // Parquet's `num_values` is total cell count including nulls.
+    // `null_count_opt()` returns the explicitly-recorded null count
+    // (defaulting to 0 when absent, per parquet-rs guidance).
+    let num_values = chunk.num_values().max(0) as u64;
+    let null_count = stats.null_count_opt().unwrap_or(0);
+
+    if null_count > 0 {
+        // Two failure modes Codex flagged:
+        //
+        // 1. **Mixed null + non-null.** Parquet's min/max stats cover only non-null cells, so an RG
+        //    with N nulls + 1 cell valued "x" reports `min == max == "x"` and the legacy check
+        //    would have accepted it. But two distinct prefix values (null and "x") live in that RG
+        //    → PA-1 violation.
+        // 2. **All-null** (`null_count == num_values`). The legacy check bails earlier because
+        //    `min` / `max` are missing. Logically the RG carries one prefix value (null) and is
+        //    aligned — but supporting it requires a null marker in the composite-key encoding that
+        //    sorts in agreement with the writer's null ordering (SS-2 says nulls last;
+        //    `encode_byte_array_prefix(&[])` would sort them first). Coordinating those is a
+        //    follow-up; reject for now with a clearer error than the missing-stats bail.
+        //
+        // Both cases bail. Producers that need null grouping must
+        // either drop the column from the advertised prefix or wait
+        // for null-marker support to land.
+        if null_count == num_values {
+            bail!(
+                "input {input_idx} rg {rg_idx} col '{sort_col_name}' is all-null. All-null prefix \
+                 RGs are not yet supported by the streaming-merge composite-key encoding (a null \
+                 marker that agrees with SS-2 ordering is a follow-up). Drop this column from the \
+                 advertised prefix, or pin a non-null sentinel value in the writer for the \
+                 all-null run."
+            );
+        }
+        bail!(
+            "input {input_idx} rg {rg_idx} col '{sort_col_name}' is NOT prefix-aligned: contains \
+             {null_count} nulls plus {} non-null values. PA-1 requires each row group to carry a \
+             single prefix value; parquet stats hide nulls from min/max, so this RG would have \
+             been accepted by a `min == max`-only check.",
+            num_values - null_count,
+        );
+    }
 
     fn require_eq<T: PartialEq + std::fmt::Debug>(
         min: Option<T>,

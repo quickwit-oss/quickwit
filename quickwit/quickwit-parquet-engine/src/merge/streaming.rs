@@ -308,8 +308,7 @@ pub async fn streaming_merge_sorted_parquet_files(
             // `finalize_output`. Same for `outputs_remaining`: after
             // the rollover one fewer output is left to fill.
             let outputs_remaining_raw = num_outputs - current_output_idx;
-            let remaining_in_current_raw =
-                target_per_output.saturating_sub(current_output_rows);
+            let remaining_in_current_raw = target_per_output.saturating_sub(current_output_rows);
             let will_roll_over = current_writer.is_some()
                 && current_output_rows >= target_per_output
                 && current_output_idx + 1 < num_outputs;
@@ -323,8 +322,8 @@ pub async fn streaming_merge_sorted_parquet_files(
             } else {
                 outputs_remaining_raw
             };
-            let needs_split = effective_outputs_remaining > 1
-                && region.total_rows() > effective_first_target;
+            let needs_split =
+                effective_outputs_remaining > 1 && region.total_rows() > effective_first_target;
 
             let prefetched: Option<Vec<RecordBatch>> = if needs_split {
                 Some(drain_and_align_region(
@@ -2108,6 +2107,135 @@ mod tests {
         assert!(
             s.contains("input 0"),
             "error should identify which input is bad, got: {s}",
+        );
+    }
+
+    /// Build a single-RG parquet file with a nullable `metric_name`
+    /// prefix column. `values` is one entry per row (`None` for a
+    /// null cell). `prefix_len` is stamped in the file metadata so
+    /// the streaming merge treats the file as prefix-aligned.
+    fn make_nullable_prefix_input_single_rg(values: &[Option<&str>], prefix_len: u32) -> Bytes {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, true),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+        let n = values.len();
+        let metric_name: ArrayRef = Arc::new(StringArray::from(
+            values
+                .iter()
+                .map(|v| v.map(str::to_string))
+                .collect::<Vec<_>>(),
+        ));
+        let timestamps: Vec<u64> = (0..n as u64).map(|i| 1_700_000_000 + i).collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_bytes: Vec<Vec<u8>> = (0..n as u64).map(|i| i.to_be_bytes().to_vec()).collect();
+        let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..n).map(|i| i as f64).collect::<Vec<_>>(),
+        ));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![metric_name, timestamp_secs, sorted_series, value],
+        )
+        .expect("test batch");
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: n.max(1),
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                prefix_len.to_string(),
+            ),
+        ];
+        let sorting_cols = vec![parquet::file::metadata::SortingColumn {
+            column_idx: 0,
+            descending: false,
+            nulls_first: false,
+        }];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P1 on PR #6424 (null prefix handling): an
+    /// RG with mixed null + non-null cells on a nullable prefix
+    /// column is NOT prefix-aligned (PA-1). The legacy `min == max`
+    /// check would silently accept it because Parquet stats hide
+    /// nulls from min/max, so a single non-null cell + N nulls
+    /// reports `min == max == non_null_value`. The fix reads
+    /// `null_count` from stats and bails when it's non-zero.
+    #[tokio::test]
+    async fn test_mixed_null_and_value_prefix_rg_rejected() {
+        // 1 RG, 4 rows: 3× "cpu.usage" + 1× null. Stats record
+        // `min == max == "cpu.usage"`, `null_count == 1`.
+        let bytes = make_nullable_prefix_input_single_rg(
+            &[
+                Some("cpu.usage"),
+                Some("cpu.usage"),
+                None,
+                Some("cpu.usage"),
+            ],
+            1,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("mixed null + non-null must be rejected");
+        let s = format!("{err:#}");
+        assert!(
+            s.contains("NOT prefix-aligned") && s.contains("nulls plus"),
+            "expected PA-1 mixed-null error, got: {s}",
+        );
+    }
+
+    /// Regression for Codex P1 on PR #6424 (null prefix handling):
+    /// an all-null prefix RG is logically aligned (constant value =
+    /// null), but the composite-key encoding's null marker has not
+    /// yet been coordinated with SS-2's null-ordering rule. Reject
+    /// upfront with a clearer error than "no min in stats" so
+    /// callers know this is a known-not-yet-supported case rather
+    /// than a stats-missing oddity.
+    #[tokio::test]
+    async fn test_all_null_prefix_rg_rejected() {
+        // 1 RG, 3 rows, all `metric_name` null. Stats: min/max
+        // absent, null_count == num_values.
+        let bytes = make_nullable_prefix_input_single_rg(&[None, None, None], 1);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("all-null prefix RG must be rejected for now");
+        let s = format!("{err:#}");
+        assert!(
+            s.contains("all-null") && s.contains("not yet supported"),
+            "expected all-null not-yet-supported error, got: {s}",
         );
     }
 
