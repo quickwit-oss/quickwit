@@ -26,6 +26,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
+use anyhow::bail;
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{
@@ -41,6 +42,7 @@ pub use field_mapping_type::FieldMappingType;
 use serde_json::Value as JsonValue;
 use tantivy::Term;
 use tantivy::schema::{Field, FieldType};
+use tantivy_fst::Automaton as TantivyFstAutomaton;
 pub(crate) use tokenizer_entry::{
     NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
 };
@@ -76,10 +78,70 @@ pub struct TermRange {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Supported automaton types to warmup
 pub enum Automaton {
-    /// A regex in it's str representation as tantivy_fst::Regex isn't PartialEq, and the path if
+    /// A regex in its str representation as tantivy_fst::Regex isn't PartialEq, and the path if
     /// inside a json field
     Regex(Option<Vec<u8>>, String),
-    // we could add termset query here, instead of downloading the whole dictionary
+    /// An exact-match automaton for a TermSet query.
+    TermSet(ExactSetAutomaton),
+}
+
+/// A byte-level DFA that accepts exactly the strings in a sorted, deduplicated byte-sequence
+/// set. State = `(depth, lo, hi)` meaning all terms in `self.terms[lo..hi]` share the first
+/// `depth` bytes consumed so far. Transitions are computed via binary search, avoiding any
+/// upfront DFA materialisation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExactSetAutomaton {
+    /// Holds sorted, deduplicated `term.serialized_value_bytes()` for all terms in the set.
+    /// Using `warm_postings_automaton` coalesces both the SSTable lookup and the postings
+    /// downloads into a small number of merged range requests.
+    terms: Vec<Vec<u8>>,
+}
+
+impl ExactSetAutomaton {
+    /// Create an `ExactSetAutomaton` from an iterator of terms.
+    pub fn try_from_terms<'a>(terms: impl IntoIterator<Item = &'a Term>) -> anyhow::Result<Self> {
+        let mut sorted_bytes: Vec<Vec<u8>> = terms
+            .into_iter()
+            .map(|term| term.serialized_value_bytes().to_vec())
+            .collect();
+        if sorted_bytes.is_empty() {
+            bail!("Cannot create an ExactSetAutomaton from an empty set of terms");
+        }
+        sorted_bytes.sort();
+        sorted_bytes.dedup();
+        Ok(ExactSetAutomaton {
+            terms: sorted_bytes,
+        })
+    }
+}
+
+impl TantivyFstAutomaton for ExactSetAutomaton {
+    /// (depth, lo, hi)
+    type State = (usize, usize, usize);
+
+    fn start(&self) -> Self::State {
+        (0, 0, self.terms.len())
+    }
+
+    fn is_match(&self, &(depth, lo, hi): &Self::State) -> bool {
+        lo < hi && self.terms[lo].len() == depth
+    }
+
+    fn can_match(&self, &(_, lo, hi): &Self::State) -> bool {
+        lo < hi
+    }
+
+    fn accept(&self, &(depth, lo, hi): &Self::State, byte: u8) -> Self::State {
+        // Within [lo, hi), terms are sorted by their bytes. Terms of length == depth (exact
+        // matches) sort before any extension, so there is at most one such term at index lo.
+        // Skip it — it has no byte at position `depth`.
+        let lo = lo + usize::from(lo < hi && self.terms[lo].len() == depth);
+        // Binary-search for the sub-range where terms[i][depth] == byte.
+        // All remaining terms in [lo, hi) have length > depth, so indexing [depth] is safe.
+        let new_lo = lo + self.terms[lo..hi].partition_point(|t| t[depth] < byte);
+        let new_hi = new_lo + self.terms[new_lo..hi].partition_point(|t| t[depth] <= byte);
+        (depth + 1, new_lo, new_hi)
+    }
 }
 
 /// Description of how a fast field should be warmed up
@@ -95,9 +157,6 @@ pub struct FastFieldWarmupInfo {
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WarmupInfo {
-    /// Name of fields from the term dictionary and posting list which needs to
-    /// be entirely loaded
-    pub term_dict_fields: HashSet<Field>,
     /// Fast fields which needs to be loaded
     pub fast_fields: HashSet<FastFieldWarmupInfo>,
     /// Whether to warmup field norms. Used mostly for scoring.
@@ -113,7 +172,6 @@ pub struct WarmupInfo {
 impl WarmupInfo {
     /// Merge other WarmupInfo into self.
     pub fn merge(&mut self, other: WarmupInfo) {
-        self.term_dict_fields.extend(other.term_dict_fields);
         self.field_norms |= other.field_norms;
 
         for fast_field_warmup_info in other.fast_fields.into_iter() {
@@ -151,21 +209,6 @@ impl WarmupInfo {
 
     /// Simplify a WarmupInfo, removing some redundant tasks
     pub fn simplify(&mut self) {
-        self.terms_grouped_by_field.retain(|field, terms| {
-            if self.term_dict_fields.contains(field) {
-                // we are already about to full-load this dictionary. We only care about terms
-                // which needs additional position
-                terms.retain(|_term, include_position| *include_position);
-            }
-            // if no term is left, remove the entry from the hashmap
-            !terms.is_empty()
-        });
-        self.term_ranges_grouped_by_field.retain(|field, terms| {
-            if self.term_dict_fields.contains(field) {
-                terms.retain(|_term, include_position| *include_position);
-            }
-            !terms.is_empty()
-        });
         // TODO we could remove from terms_grouped_by_field for ranges with no `limit` in
         // term_ranges_grouped_by_field
     }
@@ -622,13 +665,6 @@ mod tests {
             .collect()
     }
 
-    fn hashset_field(elements: &[u32]) -> HashSet<Field> {
-        elements
-            .iter()
-            .map(|elem| Field::from_field_id(*elem))
-            .collect()
-    }
-
     fn hashmap(elements: &[(u32, &str, bool)]) -> HashMap<Field, HashMap<Term, bool>> {
         let mut result: HashMap<Field, HashMap<Term, bool>> = HashMap::new();
         for (field, term, pos) in elements {
@@ -663,7 +699,6 @@ mod tests {
     #[test]
     fn test_warmup_info_merge() {
         let wi_base = WarmupInfo {
-            term_dict_fields: hashset_field(&[1, 2]),
             fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[(1, "term1", false), (1, "term2", false)]),
@@ -686,7 +721,6 @@ mod tests {
 
         let mut wi_base = wi_base;
         let wi_2 = WarmupInfo {
-            term_dict_fields: hashset_field(&[2, 3]),
             fast_fields: hashset_fast(&["fast2", "fast3"]),
             field_norms: true,
             terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
@@ -703,7 +737,6 @@ mod tests {
         };
         wi_base.merge(wi_2.clone());
 
-        assert_eq!(wi_base.term_dict_fields, hashset_field(&[1, 2, 3]));
         assert_eq!(
             wi_base.fast_fields,
             hashset_fast(&["fast1", "fast2", "fast3"])
@@ -769,7 +802,6 @@ mod tests {
     #[test]
     fn test_warmup_info_simplify() {
         let mut warmup_info = WarmupInfo {
-            term_dict_fields: hashset_field(&[1]),
             fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[
@@ -791,11 +823,15 @@ mod tests {
             .collect(),
         };
         let expected = WarmupInfo {
-            term_dict_fields: hashset_field(&[1]),
             fast_fields: hashset_fast(&["fast1", "fast2"]),
             field_norms: false,
-            terms_grouped_by_field: hashmap(&[(1, "term2", true), (2, "term3", false)]),
+            terms_grouped_by_field: hashmap(&[
+                (1, "term1", false),
+                (1, "term2", true),
+                (2, "term3", false),
+            ]),
             term_ranges_grouped_by_field: hashmap_ranges(&[
+                (1, "term1", false),
                 (1, "term2", true),
                 (2, "term3", false),
             ]),
