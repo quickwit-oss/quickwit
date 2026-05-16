@@ -17,6 +17,7 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 fnv = { workspace = true }
+foyer = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }

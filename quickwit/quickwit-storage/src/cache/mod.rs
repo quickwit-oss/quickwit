@@ -14,6 +14,7 @@
 
 mod base_cache;
 mod byte_range_cache;
+pub mod foyer_cache;
 mod memory_sized_cache;
 mod quickwit_cache;
 mod slice_address;

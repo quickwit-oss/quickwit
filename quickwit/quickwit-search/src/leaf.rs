@@ -40,8 +40,8 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, OwnedBytes, SplitCache, Storage,
+    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -54,7 +54,7 @@ use tokio::task::{JoinError, JoinSet};
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::leaf_cache::LeafSearchCache;
+use crate::leaf_cache::{LeafSearchCache, SplitFooterCache};
 use crate::metrics::SplitSearchOutcomeCounters;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
@@ -119,13 +119,10 @@ fn greedy_batch_split<T>(
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-    footer_cache: &MemorySizedCache<String>,
+    footer_cache: &SplitFooterCache,
 ) -> anyhow::Result<OwnedBytes> {
-    {
-        let possible_val = footer_cache.get(&split_and_footer_offsets.split_id);
-        if let Some(footer_data) = possible_val {
-            return Ok(footer_data);
-        }
+    if let Some(footer_data) = footer_cache.get(&split_and_footer_offsets.split_id).await {
+        return Ok(footer_data);
     }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data_opt = index_storage
@@ -511,6 +508,7 @@ async fn leaf_search_single_split(
         .searcher_context
         .leaf_search_cache
         .get(split.clone(), search_request.clone())
+        .await
     {
         leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
         return Ok(Some(cached_answer));
@@ -1708,7 +1706,8 @@ pub async fn single_doc_mapping_leaf_search(
             split_with_req,
             split_outcome_counters.clone(),
             &mut incremental_merge_collector,
-        )?;
+        )
+        .await?;
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
 
@@ -1869,7 +1868,7 @@ async fn run_local_search_tasks(
 
 /// We identify the splits that are in the cache and append them to the incremental merge collector.
 /// The (split, request) that are yet to be processed are returned.
-fn process_partial_result_cache(
+async fn process_partial_result_cache(
     leaf_search_cache: &LeafSearchCache,
     split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     split_outcome_counters: Arc<SplitSearchOutcomeCounters>,
@@ -1881,6 +1880,7 @@ fn process_partial_result_cache(
         if let Some(cached_response) = leaf_search_cache
             // TODO remove the clone here.
             .get(split.clone(), search_request.clone())
+            .await
         {
             // The cached response already carries cache-hit `resource_stats`
             // (set at write time by `LeafSearchCache::put`), so no per-read

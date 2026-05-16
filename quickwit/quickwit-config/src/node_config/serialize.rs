@@ -688,6 +688,9 @@ mod tests {
                 }),
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::mb(300),
+                fast_field_disk_cache_capacity: ByteSize(0),
+                split_footer_disk_cache_capacity: ByteSize(0),
+                partial_request_disk_cache_capacity: ByteSize(0),
                 lambda: Some(LambdaConfig {
                     function_name: "quickwit-lambda-leaf-search".to_string(),
                     max_splits_per_invocation: NonZeroUsize::new(10).unwrap(),

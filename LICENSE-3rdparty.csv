@@ -159,6 +159,7 @@ clap_builder,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_builder 
 clap_lex,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_lex Authors
 cmac,https://github.com/RustCrypto/MACs,MIT OR Apache-2.0,RustCrypto Developers
 cmov,https://github.com/RustCrypto/utils,Apache-2.0 OR MIT,RustCrypto Developers
+cmsketch,https://github.com/mrcroxx/cmsketch-rs,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
 coarsetime,https://github.com/jedisct1/rust-coarsetime,BSD-2-Clause,Frank Denis <github@pureftpd.org>
 cobs,https://github.com/jamesmunns/cobs.rs,MIT OR Apache-2.0,"Allen Welkie <>, James Munns <james@onevariable.com>"
 codespan-reporting,https://github.com/brendanzab/codespan,Apache-2.0,Brendan Zabarauskas <bjzaba@yahoo.com.au>
@@ -182,6 +183,7 @@ constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0 OR MIT-0 OR 
 convert_case,https://github.com/rutrum/convert-case,MIT,rutrum <dave@rutrum.net>
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
+core_affinity,https://github.com/Elzair/core_affinity_rs,MIT OR Apache-2.0,Philip Woods <elzairthesorcerer@gmail.com>
 cpp_demangle,https://github.com/gimli-rs/cpp_demangle,MIT OR Apache-2.0,"Nick Fitzgerald <fitzgen@gmail.com>, Jim Blandy <jimb@red-bean.com>, Kyle Huey <khuey@kylehuey.com>"
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 crc,https://github.com/mrhooray/crc-rs,MIT OR Apache-2.0,"Rui Hu <code@mrhooray.com>, Akhil Velagapudi <4@4khil.com>"
@@ -297,6 +299,7 @@ event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,"Stje
 event-listener-strategy,https://github.com/smol-rs/event-listener-strategy,Apache-2.0 OR MIT,John Nunley <dev@notgull.net>
 fail,https://github.com/tikv/fail-rs,Apache-2.0,The TiKV Project Developers
 fancy-regex,https://github.com/fancy-regex/fancy-regex,MIT,"Raph Levien <raph@google.com>, Robin Stocker <robin@nibor.org>, Keith Hall <keith.hall@available.systems>"
+fastant,https://github.com/fast/fastant,MIT,The fastant Authors
 fastdivide,https://github.com/fulmicoton/fastdivide,zlib-acknowledgement OR MIT,Paul Masurel <paul.masurel@gmail.com>
 fastrand,https://github.com/smol-rs/fastrand,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 ff,https://github.com/zkcrypto/ff,MIT OR Apache-2.0,"Sean Bowe <ewillbefull@gmail.com>, Jack Grigg <thestr4d@gmail.com>"
@@ -314,6 +317,12 @@ foldhash,https://github.com/orlp/foldhash,Zlib,Orson Peters <orsonpeters@gmail.c
 foreign-types,https://github.com/sfackler/foreign-types,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>
 foreign-types-shared,https://github.com/sfackler/foreign-types,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>
 form_urlencoded,https://github.com/servo/rust-url,MIT OR Apache-2.0,The rust-url developers
+foyer,https://github.com/foyer-rs/foyer,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
+foyer-common,https://github.com/foyer-rs/foyer,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
+foyer-intrusive-collections,https://github.com/foyer-rs/intrusive-rs,Apache-2.0 OR MIT,Amanieu d'Antras <amanieu@gmail.com>
+foyer-memory,https://github.com/foyer-rs/foyer,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
+foyer-storage,https://github.com/foyer-rs/foyer,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
+foyer-tokio,https://github.com/foyer-rs/foyer,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
 fraction,https://github.com/dnsl48/fraction,MIT OR Apache-2.0,dnsl48 <dnsl48@gmail.com>
 fragile,https://github.com/mitsuhiko/fragile,Apache-2.0,Armin Ronacher <armin.ronacher@active-4.com>
 fs4,https://github.com/al8n/fs4-rs,MIT OR Apache-2.0,"Dan Burkert <dan@danburkert.com>, Al Liu <scygliu1@gmail.com>"
@@ -400,6 +409,7 @@ inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developer
 instant,https://github.com/sebcrozet/instant,BSD-3-Clause,sebcrozet <developer@crozet.re>
 integer-encoding,https://github.com/dermesser/integer-encoding-rs,MIT,Lewin Bormann <lbo@spheniscida.de>
 inventory,https://github.com/dtolnay/inventory,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
+io-uring,https://github.com/tokio-rs/io-uring,MIT OR Apache-2.0,quininer <quininer@live.com>
 ipcrypt-rs,https://github.com/jedisct1/rust-ipcrypt2,ISC,Frank Denis <github@pureftpd.org>
 ipnet,https://github.com/krisprice/ipnet,MIT OR Apache-2.0,Kris Price <kris@krisprice.nz>
 ipnetwork,https://github.com/achanda/ipnetwork,MIT OR Apache-2.0,"Abhishek Chanda <abhishek.becs@gmail.com>, Linus Färnstrand <faern@faern.net>"
@@ -457,6 +467,7 @@ mea,https://github.com/fast/mea,Apache-2.0,The mea Authors
 measure_time,https://github.com/PSeitz/rust_measure_time,MIT,Pascal Seitz <pascal.seitz@gmail.com>
 memchr,https://github.com/BurntSushi/memchr,Unlicense OR MIT,"Andrew Gallant <jamslam@gmail.com>, bluss"
 memmap2,https://github.com/RazrFalcon/memmap2-rs,MIT OR Apache-2.0,"Dan Burkert <dan@danburkert.com>, Yevhenii Reizner <razrfalcon@gmail.com>, The Contributors"
+memoffset,https://github.com/Gilnaa/memoffset,MIT,Gilad Naaman <gilad.naaman@gmail.com>
 mime,https://github.com/hyperium/mime,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 mime_guess,https://github.com/abonander/mime_guess,MIT,Austin Bonander <austin.bonander@gmail.com>
 mini-internal,https://github.com/dtolnay/miniserde,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
@@ -465,6 +476,7 @@ minimal-lexical,https://github.com/Alexhuszagh/minimal-lexical,MIT OR Apache-2.0
 miniserde,https://github.com/dtolnay/miniserde,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 miniz_oxide,https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide,MIT OR Zlib OR Apache-2.0,"Frommi <daniil.liferenko@gmail.com>, oyvindln <oyvindln@users.noreply.github.com>, Rich Geldreich richgel99@gmail.com"
 mio,https://github.com/tokio-rs/mio,MIT,"Carl Lerche <me@carllerche.com>, Thomas de Zeeuw <thomasdezeeuw@gmail.com>, Tokio Contributors <team@tokio.rs>"
+mixtrics,https://github.com/foyer-rs/mixtrics,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
 mockall,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 mockall_derive,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 moka,https://github.com/moka-rs/moka,(MIT OR Apache-2.0) AND Apache-2.0,The moka Authors
@@ -749,6 +761,7 @@ simple_asn1,https://github.com/acw/simple_asn1,ISC,Adam Wick <awick@uhsure.com>
 siphasher,https://github.com/jedisct1/rust-siphash,MIT OR Apache-2.0,Frank Denis <github@pureftpd.org>
 sketches-ddsketch,https://github.com/mheffner/rust-sketches-ddsketch,Apache-2.0,Mike Heffner <mikeh@fesnel.com>
 slab,https://github.com/tokio-rs/slab,MIT,Carl Lerche <me@carllerche.com>
+small_ctor,https://github.com/mitsuhiko/small-ctor,Apache-2.0,Armin Ronacher <armin.ronacher@active-4.com>
 smallvec,https://github.com/servo/rust-smallvec,MIT OR Apache-2.0,The Servo Project Developers
 snafu,https://github.com/shepmaster/snafu,MIT OR Apache-2.0,Jake Goulding <jake.goulding@gmail.com>
 snafu-derive,https://github.com/shepmaster/snafu,MIT OR Apache-2.0,Jake Goulding <jake.goulding@gmail.com>
