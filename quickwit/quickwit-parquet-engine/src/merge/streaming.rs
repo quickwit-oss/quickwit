@@ -1825,6 +1825,32 @@ fn build_full_union_schema_from_arrow_schemas(
 }
 
 // ============================================================================
+// Test support
+// ============================================================================
+
+/// Process-wide serial lock for tests that run streaming merges. Every
+/// streaming merge writes to the global `PEAK_BODY_COL_PAGE_CACHE_LEN`
+/// atomic; MS-7 tests reset-then-read it and would race any
+/// concurrent merge in the same test binary. Both the MS-7 tests in
+/// this module and any other test that invokes
+/// `streaming_merge_sorted_parquet_files` (e.g. the engine-parity
+/// tests in `merge::tests::parity`) must acquire this lock for the
+/// duration of the merge.
+///
+/// Held across `.await` points in MS-7 tests — that's why each
+/// MS-7 test allows `clippy::await_holding_lock`. The lock is
+/// `std::sync::Mutex` and the `#[tokio::test]` runtime is
+/// single-threaded, so holding the guard across await won't deadlock
+/// another thread. `tokio::sync::Mutex` is forbidden by GAP-002.
+#[cfg(test)]
+pub(crate) fn ms7_serial_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Poisoning is fine — a previous test panicking shouldn't prevent
+    // the next one from acquiring; just unwrap the inner.
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -4800,25 +4826,11 @@ mod tests {
 
     /// `PEAK_BODY_COL_PAGE_CACHE_LEN` is a process-global atomic, so
     /// concurrent MS-7 tests would pollute each other's readings.
-    /// Every MS-7 test must acquire this lock for the duration of its
-    /// merge + read sequence. The static guarantees there's only one
-    /// MS-7 merge in flight at a time across the whole test binary.
-    ///
-    /// Held across `.await` points in the MS-7 tests — that's why
-    /// each test allows `clippy::await_holding_lock`. In production
-    /// code we'd use an async-aware mutex, but this is test-only
-    /// process-wide serialization for a global atomic that has no
-    /// async-safe alternative; `tokio::sync::Mutex` is also banned
-    /// by GAP-002 (cancel-correctness). The lock is `std::sync::Mutex`
-    /// and the executor is `tokio::test`'s single-threaded runtime,
-    /// so holding the guard across await won't deadlock another
-    /// thread.
-    fn ms7_serial_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        // Poisoning is fine — a previous test panicking shouldn't
-        // prevent the next one from acquiring; just unwrap the inner.
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    /// Re-exported from the module-level helper so existing MS-7 tests
+    /// in this submodule keep their unqualified name; other test
+    /// modules call `super::ms7_serial_lock` (or the full path)
+    /// directly.
+    use super::ms7_serial_lock;
 
     /// Build a fixture that forces many input body-col pages with a
     /// pinned `data_page_row_count_limit`, then merge it through the

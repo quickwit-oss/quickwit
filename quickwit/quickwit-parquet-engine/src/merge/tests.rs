@@ -1679,6 +1679,293 @@ fn test_merge_descending_pre_timestamp_column() {
     );
 }
 
+// ---- Engine parity: streaming vs in-memory ----
+//
+// Verifies that `execute_merge_operation` (the streaming column-major engine)
+// and `merge_sorted_parquet_files` (the in-memory engine) produce the same
+// row content for the same inputs. Gates the executor's
+// `parquet_merge_use_streaming_engine` YAML flag: once parity holds on a
+// realistic fixture, production can flip the flag with confidence the
+// streaming engine is a drop-in replacement. The in-memory engine stays in
+// the executor as the runtime fallback until the streaming engine has
+// soaked, at which point both this test and the fallback branch can be
+// removed.
+
+mod parity {
+    use std::io;
+    use std::ops::Range;
+    use std::path::Path;
+
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
+
+    use super::*;
+    use crate::merge::execute_merge_operation;
+    use crate::merge::policy::ParquetMergeOperation;
+    use crate::storage::RemoteByteSource;
+
+    /// Mirrors the executor's `LocalFileByteSource` so parity tests exercise
+    /// the same code path production will use: a local Parquet file wrapped
+    /// in `RemoteByteSource` and handed to `execute_merge_operation`.
+    /// Ignores the `_path` argument from the trait surface — the source is
+    /// already bound to one concrete file at construction time.
+    struct LocalFileByteSource {
+        path: PathBuf,
+    }
+
+    #[async_trait]
+    impl RemoteByteSource for LocalFileByteSource {
+        async fn file_size(&self, _path: &Path) -> io::Result<u64> {
+            tokio::fs::metadata(&self.path).await.map(|m| m.len())
+        }
+
+        async fn get_slice(&self, _path: &Path, range: Range<u64>) -> io::Result<Bytes> {
+            let mut file = tokio::fs::File::open(&self.path).await?;
+            file.seek(io::SeekFrom::Start(range.start)).await?;
+            let len = (range.end - range.start) as usize;
+            let mut buf = vec![0u8; len];
+            file.read_exact(&mut buf).await?;
+            Ok(Bytes::from(buf))
+        }
+
+        async fn get_slice_stream(
+            &self,
+            _path: &Path,
+            range: Range<u64>,
+        ) -> io::Result<Box<dyn AsyncRead + Send + Unpin>> {
+            let mut file = tokio::fs::File::open(&self.path).await?;
+            file.seek(io::SeekFrom::Start(range.start)).await?;
+            let len = range.end - range.start;
+            Ok(Box::new(file.take(len)))
+        }
+    }
+
+    /// Build a `ParquetMergeOperation` for a regular (non-promotion) merge
+    /// over the given file paths. Each split's `parquet_file` is set to the
+    /// basename — the streaming engine passes it to `RemoteByteSource`,
+    /// which `LocalFileByteSource` ignores.
+    fn make_regular_merge_op(input_paths: &[PathBuf]) -> ParquetMergeOperation {
+        let splits: Vec<ParquetSplitMetadata> = input_paths
+            .iter()
+            .map(|path| {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .expect("input path must have a UTF-8 filename");
+                ParquetSplitMetadata::metrics_builder()
+                    .split_id(ParquetSplitId::generate(ParquetSplitKind::Metrics))
+                    .index_uid("test-index:0")
+                    .sort_fields(TEST_SORT_FIELDS)
+                    .window_duration_secs(900)
+                    .window_start_secs(0)
+                    .time_range(TimeRange::new(0, 1))
+                    .rg_partition_prefix_len(0)
+                    .parquet_file(name)
+                    .build()
+            })
+            .collect();
+        ParquetMergeOperation::new(splits)
+    }
+
+    /// Run both engines on the same inputs and assert the materialised row
+    /// content matches column-by-column on every output, in order. Per-output
+    /// physical metadata (page boundaries, row group sizing) is allowed to
+    /// differ — we only assert what the merge contract guarantees to readers.
+    fn assert_engine_parity(input_paths: &[PathBuf], num_outputs: usize) {
+        // The streaming engine increments the process-global
+        // `PEAK_BODY_COL_PAGE_CACHE_LEN` atomic that MS-7 tests
+        // reset-then-read. Serialise against MS-7 by acquiring the
+        // same lock for the duration of the streaming-engine run.
+        let _ms7_guard = crate::merge::streaming::ms7_serial_lock();
+
+        let parent_dir = input_paths
+            .first()
+            .and_then(|p| p.parent())
+            .expect("at least one input expected");
+        let in_memory_out_dir = parent_dir.join("output_in_memory");
+        let streaming_out_dir = parent_dir.join("output_streaming");
+        std::fs::create_dir_all(&in_memory_out_dir).unwrap();
+        std::fs::create_dir_all(&streaming_out_dir).unwrap();
+
+        let config = MergeConfig {
+            num_outputs,
+            writer_config: ParquetWriterConfig::default(),
+        };
+
+        // In-memory engine.
+        let in_memory_outputs =
+            merge_sorted_parquet_files(input_paths, &in_memory_out_dir, &config).unwrap();
+
+        // Streaming engine through the same surface the executor uses.
+        let op = make_regular_merge_op(input_paths);
+        let sources: Vec<Arc<dyn RemoteByteSource>> = input_paths
+            .iter()
+            .map(|path| {
+                Arc::new(LocalFileByteSource { path: path.clone() }) as Arc<dyn RemoteByteSource>
+            })
+            .collect();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let streaming_outputs = runtime
+            .block_on(execute_merge_operation(
+                &op,
+                sources,
+                &streaming_out_dir,
+                &config,
+            ))
+            .unwrap();
+
+        assert_eq!(
+            streaming_outputs.len(),
+            in_memory_outputs.len(),
+            "engines disagree on output count"
+        );
+        for (i, (s, m)) in streaming_outputs
+            .iter()
+            .zip(in_memory_outputs.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                s.num_rows, m.num_rows,
+                "output #{i}: engines disagree on row count ({} vs {})",
+                s.num_rows, m.num_rows
+            );
+            let s_batch = read_parquet_file(&s.path);
+            let m_batch = read_parquet_file(&m.path);
+            for col_name in ["metric_name", "timestamp_secs", "value", "timeseries_id"] {
+                if s_batch.schema().index_of(col_name).is_err() {
+                    continue;
+                }
+                let m_idx = m_batch.schema().index_of(col_name).unwrap_or_else(|_| {
+                    panic!("output #{i}: streaming has column {col_name} but in-memory does not")
+                });
+                let s_idx = s_batch.schema().index_of(col_name).unwrap();
+                // Compare column values through the existing string/numeric
+                // extractors; raw Arrow array equality would reject benign
+                // representational differences like the dict-key permutation.
+                match s_batch.column(s_idx).data_type() {
+                    DataType::Dictionary(_, _) | DataType::Utf8 | DataType::LargeUtf8 => {
+                        let s_vals = extract_string_column(&s_batch, col_name);
+                        let m_vals = extract_string_column(&m_batch, col_name);
+                        assert_eq!(
+                            s_vals, m_vals,
+                            "output #{i}: column {col_name} (string) differs between engines"
+                        );
+                    }
+                    DataType::UInt64 => {
+                        let s_vals = extract_u64_column(&s_batch, col_name);
+                        let m_vals = extract_u64_column(&m_batch, col_name);
+                        assert_eq!(
+                            s_vals, m_vals,
+                            "output #{i}: column {col_name} (u64) differs between engines"
+                        );
+                    }
+                    DataType::Float64 => {
+                        let s_vals = extract_f64_column(&s_batch, col_name);
+                        let m_vals = extract_f64_column(&m_batch, col_name);
+                        assert_eq!(
+                            s_vals, m_vals,
+                            "output #{i}: column {col_name} (f64) differs between engines"
+                        );
+                    }
+                    DataType::Int64 => {
+                        let s_idx = s_batch.schema().index_of(col_name).unwrap();
+                        let s_col = s_batch
+                            .column(s_idx)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .unwrap();
+                        let m_col = m_batch
+                            .column(m_idx)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .unwrap();
+                        assert_eq!(
+                            s_col.values(),
+                            m_col.values(),
+                            "output #{i}: column {col_name} (i64) differs between engines"
+                        );
+                    }
+                    other => {
+                        panic!(
+                            "output #{i}: column {col_name} has unexpected type {other:?} for \
+                             parity comparison"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Multi-input, single-output merge. The streaming and in-memory engines
+    /// must produce the same number of rows and the same row-by-row content
+    /// on every visible column.
+    #[test]
+    fn parity_multi_input_single_output() {
+        let dir = TempDir::new().unwrap();
+
+        // Three inputs with overlapping metric names so the merge interleaves
+        // across all three streams (the streaming engine's hot path under the
+        // page-bounded body cache).
+        let input1 = write_test_split(
+            dir.path(),
+            "p1.parquet",
+            &["cpu", "cpu", "mem"],
+            &[300, 100, 200],
+            &[1.0, 2.0, 3.0],
+            &[42, 42, 99],
+        );
+        let input2 = write_test_split(
+            dir.path(),
+            "p2.parquet",
+            &["cpu", "mem", "mem"],
+            &[250, 250, 100],
+            &[4.0, 5.0, 6.0],
+            &[42, 99, 99],
+        );
+        let input3 = write_test_split(
+            dir.path(),
+            "p3.parquet",
+            &["cpu", "mem", "net"],
+            &[200, 150, 100],
+            &[7.0, 8.0, 9.0],
+            &[42, 99, 7],
+        );
+
+        assert_engine_parity(&[input1, input2, input3], 1);
+    }
+
+    /// Multi-input, multi-output merge. With `num_outputs > 1` the streaming
+    /// engine splits at `sorted_series` boundaries; this test guards that the
+    /// split policy and per-output row content match the in-memory engine.
+    #[test]
+    fn parity_multi_input_multi_output() {
+        let dir = TempDir::new().unwrap();
+
+        let input1 = write_test_split(
+            dir.path(),
+            "m1.parquet",
+            &["alpha", "beta", "gamma"],
+            &[100, 100, 100],
+            &[1.0, 2.0, 3.0],
+            &[1, 2, 3],
+        );
+        let input2 = write_test_split(
+            dir.path(),
+            "m2.parquet",
+            &["alpha", "beta", "gamma"],
+            &[200, 200, 200],
+            &[4.0, 5.0, 6.0],
+            &[1, 2, 3],
+        );
+
+        assert_engine_parity(&[input1, input2], 3);
+    }
+}
+
 // ---- Proptest DST: property-based invariant verification ----
 
 mod proptests {
