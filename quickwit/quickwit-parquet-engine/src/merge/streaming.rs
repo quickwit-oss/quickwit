@@ -107,16 +107,18 @@ use crate::storage::{
 /// [`write_next_column_arrays`]: crate::storage::streaming_writer::RowGroupBuilder::write_next_column_arrays
 pub(crate) const OUTPUT_PAGE_ROWS: usize = 1024;
 
-/// Test-only peak observed length of any input's `body_col_page_cache`
-/// since the last reset. Used by the MS-7 page-bounded-memory test to
-/// assert that the cache stays bounded by a small constant regardless
-/// of input column size. Set unconditionally inside the merge so the
-/// invariant is observable in any test build; reset on each merge entry.
-#[cfg(test)]
-pub(crate) static PEAK_BODY_COL_PAGE_CACHE_LEN: std::sync::atomic::AtomicUsize =
+/// Peak observed length of any input's `body_col_page_cache` since the
+/// last reset, set unconditionally inside the merge so the invariant is
+/// observable in any test build. Used by the MS-7 page-bounded-memory
+/// test to assert that the cache stays bounded by a small constant
+/// regardless of input column size, and by cross-crate integration tests
+/// that need to confirm the streaming engine ran (any non-zero value
+/// proves a streaming merge executed).
+#[cfg(any(test, feature = "testsuite"))]
+pub static PEAK_BODY_COL_PAGE_CACHE_LEN: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testsuite"))]
 pub(crate) fn record_body_col_page_cache_len(len: usize) {
     use std::sync::atomic::Ordering;
     let mut prev = PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed);
@@ -133,7 +135,7 @@ pub(crate) fn record_body_col_page_cache_len(len: usize) {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "testsuite")))]
 pub(crate) fn record_body_col_page_cache_len(_len: usize) {}
 
 /// Streaming N-input → M-output column-major merge.
