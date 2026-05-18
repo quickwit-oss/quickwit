@@ -224,6 +224,7 @@ sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
+  "postgres-array",
 ] }
 # ^1.0.184 due to serde-rs/serde#2538
 serde = { version = "1.0.228", features = ["derive", "rc"] }

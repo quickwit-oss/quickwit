@@ -206,6 +206,7 @@ impl DeleteTaskPipeline {
             doc_mapper.clone(),
             delete_executor_io_controls,
             packager_mailbox,
+            None,
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);

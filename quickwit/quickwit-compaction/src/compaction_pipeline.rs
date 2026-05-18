@@ -26,11 +26,11 @@ use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::MergeOperation;
-use quickwit_indexing::metrics::INDEXER_METRICS;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
+use tokio::sync::Semaphore;
 use tracing::{error, info};
 
 use crate::metrics::COMPACTOR_METRICS;
@@ -105,6 +105,7 @@ pub struct CompactionPipeline {
     io_throughput_limiter: Option<Limiter>,
     max_concurrent_split_uploads: usize,
     event_broker: EventBroker,
+    merge_execution_semaphore: Arc<Semaphore>,
     pipeline_start: Option<Instant>,
 }
 
@@ -123,6 +124,7 @@ impl CompactionPipeline {
         io_throughput_limiter: Option<Limiter>,
         max_concurrent_split_uploads: usize,
         event_broker: EventBroker,
+        merge_execution_semaphore: Arc<Semaphore>,
     ) -> Self {
         CompactionPipeline {
             task_id,
@@ -140,6 +142,7 @@ impl CompactionPipeline {
             io_throughput_limiter,
             max_concurrent_split_uploads,
             event_broker,
+            merge_execution_semaphore,
             pipeline_start: None,
         }
     }
@@ -331,6 +334,7 @@ impl CompactionPipeline {
             self.doc_mapper.clone(),
             merge_executor_io_controls,
             merge_packager_mailbox,
+            Some(self.merge_execution_semaphore.clone()),
         );
         let (merge_executor_mailbox, merge_executor_handle) = spawn_ctx
             .spawn_builder()
@@ -386,6 +390,7 @@ pub(crate) mod tests {
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
+    use tokio::sync::Semaphore;
 
     use super::{CompactionPipeline, PipelineStatus};
 
@@ -416,6 +421,7 @@ pub(crate) mod tests {
             None,
             2,
             EventBroker::default(),
+            Arc::new(Semaphore::new(2)),
         )
     }
 

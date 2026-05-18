@@ -37,10 +37,14 @@ use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 /// Cap on splits fetched per tick. Every tick, the planner re-scans the immature published set,
-/// sorted by `maturity_timestamp` ASC  so the most-urgent splits are processed first when a backlog
+/// sorted by `maturity_timestamp` ASC so the most-urgent splits are processed first when a backlog
 /// exists. Splits beyond this cap aren't lost -- they bubble into range as the front of the queue
 /// is merged off.
 const SCAN_PAGE_SIZE: usize = 5_000;
+
+/// Cap on the size of the `excluded_split_ids` list we send to the metastore.
+/// It's a sanity max rather than some invariant.
+const MAX_EXCLUDED_SPLIT_IDS: usize = 50_000;
 
 #[derive(Debug)]
 pub struct CompactionPlanner {
@@ -140,11 +144,13 @@ impl CompactionPlanner {
     }
 
     async fn scan_metastore(&self) -> Result<Vec<Split>> {
+        let excluded_split_ids = self.state.tracked_split_ids(MAX_EXCLUDED_SPLIT_IDS);
         let query = ListSplitsQuery::for_all_indexes()
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc())
             .sort_by_maturity_timestamp()
-            .with_limit(SCAN_PAGE_SIZE);
+            .with_limit(SCAN_PAGE_SIZE)
+            .with_excluded_split_ids(excluded_split_ids);
         let request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let splits = self
             .metastore
@@ -266,7 +272,7 @@ mod tests {
         IndexMetadata, IndexMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
         SortBy, Split, SplitMaturity, SplitMetadata, SplitState,
     };
-    use quickwit_proto::compaction::CompactionSuccess;
+    use quickwit_proto::compaction::{CompactionInProgress, CompactionSuccess};
     use quickwit_proto::metastore::{
         IndexMetadataResponse, ListSplitsResponse, MetastoreError, MockMetastoreService,
     };
@@ -347,6 +353,10 @@ mod tests {
             assert_eq!(query.update_timestamp.start, Bound::Unbounded);
             assert_eq!(query.update_timestamp.end, Bound::Unbounded);
 
+            // No tracked splits → empty exclude list. The non-empty case is
+            // covered by `test_scan_metastore_excludes_tracked_splits`.
+            assert!(query.excluded_split_ids.is_empty());
+
             let response = ListSplitsResponse::try_from_splits(returned_clone.clone()).unwrap();
             Ok(ServiceStream::from(vec![Ok(response)]))
         });
@@ -357,6 +367,43 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].split_metadata.split_id, "a");
         assert_eq!(result[1].split_metadata.split_id, "b");
+    }
+
+    #[tokio::test]
+    async fn test_scan_metastore_excludes_tracked_splits() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        let mut mock = MockMetastoreService::new();
+        mock.expect_list_splits().returning(move |req| {
+            let query = req.deserialize_list_splits_query().unwrap();
+            let mut excluded = query.excluded_split_ids.clone();
+            excluded.sort();
+            assert_eq!(
+                excluded,
+                vec!["in-flight".to_string(), "tracked".to_string()]
+            );
+
+            let response = ListSplitsResponse::try_from_splits(Vec::new()).unwrap();
+            Ok(ServiceStream::from(vec![Ok(response)]))
+        });
+
+        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        planner.state.track_split(SplitMetadata {
+            split_id: "tracked".to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        });
+        planner.state.update_heartbeats(
+            &NodeId::from("test-node"),
+            &[CompactionInProgress {
+                task_id: "t-1".to_string(),
+                index_uid: Some(index_uid.clone()),
+                source_id: "src".to_string(),
+                split_ids: vec!["in-flight".to_string()],
+            }],
+        );
+
+        planner.scan_metastore().await.unwrap();
     }
 
     #[tokio::test]

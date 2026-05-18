@@ -308,6 +308,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         doc_mapper,
         io_controls,
         merge_packager_mailbox,
+        None,
     );
 
     let (merge_executor_mailbox, _merge_executor_handle) =

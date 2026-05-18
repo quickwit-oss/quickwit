@@ -872,6 +872,10 @@ pub struct ListSplitsQuery {
 
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
+
+    /// Exclude any split whose `split_id` appears in this list. Empty means no
+    /// exclusion.
+    pub excluded_split_ids: Vec<SplitId>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -948,6 +952,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         }
     }
 
@@ -972,6 +977,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         })
     }
 
@@ -992,6 +998,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         }
     }
 
@@ -1185,6 +1192,13 @@ impl ListSplitsQuery {
     /// This is only useful if results are sorted by index_uid and split_id.
     pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
         self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
+        self
+    }
+
+    /// Excludes splits whose `split_id` is in the provided list. Used by the
+    /// compaction planner to skip splits it is already tracking locally.
+    pub fn with_excluded_split_ids(mut self, excluded_split_ids: Vec<SplitId>) -> Self {
+        self.excluded_split_ids = excluded_split_ids;
         self
     }
 }
