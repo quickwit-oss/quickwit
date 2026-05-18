@@ -14,14 +14,7 @@
 
 syntax = "proto3";
 
-// Vendored from dd-source: domains/event-platform/shared/libs/event-store-proto/protos/event_store_sortschema/
-// Keep identical to upstream -- do NOT strip unused fields.
-
 package sortschema;
-
-option java_package = "com.dd.event.store.sortschema.proto";
-option java_multiple_files = true;
-option go_package = "github.com/DataDog/dd-source/domains/event-platform/shared/libs/event-store-proto/protos/event_store_sortschema";
 
 // NOTE:  Be thoughtful making changes to this file.  Everything included here is
 //        included in the metadata of every fragment, and in each fragment header.
@@ -65,8 +58,7 @@ message SortColumn {
 // NOTE: Carefully consider whether you need to modify the implementation of
 //       schemautils.go/EquivalentSchemas function whenever this struct is modified.
 message SortSchema {
-    // Very common schemas used all over the place are assigned a unique version number (reference
-    // in dd-go/logs/apps/logs-event-store/storage/fragment/schema_versions.go).
+    // Very common schemas used all over the place are assigned a unique version number.
     //
     // This version number can be used in place of the complete schema description in the fragment
     // metadata entries, to reduce their size. When this value is not null, the other fields in the

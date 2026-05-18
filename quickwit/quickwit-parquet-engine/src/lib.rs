@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pomsky Parquet Engine
+//! Quickwit Parquet Engine
 //!
 //! High-throughput metrics storage and query engine using DataFusion/Parquet.
 //! Replaces Tantivy for metrics workloads while maintaining full compatibility

@@ -105,39 +105,6 @@ pub async fn start_ingest_api_service(
     init_ingest_api(universe, &queues_dir_path, config).await
 }
 
-#[macro_export]
-macro_rules! with_lock_metrics {
-    ($future:expr, $($label:tt),*) => {
-        {
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
-                .inc();
-
-            let now = std::time::Instant::now();
-            let guard = $future;
-
-            let elapsed = now.elapsed();
-            if elapsed > std::time::Duration::from_secs(1) {
-                quickwit_common::rate_limited_warn!(
-                    limit_per_min=6,
-                    "lock acquisition took {}ms", elapsed.as_millis()
-                );
-            }
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
-                .dec();
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_request_duration_secs
-                .with_label_values([$($label),*])
-                .observe(elapsed.as_secs_f64());
-
-            guard
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 

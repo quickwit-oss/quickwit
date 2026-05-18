@@ -40,6 +40,7 @@ use quickwit_proto::metastore::{
     StageSketchSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
+use tracing::instrument;
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
 /// track the state of the metastore accurately and react to events in real-time.
@@ -80,6 +81,7 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Proxied metastore API calls.
 
+    #[instrument(name = "metastore.control_plane.create_index", skip_all)]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
@@ -88,6 +90,7 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.update_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
@@ -96,32 +99,38 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.delete_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.delete_index(request).await?;
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.add_source", skip_all, fields(index_uid = %request.index_uid()))]
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.add_source(request).await?;
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.update_source", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.update_source(request).await?;
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.toggle_source", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.toggle_source(request).await?;
         Ok(response)
     }
 
+    #[instrument(name = "metastore.control_plane.delete_source", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let response = self.control_plane.delete_source(request).await?;
         Ok(response)
     }
 
     // Proxy through the control plane to debounce queries
+    #[instrument(name = "metastore.control_plane.prune_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         self.control_plane.prune_shards(request).await?;
         Ok(EmptyResponse {})
@@ -129,6 +138,7 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Other metastore API calls.
 
+    #[instrument(name = "metastore.control_plane.index_metadata", skip(self))]
     async fn index_metadata(
         &self,
         request: IndexMetadataRequest,
@@ -136,6 +146,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.index_metadata(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.indexes_metadata", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn indexes_metadata(
         &self,
         request: IndexesMetadataRequest,
@@ -143,6 +154,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.indexes_metadata(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_indexes_metadata", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_indexes_metadata(
         &self,
         request: ListIndexesMetadataRequest,
@@ -150,10 +162,12 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_indexes_metadata(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.stage_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.metastore.stage_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.publish_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_splits(
         &self,
         request: PublishSplitsRequest,
@@ -161,6 +175,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.publish_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_splits", skip_all)]
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
@@ -168,6 +183,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_index_stats", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_index_stats(
         &self,
         request: ListIndexStatsRequest,
@@ -175,6 +191,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_index_stats(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_stale_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_stale_splits(
         &self,
         request: ListStaleSplitsRequest,
@@ -182,6 +199,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_stale_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.mark_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_splits_for_deletion(
         &self,
         request: MarkSplitsForDeletionRequest,
@@ -189,10 +207,12 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.mark_splits_for_deletion(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.delete_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.metastore.delete_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.reset_source_checkpoint", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn reset_source_checkpoint(
         &self,
         request: ResetSourceCheckpointRequest,
@@ -202,10 +222,12 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Delete tasks API
 
+    #[instrument(name = "metastore.control_plane.create_delete_task", skip_all, fields(index_uid = %delete_query.index_uid()))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         self.metastore.create_delete_task(delete_query).await
     }
 
+    #[instrument(name = "metastore.control_plane.last_delete_opstamp", skip_all, fields(index_uid = %request.index_uid()))]
     async fn last_delete_opstamp(
         &self,
         request: LastDeleteOpstampRequest,
@@ -213,6 +235,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.last_delete_opstamp(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.update_splits_delete_opstamp", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_splits_delete_opstamp(
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
@@ -220,6 +243,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.update_splits_delete_opstamp(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_delete_tasks", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_delete_tasks(
         &self,
         request: ListDeleteTasksRequest,
@@ -229,10 +253,12 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Shard API
 
+    #[instrument(name = "metastore.control_plane.open_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         self.metastore.open_shards(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.acquire_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn acquire_shards(
         &self,
         request: AcquireShardsRequest,
@@ -240,10 +266,12 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.acquire_shards(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
         self.metastore.list_shards(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.delete_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_shards(
         &self,
         request: DeleteShardsRequest,
@@ -253,6 +281,7 @@ impl MetastoreService for ControlPlaneMetastore {
 
     // Index Template API
 
+    #[instrument(name = "metastore.control_plane.create_index_template", skip(self))]
     async fn create_index_template(
         &self,
         request: CreateIndexTemplateRequest,
@@ -260,6 +289,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.create_index_template(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.get_index_template", skip(self))]
     async fn get_index_template(
         &self,
         request: GetIndexTemplateRequest,
@@ -267,6 +297,10 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.get_index_template(request).await
     }
 
+    #[instrument(
+        name = "metastore.control_plane.find_index_template_matches",
+        skip(self)
+    )]
     async fn find_index_template_matches(
         &self,
         request: FindIndexTemplateMatchesRequest,
@@ -274,6 +308,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.find_index_template_matches(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_index_templates", skip_all)]
     async fn list_index_templates(
         &self,
         request: ListIndexTemplatesRequest,
@@ -281,6 +316,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_index_templates(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.delete_index_templates", skip(self))]
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
@@ -288,6 +324,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.delete_index_templates(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.get_cluster_identity", skip_all)]
     async fn get_cluster_identity(
         &self,
         request: GetClusterIdentityRequest,
@@ -314,6 +351,7 @@ impl MetastoreService for ControlPlaneMetastore {
     }
     // Metrics Splits API - Proxy to underlying metastore
 
+    #[instrument(name = "metastore.control_plane.stage_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_metrics_splits(
         &self,
         request: StageMetricsSplitsRequest,
@@ -321,6 +359,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.stage_metrics_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.publish_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_metrics_splits(
         &self,
         request: PublishMetricsSplitsRequest,
@@ -328,6 +367,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.publish_metrics_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_metrics_splits(
         &self,
         request: ListMetricsSplitsRequest,
@@ -335,6 +375,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_metrics_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.mark_metrics_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_metrics_splits_for_deletion(
         &self,
         request: MarkMetricsSplitsForDeletionRequest,
@@ -344,6 +385,7 @@ impl MetastoreService for ControlPlaneMetastore {
             .await
     }
 
+    #[instrument(name = "metastore.control_plane.delete_metrics_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_metrics_splits(
         &self,
         request: DeleteMetricsSplitsRequest,
@@ -351,6 +393,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.delete_metrics_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.stage_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_sketch_splits(
         &self,
         request: StageSketchSplitsRequest,
@@ -358,6 +401,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.stage_sketch_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.publish_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_sketch_splits(
         &self,
         request: PublishSketchSplitsRequest,
@@ -365,6 +409,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.publish_sketch_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.list_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_sketch_splits(
         &self,
         request: ListSketchSplitsRequest,
@@ -372,6 +417,7 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_sketch_splits(request).await
     }
 
+    #[instrument(name = "metastore.control_plane.mark_sketch_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_sketch_splits_for_deletion(
         &self,
         request: MarkSketchSplitsForDeletionRequest,
@@ -381,6 +427,7 @@ impl MetastoreService for ControlPlaneMetastore {
             .await
     }
 
+    #[instrument(name = "metastore.control_plane.delete_sketch_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_sketch_splits(
         &self,
         request: DeleteSketchSplitsRequest,

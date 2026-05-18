@@ -155,11 +155,10 @@ fn authenticated_request<T>(raw_request: T) -> Request<T> {
 }
 
 async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
-    // Match CI environment: disable telemetry, reverse connection, and allow old test data
+    // Match CI environment: disable reverse connection, and allow old test data
     // timestamps (test data is from April 2025).
     // SAFETY: called before spawning threads in test setup.
     unsafe {
-        std::env::set_var("QW_DISABLE_TELEMETRY", "1");
         std::env::set_var("CP_ENABLE_REVERSE_CONNECTION", "false");
         std::env::set_var("QW_MAX_LOG_PAST_AGE_HOURS", "10000000000");
     }

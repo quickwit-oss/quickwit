@@ -167,7 +167,7 @@ async fn lambda_leaf_search(
                 num_successes += 1;
                 split_results.push(LambdaSingleSplitResult {
                     split_id,
-                    outcome: Some(Outcome::Response(response)),
+                    outcome: Some(Outcome::Response(Box::new(response))),
                 });
             }
             Ok((split_id, Err(error_msg))) => {

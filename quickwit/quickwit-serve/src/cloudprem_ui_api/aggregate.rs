@@ -528,6 +528,7 @@ mod tests {
             aggregation_postcard: Some(aggregation_postcard),
             failed_splits: Vec::new(),
             num_successful_splits: 0,
+            resource_stats: None,
         };
 
         let mut search_service = MockSearchService::new();

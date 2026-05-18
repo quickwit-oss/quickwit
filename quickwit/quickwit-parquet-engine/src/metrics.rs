@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Prometheus metrics for the Pomsky Parquet Engine.
+//! Prometheus metrics for the Quickwit Parquet Engine.
 //!
 //! Provides counters, histograms, and gauges for monitoring ingest throughput,
 //! query performance, and error rates in production.
@@ -34,7 +34,7 @@ fn duration_buckets() -> Vec<f64> {
     ]
 }
 
-/// Metrics for the Pomsky Parquet Engine.
+/// Metrics for the Quickwit Parquet Engine.
 #[derive(Clone)]
 pub struct ParquetEngineMetrics {
     /// Total number of batches accumulated during indexing.

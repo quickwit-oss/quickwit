@@ -171,6 +171,7 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+    #[tracing::instrument(name = "storage.local_file.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
@@ -199,6 +200,11 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+    #[tracing::instrument(
+        name = "storage.local_file.copy_to",
+        level = "debug",
+        skip(self, output)
+    )]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let full_path = self.full_path(path)?;
         let mut file = tokio::fs::File::open(&full_path).await?;
@@ -206,7 +212,7 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self), level = "debug")]
+    #[tracing::instrument(name = "storage.local_file.get_slice", skip(self), level = "debug")]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
         tokio::task::spawn_blocking(move || {
@@ -230,7 +236,11 @@ impl Storage for LocalFileStorage {
         })?
     }
 
-    #[tracing::instrument(skip(self), level = "debug")]
+    #[tracing::instrument(
+        name = "storage.local_file.get_slice_stream",
+        skip(self),
+        level = "debug"
+    )]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -242,6 +252,7 @@ impl Storage for LocalFileStorage {
         Ok(Box::new(file.take(range.len() as u64)))
     }
 
+    #[tracing::instrument(name = "storage.local_file.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.delete_single_file(path).await?;
         if let Some(parent) = path.parent()
@@ -255,6 +266,7 @@ impl Storage for LocalFileStorage {
     /// Deletes the files identified by `paths` concurrently, with a maximum of `10` syscalls at a
     /// time. Additionally, deletes the parent directories of `paths` if they are empty after the
     /// first round of deletions.
+    #[tracing::instrument(name = "storage.local_file.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         let mut successes = Vec::with_capacity(paths.len());
         let mut failures = HashMap::new();
@@ -306,6 +318,7 @@ impl Storage for LocalFileStorage {
         })
     }
 
+    #[tracing::instrument(name = "storage.local_file.get_all", level = "debug", skip(self))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
         let content_bytes = tokio::fs::read(full_path).await.map_err(|err| {
@@ -322,6 +335,11 @@ impl Storage for LocalFileStorage {
         &self.uri
     }
 
+    #[tracing::instrument(
+        name = "storage.local_file.file_num_bytes",
+        level = "debug",
+        skip(self)
+    )]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let full_path = self.full_path(path)?;
         match tokio::fs::metadata(full_path).await {

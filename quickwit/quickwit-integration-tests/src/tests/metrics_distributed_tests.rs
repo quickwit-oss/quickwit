@@ -196,7 +196,6 @@ async fn run_sql(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_distributed_tasks_not_shuffles() {
     unsafe {
-        std::env::set_var("QW_DISABLE_TELEMETRY", "1");
         std::env::set_var("QW_ENABLE_DATAFUSION_ENDPOINT", "true");
     }
     quickwit_common::setup_logging_for_tests();
@@ -295,7 +294,6 @@ async fn test_distributed_tasks_not_shuffles() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_null_columns_for_missing_parquet_fields() {
     unsafe {
-        std::env::set_var("QW_DISABLE_TELEMETRY", "1");
         std::env::set_var("QW_ENABLE_DATAFUSION_ENDPOINT", "true");
     }
     quickwit_common::setup_logging_for_tests();

@@ -18,6 +18,7 @@
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
+use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_proto::metastore::{
     MetastoreService, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
 };
@@ -45,6 +46,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
+            _merge_task_opt,
             ..
         } = split_update;
 
@@ -85,6 +87,42 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             return Ok(());
         }
         info!("publish-metrics-splits");
+
+        // Emit lifecycle events for trace conformance (no-op when no
+        // observer is installed). Each newly-published split corresponds
+        // to either a fresh ingest (replaced empty) or a merge replacement
+        // (replaced non-empty + 1 output split per merge).
+        let index_uid_str = index_uid.to_string();
+        if replaced_split_ids.is_empty() {
+            for split in &new_splits {
+                let window = split.window.clone().unwrap_or(
+                    split.time_range.start_secs as i64..split.time_range.end_secs as i64,
+                );
+                record_merge_pipeline_event(&MergePipelineEvent::IngestSplit {
+                    index_uid: index_uid_str.clone(),
+                    split_id: split.split_id.as_str().to_string(),
+                    num_rows: split.num_rows,
+                    window,
+                });
+            }
+        } else {
+            // Merge replacement: each output split is one PublishMergeAndFeedback.
+            // The merge_id is the output split_id (planner uses output id as merge id).
+            for split in &new_splits {
+                let window = split.window.clone().unwrap_or(
+                    split.time_range.start_secs as i64..split.time_range.end_secs as i64,
+                );
+                record_merge_pipeline_event(&MergePipelineEvent::PublishMergeAndFeedback {
+                    index_uid: index_uid_str.clone(),
+                    merge_id: split.split_id.as_str().to_string(),
+                    output_split_id: split.split_id.as_str().to_string(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    output_window: window,
+                    output_merge_ops: split.num_merge_ops,
+                });
+            }
+        }
+
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
         // Feedback loop: notify the merge planner about all newly published
@@ -108,6 +146,10 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         } else {
             self.counters.num_replace_operations += 1;
         }
+        // Keep the merge task alive until after the metastore publish and
+        // planner feedback have completed. Dropping it releases both the merge
+        // semaphore permit and the planner's tracked-operation inventory guard.
+        drop(_merge_task_opt);
         Ok(())
     }
 }
@@ -175,7 +217,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -224,7 +266,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -270,7 +312,7 @@ mod tests {
             publish_lock,
             publish_token_opt: None,
             parent_span: Span::none(),
-            _merge_permit_opt: None,
+            _merge_task_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();

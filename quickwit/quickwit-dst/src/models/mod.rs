@@ -14,6 +14,7 @@
 
 //! Stateright models mirroring the TLA+ specifications.
 
+pub mod merge_pipeline;
 pub mod parquet_data_model;
 pub mod sort_schema;
 pub mod time_windowed_compaction;

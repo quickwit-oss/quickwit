@@ -18,7 +18,7 @@
 //! [`CompactionScope`], invokes [`ParquetMergePolicy::operations()`], and
 //! dispatches merge tasks to the [`MergeSchedulerService`].
 //!
-//! Follows the same pattern as the Tantivy [`MergePlanner`] but uses
+//! Follows the same pattern as the Tantivy `MergePlanner` but uses
 //! Parquet-specific types:
 //!
 //! - `CompactionScope` instead of `MergePartition`
@@ -31,6 +31,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_dst::check_invariant;
+use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
+use quickwit_dst::invariants::InvariantId;
 use quickwit_parquet_engine::merge::policy::{
     CompactionScope, ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
 };
@@ -65,7 +68,7 @@ struct PlanParquetMerge {
 /// partitions, or sort schemas are never merged together — doing so would
 /// violate temporal pruning (TW-3) or sort order (MC-3) guarantees.
 ///
-/// Follows the same pattern as the Tantivy [`MergePlanner`] but with
+/// Follows the same pattern as the Tantivy `MergePlanner` but with
 /// `CompactionScope` instead of `MergePartition` and Parquet-specific types.
 pub struct ParquetMergePlanner {
     /// Splits grouped by compaction scope that are eligible for merging.
@@ -179,6 +182,30 @@ impl ParquetMergePlanner {
         merge_split_downloader_mailbox: Mailbox<ParquetMergeSplitDownloader>,
         merge_scheduler_service: Mailbox<MergeSchedulerService>,
     ) -> Self {
+        // MP-11 (RestartReSeedsAllImmature): every split the metastore
+        // reports as still-immature should land in scoped_young_splits,
+        // unless filtered by the merge policy as mature/expired or by being
+        // pre-Phase-31. We compute the expected count, then verify the
+        // recorded count matches after seeding.
+        let now = std::time::SystemTime::now();
+        let expected_immature: Vec<ParquetSplitMetadata> = immature_splits
+            .iter()
+            .filter(|split| {
+                match merge_policy.split_maturity(split.size_bytes, split.num_merge_ops) {
+                    ParquetSplitMaturity::Mature => false,
+                    ParquetSplitMaturity::Immature {
+                        maturation_period, ..
+                    } => split.created_at + maturation_period > now,
+                }
+            })
+            .filter(|split| CompactionScope::from_split(split).is_some())
+            .cloned()
+            .collect();
+        let expected_immature_ids: HashSet<String> = expected_immature
+            .iter()
+            .map(|s| s.split_id.as_str().to_string())
+            .collect();
+
         let mut planner = Self {
             scoped_young_splits: HashMap::new(),
             known_split_ids: HashSet::new(),
@@ -190,6 +217,28 @@ impl ParquetMergePlanner {
             incarnation_started_at: Instant::now(),
         };
         planner.record_splits_if_necessary(immature_splits);
+
+        // After re-seeding: every expected-immature split must be
+        // acknowledged (in known_split_ids) AND placed in a scope bucket.
+        // Anything missing means a split fell through the cracks during
+        // recovery — exactly the failure mode MP-11 protects against.
+        let recorded_in_scope: HashSet<String> = planner
+            .scoped_young_splits
+            .values()
+            .flatten()
+            .map(|s| s.split_id.as_str().to_string())
+            .collect();
+        let all_recorded = expected_immature_ids
+            .iter()
+            .all(|id| planner.known_split_ids.contains(id) && recorded_in_scope.contains(id));
+        check_invariant!(
+            InvariantId::MP11,
+            all_recorded,
+            ": planner re-seed dropped immature splits (expected={}, recorded_in_scope={})",
+            expected_immature_ids.len(),
+            recorded_in_scope.len()
+        );
+
         planner
     }
 
@@ -198,6 +247,15 @@ impl ParquetMergePlanner {
     /// - Time-matured splits (created_at + maturation_period has elapsed)
     /// - Splits we've already seen (dedup via `known_split_ids`)
     /// - Pre-Phase-31 splits without a window (can't participate in compaction)
+    ///
+    /// TODO(CS-3): when `ParquetMergePolicyConfig` grows a
+    /// `compaction_start_time: Option<i64>` field (and the merge policy
+    /// exposes it), filter here on `split.window.start >= compaction_start_time`
+    /// and add a `check_invariant!(InvariantId::CS3, ...)` over
+    /// `scoped_young_splits` to verify no pre-threshold split slipped
+    /// through. The TLA+ model in `time_windowed_compaction.rs` and the
+    /// `CS-3` registry entry already define the invariant; production
+    /// just lacks the configurable threshold today.
     fn record_splits_if_necessary(&mut self, splits: Vec<ParquetSplitMetadata>) {
         let now = std::time::SystemTime::now();
         for split in splits {
@@ -334,6 +392,28 @@ impl ParquetMergePlanner {
                 total_bytes = merge_operation.total_size_bytes(),
                 "scheduling parquet merge operation"
             );
+
+            // Trace event: a merge operation is being dispatched. The
+            // index_uid + window are taken from the first input (all
+            // inputs share scope by MP-3).
+            if let Some(first) = merge_operation.splits.first() {
+                let level = first.num_merge_ops;
+                let window = first.window.clone().unwrap_or(
+                    first.time_range.start_secs as i64..first.time_range.end_secs as i64,
+                );
+                record_merge_pipeline_event(&MergePipelineEvent::PlanMerge {
+                    index_uid: first.index_uid.clone(),
+                    merge_id: merge_operation.merge_split_id.as_str().to_string(),
+                    input_split_ids: merge_operation
+                        .splits
+                        .iter()
+                        .map(|s| s.split_id.as_str().to_string())
+                        .collect(),
+                    level,
+                    window,
+                });
+            }
+
             let tracked = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);
@@ -360,7 +440,7 @@ mod tests {
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
     use super::*;
-    use crate::actors::metrics_pipeline::ParquetMergeTask;
+    use crate::actors::parquet_pipeline::ParquetMergeTask;
 
     fn make_split(split_id: &str, size_bytes: u64, num_merge_ops: u32) -> ParquetSplitMetadata {
         ParquetSplitMetadata::metrics_builder()
@@ -588,6 +668,134 @@ mod tests {
         assert_eq!(tasks[0].merge_operation.splits.len(), 2);
 
         universe.assert_quit().await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Property tests
+    // -----------------------------------------------------------------------
+
+    /// Generate a split with random maturity-relevant properties.
+    fn make_split_with_maturity(
+        split_id: &str,
+        size_bytes: u64,
+        num_merge_ops: u32,
+        created_secs_ago: u64,
+        has_window: bool,
+    ) -> ParquetSplitMetadata {
+        let mut split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new(split_id))
+            .index_uid("test-index:00000000000000000000000001")
+            .partition_id(0)
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(size_bytes)
+            .sort_fields("metric_name|host|timestamp_secs/V2")
+            .num_merge_ops(num_merge_ops)
+            .build();
+
+        // Override created_at to control time-based maturity.
+        split.created_at =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(created_secs_ago);
+
+        if has_window {
+            split.window = Some(0..3600);
+        } else {
+            split.window = None;
+        }
+        split
+    }
+
+    proptest::proptest! {
+        /// Verify that no merge task ever contains a split that should have
+        /// been filtered: mature by ops, mature by size, mature by time, or
+        /// missing a window.
+        #[test]
+        fn proptest_planner_never_merges_mature_or_windowless_splits(
+            splits_data in proptest::collection::vec(
+                (
+                    1u64..300_000_000,   // size_bytes
+                    0u32..6,             // num_merge_ops
+                    0u64..7200,          // created_secs_ago
+                    proptest::bool::ANY, // has_window
+                ),
+                2..20,
+            )
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let universe = Universe::with_accelerated_time();
+                let (downloader_mailbox, downloader_inbox) =
+                    universe.create_test_mailbox();
+                // max_merge_ops=5, target=256MiB, maturation=3600s
+                let policy = make_policy(2);
+
+                let splits: Vec<ParquetSplitMetadata> = splits_data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(size, ops, age, has_w))| {
+                        make_split_with_maturity(
+                            &format!("prop-{i}"),
+                            size,
+                            ops,
+                            age,
+                            has_w,
+                        )
+                    })
+                    .collect();
+
+                let planner = ParquetMergePlanner::new(
+                    splits.clone(),
+                    policy.clone(),
+                    downloader_mailbox,
+                    universe.get_or_spawn_one(),
+                );
+                let (_planner_mailbox, _planner_handle) =
+                    universe.spawn_builder().spawn(planner);
+
+                // Give the planner time to process initial splits and plan.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                let tasks = downloader_inbox
+                    .drain_for_test_typed::<ParquetMergeTask>();
+
+                let now = std::time::SystemTime::now();
+                for task in &tasks {
+                    for split in &task.merge_operation.splits {
+                        // No mature-by-ops split.
+                        assert!(
+                            split.num_merge_ops < 5,
+                            "merge task contains ops-mature split: {} has ops={}",
+                            split.split_id, split.num_merge_ops
+                        );
+                        // No mature-by-size split.
+                        assert!(
+                            split.size_bytes < 256 * 1024 * 1024,
+                            "merge task contains size-mature split: {} has size={}",
+                            split.split_id, split.size_bytes
+                        );
+                        // No time-matured split.
+                        let age = now
+                            .duration_since(split.created_at)
+                            .unwrap_or_default();
+                        assert!(
+                            age < std::time::Duration::from_secs(3600),
+                            "merge task contains time-mature split: {} age={:?}",
+                            split.split_id, age
+                        );
+                        // No windowless split.
+                        assert!(
+                            split.window.is_some(),
+                            "merge task contains windowless split: {}",
+                            split.split_id
+                        );
+                    }
+                }
+                universe.assert_quit().await;
+            });
+        }
     }
 
     #[tokio::test]

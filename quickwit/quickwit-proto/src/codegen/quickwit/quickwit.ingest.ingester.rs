@@ -743,54 +743,67 @@ impl IngesterServiceClient {
 }
 #[async_trait::async_trait]
 impl IngesterService for IngesterServiceClient {
+    #[tracing::instrument(
+        skip_all,
+        name = "ingest.ingester.persist",
+        fields(leader_id = %request.leader_id, commit_type = ?request.commit_type)
+    )]
     async fn persist(
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
         self.inner.0.persist(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.open_replication_stream")]
     async fn open_replication_stream(
         &self,
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
         self.inner.0.open_replication_stream(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.open_fetch_stream")]
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.inner.0.open_fetch_stream(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.open_observation_stream")]
     async fn open_observation_stream(
         &self,
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.inner.0.open_observation_stream(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.init_shards")]
     async fn init_shards(
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
         self.inner.0.init_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.retain_shards")]
     async fn retain_shards(
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
         self.inner.0.retain_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.truncate_shards")]
     async fn truncate_shards(
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
         self.inner.0.truncate_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.close_shards")]
     async fn close_shards(
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.inner.0.close_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.decommission")]
     async fn decommission(
         &self,
         request: DecommissionRequest,
@@ -2033,9 +2046,13 @@ where
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .persist(request)
+            .persist(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2047,9 +2064,13 @@ where
         &self,
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .open_replication_stream(request)
+            .open_replication_stream(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -2069,9 +2090,13 @@ where
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .open_fetch_stream(request)
+            .open_fetch_stream(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -2091,9 +2116,13 @@ where
         &self,
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .open_observation_stream(request)
+            .open_observation_stream(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -2113,9 +2142,13 @@ where
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .init_shards(request)
+            .init_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2127,9 +2160,13 @@ where
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .retain_shards(request)
+            .retain_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2141,9 +2178,13 @@ where
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .truncate_shards(request)
+            .truncate_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2155,9 +2196,13 @@ where
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .close_shards(request)
+            .close_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2169,9 +2214,13 @@ where
         &self,
         request: DecommissionRequest,
     ) -> crate::ingest::IngestV2Result<DecommissionResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .decommission(request)
+            .decommission(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2199,120 +2248,229 @@ impl ingester_service_grpc_server::IngesterServiceGrpc
 for IngesterServiceGrpcServerAdapter {
     async fn persist(
         &self,
-        request: tonic::Request<PersistRequest>,
+        tonic_request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
-        self.inner
-            .0
-            .persist(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!(
+            "ingest.ingester.persist", leader_id = % request.leader_id, commit_type = ?
+            request.commit_type
+        );
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .persist(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type OpenReplicationStreamStream = quickwit_common::ServiceStream<
         tonic::Result<AckReplicationMessage>,
     >;
     async fn open_replication_stream(
         &self,
-        request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
+        tonic_request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
     ) -> Result<tonic::Response<Self::OpenReplicationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_replication_stream({
-                let streaming: tonic::Streaming<_> = request.into_inner();
-                quickwit_common::ServiceStream::from(streaming)
-            })
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let streaming: tonic::Streaming<_> = tonic_request.into_inner();
+        let request = quickwit_common::ServiceStream::from(streaming);
+        let span = tracing::info_span!("ingest.ingester.open_replication_stream");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .open_replication_stream(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type OpenFetchStreamStream = quickwit_common::ServiceStream<
         tonic::Result<FetchMessage>,
     >;
     async fn open_fetch_stream(
         &self,
-        request: tonic::Request<OpenFetchStreamRequest>,
+        tonic_request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_fetch_stream(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.open_fetch_stream");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .open_fetch_stream(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type OpenObservationStreamStream = quickwit_common::ServiceStream<
         tonic::Result<ObservationMessage>,
     >;
     async fn open_observation_stream(
         &self,
-        request: tonic::Request<OpenObservationStreamRequest>,
+        tonic_request: tonic::Request<OpenObservationStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenObservationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_observation_stream(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.open_observation_stream");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .open_observation_stream(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn init_shards(
         &self,
-        request: tonic::Request<InitShardsRequest>,
+        tonic_request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .init_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.init_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .init_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn retain_shards(
         &self,
-        request: tonic::Request<RetainShardsRequest>,
+        tonic_request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .retain_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.retain_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .retain_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn truncate_shards(
         &self,
-        request: tonic::Request<TruncateShardsRequest>,
+        tonic_request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .truncate_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.truncate_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .truncate_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn close_shards(
         &self,
-        request: tonic::Request<CloseShardsRequest>,
+        tonic_request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .close_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.close_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .close_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn decommission(
         &self,
-        request: tonic::Request<DecommissionRequest>,
+        tonic_request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
-        self.inner
-            .0
-            .decommission(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.decommission");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .decommission(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

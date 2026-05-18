@@ -245,6 +245,7 @@ mod tests {
             aggregation_postcard: None,
             failed_splits: Vec::new(),
             num_successful_splits: 0,
+            resource_stats: None,
         };
         let mut search_service = MockSearchService::new();
         search_service
@@ -321,6 +322,7 @@ mod tests {
             aggregation_postcard: None,
             failed_splits: Vec::new(),
             num_successful_splits: 0,
+            resource_stats: None,
         };
         let mut search_service = MockSearchService::new();
         search_service

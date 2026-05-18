@@ -25,7 +25,7 @@ use quickwit_proto::ingest::{
 };
 use quickwit_proto::types::{DocMappingUid, DocUid};
 use serde_json_borrow::Value as JsonValue;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::DocBatchV2Builder;
 
@@ -69,31 +69,44 @@ pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc
     Ok(doc_mapper)
 }
 
-fn validate_document(
-    doc_mapper: &DocMapper,
-    doc_bytes: &[u8],
-) -> Result<(), (ParseFailureReason, String)> {
-    let Ok(json_doc) = serde_json::from_slice::<serde_json_borrow::Value>(doc_bytes) else {
-        return Err((
-            ParseFailureReason::InvalidJson,
-            "failed to parse JSON document".to_string(),
-        ));
-    };
-    let JsonValue::Object(json_obj) = json_doc else {
-        return Err((
-            ParseFailureReason::InvalidJson,
-            "JSON document is not an object".to_string(),
-        ));
-    };
-    if let Err(error) = doc_mapper.validate_json_obj(&json_obj) {
-        rate_limited_error!(
-            limit_per_min = 6,
-            "failed to validate JSON document: {}",
-            error
-        );
-        return Err((ParseFailureReason::InvalidSchema, error.to_string()));
+/// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the
+/// original batch and a list of parse failures.
+///
+/// Note: Validation is skipped for Arrow IPC format batches since they have their own schema
+/// and are processed by specialized pipelines (e.g., ParquetDocProcessor).
+pub(super) async fn validate_doc_batch(
+    doc_batch: DocBatchV2,
+    doc_mapper: Arc<DocMapper>,
+) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
+    // Skip validation for Arrow IPC format - it has its own schema and is processed
+    // by specialized pipelines (e.g., metrics pipeline)
+    if doc_batch.doc_format() == DocFormat::ArrowIpc {
+        return Ok((doc_batch, Vec::new()));
     }
-    Ok(())
+    if is_document_validation_enabled() {
+        return validate_doc_batch_cpu_intensive(doc_batch, doc_mapper).await;
+    }
+    Ok((doc_batch, Vec::new()))
+}
+
+fn is_document_validation_enabled() -> bool {
+    static IS_DOCUMENT_VALIDATION_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+        !quickwit_common::get_bool_from_env("QW_DISABLE_DOCUMENT_VALIDATION", false)
+    });
+    *IS_DOCUMENT_VALIDATION_ENABLED
+}
+
+#[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.num_bytes()))]
+async fn validate_doc_batch_cpu_intensive(
+    doc_batch: DocBatchV2,
+    doc_mapper: Arc<DocMapper>,
+) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
+    run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, &doc_mapper))
+        .await
+        .map_err(|error| {
+            let message = format!("failed to validate documents: {error}");
+            IngestV2Error::Internal(message)
+        })
 }
 
 /// Validates a batch of docs.
@@ -134,38 +147,31 @@ fn validate_doc_batch_impl(
     (valid_doc_batch, parse_failures)
 }
 
-fn is_document_validation_enabled() -> bool {
-    static IS_DOCUMENT_VALIDATION_ENABLED: LazyLock<bool> = LazyLock::new(|| {
-        !quickwit_common::get_bool_from_env("QW_DISABLE_DOCUMENT_VALIDATION", false)
-    });
-    *IS_DOCUMENT_VALIDATION_ENABLED
-}
-
-/// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the
-/// original batch and a list of parse failures.
-///
-/// Note: Validation is skipped for Arrow IPC format batches since they have their own schema
-/// and are processed by specialized pipelines (e.g., ParquetDocProcessor).
-pub(super) async fn validate_doc_batch(
-    doc_batch: DocBatchV2,
-    doc_mapper: Arc<DocMapper>,
-) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
-    // Skip validation for Arrow IPC format - it has its own schema and is processed
-    // by specialized pipelines (e.g., metrics pipeline)
-    if doc_batch.doc_format() == DocFormat::ArrowIpc {
-        return Ok((doc_batch, Vec::new()));
+fn validate_document(
+    doc_mapper: &DocMapper,
+    doc_bytes: &[u8],
+) -> Result<(), (ParseFailureReason, String)> {
+    let Ok(json_doc) = serde_json::from_slice::<serde_json_borrow::Value>(doc_bytes) else {
+        return Err((
+            ParseFailureReason::InvalidJson,
+            "failed to parse JSON document".to_string(),
+        ));
+    };
+    let JsonValue::Object(json_obj) = json_doc else {
+        return Err((
+            ParseFailureReason::InvalidJson,
+            "JSON document is not an object".to_string(),
+        ));
+    };
+    if let Err(error) = doc_mapper.validate_json_obj(&json_obj) {
+        rate_limited_error!(
+            limit_per_min = 6,
+            "failed to validate JSON document: {}",
+            error
+        );
+        return Err((ParseFailureReason::InvalidSchema, error.to_string()));
     }
-
-    if is_document_validation_enabled() {
-        run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, &doc_mapper))
-            .await
-            .map_err(|error| {
-                let message = format!("failed to validate documents: {error}");
-                IngestV2Error::Internal(message)
-            })
-    } else {
-        Ok((doc_batch, Vec::new()))
-    }
+    Ok(())
 }
 
 #[cfg(test)]

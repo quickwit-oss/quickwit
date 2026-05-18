@@ -20,7 +20,7 @@ Sorting rows within each split by a schema aligned with common query predicates 
 1. **Compression improvement.** Columnar formats like Parquet compress data by encoding runs of similar values. When rows are sorted by metric name and tags, the columns for those fields contain long runs of identical or similar values, benefiting RLE, dictionary encoding, and general-purpose compression (ZSTD). In Husky Phase 1, this yielded ~33% size reduction for APM data and ~25% for Logs data.
 2. **Query efficiency.** Parquet's column index (format v2) stores min/max statistics per page within each column chunk. When data is sorted, pages within each column naturally have non-overlapping value ranges for the sort columns. DataFusion supports page index pruning, allowing it to skip pages that cannot match a query predicate.
 
-Matthew Kim's implementation added a fixed sort on `(MetricName, TagService, TagEnv, TagDatacenter, TagRegion, TagHost, TimestampSecs)` in the Parquet writer (`quickwit-parquet-engine/src/storage/writer.rs`), demonstrating that sorting is feasible and inexpensive. However, this sort order is hardcoded in `ParquetField::sort_order()` and cannot be customized per index or deployment. Different workloads have different high-value columns; a metrics index tracking Kubernetes containers benefits from sorting by `pod` and `namespace`, while an infrastructure metrics index benefits from `host` and `datacenter`.
+An initial implementation added a fixed sort on `(MetricName, TagService, TagEnv, TagDatacenter, TagRegion, TagHost, TimestampSecs)` in the Parquet writer (`quickwit-parquet-engine/src/storage/writer.rs`), demonstrating that sorting is feasible and inexpensive. However, this sort order is hardcoded in `ParquetField::sort_order()` and cannot be customized per index or deployment. Different workloads have different high-value columns; a metrics index tracking Kubernetes containers benefits from sorting by `pod` and `namespace`, while an infrastructure metrics index benefits from `host` and `datacenter`.
 
 This ADR formalizes the sort schema as a configurable, per-index property stored in the metastore.
 
@@ -169,7 +169,7 @@ Phase 4 of the locality compaction roadmap extends sorting to the Tantivy pipeli
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| Fixed sort at ingestion | `quickwit-parquet-engine/src/storage/writer.rs` | Done (Matthew Kim). Replaced by configurable sort in PR #6287 |
+| Fixed sort at ingestion | `quickwit-parquet-engine/src/storage/writer.rs` | Done. Replaced by configurable sort in PR #6287 |
 | Configurable sort schema | `quickwit-parquet-engine/src/table_config.rs` | Done (PR #6287). `TableConfig` with `effective_sort_fields()` override; `ParquetWriter` resolves sort fields dynamically |
 | Sort schema parser | `quickwit-parquet-engine/src/sort_fields/parser.rs` | Done (PR #6290). Parses `column\|...\|&metadata\|timestamp/V2` with directions, LSM cutoff, version |
 | Per-column sort direction | `sort_fields/parser.rs` + `storage/writer.rs` | Done (PR #6290 + #6287). Parser extracts `+`/`-` suffix; writer respects `descending` flag |
@@ -197,5 +197,4 @@ Phase 4 of the locality compaction roadmap extends sorting to the Tantivy pipeli
 - [Compaction Architecture](../compaction-architecture.md) — current compaction system description
 - [ADR-001: Parquet Data Model](./001-parquet-data-model.md) — point-per-row data model and timeseries_id
 - [ADR-003: Time-Windowed Sorted Compaction](./003-time-windowed-sorted-compaction.md) — compaction that depends on sort schema
-- [Husky Phase 1: Locality of Reference](https://docs.google.com/document/d/1x9BO1muCTo1TmfhPYBdIxZ-59aU0ECSiEaGPUcDZkPs/edit) — prior art
-- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
+- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/) — prior art

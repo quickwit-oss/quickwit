@@ -38,6 +38,7 @@ use quickwit_actors::{
 use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_metastore::{ListParquetSplitsRequestExt, ListParquetSplitsResponseExt};
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
@@ -253,6 +254,17 @@ impl ParquetMergePipeline {
         );
 
         let immature_splits = self.fetch_immature_splits(ctx).await?;
+
+        // Trace event: a fresh process invocation has just re-seeded the
+        // planner. Includes the immature split IDs as the planner will see
+        // them (before the policy filters mature/expired splits).
+        record_merge_pipeline_event(&MergePipelineEvent::Restart {
+            index_uid: self.params.index_uid.to_string(),
+            re_seeded_immature_split_ids: immature_splits
+                .iter()
+                .map(|s| s.split_id.as_str().to_string())
+                .collect(),
+        });
 
         // Spawn actors bottom-up: each actor's constructor needs a mailbox
         // for the actor below it in the chain, so we start from the publisher
@@ -502,6 +514,9 @@ impl Handler<FinishPendingMergesAndShutdownPipeline> for ParquetMergePipeline {
                 .mailbox()
                 .send_message(DisconnectMergePlanner)
                 .await;
+            record_merge_pipeline_event(&MergePipelineEvent::DisconnectMergePlanner {
+                index_uid: self.params.index_uid.to_string(),
+            });
 
             // Phase 2: Run the finalize policy (merges cold-window stragglers
             // with a lower merge factor), then the planner exits. Downstream
@@ -511,6 +526,14 @@ impl Handler<FinishPendingMergesAndShutdownPipeline> for ParquetMergePipeline {
                 .mailbox()
                 .send_message(RunFinalizeMergePolicyAndQuit)
                 .await;
+            record_merge_pipeline_event(&MergePipelineEvent::RunFinalizeAndQuit {
+                index_uid: self.params.index_uid.to_string(),
+                // The exact count is computed inside the planner; we record
+                // 0 here as a sentinel and the planner will emit a more
+                // precise count on completion if needed. For now this event
+                // marks "finalize requested".
+                finalize_merges_emitted: 0,
+            });
         }
         Ok(())
     }

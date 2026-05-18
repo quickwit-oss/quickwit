@@ -2,7 +2,7 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExecuteSubstraitRequest {
     /// Substrait plan encoded as protobuf bytes (prost::Message::encode).
-    /// Used by Pomsky and other production callers that already hold an encoded plan.
+    /// Used by production callers that already hold an encoded plan.
     #[prost(bytes = "vec", tag = "1")]
     pub substrait_plan_bytes: ::prost::alloc::vec::Vec<u8>,
     /// Optional per-request session overrides (e.g. target_partitions).
@@ -65,8 +65,8 @@ pub mod data_fusion_service_client {
     use tonic::codegen::http::Uri;
     /// Service for executing DataFusion queries over Quickwit data.
     ///
-    /// This is the OSS entry point for Substrait and SQL execution.
-    /// Pomsky wraps this service inside CloudPremService.SubstraitSearch.
+    /// This is the entry point for Substrait and SQL execution. Downstream
+    /// distributions may wrap or rename this service inside their own gRPC layer.
     #[derive(Debug, Clone)]
     pub struct DataFusionServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -257,8 +257,8 @@ pub mod data_fusion_service_server {
     }
     /// Service for executing DataFusion queries over Quickwit data.
     ///
-    /// This is the OSS entry point for Substrait and SQL execution.
-    /// Pomsky wraps this service inside CloudPremService.SubstraitSearch.
+    /// This is the entry point for Substrait and SQL execution. Downstream
+    /// distributions may wrap or rename this service inside their own gRPC layer.
     #[derive(Debug)]
     pub struct DataFusionServiceServer<T> {
         inner: Arc<T>,

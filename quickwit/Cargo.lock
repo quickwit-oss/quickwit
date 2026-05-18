@@ -9823,6 +9823,8 @@ dependencies = [
  "tonic 0.14.5",
  "tonic-prost",
  "tower 0.5.3",
+ "tracing 0.1.44",
+ "tracing-opentelemetry",
  "utoipa",
 ]
 
@@ -9850,6 +9852,8 @@ dependencies = [
  "itertools 0.14.0",
  "metrics",
  "metrics-util 0.20.1",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "ordered-float 5.3.0",
  "pin-project",
  "pnet",
@@ -9873,6 +9877,7 @@ dependencies = [
  "tonic 0.14.5",
  "tower 0.5.3",
  "tracing 0.1.44",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
@@ -9967,6 +9972,7 @@ dependencies = [
  "datafusion-physical-plan",
  "datafusion-substrait",
  "futures 0.3.32",
+ "mini-moka",
  "object_store",
  "parquet",
  "prost 0.14.3",
@@ -9979,6 +9985,8 @@ dependencies = [
  "quickwit-proto",
  "quickwit-search",
  "quickwit-storage",
+ "regex",
+ "regex-automata",
  "serde_json",
  "tempfile",
  "tokio",
@@ -10139,6 +10147,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-dst",
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-metastore",
@@ -10201,6 +10210,7 @@ dependencies = [
  "tonic-prost",
  "tower 0.5.3",
  "tracing 0.1.44",
+ "tracing-opentelemetry",
  "ulid",
  "utoipa",
 ]
@@ -10452,7 +10462,9 @@ version = "0.1.27-dev"
 dependencies = [
  "anyhow",
  "arrow",
+ "async-trait",
  "base64 0.22.1",
+ "bytes 1.11.1",
  "chrono",
  "parquet",
  "proptest",
@@ -10468,6 +10480,8 @@ dependencies = [
  "storekey",
  "tempfile",
  "thiserror 2.0.18",
+ "thrift",
+ "tokio",
  "tracing 0.1.44",
  "ulid",
 ]
@@ -10511,7 +10525,6 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "mockall",
- "opentelemetry",
  "prost 0.14.3",
  "prost-build 0.14.3",
  "prost-types 0.14.3",

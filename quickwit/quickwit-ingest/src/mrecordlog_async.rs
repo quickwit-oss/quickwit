@@ -20,7 +20,7 @@ use bytes::Buf;
 use mrecordlog::error::*;
 use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceUsage};
 use tokio::task::JoinError;
-use tracing::error;
+use tracing::{Span, error, info_span, instrument};
 
 /// A light wrapper to allow async operation in mrecordlog.
 pub struct MultiRecordLogAsync {
@@ -48,6 +48,7 @@ impl MultiRecordLogAsync {
         Self::open_with_prefs(directory_path, PersistPolicy::Always(PersistAction::Flush)).await
     }
 
+    #[instrument(name = "mrecordlog.open_async", skip_all, fields(directory_path = %directory_path.display(), ?persist_policy))]
     pub async fn open_with_prefs(
         directory_path: &Path,
         persist_policy: PersistPolicy,
@@ -66,18 +67,21 @@ impl MultiRecordLogAsync {
         })
     }
 
-    async fn run_operation<F, T>(&mut self, operation: F) -> T
+    async fn run_operation<F, T>(&mut self, inner_span: Span, operation: F) -> T
     where
         F: FnOnce(&mut MultiRecordLog) -> T + Send + 'static,
         T: Send + 'static,
     {
         let mut mrecordlog = self.take();
+
         let join_res: Result<(T, MultiRecordLog), JoinError> =
             tokio::task::spawn_blocking(move || {
+                let _entered = inner_span.entered();
                 let res = operation(&mut mrecordlog);
                 (res, mrecordlog)
             })
             .await;
+
         match join_res {
             Ok((operation_result, mrecordlog)) => {
                 self.mrecordlog_opt = Some(mrecordlog);
@@ -91,29 +95,76 @@ impl MultiRecordLogAsync {
         }
     }
 
+    #[instrument(name = "mrecordlog.create_queue_async", skip_all, fields(queue))]
     pub async fn create_queue(&mut self, queue: &str) -> Result<(), CreateQueueError> {
+        let span = info_span!("mrecordlog.create_queue", queue);
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.create_queue(&queue))
+        self.run_operation(span, move |mrecordlog| mrecordlog.create_queue(&queue))
             .await
     }
 
+    #[instrument(name = "mrecordlog.delete_queue_async", skip_all, fields(queue))]
     pub async fn delete_queue(&mut self, queue: &str) -> Result<(), DeleteQueueError> {
+        let span = info_span!("mrecordlog.delete_queue", queue);
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.delete_queue(&queue))
+        self.run_operation(span, move |mrecordlog| mrecordlog.delete_queue(&queue))
             .await
     }
 
+    #[instrument(name = "mrecordlog.append_records_async", skip_all, fields(queue))]
     pub async fn append_records<T: Iterator<Item = impl Buf> + Send + 'static>(
         &mut self,
         queue: &str,
         position_opt: Option<u64>,
         payloads: T,
     ) -> Result<Option<u64>, AppendError> {
+        let span = info_span!("mrecordlog.append_records", queue);
         let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| {
+        self.run_operation(span, move |mrecordlog| {
             mrecordlog.append_records(&queue, position_opt, payloads)
         })
         .await
+    }
+
+    #[instrument(name = "mrecordlog.truncate_async", skip_all, fields(queue, position))]
+    pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
+        let span = info_span!("mrecordlog.truncate", queue, position);
+        let queue = queue.to_string();
+        self.run_operation(span, move |mrecordlog| {
+            mrecordlog.truncate(&queue, position)
+        })
+        .await
+    }
+
+    pub fn range<R>(
+        &self,
+        queue: &str,
+        range: R,
+    ) -> Result<impl Iterator<Item = Record<'_>> + '_, MissingQueue>
+    where
+        R: RangeBounds<u64> + 'static,
+    {
+        self.mrecordlog_ref().range(queue, range)
+    }
+
+    pub fn queue_exists(&self, queue: &str) -> bool {
+        self.mrecordlog_ref().queue_exists(queue)
+    }
+
+    pub fn list_queues(&self) -> impl Iterator<Item = &str> {
+        self.mrecordlog_ref().list_queues()
+    }
+
+    pub fn last_record(&self, queue: &str) -> Result<Option<Record<'_>>, MissingQueue> {
+        self.mrecordlog_ref().last_record(queue)
+    }
+
+    pub fn resource_usage(&self) -> ResourceUsage {
+        self.mrecordlog_ref().resource_usage()
+    }
+
+    pub fn summary(&self) -> mrecordlog::QueuesSummary {
+        self.mrecordlog_ref().summary()
     }
 
     #[track_caller]
@@ -158,42 +209,5 @@ impl MultiRecordLogAsync {
                 "expected record payload, `{expected_payload}`, got `{payload}`",
             );
         }
-    }
-
-    pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
-        let queue = queue.to_string();
-        self.run_operation(move |mrecordlog| mrecordlog.truncate(&queue, position))
-            .await
-    }
-
-    pub fn range<R>(
-        &self,
-        queue: &str,
-        range: R,
-    ) -> Result<impl Iterator<Item = Record<'_>> + '_, MissingQueue>
-    where
-        R: RangeBounds<u64> + 'static,
-    {
-        self.mrecordlog_ref().range(queue, range)
-    }
-
-    pub fn queue_exists(&self, queue: &str) -> bool {
-        self.mrecordlog_ref().queue_exists(queue)
-    }
-
-    pub fn list_queues(&self) -> impl Iterator<Item = &str> {
-        self.mrecordlog_ref().list_queues()
-    }
-
-    pub fn last_record(&self, queue: &str) -> Result<Option<Record<'_>>, MissingQueue> {
-        self.mrecordlog_ref().last_record(queue)
-    }
-
-    pub fn resource_usage(&self) -> ResourceUsage {
-        self.mrecordlog_ref().resource_usage()
-    }
-
-    pub fn summary(&self) -> mrecordlog::QueuesSummary {
-        self.mrecordlog_ref().summary()
     }
 }

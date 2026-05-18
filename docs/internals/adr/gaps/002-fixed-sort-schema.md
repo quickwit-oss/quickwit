@@ -2,7 +2,7 @@
 
 **Status**: Partially resolved
 **Discovered**: 2026-02-19
-**Context**: Codebase analysis during Phase 1 locality compaction design. Sort implementation by Matthew Kim provides the foundation but is not configurable.
+**Context**: Codebase analysis during Phase 1 locality compaction design. The initial sort implementation provides the foundation but is not configurable.
 **Resolution**: PRs #6287–#6292 replaced the hardcoded sort with a configurable `TableConfig` + sort schema parser. Remaining: per-index metastore storage, pipeline propagation, null ordering fix.
 
 ## Problem

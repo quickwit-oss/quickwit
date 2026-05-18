@@ -29,6 +29,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
+opentelemetry = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
@@ -53,6 +54,7 @@ tonic = { workspace = true, features = [
 ] }
 tower = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 
 [features]
 testsuite = ["hyper-util"]
@@ -67,6 +69,7 @@ jemalloc-profiled = [
 binggan = { workspace = true }
 hyper-util = { workspace = true }
 metrics-util = "0.20"
+opentelemetry_sdk = { workspace = true }
 ordered-float = "5.1"
 proptest = { workspace = true }
 serde_json = { workspace = true }

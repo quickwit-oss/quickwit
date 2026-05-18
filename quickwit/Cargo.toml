@@ -42,7 +42,6 @@ members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
-  # Fork: removed "quickwit-telemetry" (present upstream)
 ]
 
 # The following list excludes `quickwit-metastore-utils`
@@ -85,7 +84,6 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
-  # Fork: removed "quickwit-telemetry" (present in upstream)
 ]
 
 [workspace.package]
@@ -170,10 +168,10 @@ libz-sys = "1.1"
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
-metrics = "0.24"
-metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
 murmur3 = "0.5"
@@ -225,6 +223,7 @@ rdkafka = { version = "0.39", default-features = false, features = [
   "zstd",
 ] }
 regex = "1.12"
+regex-automata = "0.4"
 regex-syntax = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
@@ -399,7 +398,6 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
-# Fork: removed quickwit-telemetry (present in upstream)
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b", default-features = false, features = [
   "lz4-compression",

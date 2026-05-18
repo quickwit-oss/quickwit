@@ -206,7 +206,7 @@ async fn handle_request_inner(
             handle_err!(server.pull_cluster_metrics(pull_cluster_metrics).await),
         ),
         Request::RootSearch(root_search) => {
-            Response::RootSearch(handle_err!(server.root_search(root_search).await))
+            Response::RootSearch(Box::new(handle_err!(server.root_search(root_search).await)))
         }
         Request::RootListTerms(root_list_terms) => {
             Response::RootListTerms(handle_err!(server.root_list_terms(root_list_terms).await))

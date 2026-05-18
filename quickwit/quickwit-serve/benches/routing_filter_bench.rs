@@ -18,7 +18,7 @@ use quickwit_proto::metastore::IndexRoutingRule;
 use quickwit_serve::datadog_api::{IndexRouter, custom_field_accessor, tag_accessor};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use serde::Deserialize;
 
 /// Fixed seed for deterministic message generation across benchmark runs.

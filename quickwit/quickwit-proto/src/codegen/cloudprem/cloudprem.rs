@@ -91,7 +91,9 @@ pub mod any_response {
         #[prost(message, tag = "15")]
         PullClusterMetrics(super::PullClusterMetricsResponse),
         #[prost(message, tag = "17")]
-        RootSearch(super::super::quickwit::search::SearchResponse),
+        RootSearch(
+            ::prost::alloc::boxed::Box<super::super::quickwit::search::SearchResponse>,
+        ),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsResponse),
         /// Same as a ping, but not propagated further
@@ -1173,108 +1175,126 @@ impl CloudPremServiceClient {
 }
 #[async_trait::async_trait]
 impl CloudPremService for CloudPremServiceClient {
+    #[tracing::instrument(skip_all, name = "cloudprem.ping")]
     async fn ping(
         &self,
         request: PingRequest,
     ) -> crate::cloudprem::CloudPremResult<PingResponse> {
         self.inner.0.ping(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.list")]
     async fn list(
         &self,
         request: ListRequest,
     ) -> crate::cloudprem::CloudPremResult<ListResponse> {
         self.inner.0.list(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.fetch_one")]
     async fn fetch_one(
         &self,
         request: FetchOneRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse> {
         self.inner.0.fetch_one(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.aggregate")]
     async fn aggregate(
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
         self.inner.0.aggregate(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.pull_cluster_metrics")]
     async fn pull_cluster_metrics(
         &self,
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse> {
         self.inner.0.pull_cluster_metrics(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.root_search")]
     async fn root_search(
         &self,
         request: super::quickwit::search::SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse> {
         self.inner.0.root_search(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.root_list_terms")]
     async fn root_list_terms(
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.inner.0.root_list_terms(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.root_list_fields")]
     async fn root_list_fields(
         &self,
         request: super::quickwit::search::ListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
         self.inner.0.root_list_fields(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.get_indexes")]
     async fn get_indexes(
         &self,
         request: GetIndexesRequest,
     ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
         self.inner.0.get_indexes(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.create_index")]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
         self.inner.0.create_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.update_index")]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
         self.inner.0.update_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.delete_index")]
     async fn delete_index(
         &self,
         request: DeleteIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
         self.inner.0.delete_index(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.get_index_routing_table")]
     async fn get_index_routing_table(
         &self,
         request: GetIndexRoutingTableRequest,
     ) -> crate::cloudprem::CloudPremResult<GetIndexRoutingTableResponse> {
         self.inner.0.get_index_routing_table(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.set_index_routing_table")]
     async fn set_index_routing_table(
         &self,
         request: SetIndexRoutingTableRequest,
     ) -> crate::cloudprem::CloudPremResult<SetIndexRoutingTableResponse> {
         self.inner.0.set_index_routing_table(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.get_cluster_diagnostics")]
     async fn get_cluster_diagnostics(
         &self,
         request: GetClusterDiagnosticsRequest,
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse> {
         self.inner.0.get_cluster_diagnostics(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.es_query")]
     async fn es_query(
         &self,
         request: EsHttpRequest,
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
         self.inner.0.es_query(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.substrait_search")]
     async fn substrait_search(
         &self,
         request: CloudpremSubstraitRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
         self.inner.0.substrait_search(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.inverted_request_stream")]
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -3574,9 +3594,13 @@ where
         &self,
         request: PingRequest,
     ) -> crate::cloudprem::CloudPremResult<PingResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .ping(request)
+            .ping(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3588,9 +3612,13 @@ where
         &self,
         request: ListRequest,
     ) -> crate::cloudprem::CloudPremResult<ListResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list(request)
+            .list(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3602,9 +3630,13 @@ where
         &self,
         request: FetchOneRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchOneResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .fetch_one(request)
+            .fetch_one(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3616,9 +3648,13 @@ where
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .aggregate(request)
+            .aggregate(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3630,9 +3666,13 @@ where
         &self,
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .pull_cluster_metrics(request)
+            .pull_cluster_metrics(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3644,9 +3684,13 @@ where
         &self,
         request: super::quickwit::search::SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::SearchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .root_search(request)
+            .root_search(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3658,9 +3702,13 @@ where
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .root_list_terms(request)
+            .root_list_terms(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3672,9 +3720,13 @@ where
         &self,
         request: super::quickwit::search::ListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .root_list_fields(request)
+            .root_list_fields(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3686,9 +3738,13 @@ where
         &self,
         request: GetIndexesRequest,
     ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_indexes(request)
+            .get_indexes(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3700,9 +3756,13 @@ where
         &self,
         request: CreateIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .create_index(request)
+            .create_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3714,9 +3774,13 @@ where
         &self,
         request: UpdateIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .update_index(request)
+            .update_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3728,9 +3792,13 @@ where
         &self,
         request: DeleteIndexRequest,
     ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .delete_index(request)
+            .delete_index(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3742,9 +3810,13 @@ where
         &self,
         request: GetIndexRoutingTableRequest,
     ) -> crate::cloudprem::CloudPremResult<GetIndexRoutingTableResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_index_routing_table(request)
+            .get_index_routing_table(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3756,9 +3828,13 @@ where
         &self,
         request: SetIndexRoutingTableRequest,
     ) -> crate::cloudprem::CloudPremResult<SetIndexRoutingTableResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .set_index_routing_table(request)
+            .set_index_routing_table(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3770,9 +3846,13 @@ where
         &self,
         request: GetClusterDiagnosticsRequest,
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_cluster_diagnostics(request)
+            .get_cluster_diagnostics(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3784,9 +3864,13 @@ where
         &self,
         request: EsHttpRequest,
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .es_query(request)
+            .es_query(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3798,9 +3882,13 @@ where
         &self,
         request: CloudpremSubstraitRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .substrait_search(request)
+            .substrait_search(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -3812,9 +3900,13 @@ where
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
     ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<AnyRequest>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .inverted_request_stream(request)
+            .inverted_request_stream(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -3850,218 +3942,432 @@ impl cloud_prem_service_grpc_server::CloudPremServiceGrpc
 for CloudPremServiceGrpcServerAdapter {
     async fn ping(
         &self,
-        request: tonic::Request<PingRequest>,
+        tonic_request: tonic::Request<PingRequest>,
     ) -> Result<tonic::Response<PingResponse>, tonic::Status> {
-        self.inner
-            .0
-            .ping(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.ping");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .ping(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list(
         &self,
-        request: tonic::Request<ListRequest>,
+        tonic_request: tonic::Request<ListRequest>,
     ) -> Result<tonic::Response<ListResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.list");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn fetch_one(
         &self,
-        request: tonic::Request<FetchOneRequest>,
+        tonic_request: tonic::Request<FetchOneRequest>,
     ) -> Result<tonic::Response<FetchOneResponse>, tonic::Status> {
-        self.inner
-            .0
-            .fetch_one(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.fetch_one");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .fetch_one(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn aggregate(
         &self,
-        request: tonic::Request<AggregationRequest>,
+        tonic_request: tonic::Request<AggregationRequest>,
     ) -> Result<tonic::Response<AggregationResponse>, tonic::Status> {
-        self.inner
-            .0
-            .aggregate(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.aggregate");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .aggregate(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn pull_cluster_metrics(
         &self,
-        request: tonic::Request<PullClusterMetricsRequest>,
+        tonic_request: tonic::Request<PullClusterMetricsRequest>,
     ) -> Result<tonic::Response<PullClusterMetricsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .pull_cluster_metrics(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.pull_cluster_metrics");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .pull_cluster_metrics(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn root_search(
         &self,
-        request: tonic::Request<super::quickwit::search::SearchRequest>,
+        tonic_request: tonic::Request<super::quickwit::search::SearchRequest>,
     ) -> Result<
         tonic::Response<super::quickwit::search::SearchResponse>,
         tonic::Status,
     > {
-        self.inner
-            .0
-            .root_search(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.root_search");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .root_search(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn root_list_terms(
         &self,
-        request: tonic::Request<super::quickwit::search::ListTermsRequest>,
+        tonic_request: tonic::Request<super::quickwit::search::ListTermsRequest>,
     ) -> Result<
         tonic::Response<super::quickwit::search::ListTermsResponse>,
         tonic::Status,
     > {
-        self.inner
-            .0
-            .root_list_terms(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.root_list_terms");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .root_list_terms(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn root_list_fields(
         &self,
-        request: tonic::Request<super::quickwit::search::ListFieldsRequest>,
+        tonic_request: tonic::Request<super::quickwit::search::ListFieldsRequest>,
     ) -> Result<
         tonic::Response<super::quickwit::search::ListFieldsResponse>,
         tonic::Status,
     > {
-        self.inner
-            .0
-            .root_list_fields(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.root_list_fields");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .root_list_fields(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_indexes(
         &self,
-        request: tonic::Request<GetIndexesRequest>,
+        tonic_request: tonic::Request<GetIndexesRequest>,
     ) -> Result<tonic::Response<GetIndexesResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_indexes(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.get_indexes");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_indexes(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn create_index(
         &self,
-        request: tonic::Request<CreateIndexRequest>,
+        tonic_request: tonic::Request<CreateIndexRequest>,
     ) -> Result<tonic::Response<CreateIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .create_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.create_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .create_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_index(
         &self,
-        request: tonic::Request<UpdateIndexRequest>,
+        tonic_request: tonic::Request<UpdateIndexRequest>,
     ) -> Result<tonic::Response<UpdateIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .update_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.update_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .update_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_index(
         &self,
-        request: tonic::Request<DeleteIndexRequest>,
+        tonic_request: tonic::Request<DeleteIndexRequest>,
     ) -> Result<tonic::Response<DeleteIndexResponse>, tonic::Status> {
-        self.inner
-            .0
-            .delete_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.delete_index");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .delete_index(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_index_routing_table(
         &self,
-        request: tonic::Request<GetIndexRoutingTableRequest>,
+        tonic_request: tonic::Request<GetIndexRoutingTableRequest>,
     ) -> Result<tonic::Response<GetIndexRoutingTableResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_index_routing_table(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.get_index_routing_table");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_index_routing_table(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn set_index_routing_table(
         &self,
-        request: tonic::Request<SetIndexRoutingTableRequest>,
+        tonic_request: tonic::Request<SetIndexRoutingTableRequest>,
     ) -> Result<tonic::Response<SetIndexRoutingTableResponse>, tonic::Status> {
-        self.inner
-            .0
-            .set_index_routing_table(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.set_index_routing_table");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .set_index_routing_table(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_cluster_diagnostics(
         &self,
-        request: tonic::Request<GetClusterDiagnosticsRequest>,
+        tonic_request: tonic::Request<GetClusterDiagnosticsRequest>,
     ) -> Result<tonic::Response<GetClusterDiagnosticsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_cluster_diagnostics(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.get_cluster_diagnostics");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_cluster_diagnostics(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn es_query(
         &self,
-        request: tonic::Request<EsHttpRequest>,
+        tonic_request: tonic::Request<EsHttpRequest>,
     ) -> Result<tonic::Response<EsHttpResponse>, tonic::Status> {
-        self.inner
-            .0
-            .es_query(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.es_query");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .es_query(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn substrait_search(
         &self,
-        request: tonic::Request<CloudpremSubstraitRequest>,
+        tonic_request: tonic::Request<CloudpremSubstraitRequest>,
     ) -> Result<tonic::Response<CloudpremSubstraitResponse>, tonic::Status> {
-        self.inner
-            .0
-            .substrait_search(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.substrait_search");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .substrait_search(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type InvertedRequestStreamStream = quickwit_common::ServiceStream<
         tonic::Result<AnyRequest>,
     >;
     async fn inverted_request_stream(
         &self,
-        request: tonic::Request<tonic::Streaming<AnyResponse>>,
+        tonic_request: tonic::Request<tonic::Streaming<AnyResponse>>,
     ) -> Result<tonic::Response<Self::InvertedRequestStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .inverted_request_stream({
-                let streaming: tonic::Streaming<_> = request.into_inner();
-                quickwit_common::ServiceStream::from(streaming)
-            })
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let streaming: tonic::Streaming<_> = tonic_request.into_inner();
+        let request = quickwit_common::ServiceStream::from(streaming);
+        let span = tracing::info_span!("cloudprem.inverted_request_stream");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .inverted_request_stream(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

@@ -15,7 +15,7 @@
 /// Returns whether the given index ID corresponds to a metrics index.
 ///
 /// Metrics indexes use the Parquet/DataFusion pipeline instead of the Tantivy pipeline.
-/// An index is considered a metrics index if it uses one of the BYOC or OSS
+/// An index is considered a metrics index if its ID uses one of the well-known
 /// parquet metrics prefixes.
 pub fn is_metrics_index(index_id: &str) -> bool {
     ["datadog-metrics", "metrics-", "otel-metrics"]
@@ -49,7 +49,7 @@ mod tests {
         assert!(is_metrics_index("otel-metrics"));
         assert!(is_metrics_index("otel-metrics-custom"));
 
-        // BYOC metrics indexes
+        // Datadog-prefixed metrics indexes
         assert!(is_metrics_index("datadog-metrics"));
         assert!(is_metrics_index("datadog-metrics-v2"));
 

@@ -91,16 +91,19 @@ impl FromStr for OtlpProtocol {
     fn from_str(protocol_str: &str) -> anyhow::Result<Self> {
         const OTLP_PROTOCOL_GRPC: &str = "grpc";
         const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
+        const OTLP_PROTOCOL_HTTP_PROTO: &str = "http/proto";
         const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
 
         match protocol_str {
             OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
-            OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
+            OTLP_PROTOCOL_HTTP_PROTOBUF | OTLP_PROTOCOL_HTTP_PROTO => {
+                Ok(OtlpProtocol::HttpProtobuf)
+            }
             OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
             other => anyhow::bail!(
                 "unsupported OTLP protocol `{other}`, supported values are \
-                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and \
-                 `{OTLP_PROTOCOL_HTTP_JSON}`"
+                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}`, \
+                 `{OTLP_PROTOCOL_HTTP_PROTO}` and `{OTLP_PROTOCOL_HTTP_JSON}`"
             ),
         }
     }
@@ -365,7 +368,7 @@ where
 ///
 /// Example output:
 /// ```json
-/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"byoc","ddsource":"byoc","message":"INFO quickwit_search: hello"}
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit","ddsource":"quickwit","message":"INFO quickwit_search: hello"}
 /// ```
 struct DdgFormat {
     text_format: Format<Full, ()>,
@@ -409,7 +412,7 @@ where
         let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
         writeln!(
             writer,
-            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"byoc","ddsource":"byoc","message":{escaped_message}}}"#
+            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"quickwit","ddsource":"quickwit","message":{escaped_message}}}"#
         )
     }
 }
@@ -573,6 +576,10 @@ mod tests {
             OtlpProtocol::HttpProtobuf
         );
         assert_eq!(
+            OtlpProtocol::from_str("http/proto").unwrap(),
+            OtlpProtocol::HttpProtobuf
+        );
+        assert_eq!(
             OtlpProtocol::from_str("http/json").unwrap(),
             OtlpProtocol::HttpJson
         );
@@ -643,8 +650,8 @@ mod tests {
     fn test_ddg_format_basic_message() {
         let json = capture_ddg_log(|| tracing::info!("hello world"));
         assert_eq!(json["level"], "INFO");
-        assert_eq!(json["service"], "byoc");
-        assert_eq!(json["ddsource"], "byoc");
+        assert_eq!(json["service"], "quickwit");
+        assert_eq!(json["ddsource"], "quickwit");
         assert_eq!(
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: hello world")

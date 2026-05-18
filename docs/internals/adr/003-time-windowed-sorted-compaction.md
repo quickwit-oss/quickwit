@@ -302,4 +302,3 @@ Phase 4 of the locality compaction roadmap extends time-windowed sorted compacti
 - [StableLogMergePolicy](../../quickwit/quickwit-indexing/src/merge_policy/stable_log_merge_policy.rs) — existing merge policy
 - [Merge Planner](../../quickwit/quickwit-indexing/src/actors/merge_planner.rs) — existing merge planner (Tantivy)
 - [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
-- [Husky Phase 2: Locality of Reference](https://docs.google.com/document/d/1vax-vv0wbhfddo4n5obhlVJxsmUa9N_62tKs5ZmYC6k/edit)

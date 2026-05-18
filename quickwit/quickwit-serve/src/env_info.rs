@@ -55,7 +55,6 @@ static ALLOWED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "QW_DISABLE_DOCUMENT_VALIDATION",
         "QW_DISABLE_INGEST_V1",
         "QW_DISABLE_PER_INDEX_METRICS",
-        "QW_DISABLE_TELEMETRY",
         "QW_DISABLE_TOKIO_LIFO_SLOT",
         "QW_DISABLE_VARIABLE_SHARD_LOAD",
         "QW_ENABLE_CORS_DEBUG",

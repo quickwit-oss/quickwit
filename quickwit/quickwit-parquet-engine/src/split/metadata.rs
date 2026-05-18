@@ -207,6 +207,21 @@ pub struct ParquetSplitMetadata {
     /// Per-column zonemap regex strings, keyed by column name.
     /// Empty for pre-Phase-31 splits.
     pub zonemap_regexes: HashMap<String, String>,
+
+    /// Number of leading sort schema columns whose transitions align with
+    /// row group boundaries in the Parquet file.
+    ///
+    /// `0` = no alignment claimed (legacy default; safe for any boundaries).
+    /// `1` = first sort column (e.g., `metric_name`) — RG boundaries match
+    /// transitions in this column.
+    /// `N` (1 ≤ N ≤ sort_schema.len()) = aligned with first `N` sort columns.
+    /// A single-RG file vacuously satisfies any prefix; writers set `N` =
+    /// sort schema length so the streaming reader's fast path applies.
+    ///
+    /// **Compaction scope**: only splits with the same value of this field
+    /// merge together. Mixing prefix levels in a single merge is forbidden.
+    #[serde(default)]
+    pub rg_partition_prefix_len: u32,
 }
 
 /// Serde helper struct that uses `window_start` / `window_duration_secs` field
@@ -248,6 +263,13 @@ struct ParquetSplitMetadataSerde {
 
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     zonemap_regexes: HashMap<String, String>,
+
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rg_partition_prefix_len: u32,
+}
+
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 impl From<ParquetSplitMetadataSerde> for ParquetSplitMetadata {
@@ -274,6 +296,7 @@ impl From<ParquetSplitMetadataSerde> for ParquetSplitMetadata {
             num_merge_ops: s.num_merge_ops,
             row_keys_proto: s.row_keys_proto,
             zonemap_regexes: s.zonemap_regexes,
+            rg_partition_prefix_len: s.rg_partition_prefix_len,
         }
     }
 }
@@ -303,6 +326,7 @@ impl From<ParquetSplitMetadata> for ParquetSplitMetadataSerde {
             num_merge_ops: m.num_merge_ops,
             row_keys_proto: m.row_keys_proto,
             zonemap_regexes: m.zonemap_regexes,
+            rg_partition_prefix_len: m.rg_partition_prefix_len,
         }
     }
 }
@@ -412,6 +436,7 @@ pub struct ParquetSplitMetadataBuilder {
     num_merge_ops: u32,
     row_keys_proto: Option<Vec<u8>>,
     zonemap_regexes: HashMap<String, String>,
+    rg_partition_prefix_len: u32,
 }
 
 // The builder still accepts window_start and window_duration_secs separately
@@ -438,6 +463,7 @@ impl ParquetSplitMetadataBuilder {
             num_merge_ops: 0,
             row_keys_proto: None,
             zonemap_regexes: HashMap::new(),
+            rg_partition_prefix_len: 0,
         }
     }
 
@@ -545,6 +571,16 @@ impl ParquetSplitMetadataBuilder {
         self
     }
 
+    /// Set the row group partition prefix length.
+    ///
+    /// `0` (default) means no alignment claim. Higher values mean RG
+    /// boundaries align with the first `N` sort schema columns. See
+    /// [`ParquetSplitMetadata::rg_partition_prefix_len`].
+    pub fn rg_partition_prefix_len(mut self, prefix_len: u32) -> Self {
+        self.rg_partition_prefix_len = prefix_len;
+        self
+    }
+
     pub fn build(self) -> ParquetSplitMetadata {
         // TW-2 (ADR-003): window_duration must evenly divide 3600.
         // Enforced at build time so no invalid metadata propagates to storage.
@@ -596,6 +632,7 @@ impl ParquetSplitMetadataBuilder {
             num_merge_ops: self.num_merge_ops,
             row_keys_proto: self.row_keys_proto,
             zonemap_regexes: self.zonemap_regexes,
+            rg_partition_prefix_len: self.rg_partition_prefix_len,
         }
     }
 }
@@ -834,6 +871,62 @@ mod tests {
             "cpu\\..*"
         );
         assert_eq!(recovered.zonemap_regexes.get("host").unwrap(), "host-\\d+");
+    }
+
+    #[test]
+    fn test_rg_partition_prefix_len_default_zero() {
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .build();
+        assert_eq!(metadata.rg_partition_prefix_len, 0);
+    }
+
+    #[test]
+    fn test_rg_partition_prefix_len_round_trip() {
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("prefix-roundtrip"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .rg_partition_prefix_len(3)
+            .build();
+
+        let json = serde_json::to_string(&metadata).expect("serialize");
+        let recovered: ParquetSplitMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(recovered.rg_partition_prefix_len, 3);
+    }
+
+    #[test]
+    fn test_rg_partition_prefix_len_absent_in_legacy_json() {
+        // JSON predating the field entirely should deserialize as 0.
+        let legacy_json = r#"{
+            "split_id": "metrics_legacy",
+            "index_uid": "test-index:00000000000000000000000000",
+            "time_range": {"start_secs": 100, "end_secs": 200},
+            "num_rows": 1,
+            "size_bytes": 1,
+            "metric_names": [],
+            "low_cardinality_tags": {},
+            "high_cardinality_tag_keys": [],
+            "created_at": {"secs_since_epoch": 0, "nanos_since_epoch": 0}
+        }"#;
+        let metadata: ParquetSplitMetadata =
+            serde_json::from_str(legacy_json).expect("legacy JSON should deserialize");
+        assert_eq!(metadata.rg_partition_prefix_len, 0);
+    }
+
+    #[test]
+    fn test_rg_partition_prefix_len_zero_omitted_from_json() {
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("prefix-zero"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .build();
+        let json = serde_json::to_string(&metadata).expect("serialize");
+        assert!(
+            !json.contains("rg_partition_prefix_len"),
+            "default value 0 should be omitted from JSON to keep payloads compact"
+        );
     }
 
     #[test]

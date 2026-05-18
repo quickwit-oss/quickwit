@@ -18,7 +18,6 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_GIT_FETCH_WITH_CLI: true
   CP_ENABLE_REVERSE_CONNECTION: false
-  QW_DISABLE_TELEMETRY: 1
   QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
   RUST_BACKTRACE: 1
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links

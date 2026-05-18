@@ -168,15 +168,18 @@ impl HelloClient {
 }
 #[async_trait::async_trait]
 impl Hello for HelloClient {
+    #[tracing::instrument(skip_all, name = "hello.hello")]
     async fn hello(&self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
         self.inner.0.hello(request).await
     }
+    #[tracing::instrument(skip_all, name = "hello.goodbye")]
     async fn goodbye(
         &self,
         request: GoodbyeRequest,
     ) -> crate::HelloResult<GoodbyeResponse> {
         self.inner.0.goodbye(request).await
     }
+    #[tracing::instrument(skip_all, name = "hello.ping")]
     async fn ping(
         &self,
         request: quickwit_common::ServiceStream<PingRequest>,
@@ -742,9 +745,13 @@ where
     T::Future: Send,
 {
     async fn hello(&self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .hello(request)
+            .hello(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -756,9 +763,13 @@ where
         &self,
         request: GoodbyeRequest,
     ) -> crate::HelloResult<GoodbyeResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .goodbye(request)
+            .goodbye(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -770,9 +781,13 @@ where
         &self,
         request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .ping(request)
+            .ping(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -822,42 +837,76 @@ impl HelloGrpcServerAdapter {
 impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
     async fn hello(
         &self,
-        request: tonic::Request<HelloRequest>,
+        tonic_request: tonic::Request<HelloRequest>,
     ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
-        self.inner
-            .0
-            .hello(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("hello.hello");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .hello(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn goodbye(
         &self,
-        request: tonic::Request<GoodbyeRequest>,
+        tonic_request: tonic::Request<GoodbyeRequest>,
     ) -> Result<tonic::Response<GoodbyeResponse>, tonic::Status> {
-        self.inner
-            .0
-            .goodbye(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("hello.goodbye");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .goodbye(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type PingStream = quickwit_common::ServiceStream<tonic::Result<PingResponse>>;
     async fn ping(
         &self,
-        request: tonic::Request<tonic::Streaming<PingRequest>>,
+        tonic_request: tonic::Request<tonic::Streaming<PingRequest>>,
     ) -> Result<tonic::Response<Self::PingStream>, tonic::Status> {
-        self.inner
-            .0
-            .ping({
-                let streaming: tonic::Streaming<_> = request.into_inner();
-                quickwit_common::ServiceStream::from(streaming)
-            })
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let streaming: tonic::Streaming<_> = tonic_request.into_inner();
+        let request = quickwit_common::ServiceStream::from(streaming);
+        let span = tracing::info_span!("hello.ping");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .ping(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

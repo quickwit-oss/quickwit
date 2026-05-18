@@ -42,7 +42,7 @@ pub struct Publisher {
     pub(crate) merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     #[cfg(feature = "metrics")]
     pub(crate) parquet_merge_planner_mailbox_opt:
-        Option<Mailbox<super::metrics_pipeline::ParquetMergePlanner>>,
+        Option<Mailbox<super::parquet_pipeline::ParquetMergePlanner>>,
     pub(crate) source_mailbox_opt: Option<Mailbox<SourceActor>>,
     pub(crate) counters: PublisherCounters,
 }
@@ -73,7 +73,7 @@ impl Publisher {
     #[cfg(feature = "metrics")]
     pub fn set_parquet_merge_planner_mailbox(
         mut self,
-        mailbox: Mailbox<super::metrics_pipeline::ParquetMergePlanner>,
+        mailbox: Mailbox<super::parquet_pipeline::ParquetMergePlanner>,
     ) -> Self {
         self.parquet_merge_planner_mailbox_opt = Some(mailbox);
         self

@@ -855,14 +855,6 @@ Specifies the path to the [quickwit config](../configuration/node-config.md). Co
 
 `export QW_CONFIG=config/quickwit.yaml`
 
-### QW_DISABLE_TELEMETRY
-
-Disables [telemetry](../telemetry.md) when set to any non-empty value.
-
-*Example*
-
-`QW_DISABLE_TELEMETRY=1 quickwit help`
-
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
 Don't run database migrations (but verify that migrations were run successfully before, and no that unknown migration was run).

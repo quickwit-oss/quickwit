@@ -228,6 +228,9 @@ pub struct SearchResponse {
     /// Total number of successful splits searched.
     #[prost(uint64, tag = "8")]
     pub num_successful_splits: u64,
+    /// Resource statistics for the root search.
+    #[prost(message, optional, tag = "10")]
+    pub resource_stats: ::core::option::Option<RootResourceStats>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SearchPlanResponse {
@@ -266,18 +269,146 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Per-split resource statistics.
+///
+/// All fields are extensive (sum across splits is meaningful) except where noted.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ResourceStats {
+pub struct SplitResourceStats {
+    /// Number of documents in the split.
     #[prost(uint64, tag = "1")]
-    pub short_lived_cache_num_bytes: u64,
-    #[prost(uint64, tag = "2")]
     pub split_num_docs: u64,
+    /// Bytes resident in the warmup short-lived cache after warmup
+    /// (measure of input data the search needed to process).
+    #[prost(uint64, tag = "2")]
+    pub input_memory_bytes: u64,
+    /// Bytes downloaded from storage during the request, as measured
+    /// by a request-scoped storage wrapper.
     #[prost(uint64, tag = "3")]
-    pub warmup_microsecs: u64,
+    pub download_num_bytes: u64,
+    /// Number of storage GET requests issued during the request.
     #[prost(uint64, tag = "4")]
-    pub cpu_thread_pool_wait_microsecs: u64,
+    pub download_num_requests: u64,
+    /// Number of documents matched by the query in this split (we always count).
     #[prost(uint64, tag = "5")]
-    pub cpu_microsecs: u64,
+    pub matched_num_docs: u64,
+    /// Time the split spent waiting to acquire its search permit.
+    #[prost(uint64, tag = "6")]
+    pub wait_for_search_permit_microsecs: u64,
+    /// Time spent in the warmup phase (downloading and indexing data into caches).
+    #[prost(uint64, tag = "7")]
+    pub warmup_microsecs: u64,
+    /// Time the split spent waiting for a slot on the CPU pool after warmup.
+    #[prost(uint64, tag = "8")]
+    pub wait_for_cpu_pool_microsecs: u64,
+    /// CPU time spent in the search itself (predicate matching + collection +
+    /// per-segment harvest), as measured around the tantivy search call.
+    /// Excludes any cross-split finalize work performed outside the single-split
+    /// search.
+    #[prost(uint64, tag = "9")]
+    pub cpu_search_microsecs: u64,
+}
+/// Resource statistics for a single leaf-search call (over one or more splits).
+/// If the configuration allows it, leaf nodes can offload part of their computation to
+/// lambdas.
+///
+/// `split_resources_worst` / `split_resources_sum` aggregations on
+/// `LeafResourceStats` are only computed for locally-executed splits.
+///
+/// All numeric fields are extensive (summed when merging across leaves).
+/// `split_resources_worst` is the exception — it is selected by ranking, not
+/// summed. `lambda_bottleneck` is 0 or 1 at the source and becomes a count of
+/// leaves where lambda was the bottleneck once aggregated.
+/// `min_wait_for_search_permit_microsecs` and `min_wait_for_cpu_pool_microsecs`
+/// are also exceptions — they are merged with `min` rather than `sum` (see
+/// their per-field doc below).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LeafResourceStats {
+    /// Number of splits whose results came from the partial result cache.
+    #[prost(uint64, tag = "1")]
+    pub partial_result_cache_num_splits: u64,
+    /// Sum of `split.num_docs` across cache-hit splits.
+    #[prost(uint64, tag = "2")]
+    pub partial_result_cache_num_docs: u64,
+    /// Number of splits executed locally (excluding cache hits and lambda).
+    #[prost(uint64, tag = "3")]
+    pub localexec_num_splits: u64,
+    /// Sum of `split.num_docs` across locally-executed splits.
+    #[prost(uint64, tag = "4")]
+    pub localexec_num_docs: u64,
+    /// The worst single-split contribution, ranked by `warmup + cpu_search`
+    /// (intentionally excludes the queueing phases `wait_for_search_permit`
+    /// and `wait_for_cpu_pool` so the ranking reflects "how much work this
+    /// split actually did").
+    #[prost(message, optional, tag = "5")]
+    pub split_resources_worst: ::core::option::Option<SplitResourceStats>,
+    /// Field-wise sum of `SplitResourceStats` across all locally-executed splits.
+    /// If you want to compute averages, divide by localexec_num_splits.
+    #[prost(message, optional, tag = "6")]
+    pub split_resources_sum: ::core::option::Option<SplitResourceStats>,
+    /// Minimum `wait_for_search_permit_microsecs` across the locally-executed
+    /// splits represented by this stats record. Useful to detect a busy leaf:
+    /// if even the luckiest split waited long, the node was already saturated
+    /// before this query arrived. Splits that did not execute locally (cache
+    /// hits, lambda-dispatched) do NOT contribute — they leave the field unset.
+    ///
+    /// Aggregation is MIN everywhere (not extensive sum like most fields).
+    /// `add_leaf_stats` takes the min of two `Option<u64>` with
+    /// `min(None, x) = x`.
+    #[prost(uint64, optional, tag = "7")]
+    pub min_wait_for_search_permit_microsecs: ::core::option::Option<u64>,
+    /// Same as above, but for `wait_for_cpu_pool_microsecs`.
+    #[prost(uint64, optional, tag = "8")]
+    pub min_wait_for_cpu_pool_microsecs: ::core::option::Option<u64>,
+    /// Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
+    #[prost(uint64, tag = "9")]
+    pub wall_time_microsecs: u64,
+    /// Number of splits dispatched to lambda (offloaded execution).
+    #[prost(uint64, tag = "10")]
+    pub lambda_num_splits: u64,
+    /// Sum of `split.num_docs` across lambda-dispatched splits.
+    #[prost(uint64, tag = "11")]
+    pub lambda_num_docs: u64,
+    /// Number of lambda-dispatched splits that succeeded.
+    #[prost(uint64, tag = "12")]
+    pub lambda_success_num_splits: u64,
+    /// Sum of `split.num_docs` across successful lambda-dispatched splits.
+    #[prost(uint64, tag = "13")]
+    pub lambda_success_num_docs: u64,
+    /// At the source (a single leaf call) this is 1 if the offloaded path
+    /// finished after the local path (lambda was the bottleneck), 0 otherwise.
+    /// Forced to 0 when `lambda_num_splits == 0`. At aggregate levels (merged
+    /// across leaves) it is the count of leaves where lambda was the
+    /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
+    #[prost(uint64, tag = "14")]
+    pub lambda_bottleneck: u64,
+}
+/// Resource statistics for a root search.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RootResourceStats {
+    /// The leaf with the largest `wall_time_microsecs`.
+    #[prost(message, optional, tag = "1")]
+    pub leaf_resources_worst: ::core::option::Option<LeafResourceStats>,
+    /// Field-wise sum of all leaf stats. `wall_time_microsecs` is summed even though
+    /// it is not strictly extensive — the sum still gives a useful view of total leaf time.
+    /// If you want to compute averages, divide by leaf_num_calls: failed leaf attempts
+    /// usually do not come with proper counters.
+    #[prost(message, optional, tag = "2")]
+    pub leaf_resources_sum: ::core::option::Option<LeafResourceStats>,
+    /// Number of leaf calls excluding retries.
+    #[prost(uint64, tag = "3")]
+    pub leaf_num_calls: u64,
+    /// Number of leaf calls, including retries.
+    #[prost(uint64, tag = "4")]
+    pub leaf_num_calls_including_retries: u64,
+    /// Number of failed splits across all leaves.
+    #[prost(uint64, tag = "5")]
+    pub num_failed_splits: u64,
+    /// Per-leaf `wall_time_microsecs`, one entry per leaf that contributed
+    /// stats, sorted in descending order (largest first). Useful for
+    /// distinguishing "one straggler" from "all leaves comparably slow"
+    /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
+    #[prost(uint64, repeated, tag = "6")]
+    pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -433,8 +564,8 @@ pub struct LeafSearchResponse {
     pub intermediate_aggregation_result: ::core::option::Option<
         ::prost::alloc::vec::Vec<u8>,
     >,
-    #[prost(message, optional, tag = "8")]
-    pub resource_stats: ::core::option::Option<ResourceStats>,
+    #[prost(message, optional, tag = "9")]
+    pub resource_stats: ::core::option::Option<LeafResourceStats>,
 }
 /// The result of searching a single split in a Lambda invocation.
 /// Each result is tagged with its split_id so that ordering is irrelevant.
@@ -959,72 +1090,84 @@ impl SearchServiceClient {
 }
 #[async_trait::async_trait]
 impl SearchService for SearchServiceClient {
+    #[tracing::instrument(skip_all, name = "search.root_search")]
     async fn root_search(
         &self,
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
         self.inner.0.root_search(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.leaf_search")]
     async fn leaf_search(
         &self,
         request: LeafSearchRequest,
     ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
         self.inner.0.leaf_search(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.fetch_docs")]
     async fn fetch_docs(
         &self,
         request: FetchDocsRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
         self.inner.0.fetch_docs(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.root_list_terms")]
     async fn root_list_terms(
         &self,
         request: ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
         self.inner.0.root_list_terms(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.leaf_list_terms")]
     async fn leaf_list_terms(
         &self,
         request: LeafListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
         self.inner.0.leaf_list_terms(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.scroll")]
     async fn scroll(
         &self,
         request: ScrollRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
         self.inner.0.scroll(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.put_kv")]
     async fn put_kv(
         &self,
         request: PutKvRequest,
     ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
         self.inner.0.put_kv(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.get_kv")]
     async fn get_kv(
         &self,
         request: GetKvRequest,
     ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
         self.inner.0.get_kv(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.report_splits")]
     async fn report_splits(
         &self,
         request: ReportSplitsRequest,
     ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
         self.inner.0.report_splits(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.list_fields")]
     async fn list_fields(
         &self,
         request: ListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
         self.inner.0.list_fields(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.leaf_list_fields")]
     async fn leaf_list_fields(
         &self,
         request: LeafListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
         self.inner.0.leaf_list_fields(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.search_plan")]
     async fn search_plan(
         &self,
         request: SearchRequest,
@@ -2571,9 +2714,13 @@ where
         &self,
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .root_search(request)
+            .root_search(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2585,9 +2732,13 @@ where
         &self,
         request: LeafSearchRequest,
     ) -> crate::cloudprem::CloudPremResult<LeafSearchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .leaf_search(request)
+            .leaf_search(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2599,9 +2750,13 @@ where
         &self,
         request: FetchDocsRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .fetch_docs(request)
+            .fetch_docs(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2613,9 +2768,13 @@ where
         &self,
         request: ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListTermsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .root_list_terms(request)
+            .root_list_terms(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2627,9 +2786,13 @@ where
         &self,
         request: LeafListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<LeafListTermsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .leaf_list_terms(request)
+            .leaf_list_terms(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2641,9 +2804,13 @@ where
         &self,
         request: ScrollRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .scroll(request)
+            .scroll(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2655,9 +2822,13 @@ where
         &self,
         request: PutKvRequest,
     ) -> crate::cloudprem::CloudPremResult<PutKvResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .put_kv(request)
+            .put_kv(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2669,9 +2840,13 @@ where
         &self,
         request: GetKvRequest,
     ) -> crate::cloudprem::CloudPremResult<GetKvResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_kv(request)
+            .get_kv(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2683,9 +2858,13 @@ where
         &self,
         request: ReportSplitsRequest,
     ) -> crate::cloudprem::CloudPremResult<ReportSplitsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .report_splits(request)
+            .report_splits(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2697,9 +2876,13 @@ where
         &self,
         request: ListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .list_fields(request)
+            .list_fields(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2711,9 +2894,13 @@ where
         &self,
         request: LeafListFieldsRequest,
     ) -> crate::cloudprem::CloudPremResult<ListFieldsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .leaf_list_fields(request)
+            .leaf_list_fields(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2725,9 +2912,13 @@ where
         &self,
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .search_plan(request)
+            .search_plan(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2754,135 +2945,279 @@ impl SearchServiceGrpcServerAdapter {
 impl search_service_grpc_server::SearchServiceGrpc for SearchServiceGrpcServerAdapter {
     async fn root_search(
         &self,
-        request: tonic::Request<SearchRequest>,
+        tonic_request: tonic::Request<SearchRequest>,
     ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
-        self.inner
-            .0
-            .root_search(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.root_search");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .root_search(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn leaf_search(
         &self,
-        request: tonic::Request<LeafSearchRequest>,
+        tonic_request: tonic::Request<LeafSearchRequest>,
     ) -> Result<tonic::Response<LeafSearchResponse>, tonic::Status> {
-        self.inner
-            .0
-            .leaf_search(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.leaf_search");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .leaf_search(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn fetch_docs(
         &self,
-        request: tonic::Request<FetchDocsRequest>,
+        tonic_request: tonic::Request<FetchDocsRequest>,
     ) -> Result<tonic::Response<FetchDocsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .fetch_docs(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.fetch_docs");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .fetch_docs(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn root_list_terms(
         &self,
-        request: tonic::Request<ListTermsRequest>,
+        tonic_request: tonic::Request<ListTermsRequest>,
     ) -> Result<tonic::Response<ListTermsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .root_list_terms(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.root_list_terms");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .root_list_terms(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn leaf_list_terms(
         &self,
-        request: tonic::Request<LeafListTermsRequest>,
+        tonic_request: tonic::Request<LeafListTermsRequest>,
     ) -> Result<tonic::Response<LeafListTermsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .leaf_list_terms(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.leaf_list_terms");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .leaf_list_terms(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn scroll(
         &self,
-        request: tonic::Request<ScrollRequest>,
+        tonic_request: tonic::Request<ScrollRequest>,
     ) -> Result<tonic::Response<SearchResponse>, tonic::Status> {
-        self.inner
-            .0
-            .scroll(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.scroll");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .scroll(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn put_kv(
         &self,
-        request: tonic::Request<PutKvRequest>,
+        tonic_request: tonic::Request<PutKvRequest>,
     ) -> Result<tonic::Response<PutKvResponse>, tonic::Status> {
-        self.inner
-            .0
-            .put_kv(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.put_kv");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .put_kv(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_kv(
         &self,
-        request: tonic::Request<GetKvRequest>,
+        tonic_request: tonic::Request<GetKvRequest>,
     ) -> Result<tonic::Response<GetKvResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_kv(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.get_kv");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_kv(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn report_splits(
         &self,
-        request: tonic::Request<ReportSplitsRequest>,
+        tonic_request: tonic::Request<ReportSplitsRequest>,
     ) -> Result<tonic::Response<ReportSplitsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .report_splits(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.report_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .report_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn list_fields(
         &self,
-        request: tonic::Request<ListFieldsRequest>,
+        tonic_request: tonic::Request<ListFieldsRequest>,
     ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .list_fields(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.list_fields");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_fields(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn leaf_list_fields(
         &self,
-        request: tonic::Request<LeafListFieldsRequest>,
+        tonic_request: tonic::Request<LeafListFieldsRequest>,
     ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .leaf_list_fields(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.leaf_list_fields");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .leaf_list_fields(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn search_plan(
         &self,
-        request: tonic::Request<SearchRequest>,
+        tonic_request: tonic::Request<SearchRequest>,
     ) -> Result<tonic::Response<SearchPlanResponse>, tonic::Status> {
-        self.inner
-            .0
-            .search_plan(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.search_plan");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .search_plan(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

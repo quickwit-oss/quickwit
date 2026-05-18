@@ -32,6 +32,7 @@ tonic = { workspace = true }
 tonic-prost = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 

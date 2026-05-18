@@ -28,8 +28,7 @@ pub struct SortColumn {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SortSchema {
-    /// Very common schemas used all over the place are assigned a unique version number (reference
-    /// in dd-go/logs/apps/logs-event-store/storage/fragment/schema_versions.go).
+    /// Very common schemas used all over the place are assigned a unique version number.
     ///
     /// This version number can be used in place of the complete schema description in the fragment
     /// metadata entries, to reduce their size. When this value is not null, the other fields in the

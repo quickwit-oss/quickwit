@@ -40,8 +40,8 @@ pub use self::merge_order::MergeRun;
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 use crate::storage::{
-    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
-    PARQUET_META_WINDOW_START, ParquetWriterConfig,
+    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_SORT_FIELDS,
+    PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START, ParquetWriterConfig,
 };
 
 /// Configuration for a merge operation.
@@ -62,12 +62,22 @@ pub struct MergeConfig {
 }
 
 /// Metadata extracted from input files' Parquet KV metadata.
-/// All inputs must agree on sort_fields, window_start, and window_duration.
+/// All inputs must agree on sort_fields, window_start, window_duration,
+/// and rg_partition_prefix_len.
 struct InputMetadata {
     sort_fields: String,
     window_start_secs: Option<i64>,
     window_duration_secs: u32,
     num_merge_ops: u32,
+    /// Number of leading sort columns whose transitions align with row
+    /// group boundaries. All input files must agree on this value (it's
+    /// part of the compaction scope key). Splitting row groups at the
+    /// claimed prefix boundary is not implemented by the current merge
+    /// writer — it lands in PR-6 (streaming column-major merge engine).
+    /// Until then, the *output* file is written with prefix 0 regardless
+    /// of this value.
+    #[allow(dead_code)] // wired for PR-6 streaming engine; PR-1 only validates.
+    rg_partition_prefix_len: u32,
 }
 
 /// Result of a single output file from the merge.
@@ -76,12 +86,22 @@ struct InputMetadata {
 /// logical metadata (metric names, tags, time range) extracted from the
 /// actual rows in this output file. When the merge produces multiple
 /// outputs, each has metadata reflecting only its own rows.
+#[derive(Debug)]
 pub struct MergeOutputFile {
     /// Path to the output Parquet file.
     pub path: PathBuf,
 
     /// Number of rows in this output file.
     pub num_rows: usize,
+
+    /// Number of row groups the writer produced for this file. Used by
+    /// `merge_parquet_split_metadata` to decide whether the input prefix
+    /// alignment claim (`rg_partition_prefix_len`) can be propagated to
+    /// the output: a single-RG file vacuously satisfies any claim, so
+    /// we keep the inputs' prefix; a multi-RG file with arbitrary
+    /// boundaries (the only kind the current writer can produce) must
+    /// reset the claim to 0.
+    pub num_row_groups: usize,
 
     /// File size in bytes.
     pub size_bytes: u64,
@@ -305,6 +325,7 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
     let mut consensus_sort_fields: Option<String> = None;
     let mut consensus_window_start: Option<Option<i64>> = None;
     let mut consensus_window_duration: Option<u32> = None;
+    let mut consensus_prefix_len: Option<u32> = None;
     let mut max_merge_ops: u32 = 0;
 
     for path in paths {
@@ -419,6 +440,31 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         if file_merge_ops > max_merge_ops {
             max_merge_ops = file_merge_ops;
         }
+
+        // Row group partition prefix length: must be consistent across all
+        // inputs. Absent KV → 0 (legacy default; no alignment claim).
+        let file_prefix_len = find_kv(PARQUET_META_RG_PARTITION_PREFIX_LEN)
+            .map(|s| s.parse::<u32>())
+            .transpose()
+            .with_context(|| format!("parsing rg_partition_prefix_len from {}", path.display()))?
+            .unwrap_or(0);
+
+        match consensus_prefix_len {
+            Some(expected) => {
+                if file_prefix_len != expected {
+                    bail!(
+                        "rg_partition_prefix_len mismatch in {}: expected {}, found {} — splits \
+                         with different prefix lengths must not appear in the same merge",
+                        path.display(),
+                        expected,
+                        file_prefix_len
+                    );
+                }
+            }
+            None => {
+                consensus_prefix_len = Some(file_prefix_len);
+            }
+        }
     }
 
     Ok(InputMetadata {
@@ -426,5 +472,6 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         window_start_secs: consensus_window_start.expect("at least one input required"),
         window_duration_secs: consensus_window_duration.unwrap_or(0),
         num_merge_ops: max_merge_ops + 1,
+        rg_partition_prefix_len: consensus_prefix_len.unwrap_or(0),
     })
 }

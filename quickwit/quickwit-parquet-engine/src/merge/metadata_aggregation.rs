@@ -93,6 +93,15 @@ pub fn merge_parquet_split_metadata(
                 first.window
             );
         }
+        if input.rg_partition_prefix_len != first.rg_partition_prefix_len {
+            bail!(
+                "input {} has rg_partition_prefix_len {}, expected {} — splits with different \
+                 prefix lengths must not appear in the same merge",
+                i,
+                input.rg_partition_prefix_len,
+                first.rg_partition_prefix_len
+            );
+        }
     }
 
     // Each merge adds one to the lineage depth. The policy uses this to
@@ -109,6 +118,23 @@ pub fn merge_parquet_split_metadata(
     // this name before handing it to the uploader.
     let split_id = ParquetSplitId::generate(first.kind);
     let parquet_file = format!("{split_id}.parquet");
+
+    // `rg_partition_prefix_len` propagation rule: a single-row-group
+    // output vacuously satisfies any prefix claim (no boundary to
+    // misalign), so we keep the inputs' prefix. Multi-RG output with
+    // arbitrary row-count-driven boundaries (the only kind the current
+    // merge writer can produce) cannot honor a non-zero claim and must
+    // reset to 0. PR-6 (streaming column-major merge engine) will
+    // produce sort-prefix-aligned multi-RG output and propagate the
+    // prefix unconditionally.
+    //
+    // This must agree with the value the writer embeds in the file's
+    // `qh.rg_partition_prefix_len` KV — see `write_merge_outputs`.
+    let output_prefix_len = if output.num_row_groups <= 1 {
+        first.rg_partition_prefix_len
+    } else {
+        0
+    };
 
     // Data-dependent fields come from the MergeOutputFile (extracted from
     // this output's actual rows during the merge write pass).
@@ -130,6 +156,7 @@ pub fn merge_parquet_split_metadata(
         num_merge_ops,
         row_keys_proto: output.row_keys_proto.clone(),
         zonemap_regexes: output.zonemap_regexes.clone(),
+        rg_partition_prefix_len: output_prefix_len,
     };
 
     // Finalize: tag sets may exceed the cardinality threshold.
@@ -176,9 +203,20 @@ mod tests {
         time_range: (u64, u64),
         metric_names: &[&str],
     ) -> MergeOutputFile {
+        make_output_full(num_rows, size_bytes, 1, time_range, metric_names)
+    }
+
+    fn make_output_full(
+        num_rows: usize,
+        size_bytes: u64,
+        num_row_groups: usize,
+        time_range: (u64, u64),
+        metric_names: &[&str],
+    ) -> MergeOutputFile {
         MergeOutputFile {
             path: PathBuf::from("/tmp/merged.parquet"),
             num_rows,
+            num_row_groups,
             size_bytes,
             row_keys_proto: Some(vec![0x08, 0x01]),
             zonemap_regexes: HashMap::from([("metric_name".to_string(), "cpu\\..*".to_string())]),
@@ -355,6 +393,55 @@ mod tests {
         let output = make_output(200, 9000);
         let result = merge_parquet_split_metadata(&[s0, s1], &output);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_rg_partition_prefix_len_error() {
+        let s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s1.rg_partition_prefix_len = 1;
+
+        let output = make_output(200, 9000);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let err = result.expect_err("merge must reject mismatched prefix lengths");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rg_partition_prefix_len"),
+            "error should mention rg_partition_prefix_len, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_output_prefix_len_demoted_when_multi_rg() {
+        // The current merge writer rolls over RGs at row count, not at
+        // sort-prefix transitions. When the output ends up with > 1 RG,
+        // the boundaries are at arbitrary places and the inputs' prefix
+        // claim cannot be honored — the output's prefix must be 0.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 3;
+        s1.rg_partition_prefix_len = 3;
+
+        let output = make_output_full(200, 9000, 2, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
+        assert_eq!(result.rg_partition_prefix_len, 0);
+    }
+
+    #[test]
+    fn test_output_prefix_len_preserved_when_single_rg() {
+        // A single-RG output vacuously satisfies any prefix alignment
+        // claim (one RG, no boundary to misalign). Propagate the inputs'
+        // prefix so the merge output stays in the same compaction bucket
+        // as the inputs, instead of leaking into the prefix=0 bucket on
+        // every merge.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 3;
+        s1.rg_partition_prefix_len = 3;
+
+        let output = make_output_full(200, 9000, 1, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
+        assert_eq!(result.rg_partition_prefix_len, 3);
     }
 
     #[test]

@@ -78,7 +78,8 @@ fn register_build_info_metric() {
 async fn main_impl() -> anyhow::Result<()> {
     register_build_info_metric();
 
-    let about_text = about_text();
+    let about_text = "Sub-second search & analytics engine on cloud storage.\n  Find more \
+                      information at https://quickwit.io/docs\n\n";
     let version_text = BuildInfo::get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
@@ -125,11 +126,6 @@ async fn main_impl() -> anyhow::Result<()> {
     }
 
     std::process::exit(return_code)
-}
-
-/// Return the about text with telemetry info.
-fn about_text() -> String {
-    "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n".to_string()
 }
 
 #[cfg(test)]

@@ -87,8 +87,8 @@ struct MergePipelineHandle {
 
 #[cfg(feature = "metrics")]
 struct ParquetMergePipelineHandle {
-    mailbox: Mailbox<super::metrics_pipeline::ParquetMergePlanner>,
-    handle: ActorHandle<super::metrics_pipeline::ParquetMergePipeline>,
+    mailbox: Mailbox<super::parquet_pipeline::ParquetMergePlanner>,
+    handle: ActorHandle<super::parquet_pipeline::ParquetMergePipeline>,
 }
 
 pub type BoxedPipelineHandle = Box<dyn PipelineHandle>;
@@ -689,7 +689,7 @@ impl IndexingService {
         indexing_directory: quickwit_common::temp_dir::TempDirectory,
         immature_splits_opt: Option<Vec<quickwit_parquet_engine::split::ParquetSplitMetadata>>,
         ctx: &ActorContext<Self>,
-    ) -> Result<Mailbox<super::metrics_pipeline::ParquetMergePlanner>, IndexingError> {
+    ) -> Result<Mailbox<super::parquet_pipeline::ParquetMergePlanner>, IndexingError> {
         if let Some(handle) = self.parquet_merge_pipeline_handles.get(&index_uid) {
             return Ok(handle.mailbox.clone());
         }
@@ -713,7 +713,7 @@ impl IndexingService {
 
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
 
-        let params = super::metrics_pipeline::ParquetMergePipelineParams {
+        let params = super::parquet_pipeline::ParquetMergePipelineParams {
             index_uid: index_uid.clone(),
             indexing_directory,
             metastore: self.metastore.clone(),
@@ -725,7 +725,7 @@ impl IndexingService {
             writer_config,
         };
 
-        let pipeline = super::metrics_pipeline::ParquetMergePipeline::new(
+        let pipeline = super::parquet_pipeline::ParquetMergePipeline::new(
             params,
             immature_splits_opt,
             ctx.spawn_ctx(),

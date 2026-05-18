@@ -64,7 +64,7 @@ use super::parquet_merge_pipeline::{ParquetMergePipeline, ParquetMergePipelinePa
 /// Creates a RecordBatch with configurable metric name, timestamp range, and
 /// tag values. This allows building diverse inputs to verify the merge engine
 /// handles heterogeneous data correctly.
-fn create_custom_test_batch(
+pub(super) fn create_custom_test_batch(
     metric_name: &str,
     ts_start: u64,
     num_rows: usize,
@@ -129,7 +129,7 @@ fn create_custom_test_batch(
 
 /// Write a sorted Parquet file to the given directory using the standard
 /// writer (which computes sorted_series, row_keys, zonemaps, and KV metadata).
-fn write_test_parquet_file(
+pub(super) fn write_test_parquet_file(
     dir: &Path,
     filename: &str,
     batch: &RecordBatch,
@@ -147,7 +147,7 @@ fn write_test_parquet_file(
 }
 
 /// Create a ParquetSplitMetadata consistent with the test Parquet writer.
-fn make_test_split_metadata(
+pub(super) fn make_test_split_metadata(
     split_id: &str,
     num_rows: u64,
     size_bytes: u64,
@@ -169,12 +169,35 @@ fn make_test_split_metadata(
         .build()
 }
 
+/// Same as `make_test_split_metadata` but for sketch splits.
+pub(super) fn make_test_sketch_split_metadata(
+    split_id: &str,
+    num_rows: u64,
+    size_bytes: u64,
+    ts_start: u64,
+    metric_name: &str,
+) -> ParquetSplitMetadata {
+    let table_config = TableConfig::default();
+    ParquetSplitMetadata::sketches_builder()
+        .split_id(ParquetSplitId::new(split_id))
+        .index_uid("datadog-sketches-test:00000000000000000000000001")
+        .partition_id(0)
+        .time_range(TimeRange::new(ts_start, ts_start + num_rows))
+        .num_rows(num_rows)
+        .size_bytes(size_bytes)
+        .sort_fields(table_config.effective_sort_fields())
+        .window_start_secs(0)
+        .window_duration_secs(900)
+        .add_metric_name(metric_name)
+        .build()
+}
+
 // ---------------------------------------------------------------------------
 // Parquet reading helpers (for verifying merged output)
 // ---------------------------------------------------------------------------
 
 /// Read a Parquet file from raw bytes into a single concatenated RecordBatch.
-fn read_parquet_from_bytes(data: &[u8]) -> RecordBatch {
+pub(super) fn read_parquet_from_bytes(data: &[u8]) -> RecordBatch {
     let bytes = bytes::Bytes::copy_from_slice(data);
     let builder =
         parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes).unwrap();
@@ -188,7 +211,7 @@ fn read_parquet_from_bytes(data: &[u8]) -> RecordBatch {
 }
 
 /// Extract the Parquet file-level KV metadata from raw bytes.
-fn extract_parquet_kv_metadata(data: &[u8]) -> HashMap<String, String> {
+pub(super) fn extract_parquet_kv_metadata(data: &[u8]) -> HashMap<String, String> {
     let bytes = bytes::Bytes::copy_from_slice(data);
     let builder =
         parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes).unwrap();
@@ -204,7 +227,7 @@ fn extract_parquet_kv_metadata(data: &[u8]) -> HashMap<String, String> {
 
 /// Extract string values from a column that may be Dictionary-encoded or plain
 /// Utf8. Handles all representations uniformly.
-fn extract_string_column(batch: &RecordBatch, name: &str) -> Vec<String> {
+pub(super) fn extract_string_column(batch: &RecordBatch, name: &str) -> Vec<String> {
     let idx = batch.schema().index_of(name).unwrap();
     let col = batch.column(idx);
 
@@ -235,7 +258,7 @@ fn extract_string_column(batch: &RecordBatch, name: &str) -> Vec<String> {
     );
 }
 
-fn extract_u64_column(batch: &RecordBatch, name: &str) -> Vec<u64> {
+pub(super) fn extract_u64_column(batch: &RecordBatch, name: &str) -> Vec<u64> {
     let idx = batch.schema().index_of(name).unwrap();
     batch
         .column(idx)
@@ -246,7 +269,7 @@ fn extract_u64_column(batch: &RecordBatch, name: &str) -> Vec<u64> {
         .to_vec()
 }
 
-fn extract_binary_column(batch: &RecordBatch, name: &str) -> Vec<Vec<u8>> {
+pub(super) fn extract_binary_column(batch: &RecordBatch, name: &str) -> Vec<Vec<u8>> {
     let idx = batch.schema().index_of(name).unwrap();
     let col = batch
         .column(idx)

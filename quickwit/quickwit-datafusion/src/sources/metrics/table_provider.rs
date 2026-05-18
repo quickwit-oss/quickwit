@@ -18,8 +18,9 @@
 //! and returns a standard `ParquetSource`-backed `DataSourceExec`.
 
 use std::any::Any;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use arrow::compute::SortOptions;
 use arrow::datatypes::SchemaRef;
@@ -38,10 +39,14 @@ use datafusion_datasource::file_groups::FileGroup;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_physical_plan::expressions::Column;
+use mini_moka::sync::Cache;
 use quickwit_common::uri::Uri;
 use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_parquet_engine::table_config::ProductType;
+use regex::{Regex, RegexBuilder};
+use regex_automata::dfa::{Automaton, dense};
+use regex_automata::{Anchored, Input};
 use tracing::debug;
 
 use super::predicate;
@@ -56,6 +61,64 @@ const METRICS_SORT_ORDER: &[&str] = &[
     "timeseries_id",
     "timestamp_secs",
 ];
+// Per-regex compile-time cap for dense DFA determinization. This limits how
+// much memory we are willing to spend building one prefix-pruning automaton for
+// a split zonemap regex. If a pathological regex exceeds this limit, DFA
+// compilation fails and pruning falls back to conservative keep-split behavior.
+const ZONEMAP_DFA_SIZE_LIMIT_BYTES: usize = 1_000_000;
+const ZONEMAP_REGEX_CACHE_MAX_ENTRIES: usize = 4096;
+// Cache up to roughly 256 worst-case DFAs. The cache is weighted by the actual
+// compiled DFA memory usage, so small/common zonemap regexes occupy less of the
+// budget than regexes close to `ZONEMAP_DFA_SIZE_LIMIT_BYTES`.
+const ZONEMAP_DFA_CACHE_MAX_BYTES: u64 = 256 * ZONEMAP_DFA_SIZE_LIMIT_BYTES as u64;
+// Account for the regex key and cache bookkeeping when weighting entries. This
+// also keeps invalid regex entries bounded even though they do not store a DFA.
+const ZONEMAP_CACHE_ENTRY_OVERHEAD_BYTES: usize = 128;
+
+type DenseDfa = dense::DFA<Vec<u32>>;
+
+static ZONEMAP_DFA_CONFIG: LazyLock<dense::Config> = LazyLock::new(|| {
+    dense::Config::new()
+        .dfa_size_limit(Some(ZONEMAP_DFA_SIZE_LIMIT_BYTES))
+        .determinize_size_limit(Some(ZONEMAP_DFA_SIZE_LIMIT_BYTES))
+});
+static ZONEMAP_SYNTAX_CONFIG: LazyLock<regex_automata::util::syntax::Config> =
+    LazyLock::new(|| regex_automata::util::syntax::Config::new().dot_matches_new_line(true));
+static ZONEMAP_REGEX_CACHE: LazyLock<Cache<String, CachedCompiled<Regex>>> =
+    LazyLock::new(|| Cache::new(ZONEMAP_REGEX_CACHE_MAX_ENTRIES as u64));
+static ZONEMAP_DFA_CACHE: LazyLock<Cache<String, CachedCompiled<DenseDfa>>> = LazyLock::new(|| {
+    Cache::<String, CachedCompiled<DenseDfa>>::builder()
+        .max_capacity(ZONEMAP_DFA_CACHE_MAX_BYTES)
+        .weigher(|regex, compiled| zonemap_dfa_cache_weight(regex, compiled))
+        .build()
+});
+
+#[derive(Clone)]
+enum CachedCompiled<T> {
+    Valid(Arc<T>),
+    Invalid,
+}
+
+impl<T> CachedCompiled<T> {
+    fn valid(&self) -> Option<Arc<T>> {
+        match self {
+            Self::Valid(compiled) => Some(Arc::clone(compiled)),
+            Self::Invalid => None,
+        }
+    }
+}
+
+fn zonemap_dfa_cache_weight(regex: &str, compiled: &CachedCompiled<DenseDfa>) -> u32 {
+    let compiled_size = match compiled {
+        CachedCompiled::Valid(dfa) => dfa.memory_usage(),
+        CachedCompiled::Invalid => 0,
+    };
+    regex
+        .len()
+        .saturating_add(ZONEMAP_CACHE_ENTRY_OVERHEAD_BYTES)
+        .saturating_add(compiled_size)
+        .min(u32::MAX as usize) as u32
+}
 
 /// Provides split metadata for a metrics index.
 #[async_trait]
@@ -159,7 +222,10 @@ impl TableProvider for MetricsTableProvider {
         &self,
         filters: &[&Expr],
     ) -> DFResult<Vec<TableProviderFilterPushDown>> {
-        Ok(filters.iter().map(|expr| classify_filter(expr)).collect())
+        Ok(filters
+            .iter()
+            .map(|expr| classify_filter(expr, &self.schema))
+            .collect())
     }
 
     async fn scan(
@@ -180,8 +246,15 @@ impl TableProvider for MetricsTableProvider {
         );
 
         let splits = self.split_provider.list_splits(&split_query).await?;
+        let num_splits_before_metadata_pruning = splits.len();
+        let splits = prune_splits_with_metadata(splits, filters);
 
-        debug!(num_splits = splits.len(), "found matching splits");
+        debug!(
+            num_splits = splits.len(),
+            num_pruned_by_metadata =
+                num_splits_before_metadata_pruning.saturating_sub(splits.len()),
+            "found matching splits"
+        );
 
         // The `ObjectStore` for this URL is lazily built by
         // `QuickwitObjectStoreRegistry` on first read — see
@@ -244,37 +317,263 @@ impl TableProvider for MetricsTableProvider {
     }
 }
 
-fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
+fn classify_filter(expr: &Expr, schema: &SchemaRef) -> TableProviderFilterPushDown {
     match expr {
-        Expr::BinaryExpr(binary) => {
-            if let Some(col_name) =
-                column_name_from_expr(&binary.left).or_else(|| column_name_from_expr(&binary.right))
+        Expr::BinaryExpr(binary) if binary.op == datafusion::logical_expr::Operator::And => {
+            let left = classify_filter(&binary.left, schema);
+            let right = classify_filter(&binary.right, schema);
+            if left == TableProviderFilterPushDown::Inexact
+                || right == TableProviderFilterPushDown::Inexact
             {
-                // OSS uses bare column names (no tag_ prefix)
-                match col_name.as_str() {
-                    "metric_name" | "timestamp_secs" => TableProviderFilterPushDown::Inexact,
-                    _ => TableProviderFilterPushDown::Unsupported,
-                }
+                TableProviderFilterPushDown::Inexact
             } else {
                 TableProviderFilterPushDown::Unsupported
             }
         }
+        Expr::BinaryExpr(binary) => {
+            let column_name = column_name_from_expr(&binary.left)
+                .or_else(|| column_name_from_expr(&binary.right));
+            classify_declared_column_filter(column_name, schema)
+        }
         Expr::InList(in_list) => {
-            if let Some(col_name) = column_name_from_expr(&in_list.expr) {
-                match col_name.as_str() {
-                    "metric_name" => TableProviderFilterPushDown::Inexact,
-                    _ => TableProviderFilterPushDown::Unsupported,
-                }
-            } else {
-                TableProviderFilterPushDown::Unsupported
-            }
+            classify_declared_column_filter(column_name_from_expr(&in_list.expr), schema)
+        }
+        Expr::Like(like) if !like.negated => {
+            classify_declared_column_filter(column_name_from_expr(&like.expr), schema)
         }
         _ => TableProviderFilterPushDown::Unsupported,
     }
 }
 
+fn classify_declared_column_filter(
+    column_name: Option<String>,
+    schema: &SchemaRef,
+) -> TableProviderFilterPushDown {
+    if matches!(
+        column_name.as_deref(),
+        Some(column_name) if schema.index_of(column_name).is_ok()
+    ) {
+        TableProviderFilterPushDown::Inexact
+    } else {
+        TableProviderFilterPushDown::Unsupported
+    }
+}
+
 fn column_name_from_expr(expr: &Expr) -> Option<String> {
     predicate::column_name(expr)
+}
+
+fn prune_splits_with_metadata(
+    splits: Vec<ParquetSplitMetadata>,
+    filters: &[Expr],
+) -> Vec<ParquetSplitMetadata> {
+    let string_filters = predicate::extract_string_filters(filters);
+    let string_prefix_filters = predicate::extract_string_prefix_filters(filters);
+    if string_filters.is_empty() && string_prefix_filters.is_empty() {
+        return splits;
+    }
+
+    splits
+        .into_iter()
+        .filter(|split| {
+            split_may_match_string_filters(split, &string_filters)
+                && split_may_match_string_prefix_filters(split, &string_prefix_filters)
+        })
+        .collect()
+}
+
+fn split_may_match_string_filters(
+    split: &ParquetSplitMetadata,
+    string_filters: &[predicate::StringFilter],
+) -> bool {
+    string_filters
+        .iter()
+        .all(|string_filter| split_may_match_string_filter(split, string_filter))
+}
+
+fn split_may_match_string_filter(
+    split: &ParquetSplitMetadata,
+    string_filter: &predicate::StringFilter,
+) -> bool {
+    if string_filter.values.is_empty() {
+        return false;
+    }
+
+    if string_filter.column == "metric_name" && !split.metric_names.is_empty() {
+        return string_filter
+            .values
+            .iter()
+            .any(|value| split.metric_names.contains(value));
+    }
+
+    if let Some(split_values) = split.low_cardinality_tags.get(&string_filter.column) {
+        return string_filter
+            .values
+            .iter()
+            .any(|value| split_values.contains(value));
+    }
+
+    if let Some(superset_regex) = split.zonemap_regexes.get(&string_filter.column) {
+        return zonemap_may_match_any_value(superset_regex, &string_filter.values);
+    }
+
+    true
+}
+
+fn split_may_match_string_prefix_filters(
+    split: &ParquetSplitMetadata,
+    string_prefix_filters: &[predicate::StringPrefixFilter],
+) -> bool {
+    string_prefix_filters.iter().all(|string_prefix_filter| {
+        split_may_match_string_prefix_filter(split, string_prefix_filter)
+    })
+}
+
+fn split_may_match_string_prefix_filter(
+    split: &ParquetSplitMetadata,
+    string_prefix_filter: &predicate::StringPrefixFilter,
+) -> bool {
+    if string_prefix_filter.prefixes.is_empty() {
+        return false;
+    }
+
+    if string_prefix_filter.column == "metric_name" && !split.metric_names.is_empty() {
+        return string_prefix_filter.prefixes.iter().any(|prefix| {
+            split
+                .metric_names
+                .iter()
+                .any(|metric_name| metric_name.starts_with(prefix))
+        });
+    }
+
+    if let Some(split_values) = split.low_cardinality_tags.get(&string_prefix_filter.column) {
+        return string_prefix_filter
+            .prefixes
+            .iter()
+            .any(|prefix| split_values.iter().any(|value| value.starts_with(prefix)));
+    }
+
+    if let Some(superset_regex) = split.zonemap_regexes.get(&string_prefix_filter.column) {
+        return zonemap_may_match_any_prefix(superset_regex, &string_prefix_filter.prefixes);
+    }
+
+    true
+}
+
+fn zonemap_may_match_any_value(superset_regex: &str, values: &[String]) -> bool {
+    let Some(regex) = cached_zonemap_regex(superset_regex) else {
+        return true;
+    };
+    values.iter().any(|value| regex.is_match(value))
+}
+
+fn zonemap_may_match_any_prefix(superset_regex: &str, prefixes: &[String]) -> bool {
+    let Some(dfa) = cached_zonemap_dfa(superset_regex) else {
+        return true;
+    };
+
+    prefixes.iter().any(
+        |prefix| match zonemap_dfa_may_match_prefix(dfa.as_ref(), prefix) {
+            Ok(may_match) => may_match,
+            Err(error) => {
+                debug!(
+                    %error,
+                    superset_regex,
+                    prefix,
+                    "failed to evaluate split zonemap regex prefix"
+                );
+                true
+            }
+        },
+    )
+}
+
+fn cached_zonemap_regex(superset_regex: &str) -> Option<Arc<Regex>> {
+    let cache_key = superset_regex.to_string();
+    if let Some(cached) = ZONEMAP_REGEX_CACHE.get(&cache_key) {
+        return cached.valid();
+    }
+
+    let compiled = match RegexBuilder::new(superset_regex)
+        .dot_matches_new_line(true)
+        .build()
+    {
+        Ok(regex) => CachedCompiled::Valid(Arc::new(regex)),
+        Err(error) => {
+            debug!(
+                %error,
+                superset_regex,
+                "ignoring invalid split zonemap regex"
+            );
+            CachedCompiled::Invalid
+        }
+    };
+    let result = compiled.valid();
+    ZONEMAP_REGEX_CACHE.insert(cache_key, compiled);
+    result
+}
+
+fn cached_zonemap_dfa(superset_regex: &str) -> Option<Arc<DenseDfa>> {
+    let cache_key = superset_regex.to_string();
+    if let Some(cached) = ZONEMAP_DFA_CACHE.get(&cache_key) {
+        return cached.valid();
+    }
+
+    let compiled = match dense::Builder::new()
+        .configure(ZONEMAP_DFA_CONFIG.clone())
+        .syntax(*ZONEMAP_SYNTAX_CONFIG)
+        .build(superset_regex)
+    {
+        Ok(dfa) => CachedCompiled::Valid(Arc::new(dfa)),
+        Err(error) => {
+            debug!(
+                %error,
+                superset_regex,
+                "ignoring invalid split zonemap regex"
+            );
+            CachedCompiled::Invalid
+        }
+    };
+    let result = compiled.valid();
+    ZONEMAP_DFA_CACHE.insert(cache_key, compiled);
+    result
+}
+
+fn zonemap_dfa_may_match_prefix<A: Automaton>(
+    dfa: &A,
+    prefix: &str,
+) -> Result<bool, regex_automata::MatchError> {
+    let empty = Input::new("").anchored(Anchored::Yes);
+    let mut state = dfa.start_state_forward(&empty)?;
+    for byte in prefix.bytes() {
+        state = dfa.next_state(state, byte);
+        if dfa.is_dead_state(state) {
+            return Ok(false);
+        }
+    }
+
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+    visited.insert(state);
+    queue.push_back(state);
+
+    while let Some(state) = queue.pop_front() {
+        let end_state = dfa.next_eoi_state(state);
+        if dfa.is_match_state(end_state) {
+            return Ok(true);
+        }
+        if dfa.is_dead_state(state) {
+            continue;
+        }
+        for byte in 0..=u8::MAX {
+            let next_state = dfa.next_state(state, byte);
+            if !dfa.is_dead_state(next_state) && visited.insert(next_state) {
+                queue.push_back(next_state);
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 fn sort_expr(
@@ -348,7 +647,11 @@ fn splits_have_default_metrics_sort(splits: &[ParquetSplitMetadata]) -> bool {
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field, Schema};
-    use quickwit_parquet_engine::split::TimeRange;
+    use datafusion::logical_expr::{Expr, TableProviderFilterPushDown};
+    use datafusion::prelude::*;
+    use quickwit_parquet_engine::split::{
+        ParquetSplitId, TAG_ENV, TAG_HOST, TAG_SERVICE, TimeRange,
+    };
 
     use super::*;
 
@@ -366,7 +669,7 @@ mod tests {
             .map(|expr| {
                 expr.expr
                     .as_any()
-                    .downcast_ref::<Column>()
+                    .downcast_ref::<datafusion_physical_plan::expressions::Column>()
                     .expect("metrics ordering should contain column expressions")
                     .name()
                     .to_string()
@@ -388,6 +691,70 @@ mod tests {
             .time_range(TimeRange::new(0, 1))
             .sort_fields(sort_fields)
             .build()
+    }
+
+    fn test_split(split_id: &str) -> ParquetSplitMetadata {
+        ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new(split_id))
+            .index_uid("idx:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .num_rows(10)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .build()
+    }
+
+    fn test_split_with_low_cardinality_tag(
+        split_id: &str,
+        tag_key: &str,
+        tag_value: &str,
+    ) -> ParquetSplitMetadata {
+        ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new(split_id))
+            .index_uid("idx:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .num_rows(10)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .add_low_cardinality_tag(tag_key, tag_value)
+            .build()
+    }
+
+    fn test_split_with_zonemap(
+        split_id: &str,
+        column: &str,
+        superset_regex: &str,
+    ) -> ParquetSplitMetadata {
+        let mut split = test_split(split_id);
+        split
+            .zonemap_regexes
+            .insert(column.to_string(), superset_regex.to_string());
+        split
+    }
+
+    fn metadata_pruned_split_ids(
+        splits: Vec<ParquetSplitMetadata>,
+        filters: Vec<Expr>,
+    ) -> Vec<String> {
+        prune_splits_with_metadata(splits, &filters)
+            .into_iter()
+            .map(|split| split.split_id.as_str().to_string())
+            .collect()
+    }
+
+    fn assert_metadata_pruned_split_ids(
+        splits: Vec<ParquetSplitMetadata>,
+        filters: Vec<Expr>,
+        expected_split_ids: &[&str],
+    ) {
+        assert_eq!(
+            metadata_pruned_split_ids(splits, filters),
+            expected_names(expected_split_ids)
+        );
+    }
+
+    fn assert_metadata_prunes_all(splits: Vec<ParquetSplitMetadata>, filters: Vec<Expr>) {
+        assert_metadata_pruned_split_ids(splits, filters, &[]);
     }
 
     #[test]
@@ -474,6 +841,298 @@ mod tests {
         assert!(
             !metrics_output_orderings(&schema, &[default_sort_split]).is_empty(),
             "default metrics sort metadata should enable the advertised ordering"
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_uses_low_cardinality_tags() {
+        assert_metadata_pruned_split_ids(
+            vec![
+                test_split_with_low_cardinality_tag("web", TAG_SERVICE, "web"),
+                test_split_with_low_cardinality_tag("api", TAG_SERVICE, "api"),
+            ],
+            vec![col(TAG_SERVICE).eq(lit("web"))],
+            &["web"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_treats_low_cardinality_in_list_as_any_match() {
+        assert_metadata_pruned_split_ids(
+            vec![
+                test_split_with_low_cardinality_tag("web", TAG_SERVICE, "web"),
+                test_split_with_low_cardinality_tag("api", TAG_SERVICE, "api"),
+                test_split_with_low_cardinality_tag("db", TAG_SERVICE, "db"),
+            ],
+            vec![col(TAG_SERVICE).in_list(vec![lit("web"), lit("api")], false)],
+            &["web", "api"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_uses_zonemap_regexes() {
+        let mut prod_split = test_split("prod");
+        prod_split
+            .zonemap_regexes
+            .insert(TAG_ENV.to_string(), "^prod$".to_string());
+        let mut staging_split = test_split("staging");
+        staging_split
+            .zonemap_regexes
+            .insert(TAG_ENV.to_string(), "^staging$".to_string());
+
+        assert_metadata_pruned_split_ids(
+            vec![prod_split, staging_split],
+            vec![col(TAG_ENV).eq(lit("prod"))],
+            &["prod"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_uses_zonemap_regexes_for_declared_custom_columns() {
+        let mut matching_split = test_split("matching");
+        matching_split.zonemap_regexes.insert(
+            "availability_zone".to_string(),
+            "^us\\-east\\-1a$".to_string(),
+        );
+        let mut nonmatching_split = test_split("nonmatching");
+        nonmatching_split.zonemap_regexes.insert(
+            "availability_zone".to_string(),
+            "^us\\-east\\-1b$".to_string(),
+        );
+
+        assert_metadata_pruned_split_ids(
+            vec![matching_split, nonmatching_split],
+            vec![col("availability_zone").eq(lit("us-east-1a"))],
+            &["matching"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_matches_zonemap_equality_case_sensitively() {
+        let exact = test_split_with_zonemap("exact", TAG_ENV, "^v1$");
+
+        assert_metadata_pruned_split_ids(
+            vec![exact.clone()],
+            vec![col(TAG_ENV).eq(lit("v1"))],
+            &["exact"],
+        );
+        assert_metadata_prunes_all(vec![exact.clone()], vec![col(TAG_ENV).eq(lit("V1"))]);
+        assert_metadata_prunes_all(vec![exact], vec![col(TAG_ENV).eq(lit("v2"))]);
+    }
+
+    #[test]
+    fn metadata_pruning_keeps_zonemap_superset_equality_matches() {
+        let superset = test_split_with_zonemap("superset", TAG_ENV, "^v.*$");
+
+        assert_metadata_pruned_split_ids(
+            vec![superset.clone()],
+            vec![col(TAG_ENV).eq(lit("v1"))],
+            &["superset"],
+        );
+        assert_metadata_pruned_split_ids(
+            vec![superset.clone()],
+            vec![col(TAG_ENV).eq(lit("v2"))],
+            &["superset"],
+        );
+        assert_metadata_prunes_all(vec![superset], vec![col(TAG_ENV).eq(lit("w3"))]);
+    }
+
+    #[test]
+    fn metadata_pruning_requires_all_zonemap_conjuncts() {
+        let mut multi_column = test_split_with_zonemap("multi-column", TAG_ENV, "^v.*$");
+        multi_column
+            .zonemap_regexes
+            .insert(TAG_HOST.to_string(), "^x$".to_string());
+        assert_metadata_pruned_split_ids(
+            vec![multi_column.clone()],
+            vec![col(TAG_ENV).eq(lit("v1")).and(col(TAG_HOST).eq(lit("x")))],
+            &["multi-column"],
+        );
+        assert_metadata_prunes_all(
+            vec![multi_column.clone()],
+            vec![col(TAG_ENV).eq(lit("w3")).and(col(TAG_HOST).eq(lit("x")))],
+        );
+        assert_metadata_prunes_all(
+            vec![multi_column],
+            vec![col(TAG_ENV).eq(lit("v1")).and(col(TAG_HOST).eq(lit("y")))],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_keeps_or_predicates_conservative() {
+        let mut multi_column = test_split_with_zonemap("multi-column", TAG_ENV, "^v.*$");
+        multi_column
+            .zonemap_regexes
+            .insert(TAG_HOST.to_string(), "^x$".to_string());
+
+        assert_metadata_pruned_split_ids(
+            vec![multi_column],
+            vec![col(TAG_ENV).eq(lit("w3")).or(col(TAG_HOST).eq(lit("y")))],
+            &["multi-column"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_treats_zonemap_in_list_as_any_match() {
+        let exact = test_split_with_zonemap("exact", TAG_ENV, "^v1$");
+        assert_metadata_pruned_split_ids(
+            vec![exact.clone()],
+            vec![col(TAG_ENV).in_list(vec![lit("a"), lit("v1"), lit("c")], false)],
+            &["exact"],
+        );
+        assert_metadata_prunes_all(
+            vec![exact],
+            vec![col(TAG_ENV).in_list(vec![lit("a"), lit("V1"), lit("c")], false)],
+        );
+
+        let superset = test_split_with_zonemap("superset", TAG_ENV, "^v.*$");
+        assert_metadata_pruned_split_ids(
+            vec![superset.clone()],
+            vec![col(TAG_ENV).in_list(vec![lit("v1"), lit("v2"), lit("abc")], false)],
+            &["superset"],
+        );
+        assert_metadata_prunes_all(
+            vec![superset],
+            vec![col(TAG_ENV).in_list(vec![lit("a"), lit("b"), lit("c")], false)],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_keeps_unsupported_string_predicates_conservative() {
+        let split = test_split_with_zonemap("prod", TAG_ENV, "^prod$");
+
+        assert_metadata_pruned_split_ids(
+            vec![split.clone()],
+            vec![col(TAG_ENV).gt(lit("prod"))],
+            &["prod"],
+        );
+        assert_metadata_pruned_split_ids(
+            vec![split.clone()],
+            vec![col(TAG_ENV).eq(lit(1i64))],
+            &["prod"],
+        );
+        assert_metadata_pruned_split_ids(
+            vec![split.clone()],
+            vec![col(TAG_ENV).ilike(lit("PROD%"))],
+            &["prod"],
+        );
+        assert_metadata_pruned_split_ids(
+            vec![split],
+            vec![col(TAG_ENV).not_like(lit("prod%"))],
+            &["prod"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_uses_low_cardinality_tag_prefixes() {
+        assert_metadata_pruned_split_ids(
+            vec![
+                test_split_with_low_cardinality_tag("host-07", TAG_HOST, "ID-0701"),
+                test_split_with_low_cardinality_tag("host-08", TAG_HOST, "ID-0801"),
+            ],
+            vec![col(TAG_HOST).like(lit("ID-07%"))],
+            &["host-07"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_prunes_zonemap_regexes_for_like_prefixes() {
+        let mut host_07_split = test_split("host-07");
+        host_07_split
+            .zonemap_regexes
+            .insert(TAG_HOST.to_string(), "^ID\\-0701$".to_string());
+        let mut host_08_split = test_split("host-08");
+        host_08_split
+            .zonemap_regexes
+            .insert(TAG_HOST.to_string(), "^ID\\-0801$".to_string());
+
+        assert_metadata_pruned_split_ids(
+            vec![host_07_split, host_08_split],
+            vec![col(TAG_HOST).like(lit("ID-07%"))],
+            &["host-07"],
+        );
+    }
+
+    #[test]
+    fn zonemap_prefix_matching_accepts_possible_suffixes() {
+        assert!(zonemap_may_match_any_prefix(
+            "^[I][\\s\\S]+$",
+            &["ID-07".to_string()]
+        ));
+        assert!(!zonemap_may_match_any_prefix(
+            "^host\\-[\\s\\S]+$",
+            &["ID-07".to_string()]
+        ));
+    }
+
+    #[test]
+    fn metadata_pruning_evaluates_legacy_dotall_zonemap_regexes() {
+        assert!(zonemap_may_match_any_value(
+            "^foo.+$",
+            &["foo\nbar".to_string()]
+        ));
+        assert!(zonemap_may_match_any_prefix(
+            "^foo.+$",
+            &["foo\n".to_string()]
+        ));
+    }
+
+    #[test]
+    fn classify_filter_pushes_down_like_for_metrics_tags() {
+        let schema = schema_with_columns(&[TAG_HOST]);
+        assert_eq!(
+            classify_filter(&col(TAG_HOST).like(lit("ID-07%")), &schema),
+            TableProviderFilterPushDown::Inexact
+        );
+    }
+
+    #[test]
+    fn classify_filter_uses_declared_schema_columns() {
+        let schema = schema_with_columns(&["metric_name", "availability_zone"]);
+
+        assert_eq!(
+            classify_filter(&col("availability_zone").eq(lit("us-east-1a")), &schema),
+            TableProviderFilterPushDown::Inexact
+        );
+        assert_eq!(
+            classify_filter(
+                &col("availability_zone").in_list(vec![lit("us-east-1a")], false),
+                &schema
+            ),
+            TableProviderFilterPushDown::Inexact
+        );
+        assert_eq!(
+            classify_filter(&col("availability_zone").like(lit("us-east-%")), &schema),
+            TableProviderFilterPushDown::Inexact
+        );
+        assert_eq!(
+            classify_filter(&col("undeclared_tag").eq(lit("value")), &schema),
+            TableProviderFilterPushDown::Unsupported
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_keeps_splits_without_relevant_metadata() {
+        let split = test_split("unknown");
+
+        assert_metadata_pruned_split_ids(
+            vec![split],
+            vec![col(TAG_ENV).eq(lit("prod"))],
+            &["unknown"],
+        );
+    }
+
+    #[test]
+    fn metadata_pruning_keeps_splits_with_invalid_zonemap_regex() {
+        let mut split = test_split("invalid-regex");
+        split
+            .zonemap_regexes
+            .insert(TAG_ENV.to_string(), "(".to_string());
+
+        assert_metadata_pruned_split_ids(
+            vec![split],
+            vec![col(TAG_ENV).eq(lit("prod"))],
+            &["invalid-regex"],
         );
     }
 }
