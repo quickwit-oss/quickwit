@@ -376,8 +376,27 @@ pub async fn streaming_merge_sorted_parquet_files(
                 // sequential RGs — but we coalesce them into one
                 // RG to keep the col-outer loop simple).
                 let mut chunk_assignments: Vec<(usize, Vec<&Region>)> = Vec::new();
-                let mut active_output_idx = current_output_idx;
-                let mut active_rows = current_output_rows;
+                // Pre-rollover initialization. If `will_roll_over` is set
+                // (the previous region already filled `current_output_idx`
+                // and we still have outputs to fill), the first chunk must
+                // land in the NEXT output — not append to the already-full
+                // one. The inner `needs_new_writer` check below guards on
+                // `!chunk_assignments.is_empty()`, so it only fires from
+                // the second iteration on; the first chunk's destination
+                // has to be decided here.
+                //
+                // Companion fix to the `effective_first_target` /
+                // `effective_outputs_remaining` rollover handling above:
+                // the split *decision* uses the rolled-over output's
+                // budget, and the chunk *assignment* must too. Otherwise
+                // the first sub-region would be glued onto the already-
+                // full output, overfilling it by up to `target_per_output`
+                // rows and shrinking the final output count.
+                let (mut active_output_idx, mut active_rows) = if will_roll_over {
+                    (current_output_idx + 1, 0)
+                } else {
+                    (current_output_idx, current_output_rows)
+                };
                 for sub_region in &sub_regions {
                     let sub_rows = sub_region.total_rows();
                     let needs_new_writer = !chunk_assignments.is_empty()
@@ -2818,6 +2837,65 @@ mod tests {
                 &format!("output {i}"),
             )
             .expect("each output RG must satisfy PA-1 + PA-3 on prefix");
+        }
+    }
+
+    /// Regression for Codex P1 on PR #6428: companion to
+    /// `test_region_exactly_fills_output_does_not_split_next_aligned_region`.
+    /// The earlier fix handled the split *decision* (use the rolled-
+    /// over output's full budget) but missed the split *assignment*
+    /// loop in `process_split_region_col_outer`'s setup: it
+    /// initialized `active_output_idx` / `active_rows` from the stale
+    /// `current_output_idx` / `current_output_rows`. The inner
+    /// `needs_new_writer` check guards on `!chunk_assignments.is_empty()`,
+    /// so the first chunk never rolled over — it was appended to the
+    /// already-full output, doubling its rows and shrinking the total
+    /// output count.
+    ///
+    /// Setup: prefix_len = 1, two metrics with very different sizes
+    /// (200 rows + 400 rows = 600 total). `num_outputs = 3` →
+    /// `target_per_output = 200`. Region A (metric_name = "alpha")
+    /// fills output 0 exactly. Region B (metric_name = "beta") needs
+    /// splitting: 400 rows > the rolled-over output's 200 budget.
+    /// Pre-fix the merge produced 2 outputs of 400 + 200 (output 0
+    /// overfilled, output 2 empty). Post-fix the merge produces 3
+    /// outputs of 200 + 200 + 200.
+    #[tokio::test]
+    async fn test_split_chunk_assignment_rolls_over_before_first_chunk() {
+        let bytes = make_prefix_len_one_input(&[("aaa.alpha", 200), ("bbb.beta", 400)]);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+            .await
+            .expect("merge must succeed");
+
+        // Pre-fix: outputs.len() == 2 (output 0 = 400 rows, output 1 =
+        // 200 rows). Post-fix: 3 outputs of ~200 rows each.
+        assert_eq!(
+            outputs.len(),
+            3,
+            "expected 3 outputs (one per target), got {} — chunk assignment didn't roll over \
+             before the first chunk",
+            outputs.len(),
+        );
+        let total_rows: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(total_rows, 600, "row conservation");
+        for (i, out) in outputs.iter().enumerate() {
+            // All-non-empty: pre-fix output 2 was empty (the loop
+            // assigned both region-B sub-chunks within outputs 0+1).
+            assert!(
+                out.num_rows > 0,
+                "output {i} should be non-empty post-fix; got num_rows = {}",
+                out.num_rows,
+            );
+            // No output exceeds the target by more than one full
+            // sub-region. Pre-fix output 0 was 400 rows (2× target).
+            assert!(
+                out.num_rows <= 250,
+                "output {i} should not exceed target by more than one sub-region; got {}",
+                out.num_rows,
+            );
         }
     }
 
