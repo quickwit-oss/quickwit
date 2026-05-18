@@ -304,12 +304,15 @@ impl IngestServiceClient {
 }
 #[async_trait::async_trait]
 impl IngestService for IngestServiceClient {
+    #[tracing::instrument(skip_all, name = "ingest_service.ingest")]
     async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
         self.inner.0.ingest(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest_service.fetch")]
     async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
         self.inner.0.fetch(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest_service.tail")]
     async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.inner.0.tail(request).await
     }
@@ -833,9 +836,13 @@ where
     T::Future: Send,
 {
     async fn ingest(&self, request: IngestRequest) -> crate::Result<IngestResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .ingest(request)
+            .ingest(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -844,9 +851,13 @@ where
             ))
     }
     async fn fetch(&self, request: FetchRequest) -> crate::Result<FetchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .fetch(request)
+            .fetch(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -855,9 +866,13 @@ where
             ))
     }
     async fn tail(&self, request: TailRequest) -> crate::Result<FetchResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .tail(request)
+            .tail(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -884,36 +899,72 @@ impl IngestServiceGrpcServerAdapter {
 impl ingest_service_grpc_server::IngestServiceGrpc for IngestServiceGrpcServerAdapter {
     async fn ingest(
         &self,
-        request: tonic::Request<IngestRequest>,
+        tonic_request: tonic::Request<IngestRequest>,
     ) -> Result<tonic::Response<IngestResponse>, tonic::Status> {
-        self.inner
-            .0
-            .ingest(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest_service.ingest");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .ingest(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn fetch(
         &self,
-        request: tonic::Request<FetchRequest>,
+        tonic_request: tonic::Request<FetchRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
-        self.inner
-            .0
-            .fetch(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest_service.fetch");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .fetch(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn tail(
         &self,
-        request: tonic::Request<TailRequest>,
+        tonic_request: tonic::Request<TailRequest>,
     ) -> Result<tonic::Response<FetchResponse>, tonic::Status> {
-        self.inner
-            .0
-            .tail(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest_service.tail");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .tail(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

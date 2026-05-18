@@ -25,8 +25,8 @@ use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
     LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
     ListFieldsRequest, ListFieldsResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
-    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchPlanResponse, SearchRequest,
-    SearchResponse, SnippetRequest,
+    ReportSplitsRequest, ReportSplitsResponse, RootResourceStats, ScrollRequest,
+    SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
@@ -343,6 +343,7 @@ pub(crate) async fn scroll(
 
     let mut partial_hits = Vec::new();
     let mut scroll_context_modified = false;
+    let mut resource_stats: Option<RootResourceStats> = None;
 
     let cached_results = scroll_context.get_cached_partial_hits(start_doc..end_doc);
     partial_hits.extend_from_slice(cached_results);
@@ -352,7 +353,7 @@ pub(crate) async fn scroll(
             .cloned()
             .unwrap_or_else(|| current_scroll.search_after.clone());
         let cursor = start_doc + partial_hits.len() as u64;
-        scroll_context
+        resource_stats = scroll_context
             .load_batch_starting_at(cursor, search_after, cluster_client, searcher_context)
             .await?;
         partial_hits.extend_from_slice(scroll_context.get_cached_partial_hits(cursor..end_doc));
@@ -394,6 +395,10 @@ pub(crate) async fn scroll(
         aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,
+        // Populated only when this scroll page triggered an inner
+        // `search_partial_hits_phase`. Pure cache hits (served entirely from
+        // the scroll context) carry `None` because no leaf search ran.
+        resource_stats,
     })
 }
 /// [`SearcherContext`] provides a common set of variables

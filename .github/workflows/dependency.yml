@@ -20,4 +20,11 @@ jobs:
         with:
           # GHSA-c38w-74pg-36hr, GHSA-4grx-2x9w-596c: minor vuln on the rsa crate, used for google storage.
           # GHSA-cq8v-f236-94qc: rand 0.8.6 unsound with custom logger + rand::rng(), not affected (log feature disabled, transitive dep from fail/sqlx).
-          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c,GHSA-cq8v-f236-94qc
+          # GHSA-2f9f-gq7v-9h6m: thrift 0.17 excessive-allocation on untrusted input. Already a transitive
+          #   dep via parquet on main; PR-4 (streaming Parquet reader) adds it as a direct dep for
+          #   `parquet::format::PageHeader::read_from_in_protocol`. Inputs are parquet files we wrote to
+          #   our own object store (trusted source). Defense-in-depth: the streaming reader caps each
+          #   Thrift parse buffer at `max_page_header_bytes` (1 MiB default) BEFORE handing bytes to
+          #   thrift, so the outer buffer thrift can read from is bounded regardless of any inner
+          #   length prefix. No newer thrift release fixes this — 0.17.0 is the latest on crates.io.
+          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c,GHSA-cq8v-f236-94qc,GHSA-2f9f-gq7v-9h6m

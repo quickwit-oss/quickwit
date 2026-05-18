@@ -15,7 +15,7 @@
 use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{info, instrument};
 
 use super::state::WeakIngesterState;
 
@@ -37,39 +37,47 @@ impl CloseIdleShardsTask {
             weak_state,
             idle_shard_timeout,
         };
-        tokio::spawn(async move {
-            let Some(mut state) = task.weak_state.upgrade() else {
-                return;
-            };
-            state.wait_for_ready().await;
-            drop(state);
-
-            task.run().await
-        })
+        tokio::spawn(task.run())
     }
 
-    async fn run(&self) {
+    async fn run(mut self) {
+        let Some(mut state) = self.weak_state.upgrade() else {
+            return;
+        };
+        state.wait_for_ready().await;
+        drop(state);
+
         let mut interval = tokio::time::interval(RUN_INTERVAL_PERIOD);
 
         loop {
             interval.tick().await;
 
-            let Some(state) = self.weak_state.upgrade() else {
+            if !self.run_once().await {
                 return;
-            };
-            let Ok(mut state_guard) = state.lock_partially("close_idle_shards").await else {
-                return;
-            };
-
-            let now = Instant::now();
-
-            for (queue_id, shard) in &mut state_guard.shards {
-                if shard.is_open() && shard.is_idle(now, self.idle_shard_timeout) {
-                    shard.close();
-                    info!("closed idle shard `{queue_id}`");
-                }
             }
         }
+    }
+
+    /// Single iteration of the close-idle-shards loop. Returns `false` when the
+    /// task should stop (state dropped or ingester shutting down).
+    #[instrument(name = "close_idle_shards.tick", skip_all)]
+    async fn run_once(&mut self) -> bool {
+        let Some(state) = self.weak_state.upgrade() else {
+            return false;
+        };
+        let Ok(mut state_guard) = state.lock_partially("close_idle_shards").await else {
+            return false;
+        };
+
+        let now = Instant::now();
+
+        for (queue_id, shard) in &mut state_guard.shards {
+            if shard.is_open() && shard.is_idle(now, self.idle_shard_timeout) {
+                shard.close();
+                info!("closed idle shard `{queue_id}`");
+            }
+        }
+        true
     }
 }
 
@@ -94,9 +102,11 @@ mod tests {
         .await
         .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster).await;
-        let weak_state = state.weak();
         let idle_shard_timeout = RUN_INTERVAL_PERIOD * 4;
-        let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
+        let mut task = CloseIdleShardsTask {
+            weak_state: state.weak(),
+            idle_shard_timeout,
+        };
 
         let mut state_guard = state.lock_partially("test").await.unwrap();
         let now = Instant::now();
@@ -122,8 +132,8 @@ mod tests {
         state_guard.shards.insert(queue_id_02.clone(), shard_02);
         drop(state_guard);
 
-        tokio::time::sleep(RUN_INTERVAL_PERIOD * 2).await;
-
+        // First iteration: only shard_01 (with stale last-write) is idle.
+        assert!(task.run_once().await);
         let state_guard = state.lock_partially("test").await.unwrap();
         state_guard
             .shards
@@ -137,8 +147,17 @@ mod tests {
             .assert_is_open();
         drop(state_guard);
 
-        tokio::time::sleep(idle_shard_timeout).await;
+        // Age shard_02 directly so the next iteration considers it idle —
+        // no need to sleep for the timeout to pass.
+        let mut state_guard = state.lock_partially("test").await.unwrap();
+        state_guard
+            .shards
+            .get_mut(&queue_id_02)
+            .unwrap()
+            .last_write_instant = now - idle_shard_timeout;
+        drop(state_guard);
 
+        assert!(task.run_once().await);
         let state_guard = state.lock_partially("test").await.unwrap();
         state_guard
             .shards
@@ -146,11 +165,9 @@ mod tests {
             .unwrap()
             .assert_is_closed();
         drop(state_guard);
-        drop(state);
 
-        tokio::time::timeout(Duration::from_secs(1), join_handle)
-            .await
-            .unwrap()
-            .unwrap();
+        // Once the strong reference is dropped, the task signals stop.
+        drop(state);
+        assert!(!task.run_once().await);
     }
 }

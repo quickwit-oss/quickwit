@@ -34,7 +34,10 @@
 //! - `models::time_windowed_compaction` — TW-1..TW-3, CS-1..CS-3, MC-1..MC-4 (ADR-003,
 //!   `TimeWindowedCompaction.tla`)
 //! - `models::parquet_data_model` — DM-1..DM-5 (ADR-001, `ParquetDataModel.tla`)
+//! - `models::merge_pipeline` — MP-1, MP-4..MP-11 (`MergePipelineShutdown.tla`); shares state and
+//!   predicates literally with [`invariants::merge_pipeline`].
 
+pub mod events;
 pub mod invariants;
 
 #[cfg(feature = "model-checking")]

@@ -65,7 +65,6 @@ quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
 
 [dev-dependencies]
 predicates = { workspace = true }
@@ -93,7 +92,7 @@ pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
 # metrics here refers to adding support for metrics ingestion within Quickwit.
 # (this is not about quickwit's metrics themselves)
-metrics = [ "quickwit-indexing/metrics" ]
+metrics = [ "quickwit-indexing/metrics", "datafusion" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = [
   "dep:console-subscriber",

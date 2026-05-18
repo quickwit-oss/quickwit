@@ -44,6 +44,88 @@ Stateright      DST Tests      Production Metrics
 (exhaustive)    (simulation)   (Observability)
 ```
 
+## STOP, Don't Weaken — Specs are Load-Bearing
+
+Whether the load-bearing claim is a formal property (TLA+ invariant,
+Stateright property, DST assertion) or an English-language user
+requirement, the rule is the same: **MUST NOT** silently weaken it.
+First action is diagnosis and an explicit conversation with the user,
+not modification.
+
+### Verification check fails
+
+When a TLA+ invariant, Stateright property, or DST assertion fails, the
+failure has exactly two possible causes:
+
+1. **The implementation/model has a real bug.** Fix the bug.
+2. **The property is over-strong** — it asserts something the design does not
+   actually guarantee. *Sometimes* the right answer is to weaken or replace
+   the property — but the failing trace was probably also revealing the
+   real, weaker safety property the design *does* guarantee. Almost never
+   should the answer be just "remove the property."
+
+**Required protocol**:
+- Read the failing trace. State out loud what the property meant to claim,
+  and what the trace shows.
+- If unsure whether (1) or (2) applies — **stop and ask the user**.
+  Do not silently rewrite the property.
+- If (2) applies and you propose to weaken/replace, present the candidate
+  replacement *and* the safety property the original was reaching for, then
+  ask before changing. The replacement should usually preserve the spirit
+  via a different formulation (action property, liveness, narrower precondition)
+  — not just delete the constraint.
+
+**Forbidden** without explicit user approval:
+- Renaming an invariant to make its negation trivially true
+- Deleting an invariant that just produced a counter-example
+- Adding `=> TRUE` or other no-op weakenings
+- Changing `\A` to `\E`, `[]` to `<>`, or similar quantifier flips, when the
+  motive is to suppress a violation rather than to capture a different claim
+
+### User requirement seems hard or out-of-scope
+
+The same rule applies when translating from the user's spec into a plan,
+or from the plan into implementation. If a stated requirement looks hard,
+expensive, or "more than this PR needs," **stop and ask first** — do not
+decide unilaterally that "close enough" is acceptable.
+
+Silent-weakening moves to watch for:
+- **Granularity downgrade**: user asked for page-by-page streaming;
+  plan says "column-chunk granularity is the natural unit." The memory
+  bound the user actually wanted is gone.
+- **Constraint dropping**: user said "must not OOM under load"; plan
+  treats it as "bounded in the typical case." The qualifier was doing
+  load-bearing work and you removed it.
+- **Strength reduction**: user said "byte-identical metadata"; plan
+  says "logically equivalent metadata." Test passes; spec is gone.
+- **MUST → SHOULD**: user said "one GET per file"; plan allows "two in
+  the rare retry case." May be reasonable, but only the user can
+  authorize it.
+- **Reframing as out-of-scope**: user described a property as part of
+  the goal; plan declares it a follow-up PR. If the user didn't say
+  "split it," you don't get to.
+
+**Required protocol** mirrors the verification case: quote the user's
+original phrasing back to yourself; if you cannot point at the source
+phrase that authorizes the weaker version, you are not authorized to
+ship it. Surface the gap explicitly: *"you asked for X; my plan does
+Y; here's why I considered Y; ok to weaken, or do you want X?"* The
+default answer is X.
+
+**Plan-document approval is not spec approval.** When the plan you write
+diverges from the spec at write time, the user reviews the diverged
+plan, not the original requirement. Accountability for the divergence
+is on you — they approved what you wrote, not what they asked for.
+Re-read the user's original message before writing code.
+
+### Why this matters
+
+Specs — formal or English — describe the system's promise to its
+users. When a check fails or a requirement seems too strict, that has
+just told you either that the implementation is wrong, or that you've
+been claiming a stronger promise than you actually keep. Both deserve
+a conscious decision, never a silent edit.
+
 ## Testing Through Production Path
 
 **MUST NOT** claim a feature works unless tested through the actual network stack.

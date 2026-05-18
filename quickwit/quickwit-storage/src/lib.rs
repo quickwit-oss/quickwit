@@ -26,6 +26,7 @@
 //!
 //! The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
+mod counting_storage;
 mod debouncer;
 mod file_descriptor_cache;
 pub mod metrics;
@@ -65,6 +66,7 @@ pub use self::cache::MockStorageCache;
 pub use self::cache::{
     ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
 };
+pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};

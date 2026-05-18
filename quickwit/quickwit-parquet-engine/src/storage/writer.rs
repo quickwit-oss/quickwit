@@ -57,6 +57,18 @@ pub(crate) const PARQUET_META_NUM_MERGE_OPS: &str = "qh.num_merge_ops";
 pub(crate) const PARQUET_META_ROW_KEYS: &str = "qh.row_keys";
 pub(crate) const PARQUET_META_ROW_KEYS_JSON: &str = "qh.row_keys_json";
 pub(crate) const PARQUET_META_ZONEMAP_REGEXES: &str = "qh.zonemap_regexes";
+/// Number of leading sort schema columns whose transitions align with row
+/// group boundaries. `0` (or absent) means no alignment is claimed — RG
+/// boundaries are arbitrary (legacy default). `N` (where 1 ≤ N ≤ sort
+/// schema length) means RG boundaries align with the first `N` sort
+/// columns. A single-RG file vacuously satisfies any prefix; writers
+/// producing single-RG files set `N` = sort schema length so single-RG
+/// and metric-aligned multi-RG appear uniform to readers.
+///
+/// The marker is part of the compaction scope: only splits with the
+/// same `rg_partition_prefix_len` may merge. See
+/// `quickwit-parquet-engine/src/merge/policy/scope.rs`.
+pub(crate) const PARQUET_META_RG_PARTITION_PREFIX_LEN: &str = "qh.rg_partition_prefix_len";
 
 /// Build Parquet key_value_metadata entries for compaction metadata.
 /// Returns Vec<KeyValue> that can be added to WriterProperties.
@@ -104,6 +116,13 @@ pub(crate) fn build_compaction_key_value_metadata(
         kvs.push(KeyValue::new(
             PARQUET_META_NUM_MERGE_OPS.to_string(),
             metadata.num_merge_ops.to_string(),
+        ));
+    }
+
+    if metadata.rg_partition_prefix_len > 0 {
+        kvs.push(KeyValue::new(
+            PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+            metadata.rg_partition_prefix_len.to_string(),
         ));
     }
 
