@@ -180,14 +180,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
         .generate_rpc_name_impls()
+        // Surface a couple of top-level scalar fields on the generated tracing
+        // spans so traces are immediately filterable by leader / commit type.
+        // `leader_id` is `String` (Display ok); `commit_type` is the prost
+        // enum `CommitTypeV2` which only derives `Debug`.
+        .with_traced_request_field_debug("IngestRequestV2", "commit_type")
+        .with_traced_request_field("PersistRequest", "leader_id")
+        .with_traced_request_field_debug("PersistRequest", "commit_type")
         .run()
         .unwrap();
 
     // Search service.
+    //
+    // Unlike the other services above, search goes through `tonic_prost_build` directly
+    // (not through `quickwit_codegen::Codegen`, which emits `cargo:rerun-if-changed` for
+    // every proto it compiles). `prost_build` 0.14 has a TODO acknowledging it does not
+    // emit those directives itself, and `tonic_prost_build` 0.14.5 exposes an
+    // `emit_rerun_if_changed` setter but never forwards it to the underlying `Config`.
+    // Without the explicit hint below, edits to `search.proto` do not retrigger build.rs
+    // (because the other `Codegen` calls have already narrowed cargo's watch list).
+    println!("cargo:rerun-if-changed=protos/quickwit/search.proto");
+
     let mut prost_config = prost_build::Config::default();
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
-        .protoc_arg("--experimental_allow_proto3_optional");
+        .protoc_arg("--experimental_allow_proto3_optional")
+        // Box the large `LeafSearchResponse` variant so the oneof stays small
+        // (the `Error` variant only carries a `String`).
+        .boxed("LambdaSingleSplitResult.outcome.response");
 
     tonic_prost_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")

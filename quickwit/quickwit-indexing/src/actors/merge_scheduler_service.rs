@@ -28,7 +28,7 @@ use tracing::error;
 
 use super::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
-use super::metrics_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
+use super::parquet_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
 use crate::merge_policy::{MergeOperation, MergeTask};
 use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 

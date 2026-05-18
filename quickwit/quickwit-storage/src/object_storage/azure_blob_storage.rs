@@ -340,6 +340,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
@@ -359,6 +360,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let name = self.blob_name(path);
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
@@ -378,6 +380,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
@@ -391,6 +394,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         // See https://github.com/Azure/azure-sdk-for-rust/issues/1068
         warn!(
@@ -433,7 +437,7 @@ impl Storage for AzureBlobStorage {
         }
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         self.get_to_bytes(path, Some(range.clone()))
             .await
@@ -448,7 +452,7 @@ impl Storage for AzureBlobStorage {
             })
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -483,7 +487,12 @@ impl Storage for AzureBlobStorage {
         .map_err(|e| e.into())
     }
 
-    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
+    #[instrument(
+        name = "storage.azure.get_all",
+        level = "debug",
+        skip(self),
+        fields(fetched_bytes_len)
+    )]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let data = self
             .get_to_bytes(path, None)
@@ -500,6 +509,7 @@ impl Storage for AzureBlobStorage {
         Ok(data)
     }
 
+    #[instrument(name = "storage.azure.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let name = self.blob_name(path);
         let properties_result = self

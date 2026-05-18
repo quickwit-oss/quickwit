@@ -419,7 +419,7 @@ async fn stream_otel_spans_impl(
     }
 
     if trace_ids.len() > 1 {
-        qw_spans.sort_unstable_by(|left, right| left.trace_id.cmp(&right.trace_id));
+        qw_spans.sort_unstable_by_key(|span| span.trace_id);
     }
 
     let num_spans = qw_spans.len();

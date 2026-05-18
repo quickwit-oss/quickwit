@@ -573,7 +573,7 @@ mod tests {
         use quickwit_proto::metastore::MockMetastoreService;
         use quickwit_storage::RamStorage;
 
-        use crate::actors::metrics_pipeline::{ParquetIndexer, ParquetPackager, ParquetUploader};
+        use crate::actors::parquet_pipeline::{ParquetIndexer, ParquetPackager, ParquetUploader};
         use crate::actors::{Publisher, UploaderType};
 
         let universe = Universe::with_accelerated_time();

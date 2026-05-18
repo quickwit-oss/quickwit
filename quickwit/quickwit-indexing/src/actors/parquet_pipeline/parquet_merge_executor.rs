@@ -22,6 +22,11 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::thread_pool::run_cpu_intensive;
+use quickwit_dst::check_invariant;
+use quickwit_dst::invariants::InvariantId;
+use quickwit_dst::invariants::merge_policy::{
+    all_same_compaction_scope, all_same_merge_level, has_minimum_splits,
+};
 use quickwit_parquet_engine::merge::metadata_aggregation::merge_parquet_split_metadata;
 use quickwit_parquet_engine::merge::{MergeConfig, MergeOutputFile, merge_sorted_parquet_files};
 use quickwit_parquet_engine::storage::ParquetWriterConfig;
@@ -154,11 +159,55 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .map(|s| s.split_id.as_str().to_string())
             .collect();
 
+        // Verify pre-merge invariants on the inputs the planner gave us.
+        // These predicates are the same ones evaluated by the Stateright
+        // model and the TLA+ spec — see `quickwit-dst/src/invariants/`.
+        check_invariant!(
+            InvariantId::MP2,
+            has_minimum_splits(input_splits.len()),
+            ": merge with {} splits, need >= 2",
+            input_splits.len()
+        );
+        let merge_levels: Vec<u32> = input_splits.iter().map(|s| s.num_merge_ops).collect();
+        check_invariant!(
+            InvariantId::MP1,
+            all_same_merge_level(&merge_levels),
+            ": merge mixes levels {:?}",
+            merge_levels
+        );
+        let sort_fields_refs: Vec<&str> = input_splits
+            .iter()
+            .map(|s| s.sort_fields.as_str())
+            .collect();
+        let scope_windows: Vec<(i64, i64)> = input_splits
+            .iter()
+            .map(|s| {
+                s.window
+                    .as_ref()
+                    .map(|r| (r.start, r.end - r.start))
+                    .unwrap_or((0, 0))
+            })
+            .collect();
+        check_invariant!(
+            InvariantId::MP3,
+            all_same_compaction_scope(&sort_fields_refs, &scope_windows)
+        );
+
+        let total_input_rows: u64 = input_splits.iter().map(|s| s.num_rows).sum();
+
         // Empty output is valid (all input rows were empty). Still publish
         // the replacement so the empty input splits get marked for deletion
         // in the metastore — otherwise they stay Published forever since the
         // planner already drained them from its working set.
         if outputs.is_empty() {
+            // MP-4: empty output is only correct when there were no input
+            // rows to merge. Any other case means rows disappeared.
+            check_invariant!(
+                InvariantId::MP4,
+                total_input_rows == 0,
+                ": empty merge output but {} input rows",
+                total_input_rows
+            );
             info!(
                 merge_split_id = %merge_split_id,
                 num_replaced = replaced_split_ids.len(),
@@ -219,6 +268,19 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
 
             merged_splits.push(metadata);
         }
+
+        // MP-4 (RowsConserved): sum of output rows equals sum of input rows.
+        // This is the strong "no data loss, no duplication" check on the
+        // merge engine's output. Validates the merge engine independently
+        // of the planner.
+        let total_output_rows: u64 = merged_splits.iter().map(|s| s.num_rows).sum();
+        check_invariant!(
+            InvariantId::MP4,
+            total_input_rows == total_output_rows,
+            ": input rows {} != output rows {}",
+            total_input_rows,
+            total_output_rows
+        );
 
         // Send to uploader. Merges have no checkpoint delta, no publish lock,
         // and no publish token — they're just reorganizing existing data.

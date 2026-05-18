@@ -79,7 +79,6 @@ quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }
