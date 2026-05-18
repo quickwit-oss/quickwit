@@ -2789,7 +2789,10 @@ mod tests {
                 .expect("resolve");
         // Sanity: the second prefix column must be flagged DESC.
         assert!(
-            prefix_cols[1].descending,
+            prefix_cols[1]
+                .as_ref()
+                .expect("env present in this fixture")
+                .descending,
             "env must be parsed as DESC from sort schema",
         );
 

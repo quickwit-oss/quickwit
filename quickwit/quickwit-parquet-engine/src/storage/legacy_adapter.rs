@@ -28,11 +28,22 @@
 //!
 //! [`LegacyInputAdapter`] handles that case by buffering the whole
 //! file, decoding it through Arrow, concatenating into a single
-//! [`RecordBatch`], and re-encoding it as a **single-row-group**
-//! parquet stream that [`StreamingParquetReader`] can serve. The
-//! original file is already sorted (legacy files were written sorted);
-//! consolidating row groups preserves the order automatically — the
-//! adapter does NOT re-sort.
+//! [`RecordBatch`], and re-encoding it as a prefix-aligned multi-row-
+//! group parquet stream that [`StreamingParquetReader`] can serve.
+//! The adapter splits the consolidated batch at first-sort-col
+//! transitions (typically `metric_name`) and declares
+//! `qh.rg_partition_prefix_len = 1` on the re-encoded file so the
+//! merge engine's prefix-aware fast path can consume it. The original
+//! file is already sorted (legacy files were written sorted), so
+//! consolidating then re-splitting preserves order automatically —
+//! the adapter does NOT re-sort.
+//!
+//! When the original file lacks a `qh.sort_fields` KV or its first
+//! sort column can't be resolved in the schema, the adapter falls
+//! back to a single-row-group re-encode without claiming any prefix
+//! alignment. That route is still valid as input to the merge engine
+//! — it just goes through the engine's `prefix_len = 0` sub-region
+//! splitting path instead of the fast prefix-aligned path.
 //!
 //! Costs: one full-file decode + one full-file re-encode per legacy
 //! input, per merge. This is acceptable because legacy files age out
@@ -51,7 +62,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use arrow::array::RecordBatch;
+use arrow::array::{ArrayRef, NullArray, RecordBatch};
+use arrow::row::{RowConverter, SortField};
 use async_trait::async_trait;
 use bytes::Bytes;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -66,7 +78,10 @@ use super::streaming_reader::{
     ColumnPageStream, Page, ParquetReadError, RemoteByteSource, StreamingParquetReader,
 };
 use super::streaming_writer::StreamingParquetWriter;
-use super::writer::ParquetWriteError;
+use super::writer::{
+    PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_SORT_FIELDS, ParquetWriteError,
+};
+use crate::sort_fields::{is_timestamp_column_name, parse_sort_fields};
 
 /// Errors from the legacy input adapter.
 ///
@@ -108,6 +123,24 @@ pub enum LegacyAdapterError {
     /// against pathological inputs.
     #[error("legacy input file is too large to buffer: {actual} bytes exceeds limit {limit}")]
     InputTooLarge { actual: u64, limit: u64 },
+
+    /// The caller asked for `target_prefix_len > 0` but the file does
+    /// not advertise enough sort information to honor the request:
+    /// `qh.sort_fields` is absent, or the sort-fields string declares
+    /// fewer columns than requested. Either case means the file lacks
+    /// a name for one of the first `target_prefix_len` sort columns,
+    /// so the adapter can't claim alignment on a column it can't
+    /// identify. (Prefix columns that are *named* in `qh.sort_fields`
+    /// but missing from the arrow schema are NOT an error — per SS-3
+    /// the adapter treats them as implicitly null at every row, which
+    /// trivially satisfies alignment on that column.) The caller
+    /// should retry with a smaller `target_prefix_len` or pass `0` to
+    /// fall through to the single-row-group re-encode.
+    #[error(
+        "cannot honor target_prefix_len = {target}: {reason} (the legacy file does not advertise \
+         enough sort information to safely synthesize prefix-aligned row groups)"
+    )]
+    PrefixUnresolvable { target: u32, reason: String },
 }
 
 /// 4 GiB upper bound on the input file size we will buffer into RAM.
@@ -128,8 +161,25 @@ pub struct LegacyInputAdapter {
 
 impl LegacyInputAdapter {
     /// Open the legacy file at `path` through `source`, re-encode it
-    /// as a single-row-group parquet stream, and prepare to serve its
-    /// pages.
+    /// into a prefix-aligned parquet stream advertising
+    /// `qh.rg_partition_prefix_len = target_prefix_len`, and prepare
+    /// to serve its pages.
+    ///
+    /// The caller picks `target_prefix_len` based on what the rest of
+    /// the merge plan expects. Typical sources:
+    /// - Match the consensus `rg_partition_prefix_len` of the non-legacy inputs in the same merge
+    ///   (so all inputs end up at one value).
+    /// - Pass `0` when there is no non-legacy input, which produces a single-row-group re-encode
+    ///   and no prefix-alignment claim — the merge engine's `prefix_len = 0` sub-region splitting
+    ///   path handles it.
+    ///
+    /// When `target_prefix_len > 0`, the adapter slices the
+    /// consolidated batch at every transition of the first
+    /// `target_prefix_len` sort columns (composite key, via
+    /// [`RowConverter`]) and emits one output row group per slice.
+    /// Returns an error if the file does not have enough resolvable
+    /// sort columns to honor the request — the caller should either
+    /// retry with a smaller `target_prefix_len` or fall back to `0`.
     ///
     /// Issues exactly one buffered GET against `source` (covering the
     /// whole file). All subsequent reads are served from the in-memory
@@ -137,6 +187,7 @@ impl LegacyInputAdapter {
     pub async fn try_open(
         source: Arc<dyn RemoteByteSource>,
         path: PathBuf,
+        target_prefix_len: u32,
     ) -> Result<Self, LegacyAdapterError> {
         let file_size = source.file_size(&path).await?;
         if file_size > MAX_LEGACY_INPUT_BYTES {
@@ -147,7 +198,7 @@ impl LegacyInputAdapter {
         }
 
         let buffered = source.get_slice(&path, 0..file_size).await?;
-        let reencoded_bytes = reencode_as_single_row_group(buffered)?;
+        let reencoded_bytes = reencode_prefix_aligned(buffered, target_prefix_len)?;
         let reencoded_source: Arc<dyn RemoteByteSource> = Arc::new(InMemoryByteSource {
             bytes: Bytes::from(reencoded_bytes),
         });
@@ -176,10 +227,31 @@ impl ColumnPageStream for LegacyInputAdapter {
 }
 
 /// Decode `bytes` into a single concatenated [`RecordBatch`], then
-/// re-encode it as a single-row-group parquet stream that preserves
-/// the original file's `key_value_metadata` and `sorting_columns`.
-fn reencode_as_single_row_group(bytes: Bytes) -> Result<Vec<u8>, LegacyAdapterError> {
-    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes.clone())
+/// re-encode it according to `target_prefix_len`:
+/// - `target_prefix_len == 0`: emit a single row group with no prefix alignment claim. The original
+///   `qh.*` KV (which typically omits `qh.rg_partition_prefix_len`) is preserved verbatim. The
+///   merge engine's `prefix_len = 0` sub-region splitting path consumes this without further
+///   plumbing.
+/// - `target_prefix_len > 0`: slice the consolidated batch at every transition of the first
+///   `target_prefix_len` sort columns (composite key, via [`RowConverter`]) and emit one row group
+///   per distinct composite value. Stamp the output's KV with `qh.rg_partition_prefix_len =
+///   target_prefix_len` so the merge engine's prefix-aware fast path takes over.
+///
+/// When `target_prefix_len > 0` and the requested alignment cannot be
+/// honored — `qh.sort_fields` is absent, the sort-fields string
+/// declares fewer columns than requested, or one of the first N
+/// columns is missing from the arrow schema — returns
+/// [`LegacyAdapterError::PrefixUnresolvable`]. The caller can retry
+/// with a smaller `target_prefix_len` or fall back to `0`.
+///
+/// The zero-rows-but-`target_prefix_len > 0` case is degenerate but
+/// still stamps the KV: an empty file vacuously satisfies any prefix
+/// alignment claim.
+fn reencode_prefix_aligned(
+    bytes: Bytes,
+    target_prefix_len: u32,
+) -> Result<Vec<u8>, LegacyAdapterError> {
+    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes)
         .map_err(LegacyAdapterError::ParquetDecode)?;
 
     let arrow_schema = builder.schema().clone();
@@ -201,14 +273,212 @@ fn reencode_as_single_row_group(bytes: Bytes) -> Result<Vec<u8>, LegacyAdapterEr
     let consolidated_batch = arrow::compute::concat_batches(&arrow_schema, &decoded_batches)
         .map_err(LegacyAdapterError::ArrowDecode)?;
 
+    if target_prefix_len == 0 {
+        // Single-RG passthrough: re-encode the input as one row group
+        // with no prefix-alignment claim, so downstream readers take
+        // the legacy `prefix_len = 0` path.
+        //
+        // Preserving the original footer KVs unchanged would leak any
+        // pre-existing `qh.rg_partition_prefix_len = N` (nonzero)
+        // claim from the input into the output. The output is *one*
+        // row group whose rows can carry multiple prefix-column
+        // values, so advertising N > 0 would cause downstream to take
+        // the prefix-aware path and then fail PA-1 on the multi-value
+        // RG. Strip the prefix KV instead; absence of the key is the
+        // legacy convention for "no alignment claim".
+        let cleaned_kv = original_kv.map(|mut kvs| {
+            kvs.retain(|k| k.key != PARQUET_META_RG_PARTITION_PREFIX_LEN);
+            kvs
+        });
+        let props = build_writer_properties(
+            &arrow_schema,
+            original_sorting_cols.unwrap_or_default(),
+            cleaned_kv,
+            consolidated_batch.num_rows(),
+        );
+        return write_single_row_group(arrow_schema, props, consolidated_batch);
+    }
+
+    let prefix_col_indices =
+        resolve_prefix_sort_cols(original_kv.as_ref(), &arrow_schema, target_prefix_len)?;
+
+    let slices = if consolidated_batch.num_rows() == 0 {
+        Vec::new()
+    } else {
+        compute_prefix_value_slices(&consolidated_batch, &prefix_col_indices)?
+    };
+    let kv_with_prefix = inject_prefix_len_kv(original_kv, target_prefix_len);
     let props = build_writer_properties(
         &arrow_schema,
         original_sorting_cols.unwrap_or_default(),
-        original_kv,
+        Some(kv_with_prefix),
         consolidated_batch.num_rows(),
     );
+    write_multi_row_group(arrow_schema, props, consolidated_batch, &slices)
+}
 
-    write_single_row_group(arrow_schema, props, consolidated_batch)
+/// Resolve the first `prefix_len` sort columns from `qh.sort_fields`
+/// to arrow-schema indices. Honors the
+/// `timestamp` / `timestamp_secs` alias the rest of the engine uses.
+///
+/// Returns one entry per requested prefix column: `Some(idx)` if the
+/// column is present in the schema, or `None` if the column is
+/// declared in `qh.sort_fields` but absent from the arrow schema
+/// (treated as implicitly null at every row per SS-3). Returns
+/// [`LegacyAdapterError::PrefixUnresolvable`] only when the file
+/// doesn't advertise enough sort-column *names* (missing/unparseable
+/// `qh.sort_fields`, or declares fewer columns than requested) —
+/// those are cases where we don't even know which column the prefix
+/// alignment is supposed to be on.
+fn resolve_prefix_sort_cols(
+    kv: Option<&Vec<KeyValue>>,
+    arrow_schema: &arrow::datatypes::Schema,
+    prefix_len: u32,
+) -> Result<Vec<Option<usize>>, LegacyAdapterError> {
+    debug_assert!(prefix_len > 0);
+    let sort_fields_str = kv
+        .and_then(|kvs| kvs.iter().find(|k| k.key == PARQUET_META_SORT_FIELDS))
+        .and_then(|kv| kv.value.as_deref())
+        .ok_or_else(|| LegacyAdapterError::PrefixUnresolvable {
+            target: prefix_len,
+            reason: format!("{PARQUET_META_SORT_FIELDS} KV is absent"),
+        })?;
+    let parsed =
+        parse_sort_fields(sort_fields_str).map_err(|e| LegacyAdapterError::PrefixUnresolvable {
+            target: prefix_len,
+            reason: format!("{PARQUET_META_SORT_FIELDS} is unparseable: {e}"),
+        })?;
+    let prefix_len_usize = prefix_len as usize;
+    if parsed.column.len() < prefix_len_usize {
+        return Err(LegacyAdapterError::PrefixUnresolvable {
+            target: prefix_len,
+            reason: format!(
+                "{PARQUET_META_SORT_FIELDS} declares only {} sort columns",
+                parsed.column.len(),
+            ),
+        });
+    }
+    let mut indices = Vec::with_capacity(prefix_len_usize);
+    for sf in parsed.column.iter().take(prefix_len_usize) {
+        let resolved = if is_timestamp_column_name(&sf.name)
+            && arrow_schema.index_of("timestamp_secs").is_ok()
+        {
+            "timestamp_secs"
+        } else {
+            sf.name.as_str()
+        };
+        // Missing column → implicit null per SS-3. A column that is
+        // null at every row is constant, which trivially satisfies
+        // alignment on that column. The transition computation
+        // synthesizes a NullArray in its place.
+        //
+        // Adapter-vs-reader consistency note (Codex P2 on PR #6425):
+        // we record `None` here and the caller stamps
+        // `rg_partition_prefix_len = target_prefix_len` on the output.
+        // The matching reader-side handling — `find_prefix_parquet_col_indices`
+        // returning `Vec<Option<PrefixColumn>>` and synthesizing a
+        // constant `[0x00, 0x00]` byte sequence for `None` slots —
+        // lands in the next slice (PR #6426, the hardening PR; F12
+        // from the adversarial review). The only caller of this
+        // adapter is `execute_merge_operation` introduced in
+        // PR #6423, which sits above #6426 in the stack, so there is
+        // no production caller that can produce a missing-column
+        // prefix until the reader fix is in place.
+        indices.push(arrow_schema.index_of(resolved).ok());
+    }
+    Ok(indices)
+}
+
+/// Walk the composite prefix value row-by-row over the columns at
+/// `prefix_col_indices` and produce `(start, len)` slices, one per
+/// distinct composite-value run. Uses a single [`RowConverter`] over
+/// all prefix columns so dictionary / utf8 / primitive types are
+/// handled uniformly and N-column equality is a single byte
+/// comparison per row.
+///
+/// An entry of `None` in `prefix_col_indices` represents a prefix
+/// column that is named in `qh.sort_fields` but absent from the
+/// file's arrow schema. Per SS-3 those rows are treated as having
+/// null values, so this function materializes a [`NullArray`] of the
+/// batch's length in that slot. A column that's null at every row is
+/// constant and contributes no transitions to the composite key —
+/// equivalent to skipping it, but kept explicit so the resulting
+/// alignment claim matches the caller's requested `target_prefix_len`.
+fn compute_prefix_value_slices(
+    batch: &RecordBatch,
+    prefix_col_indices: &[Option<usize>],
+) -> Result<Vec<(usize, usize)>, LegacyAdapterError> {
+    let n = batch.num_rows();
+    let cols: Vec<ArrayRef> = prefix_col_indices
+        .iter()
+        .map(|idx_opt| match idx_opt {
+            Some(idx) => Arc::clone(batch.column(*idx)),
+            None => Arc::new(NullArray::new(n)) as ArrayRef,
+        })
+        .collect();
+    let sort_fields: Vec<SortField> = cols
+        .iter()
+        .map(|c| SortField::new(c.data_type().clone()))
+        .collect();
+    let converter = RowConverter::new(sort_fields).map_err(LegacyAdapterError::ArrowDecode)?;
+    let rows = converter
+        .convert_columns(&cols)
+        .map_err(LegacyAdapterError::ArrowDecode)?;
+    let n_rows = rows.num_rows();
+    if n_rows == 0 {
+        return Ok(Vec::new());
+    }
+    let mut slices = Vec::new();
+    let mut start = 0;
+    for i in 1..n_rows {
+        if rows.row(i) != rows.row(i - 1) {
+            slices.push((start, i - start));
+            start = i;
+        }
+    }
+    slices.push((start, n_rows - start));
+    Ok(slices)
+}
+
+/// Inject (or replace) the `qh.rg_partition_prefix_len` KV entry on
+/// the re-encoded file. Legacy files omit this key entirely; the
+/// re-encoded output advertises the synthesized prefix alignment so
+/// the merge engine's reader picks the fast path.
+fn inject_prefix_len_kv(original: Option<Vec<KeyValue>>, prefix_len: u32) -> Vec<KeyValue> {
+    let mut kvs = original.unwrap_or_default();
+    kvs.retain(|k| k.key != PARQUET_META_RG_PARTITION_PREFIX_LEN);
+    kvs.push(KeyValue::new(
+        PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+        prefix_len.to_string(),
+    ));
+    kvs
+}
+
+/// Write `batch` to a multi-row-group parquet stream: one RG per
+/// `(start, len)` slice in `slices`. Slices are emitted in order, so
+/// the sort order observed by readers matches the order of the
+/// consolidated batch.
+fn write_multi_row_group(
+    arrow_schema: arrow::datatypes::SchemaRef,
+    props: WriterProperties,
+    batch: RecordBatch,
+    slices: &[(usize, usize)],
+) -> Result<Vec<u8>, LegacyAdapterError> {
+    let mut out: Vec<u8> = Vec::new();
+    let mut writer = StreamingParquetWriter::try_new(&mut out, arrow_schema, props)?;
+    for &(start, len) in slices {
+        if len == 0 {
+            continue;
+        }
+        let mut row_group = writer.start_row_group()?;
+        for col_idx in 0..batch.num_columns() {
+            let slice = batch.column(col_idx).slice(start, len);
+            row_group.write_next_column(&slice)?;
+        }
+        row_group.finish()?;
+    }
+    writer.close()?;
+    Ok(out)
 }
 
 /// Read sorting columns from row group 0 of `metadata`, if present.
@@ -536,6 +806,86 @@ mod tests {
         PathBuf::from("legacy_test.parquet")
     }
 
+    /// Build a multi-RG fixture whose rows are sorted by `metric_name`
+    /// (so consolidating them produces a batch with contiguous
+    /// metric_name runs, which is what the legacy adapter expects on
+    /// real legacy files). `metrics` is `(name, rows_per_metric)` in
+    /// the order they should appear; the writer rolls a new RG every
+    /// `rows_per_rg` so the multi-RG structure is exercised
+    /// independently of the metric_name partitioning.
+    fn write_sorted_multi_rg_legacy_file(
+        metrics: &[(&str, usize)],
+        sort_fields_value: &str,
+        rows_per_rg: usize,
+    ) -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+
+        let total: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let metric_names_vec: Vec<&str> = metrics.iter().map(|(name, _)| *name).collect();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total);
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total);
+        let mut values: Vec<f64> = Vec::with_capacity(total);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (_, count)) in metrics.iter().enumerate() {
+            for _ in 0..*count {
+                metric_keys.push(metric_idx as i32);
+                tsids.push(1000 + row_idx as i64);
+                // -timestamp_secs/V2 in the sort schema means
+                // timestamps DESC within a metric run.
+                timestamps.push(1_700_000_000 + (*count as u64) - (row_idx % *count as u64));
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(StringArray::from(metric_names_vec)),
+            )
+            .expect("metric dict"),
+        );
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let svc_keys: Vec<Option<i32>> = (0..total as i32).map(|i| Some(i % 3)).collect();
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(svc_keys),
+                Arc::new(StringArray::from(vec!["api", "db", "cache"])),
+            )
+            .expect("svc dict"),
+        );
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .expect("sorted fixture batch");
+
+        let kvs = vec![KeyValue::new(
+            PARQUET_META_SORT_FIELDS.to_string(),
+            sort_fields_value.to_string(),
+        )];
+        let sorting_cols = default_sorting_cols(&schema);
+        write_multi_rg_file(&[batch], kvs, sorting_cols, rows_per_rg)
+    }
+
     fn default_sorting_cols(arrow_schema: &ArrowSchema) -> Vec<SortingColumn> {
         vec![
             SortingColumn {
@@ -590,7 +940,7 @@ mod tests {
             1,
         );
         let source = CountingInMemorySource::new(bytes);
-        let adapter = LegacyInputAdapter::try_open(source.clone(), dummy_path())
+        let adapter = LegacyInputAdapter::try_open(source.clone(), dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -642,7 +992,7 @@ mod tests {
         assert_eq!(pre_total, 300);
 
         let source = CountingInMemorySource::new(bytes);
-        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -689,7 +1039,7 @@ mod tests {
         // file, and assert the consolidated row count + schema match
         // the adapter's metadata.
         let source = CountingInMemorySource::new(bytes);
-        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -730,7 +1080,7 @@ mod tests {
             40,
         );
         let source = CountingInMemorySource::new(bytes);
-        let adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -761,7 +1111,7 @@ mod tests {
         let sorting_cols = default_sorting_cols(&arrow_schema);
         let bytes = write_multi_rg_file(&[batch_a, batch_b], Vec::new(), sorting_cols.clone(), 30);
         let source = CountingInMemorySource::new(bytes);
-        let adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -791,7 +1141,7 @@ mod tests {
         let oracle = read_back_to_single_batch(bytes.clone());
 
         let source = CountingInMemorySource::new(bytes);
-        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let mut adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
         // Drain to drive the streaming path.
@@ -856,7 +1206,7 @@ mod tests {
             file_size: 4096,
         });
 
-        match LegacyInputAdapter::try_open(source, dummy_path()).await {
+        match LegacyInputAdapter::try_open(source, dummy_path(), 0).await {
             Err(LegacyAdapterError::Io(err)) => {
                 assert!(
                     err.to_string().contains("simulated"),
@@ -898,7 +1248,7 @@ mod tests {
         );
         let oracle = read_back_to_single_batch(bytes.clone());
 
-        let reencoded = reencode_as_single_row_group(bytes).expect("reencode helper");
+        let reencoded = reencode_prefix_aligned(bytes, 0).expect("reencode helper");
         let reencoded_batch = read_back_to_single_batch(Bytes::from(reencoded));
 
         assert_eq!(reencoded_batch.num_rows(), oracle.num_rows());
@@ -929,7 +1279,7 @@ mod tests {
             80,
         );
         let source = CountingInMemorySource::new(bytes);
-        let adapter = LegacyInputAdapter::try_open(source, dummy_path())
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
             .await
             .expect("adapter open");
 
@@ -951,5 +1301,531 @@ mod tests {
             let stream: &mut dyn ColumnPageStream = &mut adapter;
             assert!(stream.next_page().await.expect("idempotent EOF").is_none());
         }
+    }
+
+    /// Real legacy files carry `qh.sort_fields` and are written sorted
+    /// by the schema. The adapter must split the consolidated batch
+    /// into one RG per first-sort-col value and stamp the re-encoded
+    /// file with `qh.rg_partition_prefix_len = 1` so the merge engine
+    /// reads it through the prefix-aware fast path. The streaming
+    /// engine's duplicate-prefix invariant verifies on read that each
+    /// RG's metric_name is unique within the file; this test
+    /// indirectly exercises that contract.
+    #[tokio::test]
+    async fn test_legacy_input_with_sort_fields_produces_prefix_aligned_multi_rg() {
+        let metrics = [
+            ("cpu.usage", 40usize),
+            ("memory.used", 40),
+            ("net.bytes", 40),
+        ];
+        // Force multi-RG layout in the input (rows_per_rg=30, smaller
+        // than any metric run) so the fixture proves the adapter
+        // collapses arbitrary input RG boundaries into prefix-aligned
+        // output RG boundaries.
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&metrics, "metric_name|-timestamp_secs/V2", 30);
+        let pre_builder =
+            ParquetRecordBatchReaderBuilder::try_new(bytes.clone()).expect("pre-builder");
+        assert!(
+            pre_builder.metadata().num_row_groups() >= 2,
+            "fixture must produce multi-RG input; got {}",
+            pre_builder.metadata().num_row_groups(),
+        );
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 1)
+            .await
+            .expect("adapter open");
+
+        // Three distinct metric_names → three output RGs.
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            3,
+            "adapter must emit one RG per distinct first-sort-col value",
+        );
+        let rg_rows: Vec<i64> = (0..adapter.metadata().num_row_groups())
+            .map(|i| adapter.metadata().row_group(i).num_rows())
+            .collect();
+        assert_eq!(rg_rows, vec![40, 40, 40], "row counts per RG");
+
+        // KV must advertise prefix_len = 1.
+        let kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .expect("kv metadata");
+        let prefix_kv = kv
+            .iter()
+            .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+            .and_then(|k| k.value.clone());
+        assert_eq!(
+            prefix_kv.as_deref(),
+            Some("1"),
+            "re-encoded file must declare rg_partition_prefix_len=1",
+        );
+    }
+
+    /// Single-metric legacy file: only one prefix value, so the
+    /// re-encoded file has exactly one RG (vacuously prefix-aligned).
+    /// The `qh.rg_partition_prefix_len = 1` KV is still set so the
+    /// reader's duplicate-prefix check has nothing to validate (one
+    /// RG can never violate the invariant) and the file looks
+    /// identical to a metric-aligned new-format file.
+    #[tokio::test]
+    async fn test_legacy_input_single_metric_yields_one_rg_with_prefix_kv() {
+        let metrics = [("cpu.usage", 90usize)];
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&metrics, "metric_name|-timestamp_secs/V2", 30);
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 1)
+            .await
+            .expect("adapter open");
+
+        assert_eq!(adapter.metadata().num_row_groups(), 1);
+        assert_eq!(adapter.metadata().row_group(0).num_rows(), 90);
+
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert_eq!(prefix_kv.as_deref(), Some("1"));
+    }
+
+    /// `target_prefix_len = 0`: the adapter consolidates into a
+    /// single row group and does NOT stamp
+    /// `qh.rg_partition_prefix_len`, regardless of what the original
+    /// file's KV says. This is the "all-legacy merge with no non-
+    /// legacy peers" path — the merge engine's `prefix_len = 0`
+    /// sub-region splitting consumes it directly.
+    #[tokio::test]
+    async fn test_target_prefix_len_zero_passes_through_as_single_rg() {
+        // Even with a parseable sort_fields KV, target = 0 must not
+        // alter the layout or stamp the prefix KV.
+        let metrics = [("cpu.usage", 50usize), ("memory.used", 50)];
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&metrics, "metric_name|-timestamp_secs/V2", 30);
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
+            .await
+            .expect("adapter open");
+
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            1,
+            "target_prefix_len = 0 must consolidate to a single RG",
+        );
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert!(
+            prefix_kv.is_none(),
+            "target_prefix_len = 0 must not stamp a prefix_len value; got {prefix_kv:?}",
+        );
+    }
+
+    /// Regression for Codex P2 on PR #6425: when the *input* file
+    /// already carries a stale nonzero `qh.rg_partition_prefix_len`
+    /// (e.g., it was produced by a prefix-aware writer and is now
+    /// being re-encoded through the legacy fallback path), passing
+    /// `target_prefix_len = 0` must STRIP that KV from the re-
+    /// encoded output. Without the strip, the consolidated single-RG
+    /// file would still advertise the stale prefix claim and
+    /// downstream metadata extraction would take the prefix-aware
+    /// path against a single RG that carries multiple first-prefix
+    /// values — failing PA-1 min/max on read.
+    #[tokio::test]
+    async fn test_target_prefix_len_zero_strips_stale_prefix_kv_from_input() {
+        // Build a 2-RG input with sort_fields AND a stale prefix KV
+        // (1) — simulating a prefix-aware input being demoted to the
+        // legacy single-RG path.
+        let metrics = [("cpu.usage", 30usize), ("memory.used", 30)];
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+        let total: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total);
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total);
+        let mut values: Vec<f64> = Vec::with_capacity(total);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (_, count)) in metrics.iter().enumerate() {
+            for _ in 0..*count {
+                metric_keys.push(metric_idx as i32);
+                tsids.push(1000 + row_idx as i64);
+                timestamps.push(1_700_000_000 + (*count as u64) - (row_idx % *count as u64));
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(StringArray::from(
+                    metrics.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+                )),
+            )
+            .expect("metric dict"),
+        );
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let svc_keys: Vec<Option<i32>> = (0..total as i32).map(|i| Some(i % 3)).collect();
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(svc_keys),
+                Arc::new(StringArray::from(vec!["api", "db", "cache"])),
+            )
+            .expect("svc dict"),
+        );
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .expect("batch");
+
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            // The stale claim we want stripped.
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "1".to_string(),
+            ),
+        ];
+        let bytes = write_multi_rg_file(&[batch], kvs, default_sorting_cols(&schema), 30);
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
+            .await
+            .expect("adapter open with target_prefix_len = 0");
+
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            1,
+            "target_prefix_len = 0 must consolidate to a single RG",
+        );
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert!(
+            prefix_kv.is_none(),
+            "stale `rg_partition_prefix_len = 1` from the input MUST be stripped when caller asks \
+             for target_prefix_len = 0; got {prefix_kv:?}",
+        );
+    }
+
+    /// `target_prefix_len > 0` on a file with no `qh.sort_fields` KV
+    /// must surface a `PrefixUnresolvable` error rather than silently
+    /// fall through. The caller decides whether to retry at a smaller
+    /// `target_prefix_len` or with `0`.
+    #[tokio::test]
+    async fn test_target_prefix_len_one_without_sort_fields_returns_unresolvable() {
+        // No sort_fields KV → cannot resolve any prefix column.
+        let batch_a = make_metrics_batch(40);
+        let arrow_schema = batch_a.schema();
+        let bytes = write_multi_rg_file(
+            &[batch_a],
+            Vec::new(),
+            default_sorting_cols(&arrow_schema),
+            40,
+        );
+
+        let source = CountingInMemorySource::new(bytes);
+        let result = LegacyInputAdapter::try_open(source, dummy_path(), 1).await;
+        let Err(err) = result else {
+            panic!("missing sort_fields must surface as PrefixUnresolvable, got Ok(...)");
+        };
+        match err {
+            LegacyAdapterError::PrefixUnresolvable { target, reason } => {
+                assert_eq!(target, 1);
+                assert!(
+                    reason.contains("sort_fields"),
+                    "reason should mention sort_fields KV; got: {reason}",
+                );
+            }
+            other => panic!("expected PrefixUnresolvable, got: {other}"),
+        }
+    }
+
+    /// `target_prefix_len > declared sort cols` must also bail with
+    /// `PrefixUnresolvable`. Confirms the caller-driven negotiation
+    /// contract: the adapter never silently advertises a smaller
+    /// alignment than asked for.
+    #[tokio::test]
+    async fn test_target_prefix_len_exceeds_declared_sort_cols_returns_unresolvable() {
+        // Two-col sort schema → ask for prefix_len = 3 → bail.
+        let metrics = [("cpu.usage", 30usize), ("memory.used", 30)];
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&metrics, "metric_name|-timestamp_secs/V2", 30);
+
+        let source = CountingInMemorySource::new(bytes);
+        let result = LegacyInputAdapter::try_open(source, dummy_path(), 3).await;
+        let Err(err) = result else {
+            panic!("prefix_len exceeding declared sort cols must surface as Unresolvable");
+        };
+        match err {
+            LegacyAdapterError::PrefixUnresolvable { target, reason } => {
+                assert_eq!(target, 3);
+                assert!(
+                    reason.contains("declares only"),
+                    "reason should mention sort col count; got: {reason}",
+                );
+            }
+            other => panic!("expected PrefixUnresolvable, got: {other}"),
+        }
+    }
+
+    /// Composite prefix (`target_prefix_len = 2`): each output RG
+    /// carries a unique `(metric_name, service)` tuple. Exercises the
+    /// N > 1 path of `compute_prefix_value_slices` and confirms the
+    /// stamped KV reflects the caller's request.
+    #[tokio::test]
+    async fn test_target_prefix_len_two_splits_by_metric_and_service() {
+        // 4 (metric, service) groups × 20 rows; sorted ascending by
+        // (metric_name, service). Multi-RG input layout (rows_per_rg=25)
+        // forces consolidation before re-splitting.
+        let groups = [
+            ("cpu.usage", "api", 20usize),
+            ("cpu.usage", "db", 20),
+            ("memory.used", "api", 20),
+            ("memory.used", "cache", 20),
+        ];
+        let bytes = write_sorted_composite_legacy_file(
+            &groups,
+            "metric_name|service|-timestamp_secs/V2",
+            25,
+        );
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 2)
+            .await
+            .expect("adapter open with prefix_len=2");
+
+        // 4 distinct (metric_name, service) tuples → 4 output RGs.
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            4,
+            "composite prefix must split at (metric, service) transitions",
+        );
+        let rg_rows: Vec<i64> = (0..adapter.metadata().num_row_groups())
+            .map(|i| adapter.metadata().row_group(i).num_rows())
+            .collect();
+        assert_eq!(rg_rows, vec![20, 20, 20, 20]);
+
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert_eq!(
+            prefix_kv.as_deref(),
+            Some("2"),
+            "stamped prefix_len must match caller's request",
+        );
+    }
+
+    /// SS-3: a sort column named in `qh.sort_fields` but missing from
+    /// the arrow schema is treated as implicitly null at every row.
+    /// Null at every row is constant, so the column trivially
+    /// satisfies any prefix-alignment claim involving it — the
+    /// adapter must NOT bail with `PrefixUnresolvable` in this case.
+    /// Transitions are driven purely by the columns that ARE present.
+    ///
+    /// Fixture: sort_fields declares `metric_name|env|-timestamp_secs`
+    /// but the schema doesn't contain `env`. With prefix_len = 2 the
+    /// adapter must succeed, split only at `metric_name` transitions
+    /// (the null `env` contributes no transitions), and stamp
+    /// `prefix_len = 2` on the output.
+    #[tokio::test]
+    async fn test_missing_prefix_col_treated_as_null_satisfies_alignment() {
+        let metrics = [("cpu.usage", 30usize), ("memory.used", 30)];
+        // Sort schema declares 3 cols; the fixture schema has
+        // metric_name and timestamp_secs but NO `env` column. Per
+        // SS-3 the merge engine treats `env` as null at every row.
+        let bytes =
+            write_sorted_multi_rg_legacy_file(&metrics, "metric_name|env|-timestamp_secs/V2", 30);
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 2)
+            .await
+            .expect("missing-col-as-null must satisfy alignment without erroring");
+
+        // Two metrics × constant null `env` → two output RGs (one per metric).
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            2,
+            "missing prefix col (treated as null) contributes no transitions; only metric_name \
+             transitions split RGs",
+        );
+        let rg_rows: Vec<i64> = (0..adapter.metadata().num_row_groups())
+            .map(|i| adapter.metadata().row_group(i).num_rows())
+            .collect();
+        assert_eq!(rg_rows, vec![30, 30]);
+
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert_eq!(
+            prefix_kv.as_deref(),
+            Some("2"),
+            "stamped prefix_len must match caller's request even when one col is implicitly null",
+        );
+
+        // SS-3 consumer-side verification: the file the adapter just
+        // produced must be consumable by the merge engine's
+        // `extract_rg_composite_prefix_key` reader. With `env` absent
+        // from the parquet schema, `find_prefix_parquet_col_indices`
+        // returns `None` in that slot and the composite-key extractor
+        // skips it. PA-1 + PA-3 still hold: each RG's metric_name
+        // min == max, and skipping the constant-null `env` slot makes
+        // the RG composite keys differ only by metric_name.
+        crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+            adapter.metadata(),
+            "metric_name|env|-timestamp_secs/V2",
+            2,
+            "test_missing_prefix_col_treated_as_null_satisfies_alignment adapter output",
+        )
+        .expect("SS-3 null col must satisfy PA-1 + PA-3 (null is constant across all RGs)");
+    }
+
+    /// Composite-prefix fixture: rows grouped by `(metric, service)`
+    /// in the order supplied. Used by the prefix_len=2 test to verify
+    /// transitions on the second prefix column trigger RG splits.
+    fn write_sorted_composite_legacy_file(
+        groups: &[(&str, &str, usize)],
+        sort_fields_value: &str,
+        rows_per_rg: usize,
+    ) -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+
+        // Build per-group dictionary index tables for metric_name and
+        // service. Map each distinct value to its key.
+        let mut metric_names_vec: Vec<&str> = Vec::new();
+        let mut service_values_vec: Vec<&str> = Vec::new();
+        for (metric, service, _) in groups {
+            if !metric_names_vec.contains(metric) {
+                metric_names_vec.push(metric);
+            }
+            if !service_values_vec.contains(service) {
+                service_values_vec.push(service);
+            }
+        }
+
+        let total: usize = groups.iter().map(|(_, _, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total);
+        let mut svc_keys: Vec<Option<i32>> = Vec::with_capacity(total);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total);
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total);
+        let mut values: Vec<f64> = Vec::with_capacity(total);
+        let mut row_idx: u64 = 0;
+        for (metric, service, count) in groups {
+            let metric_key = metric_names_vec
+                .iter()
+                .position(|m| m == metric)
+                .expect("metric known") as i32;
+            let svc_key = service_values_vec
+                .iter()
+                .position(|s| s == service)
+                .expect("service known") as i32;
+            for _ in 0..*count {
+                metric_keys.push(metric_key);
+                svc_keys.push(Some(svc_key));
+                tsids.push(1000 + row_idx as i64);
+                timestamps.push(1_700_000_000 + (*count as u64) - (row_idx % *count as u64));
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(StringArray::from(metric_names_vec)),
+            )
+            .expect("metric dict"),
+        );
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(svc_keys),
+                Arc::new(StringArray::from(service_values_vec)),
+            )
+            .expect("svc dict"),
+        );
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .expect("composite fixture batch");
+
+        let kvs = vec![KeyValue::new(
+            PARQUET_META_SORT_FIELDS.to_string(),
+            sort_fields_value.to_string(),
+        )];
+        let sorting_cols = default_sorting_cols(&schema);
+        write_multi_rg_file(&[batch], kvs, sorting_cols, rows_per_rg)
     }
 }
