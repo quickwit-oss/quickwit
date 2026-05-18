@@ -13,9 +13,10 @@
 // limitations under the License.
 
 //! End-to-end pipeline tests exercising the merge engines on multi-input,
-//! multi-metric, multi-row-group fixtures. Complements
-//! `parquet_merge_pipeline_test.rs` (which covers the simpler two-input,
-//! one-metric-per-input case) with the harder scenarios:
+//! multi-metric, multi-row-group fixtures, in both n=1 and m:n (n > 1)
+//! output configurations. Complements `parquet_merge_pipeline_test.rs`
+//! (which covers the simpler two-input, one-metric-per-input case) with
+//! the harder scenarios:
 //!
 //! - **Three inputs**, each carrying **three metrics** (`aaa.alpha`, `bbb.beta`,
 //!   `ccc.gamma`). Across inputs, the metrics overlap and the per-metric
@@ -24,23 +25,27 @@
 //!   per metric). Timestamps within each (metric, timeseries) overlap across
 //!   inputs but are unique — the merge must interleave rows from all three
 //!   inputs heavily, not concatenate them.
-//! - **Multi-row-group output** via `ParquetWriterConfig::row_group_size = 50`,
-//!   so the 180-row merge output breaks into 4 row groups. Exercises the
-//!   writer's multi-RG path in both engines.
+//! - **Multi-row-group output** via `ParquetWriterConfig::row_group_size = 50`
+//!   on the n=1 tests, so the 180-row merge output breaks into 4 row groups.
+//!   Exercises the writer's multi-RG path in both engines.
+//! - **Multi-row-group inputs with `rg_partition_prefix_len = 1`** in the
+//!   bonus tests (`write_prefix_aligned_input`): the writer flushes one row
+//!   group per distinct `metric_name`, so each input file carries three row
+//!   groups in alignment with the sort prefix. The streaming engine reads
+//!   these through its prefix-aware fast path.
+//! - **m:n merges** in the bonus tests: a small
+//!   `ParquetMergePipelineParams::target_split_size_bytes` forces the
+//!   executor to ask the engine for `num_outputs > 1`. The bonus
+//!   assertions cover the multi-output contract — sum-equals-total,
+//!   internal monotonicity, inter-output `sorted_series` disjointness,
+//!   and union-equals-full-set on metrics/services.
 //!
 //! Both `ParquetMergePipelineParams::use_streaming_engine = false` (the
-//! in-memory engine) and `= true` (the streaming engine) are exercised through
-//! the same fixture and the same correctness contract. The streaming-engine
-//! tests additionally assert `PEAK_BODY_COL_PAGE_CACHE_LEN > 0` to confirm the
-//! flag routed through the streaming path and not the in-memory fallback.
-//!
-//! **Scope note**: the actor pipeline today hardcodes the merge engine to
-//! `num_outputs = 1` (see `ParquetMergeExecutor::handle`). m:n merges with
-//! n > 1 are reachable only by calling the engine entry points directly,
-//! so the multi-output correctness contract — including non-overlapping
-//! `sorted_series` ranges across outputs — is verified by the engine-level
-//! parity tests in `quickwit-parquet-engine::merge::tests::parity` instead
-//! of by this module.
+//! in-memory engine) and `= true` (the streaming engine) are exercised
+//! across all four scenarios (n=1 × {prefix_len=0}, n>1 × {prefix_len=1}).
+//! Streaming-engine variants additionally assert
+//! `PEAK_BODY_COL_PAGE_CACHE_LEN > 0` to confirm the flag routed through
+//! the streaming path and not the in-memory fallback.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -59,7 +64,7 @@ use quickwit_parquet_engine::merge::policy::{
 };
 use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
-use quickwit_parquet_engine::storage::ParquetWriterConfig;
+use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
 use quickwit_parquet_engine::table_config::TableConfig;
 use quickwit_proto::metastore::{
     EmptyResponse, MetastoreServiceClient, MockMetastoreService, StageMetricsSplitsRequest,
@@ -100,7 +105,10 @@ fn create_multi_metric_batch(
 }
 
 /// Build a `ParquetSplitMetadata` advertising multiple metric names and a
-/// caller-supplied row count + time range.
+/// caller-supplied row count + time range. `prefix_len` controls the
+/// `rg_partition_prefix_len` stamped into the input file — 0 for legacy
+/// inputs, 1 for prefix-aligned inputs (each row group covers exactly one
+/// `metric_name`).
 fn make_multi_metric_split_metadata(
     split_id: &str,
     num_rows: u64,
@@ -108,6 +116,7 @@ fn make_multi_metric_split_metadata(
     ts_start: u64,
     ts_end: u64,
     metric_names: &[&str],
+    prefix_len: u32,
 ) -> ParquetSplitMetadata {
     let table_config = TableConfig::default();
     let mut builder = ParquetSplitMetadata::metrics_builder()
@@ -119,11 +128,39 @@ fn make_multi_metric_split_metadata(
         .size_bytes(size_bytes)
         .sort_fields(table_config.effective_sort_fields())
         .window_start_secs(0)
-        .window_duration_secs(900);
+        .window_duration_secs(900)
+        .rg_partition_prefix_len(prefix_len);
     for metric in metric_names {
         builder = builder.add_metric_name(*metric);
     }
     builder.build()
+}
+
+/// Write a multi-metric input file with `rg_partition_prefix_len = 1` and
+/// one row group per distinct metric. Picks `row_group_size = per-metric row
+/// count` so the writer naturally flushes at every metric boundary after
+/// sorting — each row group ends up containing exactly one distinct
+/// `metric_name`, satisfying the prefix-alignment invariant the writer
+/// validates on close.
+///
+/// Returns the file size in bytes (the caller stamps this back into the
+/// `ParquetSplitMetadata.size_bytes` field for the planner / executor).
+fn write_prefix_aligned_input(
+    dir: &Path,
+    filename: &str,
+    batch: &RecordBatch,
+    split_metadata: &ParquetSplitMetadata,
+    rows_per_metric: usize,
+) -> u64 {
+    let table_config = TableConfig::default();
+    let writer_config = ParquetWriterConfig::default().with_row_group_size(rows_per_metric);
+    let writer = ParquetWriter::new(writer_config, &table_config)
+        .expect("test ParquetWriter (prefix-aligned)");
+    let path = dir.join(filename);
+    let (file_size, _write_metadata) = writer
+        .write_to_file_with_metadata(batch, &path, Some(split_metadata))
+        .expect("write_to_file_with_metadata for prefix-aligned input");
+    file_size
 }
 
 /// Three canonical metric names sorted alphabetically. Picked so the sort
@@ -212,6 +249,7 @@ async fn build_three_multi_metric_inputs(
             ts_start,
             ts_end,
             &[METRIC_AAA, METRIC_BBB, METRIC_CCC],
+            0, // prefix_len = 0: legacy default, no per-RG alignment claim
         );
         let size_bytes = write_test_parquet_file(temp_dir, &filename, batch, &meta);
         // Re-build metadata now that size_bytes is known. Mirrors what the
@@ -224,6 +262,98 @@ async fn build_three_multi_metric_inputs(
                 ts_start,
                 ts_end,
                 &[METRIC_AAA, METRIC_BBB, METRIC_CCC],
+                0,
+            );
+            m.parquet_file = filename.clone();
+            m
+        };
+        let bytes_on_disk = std::fs::read(temp_dir.join(&filename)).unwrap();
+        ram_storage
+            .put(Path::new(&filename), Box::new(bytes_on_disk))
+            .await
+            .unwrap();
+        paths.push(temp_dir.join(&filename));
+        splits.push(meta);
+    }
+    (paths, splits)
+}
+
+/// Same shape and content as `build_three_multi_metric_inputs`, but each
+/// input is written with `rg_partition_prefix_len = 1` and one row group
+/// per distinct metric. With sort schema `metric_name | ...` and
+/// `row_group_size = ROWS_PER_METRIC_PER_INPUT`, the writer naturally
+/// flushes a row group every `ROWS_PER_METRIC_PER_INPUT` rows after
+/// sorting — those flush boundaries align with metric_name transitions,
+/// so each row group contains rows for exactly one distinct
+/// `metric_name`. The writer's prefix-alignment self-check passes, and
+/// the streaming engine reads the inputs as prefix_len=1 multi-row-group
+/// files.
+async fn build_three_prefix_aligned_multi_metric_inputs(
+    temp_dir: &Path,
+    ram_storage: &Arc<dyn Storage>,
+) -> (Vec<std::path::PathBuf>, Vec<ParquetSplitMetadata>) {
+    let batch_x = create_multi_metric_batch(
+        &[
+            (METRIC_AAA, 100, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_BBB, 100, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_CCC, 100, ROWS_PER_METRIC_PER_INPUT),
+        ],
+        "web",
+        "h1",
+    );
+    let batch_y = create_multi_metric_batch(
+        &[
+            (METRIC_AAA, 110, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_BBB, 110, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_CCC, 110, ROWS_PER_METRIC_PER_INPUT),
+        ],
+        "api",
+        "h2",
+    );
+    let batch_z = create_multi_metric_batch(
+        &[
+            (METRIC_AAA, 120, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_BBB, 120, ROWS_PER_METRIC_PER_INPUT),
+            (METRIC_CCC, 120, ROWS_PER_METRIC_PER_INPUT),
+        ],
+        "db",
+        "h3",
+    );
+
+    let mut paths = Vec::new();
+    let mut splits = Vec::new();
+    for (split_id, batch, ts_start, ts_end) in [
+        ("split-px", &batch_x, 100, 120),
+        ("split-py", &batch_y, 110, 130),
+        ("split-pz", &batch_z, 120, 140),
+    ] {
+        let filename = format!("{split_id}.parquet");
+        let num_rows = (3 * ROWS_PER_METRIC_PER_INPUT) as u64;
+        let meta = make_multi_metric_split_metadata(
+            split_id,
+            num_rows,
+            0,
+            ts_start,
+            ts_end,
+            &[METRIC_AAA, METRIC_BBB, METRIC_CCC],
+            1, // prefix_len = 1: one row group per metric_name.
+        );
+        let size_bytes = write_prefix_aligned_input(
+            temp_dir,
+            &filename,
+            batch,
+            &meta,
+            ROWS_PER_METRIC_PER_INPUT,
+        );
+        let meta = {
+            let mut m = make_multi_metric_split_metadata(
+                split_id,
+                num_rows,
+                size_bytes,
+                ts_start,
+                ts_end,
+                &[METRIC_AAA, METRIC_BBB, METRIC_CCC],
+                1,
             );
             m.parquet_file = filename.clone();
             m
@@ -300,14 +430,28 @@ fn make_pipeline_params(
     metastore: MetastoreServiceClient,
     ram_storage: Arc<dyn Storage>,
     use_streaming_engine: bool,
+    target_split_size_bytes: u64,
+    max_merge_ops: u32,
 ) -> ParquetMergePipelineParams {
     // merge_factor = max_merge_factor = 3 lets the planner pick up all
-    // three inputs in a single operation.
+    // three inputs in a single operation. `target_split_size_bytes` on
+    // the policy controls when an additional merge-up is scheduled;
+    // `target_split_size_bytes` on the pipeline params controls how the
+    // executor splits the merge output. They are the same value in
+    // production but kept independent in tests so the bonus test can
+    // ask for a small output target without disturbing the planner.
+    //
+    // `max_merge_ops` bounds the cascade depth. n=1 tests use 5 (plenty
+    // of headroom — they produce one output that doesn't re-trigger
+    // the planner anyway). m:n tests use 1 to keep the test fixed at
+    // one merge: outputs from the first merge land at
+    // `num_merge_ops = 1` and the planner refuses to merge them again
+    // because they've hit the policy's ceiling.
     let merge_policy = Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
         ParquetMergePolicyConfig {
             merge_factor: 3,
             max_merge_factor: 3,
-            max_merge_ops: 5,
+            max_merge_ops,
             target_split_size_bytes: 256 * 1024 * 1024,
             maturation_period: Duration::from_secs(3600),
             max_finalize_merge_operations: 3,
@@ -328,6 +472,7 @@ fn make_pipeline_params(
         event_broker: EventBroker::default(),
         writer_config,
         use_streaming_engine,
+        target_split_size_bytes,
     }
 }
 
@@ -533,14 +678,172 @@ async fn assert_three_input_three_metric_single_output_correct(
 }
 
 // ---------------------------------------------------------------------------
+// Shared assertions: m:n case (n > 1)
+// ---------------------------------------------------------------------------
+
+/// Asserts the post-merge state for the canonical three-input fixture when
+/// the merge produced **more than one output**. Both engines must satisfy
+/// the m:n contract:
+///
+/// - Replacement covers all three inputs.
+/// - The pipeline staged at least two output splits (proves splitting happened).
+/// - The sum of per-output row counts equals the total input row count.
+/// - Each output is internally sorted on `sorted_series`.
+/// - Across outputs, the `sorted_series` partition is **disjoint** (no two
+///   outputs share any `sorted_series` value — the merge engine splits at
+///   series boundaries, never inside).
+/// - The union of metric_names / services across outputs covers the full
+///   input set.
+/// - Every output declares `num_merge_ops = 1` (first merge over level-0
+///   inputs) and has `row_keys_proto` + `metric_name` zonemap regex
+///   populated.
+async fn assert_three_input_three_metric_multi_output_correct(
+    staged_metadata: &Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
+    replaced_ids: &Arc<std::sync::Mutex<Vec<String>>>,
+    ram_storage: &Arc<dyn Storage>,
+    expected_input_split_ids: &[&str],
+) {
+    let mut replaced_sorted: Vec<String> = replaced_ids.lock().unwrap().clone();
+    replaced_sorted.sort();
+    let mut expected_sorted: Vec<String> = expected_input_split_ids
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    expected_sorted.sort();
+    assert_eq!(
+        replaced_sorted, expected_sorted,
+        "publish must replace all three input splits",
+    );
+
+    let staged = staged_metadata.lock().unwrap().clone();
+    assert!(
+        staged.len() >= 2,
+        "m:n merge must produce at least two outputs; got {}",
+        staged.len()
+    );
+
+    let total_output_rows: u64 = staged.iter().map(|s| s.num_rows).sum();
+    assert_eq!(
+        total_output_rows, TOTAL_INPUT_ROWS,
+        "sum of output row counts must equal total input rows",
+    );
+
+    // Each output internally sorted on sorted_series; collect ranges for
+    // the disjointness check across outputs.
+    let mut output_series_ranges: Vec<(Vec<u8>, Vec<u8>, String)> =
+        Vec::with_capacity(staged.len());
+    for meta in &staged {
+        let bytes = ram_storage
+            .get_all(Path::new(&meta.parquet_file))
+            .await
+            .expect("output parquet file must exist in storage");
+        let batch = read_parquet_from_bytes(&bytes);
+        assert_eq!(
+            batch.num_rows() as u64,
+            meta.num_rows,
+            "output {} row count {} disagrees with metadata num_rows {}",
+            meta.parquet_file,
+            batch.num_rows(),
+            meta.num_rows,
+        );
+        let series = extract_binary_column(&batch, SORTED_SERIES_COLUMN);
+        assert!(
+            !series.is_empty(),
+            "every output must have at least one row (empty outputs should be dropped \
+             by the engine)"
+        );
+        for i in 1..series.len() {
+            assert!(
+                series[i] >= series[i - 1],
+                "output {} sorted_series not monotone at row {i}",
+                meta.parquet_file,
+            );
+        }
+        output_series_ranges.push((
+            series.first().unwrap().clone(),
+            series.last().unwrap().clone(),
+            meta.parquet_file.clone(),
+        ));
+    }
+
+    // Sort outputs by min_series for pairwise disjointness comparison.
+    output_series_ranges.sort_by(|a, b| a.0.cmp(&b.0));
+    for window in output_series_ranges.windows(2) {
+        let (_, left_max, left_file) = &window[0];
+        let (right_min, _, right_file) = &window[1];
+        assert!(
+            left_max < right_min,
+            "outputs {} and {} overlap on sorted_series: \
+             left max = {:?}, right min = {:?}",
+            left_file,
+            right_file,
+            left_max,
+            right_min,
+        );
+    }
+
+    let union_metrics: HashSet<String> = staged
+        .iter()
+        .flat_map(|s| s.metric_names.iter().cloned())
+        .collect();
+    let expected_metrics: HashSet<String> = [METRIC_AAA, METRIC_BBB, METRIC_CCC]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        union_metrics, expected_metrics,
+        "union of output metric_names must equal the full input set",
+    );
+
+    let union_services: HashSet<String> = staged
+        .iter()
+        .flat_map(|s| {
+            s.low_cardinality_tags
+                .get("service")
+                .into_iter()
+                .flat_map(|set| set.iter().cloned())
+        })
+        .collect();
+    let expected_services: HashSet<String> =
+        ["web", "api", "db"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(
+        union_services, expected_services,
+        "union of output services must equal the full input set",
+    );
+
+    for meta in &staged {
+        assert_eq!(
+            meta.num_merge_ops, 1,
+            "output {} num_merge_ops must be 1 for the first merge",
+            meta.parquet_file,
+        );
+        assert!(
+            meta.row_keys_proto.as_ref().is_some_and(|b| !b.is_empty()),
+            "output {} missing row_keys_proto",
+            meta.parquet_file,
+        );
+        assert!(
+            meta.zonemap_regexes.contains_key("metric_name"),
+            "output {} missing metric_name zonemap regex",
+            meta.parquet_file,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 /// Run a merge pipeline over the canonical three-input multi-metric fixture
 /// and apply the supplied assertion. Shared between the two engine variants
-/// below.
-async fn run_three_input_multi_metric_merge<F, Fut>(use_streaming_engine: bool, assertions: F)
-where
+/// below. `target_split_size_bytes` drives the executor's `num_outputs`
+/// calculation; pass `u64::MAX` (or anything bigger than the total input
+/// size) for the n=1 case, or a small value to force m:n.
+async fn run_three_input_multi_metric_merge<F, Fut>(
+    use_streaming_engine: bool,
+    target_split_size_bytes: u64,
+    assertions: F,
+) where
     F: for<'a> FnOnce(
         Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
         Arc<std::sync::Mutex<Vec<String>>>,
@@ -562,6 +865,8 @@ where
         capture.metastore.clone(),
         ram_storage.clone(),
         use_streaming_engine,
+        target_split_size_bytes,
+        5, // max_merge_ops: n=1 tests don't cascade, give plenty of headroom
     );
 
     let pipeline = ParquetMergePipeline::new(params, Some(splits), universe.spawn_ctx());
@@ -591,6 +896,8 @@ where
 async fn test_multi_metric_three_input_single_output_in_memory_engine() {
     run_three_input_multi_metric_merge(
         false, // use_streaming_engine
+        // Larger than total input size — forces num_outputs = 1.
+        256 * 1024 * 1024,
         |staged, replaced, storage| async move {
             assert_three_input_three_metric_single_output_correct(&staged, &replaced, &storage)
                 .await;
@@ -603,14 +910,22 @@ async fn test_multi_metric_three_input_single_output_in_memory_engine() {
 /// must produce a row-content-equivalent output. Additionally asserts
 /// `PEAK_BODY_COL_PAGE_CACHE_LEN > 0` to confirm the streaming engine
 /// actually ran (the in-memory engine never writes to that atomic).
+#[allow(
+    clippy::await_holding_lock,
+    reason = "see ms7_serial_lock rationale: std::sync::Mutex on a single-threaded tokio runtime"
+)]
 #[tokio::test]
 async fn test_multi_metric_three_input_single_output_streaming_engine() {
-    use quickwit_parquet_engine::merge::streaming::PEAK_BODY_COL_PAGE_CACHE_LEN;
+    use quickwit_parquet_engine::merge::streaming::{
+        PEAK_BODY_COL_PAGE_CACHE_LEN, ms7_serial_lock,
+    };
 
+    let _ms7_guard = ms7_serial_lock();
     PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
 
     run_three_input_multi_metric_merge(
         true, // use_streaming_engine
+        256 * 1024 * 1024,
         |staged, replaced, storage| async move {
             assert!(
                 PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed) > 0,
@@ -619,6 +934,134 @@ async fn test_multi_metric_three_input_single_output_streaming_engine() {
             );
             assert_three_input_three_metric_single_output_correct(&staged, &replaced, &storage)
                 .await;
+        },
+    )
+    .await;
+}
+
+/// Run a merge pipeline over the canonical three-input fixture with
+/// **prefix-aligned multi-row-group inputs** (`rg_partition_prefix_len = 1`,
+/// one row group per metric_name). Drives the m:n bonus tests.
+async fn run_three_input_prefix_aligned_merge<F, Fut>(
+    use_streaming_engine: bool,
+    target_split_size_bytes: u64,
+    assertions: F,
+) where
+    F: for<'a> FnOnce(
+        Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
+        Arc<std::sync::Mutex<Vec<String>>>,
+        Arc<dyn Storage>,
+    ) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    quickwit_common::setup_logging_for_tests();
+
+    let universe = Universe::with_accelerated_time();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let ram_storage: Arc<dyn Storage> = Arc::new(RamStorage::default());
+
+    let (_paths, splits) =
+        build_three_prefix_aligned_multi_metric_inputs(temp_dir.path(), &ram_storage).await;
+
+    let capture = mount_capturing_metastore();
+    let params = make_pipeline_params(
+        &universe,
+        capture.metastore.clone(),
+        ram_storage.clone(),
+        use_streaming_engine,
+        target_split_size_bytes,
+        // max_merge_ops = 1: outputs from the first (and only) merge land
+        // at num_merge_ops = 1 and the planner refuses to merge them again,
+        // pinning this test to exactly one merge regardless of how many
+        // outputs the engine chose to produce.
+        1,
+    );
+
+    let pipeline = ParquetMergePipeline::new(params, Some(splits), universe.spawn_ctx());
+    let (_pipeline_mailbox, _pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+
+    wait_until_predicate(
+        || {
+            let publish_called = capture.publish_called.clone();
+            async move { publish_called.load(Ordering::SeqCst) }
+        },
+        Duration::from_secs(60),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("timed out waiting for merge publish");
+
+    assertions(capture.staged_metadata, capture.replaced_ids, ram_storage).await;
+
+    universe.assert_quit().await;
+}
+
+/// **Bonus** test, in-memory engine: three multi-metric inputs each with
+/// `rg_partition_prefix_len = 1` (one row group per metric_name), merged
+/// with a small `target_split_size_bytes` that forces the executor to ask
+/// the engine for `num_outputs > 1`. Exercises the previously-impossible
+/// pipeline-level m:n merge path now that the executor's hardcoded
+/// `num_outputs = 1` is gone. Verifies the multi-output contract:
+/// sum-equals-total, internal monotonicity, inter-output disjointness on
+/// `sorted_series`, and union-equals-full-set on metrics/services.
+#[tokio::test]
+async fn test_prefix_aligned_multi_metric_three_input_multi_output_in_memory_engine() {
+    run_three_input_prefix_aligned_merge(
+        false, // use_streaming_engine
+        // Smaller than per-input size — guarantees num_outputs ≥ 2. The
+        // engine clamps to available sorted_series boundaries (~60 in
+        // this fixture: 3 metrics × 20 timeseries each), well above 2.
+        500,
+        |staged, replaced, storage| async move {
+            assert_three_input_three_metric_multi_output_correct(
+                &staged,
+                &replaced,
+                &storage,
+                &["split-px", "split-py", "split-pz"],
+            )
+            .await;
+        },
+    )
+    .await;
+}
+
+/// **Bonus** test, streaming engine: same fixture and contract as the
+/// in-memory variant. Additionally asserts
+/// `PEAK_BODY_COL_PAGE_CACHE_LEN > 0` to confirm the streaming engine
+/// actually ran. With prefix-aligned inputs the streaming engine reads
+/// each input's row groups (one per metric_name) through the prefix-aware
+/// `StreamingParquetReader` path — distinct from the legacy
+/// `LegacyInputAdapter` route, since these inputs do not require
+/// promotion (`target_prefix_len_override` is `None` for regular merges).
+#[allow(
+    clippy::await_holding_lock,
+    reason = "see ms7_serial_lock rationale: std::sync::Mutex on a single-threaded tokio runtime"
+)]
+#[tokio::test]
+async fn test_prefix_aligned_multi_metric_three_input_multi_output_streaming_engine() {
+    use quickwit_parquet_engine::merge::streaming::{
+        PEAK_BODY_COL_PAGE_CACHE_LEN, ms7_serial_lock,
+    };
+
+    let _ms7_guard = ms7_serial_lock();
+    PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
+
+    run_three_input_prefix_aligned_merge(
+        true, // use_streaming_engine
+        500,
+        |staged, replaced, storage| async move {
+            assert!(
+                PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed) > 0,
+                "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — \
+                 routing may have silently fallen back to the in-memory engine",
+            );
+            assert_three_input_three_metric_multi_output_correct(
+                &staged,
+                &replaced,
+                &storage,
+                &["split-px", "split-py", "split-pz"],
+            )
+            .await;
         },
     )
     .await;
