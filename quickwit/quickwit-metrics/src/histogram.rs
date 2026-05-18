@@ -336,7 +336,8 @@ macro_rules! histogram {
 /// A lazily-initialized [`Histogram`].
 ///
 /// The histogram is registered with the recorder on first access.
-/// See [`lazy_histogram!`] for the recommended way to construct this type.
+/// See [`lazy_histogram!`][macro@crate::lazy_histogram] for the recommended way to construct this
+/// type.
 pub type LazyHistogram = LazyLock<Histogram>;
 
 /// Wraps a [`histogram!`] invocation in a [`LazyHistogram`].

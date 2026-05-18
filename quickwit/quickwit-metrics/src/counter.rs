@@ -324,7 +324,7 @@ macro_rules! counter {
 /// A lazily-initialized [`Counter`].
 ///
 /// The counter is registered with the recorder on first access.
-/// See [`lazy_counter!`] for the recommended way to construct this type.
+/// See [`lazy_counter!`][macro@crate::lazy_counter] for the recommended way to construct this type.
 pub type LazyCounter = LazyLock<Counter>;
 
 /// Wraps a [`counter!`] invocation in a [`LazyCounter`].
