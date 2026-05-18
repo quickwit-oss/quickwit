@@ -14,21 +14,29 @@
 
 //! Parquet merge executor actor.
 //!
-//! Receives a `ParquetMergeScratch` from the downloader. Two merge
-//! paths, chosen on `target_prefix_len_override`:
+//! Receives a `ParquetMergeScratch` from the downloader. Two engines are available:
 //!
-//! - **Regular merge** (`target_prefix_len_override == None`): the input splits already share
-//!   `qh.rg_partition_prefix_len` (MP-3). Run the in-memory `merge_sorted_parquet_files` engine
-//!   inside `run_cpu_intensive()`.
-//! - **Promotion merge** (`target_prefix_len_override == Some(target)`): the inputs may carry
-//!   *different* prefix lengths (the whole point of promotion). The in-memory path's
-//!   `extract_and_validate_input_metadata` would bail on the mismatch before any output is
-//!   produced, so promotion runs through `execute_merge_operation` instead — that path opens each
-//!   input through `LegacyInputAdapter` for splits below the target prefix len and through
-//!   `StreamingParquetReader` for splits at the target, so the streaming engine sees a homogeneous
-//!   stream advertising `prefix_len = target` on every input. `mixed_prefix_ok` is then passed to
-//!   `merge_parquet_split_metadata` so the post-merge aggregator skips the input-side equality
-//!   check.
+//! - **Streaming engine** (`execute_merge_operation`): column-major, page-bounded body cache.
+//!   Used unconditionally for promotion merges (the in-memory path can't handle mixed
+//!   prefix lengths). Optionally used for regular merges when the node-level
+//!   `IndexerConfig::parquet_merge_use_streaming_engine` flag is true.
+//! - **In-memory engine** (`merge_sorted_parquet_files`): buffers all inputs in memory and
+//!   runs inside `run_cpu_intensive`. Kept as the runtime fallback so production can flip
+//!   back via YAML config if the streaming engine hits a bug. To be removed once the
+//!   streaming path has soaked.
+//!
+//! Routing in `handle()`:
+//!
+//! - `target_prefix_len_override.is_some()` → streaming engine. Promotion is the whole point
+//!   of `target_prefix_len_override`, and the in-memory path's
+//!   `extract_and_validate_input_metadata` would bail on the mixed `rg_partition_prefix_len`
+//!   before any output is produced.
+//! - Else `use_streaming_engine == true` → streaming engine (the new default once soaked).
+//! - Else → in-memory engine (the runtime fallback).
+//!
+//! `mixed_prefix_ok` is passed to `merge_parquet_split_metadata` only for promotion merges so
+//! the post-merge aggregator's strict input-side equality check stays on for ordinary
+//! same-prefix merges.
 
 use std::io;
 use std::ops::Range;
@@ -117,16 +125,23 @@ impl RemoteByteSource for LocalFileByteSource {
 pub struct ParquetMergeExecutor {
     uploader_mailbox: Mailbox<ParquetUploader>,
     writer_config: ParquetWriterConfig,
+    /// When true, regular merges run through the streaming engine. When
+    /// false, they run through the in-memory `merge_sorted_parquet_files`
+    /// fallback. Promotion merges always use the streaming engine
+    /// regardless of this flag.
+    use_streaming_engine: bool,
 }
 
 impl ParquetMergeExecutor {
     pub fn new(
         uploader_mailbox: Mailbox<ParquetUploader>,
         writer_config: ParquetWriterConfig,
+        use_streaming_engine: bool,
     ) -> Self {
         Self {
             uploader_mailbox,
             writer_config,
+            use_streaming_engine,
         }
     }
 }
@@ -176,18 +191,19 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .context("failed to create merge output directory")
             .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-        // Route promotion merges (`target_prefix_len_override.is_some()`)
-        // through `execute_merge_operation`. That path opens each input
-        // via `LegacyInputAdapter` when the split's prefix_len is below
-        // the target, so the streaming merge engine sees a homogeneous
-        // stream with all inputs at `prefix_len = target`. Without this
-        // routing the in-memory `merge_sorted_parquet_files` would bail
-        // in `extract_and_validate_input_metadata` on mixed prefix
-        // lengths before any output is produced.
-        let merge_result: Result<Result<Vec<MergeOutputFile>, _>, _> = if scratch
-            .merge_operation
-            .target_prefix_len_override
-            .is_some()
+        // Promotion merges (`target_prefix_len_override.is_some()`) must
+        // use the streaming engine; the in-memory path's
+        // `extract_and_validate_input_metadata` would bail on mixed
+        // `rg_partition_prefix_len` before producing any output. Regular
+        // merges follow the operator-controlled `use_streaming_engine`
+        // flag: true means the streaming engine, false means the
+        // in-memory fallback. Keeping the in-memory branch lets
+        // production flip back at runtime if the streaming engine hits a
+        // bug; once the streaming path has soaked, the in-memory branch
+        // and `merge_sorted_parquet_files` itself can be removed.
+        let is_promotion = scratch.merge_operation.target_prefix_len_override.is_some();
+        let merge_result: Result<Result<Vec<MergeOutputFile>, _>, _> = if is_promotion
+            || self.use_streaming_engine
         {
             let sources: Vec<Arc<dyn RemoteByteSource>> = scratch
                 .downloaded_parquet_files
@@ -203,7 +219,9 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                     .await,
             )
         } else {
-            // Regular merge: in-memory path under `run_cpu_intensive`.
+            // Fallback: in-memory engine under `run_cpu_intensive`.
+            // Kept as the runtime rollback target while the streaming
+            // engine soaks in production.
             let input_paths = scratch.downloaded_parquet_files.clone();
             let output_dir_clone = output_dir.clone();
             let writer_config = self.writer_config.clone();

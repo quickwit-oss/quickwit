@@ -657,6 +657,7 @@ mod tests {
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
+                parquet_merge_use_streaming_engine: false,
             }
         );
         assert_eq!(

@@ -628,6 +628,7 @@ async fn test_trace_conformance_normal_path() {
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
+        use_streaming_engine: false,
     };
 
     let pipeline =
@@ -747,6 +748,7 @@ async fn test_trace_conformance_crash_mid_cascade() {
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
+        use_streaming_engine: false,
     };
 
     let pipeline =
