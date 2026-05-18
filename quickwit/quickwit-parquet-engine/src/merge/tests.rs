@@ -1898,6 +1898,92 @@ mod parity {
                 }
             }
         }
+
+        // Beyond engine-vs-engine equivalence, both outputs must satisfy
+        // the m:n merge contract: every row preserved exactly once across
+        // outputs, each output internally sorted on `sorted_series`, and
+        // no two outputs sharing any `sorted_series` value (the engine
+        // promises a non-overlapping partition over the input keyspace).
+        // The two engines produce equivalent output, so checking either
+        // is sufficient; the in-memory side is the historical baseline.
+        let total_input_rows: usize = input_paths
+            .iter()
+            .map(|path| {
+                let bytes = std::fs::read(path).expect("read input parquet for row-count");
+                let builder =
+                    parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(
+                        Bytes::from(bytes),
+                    )
+                    .expect("input parquet builder");
+                builder.metadata().file_metadata().num_rows() as usize
+            })
+            .sum();
+        assert_multi_output_invariants(&in_memory_outputs, total_input_rows);
+    }
+
+    /// Verify the m:n merge contract on a single engine's outputs:
+    ///
+    /// 1. Sum of per-output row counts equals the total input row count
+    ///    (no duplication, no loss).
+    /// 2. Within each output, the `sorted_series` column is monotonically
+    ///    non-decreasing.
+    /// 3. Across outputs, after sorting by min `sorted_series`, every
+    ///    output's max sorted_series is strictly less than the next
+    ///    output's min — the partition is disjoint on the keyspace.
+    ///
+    /// Holds for any merge with `num_outputs >= 1`. Trivial for n=1
+    /// (only invariant 2 is non-trivial there).
+    fn assert_multi_output_invariants(
+        outputs: &[crate::merge::MergeOutputFile],
+        total_input_rows: usize,
+    ) {
+        let total_output_rows: u64 = outputs.iter().map(|o| o.num_rows as u64).sum();
+        assert_eq!(
+            total_output_rows, total_input_rows as u64,
+            "sum of output row counts ({total_output_rows}) must equal total input rows \
+             ({total_input_rows}) — MC-1"
+        );
+
+        let mut series_ranges: Vec<(Vec<u8>, Vec<u8>, &Path)> = Vec::with_capacity(outputs.len());
+        for output in outputs {
+            let batch = read_parquet_file(&output.path);
+            let series = extract_binary_column(&batch, SORTED_SERIES_COLUMN);
+            assert!(
+                !series.is_empty(),
+                "output {} has zero rows (engine should have dropped it)",
+                output.path.display(),
+            );
+            for i in 1..series.len() {
+                assert!(
+                    series[i] >= series[i - 1],
+                    "output {}: sorted_series not monotone at row {i}",
+                    output.path.display(),
+                );
+            }
+            series_ranges.push((
+                series.first().unwrap().clone(),
+                series.last().unwrap().clone(),
+                output.path.as_path(),
+            ));
+        }
+
+        // Sort by min_series so we can walk adjacent pairs to check
+        // disjointness. The engine's staged order isn't a documented
+        // contract — sort here for the comparison.
+        series_ranges.sort_by(|a, b| a.0.cmp(&b.0));
+        for window in series_ranges.windows(2) {
+            let (_, left_max, left_path) = &window[0];
+            let (right_min, _, right_path) = &window[1];
+            assert!(
+                left_max < right_min,
+                "outputs {} and {} overlap on sorted_series: \
+                 left max = {:?}, right min = {:?}",
+                left_path.display(),
+                right_path.display(),
+                left_max,
+                right_min,
+            );
+        }
     }
 
     /// Multi-input, single-output merge. The streaming and in-memory engines
@@ -1940,7 +2026,10 @@ mod parity {
 
     /// Multi-input, multi-output merge. With `num_outputs > 1` the streaming
     /// engine splits at `sorted_series` boundaries; this test guards that the
-    /// split policy and per-output row content match the in-memory engine.
+    /// split policy and per-output row content match the in-memory engine,
+    /// and that the engine's multi-output contract holds (sum-equals-total,
+    /// internal monotonicity, inter-output disjointness — see
+    /// `assert_multi_output_invariants`).
     #[test]
     fn parity_multi_input_multi_output() {
         let dir = TempDir::new().unwrap();
@@ -1963,6 +2052,106 @@ mod parity {
         );
 
         assert_engine_parity(&[input1, input2], 3);
+    }
+
+    /// Stress variant: 3 inputs × 3 metrics with the per-metric keyspaces
+    /// **overlapping across inputs** (each metric appears in every input
+    /// with the same `timeseries_id` range and overlapping but distinct
+    /// timestamps). The merge must heavily interleave rows from all three
+    /// inputs, not concatenate them. Asserts engine-vs-engine parity plus
+    /// the multi-output contract (disjointness across the three outputs).
+    #[test]
+    fn parity_multi_metric_overlapping_inputs_multi_output() {
+        let dir = TempDir::new().unwrap();
+
+        // Each input has 3 metrics × 10 rows. For metric=alpha, ts_id_base
+        // depends only on the metric name (see write_test_split), so all
+        // three inputs share the same set of timeseries_ids per metric.
+        // Timestamps are chosen so each (metric, timeseries) appears in
+        // all three inputs at three overlapping-but-distinct times — the
+        // merge must interleave row-by-row.
+        let input_x = write_test_split(
+            dir.path(),
+            "x.parquet",
+            // Per-input layout: alpha x10, beta x10, gamma x10 = 30 rows.
+            &[
+                "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha",
+                "alpha", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta",
+                "beta", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma",
+                "gamma", "gamma",
+            ],
+            // input-x: each metric at ts 100..109.
+            &[
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, // alpha
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, // beta
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, // gamma
+            ],
+            &[
+                1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5,
+                2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9,
+            ],
+            // Each (metric, row-position) within the input has a unique
+            // ts_id, but cross-input collisions on the same (metric, pos)
+            // ARE intentional — that's what makes the merge interleave.
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, // alpha: ts_ids 1-10
+                11, 12, 13, 14, 15, 16, 17, 18, 19, 20, // beta: 11-20
+                21, 22, 23, 24, 25, 26, 27, 28, 29, 30, // gamma: 21-30
+            ],
+        );
+        let input_y = write_test_split(
+            dir.path(),
+            "y.parquet",
+            &[
+                "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha",
+                "alpha", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta",
+                "beta", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma",
+                "gamma", "gamma",
+            ],
+            // input-y: each metric at ts 110..119.
+            &[
+                110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 110, 111, 112, 113, 114, 115,
+                116, 117, 118, 119, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+            ],
+            &[
+                4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5,
+                5.6, 5.7, 5.8, 5.9, 6.0, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9,
+            ],
+            // Same ts_id ranges as input-x — collisions intentional.
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30,
+            ],
+        );
+        let input_z = write_test_split(
+            dir.path(),
+            "z.parquet",
+            &[
+                "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "alpha",
+                "alpha", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta", "beta",
+                "beta", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma", "gamma",
+                "gamma", "gamma",
+            ],
+            // input-z: each metric at ts 105..114 (interleaved with x and y).
+            &[
+                105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 105, 106, 107, 108, 109, 110,
+                111, 112, 113, 114, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
+            ],
+            &[
+                7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5,
+                8.6, 8.7, 8.8, 8.9, 9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9,
+            ],
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30,
+            ],
+        );
+
+        // Three outputs targeted. The engine splits at sorted_series
+        // boundaries; with three distinct metric_name values and a
+        // single timeseries_id per (metric, row-position), there are
+        // enough natural boundaries to produce three outputs.
+        assert_engine_parity(&[input_x, input_y, input_z], 3);
     }
 }
 
