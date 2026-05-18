@@ -14,11 +14,17 @@
 
 //! Reusable label templates for metric extension.
 //!
-//! [`LabelNames<N>`] holds label *names* at compile time; pair them with
-//! values via the [`label_values!`] macro to get a [`Labels<N>`] that
-//! the `labels:` macro arm can consume. This avoids repeating the same
-//! label names at every call site and lets a single `Labels<N>` be
-//! shared across counter, gauge, and histogram extensions.
+//! Labels can be created in two ways:
+//!
+//! - **[`labels!`]** — inline key-value pairs. Keys are always static
+//!   literals; values can be static literals (const-compatible, zero
+//!   allocation) or dynamic expressions (`Into<SharedString>`).
+//!
+//! - **[`label_names!`] + [`label_values!`]** — separate the label *names*
+//!   (a const [`LabelNames<N>`]) from the *values*. This avoids repeating
+//!   the same label names at every call site and lets a single
+//!   [`Labels<N>`] be shared across counter, gauge, and histogram
+//!   extensions.
 
 use metrics::SharedString;
 
@@ -69,15 +75,21 @@ macro_rules! label_values {
     };
 }
 
-/// Creates a const `Labels` from all-static key-value pairs.
+/// Creates a [`Labels<N>`] from key-value pairs.
 ///
-/// Every key and value must be `&'static str` literals. The result is a
-/// `const` value — zero allocation, zero runtime cost.
+/// Keys are always `&'static str` literals. Values can be either
+/// string literals (const-compatible, zero allocation) or arbitrary
+/// expressions convertible to `SharedString` (dynamic, allocated at
+/// runtime).
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust,ignore
+/// // All-static — const-compatible, zero allocation:
 /// const LABELS: Labels<2> = labels!("env" => "prod", "region" => "us-east-1");
+///
+/// // Dynamic values — any expression that implements Into<SharedString>:
+/// let labels = labels!("env" => "prod", "node_id" => node_id.to_string());
 /// ```
 #[macro_export]
 macro_rules! labels {
