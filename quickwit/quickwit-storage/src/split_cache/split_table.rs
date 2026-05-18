@@ -154,10 +154,7 @@ impl SplitTable {
             Status::Downloading { .. } => &mut self.downloading_splits,
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes -= num_bytes;
-                SEARCHER_SPLIT_CACHE
-                    .cache_metrics
-                    .in_cache_count
-                    .dec();
+                SEARCHER_SPLIT_CACHE.cache_metrics.in_cache_count.dec();
                 SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes

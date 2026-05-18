@@ -94,7 +94,7 @@ impl Storage for OpendalStorage {
             .compat_write();
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
-        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(payload.len());
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         Ok(())
     }
 
@@ -108,7 +108,7 @@ impl Storage for OpendalStorage {
             .await?
             .compat();
         let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
-        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.increment(num_bytes_copied);
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }

@@ -41,20 +41,11 @@ pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
     Arc::new(|_| Ok(()))
 }
 
+#[derive(Default)]
 pub struct TelemetryHandle {
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
     meter_provider: Option<SdkMetricsProvider>,
-}
-
-impl Default for TelemetryHandle {
-    fn default() -> Self {
-        TelemetryHandle {
-            tracer_provider: None,
-            logger_provider: None,
-            meter_provider: None,
-        }
-    }
 }
 
 impl TelemetryHandle {

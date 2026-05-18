@@ -241,7 +241,7 @@ impl AzureBlobStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
-        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(payload.len());
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -275,7 +275,7 @@ impl AzureBlobStorage {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
                 crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
-                crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(range.end - range.start);
+                crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
@@ -372,7 +372,7 @@ impl Storage for AzureBlobStorage {
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
             let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.increment(num_bytes_copied);
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         }
         output.flush().await?;
         Ok(())
@@ -571,7 +571,7 @@ async fn download_all(
             segments.push(bytes);
         }
     }
-    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.increment(total_num_bytes as u64);
+    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(total_num_bytes as u64);
     Ok(coalesce_segments(segments, total_num_bytes))
 }
 

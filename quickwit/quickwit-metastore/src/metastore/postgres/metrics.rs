@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_metrics::{Gauge, LazyGauge, gauge, lazy_gauge};
+use quickwit_metrics::{LazyGauge, lazy_gauge};
 
 pub(super) static ACQUIRE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "acquire_connections",
