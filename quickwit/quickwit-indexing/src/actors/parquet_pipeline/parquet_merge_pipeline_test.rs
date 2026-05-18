@@ -425,6 +425,45 @@ async fn test_merge_pipeline_end_to_end() {
     .await
     .expect("timed out waiting for merge publish");
 
+    assert_cpu_mem_merge_outputs_correct(&staged_metadata, &replaced_ids, &ram_storage).await;
+
+    universe.assert_quit().await;
+}
+
+/// Asserts the post-merge state captured from the metastore mock and the
+/// Parquet file in storage for the canonical two-input fixture used by
+/// the end-to-end tests:
+///
+/// - `split-a`: 50 rows of `cpu.usage`, ts 100..150, service `web`, host `host-1`
+/// - `split-b`: 50 rows of `mem.usage`, ts 200..250, service `api`, host `host-2`
+///
+/// Both engines (in-memory and streaming) must produce a merged split that
+/// passes every check below — that is the **contract** of a regular merge,
+/// independent of which engine ran. Driven by both
+/// `test_merge_pipeline_end_to_end` (in-memory engine via the flag default)
+/// and `test_merge_pipeline_end_to_end_with_streaming_engine_flag`
+/// (streaming engine via the flag).
+///
+/// Verifies, in order:
+/// - **Step 5**: `replaced_split_ids = [split-a, split-b]`.
+/// - **Step 6**: staged `ParquetSplitMetadata` — `num_rows = 100`,
+///   `time_range = [100, 250)`, `metric_names = {cpu.usage, mem.usage}`,
+///   `num_merge_ops = 1`, `sort_fields` matches the table config,
+///   `row_keys_proto` present + non-empty, `zonemap_regexes` contains
+///   `metric_name`, `low_cardinality_tags["service"] = {web, api}`.
+/// - **Step 7**: merged Parquet file content — row count, all 100 timestamps
+///   match expected and metadata `time_range`, both service / host values
+///   survive, `sorted_series` is monotonically non-decreasing, and
+///   `cpu.usage` rows precede `mem.usage` rows (the global sort order
+///   semantics).
+/// - **Step 8**: Parquet KV metadata — `qh.sort_fields`, `qh.num_merge_ops`,
+///   `qh.row_keys` (non-empty), `qh.zonemap_regexes` parses as JSON and
+///   contains `metric_name`, and cross-validates with the staged metadata.
+async fn assert_cpu_mem_merge_outputs_correct(
+    staged_metadata: &Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
+    replaced_ids: &Arc<std::sync::Mutex<Vec<String>>>,
+    ram_storage: &Arc<dyn Storage>,
+) {
     // --- Step 5: Verify replaced_split_ids ---
 
     let mut replaced_sorted: Vec<String> = replaced_ids.lock().unwrap().clone();
@@ -664,8 +703,6 @@ async fn test_merge_pipeline_end_to_end() {
         merged_meta.zonemap_regexes, zonemaps_parsed,
         "metadata zonemap_regexes must match Parquet qh.zonemap_regexes"
     );
-
-    universe.assert_quit().await;
 }
 
 /// End-to-end production-path test for the YAML-flag-gated streaming
@@ -815,7 +852,8 @@ async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
     // The streaming engine writes to `PEAK_BODY_COL_PAGE_CACHE_LEN` on
     // every body-col page assembly; the in-memory engine never touches
     // it. A non-zero post-merge value is direct evidence the streaming
-    // engine ran the body-col path.
+    // engine ran the body-col path — distinguishes this test from a
+    // silent fallback to the in-memory engine.
     let peak = PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed);
     assert!(
         peak > 0,
@@ -823,49 +861,12 @@ async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
          silently fallen back to the in-memory engine",
     );
 
-    let mut replaced_sorted: Vec<String> = replaced_ids.lock().unwrap().clone();
-    replaced_sorted.sort();
-    assert_eq!(
-        replaced_sorted,
-        vec!["split-a".to_string(), "split-b".to_string()],
-        "publish must replace both input splits"
-    );
-
-    let staged = staged_metadata.lock().unwrap().clone();
-    assert_eq!(staged.len(), 1, "exactly one merged split should be staged");
-    let merged_meta = &staged[0];
-    assert_eq!(
-        merged_meta.num_rows, 100,
-        "streaming-engine merge must preserve row count (MC-1)"
-    );
-    let expected_metrics: HashSet<String> = ["cpu.usage", "mem.usage"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    assert_eq!(
-        merged_meta.metric_names, expected_metrics,
-        "streaming-engine merge must preserve metric names from both inputs"
-    );
-
-    let merged_parquet_path = &merged_meta.parquet_file;
-    let merged_bytes = ram_storage
-        .get_all(Path::new(merged_parquet_path))
-        .await
-        .expect("merged parquet file must exist in storage");
-    let merged_batch = read_parquet_from_bytes(&merged_bytes);
-    assert_eq!(
-        merged_batch.num_rows(),
-        100,
-        "streaming-engine merge output row count must match staged metadata"
-    );
-
-    let metric_names_in_file: HashSet<String> = extract_string_column(&merged_batch, "metric_name")
-        .into_iter()
-        .collect();
-    assert_eq!(
-        metric_names_in_file, expected_metrics,
-        "streaming-engine merge output must contain both metric names"
-    );
+    // Same correctness contract as the in-memory variant: every check on
+    // the merged metadata, the Parquet file content, and the Parquet KV
+    // headers must hold regardless of which engine ran. This shared
+    // helper is the executable parity between engines at the
+    // pipeline-integration level.
+    assert_cpu_mem_merge_outputs_correct(&staged_metadata, &replaced_ids, &ram_storage).await;
 
     universe.assert_quit().await;
 }
