@@ -1835,17 +1835,22 @@ fn build_full_union_schema_from_arrow_schemas(
 /// atomic; MS-7 tests reset-then-read it and would race any
 /// concurrent merge in the same test binary. Both the MS-7 tests in
 /// this module and any other test that invokes
-/// `streaming_merge_sorted_parquet_files` (e.g. the engine-parity
-/// tests in `merge::tests::parity`) must acquire this lock for the
-/// duration of the merge.
+/// `streaming_merge_sorted_parquet_files` (engine-crate parity tests
+/// in `merge::tests::parity`, indexing-crate pipeline tests that
+/// reset the atomic for the same reason) must acquire this lock for
+/// the duration of the merge.
+///
+/// Exposed `pub` under the `testsuite` feature so cross-crate tests
+/// can share the same lock — the streaming engine's atomic is
+/// process-global and the lock has to be too.
 ///
 /// Held across `.await` points in MS-7 tests — that's why each
 /// MS-7 test allows `clippy::await_holding_lock`. The lock is
 /// `std::sync::Mutex` and the `#[tokio::test]` runtime is
 /// single-threaded, so holding the guard across await won't deadlock
 /// another thread. `tokio::sync::Mutex` is forbidden by GAP-002.
-#[cfg(test)]
-pub(crate) fn ms7_serial_lock() -> std::sync::MutexGuard<'static, ()> {
+#[cfg(any(test, feature = "testsuite"))]
+pub fn ms7_serial_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     // Poisoning is fine — a previous test panicking shouldn't prevent
     // the next one from acquiring; just unwrap the inner.

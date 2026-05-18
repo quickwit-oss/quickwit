@@ -732,6 +732,7 @@ impl IndexingService {
             event_broker: self.event_broker.clone(),
             writer_config,
             use_streaming_engine: self.parquet_merge_use_streaming_engine,
+            target_split_size_bytes: cfg.target_split_size_bytes,
         };
 
         let pipeline = super::parquet_pipeline::ParquetMergePipeline::new(

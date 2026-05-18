@@ -406,6 +406,7 @@ async fn test_merge_pipeline_end_to_end() {
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let initial_splits = vec![meta_a, meta_b];
@@ -726,21 +727,26 @@ async fn assert_cpu_mem_merge_outputs_correct(
 /// 3. Asserting row count and metric names on the output match the
 ///    inputs (the streaming engine produces correct results, not just
 ///    "something").
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the lock is `std::sync::Mutex` and the `#[tokio::test]` runtime is \
+              single-threaded, so holding the guard across await won't deadlock another \
+              thread — see `ms7_serial_lock` rationale"
+)]
 #[tokio::test]
 async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
     use std::sync::atomic::Ordering;
 
-    use quickwit_parquet_engine::merge::streaming::PEAK_BODY_COL_PAGE_CACHE_LEN;
+    use quickwit_parquet_engine::merge::streaming::{
+        PEAK_BODY_COL_PAGE_CACHE_LEN, ms7_serial_lock,
+    };
 
-    // Serialise against any other test in this binary that runs a
-    // streaming merge and reads this atomic. See
-    // `quickwit_parquet_engine::merge::streaming::ms7_serial_lock`.
-    // The lock isn't exposed across crates, so we settle for: zero the
-    // counter before the merge, run it, observe the post-merge value.
-    // If a concurrent unrelated test also runs a streaming merge in
-    // parallel it would inflate our reading — but inflation only
-    // strengthens the "streaming engine ran" assertion (the in-memory
-    // engine never writes to this atomic).
+    // Serialise against every other test in this binary that runs a
+    // streaming merge: they all touch the same process-global atomic,
+    // and a concurrent `store(0)` would race our load. The lock is
+    // re-exported from `quickwit_parquet_engine` under the `testsuite`
+    // feature for exactly this cross-crate case.
+    let _ms7_guard = ms7_serial_lock();
     PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
 
     quickwit_common::setup_logging_for_tests();
@@ -832,6 +838,7 @@ async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
         // This is the bit under test: regular merges must route through
         // `execute_merge_operation`, not the in-memory fallback.
         use_streaming_engine: true,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let initial_splits = vec![meta_a, meta_b];

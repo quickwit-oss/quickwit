@@ -204,6 +204,7 @@ async fn test_merge_pipeline_crash_and_restart() {
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let pipeline = ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
@@ -328,6 +329,7 @@ async fn test_merge_pipeline_multi_round() {
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let pipeline = ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
