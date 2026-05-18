@@ -1586,6 +1586,22 @@ mod tests {
             Some("2"),
             "stamped prefix_len must match caller's request even when one col is implicitly null",
         );
+
+        // SS-3 consumer-side verification: the file the adapter just
+        // produced must be consumable by the merge engine's
+        // `extract_rg_composite_prefix_key` reader. With `env` absent
+        // from the parquet schema, `find_prefix_parquet_col_indices`
+        // returns `None` in that slot and the composite-key extractor
+        // skips it. PA-1 + PA-3 still hold: each RG's metric_name
+        // min == max, and skipping the constant-null `env` slot makes
+        // the RG composite keys differ only by metric_name.
+        crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+            adapter.metadata(),
+            "metric_name|env|-timestamp_secs/V2",
+            2,
+            "test_missing_prefix_col_treated_as_null_satisfies_alignment adapter output",
+        )
+        .expect("SS-3 null col must satisfy PA-1 + PA-3 (null is constant across all RGs)");
     }
 
     /// Composite-prefix fixture: rows grouped by `(metric, service)`
