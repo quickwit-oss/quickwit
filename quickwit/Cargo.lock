@@ -8335,6 +8335,7 @@ name = "quickwit-cli"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "backtrace",
  "bytesize",
  "chrono",
  "clap",
@@ -8377,6 +8378,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -9388,7 +9390,6 @@ name = "quickwit-telemetry-exporters"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "backtrace",
  "metrics",
  "metrics-exporter-otel",
  "metrics-exporter-prometheus",

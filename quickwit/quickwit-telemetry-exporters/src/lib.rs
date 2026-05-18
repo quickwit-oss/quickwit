@@ -24,10 +24,11 @@ use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider as SdkMetricsProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use tracing::Level;
-use tracing_subscriber::EnvFilter;
+use tracing::{Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::{EnvFilter, Layer};
 
 mod logs;
 mod metrics;
@@ -41,7 +42,6 @@ pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
 }
 
 pub struct TelemetryHandle {
-    env_filter_reload_fn: EnvFilterReloadFn,
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
     meter_provider: Option<SdkMetricsProvider>,
@@ -50,7 +50,6 @@ pub struct TelemetryHandle {
 impl Default for TelemetryHandle {
     fn default() -> Self {
         TelemetryHandle {
-            env_filter_reload_fn: do_nothing_env_filter_reload_fn(),
             tracer_provider: None,
             logger_provider: None,
             meter_provider: None,
@@ -59,10 +58,6 @@ impl Default for TelemetryHandle {
 }
 
 impl TelemetryHandle {
-    pub fn env_filter_reload_fn(&self) -> EnvFilterReloadFn {
-        self.env_filter_reload_fn.clone()
-    }
-
     pub fn shutdown(self) -> anyhow::Result<()> {
         if let Some(tracer_provider) = self.tracer_provider {
             tracer_provider
@@ -83,9 +78,11 @@ impl TelemetryHandle {
     }
 }
 
-/// Load the default logging filter from the environment. The filter can later
-/// be updated using the result callback of [init_telemetry].
-pub(crate) fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
+/// Loads the default logging filter from the environment.
+///
+/// The default registry wires this filter into the reload callback returned
+/// alongside the registry.
+fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     let env_filter = std::env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={level},tantivy=WARN")))
@@ -93,54 +90,56 @@ pub(crate) fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     Ok(env_filter)
 }
 
-pub(crate) type ReloadLayer =
-    tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
+type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
+
+/// Returns the regular Quickwit logging layer.
+pub fn logging_layer<S>(ansi_colors: bool) -> impl Layer<S> + Send + Sync + 'static
+where S: Subscriber + for<'span> LookupSpan<'span> {
+    let event_format = logs::EventFormat::get_from_env();
+    let fmt_fields = event_format.format_fields();
+    tracing_subscriber::fmt::layer()
+        .event_format(event_format)
+        .fmt_fields(fmt_fields)
+        .with_ansi(ansi_colors)
+}
+
+/// Builds the default tracing registry and its reload callback.
+pub fn default_tracing_registry(
+    level: Level,
+    ansi_colors: bool,
+) -> anyhow::Result<(
+    impl Subscriber + for<'span> LookupSpan<'span> + Send + Sync + 'static,
+    EnvFilterReloadFn,
+)> {
+    let (reloadable_env_filter, reload_handle) = ReloadLayer::new(startup_env_filter(level)?);
+    let registry = tracing_subscriber::registry()
+        .with(reloadable_env_filter)
+        .with(logging_layer(ansi_colors));
+    let env_filter_reload_fn: EnvFilterReloadFn = Arc::new(move |env_filter_def: &str| {
+        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
+        reload_handle.reload(new_env_filter)?;
+        Ok(())
+    });
+    Ok((registry, env_filter_reload_fn))
+}
 
 /// Initializes logging/tracing/metrics providers for the process.
+///
+/// The caller provides the tracing registry so binaries can add process-specific
+/// layers before OpenTelemetry layers are attached.
 ///
 /// NOTE: this function must be called before any metric is emitted so metric handles
 /// are registered against the production recorder instead of a noop/default
 /// recorder.
 pub fn init_telemetry(
     service_version: &str,
-    level: Level,
-    ansi_colors: bool,
+    registry: impl Subscriber + for<'span> LookupSpan<'span> + Send + Sync + 'static,
 ) -> anyhow::Result<TelemetryHandle> {
     let otlp_config = otlp::OtlpExporterConfig::load_from_env();
 
     let meter_provider = metrics::init_metrics_provider(service_version, &otlp_config)?;
 
     global::set_text_map_propagator(TraceContextPropagator::new());
-
-    let event_format = logs::EventFormat::get_from_env();
-    let fmt_fields = event_format.format_fields();
-    let registry = tracing_subscriber::registry();
-
-    let (reloadable_env_filter, reload_handle) = ReloadLayer::new(startup_env_filter(level)?);
-
-    #[cfg(not(feature = "jemalloc-profiled"))]
-    let registry = registry.with(reloadable_env_filter).with(
-        tracing_subscriber::fmt::layer()
-            .event_format(event_format)
-            .fmt_fields(fmt_fields)
-            .with_ansi(ansi_colors),
-    );
-
-    #[cfg(feature = "jemalloc-profiled")]
-    let registry = logs::jemalloc_profiled::configure_registry(
-        registry,
-        event_format,
-        fmt_fields,
-        ansi_colors,
-        level,
-        reloadable_env_filter,
-    )?;
-
-    let env_filter_reload_fn: EnvFilterReloadFn = Arc::new(move |env_filter_def: &str| {
-        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
-        reload_handle.reload(new_env_filter)?;
-        Ok(())
-    });
 
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
@@ -163,7 +162,6 @@ pub fn init_telemetry(
             .context("failed to register tracing subscriber")?;
 
         TelemetryHandle {
-            env_filter_reload_fn,
             tracer_provider: Some(tracer_provider),
             logger_provider: Some(logger_provider),
             meter_provider,
@@ -173,7 +171,6 @@ pub fn init_telemetry(
             .try_init()
             .context("failed to register tracing subscriber")?;
         TelemetryHandle {
-            env_filter_reload_fn,
             tracer_provider: None,
             logger_provider: None,
             meter_provider,

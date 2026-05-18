@@ -23,7 +23,7 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::metrics::register_build_info_metric;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
-use quickwit_serve::BuildInfo;
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
 
 #[cfg(feature = "tokio-console")]
@@ -83,15 +83,30 @@ fn init_telemetry(
     service_version: &str,
     level: tracing::Level,
     ansi_colors: bool,
-) -> anyhow::Result<quickwit_telemetry_exporters::TelemetryHandle> {
+) -> anyhow::Result<(
+    quickwit_telemetry_exporters::TelemetryHandle,
+    EnvFilterReloadFn,
+)> {
     #[cfg(feature = "tokio-console")]
     {
         if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
             console_subscriber::init();
-            return Ok(quickwit_telemetry_exporters::TelemetryHandle::default());
+            return Ok((
+                quickwit_telemetry_exporters::TelemetryHandle::default(),
+                quickwit_telemetry_exporters::do_nothing_env_filter_reload_fn(),
+            ));
         }
     }
-    quickwit_telemetry_exporters::init_telemetry(service_version, level, ansi_colors)
+    #[cfg(feature = "jemalloc-profiled")]
+    let (registry, env_filter_reload_fn) =
+        quickwit_cli::jemalloc::tracing_registry(level, ansi_colors)?;
+
+    #[cfg(not(feature = "jemalloc-profiled"))]
+    let (registry, env_filter_reload_fn) =
+        quickwit_telemetry_exporters::default_tracing_registry(level, ansi_colors)?;
+
+    let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(service_version, registry)?;
+    Ok((telemetry_handle, env_filter_reload_fn))
 }
 
 async fn main_impl() -> anyhow::Result<()> {
@@ -100,7 +115,7 @@ async fn main_impl() -> anyhow::Result<()> {
     install_default_crypto_ring_provider();
 
     let build_info = BuildInfo::get();
-    let telemetry_handle = init_telemetry(
+    let (telemetry_handle, env_filter_reload_fn) = init_telemetry(
         &build_info.version,
         command.default_log_level(),
         ansi_colors,
@@ -113,10 +128,7 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    let return_code: i32 = if let Err(command_error) = command
-        .execute(telemetry_handle.env_filter_reload_fn())
-        .await
-    {
+    let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
         eprintln!(
             "{} command failed: {:?}\n",
