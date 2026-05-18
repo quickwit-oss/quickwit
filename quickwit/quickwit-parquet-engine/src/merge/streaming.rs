@@ -58,39 +58,43 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use arrow::array::{Array, ArrayRef, RecordBatch, new_null_array};
-use arrow::compute::interleave;
-use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
+use arrow::datatypes::{Field, Schema as ArrowSchema, SchemaRef};
 use parquet::file::metadata::ParquetMetaData;
 use tokio::runtime::Handle;
 use tracing::info;
-use ulid::Ulid;
 
-use super::merge_order::{MergeRun, compute_merge_order, compute_output_boundaries};
-use super::schema::{align_inputs_to_union_schema, optimize_output_batch};
-use super::writer::{
-    apply_merge_permutation, build_merge_kv_metadata, build_sorting_columns,
-    resolve_sort_field_names, verify_sort_order,
-};
+use super::merge_order::{MergeRun, compute_merge_order};
+use super::schema::align_inputs_to_union_schema;
+use super::writer::{apply_merge_permutation, verify_sort_order};
 use super::{InputMetadata, MergeConfig, MergeOutputFile};
-use crate::row_keys;
+
+mod body_assembler;
+mod output;
+pub(crate) mod region_grouping;
+
+use body_assembler::{BodyColOutputPageAssembler, StreamingBodyColIter};
+use output::{
+    OutputAccumulator, OutputWriterStorage, finalize_output, open_output_writer_for_streaming,
+};
+use region_grouping::{
+    Region, extract_regions_from_metadata, split_region_at_sorted_series,
+    validate_region_order_matches_physical_rg_order,
+};
+
 use crate::sort_fields::{
     equivalent_schemas_for_compaction, is_timestamp_column_name, parse_sort_fields,
 };
 use crate::sorted_series::SORTED_SERIES_COLUMN;
-use crate::split::TAG_SERVICE;
 use crate::storage::page_decoder::{DecodedPage, StreamDecoder};
-use crate::storage::split_writer::{extract_metric_names, extract_time_range};
-use crate::storage::streaming_writer::StreamingParquetWriter;
 use crate::storage::{
     ColumnPageStream, PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN,
     PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
 };
-use crate::zonemap::{self, ZonemapOptions};
 
 /// Output page size in rows for body-col assembly. Each call to the
 /// sync iterator passed to [`write_next_column_arrays`] yields one
@@ -101,7 +105,7 @@ use crate::zonemap::{self, ZonemapOptions};
 /// fixed costs.
 ///
 /// [`write_next_column_arrays`]: crate::storage::streaming_writer::RowGroupBuilder::write_next_column_arrays
-const OUTPUT_PAGE_ROWS: usize = 1024;
+pub(crate) const OUTPUT_PAGE_ROWS: usize = 1024;
 
 /// Test-only peak observed length of any input's `body_col_page_cache`
 /// since the last reset. Used by the MS-7 page-bounded-memory test to
@@ -113,7 +117,7 @@ pub(crate) static PEAK_BODY_COL_PAGE_CACHE_LEN: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(test)]
-fn record_body_col_page_cache_len(len: usize) {
+pub(crate) fn record_body_col_page_cache_len(len: usize) {
     use std::sync::atomic::Ordering;
     let mut prev = PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed);
     while len > prev {
@@ -130,7 +134,7 @@ fn record_body_col_page_cache_len(len: usize) {
 }
 
 #[cfg(not(test))]
-fn record_body_col_page_cache_len(_len: usize) {}
+pub(crate) fn record_body_col_page_cache_len(_len: usize) {}
 
 /// Streaming N-input → M-output column-major merge.
 ///
@@ -151,21 +155,34 @@ pub async fn streaming_merge_sorted_parquet_files(
         bail!("num_outputs must be at least 1");
     }
 
-    // Validate that all inputs are single-RG (or zero-RG, which means
-    // the file has no data). PR-6b.2 simplification — see module docs.
-    for (idx, stream) in inputs.iter().enumerate() {
-        let num_rgs = stream.metadata().num_row_groups();
-        if num_rgs > 1 {
-            bail!(
-                "streaming merge requires single-row-group inputs in PR-6b.2 (input {idx} has \
-                 {num_rgs} row groups); multi-RG metric-aligned inputs land in a follow-up. \
-                 Legacy multi-RG (rg_partition_prefix_len=0) inputs must go through the PR-5 \
-                 adapter, which presents them as a single synthetic row group."
-            );
+    let input_meta = extract_and_validate_input_metadata(&inputs)?;
+
+    // Reject legacy multi-RG inputs (`rg_partition_prefix_len == 0`
+    // AND any input has >1 row group). These have no alignment claim,
+    // so RG boundaries are arbitrary row counts that may split a
+    // single sort-key value across two RGs. The streaming engine
+    // cannot determine merge regions without column-chunk-bounded
+    // buffering; such inputs must go through `LegacyInputAdapter`
+    // (from PR-5, see `storage::legacy_adapter`), which presents
+    // them as one synthetic single-RG stream.
+    //
+    // This guard catches caller bugs — production code always routes
+    // legacy splits through the adapter (see `merge::execute_merge_operation`
+    // in `merge/mod.rs`), so a raw legacy `StreamingParquetReader`
+    // arriving here is a wiring mistake, not a supported input shape.
+    // Bail with a clear pointer rather than wading further into the
+    // streaming pipeline with mis-aligned RGs.
+    if input_meta.rg_partition_prefix_len == 0 {
+        for (idx, stream) in inputs.iter().enumerate() {
+            let num_rgs = stream.metadata().num_row_groups();
+            if num_rgs > 1 {
+                bail!(
+                    "legacy multi-RG inputs (rg_partition_prefix_len=0) must go through the PR-5 \
+                     adapter — input {idx} has {num_rgs} row groups with no alignment claim"
+                );
+            }
         }
     }
-
-    let input_meta = extract_and_validate_input_metadata(&inputs)?;
 
     info!(
         num_inputs = inputs.len(),
@@ -191,54 +208,203 @@ pub async fn streaming_merge_sorted_parquet_files(
         let mut decoders_state = build_input_decoders_state(&mut inputs)?;
 
         // Cross-input precondition for the body-col memory bound. See
-        // the function doc and the `body_col_page_cache` field doc for
+        // the function doc and the `body_col_page_caches` field doc for
         // the load-bearing argument.
         assert_inputs_in_husky_body_col_order(&decoders_state, &input_meta.sort_fields)?;
 
-        // Phase 0
-        let sort_col_batches =
-            drain_sort_cols_all_inputs(&handle, &mut decoders_state, &input_meta.sort_fields)?;
+        // Pre-compute regions from RG metadata. With prefix_len >= 1
+        // each region is one sort-prefix value across inputs (each
+        // contributing input has exactly one RG in that region). With
+        // prefix_len == 0 (validated single-RG above) there is one
+        // region covering all inputs — we'll subdivide it below by
+        // walking the merge order to find first-sort-col transitions.
+        let regions = extract_regions_from_metadata(&decoders_state, &input_meta)?;
 
-        if sort_col_batches.iter().all(|b| b.num_rows() == 0) {
+        if regions.is_empty() {
             info!("all inputs empty, producing no output");
             return Ok(Vec::new());
         }
 
-        // Phase 1: align inputs to a union sort-col schema so the merge-order
-        // comparator sees uniformly-typed `sorted_series` + `timestamp_secs`.
-        let (sort_union_schema, aligned_sort_batches) =
-            align_inputs_to_union_schema(&sort_col_batches, &input_meta.sort_fields)?;
-        let merge_order = compute_merge_order(&aligned_sort_batches, &input_meta.sort_fields)?;
+        // MS-2: validate that the BTreeMap-driven region order
+        // agrees with each input's physical RG order. The streaming
+        // engine reads inputs sequentially — it cannot rewind. If
+        // region K's contributing RG for input I is physically AFTER
+        // a later region L's contributing RG for the same input, the
+        // engine would bail mid-merge with "page from rg X while
+        // draining rg Y" (Err returned up the spawn_blocking task,
+        // not a panic). This typically means the input was sorted
+        // in the opposite direction from what the sort schema
+        // declares (e.g., metric_name written DESC on disk but the
+        // sort schema says ASC). Reject upfront with a clearer
+        // error that names the offending input and region.
+        validate_region_order_matches_physical_rg_order(&regions, decoders_state.len())?;
 
-        // Phase 2: split merge order into M outputs at sorted_series boundaries.
-        let boundaries =
-            compute_output_boundaries(&merge_order, &aligned_sort_batches, num_outputs)?;
+        let total_rows: usize = regions.iter().map(|r| r.total_rows()).sum();
+        let target_per_output = (total_rows.div_ceil(num_outputs)).max(1);
 
-        let total_rows: usize = aligned_sort_batches.iter().map(|b| b.num_rows()).sum();
         info!(
             total_rows,
-            num_outputs = boundaries.len(),
-            "streaming merge order computed"
+            num_regions = regions.len(),
+            num_outputs,
+            "streaming merge regions computed"
         );
 
-        // Pre-compute per-input row → (output_idx, output_position) destination map.
-        // Used by every column write to slice take/interleave indices per page.
-        let destinations =
-            build_input_row_destinations(&aligned_sort_batches, &merge_order, &boundaries);
+        // Build the union schema once across all inputs' arrow schemas.
+        let arrow_schemas: Vec<SchemaRef> = decoders_state
+            .iter()
+            .map(|s| Arc::clone(&s.arrow_schema))
+            .collect();
+        let union_schema =
+            build_full_union_schema_from_arrow_schemas(&arrow_schemas, &input_meta.sort_fields)?;
 
-        // Phase 3
-        let outputs = write_streaming_outputs(
-            &handle,
-            &mut decoders_state,
-            &aligned_sort_batches,
-            &sort_union_schema,
-            &merge_order,
-            &boundaries,
-            &destinations,
-            &input_meta,
-            &writer_config,
-            &output_dir,
-        )?;
+        // Region processing loop. For each top-level region we may
+        // need to subdivide it across multiple output files so we
+        // honor `num_outputs` even when the input layout doesn't
+        // give us enough region boundaries (e.g., one giant
+        // `metric_name` with prefix_len=0). Splitting happens at
+        // `sorted_series` transitions inside the region's merge
+        // order — never inside a single sorted_series run.
+        //
+        // Memory: between top-level regions we reset every input's
+        // per-col page cache + cursor, because pages from one RG
+        // would have row_start values that collide with the next
+        // RG's row-index space. Sub-regions of one top-level region
+        // share an RG, so the cache survives across sub-region
+        // boundaries — that's what lets the col write loop re-read
+        // an earlier col's pages for a later sub-region.
+        let mut outputs: Vec<MergeOutputFile> = Vec::new();
+        let mut current_writer: Option<OutputWriterStorage> = None;
+        let mut current_accumulator: Option<OutputAccumulator> = None;
+        let mut current_output_idx: usize = 0;
+        let mut current_output_rows: usize = 0;
+
+        for (region_idx, region) in regions.iter().enumerate() {
+            if region_idx > 0 {
+                for state in decoders_state.iter_mut() {
+                    state.reset_all_body_col_state();
+                }
+            }
+
+            // Decide whether we need to split this region across
+            // multiple outputs. Two conditions must both hold: the
+            // region's rows would push the current output past the
+            // target AND there is an unused output to advance to.
+            // When splitting kicks in we have to pre-drain this
+            // region's sort cols so we can compute the merge order
+            // and find sorted_series transitions; if no split is
+            // needed we let `process_region` drain internally to
+            // preserve the existing per-region memory bound.
+            //
+            // If the current output is already at-or-past target,
+            // the sub-region loop below will roll over to a fresh
+            // output BEFORE writing this region's first sub-region.
+            // The split decision must be made against that fresh
+            // output's full budget — not the current (zero) remainder
+            // — otherwise `split_region_at_sorted_series` would cut
+            // after the very first sorted_series run, and the small
+            // leftover plus the large continuation (both inheriting
+            // the region's prefix key) would land in the same new
+            // output, tripping the PA-3 duplicate-prefix-RG check in
+            // `finalize_output`. Same for `outputs_remaining`: after
+            // the rollover one fewer output is left to fill.
+            let outputs_remaining_raw = num_outputs - current_output_idx;
+            let remaining_in_current_raw = target_per_output.saturating_sub(current_output_rows);
+            let will_roll_over = current_writer.is_some()
+                && current_output_rows >= target_per_output
+                && current_output_idx + 1 < num_outputs;
+            let effective_first_target = if will_roll_over {
+                target_per_output
+            } else {
+                remaining_in_current_raw
+            };
+            let effective_outputs_remaining = if will_roll_over {
+                outputs_remaining_raw.saturating_sub(1)
+            } else {
+                outputs_remaining_raw
+            };
+            let needs_split =
+                effective_outputs_remaining > 1 && region.total_rows() > effective_first_target;
+
+            let prefetched: Option<Vec<RecordBatch>> = if needs_split {
+                Some(drain_and_align_region(
+                    &handle,
+                    &mut decoders_state,
+                    region,
+                    &input_meta.sort_fields,
+                )?)
+            } else {
+                None
+            };
+
+            let sub_regions: Vec<Region> = if let Some(ref prefetched_batches) = prefetched {
+                let merge_order = compute_merge_order(prefetched_batches, &input_meta.sort_fields)?;
+                split_region_at_sorted_series(
+                    region,
+                    &merge_order,
+                    prefetched_batches,
+                    effective_first_target,
+                    target_per_output,
+                    effective_outputs_remaining,
+                )?
+            } else {
+                vec![region.clone()]
+            };
+
+            for sub_region in &sub_regions {
+                let sub_rows = sub_region.total_rows();
+
+                // Advance to the next output file BEFORE this sub-
+                // region if the current output already met the
+                // target and we still have outputs to fill. The
+                // very first sub-region is exempt so we don't open
+                // an empty writer.
+                if current_writer.is_some()
+                    && current_output_rows >= target_per_output
+                    && current_output_idx + 1 < num_outputs
+                {
+                    if let (Some(w), Some(acc)) =
+                        (current_writer.take(), current_accumulator.take())
+                    {
+                        outputs.push(finalize_output(w, acc, &input_meta)?);
+                    }
+                    current_output_idx += 1;
+                    current_output_rows = 0;
+                }
+
+                if current_writer.is_none() {
+                    let writer = open_output_writer_for_streaming(
+                        current_output_idx,
+                        &output_dir,
+                        &union_schema,
+                        &input_meta,
+                        &writer_config,
+                    )?;
+                    current_writer = Some(writer);
+                    current_accumulator = Some(OutputAccumulator::new(current_output_idx));
+                }
+
+                process_region(
+                    &handle,
+                    &mut decoders_state,
+                    current_writer
+                        .as_mut()
+                        .expect("writer opened above for this sub-region"),
+                    current_accumulator
+                        .as_mut()
+                        .expect("accumulator opened above for this sub-region"),
+                    sub_region,
+                    &union_schema,
+                    &input_meta,
+                    prefetched.as_deref(),
+                )?;
+                current_output_rows += sub_rows;
+            }
+        }
+
+        // Close the last writer.
+        if let (Some(w), Some(acc)) = (current_writer.take(), current_accumulator.take()) {
+            outputs.push(finalize_output(w, acc, &input_meta)?);
+        }
 
         // MC-1: total row count preserved.
         let output_total: usize = outputs.iter().map(|o| o.num_rows).sum();
@@ -266,50 +432,106 @@ pub async fn streaming_merge_sorted_parquet_files(
 /// rows from more than one page). Reconstructing the decoder mid-pass
 /// would reset the per-column `rows_decoded` counter (so `row_start`
 /// becomes wrong) and discard cached dictionary / queued pages.
-struct InputDecoderState {
-    decoder: StreamDecoder<'static>,
-    metadata: Arc<ParquetMetaData>,
+pub(crate) struct InputDecoderState {
+    pub(crate) decoder: StreamDecoder<'static>,
+    pub(crate) metadata: Arc<ParquetMetaData>,
     /// Arrow schema of this input (from parquet → arrow conversion).
-    arrow_schema: SchemaRef,
-    /// Per-input page cache for the *currently active* body column.
-    /// Pages are appended as the decoder produces them and evicted from
-    /// the front once their last row is below `body_col_cursor`. The
-    /// cache must persist across all outputs that consume rows from
-    /// this column so that a page whose range straddles two outputs is
-    /// not re-decoded (the stream has already advanced past it). At
-    /// the start of each body column [`reset_body_col_state`] clears
-    /// this cache and zeroes the cursor.
+    pub(crate) arrow_schema: SchemaRef,
+    /// Per-input, per-parquet-col page cache. Pages emitted by the
+    /// decoder are stored under their actual `col_idx`, not the col
+    /// the caller was asking about — this lets `fill_page_cache_to_row`
+    /// pull pages of col B during a col A advance (storage order:
+    /// col A pages all stream before col B pages within an RG, so to
+    /// get any col B pages we may have to consume leftover col A
+    /// pages first). The synthesized-prefix path relies on this:
+    /// adjacent regions sharing one RG re-read col A from this cache
+    /// when region 2 starts, and the cache has already been filled in
+    /// by region 1's reads.
+    ///
+    /// Pages are evicted (per col) when the col's cursor advances
+    /// past their last row.
     ///
     /// **Memory bound (horizontal, not vertical).** This cache is
     /// per-input: total memory across inputs is
     /// `N_inputs × per_input_peak`. The per-input peak is bounded by
     /// `ceil(OUTPUT_PAGE_ROWS / input_page_rows) + small_slack` —
-    /// driven by [`fill_page_cache_to_row`], which fetches only enough
-    /// pages to cover the rows from *this* input that contribute to
-    /// the *current output page* (a 1024-row slice), and by the
-    /// eviction loop in [`assemble_one_output_page`], which drops any
-    /// page whose last row falls below the cursor after each output
-    /// page emits. The cache never holds an input column-chunk's worth
-    /// of pages — a regression that ever did would break the MS-7
-    /// invariant asserted by
+    /// driven by `fill_page_cache_to_row` (in `body_assembler`), which
+    /// fetches only enough pages to cover the rows from *this* input
+    /// that contribute to the *current output page* (a 1024-row
+    /// slice), and by the eviction loop in `assemble_one_output_page`,
+    /// which drops any page whose last row falls below the cursor
+    /// after each output page emits. The cache never holds an input
+    /// column-chunk's worth of pages — a regression that ever did
+    /// would break the MS-7 invariant asserted by
     /// `test_ms7_body_col_page_cache_bounded_regardless_of_input_size`.
-    body_col_page_cache: Vec<DecodedPage>,
-    /// Next unconsumed input row for the active body column. Advances
-    /// monotonically across outputs because the merge plan assigns each
-    /// input's rows to outputs in input-row order.
-    body_col_cursor: usize,
+    pub(crate) body_col_page_caches: HashMap<usize, Vec<DecodedPage>>,
+    /// Per-parquet-col cursor: the next unconsumed input row for that
+    /// col. Advances monotonically as outputs are written; survives
+    /// across regions of the same input so the body col assembler can
+    /// resume mid-RG for synthesized regions.
+    pub(crate) body_col_cursors: HashMap<usize, usize>,
 }
 
 impl InputDecoderState {
-    /// Clear the per-input body-column cache. Called at the start of
-    /// each new body column so leftover pages from the previous column
-    /// (which have a different `col_idx`) don't poison the new column's
-    /// row-start arithmetic. The decoder itself is *not* reset — its
-    /// per-(rg, col) `rows_decoded` counters and queued pages must
-    /// survive so subsequent decode calls return correct row offsets.
-    fn reset_body_col_state(&mut self) {
-        self.body_col_page_cache.clear();
-        self.body_col_cursor = 0;
+    /// Position the cursor for `col_idx` to `start_row` and drop any
+    /// cached pages strictly below it. Used at the start of each
+    /// (region, body col) write: for whole-RG regions this is a no-op
+    /// (cursor was already 0 and cache empty); for synthesized
+    /// regions that share an RG with earlier regions, this skips the
+    /// rows the previous region consumed without clearing the rest of
+    /// the cache.
+    pub(crate) fn set_body_col_cursor(&mut self, col_idx: usize, start_row: usize) {
+        self.body_col_cursors.insert(col_idx, start_row);
+        if let Some(pages) = self.body_col_page_caches.get_mut(&col_idx) {
+            while let Some(front) = pages.first() {
+                let front_end = front.row_start + front.array.len();
+                if front_end <= start_row {
+                    pages.remove(0);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Look up the cached pages for the given col, returning an empty
+    /// slice if none have been decoded yet.
+    pub(crate) fn body_col_cache(&self, col_idx: usize) -> &[DecodedPage] {
+        match self.body_col_page_caches.get(&col_idx) {
+            Some(v) => v.as_slice(),
+            None => &[],
+        }
+    }
+
+    /// Mutable handle to the cache for `col_idx`, creating an empty
+    /// entry if none exists.
+    pub(crate) fn body_col_cache_mut(&mut self, col_idx: usize) -> &mut Vec<DecodedPage> {
+        self.body_col_page_caches.entry(col_idx).or_default()
+    }
+
+    /// Current cursor for `col_idx`; defaults to 0 if untouched.
+    pub(crate) fn body_col_cursor(&self, col_idx: usize) -> usize {
+        self.body_col_cursors.get(&col_idx).copied().unwrap_or(0)
+    }
+
+    /// Sum of cached pages across all cols. Used by the MS-7 peak-
+    /// length probe in tests.
+    pub(crate) fn body_col_caches_total_len(&self) -> usize {
+        self.body_col_page_caches.values().map(|v| v.len()).sum()
+    }
+
+    /// Clear every per-col page cache and every per-col cursor.
+    /// Called between top-level regions: each region typically uses a
+    /// different input RG, and the per-col page `row_start` values
+    /// reported by the decoder are RG-local, so pages cached for RG K
+    /// would conflict with RG K+1's row-index space. Sub-regions of a
+    /// single top-level region share an RG and MUST NOT trigger this
+    /// reset — they rely on the cache surviving from one sub-region
+    /// to the next so an earlier-col read whose stream-tail spans
+    /// later sub-regions stays available.
+    pub(crate) fn reset_all_body_col_state(&mut self) {
+        self.body_col_page_caches.clear();
+        self.body_col_cursors.clear();
     }
 }
 
@@ -330,8 +552,8 @@ fn build_input_decoders_state(
             decoder,
             metadata,
             arrow_schema: Arc::new(arrow_schema),
-            body_col_page_cache: Vec::new(),
-            body_col_cursor: 0,
+            body_col_page_caches: HashMap::new(),
+            body_col_cursors: HashMap::new(),
         });
     }
     Ok(states)
@@ -470,6 +692,59 @@ fn extract_and_validate_input_metadata(
     })
 }
 
+/// Drain a region's contributing inputs' sort cols and align them to
+/// the union sort schema. The result has one entry per global input
+/// index (zero-row placeholders for non-contributing inputs), which
+/// is what `split_region_at_sorted_series` and `process_region` both
+/// expect.
+///
+/// Used by the main loop when a region needs to be sub-divided
+/// across multiple output files — splitting needs the merge order,
+/// which needs the drained sort cols. For regions that fit in a
+/// single output we skip this and let `process_region` drain
+/// internally so the per-region memory cost stays bounded by what
+/// the writer actively consumes.
+fn drain_and_align_region(
+    handle: &Handle,
+    decoders_state: &mut [InputDecoderState],
+    region: &Region,
+    sort_fields_str: &str,
+) -> Result<Vec<RecordBatch>> {
+    let num_inputs = decoders_state.len();
+    let mut sort_col_batches: Vec<Option<RecordBatch>> = (0..num_inputs).map(|_| None).collect();
+    for c in &region.contributing {
+        let batch = drain_sort_cols_one_input(
+            handle,
+            &mut decoders_state[c.input_idx],
+            sort_fields_str,
+            c.input_idx,
+            c.rg_idx,
+        )?;
+        if batch.num_columns() > 0 && batch.schema().index_of(SORTED_SERIES_COLUMN).is_err() {
+            bail!(
+                "input {} rg {} is missing the '{}' column required for merge",
+                c.input_idx,
+                c.rg_idx,
+                SORTED_SERIES_COLUMN,
+            );
+        }
+        sort_col_batches[c.input_idx] = Some(batch);
+    }
+
+    let mut sort_batch_vec: Vec<RecordBatch> = Vec::with_capacity(num_inputs);
+    for (idx, slot) in sort_col_batches.into_iter().enumerate() {
+        let batch = match slot {
+            Some(b) => b,
+            None => empty_sort_col_record_batch(&decoders_state[idx], sort_fields_str)?,
+        };
+        sort_batch_vec.push(batch);
+    }
+
+    let (_sort_union_schema, aligned_sort_batches) =
+        align_inputs_to_union_schema(&sort_batch_vec, sort_fields_str)?;
+    Ok(aligned_sort_batches)
+}
+
 // ============================================================================
 // Phase 0: drain sort cols from each input
 // ============================================================================
@@ -484,9 +759,13 @@ fn drain_sort_cols_all_inputs(
     decoders_state: &mut [InputDecoderState],
     sort_fields_str: &str,
 ) -> Result<Vec<RecordBatch>> {
+    // Single-region path: drain RG 0 of each input. Used by the
+    // single-region streaming path (one region covering all inputs;
+    // applies when all inputs are single-RG OR `rg_partition_prefix_len
+    // == 0` with one synthetic adapter-presented RG per input).
     let mut batches = Vec::with_capacity(decoders_state.len());
     for (idx, state) in decoders_state.iter_mut().enumerate() {
-        let batch = drain_sort_cols_one_input(handle, state, sort_fields_str, idx)?;
+        let batch = drain_sort_cols_one_input(handle, state, sort_fields_str, idx, 0)?;
         if batch.num_columns() > 0 && batch.schema().index_of(SORTED_SERIES_COLUMN).is_err() {
             bail!(
                 "input {idx} is missing the '{}' column required for merge",
@@ -498,14 +777,273 @@ fn drain_sort_cols_all_inputs(
     Ok(batches)
 }
 
+/// Process one merge region: obtain the contributing inputs' sort col
+/// batches (drain them fresh from the streaming decoder when
+/// `prefetched_sort_batches` is `None`; otherwise slice the
+/// pre-drained batches by each contribution's row range — used by the
+/// synthesized prefix-region path), compute the region's merge order,
+/// open a new output RG in the writer, write all cols (sort cols via
+/// interleave, body cols via the page-bounded assembler), close the
+/// RG, accumulate per-output static metadata.
+///
+/// When `prefetched_sort_batches` is provided, each contribution's
+/// `start_row` determines where the body col assembler starts inside
+/// the contributing input's RG. The body col stream is shared with
+/// adjacent synthesized regions of the same input, so its cache /
+/// cursor must advance monotonically — see `reset_body_col_state`.
+#[allow(clippy::too_many_arguments)]
+fn process_region(
+    handle: &Handle,
+    decoders_state: &mut [InputDecoderState],
+    writer_state: &mut OutputWriterStorage,
+    accumulator: &mut OutputAccumulator,
+    region: &Region,
+    union_schema: &SchemaRef,
+    input_meta: &InputMetadata,
+    prefetched_sort_batches: Option<&[RecordBatch]>,
+) -> Result<()> {
+    // 1. Obtain sort col batches for this region's contributing inputs. When prefetched batches are
+    //    supplied (synthesized path), slice them by the contribution's row range so a single RG
+    //    drained once can feed multiple adjacent regions. Otherwise drain a fresh whole-RG batch
+    //    from the streaming decoder. The result is indexed BY GLOBAL INPUT INDEX, with zero-row
+    //    placeholders for non-contributing inputs so the BodyColOutputPageAssembler sees a uniform
+    //    input-count.
+    let num_inputs = decoders_state.len();
+    let mut sort_col_batches: Vec<Option<RecordBatch>> = (0..num_inputs).map(|_| None).collect();
+    for c in &region.contributing {
+        let input_idx = c.input_idx;
+        let rg_idx = c.rg_idx;
+        let batch = match prefetched_sort_batches {
+            Some(prefetched) => prefetched[input_idx].slice(c.start_row, c.num_rows),
+            None => drain_sort_cols_one_input(
+                handle,
+                &mut decoders_state[input_idx],
+                &input_meta.sort_fields,
+                input_idx,
+                rg_idx,
+            )?,
+        };
+        if batch.num_columns() > 0 && batch.schema().index_of(SORTED_SERIES_COLUMN).is_err() {
+            bail!(
+                "input {input_idx} rg {rg_idx} is missing the '{}' column required for merge",
+                SORTED_SERIES_COLUMN,
+            );
+        }
+        sort_col_batches[input_idx] = Some(batch);
+    }
+
+    // Materialise into a `Vec<RecordBatch>` per input. Non-contributing
+    // inputs get zero-row placeholders with the input's sort col schema
+    // so `compute_merge_order` and the body col assembler see uniform
+    // shapes.
+    let mut sort_batch_vec: Vec<RecordBatch> = Vec::with_capacity(num_inputs);
+    for (idx, slot) in sort_col_batches.into_iter().enumerate() {
+        let batch = match slot {
+            Some(b) => b,
+            None => empty_sort_col_record_batch(&decoders_state[idx], &input_meta.sort_fields)?,
+        };
+        sort_batch_vec.push(batch);
+    }
+
+    // Per-input cursor offsets to feed to the body col reset hook
+    // below. For whole-RG regions this is 0 everywhere; for
+    // synthesized regions it is `c.start_row` of the contributing
+    // input so the body col assembler walks rows starting at the
+    // region's first input row instead of restarting at 0.
+    let mut input_start_rows: Vec<usize> = vec![0; num_inputs];
+    for c in &region.contributing {
+        input_start_rows[c.input_idx] = c.start_row;
+    }
+
+    // 2. Align to union sort schema for the merge-order comparator.
+    let (sort_union_schema, aligned_sort_batches) =
+        align_inputs_to_union_schema(&sort_batch_vec, &input_meta.sort_fields)?;
+
+    // 3. Compute merge order for this region.
+    let merge_order = compute_merge_order(&aligned_sort_batches, &input_meta.sort_fields)?;
+    let region_rows: usize = merge_order.iter().map(|r| r.row_count).sum();
+    if region_rows == 0 {
+        return Ok(());
+    }
+
+    // 4. Apply the merge permutation to the sort col batches to get the region's sorted sort-col
+    //    batch. This will be appended to the output accumulator; also used to compute take indices
+    //    for the body col assembler.
+    let region_sort_batch =
+        apply_merge_permutation(&aligned_sort_batches, &sort_union_schema, &merge_order)
+            .context("applying merge permutation for region sort cols")?;
+
+    // MC-3: verify the region's output is sorted.
+    verify_sort_order(&region_sort_batch, &input_meta.sort_fields);
+
+    // 5. Build per-region destinations: maps (input_idx, input_row) → (output_idx=0,
+    //    position_in_region). The body col assembler walks this to find which (input, row)
+    //    contributes each output position.
+    //
+    //    The destinations array is indexed by row *within the sort
+    //    batch* — which for whole-RG regions equals "row within the
+    //    RG" and for synthesized regions equals "row within the
+    //    region's slice". In both cases that index lines up with what
+    //    the body col decoder's `row_start` reports for the current
+    //    RG, modulo the per-input `start_row` offset added below.
+    let mut destinations: Vec<Vec<Option<(usize, usize)>>> = aligned_sort_batches
+        .iter()
+        .enumerate()
+        .map(|(idx, b)| {
+            // For the synthesized path the body col assembler walks
+            // absolute input rows; pad the destinations array so the
+            // index space matches what the page decoder reports.
+            vec![None; input_start_rows[idx] + b.num_rows()]
+        })
+        .collect();
+    let mut pos = 0usize;
+    for run in &merge_order {
+        for r in 0..run.row_count {
+            let absolute_row = input_start_rows[run.input_index] + run.start_row + r;
+            destinations[run.input_index][absolute_row] = Some((0, pos));
+            pos += 1;
+        }
+    }
+    let region_destinations = InputRowDestinations {
+        per_input: destinations,
+        rows_per_output: vec![region_rows],
+    };
+
+    // 6. Open a new output RG and write all cols in union schema order.
+    let mut row_group = writer_state.writer.start_row_group().with_context(|| {
+        format!(
+            "opening row group for output {} region",
+            writer_state.output_idx,
+        )
+    })?;
+    writer_state.num_row_groups += 1;
+
+    for (col_idx, field) in union_schema.fields().iter().enumerate() {
+        let col_name = field.name();
+        if sort_union_schema.index_of(col_name).is_ok() {
+            // Sort col: take from the already-built region_sort_batch.
+            let arrays = build_sort_col_pages_from_sorted_batch(&region_sort_batch, col_name)?;
+            row_group
+                .write_next_column_arrays(arrays.into_iter())
+                .with_context(|| {
+                    format!(
+                        "writing sort col '{col_name}' (col_idx {col_idx}) to output {}",
+                        writer_state.output_idx,
+                    )
+                })?;
+        } else {
+            // Body col: stream via the page-bounded assembler. Resolve
+            // each input's parquet col_idx for this union-schema col
+            // first, then position the per-col cursor at the region's
+            // `start_row` for that input. For whole-RG regions
+            // `start_row == 0` (no-op for first region); for synthesized
+            // regions sharing an RG with earlier regions the cursor
+            // jumps past already-emitted rows so we don't re-emit them.
+            // The decoder itself is never reset — its per-(rg, col)
+            // `rows_decoded` counters and queued pages must survive so
+            // subsequent decode calls return correct row offsets.
+            let mut input_col_indices: Vec<Option<usize>> = Vec::with_capacity(num_inputs);
+            for state in decoders_state.iter() {
+                input_col_indices.push(state.arrow_schema.index_of(col_name).ok());
+            }
+            for (idx, state) in decoders_state.iter_mut().enumerate() {
+                if let Some(col_parquet_idx) = input_col_indices[idx] {
+                    state.set_body_col_cursor(col_parquet_idx, input_start_rows[idx]);
+                }
+            }
+
+            let track_service = col_name == "service";
+
+            let assembler = BodyColOutputPageAssembler::new(
+                handle,
+                decoders_state,
+                &input_col_indices,
+                &region_destinations,
+                0, // out_idx is always 0 within a single-region call
+                col_name,
+                field.as_ref(),
+            );
+
+            // Feed pages one at a time into `write_next_column_arrays`
+            // via the streaming iterator: it surfaces assembly errors
+            // through `error_slot` so memory stays bounded by output-
+            // page size instead of column-chunk size.
+            let mut error_slot: Option<anyhow::Error> = None;
+            let service_collector: Option<&mut HashSet<String>> = if track_service {
+                Some(&mut accumulator.service_names)
+            } else {
+                None
+            };
+            let stream_iter = StreamingBodyColIter {
+                inner: assembler.into_iter(),
+                error_slot: &mut error_slot,
+                service_collector,
+            };
+            let write_result = row_group.write_next_column_arrays(stream_iter);
+
+            if let Some(err) = error_slot {
+                return Err(err).with_context(|| {
+                    format!(
+                        "assembling body col '{col_name}' for output {} region",
+                        writer_state.output_idx,
+                    )
+                });
+            }
+            write_result.with_context(|| {
+                format!(
+                    "writing body col '{col_name}' to output {} region",
+                    writer_state.output_idx,
+                )
+            })?;
+        }
+    }
+
+    row_group.finish().with_context(|| {
+        format!(
+            "finishing region row group for output {}",
+            writer_state.output_idx
+        )
+    })?;
+
+    // 7. Accumulate this region's contribution to the output.
+    accumulator.append_sort_batch(region_sort_batch)?;
+    accumulator.num_rows += region_rows;
+
+    Ok(())
+}
+
+/// Helper for sort col writes within a region: split the region's
+/// already-sorted sort col into page-sized chunks for
+/// `write_next_column_arrays`.
+fn build_sort_col_pages_from_sorted_batch(
+    sorted_batch: &RecordBatch,
+    col_name: &str,
+) -> Result<Vec<ArrayRef>> {
+    let col_idx = sorted_batch
+        .schema()
+        .index_of(col_name)
+        .with_context(|| format!("missing sort col '{col_name}' in region sorted batch"))?;
+    let col = sorted_batch.column(col_idx);
+    let total_rows = col.len();
+    let mut pages = Vec::with_capacity(total_rows.div_ceil(OUTPUT_PAGE_ROWS));
+    let mut start = 0;
+    while start < total_rows {
+        let len = (total_rows - start).min(OUTPUT_PAGE_ROWS);
+        pages.push(col.slice(start, len));
+        start += len;
+    }
+    Ok(pages)
+}
+
 fn drain_sort_cols_one_input(
     handle: &Handle,
     state: &mut InputDecoderState,
     sort_fields_str: &str,
     input_idx: usize,
+    expected_rg_idx: usize,
 ) -> Result<RecordBatch> {
-    if state.metadata.num_row_groups() == 0 {
-        // Empty input — no rows to drain. Return a zero-row batch with the
+    if state.metadata.num_row_groups() == 0 || expected_rg_idx >= state.metadata.num_row_groups() {
+        // No rows to drain at this RG. Return a zero-row batch with the
         // sort cols' fields preserved so downstream merge order code sees a
         // uniform schema across inputs.
         return empty_sort_col_record_batch(state, sort_fields_str);
@@ -541,20 +1079,20 @@ fn drain_sort_cols_one_input(
     }
 
     // Target row count per sort col (from row group's column chunk metadata).
-    let rg_meta = state.metadata.row_group(0);
+    let rg_meta = state.metadata.row_group(expected_rg_idx);
     let mut target_rows_per_col: HashMap<usize, usize> = HashMap::new();
     for &col_idx in sort_col_parquet_indices.keys() {
         target_rows_per_col.insert(col_idx, rg_meta.column(col_idx).num_values() as usize);
     }
 
     // Drain pages into per-col buffers until all sort cols are fully
-    // decoded. The streaming engine relies on a hard storage-ordering
-    // contract: within a row group, parquet emits column chunks in
-    // schema order (sort cols are declared first in our schema, body
-    // cols after), so all sort col pages appear before any body col
-    // page. Cross-file we don't require identical body-col ordering —
+    // decoded for this RG. The streaming engine relies on a hard
+    // storage-ordering contract: within each row group parquet emits
+    // column chunks in schema order (sort cols declared first, body
+    // cols after), so every sort-col page appears before any body-col
+    // page. Cross-file we do NOT require identical body-col ordering —
     // the body-col loop drives from the union schema and looks each
-    // column up by name. The contract we DO require cross-file is
+    // column up by name; the contract we do require cross-file is
     // "sort cols come first." A page from a body col arriving here
     // means a producer violated that contract; bail rather than guess.
     let mut per_col_pages: HashMap<usize, Vec<ArrayRef>> = HashMap::new();
@@ -566,30 +1104,28 @@ fn drain_sort_cols_one_input(
     while sort_cols_finished < sort_col_target {
         let decoded = handle
             .block_on(state.decoder.decode_next_page())
-            .with_context(|| format!("decoding sort col page (input {input_idx})"))?;
+            .with_context(|| {
+                format!("decoding sort col page (input {input_idx}, rg {expected_rg_idx})")
+            })?;
         let page = match decoded {
             Some(p) => p,
             None => bail!(
-                "stream ended before sort cols fully drained for input {input_idx}: \
-                 {sort_cols_finished}/{sort_col_target} cols complete",
+                "stream ended before sort cols fully drained for input {input_idx} rg \
+                 {expected_rg_idx}: {sort_cols_finished}/{sort_col_target} cols complete",
             ),
         };
 
         if !sort_col_parquet_indices.contains_key(&page.col_idx) {
             bail!(
                 "input {input_idx} returned a non-sort page (col {}) before all sort cols were \
-                 drained — sort-cols-first storage ordering violated",
+                 drained for rg {expected_rg_idx} — this violates Husky storage ordering",
                 page.col_idx,
             );
         }
-        if page.rg_idx != 0 {
-            // PR-6b.2 (this PR) only supports single-RG inputs. The
-            // multi-RG path with prefix-aligned row groups is added
-            // in PR-6c.2 (#6424) along with `process_region` /
-            // composite-key encoding.
+        if page.rg_idx != expected_rg_idx {
             bail!(
-                "input {input_idx} returned a page from rg {} during sort col drain — only \
-                 single-RG inputs are supported in PR-6b.2",
+                "input {input_idx} returned a page from rg {} while draining sort cols of rg \
+                 {expected_rg_idx}",
                 page.rg_idx,
             );
         }
@@ -760,11 +1296,11 @@ fn concat_arrays(arrays: &[ArrayRef]) -> Result<ArrayRef> {
 /// is not in any output (only possible for rows beyond the merge
 /// plan's coverage; shouldn't happen with our merge order).
 #[derive(Debug)]
-struct InputRowDestinations {
+pub(crate) struct InputRowDestinations {
     /// One Vec per input. Length = input's sort-col row count.
-    per_input: Vec<Vec<Option<(usize, usize)>>>,
+    pub(crate) per_input: Vec<Vec<Option<(usize, usize)>>>,
     /// Total rows per output index (cumulative writer "expected" rows).
-    rows_per_output: Vec<usize>,
+    pub(crate) rows_per_output: Vec<usize>,
 }
 
 fn build_input_row_destinations(
@@ -798,205 +1334,10 @@ fn build_input_row_destinations(
 }
 
 // ============================================================================
-// Phase 3: streaming write with one writer per output
+// Obsolete PR-6b.2 multi-output-parallel helpers (deleted in PR-6c.2's
+// per-region restructure). The functions below are no longer used —
+// per-region processing in `process_region` is the new path.
 // ============================================================================
-
-/// Per-output state owned across phase 3 (writer + bookkeeping).
-/// The row group lives in a parallel Vec so its borrow into `writer`
-/// is tracked by the compiler instead of through a `'static`
-/// transmute.
-struct OutputWriterStorage {
-    output_idx: usize,
-    output_path: PathBuf,
-    writer: StreamingParquetWriter<std::fs::File>,
-    /// Service-name set built during the body col write of "service"
-    /// (or empty if no service col).
-    service_names: HashSet<String>,
-    /// Per-output total row count = sum of merge runs in this output's boundary.
-    num_rows: usize,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_streaming_outputs(
-    handle: &Handle,
-    decoders_state: &mut [InputDecoderState],
-    aligned_sort_batches: &[RecordBatch],
-    sort_union_schema: &SchemaRef,
-    merge_order: &[MergeRun],
-    boundaries: &[Range<usize>],
-    destinations: &InputRowDestinations,
-    input_meta: &InputMetadata,
-    writer_config: &crate::storage::ParquetWriterConfig,
-    output_dir: &Path,
-) -> Result<Vec<MergeOutputFile>> {
-    // 1. Build the union schema across full input arrow schemas (so the output covers every column
-    //    that appears in any input). The sort union schema covers only sort cols.
-    let input_arrow_schemas: Vec<SchemaRef> = decoders_state
-        .iter()
-        .map(|s| Arc::clone(&s.arrow_schema))
-        .collect();
-    let (full_union_schema, _aligned_full_placeholder) =
-        build_full_union_schema_from_arrow_schemas(&input_arrow_schemas, &input_meta.sort_fields)?;
-
-    // 2. Build per-output metadata (KV entries, row keys, zonemaps) up front from sort col data —
-    //    these are what the schema + writer props depend on.
-    let per_output_static = boundaries
-        .iter()
-        .enumerate()
-        .map(|(out_idx, boundary)| {
-            build_per_output_static(
-                out_idx,
-                boundary,
-                aligned_sort_batches,
-                sort_union_schema,
-                merge_order,
-                input_meta,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    // 3. Decide per-output schema: optimise based on each output's sort col data (which determines
-    //    metric_name cardinality, etc.). Body cols stay as declared by the union schema; we don't
-    //    probe their cardinality here since we haven't read them yet. This is a slight regression
-    //    vs. the non-streaming engine — it would dict-encode low-cardinality string body cols too.
-    //    PR-6c.2 or later can revisit by gathering body-col cardinality during the streaming pass.
-    let per_output_schemas: Vec<SchemaRef> = per_output_static
-        .iter()
-        .map(|s| derive_output_schema(&full_union_schema, sort_union_schema, &s.sort_optimised))
-        .collect::<Result<Vec<_>>>()?;
-
-    // 4. Open M writers, one per output. Writers + bookkeeping live in `writer_states`; the row
-    //    group borrows mutably from each writer and is held in a parallel `row_groups` Vec for the
-    //    col loop.
-    let mut writer_states: Vec<OutputWriterStorage> = Vec::with_capacity(boundaries.len());
-    for (out_idx, (schema, static_meta)) in per_output_schemas
-        .iter()
-        .zip(per_output_static.iter())
-        .enumerate()
-    {
-        if destinations.rows_per_output[out_idx] == 0 {
-            continue;
-        }
-        writer_states.push(open_output_writer(
-            out_idx,
-            output_dir,
-            Arc::clone(schema),
-            static_meta,
-            input_meta,
-            writer_config,
-        )?);
-    }
-
-    // Snapshot the (output_idx, num_rows) for each storage entry BEFORE
-    // calling `start_row_group`, which borrows `writer_states` mutably
-    // for the rest of phase 3's col loop.
-    let writer_index_view = writer_states_index_view(&writer_states);
-    let num_storages = writer_states.len();
-
-    let mut row_groups: Vec<crate::storage::streaming_writer::RowGroupBuilder<'_, std::fs::File>> =
-        writer_states
-            .iter_mut()
-            .map(|s| {
-                s.writer
-                    .start_row_group()
-                    .with_context(|| format!("opening row group for output {}", s.output_idx))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-    // Service names are collected into a separate Vec<HashSet<String>>
-    // parallel to `row_groups`; we can't write into `writer_states` here
-    // because it is already borrowed mutably by `row_groups`. We merge
-    // these back into `writer_states` after dropping the row groups.
-    let mut service_names_per_output: Vec<HashSet<String>> =
-        (0..num_storages).map(|_| HashSet::new()).collect();
-    write_all_columns(
-        handle,
-        &mut row_groups,
-        &mut service_names_per_output,
-        &writer_index_view,
-        decoders_state,
-        aligned_sort_batches,
-        sort_union_schema,
-        &full_union_schema,
-        merge_order,
-        boundaries,
-        destinations,
-        &per_output_schemas,
-    )?;
-
-    // 6. Finish all row groups (drops the borrows on writers).
-    for rg in row_groups {
-        rg.finish().context("finishing row group")?;
-    }
-
-    // 7. Merge collected service names + close writers + build MergeOutputFiles.
-    let mut outputs = Vec::with_capacity(writer_states.len());
-    for (mut state, services) in writer_states
-        .into_iter()
-        .zip(service_names_per_output.into_iter())
-    {
-        state.service_names.extend(services);
-        outputs.push(finalize_output_writer(state, &per_output_static)?);
-    }
-    Ok(outputs)
-}
-
-/// Static per-output state computed once from sort col data. Holds
-/// the per-output sort-col-only batch (used for metadata extraction)
-/// and the per-output schema-optimisation hints.
-struct PerOutputStatic {
-    /// Sort-cols-only batch in output sort order — used by row_keys /
-    /// zonemap / metric_names / time_range extractors.
-    sort_optimised: RecordBatch,
-    row_keys_proto: Option<Vec<u8>>,
-    zonemap_regexes: HashMap<String, String>,
-    metric_names: HashSet<String>,
-    time_range: crate::split::TimeRange,
-    /// Number of rows that go into this output.
-    num_rows: usize,
-}
-
-fn build_per_output_static(
-    out_idx: usize,
-    boundary: &Range<usize>,
-    aligned_sort_batches: &[RecordBatch],
-    sort_union_schema: &SchemaRef,
-    merge_order: &[MergeRun],
-    input_meta: &InputMetadata,
-) -> Result<PerOutputStatic> {
-    let runs = &merge_order[boundary.clone()];
-    let sort_batch = apply_merge_permutation(aligned_sort_batches, sort_union_schema, runs)
-        .with_context(|| format!("applying merge permutation for output {out_idx} sort cols"))?;
-    let num_rows = sort_batch.num_rows();
-
-    // MC-3 sort order on the sort-col-only batch (same check the
-    // non-streaming engine does, just restricted to columns we have).
-    verify_sort_order(&sort_batch, &input_meta.sort_fields);
-    let sort_optimised = optimize_output_batch(&sort_batch);
-
-    let row_keys_proto = row_keys::extract_row_keys(&input_meta.sort_fields, &sort_optimised)
-        .with_context(|| format!("extracting row keys for output {out_idx}"))?
-        .map(|rk| row_keys::encode_row_keys_proto(&rk));
-
-    let zonemap_opts = ZonemapOptions::default();
-    let zonemap_regexes =
-        zonemap::extract_zonemap_regexes(&input_meta.sort_fields, &sort_optimised, &zonemap_opts)
-            .with_context(|| format!("extracting zonemap regexes for output {out_idx}"))?;
-
-    let metric_names = extract_metric_names(&sort_optimised)
-        .with_context(|| format!("extracting metric names for output {out_idx}"))?;
-    let time_range = extract_time_range(&sort_optimised)
-        .with_context(|| format!("extracting time range for output {out_idx}"))?;
-
-    Ok(PerOutputStatic {
-        sort_optimised,
-        row_keys_proto,
-        zonemap_regexes,
-        metric_names,
-        time_range,
-        num_rows,
-    })
-}
 
 /// Build the full union schema across all inputs' arrow schemas
 /// (NOT just sort cols). Reuses the same algorithm as
@@ -1005,7 +1346,7 @@ fn build_per_output_static(
 fn build_full_union_schema_from_arrow_schemas(
     arrow_schemas: &[SchemaRef],
     sort_fields_str: &str,
-) -> Result<(SchemaRef, ())> {
+) -> Result<SchemaRef> {
     // Build zero-row batches with the right schemas; that lets us
     // reuse `align_inputs_to_union_schema`'s field-merge / storage-
     // ordering logic unchanged.
@@ -1014,922 +1355,7 @@ fn build_full_union_schema_from_arrow_schemas(
         .map(|s| RecordBatch::new_empty(Arc::clone(s)))
         .collect();
     let (schema, _) = align_inputs_to_union_schema(&empty_batches, sort_fields_str)?;
-    Ok((schema, ()))
-}
-
-/// Compute the per-output schema. For PR-6b.2 we use the
-/// (string-normalised) union schema as the output schema directly —
-/// fields stay Utf8/LargeUtf8 rather than being re-dict-encoded.
-/// Reason: streaming-decoded input arrays come out of the page
-/// decoder as plain `StringArray`/`BinaryArray` (not Dictionary), and
-/// dict re-encoding per output page would add a per-page CPU cost we
-/// don't want to take in the page-bounded path. Re-introducing
-/// dict-encoded output strings can be done later by tracking
-/// cardinality during the streaming pass — call site is here.
-///
-/// We do still want to drop columns that are all-null *for this
-/// output* (e.g., a column only present in inputs that don't
-/// contribute any rows to this output's range). The `sort_optimised`
-/// batch has already discarded all-null sort fields; we mirror that
-/// decision when building the per-output schema. Body cols are kept
-/// unconditionally — tracking per-output body-col presence would
-/// require pre-reading every body column for every output, which is
-/// exactly the column-chunk-bounded buffering the streaming path
-/// exists to avoid.
-///
-/// `sort_union_schema` is the union of every input's sort columns
-/// (before per-output optimisation). It's the only way to tell
-/// whether a given union-schema field is a sort field or a body
-/// field — `sort_optimised.schema()` alone can't disambiguate because
-/// it has dropped some sort fields by design. Without this
-/// distinction the function falls into the trap of using
-/// `full_union_schema.index_of(field.name())`, which is trivially
-/// true for every iterated field, and the all-null drop never
-/// happens.
-fn derive_output_schema(
-    full_union_schema: &SchemaRef,
-    sort_union_schema: &SchemaRef,
-    sort_optimised: &RecordBatch,
-) -> Result<SchemaRef> {
-    let sort_optimised_schema = sort_optimised.schema();
-    let mut fields: Vec<Arc<Field>> = Vec::with_capacity(full_union_schema.fields().len());
-    for field in full_union_schema.fields() {
-        let is_sort_field = sort_union_schema.index_of(field.name()).is_ok();
-        if is_sort_field {
-            // Sort field: keep only if the per-output optimiser kept
-            // it (i.e., not all-null for this output's rows).
-            if sort_optimised_schema.index_of(field.name()).is_ok() {
-                fields.push(Arc::clone(field));
-            }
-        } else {
-            // Body field: always kept.
-            fields.push(Arc::clone(field));
-        }
-    }
-    Ok(Arc::new(ArrowSchema::new(fields)))
-}
-
-fn open_output_writer(
-    out_idx: usize,
-    output_dir: &Path,
-    schema: SchemaRef,
-    static_meta: &PerOutputStatic,
-    input_meta: &InputMetadata,
-    writer_config: &crate::storage::ParquetWriterConfig,
-) -> Result<OutputWriterStorage> {
-    let output_prefix_len = input_meta.rg_partition_prefix_len;
-    let kv_entries = build_merge_kv_metadata(
-        input_meta,
-        &static_meta.row_keys_proto,
-        &static_meta.zonemap_regexes,
-        output_prefix_len,
-    );
-    let sorting_cols = build_sorting_columns(&static_meta.sort_optimised, &input_meta.sort_fields)?;
-    let sort_field_names = resolve_sort_field_names(&input_meta.sort_fields)?;
-
-    let props = writer_config.to_writer_properties_with_metadata(
-        &schema,
-        sorting_cols,
-        Some(kv_entries),
-        &sort_field_names,
-    );
-
-    let output_filename = format!("merge_output_{}.parquet", Ulid::new());
-    let output_path = output_dir.join(&output_filename);
-    let file = std::fs::File::create(&output_path)
-        .with_context(|| format!("creating output file: {}", output_path.display()))?;
-    let writer = StreamingParquetWriter::try_new(file, Arc::clone(&schema), props)
-        .with_context(|| format!("opening streaming writer for output {out_idx}"))?;
-
-    Ok(OutputWriterStorage {
-        output_idx: out_idx,
-        output_path,
-        writer,
-        service_names: HashSet::new(),
-        num_rows: static_meta.num_rows,
-    })
-}
-
-/// Index view used inside the col loop to find the writer's
-/// `output_idx` and `num_rows` without needing a mutable borrow on
-/// `writer_states` (which is already mutably borrowed by `row_groups`).
-fn writer_states_index_view(writer_states: &[OutputWriterStorage]) -> Vec<(usize, usize)> {
-    writer_states
-        .iter()
-        .map(|s| (s.output_idx, s.num_rows))
-        .collect()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_all_columns(
-    handle: &Handle,
-    row_groups: &mut [crate::storage::streaming_writer::RowGroupBuilder<'_, std::fs::File>],
-    service_names_per_output: &mut [HashSet<String>],
-    writer_index_view: &[(usize, usize)],
-    decoders_state: &mut [InputDecoderState],
-    aligned_sort_batches: &[RecordBatch],
-    sort_union_schema: &SchemaRef,
-    full_union_schema: &SchemaRef,
-    merge_order: &[MergeRun],
-    boundaries: &[Range<usize>],
-    destinations: &InputRowDestinations,
-    per_output_schemas: &[SchemaRef],
-) -> Result<()> {
-    // Iterate cols in the **full union schema** order. The union
-    // covers every column that appears in ANY output. For each col K
-    // and each output:
-    //   - If output's schema includes col K: write col K's data (sort col → from buffer, body col →
-    //     from decoder).
-    //   - Else: skip — that output dropped col K as all-null for its row range; the next output's
-    //     col K still gets written.
-    //
-    // It's tempting to drive from one per-output schema, since all
-    // per-output schemas share the same column ordering as a
-    // subsequence. But two outputs may drop *different* all-null
-    // fields and end up with the same field count — then picking
-    // either misses a field the other output still needs, and the
-    // writer for the latter output writes subsequent columns into
-    // the wrong slot. The full union schema is the only choice that
-    // covers every column every output may need, in the canonical
-    // storage order.
-
-    // For each full-union-schema col K:
-    for parent_col_idx in 0..full_union_schema.fields().len() {
-        let parent_field = full_union_schema.field(parent_col_idx);
-        let parent_name = parent_field.name();
-
-        // Is this a sort col (in memory) or a body col (streamed)?
-        let is_sort_col = sort_union_schema.index_of(parent_name).is_ok();
-
-        if is_sort_col {
-            write_sort_col_for_all_outputs(
-                row_groups,
-                writer_index_view,
-                parent_name,
-                aligned_sort_batches,
-                sort_union_schema,
-                merge_order,
-                boundaries,
-                destinations,
-                per_output_schemas,
-            )?;
-        } else {
-            write_body_col_for_all_outputs(
-                handle,
-                row_groups,
-                service_names_per_output,
-                writer_index_view,
-                decoders_state,
-                parent_name,
-                destinations,
-                per_output_schemas,
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_sort_col_for_all_outputs(
-    row_groups: &mut [crate::storage::streaming_writer::RowGroupBuilder<'_, std::fs::File>],
-    writer_index_view: &[(usize, usize)],
-    col_name: &str,
-    aligned_sort_batches: &[RecordBatch],
-    sort_union_schema: &SchemaRef,
-    merge_order: &[MergeRun],
-    boundaries: &[Range<usize>],
-    destinations: &InputRowDestinations,
-    per_output_schemas: &[SchemaRef],
-) -> Result<()> {
-    let _ = sort_union_schema;
-
-    let mut storage_idx = 0;
-    for (out_idx, boundary) in boundaries.iter().enumerate() {
-        if destinations.rows_per_output[out_idx] == 0 {
-            continue;
-        }
-        debug_assert_eq!(writer_index_view[storage_idx].0, out_idx);
-
-        // Drop this col if the output's schema doesn't include it.
-        let out_schema = &per_output_schemas[out_idx];
-        if out_schema.index_of(col_name).is_err() {
-            storage_idx += 1;
-            continue;
-        }
-
-        let runs = &merge_order[boundary.clone()];
-        let arrays = build_sort_col_pages_for_output(col_name, aligned_sort_batches, runs)?;
-        row_groups[storage_idx]
-            .write_next_column_arrays(arrays.into_iter())
-            .with_context(|| format!("writing sort col '{col_name}' to output {out_idx}"))?;
-        storage_idx += 1;
-    }
-    Ok(())
-}
-
-/// Build per-output-page arrays for one sort col. The col is already
-/// in memory across all inputs (`aligned_sort_batches`); for this
-/// output we walk its merge runs and split the take result into
-/// `OUTPUT_PAGE_ROWS`-sized chunks.
-fn build_sort_col_pages_for_output(
-    col_name: &str,
-    aligned_sort_batches: &[RecordBatch],
-    runs: &[MergeRun],
-) -> Result<Vec<ArrayRef>> {
-    // Collect references to each input's column array.
-    let mut input_arrays: Vec<&dyn Array> = Vec::with_capacity(aligned_sort_batches.len());
-    for batch in aligned_sort_batches {
-        let idx = batch.schema().index_of(col_name).map_err(|_| {
-            anyhow!("input is missing sort col '{col_name}' that the union schema expected",)
-        })?;
-        input_arrays.push(batch.column(idx).as_ref());
-    }
-
-    let mut indices: Vec<(usize, usize)> =
-        Vec::with_capacity(runs.iter().map(|r| r.row_count).sum());
-    for run in runs {
-        for r in 0..run.row_count {
-            indices.push((run.input_index, run.start_row + r));
-        }
-    }
-
-    // Split into OUTPUT_PAGE_ROWS-sized chunks; each chunk → one
-    // arrow::interleave call → one ArrayRef.
-    let mut pages = Vec::with_capacity(indices.len().div_ceil(OUTPUT_PAGE_ROWS));
-    for chunk in indices.chunks(OUTPUT_PAGE_ROWS) {
-        let arr = interleave(&input_arrays, chunk)
-            .with_context(|| format!("interleaving sort col '{col_name}' pages"))?;
-        pages.push(arr);
-    }
-    Ok(pages)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_body_col_for_all_outputs(
-    handle: &Handle,
-    row_groups: &mut [crate::storage::streaming_writer::RowGroupBuilder<'_, std::fs::File>],
-    service_names_per_output: &mut [HashSet<String>],
-    writer_index_view: &[(usize, usize)],
-    decoders_state: &mut [InputDecoderState],
-    col_name: &str,
-    destinations: &InputRowDestinations,
-    per_output_schemas: &[SchemaRef],
-) -> Result<()> {
-    // Find this col's per-input parquet leaf index (one per input).
-    // Inputs whose schema doesn't have this col OR which have zero
-    // row groups (legal — phase 0 explicitly accepts empty inputs and
-    // returns an empty sort batch for them) contribute null rows and
-    // don't advance their decoder for this col. Looking up
-    // `row_group(0)` on a zero-RG input would panic, so guard up
-    // front.
-    let mut input_col_indices: Vec<Option<usize>> = Vec::with_capacity(decoders_state.len());
-    for state in decoders_state.iter() {
-        if state.metadata.num_row_groups() == 0 {
-            input_col_indices.push(None);
-            continue;
-        }
-        match state.arrow_schema.index_of(col_name) {
-            Ok(idx) => input_col_indices.push(Some(idx)),
-            Err(_) => input_col_indices.push(None),
-        }
-    }
-
-    // Reset each input's body-col cache + cursor at the start of this
-    // column. The persistent `StreamDecoder` retains its per-(rg, col)
-    // state for *every* column it has touched so the next page from
-    // this column has the correct `row_start`; only the cached pages
-    // (which belong to the previous column) need to be discarded.
-    for state in decoders_state.iter_mut() {
-        state.reset_body_col_state();
-    }
-
-    // Track service names while streaming the service col.
-    let track_service = col_name == "service";
-
-    // For each output sequentially: build output pages, feed to writer
-    // one page at a time. We must NOT collect the whole column into a
-    // Vec — that would defeat the page-bounded merge path and scale
-    // memory with column-chunk size on production splits. Instead we
-    // hand `write_next_column_arrays` a streaming iterator that
-    // captures the first error in a side cell so the writer stops as
-    // soon as assembly fails.
-    let mut storage_idx = 0;
-    for (out_idx, &row_count) in destinations.rows_per_output.iter().enumerate() {
-        if row_count == 0 {
-            continue;
-        }
-        debug_assert_eq!(writer_index_view[storage_idx].0, out_idx);
-
-        let out_schema = &per_output_schemas[out_idx];
-        if out_schema.index_of(col_name).is_err() {
-            storage_idx += 1;
-            continue;
-        }
-        let out_field_idx = out_schema.index_of(col_name)?;
-        let out_field = out_schema.field(out_field_idx);
-
-        let assembler = BodyColOutputPageAssembler::new(
-            handle,
-            decoders_state,
-            &input_col_indices,
-            destinations,
-            out_idx,
-            col_name,
-            out_field,
-        );
-
-        let mut error_slot: Option<anyhow::Error> = None;
-        let service_collector: Option<&mut HashSet<String>> = if track_service {
-            Some(&mut service_names_per_output[storage_idx])
-        } else {
-            None
-        };
-
-        let stream_iter = StreamingBodyColIter {
-            inner: assembler.into_iter(),
-            error_slot: &mut error_slot,
-            service_collector,
-        };
-
-        let write_result = row_groups[storage_idx].write_next_column_arrays(stream_iter);
-
-        // Assembly errors are reported via `error_slot`; surface them
-        // first because a downstream write error is usually a
-        // consequence (the writer stops on `None` and reports a
-        // row-count mismatch otherwise).
-        if let Some(err) = error_slot {
-            return Err(err)
-                .with_context(|| format!("assembling body col '{col_name}' for output {out_idx}"));
-        }
-        write_result
-            .with_context(|| format!("writing body col '{col_name}' to output {out_idx}"))?;
-        storage_idx += 1;
-    }
-
-    Ok(())
-}
-
-/// Adapts a `Result<ArrayRef>` page assembler into the
-/// `Iterator<Item = ArrayRef>` shape `write_next_column_arrays` expects.
-/// The first assembly error is captured in `error_slot` and iteration
-/// ends; the caller MUST check the slot after the writer returns. If
-/// `service_collector` is `Some`, every yielded page is scanned for
-/// service names and added to the set; collection failures also stop
-/// the iterator and populate `error_slot`.
-struct StreamingBodyColIter<'a, I> {
-    inner: I,
-    error_slot: &'a mut Option<anyhow::Error>,
-    service_collector: Option<&'a mut HashSet<String>>,
-}
-
-impl<I> Iterator for StreamingBodyColIter<'_, I>
-where I: Iterator<Item = Result<ArrayRef>>
-{
-    type Item = ArrayRef;
-
-    fn next(&mut self) -> Option<ArrayRef> {
-        if self.error_slot.is_some() {
-            return None;
-        }
-        match self.inner.next() {
-            Some(Ok(arr)) => {
-                if let Some(out) = self.service_collector.as_deref_mut()
-                    && let Err(e) = collect_service_names_from_page(arr.as_ref(), out)
-                {
-                    *self.error_slot = Some(e);
-                    return None;
-                }
-                Some(arr)
-            }
-            Some(Err(e)) => {
-                *self.error_slot = Some(e);
-                None
-            }
-            None => None,
-        }
-    }
-}
-
-/// Per-page service name collector. Used during the streaming write
-/// of the "service" body col to populate per-output service_names.
-fn collect_service_names_from_page(arr: &dyn Array, out: &mut HashSet<String>) -> Result<()> {
-    use arrow::array::AsArray;
-    use arrow::datatypes::{Int8Type, Int16Type, Int32Type, Int64Type};
-
-    fn extend_from_strings(strings: &arrow::array::StringArray, out: &mut HashSet<String>) {
-        for i in 0..strings.len() {
-            if strings.is_valid(i) {
-                out.insert(strings.value(i).to_string());
-            }
-        }
-    }
-
-    match arr.data_type() {
-        DataType::Utf8 => {
-            let strings = arr
-                .as_any()
-                .downcast_ref::<arrow::array::StringArray>()
-                .ok_or_else(|| anyhow!("expected StringArray for service col page"))?;
-            extend_from_strings(strings, out);
-        }
-        DataType::LargeUtf8 => {
-            let strings = arr
-                .as_any()
-                .downcast_ref::<arrow::array::LargeStringArray>()
-                .ok_or_else(|| anyhow!("expected LargeStringArray for service col page"))?;
-            for i in 0..strings.len() {
-                if strings.is_valid(i) {
-                    out.insert(strings.value(i).to_string());
-                }
-            }
-        }
-        DataType::Dictionary(key_type, value_type)
-            if matches!(value_type.as_ref(), DataType::Utf8) =>
-        {
-            // Extract the dictionary's values that are referenced by
-            // valid (non-null) keys.
-            match key_type.as_ref() {
-                DataType::Int8 => {
-                    let dict = arr.as_dictionary::<Int8Type>();
-                    if let Some(strings) = dict
-                        .values()
-                        .as_any()
-                        .downcast_ref::<arrow::array::StringArray>()
-                    {
-                        for i in 0..dict.len() {
-                            if dict.is_valid(i) {
-                                let key = dict.keys().value(i) as usize;
-                                if key < strings.len() && strings.is_valid(key) {
-                                    out.insert(strings.value(key).to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                DataType::Int16 => {
-                    let dict = arr.as_dictionary::<Int16Type>();
-                    if let Some(strings) = dict
-                        .values()
-                        .as_any()
-                        .downcast_ref::<arrow::array::StringArray>()
-                    {
-                        for i in 0..dict.len() {
-                            if dict.is_valid(i) {
-                                let key = dict.keys().value(i) as usize;
-                                if key < strings.len() && strings.is_valid(key) {
-                                    out.insert(strings.value(key).to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                DataType::Int32 => {
-                    let dict = arr.as_dictionary::<Int32Type>();
-                    if let Some(strings) = dict
-                        .values()
-                        .as_any()
-                        .downcast_ref::<arrow::array::StringArray>()
-                    {
-                        for i in 0..dict.len() {
-                            if dict.is_valid(i) {
-                                let key = dict.keys().value(i) as usize;
-                                if key < strings.len() && strings.is_valid(key) {
-                                    out.insert(strings.value(key).to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                DataType::Int64 => {
-                    let dict = arr.as_dictionary::<Int64Type>();
-                    if let Some(strings) = dict
-                        .values()
-                        .as_any()
-                        .downcast_ref::<arrow::array::StringArray>()
-                    {
-                        for i in 0..dict.len() {
-                            if dict.is_valid(i) {
-                                let key = dict.keys().value(i) as usize;
-                                if key < strings.len() && strings.is_valid(key) {
-                                    out.insert(strings.value(key).to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        _ => {
-            // Skip non-string types — service col is expected to be
-            // string-like; if it isn't, just don't collect names.
-        }
-    }
-    Ok(())
-}
-
-// ============================================================================
-// Body col output page assembler — the page-bounded streaming core
-// ============================================================================
-
-/// Assembles output pages for one (output_idx, body_col) by:
-/// 1. Walking the destinations table forward through this output's row range, accumulating
-///    `(input_idx, input_row)` index pairs.
-/// 2. When the index buffer hits `OUTPUT_PAGE_ROWS`, advancing each contributing input's decoder
-///    until its decoded pages cover the needed input rows, then calling
-///    `arrow::compute::interleave`.
-/// 3. Emitting one `ArrayRef` per iter step until the row range is exhausted; then `Ok(None)`.
-///
-/// Memory per `next()` call: one in-progress output page (P rows) +
-/// up to ~2 in-flight decoded pages per input (kept until all their
-/// rows are consumed). Bounded by page sizes, not column-chunk sizes.
-///
-/// **Cross-output state**: the per-input `body_col_page_cache` and
-/// `body_col_cursor` live on [`InputDecoderState`], not the assembler.
-/// They must persist across all outputs that consume rows from the
-/// active body column — a page whose row range straddles two outputs
-/// would otherwise be dropped when the first output's assembler ends,
-/// even though the stream has already advanced past it and the next
-/// output still needs rows from inside that page.
-struct BodyColOutputPageAssembler<'a> {
-    handle: &'a Handle,
-    decoders_state: &'a mut [InputDecoderState],
-    input_col_indices: &'a [Option<usize>],
-    destinations: &'a InputRowDestinations,
-    out_idx: usize,
-    col_name: &'a str,
-    out_field: &'a Field,
-    /// Total rows written so far for this output's col.
-    rows_emitted: usize,
-    /// Total rows expected = destinations.rows_per_output[out_idx].
-    expected_rows: usize,
-    /// EOF flag (returns None on subsequent calls once true).
-    done: bool,
-}
-
-impl<'a> BodyColOutputPageAssembler<'a> {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        handle: &'a Handle,
-        decoders_state: &'a mut [InputDecoderState],
-        input_col_indices: &'a [Option<usize>],
-        destinations: &'a InputRowDestinations,
-        out_idx: usize,
-        col_name: &'a str,
-        out_field: &'a Field,
-    ) -> Self {
-        Self {
-            handle,
-            decoders_state,
-            input_col_indices,
-            destinations,
-            out_idx,
-            col_name,
-            out_field,
-            rows_emitted: 0,
-            expected_rows: destinations.rows_per_output[out_idx],
-            done: false,
-        }
-    }
-
-    fn into_iter(self) -> BodyColOutputPageIter<'a> {
-        BodyColOutputPageIter { inner: self }
-    }
-}
-
-struct BodyColOutputPageIter<'a> {
-    inner: BodyColOutputPageAssembler<'a>,
-}
-
-impl Iterator for BodyColOutputPageIter<'_> {
-    type Item = Result<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.inner.done || self.inner.rows_emitted >= self.inner.expected_rows {
-            self.inner.done = true;
-            return None;
-        }
-        match assemble_one_output_page(&mut self.inner) {
-            Ok(Some(arr)) => Some(Ok(arr)),
-            Ok(None) => {
-                self.inner.done = true;
-                None
-            }
-            Err(e) => {
-                self.inner.done = true;
-                Some(Err(e))
-            }
-        }
-    }
-}
-
-fn assemble_one_output_page(s: &mut BodyColOutputPageAssembler) -> Result<Option<ArrayRef>> {
-    let remaining = s.expected_rows - s.rows_emitted;
-    if remaining == 0 {
-        return Ok(None);
-    }
-    let page_size = remaining.min(OUTPUT_PAGE_ROWS);
-
-    // Walk this output's row positions and figure out which (input, input_row)
-    // contributes each one. We use the per-input destinations table: for
-    // input i, find the next input_row whose destination is (out_idx, *).
-    // Since `destinations.per_input[i]` is in input order and outputs are
-    // strictly increasing by sort key, the rows that go to this output are
-    // a contiguous slice in input i's row order.
-    //
-    // For each output position 0..page_size, we need (input_idx, input_row).
-    // Walk input cursors and pick the next row going to this output.
-
-    // Collect (input_idx, input_row) indices for this output page.
-    let mut indices_per_input: Vec<Vec<usize>> = vec![Vec::new(); s.decoders_state.len()];
-    let mut interleave_indices: Vec<(usize, usize)> = Vec::with_capacity(page_size);
-    let mut total_picked = 0usize;
-
-    while total_picked < page_size {
-        // Look across all inputs for the next contribution to this output.
-        // Per the merge order, within each input the rows assigned to this
-        // output are a contiguous slice; once we've advanced cursor past
-        // them, no more rows from this input contribute. We collect ALL
-        // rows from one input up to a per-input limit determined by the
-        // merge order, but the simplest correct approach is to walk in
-        // merge-order globally. We don't have the merge order indexed by
-        // output here, so re-derive by scanning the destinations table.
-        //
-        // Better: pre-compute per-output, per-input row ranges. Each input
-        // contributes a contiguous half-open range `[lo_i..hi_i)` to this
-        // output (possibly empty). We could compute these ranges once and
-        // reuse. For now, lazy approach: scan forward from cursor on each
-        // input, picking the next row that maps to (out_idx, *).
-        //
-        // The ORDER in which we pick across inputs must match the merge
-        // plan's output position. We have output positions in destinations:
-        // `destinations.per_input[i][r] = Some((out_idx, pos))`. The merged
-        // output picks rows in order of increasing `pos`.
-        //
-        // For one output page, the positions we want are
-        // `s.rows_emitted..s.rows_emitted + page_size`. For each position
-        // p in that range, find (input_idx, input_row) such that
-        // destinations.per_input[input_idx][input_row] == Some((out_idx, p)).
-        let target_pos = s.rows_emitted + total_picked;
-        let mut found = false;
-        for (input_idx, dests) in s.destinations.per_input.iter().enumerate() {
-            let cursor = s.decoders_state[input_idx].body_col_cursor;
-            for (input_row, dest) in dests.iter().enumerate().skip(cursor) {
-                match dest {
-                    Some((o, p)) if *o == s.out_idx => {
-                        if *p == target_pos {
-                            interleave_indices.push((input_idx, input_row));
-                            indices_per_input[input_idx].push(input_row);
-                            // Don't advance the cursor past this row yet —
-                            // we may need rows from input i in this page
-                            // with positions ahead. We bump it after the
-                            // whole page is collected.
-                            found = true;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-                if found {
-                    break;
-                }
-            }
-            if found {
-                break;
-            }
-        }
-        if !found {
-            // Shouldn't happen — every output position should be reachable.
-            bail!(
-                "merge plan inconsistency: output {} position {target_pos} not found in any input",
-                s.out_idx,
-            );
-        }
-        total_picked += 1;
-    }
-
-    // Now ensure each input's decoder has decoded pages covering all
-    // `indices_per_input[i]` rows. Advance decoders as needed.
-    for (input_idx, input_rows) in indices_per_input.iter().enumerate() {
-        if input_rows.is_empty() {
-            continue;
-        }
-        let col_parquet_idx = match s.input_col_indices[input_idx] {
-            Some(c) => c,
-            None => {
-                // This input lacks this col entirely — null contributions.
-                // We'll handle null-filling in the interleave step below.
-                continue;
-            }
-        };
-        let max_needed_row = *input_rows.iter().max().expect("non-empty");
-        fill_page_cache_to_row(
-            s.handle,
-            &mut s.decoders_state[input_idx],
-            col_parquet_idx,
-            max_needed_row,
-        )?;
-    }
-
-    // Build the per-(input, row) value array by:
-    //   1. Concatenating each input's cached pages into one ArrayRef (they cover a contiguous input
-    //      row range from cache_start to cursor_max).
-    //   2. Computing local indices = input_row - cache_start.
-    //   3. Calling arrow::compute::interleave across N input arrays.
-    //
-    // For inputs without this col, we substitute a single null page of the
-    // out_field's type.
-    let mut input_array_refs: Vec<ArrayRef> = Vec::with_capacity(s.decoders_state.len());
-    let mut input_cache_starts: Vec<usize> = Vec::with_capacity(s.decoders_state.len());
-
-    for input_idx in 0..s.decoders_state.len() {
-        match s.input_col_indices[input_idx] {
-            Some(_) => {
-                let pages = &s.decoders_state[input_idx].body_col_page_cache;
-                if pages.is_empty() {
-                    // No pages decoded for this input (no rows from this input go to this output).
-                    // Use a zero-row placeholder; we won't index into it.
-                    input_array_refs.push(new_null_array(s.out_field.data_type(), 0));
-                    input_cache_starts.push(0);
-                } else {
-                    let cache_start = pages[0].row_start;
-                    let arrays: Vec<&dyn Array> = pages.iter().map(|p| p.array.as_ref()).collect();
-                    let concatenated = arrow::compute::concat(&arrays).with_context(|| {
-                        format!(
-                            "concatenating cached pages for input {input_idx} col '{}'",
-                            s.col_name,
-                        )
-                    })?;
-                    input_array_refs.push(concatenated);
-                    input_cache_starts.push(cache_start);
-                }
-            }
-            None => {
-                // Null-fill array of the right length. The max needed local
-                // index from this input is the largest index we'd reference;
-                // since we don't actually reference rows from this input (we'd
-                // need an alternate "null contribution" mechanism), we leave
-                // it as a 1-row null array and route indices to position 0.
-                let null_arr = new_null_array(s.out_field.data_type(), 1);
-                input_array_refs.push(null_arr);
-                input_cache_starts.push(0);
-            }
-        }
-    }
-
-    let interleave_local: Vec<(usize, usize)> = interleave_indices
-        .iter()
-        .map(|&(i_idx, i_row)| match s.input_col_indices[i_idx] {
-            Some(_) => (i_idx, i_row - input_cache_starts[i_idx]),
-            None => (i_idx, 0),
-        })
-        .collect();
-
-    let array_refs_ref: Vec<&dyn Array> = input_array_refs.iter().map(|a| a.as_ref()).collect();
-    let assembled = interleave(&array_refs_ref, &interleave_local).with_context(|| {
-        format!(
-            "interleaving body col '{}' for output {}",
-            s.col_name, s.out_idx,
-        )
-    })?;
-
-    // Bump input cursors past rows we just consumed and drop pages
-    // whose rows are fully consumed. Both the cursor and the cache
-    // live on InputDecoderState so they persist across outputs that
-    // share this column.
-    for (input_idx, input_rows) in indices_per_input.iter().enumerate() {
-        if input_rows.is_empty() {
-            continue;
-        }
-        let max_row = *input_rows.iter().max().expect("non-empty");
-        let state = &mut s.decoders_state[input_idx];
-        state.body_col_cursor = max_row + 1;
-
-        // Drop pages whose last row is < cursor.
-        if s.input_col_indices[input_idx].is_some() {
-            let pages = &mut state.body_col_page_cache;
-            while let Some(front) = pages.first() {
-                let front_end = front.row_start + front.array.len();
-                if front_end <= state.body_col_cursor {
-                    pages.remove(0);
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    s.rows_emitted += page_size;
-    Ok(Some(assembled))
-}
-
-/// Pull pages from the input's persistent decoder via `block_on` until
-/// the cached pages for `col_parquet_idx` cover up through `target_row`
-/// (inclusive). Stops as soon as the latest cached page ends past
-/// `target_row`. The function's effect on the world is *adding pages
-/// to the cache* — it does not skip data and does not consume any
-/// rows on its own.
-///
-/// The decoder MUST be the long-lived [`InputDecoderState::decoder`]:
-/// it preserves the per-(rg, col) `rows_decoded` counter so successive
-/// `DecodedPage::row_start` values are absolute input row indices,
-/// not page-local zeros. Likewise, the cache lives on the state so
-/// pages whose row range spans an output boundary survive into the
-/// next output's assembler.
-fn fill_page_cache_to_row(
-    handle: &Handle,
-    state: &mut InputDecoderState,
-    col_parquet_idx: usize,
-    target_row: usize,
-) -> Result<()> {
-    // If cache already covers target_row, nothing to do.
-    if let Some(last) = state.body_col_page_cache.last() {
-        let last_end = last.row_start + last.array.len();
-        if target_row < last_end {
-            return Ok(());
-        }
-    }
-
-    loop {
-        let decoded = handle
-            .block_on(state.decoder.decode_next_page())
-            .context("decoding body col page")?;
-        let page = match decoded {
-            Some(p) => p,
-            None => bail!(
-                "stream EOF while advancing to row {target_row} for parquet col {col_parquet_idx}",
-            ),
-        };
-        if page.col_idx != col_parquet_idx {
-            bail!(
-                "expected col {col_parquet_idx} page, got col {} — column ordering violated",
-                page.col_idx,
-            );
-        }
-        let end = page.row_start + page.array.len();
-        state.body_col_page_cache.push(page);
-        record_body_col_page_cache_len(state.body_col_page_cache.len());
-        if target_row < end {
-            return Ok(());
-        }
-    }
-}
-
-fn finalize_output_writer(
-    state: OutputWriterStorage,
-    per_output_static: &[PerOutputStatic],
-) -> Result<MergeOutputFile> {
-    let OutputWriterStorage {
-        output_idx,
-        output_path,
-        writer,
-        mut service_names,
-        num_rows,
-    } = state;
-
-    let _metadata = writer
-        .close()
-        .with_context(|| format!("closing writer for output {output_idx}"))?;
-
-    let size_bytes = std::fs::metadata(&output_path)
-        .with_context(|| format!("stat output file: {}", output_path.display()))?
-        .len();
-
-    let static_meta = &per_output_static[output_idx];
-
-    // If `service` is a sort column for this schema, it took the
-    // sort-col write path and `service_names` (populated by the body-
-    // col `track_service` branch) never saw it. Fold in the names
-    // from the per-output sort batch so the `TAG_SERVICE` low-
-    // cardinality metadata stays accurate regardless of which path
-    // wrote the column.
-    if let Ok(service_col_idx) = static_meta.sort_optimised.schema().index_of("service") {
-        collect_service_names_from_page(
-            static_meta.sort_optimised.column(service_col_idx).as_ref(),
-            &mut service_names,
-        )
-        .with_context(|| {
-            format!("collecting service names from sort col for output {output_idx}")
-        })?;
-    }
-
-    let mut low_cardinality_tags: HashMap<String, HashSet<String>> = HashMap::new();
-    if !service_names.is_empty() {
-        low_cardinality_tags.insert(TAG_SERVICE.to_string(), service_names);
-    }
-
-    Ok(MergeOutputFile {
-        path: output_path,
-        num_rows,
-        num_row_groups: 1,
-        size_bytes,
-        row_keys_proto: static_meta.row_keys_proto.clone(),
-        zonemap_regexes: static_meta.zonemap_regexes.clone(),
-        metric_names: static_meta.metric_names.clone(),
-        time_range: static_meta.time_range,
-        low_cardinality_tags,
-    })
+    Ok(schema)
 }
 
 // ============================================================================
@@ -1946,6 +1372,8 @@ mod tests {
         UInt64Array,
     };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as BASE64;
     use bytes::Bytes;
     use parquet::arrow::ArrowWriter;
     use parquet::file::metadata::KeyValue;
@@ -1954,10 +1382,17 @@ mod tests {
     use tempfile::TempDir;
     use tokio::io::AsyncRead;
 
+    use super::region_grouping::{
+        assert_unique_rg_prefix_keys, extract_rg_composite_prefix_key,
+        find_prefix_parquet_col_indices,
+    };
     use super::*;
+    use crate::split::TAG_SERVICE;
     use crate::storage::page_decoder::StreamDecoder;
     use crate::storage::streaming_reader::{RemoteByteSource, StreamingParquetReader};
-    use crate::storage::{Compression, ParquetWriterConfig};
+    use crate::storage::{
+        Compression, PARQUET_META_ROW_KEYS, PARQUET_META_ZONEMAP_REGEXES, ParquetWriterConfig,
+    };
 
     // -------- Fixtures --------
 
@@ -2424,11 +1859,1305 @@ mod tests {
         );
     }
 
-    /// Regression for Codex P1 on PR-6409: a zero-row-group input
-    /// must not panic the body-column path. Phase 0 explicitly accepts
-    /// empty inputs (returning a zero-row sort batch), so the body-col
-    /// loop has to defend against `row_group(0)` lookups on inputs
-    /// with `num_row_groups() == 0`.
+    /// Multi-RG metric-aligned input (`prefix_len >= 1`) is accepted
+    /// and produces multi-RG output: one output RG per input metric_name
+    /// region.
+    #[tokio::test]
+    async fn test_multi_rg_metric_aligned_input_produces_multi_rg_output() {
+        // Build a fixture with 2 metric_names → 2 RGs each holding one
+        // metric_name. Use `prefix_len = 1` to declare metric_name
+        // alignment.
+        let bytes = make_two_metric_aligned_input();
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge multi-RG metric-aligned input");
+        assert_eq!(outputs.len(), 1, "expected one output file");
+        assert_eq!(outputs[0].num_rows, 60, "30 + 30 rows");
+
+        let out_bytes = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(out_bytes)).expect("ser");
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            2,
+            "multi-RG metric-aligned input must produce multi-RG output (one RG per metric_name \
+             region)",
+        );
+
+        // `MergeOutputFile.num_row_groups` must agree with the file
+        // on disk. Before the fix it was hard-coded to 1, so this
+        // assertion caught the regression on a multi-region output.
+        assert_eq!(
+            outputs[0].num_row_groups, 2,
+            "MergeOutputFile.num_row_groups should match physical row group count",
+        );
+    }
+
+    /// Regression for Codex P2 on PR-6410: a streaming merge output
+    /// whose multi-region content lands in a single file must report
+    /// `MergeOutputFile.num_row_groups` consistent with the parquet
+    /// footer. Two regions assigned to one output should yield
+    /// `num_row_groups = 2`.
+    #[tokio::test]
+    async fn test_streaming_output_num_row_groups_matches_footer() {
+        let bytes = make_two_metric_aligned_input();
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        assert_eq!(
+            outputs[0].num_row_groups,
+            reader.metadata().num_row_groups(),
+            "MergeOutputFile.num_row_groups must match the physical RG count",
+        );
+    }
+
+    /// Regression for Codex P2 on PR-6410: `qh.row_keys` and
+    /// `qh.zonemap_regexes` must be written into the on-disk Parquet
+    /// footer for every streaming output. Per-output values come from
+    /// the rows that landed in that output specifically — merging
+    /// eliminates key overlap between outputs, so this metadata can't
+    /// be carried over from inputs.
+    #[tokio::test]
+    async fn test_streaming_output_kv_footer_contains_row_keys_and_zonemap() {
+        let bytes = make_two_metric_aligned_input();
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        let kvs: Vec<(String, Option<String>)> = reader
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .map(|v| {
+                v.iter()
+                    .map(|kv| (kv.key.clone(), kv.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let find = |k: &str| kvs.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+
+        // row_keys: streaming merge derives them from THIS output's
+        // sort cols, and the in-memory `MergeOutputFile` records the
+        // proto bytes. The base64-encoded KV in the footer must
+        // round-trip to the same bytes.
+        assert!(
+            outputs[0].row_keys_proto.is_some(),
+            "expected per-output row_keys_proto in MergeOutputFile",
+        );
+        let row_keys_kv = find(PARQUET_META_ROW_KEYS).flatten().expect(
+            "qh.row_keys missing from streaming output footer — appended-after-write KV metadata \
+             did not survive close",
+        );
+        let decoded = BASE64.decode(row_keys_kv).expect("base64 decode");
+        assert_eq!(
+            &decoded,
+            outputs[0].row_keys_proto.as_ref().unwrap(),
+            "footer row_keys bytes must equal MergeOutputFile.row_keys_proto",
+        );
+
+        // zonemap_regexes: footer carries a JSON-encoded map.
+        // metric_name alignment + multiple metric_names → non-empty.
+        assert!(
+            !outputs[0].zonemap_regexes.is_empty(),
+            "expected non-empty zonemap_regexes for multi-metric output",
+        );
+        let zonemap_kv = find(PARQUET_META_ZONEMAP_REGEXES)
+            .flatten()
+            .expect("qh.zonemap_regexes missing from streaming output footer");
+        let parsed: HashMap<String, String> =
+            serde_json::from_str(&zonemap_kv).expect("zonemap JSON parse");
+        assert_eq!(
+            parsed, outputs[0].zonemap_regexes,
+            "footer zonemap must equal MergeOutputFile.zonemap_regexes",
+        );
+    }
+
+    /// Composite-key extraction with two byte-array prefix columns:
+    /// `(metric_name, service)` ASC/ASC. Two RGs with the same
+    /// metric_name but different services must produce distinct
+    /// composite keys, with byte-lex order matching the natural
+    /// `(metric_name, service)` sort order.
+    #[test]
+    fn test_extract_rg_composite_prefix_key_two_byte_array_cols() {
+        let bytes =
+            make_prefix_len_two_input(&[("cpu.usage", "host-a"), ("cpu.usage", "host-b")], 10);
+        let reader = SerializedFileReader::new(bytes).expect("ser");
+        let metadata = reader.metadata();
+        assert_eq!(metadata.num_row_groups(), 2);
+
+        let prefix_cols = find_prefix_parquet_col_indices(
+            metadata,
+            "metric_name|service|-timestamp_secs/V2",
+            2,
+            0,
+        )
+        .expect("resolve");
+        let key_rg0 = extract_rg_composite_prefix_key(metadata, 0, &prefix_cols, 0).expect("rg0");
+        let key_rg1 = extract_rg_composite_prefix_key(metadata, 1, &prefix_cols, 0).expect("rg1");
+        assert_ne!(
+            key_rg0, key_rg1,
+            "different services → different composite keys"
+        );
+        // metric_name is equal across RGs; ordering must come from
+        // service ('host-a' < 'host-b' lex), so key_rg0 < key_rg1.
+        assert!(
+            key_rg0 < key_rg1,
+            "composite key for ('cpu.usage', 'host-a') must lex-sort before ('cpu.usage', \
+             'host-b')",
+        );
+
+        // Encoded representation under the storekey-based encoding
+        // (shared with `sorted_series` via `append_prefix_col_to_key`):
+        // each prefix column contributes `storekey(u8 ord) ||
+        // storekey(str value)`, then the whole key ends with a
+        // `u8(prefix_len)` sentinel ordinal (so an all-null RG's
+        // empty body still sorts after any non-null key — see
+        // `extract_rg_composite_prefix_key` for the argument).
+        //
+        //   [0x00]              ord=0 (metric_name)
+        //   b"cpu.usage" + 0x00 storekey("cpu.usage") — 10 bytes
+        //   [0x01]              ord=1 (service)
+        //   b"host-a"    + 0x00 storekey("host-a")    —  7 bytes
+        //   [0x02]              sentinel u8(prefix_len)
+        //
+        // Total = 1 + 10 + 1 + 7 + 1 = 20 bytes.
+        assert_eq!(key_rg0[0], 0x00);
+        assert_eq!(&key_rg0[1..10], b"cpu.usage");
+        assert_eq!(key_rg0[10], 0x00);
+        assert_eq!(key_rg0[11], 0x01);
+        assert_eq!(&key_rg0[12..18], b"host-a");
+        assert_eq!(key_rg0[18], 0x00);
+        assert_eq!(key_rg0[19], 0x02);
+        assert_eq!(key_rg0.len(), 20);
+    }
+
+    /// Regression for Codex P1 on PR-6410 (positive coverage of the
+    /// fix): `rg_partition_prefix_len = 2` groups RGs by the
+    /// composite (metric_name, service) value, producing one output
+    /// row group per (metric_name, service) pair. Two RGs that share
+    /// metric_name but differ in service must NOT be folded into one
+    /// region.
+    #[tokio::test]
+    async fn test_streaming_merge_with_prefix_len_two() {
+        let bytes = make_prefix_len_two_input(
+            &[
+                ("cpu.usage", "host-a"),
+                ("cpu.usage", "host-b"),
+                ("memory.used", "host-a"),
+            ],
+            20,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge with prefix_len = 2");
+        assert_eq!(outputs.len(), 1, "expected one output file");
+        assert_eq!(outputs[0].num_rows, 60, "20 × 3 input RGs = 60 rows");
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        // Three distinct (metric_name, service) tuples → three output
+        // row groups. With prefix_len truncated to 1 (the pre-fix
+        // bug) the two cpu.usage RGs would have folded into one
+        // region and only two output RGs would be written.
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            3,
+            "three distinct (metric_name, service) pairs must produce three output RGs",
+        );
+        assert_eq!(outputs[0].num_row_groups, 3);
+    }
+
+    /// Regression for Codex finding #1 on PR-6410: when one input
+    /// file has two RGs sharing the same composite prefix key, the
+    /// streaming engine must reject up-front. Without the check,
+    /// `process_region` keys `sort_col_batches` by input_idx, so the
+    /// second RG silently overwrites the first while
+    /// `Region::total_rows` keeps counting both — rows would be
+    /// dropped and the body-col / sort-col mapping would be off by a
+    /// full RG.
+    ///
+    /// The fixture passes `("cpu.usage", "host-a")` twice, producing
+    /// an input with two RGs that have identical (metric_name,
+    /// service) statistics. The merge must bail with a clear error
+    /// pointing at the duplicate.
+    #[tokio::test]
+    async fn test_streaming_merge_rejects_duplicate_prefix_rgs_in_one_input() {
+        let bytes = make_prefix_len_two_input(
+            &[
+                ("cpu.usage", "host-a"),
+                ("cpu.usage", "host-a"), // duplicate prefix key
+                ("memory.used", "host-a"),
+            ],
+            20,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("must reject input with duplicate prefix RGs");
+        let s = err.to_string();
+        assert!(
+            s.contains("sharing a prefix key with an earlier RG"),
+            "expected duplicate-prefix error, got: {s}",
+        );
+        assert!(
+            s.contains("input 0"),
+            "error should identify which input is bad, got: {s}",
+        );
+    }
+
+    /// Build a single-RG parquet file with a nullable `metric_name`
+    /// prefix column. `values` is one entry per row (`None` for a
+    /// null cell). `prefix_len` is stamped in the file metadata so
+    /// the streaming merge treats the file as prefix-aligned.
+    fn make_nullable_prefix_input_single_rg(values: &[Option<&str>], prefix_len: u32) -> Bytes {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, true),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+        let n = values.len();
+        let metric_name: ArrayRef = Arc::new(StringArray::from(
+            values
+                .iter()
+                .map(|v| v.map(str::to_string))
+                .collect::<Vec<_>>(),
+        ));
+        let timestamps: Vec<u64> = (0..n as u64).map(|i| 1_700_000_000 + i).collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_bytes: Vec<Vec<u8>> = (0..n as u64).map(|i| i.to_be_bytes().to_vec()).collect();
+        let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..n).map(|i| i as f64).collect::<Vec<_>>(),
+        ));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![metric_name, timestamp_secs, sorted_series, value],
+        )
+        .expect("test batch");
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: n.max(1),
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                prefix_len.to_string(),
+            ),
+        ];
+        let sorting_cols = vec![parquet::file::metadata::SortingColumn {
+            column_idx: 0,
+            descending: false,
+            nulls_first: false,
+        }];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P1 on PR #6424 (null prefix handling): an
+    /// RG with mixed null + non-null cells on a nullable prefix
+    /// column is NOT prefix-aligned (PA-1). The legacy `min == max`
+    /// check would silently accept it because Parquet stats hide
+    /// nulls from min/max, so a single non-null cell + N nulls
+    /// reports `min == max == non_null_value`. The fix reads
+    /// `null_count` from stats and bails when it's non-zero.
+    #[tokio::test]
+    async fn test_mixed_null_and_value_prefix_rg_rejected() {
+        // 1 RG, 4 rows: 3× "cpu.usage" + 1× null. Stats record
+        // `min == max == "cpu.usage"`, `null_count == 1`.
+        let bytes = make_nullable_prefix_input_single_rg(
+            &[
+                Some("cpu.usage"),
+                Some("cpu.usage"),
+                None,
+                Some("cpu.usage"),
+            ],
+            1,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("mixed null + non-null must be rejected");
+        let s = format!("{err:#}");
+        assert!(
+            s.contains("NOT prefix-aligned") && s.contains("nulls plus"),
+            "expected PA-1 mixed-null error, got: {s}",
+        );
+    }
+
+    /// Regression for Codex P1 on PR #6424 (null prefix handling):
+    /// an all-null prefix RG is logically aligned (its single prefix
+    /// "value" is null) and must successfully merge. The
+    /// composite-prefix encoding skips the column entirely for the
+    /// all-null RG; in a multi-input setup that mixes non-null and
+    /// all-null contributions on the same prefix column, BTreeMap
+    /// iteration order puts the all-null region AFTER any
+    /// non-null-prefix region (nulls-last), matching `sorted_series`'s
+    /// row-level null-skip convention.
+    #[tokio::test]
+    async fn test_all_null_prefix_rg_groups_into_separate_region_sorted_last() {
+        // Input A: one RG, metric_name = "cpu.usage" for all rows.
+        // Input B: one RG, metric_name = NULL for all rows.
+        // prefix_len = 1, merge into a single output. Each input
+        // contributes its own region; the all-null region should
+        // sort after the non-null region, so the merged output's
+        // RG 0 carries the non-null metric and RG 1 carries the
+        // all-null one.
+        let bytes_a = make_nullable_prefix_input_single_rg(
+            &[Some("cpu.usage"), Some("cpu.usage"), Some("cpu.usage")],
+            1,
+        );
+        let bytes_b = make_nullable_prefix_input_single_rg(&[None, None, None], 1);
+        let inputs: Vec<Box<dyn ColumnPageStream>> =
+            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("all-null prefix RG must merge cleanly via column-skip encoding");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 6, "3 non-null + 3 null = 6 rows total");
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            2,
+            "two regions (non-null + all-null) → two output RGs",
+        );
+
+        // Read the output back as Arrow and confirm RG 0 is the
+        // non-null region (rows have `metric_name = "cpu.usage"`)
+        // and RG 1 is the all-null region (rows have
+        // `metric_name = NULL`). This pins the nulls-last ordering
+        // produced by the composite-prefix's column-skip encoding.
+        use arrow::array::StringArray;
+        let combined = read_output_to_record_batch(&outputs[0].path);
+        let mn_idx = combined.schema().index_of("metric_name").expect("mn col");
+        let arr = combined
+            .column(mn_idx)
+            .as_any()
+            .downcast_ref::<StringArray>();
+        let arr = arr.expect("metric_name should decode as StringArray");
+        // First 3 rows are the non-null region, last 3 are all-null.
+        for i in 0..3 {
+            assert!(arr.is_valid(i), "row {i} should be non-null");
+            assert_eq!(arr.value(i), "cpu.usage");
+        }
+        for i in 3..6 {
+            assert!(
+                arr.is_null(i),
+                "row {i} should be null (all-null region sorts last)"
+            );
+        }
+    }
+
+    /// Regression for Codex P1 on PR #6424: when a top-level region
+    /// exactly fills the current output (so `remaining_in_current == 0`)
+    /// AND the following prefix-aligned region needs splitting, the
+    /// split's first-sub-region budget must be computed against the
+    /// rolled-over fresh output's full target — NOT the stale zero
+    /// remainder. Before the fix, `split_region_at_sorted_series` cut
+    /// after the first sorted_series run, producing a tiny leftover
+    /// plus a large continuation that both shared the parent region's
+    /// prefix key and landed in the same new output, tripping the
+    /// PA-3 duplicate-prefix-RG check in `finalize_output`.
+    ///
+    /// Setup: three RGs of 50 rows each, distinct (metric, service)
+    /// prefixes, num_outputs = 3 → target_per_output = 50. Each region
+    /// should land cleanly in its own output with a single RG.
+    #[tokio::test]
+    async fn test_region_exactly_fills_output_does_not_split_next_aligned_region() {
+        let bytes = make_prefix_len_two_input(
+            &[
+                ("cpu.usage", "host-a"),
+                ("cpu.usage", "host-b"),
+                ("memory.used", "host-a"),
+            ],
+            50,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+            .await
+            .expect("merge must succeed; pre-fix this tripped PA-3 on output 1");
+
+        assert_eq!(outputs.len(), 3, "three regions → three outputs");
+        for (i, out) in outputs.iter().enumerate() {
+            assert_eq!(out.num_rows, 50, "output {i} should have exactly 50 rows");
+            assert_eq!(
+                out.num_row_groups, 1,
+                "output {i} should have a single RG (no spurious split)",
+            );
+        }
+
+        // PA-3 verification: each output's single RG carries a
+        // unique composite prefix key.
+        for (i, out) in outputs.iter().enumerate() {
+            let bytes_out = std::fs::read(&out.path).expect("read");
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+            assert_unique_rg_prefix_keys(
+                reader.metadata(),
+                "metric_name|service|-timestamp_secs/V2",
+                2,
+                &format!("output {i}"),
+            )
+            .expect("each output RG must satisfy PA-1 + PA-3 on prefix");
+        }
+    }
+
+    /// Build a single-RG fixture with multiple metric_names sorted
+    /// by metric_name then timestamp. The file has
+    /// `rg_partition_prefix_len = 0` (legacy) so the streaming merge
+    /// synthesizes prefix-aligned regions during the merge.
+    ///
+    /// `metrics` = list of (metric_name, num_rows). Rows are emitted
+    /// in order so the resulting batch is already sorted by
+    /// metric_name; each row gets a unique sorted_series identifier
+    /// derived from its position so the k-way merge has a well-
+    /// defined order even when other tag dimensions are degenerate.
+    fn make_multi_metric_single_rg_input(metrics: &[(&str, usize)]) -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("service", dict_type, true),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let total_rows: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total_rows);
+        let mut metric_values_vec: Vec<&str> = Vec::with_capacity(metrics.len());
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total_rows);
+        let mut series_bytes: Vec<Vec<u8>> = Vec::with_capacity(total_rows);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total_rows);
+        let mut values: Vec<f64> = Vec::with_capacity(total_rows);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (name, num)) in metrics.iter().enumerate() {
+            metric_values_vec.push(name);
+            // -timestamp_secs/V2 in the sort schema means timestamps
+            // DESC within a metric.
+            for r in 0..*num {
+                metric_keys.push(metric_idx as i32);
+                timestamps.push(1_700_000_000 + ((*num - r) as u64));
+                series_bytes.push(row_idx.to_be_bytes().to_vec());
+                tsids.push(1000 + row_idx as i64);
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_names_arr = StringArray::from(metric_values_vec);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_names_arr),
+            )
+            .expect("dict array"),
+        );
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total_rows]));
+        let service: ArrayRef = {
+            let svc_keys: Vec<Option<i32>> = (0..total_rows as i32).map(|i| Some(i % 3)).collect();
+            let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+            Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(svc_keys),
+                    Arc::new(svc_values),
+                )
+                .expect("svc dict"),
+            )
+        };
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                metric_type,
+                service,
+                timeseries_id,
+                value,
+            ],
+        )
+        .expect("batch");
+
+        // Write as a single-RG legacy file (prefix_len absent → 0).
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            ..ParquetWriterConfig::default()
+        };
+        let sort_fields = "metric_name|-timestamp_secs/V2";
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                sort_fields.to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+        ];
+        let sort_field_names = vec!["metric_name".to_string(), "timestamp_secs".to_string()];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            Vec::new(),
+            Some(kvs),
+            &sort_field_names,
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P2 on PR-6410: prefix_len=0 inputs +
+    /// `num_outputs > 1` previously folded into a single oversized
+    /// output because the region-to-output assigner only split at
+    /// region boundaries and prefix_len=0 produces exactly one region.
+    /// The engine now subdivides the single region at sorted_series
+    /// transitions so it can honor `num_outputs`. The output inherits
+    /// the input's `rg_partition_prefix_len` (= 0 here) — the engine
+    /// does not declare a prefix it can't unconditionally guarantee.
+    #[tokio::test]
+    async fn test_prefix_len_zero_multi_output_splits_at_sorted_series() {
+        // 6 distinct metric_names × 50 rows = 300 rows total.
+        // num_outputs = 3 → target 100 rows/output. Splits land at
+        // sorted_series transitions (each row has a unique
+        // sorted_series in this fixture).
+        let metrics = [
+            ("aaa.alpha", 50usize),
+            ("bbb.beta", 50),
+            ("ccc.gamma", 50),
+            ("ddd.delta", 50),
+            ("eee.epsilon", 50),
+            ("fff.zeta", 50),
+        ];
+        let bytes = make_multi_metric_single_rg_input(&metrics);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(3))
+            .await
+            .expect("merge");
+
+        assert_eq!(
+            outputs.len(),
+            3,
+            "prefix_len=0 input + num_outputs=3 must produce 3 output files; got {} ({} rows \
+             total)",
+            outputs.len(),
+            outputs.iter().map(|o| o.num_rows).sum::<usize>(),
+        );
+        let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(total, 300, "rows preserved (MC-1)");
+
+        for out in &outputs {
+            let bytes_out = std::fs::read(&out.path).expect("read");
+            let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+            // Inherits input's prefix_len = 0 → KV absent.
+            let prefix_kv = reader
+                .metadata()
+                .file_metadata()
+                .key_value_metadata()
+                .and_then(|kvs| {
+                    kvs.iter()
+                        .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                        .and_then(|k| k.value.clone())
+                });
+            assert!(
+                prefix_kv.is_none(),
+                "prefix_len=0 input must produce prefix_len=0 output (KV absent); got \
+                 {prefix_kv:?}",
+            );
+            // Each sub-region produces one output RG.
+            assert_eq!(
+                reader.metadata().num_row_groups(),
+                1,
+                "expected one output RG per sub-region; got {}",
+                reader.metadata().num_row_groups(),
+            );
+        }
+    }
+
+    /// Giant single-metric input: prefix_len=0, only one metric_name,
+    /// so there are NO metric_name transitions in the merge order.
+    /// Splitting must still honor `num_outputs` by breaking at
+    /// sorted_series transitions inside the single metric. Confirms
+    /// the engine does not require prefix-value transitions to
+    /// honor the requested output count.
+    #[tokio::test]
+    async fn test_prefix_len_zero_giant_single_metric_splits_into_multiple_outputs() {
+        let metrics = [("cpu.usage", 200usize)];
+        let bytes = make_multi_metric_single_rg_input(&metrics);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(2))
+            .await
+            .expect("merge");
+
+        assert_eq!(
+            outputs.len(),
+            2,
+            "one metric × num_outputs=2 must still split (at sorted_series boundaries); got {}",
+            outputs.len(),
+        );
+        let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+        assert_eq!(total, 200, "rows preserved");
+        // Each output is balanced near 100 rows.
+        for out in &outputs {
+            assert!(
+                out.num_rows > 0 && out.num_rows <= 200,
+                "output rows = {}",
+                out.num_rows
+            );
+        }
+    }
+
+    /// Prefix_len=0 + num_outputs=1: the whole region fits in one
+    /// output, no splitting needed. `process_region` drains
+    /// internally (no pre-drain) and produces a single output RG.
+    #[tokio::test]
+    async fn test_prefix_len_zero_single_output_is_single_rg() {
+        let metrics = [
+            ("cpu.usage", 40usize),
+            ("memory.used", 40),
+            ("net.bytes", 40),
+        ];
+        let bytes = make_multi_metric_single_rg_input(&metrics);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 120);
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            1,
+            "single output, no split → single RG (engine does not synthesize prefix alignment \
+             when inputs declare prefix_len=0)",
+        );
+        let prefix_kv = reader
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert!(
+            prefix_kv.is_none(),
+            "output must inherit input's prefix_len = 0 (KV absent); got {prefix_kv:?}",
+        );
+    }
+
+    /// Build a multi-RG fixture where each RG has a single
+    /// (metric_name, service) tuple. `rg_partition_prefix_len = 2`
+    /// declares the alignment.
+    fn make_prefix_len_two_input(rgs: &[(&str, &str)], rows_per_rg: usize) -> Bytes {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("service", DataType::Utf8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let make_batch = |metric: &str, service: &str, start_series: u64| -> RecordBatch {
+            let metric_name: ArrayRef = Arc::new(StringArray::from(vec![metric; rows_per_rg]));
+            let svc: ArrayRef = Arc::new(StringArray::from(vec![service; rows_per_rg]));
+            let timestamps: Vec<u64> = (0..rows_per_rg as u64).map(|i| 1_700_000_000 + i).collect();
+            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+            let series: Vec<Vec<u8>> = (0..rows_per_rg as u64)
+                .map(|i| (start_series + i).to_be_bytes().to_vec())
+                .collect();
+            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+                series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+            ));
+            let value: ArrayRef = Arc::new(Float64Array::from(
+                (0..rows_per_rg).map(|i| i as f64).collect::<Vec<_>>(),
+            ));
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![metric_name, svc, timestamp_secs, sorted_series, value],
+            )
+            .expect("batch")
+        };
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: rows_per_rg, // one RG per batch
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|service|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "2".to_string(),
+            ),
+        ];
+        let sorting_cols = vec![
+            parquet::file::metadata::SortingColumn {
+                column_idx: 0,
+                descending: false,
+                nulls_first: false,
+            },
+            parquet::file::metadata::SortingColumn {
+                column_idx: 1,
+                descending: false,
+                nulls_first: false,
+            },
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string(), "service".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer =
+            ArrowWriter::try_new(&mut buf, schema.clone(), Some(props)).expect("arrow writer");
+        for (i, (metric, service)) in rgs.iter().enumerate() {
+            let batch = make_batch(metric, service, (i as u64) * rows_per_rg as u64);
+            writer.write(&batch).expect("write");
+        }
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// End-to-end regression for DESC prefix columns. Three RGs with
+    /// the same metric_name (ASC) and distinct `env` values; sort
+    /// schema declares env DESC. The input file must itself be
+    /// DESC-sorted on env (RGs in physical order staging → prod →
+    /// dev) because the streaming engine processes each input's RGs
+    /// in physical order; the BTreeMap-driven region order is the
+    /// thing the composite key + `invert_for_descending` controls,
+    /// and it must agree with the input's physical RG order for the
+    /// engine to drain sort cols in lockstep with the body cols.
+    ///
+    /// Regions must therefore come out in DESC order on env:
+    /// staging → prod → dev. Without the `invert_for_descending`
+    /// step the BTreeMap would emit dev → prod → staging, which
+    /// would disagree with the physical RG order and the engine
+    /// would bail with "page from rg 0 while draining sort cols of
+    /// rg 2".
+    #[tokio::test]
+    async fn test_streaming_merge_with_desc_prefix_col() {
+        let bytes = make_prefix_len_two_input_with_directions(
+            // (metric, env, marker_value). Each RG's body `value`
+            // column is filled with `marker_value` so we can identify
+            // which RG produced each output row group. Order is
+            // env-DESC physical: staging, prod, dev.
+            &[
+                ("cpu.usage", "staging", 3.0),
+                ("cpu.usage", "prod", 2.0),
+                ("cpu.usage", "dev", 1.0),
+            ],
+            20,
+            /* env_descending */ true,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge with env DESC");
+        assert_eq!(outputs.len(), 1);
+
+        // Read the output and inspect the per-RG metric values: each
+        // RG should be filled with a single marker, and the RG order
+        // must be staging (3.0) → prod (2.0) → dev (1.0).
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        let meta = reader.metadata();
+        assert_eq!(
+            meta.num_row_groups(),
+            3,
+            "three distinct env values → three RGs"
+        );
+
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let value = merged
+            .column(merged.schema().index_of("value").expect("value"))
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .expect("Float64");
+        // RG 0 spans rows 0..20, RG 1 spans 20..40, RG 2 spans 40..60.
+        // Within each RG the marker_value is constant.
+        let first_block = value.value(0);
+        let second_block = value.value(20);
+        let third_block = value.value(40);
+        assert!(
+            (first_block - 3.0).abs() < 1e-9,
+            "first output RG should be 'staging' (marker 3.0), got {first_block}",
+        );
+        assert!(
+            (second_block - 2.0).abs() < 1e-9,
+            "second output RG should be 'prod' (marker 2.0), got {second_block}",
+        );
+        assert!(
+            (third_block - 1.0).abs() < 1e-9,
+            "third output RG should be 'dev' (marker 1.0), got {third_block}",
+        );
+    }
+
+    /// Regression for the composite-key encoding when ASC and DESC
+    /// columns are interleaved. metric_name ASC + env DESC: composite
+    /// keys for ("cpu.usage", "dev") and ("cpu.usage", "prod") must
+    /// put 'prod' before 'dev' (because prod > dev in ASC lex, so
+    /// prod's DESC encoding sorts smaller).
+    #[test]
+    fn test_extract_rg_composite_prefix_key_mixed_directions() {
+        let bytes = make_prefix_len_two_input_with_directions(
+            &[("cpu.usage", "dev", 0.0), ("cpu.usage", "prod", 0.0)],
+            5,
+            /* env_descending */ true,
+        );
+        let reader = SerializedFileReader::new(Bytes::from(bytes.to_vec())).expect("ser");
+        let metadata = reader.metadata();
+        let prefix_cols =
+            find_prefix_parquet_col_indices(metadata, "metric_name|-env|-timestamp_secs/V2", 2, 0)
+                .expect("resolve");
+        // Sanity: the second prefix column must be flagged DESC.
+        assert!(
+            prefix_cols[1].descending,
+            "env must be parsed as DESC from sort schema",
+        );
+
+        let key_dev = extract_rg_composite_prefix_key(metadata, 0, &prefix_cols, 0).expect("dev");
+        let key_prod = extract_rg_composite_prefix_key(metadata, 1, &prefix_cols, 0).expect("prod");
+        // metric_name is the same; env differs. DESC on env means
+        // 'prod' (larger lex) should encode to LESS-THAN 'dev', so
+        // the BTreeMap iterates prod first.
+        assert!(
+            key_prod < key_dev,
+            "with env DESC, composite key for 'prod' must lex-sort before 'dev'",
+        );
+    }
+
+    /// MS-2: a file whose physical RG order disagrees with the
+    /// composite-key encoding's derived order must be rejected
+    /// upfront at `extract_regions_from_metadata` time, not bail
+    /// later from inside `process_region`. Construct an input that declares
+    /// env DESC but physically writes RGs in ASC env order — the
+    /// BTreeMap region iteration will visit RG 2 (env DESC = "dev",
+    /// largest in DESC encoding ... wait, no — DESC means largest
+    /// first, so env "staging" should be first ...).
+    ///
+    /// Concretely: RGs written physically as `[dev, prod, staging]`
+    /// with sort direction declared DESC. DESC iteration order is
+    /// `[staging (RG 2), prod (RG 1), dev (RG 0)]`. The first region
+    /// the engine would try to drain is RG 2, but the input stream
+    /// reaches RG 0 first. MS-2 must reject this at
+    /// `extract_regions_from_metadata` time.
+    #[tokio::test]
+    async fn test_ms2_region_order_disagrees_with_physical_rg_order_rejected() {
+        let bytes = make_prefix_len_two_input_with_directions(
+            // Physical order ASC on env: dev, prod, staging. But the
+            // sort schema below declares env DESC.
+            &[
+                ("cpu.usage", "dev", 1.0),
+                ("cpu.usage", "prod", 2.0),
+                ("cpu.usage", "staging", 3.0),
+            ],
+            10,
+            /* env_descending */ true,
+        );
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("region order vs physical RG order mismatch must be rejected");
+        let s = err.to_string();
+        assert!(
+            s.contains("disagrees with input") && s.contains("physical row order"),
+            "expected MS-2 rejection message, got: {s}",
+        );
+    }
+
+    /// Build a multi-RG fixture whose second sort col can be flagged
+    /// DESC. Sort schema written into KV metadata: either
+    /// `metric_name|env|-timestamp_secs/V2` or
+    /// `metric_name|-env|-timestamp_secs/V2`.
+    fn make_prefix_len_two_input_with_directions(
+        rgs: &[(&str, &str, f64)],
+        rows_per_rg: usize,
+        env_descending: bool,
+    ) -> Bytes {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("env", DataType::Utf8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let make_batch = |metric: &str, env: &str, marker: f64, start_series: u64| -> RecordBatch {
+            let metric_name: ArrayRef = Arc::new(StringArray::from(vec![metric; rows_per_rg]));
+            let env_arr: ArrayRef = Arc::new(StringArray::from(vec![env; rows_per_rg]));
+            let timestamps: Vec<u64> = (0..rows_per_rg as u64)
+                // Timestamps DESC within the RG to match the DESC sort.
+                .map(|i| 1_700_000_000 + (rows_per_rg as u64 - i))
+                .collect();
+            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+            let series: Vec<Vec<u8>> = (0..rows_per_rg as u64)
+                .map(|i| (start_series + i).to_be_bytes().to_vec())
+                .collect();
+            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+                series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+            ));
+            let value: ArrayRef = Arc::new(Float64Array::from(vec![marker; rows_per_rg]));
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![metric_name, env_arr, timestamp_secs, sorted_series, value],
+            )
+            .expect("batch")
+        };
+
+        let env_token = if env_descending { "-env" } else { "env" };
+        let sort_fields = format!("metric_name|{env_token}|-timestamp_secs/V2");
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: rows_per_rg,
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(PARQUET_META_SORT_FIELDS.to_string(), sort_fields),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "2".to_string(),
+            ),
+        ];
+        let sorting_cols = vec![
+            parquet::file::metadata::SortingColumn {
+                column_idx: 0,
+                descending: false,
+                nulls_first: false,
+            },
+            parquet::file::metadata::SortingColumn {
+                column_idx: 1,
+                descending: env_descending,
+                nulls_first: false,
+            },
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string(), "env".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer =
+            ArrowWriter::try_new(&mut buf, schema.clone(), Some(props)).expect("arrow writer");
+        for (i, (metric, env, marker)) in rgs.iter().enumerate() {
+            let batch = make_batch(metric, env, *marker, (i as u64) * rows_per_rg as u64);
+            writer.write(&batch).expect("write");
+        }
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// `extract_aligned_prefix_value` rejects an RG whose prefix
+    /// column has `min != max` — those RGs are not actually aligned
+    /// on the prefix value and grouping them into one region would be
+    /// silently wrong.
+    #[test]
+    fn test_composite_key_rejects_non_aligned_rg() {
+        // A single RG whose `metric_name` carries two distinct values:
+        // min ("cpu.usage") != max ("memory.used"). The composite-key
+        // extractor must refuse to mint a key for this RG.
+        let bytes = make_misaligned_metric_name_input(&[("cpu.usage", "memory.used")], 20);
+        let reader = SerializedFileReader::new(bytes).expect("ser");
+        let metadata = reader.metadata();
+        let prefix_cols =
+            find_prefix_parquet_col_indices(metadata, "metric_name|-timestamp_secs/V2", 1, 0)
+                .expect("resolve");
+        let err = extract_rg_composite_prefix_key(metadata, 0, &prefix_cols, 0)
+            .expect_err("RG with min != max on prefix col must be rejected");
+        let s = err.to_string();
+        assert!(
+            s.contains("NOT prefix-aligned"),
+            "expected misalignment error, got: {s}",
+        );
+    }
+
+    /// Build a single-RG fixture whose `metric_name` column contains
+    /// two distinct values within the same RG. Used to exercise the
+    /// `min != max` rejection path in
+    /// `extract_aligned_prefix_value`.
+    fn make_misaligned_metric_name_input(names: &[(&str, &str)], rows_per_run: usize) -> Bytes {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", DataType::Utf8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let total = rows_per_run * 2 * names.len();
+        let mut metric_values: Vec<&str> = Vec::with_capacity(total);
+        for (a, b) in names {
+            for _ in 0..rows_per_run {
+                metric_values.push(*a);
+            }
+            for _ in 0..rows_per_run {
+                metric_values.push(*b);
+            }
+        }
+        let metric_name: ArrayRef = Arc::new(StringArray::from(metric_values));
+        let timestamps: Vec<u64> = (0..total as u64).map(|i| 1_700_000_000 + i).collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let series: Vec<Vec<u8>> = (0..total as u64)
+            .map(|i| i.to_be_bytes().to_vec())
+            .collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+        ));
+        let value: ArrayRef = Arc::new(Float64Array::from(
+            (0..total).map(|i| i as f64).collect::<Vec<_>>(),
+        ));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![metric_name, timestamp_secs, sorted_series, value],
+        )
+        .expect("batch");
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "1".to_string(),
+            ),
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            Vec::new(),
+            Some(kvs),
+            &["metric_name".to_string(), "timestamp_secs".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer =
+            ArrowWriter::try_new(&mut buf, schema.clone(), Some(props)).expect("arrow writer");
+        writer.write(&batch).expect("write");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Build a parquet fixture with TWO row groups, each containing
+    /// rows of one distinct metric_name. RG 0 = "cpu.usage" × 30 rows,
+    /// RG 1 = "memory.used" × 30 rows. `rg_partition_prefix_len = 1`
+    /// declares metric_name alignment.
+    fn make_two_metric_aligned_input() -> Bytes {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("service", dict_type, true),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        let make_batch = |metric_key: i32, start_series: u64, rows: usize| -> RecordBatch {
+            let metric_keys: Vec<i32> = vec![metric_key; rows];
+            let metric_values = StringArray::from(vec!["cpu.usage", "memory.used"]);
+            let metric_name: ArrayRef = Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(metric_keys),
+                    Arc::new(metric_values),
+                )
+                .expect("dict"),
+            );
+            let timestamps: Vec<u64> = (0..rows as u64)
+                .map(|i| 1_700_000_000 + (rows as u64 - i))
+                .collect();
+            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+            let mut series_bytes: Vec<Vec<u8>> = Vec::with_capacity(rows);
+            for i in 0..rows as u64 {
+                series_bytes.push((start_series + i).to_be_bytes().to_vec());
+            }
+            let series_refs: Vec<&[u8]> = series_bytes.iter().map(|v| v.as_slice()).collect();
+            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(series_refs));
+            let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; rows]));
+            let svc_values = StringArray::from(vec!["api", "db", "cache"]);
+            let svc_keys: Vec<Option<i32>> = (0..rows as i32)
+                .map(|i| if i % 5 == 0 { None } else { Some(i % 3) })
+                .collect();
+            let service: ArrayRef = Arc::new(
+                DictionaryArray::<Int32Type>::try_new(
+                    arrow::array::Int32Array::from(svc_keys),
+                    Arc::new(svc_values),
+                )
+                .expect("dict"),
+            );
+            let tsids: Vec<i64> = (0..rows as i64).map(|i| 1000 + i).collect();
+            let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+            let values: Vec<f64> = (0..rows).map(|i| i as f64).collect();
+            let value: ArrayRef = Arc::new(Float64Array::from(values));
+
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    metric_name,
+                    timestamp_secs,
+                    sorted_series,
+                    metric_type,
+                    service,
+                    timeseries_id,
+                    value,
+                ],
+            )
+            .expect("batch")
+        };
+
+        let batch_cpu = make_batch(0, 0, 30);
+        let batch_mem = make_batch(1, 100, 30);
+
+        let cfg = ParquetWriterConfig {
+            compression: Compression::Snappy,
+            row_group_size: 30, // one RG per metric_name
+            ..ParquetWriterConfig::default()
+        };
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            KeyValue::new(
+                PARQUET_META_WINDOW_START.to_string(),
+                "1700000000".to_string(),
+            ),
+            KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
+            KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
+            // `prefix_len = 1` declares metric_name alignment.
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "1".to_string(),
+            ),
+        ];
+        let sorting_cols = vec![
+            parquet::file::metadata::SortingColumn {
+                column_idx: 0,
+                descending: false,
+                nulls_first: false,
+            },
+            parquet::file::metadata::SortingColumn {
+                column_idx: 1,
+                descending: true,
+                nulls_first: false,
+            },
+        ];
+        let props: WriterProperties = cfg.to_writer_properties_with_metadata(
+            &schema,
+            sorting_cols,
+            Some(kvs),
+            &["metric_name".to_string(), "timestamp_secs".to_string()],
+        );
+        let mut buf: Vec<u8> = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, Some(props)).expect("arrow writer");
+        writer.write(&batch_cpu).expect("write cpu");
+        writer.write(&batch_mem).expect("write mem");
+        writer.close().expect("close");
+        Bytes::from(buf)
+    }
+
+    /// Regression for Codex P1 on PR-6409 (the empty-input half): a
+    /// zero-row-group input mixed with a populated one must not panic
+    /// the body-column path. Phase 0 already accepts empty inputs;
+    /// PR-6c.2's per-region engine only iterates `region.contributing`
+    /// inputs for body cols, but verify directly so any future change
+    /// that broadens the iteration is caught.
     #[tokio::test]
     async fn test_zero_row_input_mixed_with_non_empty() {
         let empty = make_sorted_batch(0, 0);
@@ -2454,9 +3183,6 @@ mod tests {
             .as_any()
             .downcast_ref::<Float64Array>()
             .expect("Float64");
-        // All 50 values from the populated input should round-trip in
-        // input row order (timestamps descend in input row order to
-        // match the sort key).
         for i in 0..50 {
             assert!(
                 (value.value(i) - i as f64).abs() < 1e-9,
@@ -2464,66 +3190,6 @@ mod tests {
                 value.value(i),
             );
         }
-    }
-
-    /// Regression for Codex P2 on PR-6409: `derive_output_schema`
-    /// must drop sort fields that `optimize_output_batch` discarded as
-    /// all-null for a given output. Before the fix the check was
-    /// `sort_optimised.has(name) || full_union.has(name)`, where the
-    /// second disjunct is trivially true for every iterated field, so
-    /// all-null sort columns were never dropped. We exercise the
-    /// helper directly with a synthetic union + sort-optimised pair so
-    /// the regression doesn't depend on the merge plan creating an
-    /// all-null sort col (which requires a multi-input fixture with
-    /// divergent sort col presence).
-    #[test]
-    fn test_derive_output_schema_drops_all_null_sort_field() {
-        // Union covers sort fields {metric_name, env, timestamp_secs}
-        // plus body field {value}. `env` is a sort field declared in
-        // the sort union but `optimize_output_batch` dropped it from
-        // this output's `sort_optimised` (all-null for this output's
-        // rows). Body field `value` is NOT in the sort union — it
-        // must be preserved unconditionally.
-        let full_union = Arc::new(ArrowSchema::new(vec![
-            Field::new("metric_name", DataType::Utf8, false),
-            Field::new("env", DataType::Utf8, true),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-        ]));
-        let sort_union = Arc::new(ArrowSchema::new(vec![
-            Field::new("metric_name", DataType::Utf8, false),
-            Field::new("env", DataType::Utf8, true),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-        ]));
-        // sort_optimised has dropped `env` (all-null for this output).
-        let sort_optimised_schema = Arc::new(ArrowSchema::new(vec![
-            Field::new("metric_name", DataType::Utf8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-        ]));
-        let sort_optimised = RecordBatch::try_new(
-            sort_optimised_schema,
-            vec![
-                Arc::new(StringArray::from(vec!["cpu.usage"; 4])),
-                Arc::new(UInt64Array::from(vec![1u64, 2, 3, 4])),
-            ],
-        )
-        .expect("test batch");
-
-        let derived = derive_output_schema(&full_union, &sort_union, &sort_optimised).expect("ok");
-        let names: Vec<&str> = derived.fields().iter().map(|f| f.name().as_str()).collect();
-        assert_eq!(
-            names,
-            vec!["metric_name", "timestamp_secs", "value"],
-            "all-null sort field 'env' must be dropped; body field 'value' preserved",
-        );
-
-        // Direct contrast: with the pre-fix logic (every field kept)
-        // the result would have included 'env'. Asserting the negative
-        // form makes the regression unambiguous.
-        assert!(
-            derived.index_of("env").is_err(),
-            "'env' must not appear in derived output schema",
-        );
     }
 
     /// Write a fixture parquet file where each body column is forced
@@ -2646,116 +3312,10 @@ mod tests {
         }
     }
 
-    /// Regression for Codex P1 on PR-6409 (the multi-output half): when
-    /// a body column is consumed by more than one output, the per-input
-    /// page cache and decoder must outlive each output's assembler. The
-    /// stream cannot be rewound, so dropping a partially-consumed page
-    /// when output K ends would leave output K+1 unable to read rows
-    /// that physically live inside that same page.
+    /// Legacy multi-RG input (prefix_len=0, num_RGs>1) is rejected —
+    /// these must route through `LegacyInputAdapter` (PR-5).
     #[tokio::test]
-    async fn test_body_col_cache_persists_across_outputs() {
-        // Two metric names so the engine splits the merge into two
-        // outputs at the metric_name boundary. Each input has 200
-        // rows of cpu.usage then 200 rows of memory.used — small
-        // 50-row pages mean some pages span the boundary.
-        let schema = make_sorted_batch(0, 0).schema();
-        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
-        let metric_values = StringArray::from(vec!["cpu.usage", "memory.used"]);
-        let keys: Vec<i32> = (0..400).map(|i| if i < 200 { 0 } else { 1 }).collect();
-        let metric_name: ArrayRef = Arc::new(
-            DictionaryArray::<Int32Type>::try_new(
-                arrow::array::Int32Array::from(keys),
-                Arc::new(metric_values),
-            )
-            .expect("dict"),
-        );
-
-        // Timestamps descend within each metric_name run so the file
-        // is sorted by (metric_name ASC, timestamp DESC) — matching
-        // the sort schema declared in write_input_parquet_with_small_pages.
-        let timestamps: Vec<u64> = (0..400)
-            .map(|i| {
-                let run_pos = if i < 200 { i } else { i - 200 };
-                1_700_000_000u64 + (199 - run_pos as u64)
-            })
-            .collect();
-        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
-
-        let series: Vec<Vec<u8>> = (0..400u64).map(|i| i.to_be_bytes().to_vec()).collect();
-        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
-            series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
-        ));
-
-        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![1u8; 400]));
-        let service_keys: Vec<i32> = (0..400i32).map(|_| 0).collect();
-        let service_values = StringArray::from(vec!["svc-a"]);
-        let service: ArrayRef = Arc::new(
-            DictionaryArray::<Int32Type>::try_new(
-                arrow::array::Int32Array::from(service_keys),
-                Arc::new(service_values),
-            )
-            .expect("svc dict"),
-        );
-        let timeseries_id: ArrayRef = Arc::new(Int64Array::from((0..400i64).collect::<Vec<_>>()));
-        let value: ArrayRef = Arc::new(Float64Array::from(
-            (0..400).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
-        ));
-        // Confirm the schema we hand-build still matches make_sorted_batch's:
-        let _ = dict_type;
-        let batch = RecordBatch::try_new(
-            Arc::clone(&schema),
-            vec![
-                metric_name,
-                timestamp_secs,
-                sorted_series,
-                metric_type,
-                service,
-                timeseries_id,
-                value,
-            ],
-        )
-        .expect("test batch");
-
-        let bytes = write_input_parquet_with_small_pages(std::slice::from_ref(&batch), 50);
-        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
-
-        let tmp = TempDir::new().expect("tmpdir");
-        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(2))
-            .await
-            .expect("merge");
-        assert_eq!(outputs.len(), 2, "two metric names → two outputs");
-
-        let total: usize = outputs.iter().map(|o| o.num_rows).sum();
-        assert_eq!(total, 400);
-
-        // Concatenate the two outputs' value columns in output order
-        // and verify every original value is present. The merge is
-        // sort-stable, so values within each output appear in input
-        // row order (timestamps descend within each metric run).
-        let mut seen_values: HashSet<u64> = HashSet::new();
-        for out in &outputs {
-            let merged = read_output_to_record_batch(&out.path);
-            let v = merged
-                .column(merged.schema().index_of("value").expect("value col"))
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .expect("Float64");
-            for i in 0..v.len() {
-                // Encode as integer bits to dedupe; original values
-                // are i * 0.5 for i in 0..400, all distinct.
-                seen_values.insert(v.value(i).to_bits());
-            }
-        }
-        assert_eq!(
-            seen_values.len(),
-            400,
-            "every input value should round-trip through the merge across both outputs",
-        );
-    }
-
-    /// Multi-RG input is rejected (PR-6b.2 simplification).
-    #[tokio::test]
-    async fn test_multi_rg_input_rejected() {
+    async fn test_legacy_multi_rg_input_rejected() {
         // Force a 2-RG file by writing two batches with row_group_size = 1
         // small enough to trip RG rollover.
         let batch_a = make_sorted_batch(50, 0);
@@ -2796,11 +3356,11 @@ mod tests {
         let tmp = TempDir::new().expect("tmpdir");
         let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
             .await
-            .expect_err("multi-RG input must be rejected");
+            .expect_err("legacy multi-RG input must be rejected");
         let s = err.to_string();
         assert!(
-            s.contains("single-row-group"),
-            "expected 'single-row-group' error, got: {s}",
+            s.contains("legacy multi-RG") || s.contains("PR-5 adapter"),
+            "expected legacy multi-RG rejection, got: {s}",
         );
     }
 
@@ -3497,189 +4057,6 @@ mod tests {
     // ============================================================================
     // Heterogeneous-output regressions (Codex P2 batch on PR-6409)
     // ============================================================================
-
-    /// Regression for "Use the full union schema when driving column
-    /// writes": two outputs with the **same field count** that drop
-    /// *different* all-null sort fields. The previous
-    /// `build_parent_union_schema` heuristic picked the first such
-    /// schema and used it to drive the column loop — silently
-    /// skipping any column it dropped, even if another output still
-    /// needed it. The fix drives iteration from `full_union_schema`
-    /// directly.
-    ///
-    /// Setup: two inputs declaring an extended sort schema
-    /// `metric_name|tag_a|tag_b|-timestamp_secs/V2`. Input A has only
-    /// `tag_a` populated, input B has only `tag_b` populated. Merge
-    /// with `num_outputs=2` so each input's rows land in its own
-    /// output. After the per-output optimiser, output 0's schema
-    /// drops `tag_b` (all-null) and output 1's schema drops `tag_a`
-    /// — same field count, different dropped fields. Both outputs
-    /// must still write their kept tag column.
-    #[tokio::test]
-    async fn test_heterogeneous_dropped_fields_drive_from_full_union_schema() {
-        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
-        // Schema for input A: metric_name, tag_a (non-null), tag_b
-        // absent. Schema for input B: metric_name, tag_b (non-null),
-        // tag_a absent. The merge engine's union schema makes both
-        // tag fields nullable in the combined view.
-        let mk_schema = |with_a: bool, with_b: bool| -> SchemaRef {
-            let mut fields = vec![
-                Field::new("metric_name", dict_type.clone(), false),
-                Field::new("timestamp_secs", DataType::UInt64, false),
-                Field::new("sorted_series", DataType::Binary, false),
-            ];
-            // Body cols in lexicographic order.
-            if with_a {
-                fields.push(Field::new("tag_a", DataType::Utf8, false));
-            }
-            if with_b {
-                fields.push(Field::new("tag_b", DataType::Utf8, false));
-            }
-            fields.push(Field::new("value", DataType::Float64, false));
-            Arc::new(ArrowSchema::new(fields))
-        };
-
-        let make_batch = |metric: &str,
-                          schema: SchemaRef,
-                          tag_a_val: Option<&str>,
-                          tag_b_val: Option<&str>,
-                          row_count: usize,
-                          base_series: u64|
-         -> RecordBatch {
-            let metric_keys: Vec<i32> = vec![0; row_count];
-            let metric_values = StringArray::from(vec![metric]);
-            let metric_name: ArrayRef = Arc::new(
-                DictionaryArray::<Int32Type>::try_new(
-                    arrow::array::Int32Array::from(metric_keys),
-                    Arc::new(metric_values),
-                )
-                .expect("dict"),
-            );
-            let timestamps: Vec<u64> = (0..row_count as u64)
-                .map(|i| 1_700_000_000 + (row_count as u64 - i))
-                .collect();
-            let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
-            let series: Vec<Vec<u8>> = (0..row_count as u64)
-                .map(|i| (base_series + i).to_be_bytes().to_vec())
-                .collect();
-            let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
-                series.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
-            ));
-            let value: ArrayRef = Arc::new(Float64Array::from(
-                (0..row_count).map(|i| i as f64).collect::<Vec<_>>(),
-            ));
-            let mut columns: Vec<ArrayRef> = vec![metric_name, timestamp_secs, sorted_series];
-            if let Some(v) = tag_a_val {
-                columns.push(Arc::new(StringArray::from(vec![v; row_count])) as ArrayRef);
-            }
-            if let Some(v) = tag_b_val {
-                columns.push(Arc::new(StringArray::from(vec![v; row_count])) as ArrayRef);
-            }
-            columns.push(value);
-            RecordBatch::try_new(schema, columns).expect("batch")
-        };
-
-        // Input A has tag_a populated, sort key "aaa.metric" (sorts
-        // before "zzz.metric"). Input B has tag_b populated, sort key
-        // "zzz.metric". With num_outputs=2 the merge splits at the
-        // metric boundary so each input's rows land in its own output.
-        let schema_a = mk_schema(true, false);
-        let schema_b = mk_schema(false, true);
-        let batch_a = make_batch("aaa.metric", schema_a, Some("alpha"), None, 12, 0);
-        let batch_b = make_batch("zzz.metric", schema_b, None, Some("beta"), 12, 1000);
-
-        let sort_fields_str = "metric_name|tag_a|tag_b|-timestamp_secs/V2";
-        let make_input_bytes = |batch: &RecordBatch| -> Bytes {
-            let cfg = ParquetWriterConfig {
-                compression: Compression::Snappy,
-                ..ParquetWriterConfig::default()
-            };
-            let kvs = vec![
-                KeyValue::new(
-                    PARQUET_META_SORT_FIELDS.to_string(),
-                    sort_fields_str.to_string(),
-                ),
-                KeyValue::new(
-                    PARQUET_META_WINDOW_START.to_string(),
-                    "1700000000".to_string(),
-                ),
-                KeyValue::new(PARQUET_META_WINDOW_DURATION.to_string(), "60".to_string()),
-                KeyValue::new(PARQUET_META_NUM_MERGE_OPS.to_string(), "0".to_string()),
-            ];
-            let props: WriterProperties = cfg.to_writer_properties_with_metadata(
-                &batch.schema(),
-                Vec::new(),
-                Some(kvs),
-                &[
-                    "metric_name".to_string(),
-                    "tag_a".to_string(),
-                    "tag_b".to_string(),
-                    "timestamp_secs".to_string(),
-                ],
-            );
-            let mut buf: Vec<u8> = Vec::new();
-            let mut writer =
-                ArrowWriter::try_new(&mut buf, batch.schema(), Some(props)).expect("arrow writer");
-            writer.write(batch).expect("write");
-            writer.close().expect("close");
-            Bytes::from(buf)
-        };
-        let bytes_a = make_input_bytes(&batch_a);
-        let bytes_b = make_input_bytes(&batch_b);
-
-        let inputs: Vec<Box<dyn ColumnPageStream>> =
-            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
-
-        let tmp = TempDir::new().expect("tmpdir");
-        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(2))
-            .await
-            .expect("merge with heterogeneous dropped fields");
-        assert_eq!(outputs.len(), 2, "two metric names → two outputs");
-
-        // The output whose rows came from input A must carry tag_a
-        // values; the output whose rows came from input B must carry
-        // tag_b values. Before the fix, one of them was silently
-        // missing its kept tag column because the parent driver
-        // skipped it.
-        let mut saw_alpha = false;
-        let mut saw_beta = false;
-        for out in &outputs {
-            let merged = read_output_to_record_batch(&out.path);
-            let schema = merged.schema();
-            if let Ok(tag_a_idx) = schema.index_of("tag_a") {
-                let col = merged.column(tag_a_idx);
-                for i in 0..col.len() {
-                    if col.is_valid(i) {
-                        let s = render_cell(col.as_ref(), i);
-                        if s.ends_with("alpha") {
-                            saw_alpha = true;
-                        }
-                    }
-                }
-            }
-            if let Ok(tag_b_idx) = schema.index_of("tag_b") {
-                let col = merged.column(tag_b_idx);
-                for i in 0..col.len() {
-                    if col.is_valid(i) {
-                        let s = render_cell(col.as_ref(), i);
-                        if s.ends_with("beta") {
-                            saw_beta = true;
-                        }
-                    }
-                }
-            }
-        }
-        assert!(
-            saw_alpha,
-            "expected to find tag_a='alpha' in some output — the full-union-schema-driven column \
-             loop must visit tag_a even when another output dropped it",
-        );
-        assert!(
-            saw_beta,
-            "expected to find tag_b='beta' in some output — the full-union-schema-driven column \
-             loop must visit tag_b even when another output dropped it",
-        );
-    }
 
     /// Regression for "Preserve service tags when service is a sort
     /// column". If the sort schema places `service` in the sort key

@@ -119,22 +119,18 @@ pub fn merge_parquet_split_metadata(
     let split_id = ParquetSplitId::generate(first.kind);
     let parquet_file = format!("{split_id}.parquet");
 
-    // `rg_partition_prefix_len` propagation rule: a single-row-group
-    // output vacuously satisfies any prefix claim (no boundary to
-    // misalign), so we keep the inputs' prefix. Multi-RG output with
-    // arbitrary row-count-driven boundaries (the only kind the current
-    // merge writer can produce) cannot honor a non-zero claim and must
-    // reset to 0. PR-6 (streaming column-major merge engine) will
-    // produce sort-prefix-aligned multi-RG output and propagate the
-    // prefix unconditionally.
-    //
-    // This must agree with the value the writer embeds in the file's
-    // `qh.rg_partition_prefix_len` KV — see `write_merge_outputs`.
-    let output_prefix_len = if output.num_row_groups <= 1 {
-        first.rg_partition_prefix_len
-    } else {
-        0
-    };
+    // CS-1: the metastore-recorded `rg_partition_prefix_len` must equal
+    // the value the writer embedded in the file's
+    // `qh.rg_partition_prefix_len` KV. Each writer makes its own
+    // decision (the legacy `merge/writer.rs` demotes to 0 on multi-RG
+    // output because its boundaries are row-count-driven; the streaming
+    // writer propagates the inputs' prefix unchanged because it splits
+    // at prefix transitions and verifies via `assert_unique_rg_prefix_keys`)
+    // and reports it via `MergeOutputFile.output_rg_partition_prefix_len`.
+    // We propagate that one source of truth — re-deriving here from
+    // `num_row_groups` would silently diverge from the streaming
+    // engine's prefix-aligned multi-RG output.
+    let output_prefix_len = output.output_rg_partition_prefix_len;
 
     // Data-dependent fields come from the MergeOutputFile (extracted from
     // this output's actual rows during the merge write pass).
@@ -213,10 +209,29 @@ mod tests {
         time_range: (u64, u64),
         metric_names: &[&str],
     ) -> MergeOutputFile {
+        make_output_full_with_prefix(
+            num_rows,
+            size_bytes,
+            num_row_groups,
+            0,
+            time_range,
+            metric_names,
+        )
+    }
+
+    fn make_output_full_with_prefix(
+        num_rows: usize,
+        size_bytes: u64,
+        num_row_groups: usize,
+        output_rg_partition_prefix_len: u32,
+        time_range: (u64, u64),
+        metric_names: &[&str],
+    ) -> MergeOutputFile {
         MergeOutputFile {
             path: PathBuf::from("/tmp/merged.parquet"),
             num_rows,
             num_row_groups,
+            output_rg_partition_prefix_len,
             size_bytes,
             row_keys_proto: Some(vec![0x08, 0x01]),
             zonemap_regexes: HashMap::from([("metric_name".to_string(), "cpu\\..*".to_string())]),
@@ -412,17 +427,21 @@ mod tests {
     }
 
     #[test]
-    fn test_output_prefix_len_demoted_when_multi_rg() {
-        // The current merge writer rolls over RGs at row count, not at
-        // sort-prefix transitions. When the output ends up with > 1 RG,
-        // the boundaries are at arbitrary places and the inputs' prefix
-        // claim cannot be honored — the output's prefix must be 0.
+    fn test_output_prefix_len_carries_writers_value_when_demoted() {
+        // CS-1: the metastore-recorded value must match the writer's
+        // KV stamp. Legacy `merge/writer.rs` demotes to 0 when its
+        // row-count-driven RG layout produces multi-RG output and
+        // reports that demoted value on the `MergeOutputFile`. The
+        // metastore aggregator must propagate it as-is (NOT re-derive
+        // from inputs) so the metastore agrees with the file's KV.
         let mut s0 = make_test_split("s0", (1000, 2000), 0);
         let mut s1 = make_test_split("s1", (1000, 2000), 0);
         s0.rg_partition_prefix_len = 3;
         s1.rg_partition_prefix_len = 3;
 
-        let output = make_output_full(200, 9000, 2, (1000, 2000), &["cpu.usage"]);
+        // num_row_groups = 2 + writer reports demoted prefix_len = 0
+        // (the legacy writer's choice for a row-count-driven multi-RG).
+        let output = make_output_full_with_prefix(200, 9000, 2, 0, (1000, 2000), &["cpu.usage"]);
         let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
         assert_eq!(result.rg_partition_prefix_len, 0);
     }
@@ -430,18 +449,42 @@ mod tests {
     #[test]
     fn test_output_prefix_len_preserved_when_single_rg() {
         // A single-RG output vacuously satisfies any prefix alignment
-        // claim (one RG, no boundary to misalign). Propagate the inputs'
-        // prefix so the merge output stays in the same compaction bucket
-        // as the inputs, instead of leaking into the prefix=0 bucket on
-        // every merge.
+        // claim (one RG, no boundary to misalign). The writer reports
+        // the inputs' prefix; aggregator propagates it.
         let mut s0 = make_test_split("s0", (1000, 2000), 0);
         let mut s1 = make_test_split("s1", (1000, 2000), 0);
         s0.rg_partition_prefix_len = 3;
         s1.rg_partition_prefix_len = 3;
 
-        let output = make_output_full(200, 9000, 1, (1000, 2000), &["cpu.usage"]);
+        let output = make_output_full_with_prefix(200, 9000, 1, 3, (1000, 2000), &["cpu.usage"]);
         let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
         assert_eq!(result.rg_partition_prefix_len, 3);
+    }
+
+    #[test]
+    fn test_output_prefix_len_preserved_on_multi_rg_streaming_engine() {
+        // CS-1 regression for F1: the streaming engine produces
+        // sort-prefix-aligned multi-RG output and reports the inputs'
+        // prefix unchanged via `MergeOutputFile.output_rg_partition_prefix_len`.
+        // Before this fix, `merge_parquet_split_metadata` would
+        // unconditionally demote to 0 whenever `num_row_groups > 1`,
+        // breaking CS-1 (metastore disagreed with the file's KV) and
+        // leaking aligned outputs into the unaligned compaction bucket
+        // on every subsequent merge.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 2;
+        s1.rg_partition_prefix_len = 2;
+
+        // num_row_groups = 3 (multi-RG) AND writer reports prefix_len = 2
+        // (the streaming engine's stamp because it verified alignment).
+        let output = make_output_full_with_prefix(300, 12000, 3, 2, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
+        assert_eq!(
+            result.rg_partition_prefix_len, 2,
+            "metastore must mirror the writer's KV (CS-1); multi-RG aligned output keeps its \
+             prefix claim"
+        );
     }
 
     #[test]

@@ -169,6 +169,7 @@ pub fn write_merge_outputs(
             path: output_path,
             num_rows: sorted_batch.num_rows(),
             num_row_groups: written.num_row_groups,
+            output_rg_partition_prefix_len: output_prefix_len,
             size_bytes: written.size_bytes,
             row_keys_proto,
             zonemap_regexes,

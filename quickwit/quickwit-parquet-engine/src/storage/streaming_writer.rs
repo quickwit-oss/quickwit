@@ -153,6 +153,16 @@ impl<W: Write + Send> StreamingParquetWriter<W> {
         })
     }
 
+    /// Append a `KeyValue` entry to the file's footer metadata. Useful
+    /// when the value can only be computed after all row groups have
+    /// been written (e.g., per-output `qh.row_keys` / `qh.zonemap_regexes`
+    /// in the streaming merge, which derive from the rows that
+    /// physically land in this output file). Must be called before
+    /// [`Self::close`] flushes the footer.
+    pub(crate) fn append_key_value_metadata(&mut self, kv: parquet::file::metadata::KeyValue) {
+        self.file_writer.append_key_value_metadata(kv);
+    }
+
     /// Close the file and return its metadata.
     pub(crate) fn close(self) -> Result<ParquetMetaData, ParquetWriteError> {
         Ok(self.file_writer.close()?)
