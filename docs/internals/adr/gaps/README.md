@@ -115,3 +115,4 @@ Gap files use sequential numbering: `001-short-description.md`
 | [008](./008-no-high-query-rate-optimization.md) | No High Query Rate Optimization | Open | High |
 | [009](./009-no-leading-edge-prioritization.md) | No Leading Edge Prioritization | Open | High |
 | [010](./010-no-data-caching-or-query-affinity.md) | No Multi-Level Data Caching or Query Affinity Optimization | Open | High |
+| [011](./011-no-legacy-promotion-planner.md) | No Planner-Level Legacy Promotion | Open | Medium |
