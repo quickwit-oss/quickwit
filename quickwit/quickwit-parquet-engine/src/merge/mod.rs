@@ -31,6 +31,7 @@ mod writer;
 mod tests;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use arrow::array::RecordBatch;
@@ -41,8 +42,9 @@ pub use self::merge_order::MergeRun;
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 use crate::storage::{
-    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_SORT_FIELDS,
-    PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START, ParquetWriterConfig,
+    ColumnPageStream, LegacyInputAdapter, PARQUET_META_NUM_MERGE_OPS,
+    PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
+    PARQUET_META_WINDOW_START, ParquetWriterConfig, RemoteByteSource, StreamingParquetReader,
 };
 
 /// Configuration for a merge operation.
@@ -482,4 +484,79 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         num_merge_ops: max_merge_ops + 1,
         rg_partition_prefix_len: consensus_prefix_len.unwrap_or(0),
     })
+}
+
+/// Execute a [`policy::ParquetMergeOperation`] by opening each input through
+/// the appropriate `ColumnPageStream` impl, then feeding the streams
+/// to the streaming merge engine.
+///
+/// Routing per input:
+/// - **Regular merge** (`op.target_prefix_len_override == None`): every split is opened directly
+///   via [`StreamingParquetReader`]. MP-3 already requires inputs to share
+///   `rg_partition_prefix_len`, so the streaming engine sees uniform metadata.
+/// - **Promotion merge** (`op.target_prefix_len_override == Some(target)`): splits with
+///   `rg_partition_prefix_len < target` are opened through [`LegacyInputAdapter`] with the same
+///   target — the adapter re-encodes the file in memory as prefix-aligned and rewrites the
+///   `qh.rg_partition_prefix_len` KV. Splits already at `target` are opened directly. The streaming
+///   engine then consumes a homogeneous stream advertising `prefix_len = target` on every input.
+///
+/// `sources` is parallel to `op.splits`: `sources[i]` provides byte-
+/// range reads against `op.splits[i].parquet_file`. The caller (e.g.
+/// the executor wrapper that lives outside this crate) is responsible
+/// for materializing one [`RemoteByteSource`] per split based on its
+/// storage backend (S3, local FS, etc.). Splits with names that
+/// cannot be opened by the source surface as `LegacyAdapterError::Io`
+/// or `ParquetReadError`.
+///
+/// Returns the merge engine's [`MergeOutputFile`]s. Conversion to
+/// `ParquetSplitMetadata` for the metastore is the caller's
+/// responsibility — use [`metadata_aggregation::merge_parquet_split_metadata`]
+/// with `mixed_prefix_ok = op.target_prefix_len_override.is_some()`.
+pub async fn execute_merge_operation(
+    op: &policy::ParquetMergeOperation,
+    sources: Vec<Arc<dyn RemoteByteSource>>,
+    output_dir: &Path,
+    config: &MergeConfig,
+) -> Result<Vec<MergeOutputFile>> {
+    if sources.len() != op.splits.len() {
+        bail!(
+            "execute_merge_operation: sources.len() ({}) != op.splits.len() ({})",
+            sources.len(),
+            op.splits.len(),
+        );
+    }
+
+    let mut streams: Vec<Box<dyn ColumnPageStream>> = Vec::with_capacity(op.splits.len());
+    for (split, source) in op.splits.iter().zip(sources.into_iter()) {
+        let path = PathBuf::from(&split.parquet_file);
+        let stream: Box<dyn ColumnPageStream> = match op.target_prefix_len_override {
+            Some(target) if split.rg_partition_prefix_len < target => {
+                // Promote this legacy input. The adapter re-encodes in
+                // memory and presents itself as a prefix_len = target
+                // single-RG stream to the merge engine.
+                let adapter = LegacyInputAdapter::try_open(source, path, target)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "opening legacy adapter for split {} with target_prefix_len = {target}",
+                            split.split_id,
+                        )
+                    })?;
+                Box::new(adapter)
+            }
+            _ => {
+                // Direct streaming reader: regular merge, or promotion
+                // where this input already satisfies the target.
+                let reader = StreamingParquetReader::try_open(source, path)
+                    .await
+                    .with_context(|| {
+                        format!("opening streaming reader for split {}", split.split_id)
+                    })?;
+                Box::new(reader)
+            }
+        };
+        streams.push(stream);
+    }
+
+    streaming::streaming_merge_sorted_parquet_files(streams, output_dir, config).await
 }
