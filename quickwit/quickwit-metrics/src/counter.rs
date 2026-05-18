@@ -312,3 +312,41 @@ macro_rules! counter {
         )
     };
 }
+
+/// A lazily-initialized [`Counter`].
+///
+/// The counter is registered with the recorder on first access.
+/// See [`lazy_counter!`] for the recommended way to construct this type.
+pub type LazyCounter = LazyLock<Counter>;
+
+/// Wraps a [`counter!`] invocation in a [`LazyCounter`].
+///
+/// Accepts exactly the same arguments as [`counter!`] and produces a
+/// `LazyCounter` (i.e. `LazyLock<Counter>`).
+///
+/// # Example
+///
+/// ```ignore
+/// static REQUESTS: LazyCounter = lazy_counter!(
+///     name: "requests_total",
+///     description: "Total HTTP requests",
+///     subsystem: "http",
+/// );
+///
+/// // Equivalent to:
+/// static REQUESTS: LazyCounter = LazyLock::new(|| {
+///     counter!(
+///         name: "requests_total",
+///         description: "Total HTTP requests",
+///         subsystem: "http",
+///     )
+/// });
+/// ```
+#[macro_export]
+macro_rules! lazy_counter {
+    ($($arg:tt)*) => {
+        $crate::LazyCounter::new(|| {
+            $crate::counter!($($arg)*)
+        })
+    };
+}

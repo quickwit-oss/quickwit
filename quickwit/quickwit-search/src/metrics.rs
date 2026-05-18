@@ -20,7 +20,8 @@ use std::sync::LazyLock;
 use bytesize::ByteSize;
 use quickwit_common::metrics::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{
-    Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram, label_names,
+    Counter, Gauge, Histogram, LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, gauge,
+    histogram, label_names, lazy_counter, lazy_gauge, lazy_histogram,
 };
 
 pub(crate) const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");
@@ -131,143 +132,111 @@ fn pseudo_exponential_bytes_buckets() -> Vec<f64> {
     ]
 }
 
-static SPLIT_SEARCH_OUTCOME: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static SPLIT_SEARCH_OUTCOME: LazyCounter = lazy_counter!(
         name: "split_search_outcome",
         description: "Count the state in which each leaf search split ended",
         subsystem: "search",
-    )
-});
+);
 
 pub(crate) static SPLIT_SEARCH_OUTCOME_TOTAL: LazyLock<SplitSearchOutcomeCounters> =
     LazyLock::new(SplitSearchOutcomeCounters::new_global);
 
-static LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE: LazyGauge = lazy_gauge!(
         name: "leaf_search_single_split_tasks",
         description: "Number of single split search tasks pending or ongoing",
         subsystem: "search",
-    )
-});
+);
 
-pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "ongoing"));
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING: LazyGauge =
+    lazy_gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "ongoing");
 
-pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending"));
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING: LazyGauge =
+    lazy_gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending");
 
-static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyCounter = lazy_counter!(
         name: "root_search_requests_total",
         description: "Total number of root search gRPC requests processed.",
         subsystem: "search",
-    )
-});
+);
 
-pub(crate) static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+pub(crate) static ROOT_SEARCH_REQUESTS_TOTAL: LazyCounter =
+    lazy_counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server");
 
-static ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyHistogram = lazy_histogram!(
         name: "root_search_request_duration_seconds",
         description: "Duration of root search gRPC requests in seconds.",
         subsystem: "search",
         buckets: duration_buckets(),
-    )
-});
+);
 
-pub(crate) static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
         parent: ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE,
         "kind" => "server",
-    )
-});
+);
 
-pub(crate) static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static ROOT_SEARCH_TARGETED_SPLITS: LazyHistogram = lazy_histogram!(
         name: "root_search_targeted_splits",
         description: "Number of splits targeted per root search GRPC request.",
         subsystem: "search",
         buckets: targeted_splits_buckets(),
-    )
-});
+);
 
-static LEAF_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static LEAF_SEARCH_REQUESTS_TOTAL_BASE: LazyCounter = lazy_counter!(
         name: "leaf_search_requests_total",
         description: "Total number of leaf search gRPC requests processed.",
         subsystem: "search",
-    )
-});
+);
 
-pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyCounter =
+    lazy_counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server");
 
-static LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyHistogram = lazy_histogram!(
         name: "leaf_search_request_duration_seconds",
         description: "Duration of leaf search gRPC requests in seconds.",
         subsystem: "search",
         buckets: duration_buckets(),
-    )
-});
+);
 
-pub(crate) static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
         parent: LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE,
         "kind" => "server",
-    )
-});
+);
 
-pub(crate) static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static LEAF_SEARCH_TARGETED_SPLITS: LazyHistogram = lazy_histogram!(
         name: "leaf_search_targeted_splits",
         description: "Number of splits targeted per leaf search GRPC request.",
         subsystem: "search",
         buckets: targeted_splits_buckets(),
-    )
-});
+);
 
-pub(crate) static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyCounter = lazy_counter!(
         name: "leaf_list_terms_splits_total",
         description: "Number of list terms splits total",
         subsystem: "search",
-    )
-});
+);
 
-pub(crate) static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyHistogram = lazy_histogram!(
         name: "leaf_search_split_duration_secs",
         description: "Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained.",
         subsystem: "search",
         buckets: duration_buckets(),
-    )
-});
-
-pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyLock<Histogram> = LazyLock::new(
-    || {
-        histogram!(
-            name: "leaf_search_single_split_warmup_num_bytes",
-            description: "Size of the short lived cache for a single split once the warmup is done.",
-            subsystem: "search",
-            buckets: pseudo_exponential_bytes_buckets(),
-        )
-    },
 );
 
-pub(crate) static JOB_ASSIGNED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = lazy_histogram!(
+    name: "leaf_search_single_split_warmup_num_bytes",
+    description: "Size of the short lived cache for a single split once the warmup is done.",
+    subsystem: "search",
+    buckets: pseudo_exponential_bytes_buckets(),
+);
+
+pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
         name: "job_assigned_total",
         description: "Number of job assigned to searchers, per affinity rank.",
         subsystem: "search",
-    )
-});
+);
 
-pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         name: "searcher_local_kv_store_size_bytes",
         description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",
         subsystem: "search",
-    )
-});
+);

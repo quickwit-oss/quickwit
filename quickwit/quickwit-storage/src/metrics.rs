@@ -20,137 +20,114 @@ use std::sync::{LazyLock, RwLock};
 
 use quickwit_config::CacheConfig;
 use quickwit_metrics::{
-    Counter, Gauge, GaugeGuard, Histogram, LabelNames, Labels, counter, gauge, histogram,
-    label_names, label_values, labels,
+    Counter, Gauge, GaugeGuard, LabelNames, Labels, LazyCounter, LazyGauge, LazyHistogram, counter,
+    gauge, label_names, label_values, labels, lazy_counter, lazy_gauge, lazy_histogram,
 };
 
 const ACTION_DELETE_OBJECT: Labels<1> = labels!("action" => "delete_object");
-const OUTCOME: LabelNames<1> = label_names!("outcome");
+const OUTCOME_NAME: LabelNames<1> = label_names!("outcome");
 const COMPONENT_NAME: LabelNames<1> = label_names!("component_name");
 const COMPONENT_CAPACITY_POLICY: LabelNames<3> =
     label_names!("component_name", "capacity", "policy");
 
-static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyCounter = lazy_counter!(
         name: "get_slice_timeout_outcome",
         description: "Outcome of get_slice operations. success_after_1_timeout means the operation succeeded after a retry caused by a timeout.",
         subsystem: "storage",
-    )
-});
-
-pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_0_timeout")]),
 );
 
-pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_1_timeout")]),
+pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT: LazyCounter = lazy_counter!(
+    parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+    labels: [label_values!(OUTCOME_NAME => "success_after_0_timeout")]
 );
 
-pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_2+_timeout")]),
+pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyCounter = lazy_counter!(
+    parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+    labels: [label_values!(OUTCOME_NAME => "success_after_1_timeout")]
 );
 
-pub(crate) static GET_SLICE_TIMEOUT_ALL_TIMEOUTS: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "all_timeouts")]),
+pub(crate) static GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT: LazyCounter = lazy_counter!(
+    parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+    labels: [label_values!(OUTCOME_NAME => "success_after_2+_timeout")]
 );
 
-static OBJECT_STORAGE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GET_SLICE_TIMEOUT_ALL_TIMEOUTS: LazyCounter = lazy_counter!(
+    parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+    labels: [label_values!(OUTCOME_NAME => "all_timeouts")]
+);
+
+static OBJECT_STORAGE_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_requests_total",
         description: "Total number of object storage requests performed.",
         subsystem: "storage",
-    )
-});
+);
 
-static OBJECT_STORAGE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static OBJECT_STORAGE_REQUEST_DURATION: LazyHistogram = lazy_histogram!(
         name: "object_storage_request_duration_seconds",
         description: "Duration of object storage requests in seconds.",
         subsystem: "storage",
         buckets: vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
-    )
-});
-
-pub(crate) static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]),
 );
 
-pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(
-    || counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]),
-);
+pub(crate) static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyCounter =
+    lazy_counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]);
 
-pub(crate) static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(
-    || histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]),
-);
+pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyCounter =
+    lazy_counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]);
 
-pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(
-    || histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]),
-);
+pub(crate) static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]);
 
-pub(crate) static OBJECT_STORAGE_GET_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]);
+
+pub(crate) static OBJECT_STORAGE_GET_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_gets_total",
         description: "Number of objects fetched. Might be lower than get_slice_timeout_outcome if queries are debounced.",
         subsystem: "storage",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_get_errors_total",
         description: "Number of GetObject errors.",
         subsystem: "storage",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyGauge = lazy_gauge!(
         name: "object_storage_get_slice_in_flight_count",
         description: "Number of GetObject for which the memory was allocated but the download is still in progress.",
         subsystem: "storage",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES: LazyLock<Gauge> =
-    LazyLock::new(|| {
-        gauge!(
-            name: "object_storage_get_slice_in_flight_num_bytes",
-            description: "Memory allocated for GetObject requests that are still in progress.",
-            subsystem: "storage",
-        )
-    });
+pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES: LazyGauge = lazy_gauge!(
+    name: "object_storage_get_slice_in_flight_num_bytes",
+    description: "Memory allocated for GetObject requests that are still in progress.",
+    subsystem: "storage",
+);
 
-pub(crate) static OBJECT_STORAGE_PUT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_PUT_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_puts_total",
         description: "Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload.",
         subsystem: "storage",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_PUT_PARTS: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_PUT_PARTS: LazyCounter = lazy_counter!(
         name: "object_storage_puts_parts",
         description: "Number of object parts uploaded.",
         subsystem: "",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_DOWNLOAD_NUM_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_DOWNLOAD_NUM_BYTES: LazyCounter = lazy_counter!(
         name: "object_storage_download_num_bytes",
         description: "Amount of data downloaded from an object storage.",
         subsystem: "storage",
-    )
-});
+);
 
-pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyCounter = lazy_counter!(
         name: "object_storage_upload_num_bytes",
         description: "Amount of data uploaded to an object storage.",
         subsystem: "storage",
-    )
-});
+);
 
 /// Metrics for a named cache component (e.g. "shortlived", "splitfooter").
 ///
@@ -238,117 +215,89 @@ impl CacheMetrics {
     }
 }
 
-static CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static CACHE_IN_CACHE_COUNT: LazyGauge = lazy_gauge!(
         name: "in_cache_count",
         description: "Count of in cache by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static CACHE_IN_CACHE_NUM_BYTES: LazyGauge = lazy_gauge!(
         name: "in_cache_num_bytes",
         description: "Number of bytes in cache by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static CACHE_HITS_TOTAL: LazyCounter = lazy_counter!(
         name: "cache_hits_total",
         description: "Number of cache hits by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static CACHE_HITS_BYTES: LazyCounter = lazy_counter!(
         name: "cache_hits_bytes",
         description: "Number of cache hits in bytes by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static CACHE_MISSES_TOTAL: LazyCounter = lazy_counter!(
         name: "cache_misses_total",
         description: "Number of cache misses by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static CACHE_EVICT_TOTAL: LazyCounter = lazy_counter!(
         name: "cache_evict_total",
         description: "Number of cache entry evicted by component",
         subsystem: "cache",
-    )
-});
+);
 
-static CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static CACHE_EVICT_BYTES: LazyCounter = lazy_counter!(
         name: "cache_evict_bytes",
         description: "Number of cache entry evicted in bytes by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static VIRTUAL_CACHE_IN_CACHE_COUNT: LazyGauge = lazy_gauge!(
         name: "virtual_in_cache_count",
         description: "Count of in cache by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static VIRTUAL_CACHE_IN_CACHE_NUM_BYTES: LazyGauge = lazy_gauge!(
         name: "virtual_in_cache_num_bytes",
         description: "Number of bytes in cache by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static VIRTUAL_CACHE_HITS_TOTAL: LazyCounter = lazy_counter!(
         name: "virtual_cache_hits_total",
         description: "Number of cache hits by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static VIRTUAL_CACHE_HITS_BYTES: LazyCounter = lazy_counter!(
         name: "virtual_cache_hits_bytes",
         description: "Number of cache hits in bytes by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static VIRTUAL_CACHE_MISSES_TOTAL: LazyCounter = lazy_counter!(
         name: "virtual_cache_misses_total",
         description: "Number of cache misses by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static VIRTUAL_CACHE_EVICT_TOTAL: LazyCounter = lazy_counter!(
         name: "virtual_cache_evict_total",
         description: "Number of cache entry evicted by component",
         subsystem: "cache",
-    )
-});
+);
 
-static VIRTUAL_CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static VIRTUAL_CACHE_EVICT_BYTES: LazyCounter = lazy_counter!(
         name: "virtual_cache_evict_bytes",
         description: "Number of cache entry evicted in bytes by component",
         subsystem: "cache",
-    )
-});
+);
 
 pub(crate) static FAST_FIELD_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("fastfields"));

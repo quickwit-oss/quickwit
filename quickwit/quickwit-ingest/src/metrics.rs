@@ -12,49 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_metrics::{Counter, Gauge, LabelNames, counter, gauge, label_names};
+use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
 pub(crate) const VALIDITY: LabelNames<1> = label_names!("validity");
 
-pub(crate) static DOCS_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static DOCS_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "docs_bytes_total",
         description: "Total size of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
         subsystem: "ingest",
-    )
-});
+);
 
-pub(crate) static DOCS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "docs_total",
         description: "Total number of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
         subsystem: "ingest",
-    )
-});
+);
 
-pub(crate) static REPLICATED_NUM_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static REPLICATED_NUM_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "replicated_num_bytes_total",
         description: "Total size in bytes of the replicated docs.",
         subsystem: "ingest",
-    )
-});
+);
 
-pub(crate) static REPLICATED_NUM_DOCS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static REPLICATED_NUM_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "replicated_num_docs_total",
         description: "Total number of docs replicated.",
         subsystem: "ingest",
-    )
-});
+);
 
 #[allow(dead_code)] // this really shouldn't be dead, it needs to be used somewhere
-pub(crate) static QUEUE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static QUEUE_COUNT: LazyGauge = lazy_gauge!(
         name: "queue_count",
         description: "Number of queues currently active",
         subsystem: "ingest",
-    )
-});
+);

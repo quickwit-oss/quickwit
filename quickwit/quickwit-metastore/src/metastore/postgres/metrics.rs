@@ -14,28 +14,22 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Gauge, gauge};
+use quickwit_metrics::{Gauge, LazyGauge, gauge, lazy_gauge};
 
-pub(super) static ACQUIRE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(super) static ACQUIRE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "acquire_connections",
         description: "Number of connections being acquired.",
         subsystem: "metastore",
-    )
-});
+);
 
-pub(super) static ACTIVE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(super) static ACTIVE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "active_connections",
         description: "Number of active (used + idle) connections.",
         subsystem: "metastore",
-    )
-});
+);
 
-pub(super) static IDLE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(super) static IDLE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "idle_connections",
         description: "Number of idle connections.",
         subsystem: "metastore",
-    )
-});
+);

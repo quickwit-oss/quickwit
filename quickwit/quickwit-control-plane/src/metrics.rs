@@ -14,7 +14,9 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Counter, Gauge, LabelNames, counter, gauge, label_names};
+use quickwit_metrics::{
+    Gauge, LabelNames, LazyCounter, LazyGauge, gauge, label_names, lazy_counter, lazy_gauge,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
@@ -29,88 +31,68 @@ impl ShardLocalityMetrics {
     }
 }
 
-pub(crate) static INDEXES_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static INDEXES_TOTAL: LazyGauge = lazy_gauge!(
         name: "indexes_total",
         description: "Number of indexes tracked by the control plane.",
         subsystem: "control_plane",
-    )
-});
+);
 
-static SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static SHARDS: LazyGauge = lazy_gauge!(
         name: "shards",
         description: "Number of open and closed shards tracked by the ingest controller",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static OPEN_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "open"));
+pub(crate) static OPEN_SHARDS: LazyGauge = lazy_gauge!(parent: SHARDS, "state" => "open");
 
-pub(crate) static CLOSED_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "closed"));
+pub(crate) static CLOSED_SHARDS: LazyGauge = lazy_gauge!(parent: SHARDS, "state" => "closed");
 
 pub(crate) const INDEX_ID_LABEL_NAMES: LabelNames<1> = label_names!("index_id");
 
-static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static INDEXED_SHARDS: LazyGauge = lazy_gauge!(
         name: "indexed_shards",
         description: "Number of (remote/local) shards in the indexing plan",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static LOCAL_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: INDEXED_SHARDS, "locality" => "local"));
+pub(crate) static LOCAL_SHARDS: LazyGauge =
+    lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "local");
 
-pub(crate) static REMOTE_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: INDEXED_SHARDS, "locality" => "remote"));
+pub(crate) static REMOTE_SHARDS: LazyGauge =
+    lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "remote");
 
-pub(crate) static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static APPLY_PLAN_TOTAL: LazyCounter = lazy_counter!(
         name: "apply_plan_total",
         description: "Number of control plane `apply plan` operations.",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static REBALANCE_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static REBALANCE_SHARDS: LazyGauge = lazy_gauge!(
         name: "rebalance_shards",
         description: "Number of shards rebalanced by the control plane.",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static RESTART_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static RESTART_TOTAL: LazyCounter = lazy_counter!(
         name: "restart_total",
         description: "Number of control plane restarts.",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static SCHEDULE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static SCHEDULE_TOTAL: LazyCounter = lazy_counter!(
         name: "schedule_total",
         description: "Number of control plane `schedule` operations.",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static METASTORE_ERROR_ABORTED: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static METASTORE_ERROR_ABORTED: LazyCounter = lazy_counter!(
         name: "metastore_error_aborted",
         description: "Number of aborted metastore transaction (= do not trigger a control plane restart)",
         subsystem: "control_plane",
-    )
-});
+);
 
-pub(crate) static METASTORE_ERROR_MAYBE_EXECUTED: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static METASTORE_ERROR_MAYBE_EXECUTED: LazyCounter = lazy_counter!(
         name: "metastore_error_maybe_executed",
         description: "Number of metastore transaction with an uncertain outcome (= do trigger a control plane restart)",
         subsystem: "control_plane",
-    )
-});
+);

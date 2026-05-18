@@ -41,30 +41,24 @@
 //! use quickwit_metrics::*;
 //! use std::sync::LazyLock;
 //!
-//! static HTTP_REQUESTS: LazyLock<Counter> = LazyLock::new(|| {
-//!     counter!(
-//!         name: "requests_total",
-//!         description: "Total HTTP requests",
-//!         subsystem: "http"
-//!     )
-//! });
+//! static HTTP_REQUESTS: LazyCounter = lazy_counter!(
+//!     name: "requests_total",
+//!     description: "Total HTTP requests",
+//!     subsystem: "http",
+//! );
 //!
-//! static REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-//!     histogram!(
-//!         name: "request_duration_seconds",
-//!         description: "Time spent processing HTTP requests",
-//!         subsystem: "http",
-//!         buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-//!     )
-//! });
+//! static REQUEST_DURATION: LazyHistogram = lazy_histogram!(
+//!     name: "request_duration_seconds",
+//!     description: "Time spent processing HTTP requests",
+//!     subsystem: "http",
+//!     buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+//! );
 //!
-//! static ACTIVE_CONNS: LazyLock<Gauge> = LazyLock::new(|| {
-//!     gauge!(
-//!         name: "active_connections",
-//!         description: "Currently active HTTP connections",
-//!         subsystem: "http"
-//!     )
-//! });
+//! static ACTIVE_CONNS: LazyGauge = lazy_gauge!(
+//!     name: "active_connections",
+//!     description: "Currently active HTTP connections",
+//!     subsystem: "http",
+//! );
 //! ```
 //!
 //! ### 2. Derive child metrics from a parent
@@ -155,13 +149,11 @@
 //! conditional logging:
 //!
 //! ```rust,ignore
-//! static PENDING: LazyLock<Gauge> = LazyLock::new(|| {
-//!     gauge!(
-//!         name: "pending_bytes",
-//!         description: "Bytes waiting to be flushed",
-//!         subsystem: "indexer",
-//!     )
-//! });
+//! static PENDING: LazyGauge = lazy_gauge!(
+//!     name: "pending_bytes",
+//!     description: "Bytes waiting to be flushed",
+//!     subsystem: "indexer",
+//! );
 //!
 //! PENDING.set(1024.0);
 //! assert_eq!(PENDING.get(), 1024.0);
@@ -310,9 +302,9 @@ pub mod __inventory {
 }
 
 // ─── Public types ───
-pub use counter::Counter;
-pub use gauge::{Gauge, GaugeGuard};
-pub use histogram::{Histogram, HistogramConfig, HistogramTimer};
+pub use counter::{Counter, LazyCounter};
+pub use gauge::{Gauge, GaugeGuard, LazyGauge};
+pub use histogram::{Histogram, HistogramConfig, HistogramTimer, LazyHistogram};
 pub use labels::{LabelNames, Labels};
 // ─── metrics-rs re-exports ───
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};

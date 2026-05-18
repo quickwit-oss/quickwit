@@ -12,49 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
+use quickwit_metrics::{
+    LazyCounter, LazyGauge, LazyHistogram, lazy_counter, lazy_gauge, lazy_histogram,
+};
 
-pub(crate) static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static HTTP_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "http_requests_total",
         description: "Total number of HTTP requests processed.",
         subsystem: "",
-    )
-});
+);
 
-pub(crate) static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static REQUEST_DURATION_SECS: LazyHistogram = lazy_histogram!(
         name: "request_duration_secs",
         description: "Response time in seconds",
         subsystem: "",
         // last bucket is 163.84s
         buckets: exponential_buckets(0.02, 2.0, 14).unwrap(),
-    )
-});
+);
 
-pub(crate) static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static ONGOING_REQUESTS: LazyGauge = lazy_gauge!(
         name: "ongoing_requests",
         description: "Number of ongoing requests.",
         subsystem: "",
-    )
-});
+);
 
-pub(crate) static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static PENDING_REQUESTS: LazyGauge = lazy_gauge!(
         name: "pending_requests",
         description: "Number of pending requests.",
         subsystem: "",
-    )
-});
+);
 
-pub(crate) static CIRCUIT_BREAK_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static CIRCUIT_BREAK_TOTAL: LazyCounter = lazy_counter!(
         name: "circuit_break_total",
         description: "Circuit breaker counter",
         subsystem: "grpc",
-    )
-});
+);

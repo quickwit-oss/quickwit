@@ -16,8 +16,6 @@
 //!
 //! Run with: `cargo run --example http_service -p quickwit-metrics`
 
-use std::sync::LazyLock;
-
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use quickwit_metrics::*;
 
@@ -29,57 +27,45 @@ fn exponential_buckets(start: f64, factor: f64, count: usize) -> Vec<f64> {
 
 // ─── Metric definitions ───
 
-static HTTP_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static HTTP_REQUEST_DURATION: LazyHistogram = lazy_histogram!(
         name: "request_duration_seconds",
         description: "Time spent processing HTTP requests",
         subsystem: "http",
         buckets: exponential_buckets(0.005, 2.0, 12)
-    )
-});
+);
 
-static HTTP_RESPONSE_SIZE: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static HTTP_RESPONSE_SIZE: LazyHistogram = lazy_histogram!(
         name: "response_size_bytes",
         description: "Size of HTTP responses in bytes",
         subsystem: "http",
         buckets: vec![100.0, 1_000.0, 10_000.0, 100_000.0, 1_000_000.0]
-    )
-});
+);
 
-static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static HTTP_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "requests_total",
         description: "Total number of HTTP requests",
         subsystem: "http"
-    )
-});
+);
 
-static HTTP_REQUESTS_BY_METHOD: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static HTTP_REQUESTS_BY_METHOD: LazyCounter = lazy_counter!(
         name: "requests_by_method_total",
         description: "HTTP requests broken down by method",
         subsystem: "http",
         "method" => "GET",
-    )
-});
+);
 
-static HTTP_ACTIVE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static HTTP_ACTIVE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "active_connections",
         description: "Number of currently active HTTP connections",
         subsystem: "http"
-    )
-});
+);
 
-static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyGauge = lazy_gauge!(
         name: "active_connections",
         description: "Number of currently active HTTP connections",
         subsystem: "http",
         "region" => "us-east-1",
-    )
-});
+);
 
 // ─── LabelNames<N> examples ───
 

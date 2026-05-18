@@ -332,3 +332,43 @@ macro_rules! histogram {
         )
     };
 }
+
+/// A lazily-initialized [`Histogram`].
+///
+/// The histogram is registered with the recorder on first access.
+/// See [`lazy_histogram!`] for the recommended way to construct this type.
+pub type LazyHistogram = LazyLock<Histogram>;
+
+/// Wraps a [`histogram!`] invocation in a [`LazyHistogram`].
+///
+/// Accepts exactly the same arguments as [`histogram!`] and produces a
+/// `LazyHistogram` (i.e. `LazyLock<Histogram>`).
+///
+/// # Example
+///
+/// ```ignore
+/// static REQUEST_DURATION: LazyHistogram = lazy_histogram!(
+///     name: "request_duration_seconds",
+///     description: "Time spent processing HTTP requests",
+///     subsystem: "http",
+///     buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+/// );
+///
+/// // Equivalent to:
+/// static REQUEST_DURATION: LazyHistogram = LazyLock::new(|| {
+///     histogram!(
+///         name: "request_duration_seconds",
+///         description: "Time spent processing HTTP requests",
+///         subsystem: "http",
+///         buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+///     )
+/// });
+/// ```
+#[macro_export]
+macro_rules! lazy_histogram {
+    ($($arg:tt)*) => {
+        $crate::LazyHistogram::new(|| {
+            $crate::histogram!($($arg)*)
+        })
+    };
+}

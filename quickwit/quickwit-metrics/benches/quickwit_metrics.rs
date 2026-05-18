@@ -293,33 +293,26 @@ fn on_the_fly_histogram(c: &mut Criterion) {
 // STATIC
 // ---------------------------------------------------------------------------
 
-static STATIC_COUNTER_0: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static STATIC_COUNTER_0: LazyCounter = lazy_counter!(
         name: "static_counter",
         description: "bench counter",
         subsystem: "bench"
-    )
-});
-static STATIC_COUNTER_1: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+);
+static STATIC_COUNTER_1: LazyCounter = lazy_counter!(
         name: "static_counter",
         description: "bench counter",
         subsystem: "bench",
         "service" => "api"
-    )
-});
-static STATIC_COUNTER_3: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+);
+static STATIC_COUNTER_3: LazyCounter = lazy_counter!(
         name: "static_counter",
         description: "bench counter",
         subsystem: "bench",
         "service" => "api",
         "method" => "GET",
         "endpoint" => "/health"
-    )
-});
-static STATIC_COUNTER_5: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+);
+static STATIC_COUNTER_5: LazyCounter = lazy_counter!(
         name: "static_counter",
         description: "bench counter",
         subsystem: "bench",
@@ -328,36 +321,28 @@ static STATIC_COUNTER_5: LazyLock<Counter> = LazyLock::new(|| {
         "endpoint" => "/health",
         "status" => "200",
         "region" => "us-east-1"
-    )
-});
+);
 
-static STATIC_GAUGE_0: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static STATIC_GAUGE_0: LazyGauge = lazy_gauge!(
         name: "static_gauge",
         description: "bench gauge",
         subsystem: "bench"
-    )
-});
-static STATIC_GAUGE_1: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+);
+static STATIC_GAUGE_1: LazyGauge = lazy_gauge!(
         name: "static_gauge",
         description: "bench gauge",
         subsystem: "bench",
         "service" => "api"
-    )
-});
-static STATIC_GAUGE_3: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+);
+static STATIC_GAUGE_3: LazyGauge = lazy_gauge!(
         name: "static_gauge",
         description: "bench gauge",
         subsystem: "bench",
         "service" => "api",
         "method" => "GET",
         "endpoint" => "/health"
-    )
-});
-static STATIC_GAUGE_5: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+);
+static STATIC_GAUGE_5: LazyGauge = lazy_gauge!(
         name: "static_gauge",
         description: "bench gauge",
         subsystem: "bench",
@@ -366,28 +351,22 @@ static STATIC_GAUGE_5: LazyLock<Gauge> = LazyLock::new(|| {
         "endpoint" => "/health",
         "status" => "200",
         "region" => "us-east-1"
-    )
-});
+);
 
-static STATIC_HISTOGRAM_0: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static STATIC_HISTOGRAM_0: LazyHistogram = lazy_histogram!(
         name: "static_histogram",
         description: "bench histogram",
         subsystem: "bench",
         buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
-    )
-});
-static STATIC_HISTOGRAM_1: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+);
+static STATIC_HISTOGRAM_1: LazyHistogram = lazy_histogram!(
         name: "static_histogram",
         description: "bench histogram",
         subsystem: "bench",
         buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
         "service" => "api"
-    )
-});
-static STATIC_HISTOGRAM_3: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+);
+static STATIC_HISTOGRAM_3: LazyHistogram = lazy_histogram!(
         name: "static_histogram",
         description: "bench histogram",
         subsystem: "bench",
@@ -395,10 +374,8 @@ static STATIC_HISTOGRAM_3: LazyLock<Histogram> = LazyLock::new(|| {
         "service" => "api",
         "method" => "GET",
         "endpoint" => "/health"
-    )
-});
-static STATIC_HISTOGRAM_5: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+);
+static STATIC_HISTOGRAM_5: LazyHistogram = lazy_histogram!(
         name: "static_histogram",
         description: "bench histogram",
         subsystem: "bench",
@@ -408,13 +385,12 @@ static STATIC_HISTOGRAM_5: LazyLock<Histogram> = LazyLock::new(|| {
         "endpoint" => "/health",
         "status" => "200",
         "region" => "us-east-1"
-    )
-});
+);
 
 fn static_counter(c: &mut Criterion) {
     install_recorder();
 
-    let counters: &[(usize, &LazyLock<Counter>)] = &[
+    let counters: &[(usize, &LazyCounter)] = &[
         (0, &STATIC_COUNTER_0),
         (1, &STATIC_COUNTER_1),
         (3, &STATIC_COUNTER_3),
@@ -434,7 +410,7 @@ fn static_counter(c: &mut Criterion) {
 fn static_gauge(c: &mut Criterion) {
     install_recorder();
 
-    let gauges: &[(usize, &LazyLock<Gauge>)] = &[
+    let gauges: &[(usize, &LazyGauge)] = &[
         (0, &STATIC_GAUGE_0),
         (1, &STATIC_GAUGE_1),
         (3, &STATIC_GAUGE_3),
@@ -454,7 +430,7 @@ fn static_gauge(c: &mut Criterion) {
 fn static_histogram(c: &mut Criterion) {
     install_recorder();
 
-    let histograms: &[(usize, &LazyLock<Histogram>)] = &[
+    let histograms: &[(usize, &LazyHistogram)] = &[
         (0, &STATIC_HISTOGRAM_0),
         (1, &STATIC_HISTOGRAM_1),
         (3, &STATIC_HISTOGRAM_3),
@@ -475,33 +451,27 @@ fn static_histogram(c: &mut Criterion) {
 // PARENT EXTENSION
 // ---------------------------------------------------------------------------
 
-static PARENT_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static PARENT_COUNTER: LazyCounter = lazy_counter!(
         name: "parent_counter",
         description: "bench parent counter",
         subsystem: "bench",
         "service" => "api"
-    )
-});
+);
 
-static PARENT_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static PARENT_GAUGE: LazyGauge = lazy_gauge!(
         name: "parent_gauge",
         description: "bench parent gauge",
         subsystem: "bench",
         "service" => "api"
-    )
-});
+);
 
-static PARENT_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static PARENT_HISTOGRAM: LazyHistogram = lazy_histogram!(
         name: "parent_histogram",
         description: "bench parent histogram",
         subsystem: "bench",
         buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
         "service" => "api"
-    )
-});
+);
 
 fn parent_counter(c: &mut Criterion) {
     install_recorder();
@@ -588,23 +558,19 @@ fn parent_histogram(c: &mut Criterion) {
 // DYNAMIC LABELS
 // ---------------------------------------------------------------------------
 
-static DYN_PARENT_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static DYN_PARENT_COUNTER: LazyCounter = lazy_counter!(
         name: "dyn_parent_counter",
         description: "bench dynamic parent counter",
         subsystem: "bench",
         "service" => "api"
-    )
-});
+);
 
-static DYN_PARENT_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static DYN_PARENT_GAUGE: LazyGauge = lazy_gauge!(
         name: "dyn_parent_gauge",
         description: "bench dynamic parent gauge",
         subsystem: "bench",
         "service" => "api"
-    )
-});
+);
 
 fn dynamic_counter(c: &mut Criterion) {
     install_recorder();
@@ -666,21 +632,17 @@ fn dynamic_gauge(c: &mut Criterion) {
 // OBSERVABLE
 // ---------------------------------------------------------------------------
 
-static OBS_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static OBS_COUNTER: LazyCounter = lazy_counter!(
         name: "obs_counter",
         description: "bench observable counter",
         subsystem: "bench",
-    )
-});
+);
 
-static OBS_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static OBS_GAUGE: LazyGauge = lazy_gauge!(
         name: "obs_gauge",
         description: "bench observable gauge",
         subsystem: "bench",
-    )
-});
+);
 
 fn observable_counter(c: &mut Criterion) {
     install_recorder();

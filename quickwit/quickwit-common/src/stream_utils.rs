@@ -281,9 +281,7 @@ impl<T> TrackedUnboundedSender<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
-
-    use quickwit_metrics::{Gauge, gauge};
+    use quickwit_metrics::{LazyGauge, lazy_gauge};
 
     use super::*;
 
@@ -298,13 +296,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_bounded() {
-        static TEST_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-            gauge!(
-                name: "common",
-                description: "help",
-                subsystem: "test_tracked_service_stream_bounded",
-            )
-        });
+        static TEST_GAUGE: LazyGauge = lazy_gauge!(
+            name: "common",
+            description: "help",
+            subsystem: "test_tracked_service_stream_bounded",
+        );
 
         let (service_stream_tx, mut service_stream) =
             ServiceStream::new_bounded_with_gauge(3, &TEST_GAUGE);
@@ -322,13 +318,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_unbounded() {
-        static TEST_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-            gauge!(
-                name: "common",
-                description: "help",
-                subsystem: "test_tracked_service_stream_unbounded",
-            )
-        });
+        static TEST_GAUGE: LazyGauge = lazy_gauge!(
+            name: "common",
+            description: "help",
+            subsystem: "test_tracked_service_stream_unbounded",
+        );
 
         let (service_stream_tx, mut service_stream) =
             ServiceStream::new_unbounded_with_gauge(&TEST_GAUGE);

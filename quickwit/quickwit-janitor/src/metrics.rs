@@ -12,46 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
+use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
-
-pub(crate) static ONGOING_NUM_DELETE_OPERATIONS_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static ONGOING_NUM_DELETE_OPERATIONS_TOTAL: LazyGauge = lazy_gauge!(
         name: "ongoing_num_delete_operations_total",
         description: "Num of ongoing delete operations (per index).",
         subsystem: "janitor",
-    )
-});
+);
 
-pub(crate) static GC_DELETED_SPLITS: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GC_DELETED_SPLITS: LazyCounter = lazy_counter!(
         name: "gc_deleted_splits_total",
         description: "Total number of splits deleted by the garbage collector.",
         subsystem: "janitor",
-    )
-});
+);
 
-pub(crate) static GC_DELETED_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GC_DELETED_BYTES: LazyCounter = lazy_counter!(
         name: "gc_deleted_bytes_total",
         description: "Total number of bytes deleted by the garbage collector.",
         subsystem: "janitor",
-    )
-});
+);
 
-pub(crate) static GC_RUNS: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GC_RUNS: LazyCounter = lazy_counter!(
         name: "gc_runs_total",
         description: "Total number of garbage collector execition.",
         subsystem: "janitor",
-    )
-});
+);
 
-pub(crate) static GC_SECONDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GC_SECONDS_TOTAL: LazyCounter = lazy_counter!(
         name: "gc_seconds_total",
         description: "Total time spent running the garbage collector",
         subsystem: "janitor",
-    )
-});
+);

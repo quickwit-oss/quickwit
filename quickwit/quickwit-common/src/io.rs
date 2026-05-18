@@ -25,7 +25,6 @@ use std::future::Future;
 use std::io;
 use std::io::IoSlice;
 use std::pin::Pin;
-use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -34,7 +33,7 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
-use quickwit_metrics::{Counter, counter};
+use quickwit_metrics::{Counter, LazyCounter, counter, lazy_counter};
 use tokio::io::AsyncWrite;
 
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
@@ -47,13 +46,11 @@ fn truncate_bytes(bytes: &[u8]) -> &[u8] {
     &bytes[..num_bytes]
 }
 
-static WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static WRITE_BYTES: LazyCounter = lazy_counter!(
         name: "write_bytes",
         description: "Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]",
         subsystem: "",
-    )
-});
+);
 
 /// Parameter used in `async_speed_limit`.
 ///

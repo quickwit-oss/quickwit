@@ -14,110 +14,86 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::sync::{LazyLock, Weak};
+use std::sync::Weak;
 use std::time::Duration;
 
 use chitchat::{Chitchat, ChitchatId};
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
 use tokio::sync::Mutex;
 
 use crate::member::NodeStateExt;
 
-pub(crate) static LIVE_NODES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static LIVE_NODES: LazyGauge = lazy_gauge!(
         name: "live_nodes",
         description: "The number of live nodes observed locally.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static READY_NODES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static READY_NODES: LazyGauge = lazy_gauge!(
         name: "ready_nodes",
         description: "The number of ready nodes observed locally.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static ZOMBIE_NODES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static ZOMBIE_NODES: LazyGauge = lazy_gauge!(
         name: "zombie_nodes",
         description: "The number of zombie nodes observed locally.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static DEAD_NODES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static DEAD_NODES: LazyGauge = lazy_gauge!(
         name: "dead_nodes",
         description: "The number of dead nodes observed locally.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static CLUSTER_STATE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static CLUSTER_STATE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         name: "cluster_state_size_bytes",
         description: "The size of the cluster state in bytes.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static NODE_STATE_KEYS: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static NODE_STATE_KEYS: LazyGauge = lazy_gauge!(
         name: "node_state_keys",
         description: "The number of keys in the node state.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static NODE_STATE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+pub(crate) static NODE_STATE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         name: "node_state_size_bytes",
         description: "The size of the node state in bytes.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static GOSSIP_RECV_MESSAGES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GOSSIP_RECV_MESSAGES_TOTAL: LazyCounter = lazy_counter!(
         name: "gossip_recv_messages_total",
         description: "Total number of gossip messages received.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static GOSSIP_RECV_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GOSSIP_RECV_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "gossip_recv_bytes_total",
         description: "Total amount of gossip data received in bytes.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static GOSSIP_SENT_MESSAGES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GOSSIP_SENT_MESSAGES_TOTAL: LazyCounter = lazy_counter!(
         name: "gossip_sent_messages_total",
         description: "Total number of gossip messages sent.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static GOSSIP_SENT_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GOSSIP_SENT_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "gossip_sent_bytes_total",
         description: "Total amount of gossip data sent in bytes.",
         subsystem: "cluster",
-    )
-});
+);
 
-pub(crate) static GRPC_GOSSIP_ROUNDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static GRPC_GOSSIP_ROUNDS_TOTAL: LazyCounter = lazy_counter!(
         name: "grpc_gossip_rounds_total",
         description: "Total number of gRPC gossip rounds performed with peer nodes.",
         subsystem: "cluster",
-    )
-});
+);
 
 pub(crate) fn spawn_metrics_task(
     weak_chitchat: Weak<Mutex<Chitchat>>,

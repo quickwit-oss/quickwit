@@ -13,13 +13,15 @@
 // limitations under the License.
 
 use std::pin::Pin;
-use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
-use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram, labels};
+use quickwit_metrics::{
+    Counter, Gauge, Histogram, LazyCounter, LazyGauge, LazyHistogram, counter, gauge, histogram,
+    labels, lazy_counter, lazy_gauge, lazy_histogram,
+};
 use tower::{Layer, Service};
 
 use crate::metrics::exponential_buckets;
@@ -28,30 +30,24 @@ pub trait RpcName {
     fn rpc_name() -> &'static str;
 }
 
-static GRPC_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static GRPC_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "requests_total",
         description: "Total number of gRPC requests processed.",
         subsystem: "grpc",
-    )
-});
+);
 
-static GRPC_REQUESTS_IN_FLIGHT: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static GRPC_REQUESTS_IN_FLIGHT: LazyGauge = lazy_gauge!(
         name: "requests_in_flight",
         description: "Number of gRPC requests in-flight.",
         subsystem: "grpc",
-    )
-});
+);
 
-static GRPC_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+static GRPC_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
         name: "request_duration_seconds",
         description: "Duration of request in seconds.",
         subsystem: "grpc",
         buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
-    )
-});
+);
 
 #[derive(Clone)]
 pub struct GrpcMetrics<S> {

@@ -16,10 +16,10 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
-use quickwit_metrics::{Counter, Gauge, GaugeGuard, gauge};
+use quickwit_metrics::{Counter, GaugeGuard, LazyGauge, lazy_gauge};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
@@ -311,13 +311,11 @@ struct InboxInner<A: Actor> {
     _inboxes_count_gauge_guard: GaugeGuard,
 }
 
-static INBOX_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static INBOX_GAUGE: LazyGauge = lazy_gauge!(
         name: "inboxes_count",
         description: "overall count of actors",
         subsystem: "actor",
-    )
-});
+);
 
 pub struct Inbox<A: Actor> {
     inner: Arc<InboxInner<A>>,

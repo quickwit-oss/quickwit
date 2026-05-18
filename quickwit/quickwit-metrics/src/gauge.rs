@@ -381,3 +381,41 @@ macro_rules! gauge {
         )
     };
 }
+
+/// A lazily-initialized [`Gauge`].
+///
+/// The gauge is registered with the recorder on first access.
+/// See [`lazy_gauge!`] for the recommended way to construct this type.
+pub type LazyGauge = LazyLock<Gauge>;
+
+/// Wraps a [`gauge!`] invocation in a [`LazyGauge`].
+///
+/// Accepts exactly the same arguments as [`gauge!`] and produces a
+/// `LazyGauge` (i.e. `LazyLock<Gauge>`).
+///
+/// # Example
+///
+/// ```ignore
+/// static ACTIVE_CONNS: LazyGauge = lazy_gauge!(
+///     name: "active_connections",
+///     description: "Currently active HTTP connections",
+///     subsystem: "http",
+/// );
+///
+/// // Equivalent to:
+/// static ACTIVE_CONNS: LazyGauge = LazyLock::new(|| {
+///     gauge!(
+///         name: "active_connections",
+///         description: "Currently active HTTP connections",
+///         subsystem: "http",
+///     )
+/// });
+/// ```
+#[macro_export]
+macro_rules! lazy_gauge {
+    ($($arg:tt)*) => {
+        $crate::LazyGauge::new(|| {
+            $crate::gauge!($($arg)*)
+        })
+    };
+}

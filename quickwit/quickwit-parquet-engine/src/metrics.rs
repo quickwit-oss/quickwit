@@ -17,9 +17,7 @@
 //! Provides counters, histograms, and gauges for monitoring ingest throughput,
 //! query performance, and error rates in production.
 
-use std::sync::LazyLock;
-
-use quickwit_metrics::{Counter, Histogram, counter, histogram};
+use quickwit_metrics::{LazyCounter, LazyHistogram, lazy_counter, lazy_histogram};
 
 /// Histogram buckets for duration measurements (in seconds).
 /// Covers sub-millisecond to multi-second operations.
@@ -29,80 +27,62 @@ fn duration_buckets() -> Vec<f64> {
     ]
 }
 
-pub(crate) static INDEX_BATCHES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static INDEX_BATCHES_TOTAL: LazyCounter = lazy_counter!(
         name: "index_batches_total",
         description: "Total number of batches accumulated during indexing.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
-pub(crate) static INDEX_ROWS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static INDEX_ROWS_TOTAL: LazyCounter = lazy_counter!(
         name: "index_rows_total",
         description: "Total number of rows accumulated during indexing.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
-pub(crate) static INGEST_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static INGEST_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "ingest_bytes_total",
         description: "Total number of bytes received from IPC payloads during ingestion.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
-pub(crate) static INDEX_BATCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static INDEX_BATCH_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
         name: "index_batch_duration_seconds",
         description: "Histogram of add_batch durations in seconds, including any triggered flush.",
         subsystem: "metrics_engine",
         buckets: duration_buckets(),
-    )
-});
+);
 
 #[allow(dead_code)]
-pub(crate) static SPLITS_WRITTEN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static SPLITS_WRITTEN_TOTAL: LazyCounter = lazy_counter!(
         name: "splits_written_total",
         description: "Total number of splits written to storage.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
 #[allow(dead_code)]
-pub(crate) static SPLITS_BYTES_WRITTEN: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static SPLITS_BYTES_WRITTEN: LazyCounter = lazy_counter!(
         name: "splits_bytes_written",
         description: "Total bytes written to split files.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
 #[allow(dead_code)]
-pub(crate) static QUERY_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static QUERY_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
         name: "query_duration_seconds",
         description: "Histogram of query execution durations in seconds.",
         subsystem: "metrics_engine",
         buckets: duration_buckets(),
-    )
-});
+);
 
 #[allow(dead_code)]
-pub(crate) static QUERY_ROWS_RETURNED: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static QUERY_ROWS_RETURNED: LazyCounter = lazy_counter!(
         name: "query_rows_returned",
         description: "Total number of rows returned from queries.",
         subsystem: "metrics_engine",
-    )
-});
+);
 
-pub(crate) static ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+pub(crate) static ERRORS_TOTAL: LazyCounter = lazy_counter!(
         name: "errors_total",
         description: "Total errors by operation type and kind.",
         subsystem: "metrics_engine",
-    )
-});
+);

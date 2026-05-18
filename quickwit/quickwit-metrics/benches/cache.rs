@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use quickwit_metrics::*;
@@ -82,14 +82,12 @@ fn install_recorder() {
 // Shared parent counter used by both benchmark groups.
 // ---------------------------------------------------------------------------
 
-static DYN_PARENT_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static DYN_PARENT_COUNTER: LazyCounter = lazy_counter!(
         name: "cache_dyn_parent_counter",
         description: "bench dynamic parent counter for cache benches",
         subsystem: "bench",
         "service" => "api"
-    )
-});
+);
 
 // ---------------------------------------------------------------------------
 // KEY HASH

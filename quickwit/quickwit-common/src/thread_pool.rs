@@ -16,25 +16,21 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
-use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
+use quickwit_metrics::{Gauge, GaugeGuard, LazyGauge, gauge, labels, lazy_gauge};
 use tokio::sync::oneshot;
 use tracing::error;
 
-static THREAD_POOL_ONGOING_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
-    gauge!(
-        name: "ongoing_tasks",
-        description: "number of tasks being currently processed by threads in the thread pool",
-        subsystem: "thread_pool",
-    )
-});
+static THREAD_POOL_ONGOING_TASKS: LazyGauge = lazy_gauge!(
+    name: "ongoing_tasks",
+    description: "number of tasks being currently processed by threads in the thread pool",
+    subsystem: "thread_pool",
+);
 
-static THREAD_POOL_PENDING_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
-    gauge!(
-        name: "pending_tasks",
-        description: "number of tasks waiting in the queue before being processed by the thread pool",
-        subsystem: "thread_pool",
-    )
-});
+static THREAD_POOL_PENDING_TASKS: LazyGauge = lazy_gauge!(
+    name: "pending_tasks",
+    description: "number of tasks waiting in the queue before being processed by the thread pool",
+    subsystem: "thread_pool",
+);
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///

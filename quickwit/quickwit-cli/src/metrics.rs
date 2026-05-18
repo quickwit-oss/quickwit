@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Counter, Histogram, counter, histogram, labels};
+use quickwit_metrics::{LazyCounter, LazyHistogram, counter, labels, lazy_counter, lazy_histogram};
 use quickwit_serve::BuildInfo;
 
-static BUILD_INFO: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
+static BUILD_INFO: LazyCounter = lazy_counter!(
         name: "build_info",
         description: "Quickwit's build info",
         subsystem: "",
-    )
-});
+);
 pub fn register_build_info_metric(build_info: &BuildInfo) {
     let commit_tags = build_info.commit_tags.join(",");
     let labels = labels!(
@@ -37,11 +33,9 @@ pub fn register_build_info_metric(build_info: &BuildInfo) {
     counter!(parent: BUILD_INFO, labels: [labels]).increment(1);
 }
 
-pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
+pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyHistogram = lazy_histogram!(
         name: "thread_unpark_duration_microseconds",
         description: "Duration for which a thread of the main tokio runtime is unparked.",
         subsystem: "cli",
         buckets: exponential_buckets(5.0, 5.0, 5).unwrap(),
-    )
-});
+);

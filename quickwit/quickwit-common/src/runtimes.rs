@@ -17,44 +17,37 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge, labels};
+use quickwit_metrics::{
+    Counter, Gauge, LazyCounter, LazyGauge, counter, gauge, labels, lazy_counter, lazy_gauge,
+};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
 static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
 
-static TOKIO_SCHEDULED_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
-    gauge!(
-        name: "tokio_scheduled_tasks",
-        description: "The total number of tasks currently scheduled in workers' local queues.",
-        subsystem: "runtime",
-    )
-});
+static TOKIO_SCHEDULED_TASKS: LazyGauge = lazy_gauge!(
+    name: "tokio_scheduled_tasks",
+    description: "The total number of tasks currently scheduled in workers' local queues.",
+    subsystem: "runtime",
+);
 
-static TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL: std::sync::LazyLock<Counter> =
-    std::sync::LazyLock::new(|| {
-        counter!(
-            name: "tokio_worker_busy_duration_milliseconds_total",
-            description: " The total amount of time worker threads were busy.",
-            subsystem: "runtime",
-        )
-    });
+static TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL: LazyCounter = lazy_counter!(
+    name: "tokio_worker_busy_duration_milliseconds_total",
+    description: " The total amount of time worker threads were busy.",
+    subsystem: "runtime",
+);
 
-static TOKIO_WORKER_BUSY_RATIO: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
-    gauge!(
-        name: "tokio_worker_busy_ratio",
-        description: "The ratio of time worker threads were busy since the last time runtime metrics were collected.",
-        subsystem: "runtime",
-    )
-});
+static TOKIO_WORKER_BUSY_RATIO: LazyGauge = lazy_gauge!(
+    name: "tokio_worker_busy_ratio",
+    description: "The ratio of time worker threads were busy since the last time runtime metrics were collected.",
+    subsystem: "runtime",
+);
 
-static TOKIO_WORKER_THREADS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
-    gauge!(
-        name: "tokio_worker_threads",
-        description: "The number of worker threads used by the runtime.",
-        subsystem: "runtime",
-    )
-});
+static TOKIO_WORKER_THREADS: LazyGauge = lazy_gauge!(
+    name: "tokio_worker_threads",
+    description: "The number of worker threads used by the runtime.",
+    subsystem: "runtime",
+);
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
