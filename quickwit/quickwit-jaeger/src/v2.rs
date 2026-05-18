@@ -52,7 +52,7 @@ use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument};
 
 use crate::metrics::{
-    FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABELS, OPERATION_INDEX_LABELS,
+    FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABEL_NAMES, OPERATION_INDEX_LABEL_NAMES,
     REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
 };
 use crate::{
@@ -65,7 +65,7 @@ macro_rules! metrics {
         let start = std::time::Instant::now();
         let operation = stringify!($operation);
         let index = $index;
-        let labels = label_values!(OPERATION_INDEX_LABELS => operation, index);
+        let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation, index);
         counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
         let (res, is_error) = match $expr {
             ok @ Ok(_) => (ok, "false"),
@@ -76,7 +76,7 @@ macro_rules! metrics {
         };
         let elapsed = start.elapsed().as_secs_f64();
         let err_labels = label_values!(
-            OPERATION_INDEX_ERROR_LABELS => operation, index, is_error
+            OPERATION_INDEX_ERROR_LABEL_NAMES => operation, index, is_error
         );
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
             .record(elapsed);
@@ -433,12 +433,12 @@ async fn stream_otel_spans_impl(
 
     record_send(operation_name, num_spans, num_bytes);
 
-    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
     counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).increment(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
     let err_labels = label_values!(
-        OPERATION_INDEX_ERROR_LABELS => operation_name, OTEL_TRACES_INDEX_ID, "false"
+        OPERATION_INDEX_ERROR_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID, "false"
     );
     histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
 

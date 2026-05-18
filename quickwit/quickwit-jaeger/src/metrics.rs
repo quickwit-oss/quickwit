@@ -17,8 +17,8 @@ use std::sync::LazyLock;
 use quickwit_common::metrics::exponential_buckets;
 use quickwit_metrics::{Counter, Histogram, LabelNames, counter, histogram, label_names};
 
-pub(crate) const OPERATION_INDEX_LABELS: LabelNames<2> = label_names!("operation", "index");
-pub(crate) const OPERATION_INDEX_ERROR_LABELS: LabelNames<3> =
+pub(crate) const OPERATION_INDEX_LABEL_NAMES: LabelNames<2> = label_names!("operation", "index");
+pub(crate) const OPERATION_INDEX_ERROR_LABEL_NAMES: LabelNames<3> =
     label_names!("operation", "index", "error");
 
 pub(crate) static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {

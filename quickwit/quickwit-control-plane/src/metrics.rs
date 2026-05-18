@@ -51,7 +51,7 @@ pub(crate) static OPEN_SHARDS: LazyLock<Gauge> =
 pub(crate) static CLOSED_SHARDS: LazyLock<Gauge> =
     LazyLock::new(|| gauge!(parent: SHARDS, "state" => "closed"));
 
-pub(crate) const INDEX_ID_LABELS: LabelNames<1> = label_names!("index_id");
+pub(crate) const INDEX_ID_LABEL_NAMES: LabelNames<1> = label_names!("index_id");
 
 static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(

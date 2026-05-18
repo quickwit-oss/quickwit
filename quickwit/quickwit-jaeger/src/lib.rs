@@ -53,8 +53,8 @@ use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
 
 use crate::metrics::{
-    FETCHED_SPANS_TOTAL, FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABELS,
-    OPERATION_INDEX_LABELS, REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL,
+    FETCHED_SPANS_TOTAL, FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABEL_NAMES,
+    OPERATION_INDEX_LABEL_NAMES, REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL,
     TRANSFERRED_BYTES_TOTAL,
 };
 
@@ -421,13 +421,13 @@ impl JaegerService {
             current_span.record("num_bytes", num_bytes_total);
 
             let labels = label_values!(
-                OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID
+                OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID
             );
             counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             let err_labels = label_values!(
-                OPERATION_INDEX_ERROR_LABELS =>
+                OPERATION_INDEX_ERROR_LABEL_NAMES =>
                 operation_name, OTEL_TRACES_INDEX_ID, "false"
             );
             histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
@@ -437,18 +437,18 @@ impl JaegerService {
 }
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
-    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
     counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
 
     let elapsed = request_start.elapsed().as_secs_f64();
     let err_labels = label_values!(
-        OPERATION_INDEX_ERROR_LABELS => operation_name, OTEL_TRACES_INDEX_ID, "true"
+        OPERATION_INDEX_ERROR_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID, "true"
     );
     histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
 }
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
-    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
     counter!(parent: FETCHED_SPANS_TOTAL, labels: [labels]).increment(num_spans as u64);
     counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: [labels]).increment(num_bytes as u64);
 }

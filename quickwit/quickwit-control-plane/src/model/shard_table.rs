@@ -27,7 +27,7 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
 
-use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABELS, OPEN_SHARDS};
+use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABEL_NAMES, OPEN_SHARDS};
 
 /// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
@@ -464,7 +464,7 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
+            let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
             gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_stats.num_open_shards as f64);
             gauge!(parent: CLOSED_SHARDS, labels: [labels])
                 .set(shard_stats.num_closed_shards as f64);
@@ -481,7 +481,7 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
+        let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
         gauge!(parent: OPEN_SHARDS, labels: [labels]).set(num_open_shards as f64);
         gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
     }

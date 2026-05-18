@@ -26,7 +26,7 @@ use crate::SearchError;
 use crate::metrics::{
     LEAF_SEARCH_REQUEST_DURATION_SECONDS, LEAF_SEARCH_REQUESTS_TOTAL, LEAF_SEARCH_TARGETED_SPLITS,
     ROOT_SEARCH_REQUEST_DURATION_SECONDS, ROOT_SEARCH_REQUESTS_TOTAL, ROOT_SEARCH_TARGETED_SPLITS,
-    STATUS_LABELS,
+    STATUS_LABEL_NAMES,
 };
 
 // root
@@ -74,7 +74,7 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             ) => (*num_targeted_splits, "cancelled"),
         };
 
-        let labels = label_values!(STATUS_LABELS => status);
+        let labels = label_values!(STATUS_LABEL_NAMES => status);
         counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
         histogram!(parent: ROOT_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
             .record(self.start.elapsed().as_secs_f64());
@@ -116,7 +116,7 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 {
     fn drop(self: Pin<&mut Self>) {
         let status = self.status.unwrap_or("cancelled");
-        let labels = label_values!(STATUS_LABELS => status);
+        let labels = label_values!(STATUS_LABEL_NAMES => status);
         counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
         histogram!(parent: LEAF_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
             .record(self.start.elapsed().as_secs_f64());

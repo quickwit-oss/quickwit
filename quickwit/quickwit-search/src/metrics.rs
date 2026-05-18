@@ -23,7 +23,7 @@ use quickwit_metrics::{
     Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram, label_names,
 };
 
-pub(crate) const STATUS_LABELS: LabelNames<1> = label_names!("status");
+pub(crate) const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");
 
 fn print_if_not_null(
     field_name: &'static str,

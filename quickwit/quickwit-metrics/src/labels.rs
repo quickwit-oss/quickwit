@@ -16,14 +16,13 @@
 //!
 //! Labels can be created in two ways:
 //!
-//! - **[`labels!`]** — inline key-value pairs. Keys are always static
-//!   literals; values can be static literals (const-compatible, zero
-//!   allocation) or dynamic expressions (`Into<SharedString>`).
+//! - **[`labels!`]** — inline key-value pairs. Keys are always static literals; values can be
+//!   static literals (const-compatible, zero allocation) or dynamic expressions
+//!   (`Into<SharedString>`).
 //!
-//! - **[`label_names!`] + [`label_values!`]** — separate the label *names*
-//!   (a const [`LabelNames<N>`]) from the *values*. This avoids repeating
-//!   the same label names at every call site and lets a single
-//!   [`Labels<N>`] be shared across counter, gauge, and histogram
+//! - **[`label_names!`] + [`label_values!`]** — separate the label *names* (a const
+//!   [`LabelNames<N>`]) from the *values*. This avoids repeating the same label names at every call
+//!   site and lets a single [`Labels<N>`] be shared across counter, gauge, and histogram
 //!   extensions.
 
 use metrics::SharedString;

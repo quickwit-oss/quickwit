@@ -41,8 +41,8 @@ use super::{
 };
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::{
-    INGESTED_BYTES_TOTAL, INGESTED_LOG_RECORDS_TOTAL, OTLP_GRPC_ERROR_LABELS, OTLP_GRPC_LABELS,
-    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+    INGESTED_BYTES_TOTAL, INGESTED_LOG_RECORDS_TOTAL, OTLP_GRPC_ERROR_LABEL_NAMES,
+    OTLP_GRPC_LABEL_NAMES, REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
 };
 
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_9";
@@ -243,7 +243,7 @@ impl OtlpGrpcLogsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_logs(index_id.clone(), doc_batch).await?;
 
-        let labels = label_values!(OTLP_GRPC_LABELS => "logs", index_id, "grpc", "protobuf");
+        let labels = label_values!(OTLP_GRPC_LABEL_NAMES => "logs", index_id, "grpc", "protobuf");
         counter!(parent: INGESTED_LOG_RECORDS_TOTAL, labels: [labels]).increment(num_log_records);
         counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).increment(num_bytes);
 
@@ -317,7 +317,7 @@ impl OtlpGrpcLogsService {
         let start = std::time::Instant::now();
 
         let labels =
-            label_values!(OTLP_GRPC_LABELS => "logs", index_id.clone(), "grpc", "protobuf");
+            label_values!(OTLP_GRPC_LABEL_NAMES => "logs", index_id.clone(), "grpc", "protobuf");
         counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
             ok @ Ok(_) => (ok, "false"),
@@ -327,8 +327,7 @@ impl OtlpGrpcLogsService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let error_labels =
-            label_values!(OTLP_GRPC_ERROR_LABELS => "logs", index_id, "grpc", "protobuf", is_error);
+        let error_labels = label_values!(OTLP_GRPC_ERROR_LABEL_NAMES => "logs", index_id, "grpc", "protobuf", is_error);
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).record(elapsed);
 
         export_res

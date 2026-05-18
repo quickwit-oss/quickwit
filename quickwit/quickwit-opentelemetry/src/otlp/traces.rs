@@ -46,7 +46,7 @@ use super::{
     ingest_doc_batch_v2, is_zero,
 };
 use crate::otlp::metrics::{
-    INGESTED_BYTES_TOTAL, INGESTED_SPANS_TOTAL, OTLP_GRPC_ERROR_LABELS, OTLP_GRPC_LABELS,
+    INGESTED_BYTES_TOTAL, INGESTED_SPANS_TOTAL, OTLP_GRPC_ERROR_LABEL_NAMES, OTLP_GRPC_LABEL_NAMES,
     REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
 };
 use crate::otlp::{SpanId, TraceId, extract_attributes};
@@ -705,7 +705,7 @@ impl OtlpGrpcTracesService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_spans(index_id.clone(), doc_batch).await?;
 
-        let labels = label_values!(OTLP_GRPC_LABELS => "trace", index_id, "grpc", "protobuf");
+        let labels = label_values!(OTLP_GRPC_LABEL_NAMES => "trace", index_id, "grpc", "protobuf");
         counter!(parent: INGESTED_SPANS_TOTAL, labels: [labels]).increment(num_spans);
         counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).increment(num_bytes);
 
@@ -779,7 +779,7 @@ impl OtlpGrpcTracesService {
         let start = std::time::Instant::now();
 
         let labels =
-            label_values!(OTLP_GRPC_LABELS => "trace", index_id.clone(), "grpc", "protobuf");
+            label_values!(OTLP_GRPC_LABEL_NAMES => "trace", index_id.clone(), "grpc", "protobuf");
         counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
             ok @ Ok(_) => (ok, "false"),
@@ -789,7 +789,7 @@ impl OtlpGrpcTracesService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let error_labels = label_values!(OTLP_GRPC_ERROR_LABELS => "trace", index_id, "grpc", "protobuf", is_error);
+        let error_labels = label_values!(OTLP_GRPC_ERROR_LABEL_NAMES => "trace", index_id, "grpc", "protobuf", is_error);
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).record(elapsed);
 
         export_res

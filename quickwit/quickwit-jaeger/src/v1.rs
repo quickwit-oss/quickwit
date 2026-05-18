@@ -29,7 +29,7 @@ use quickwit_proto::jaeger::storage::v1::{
 use tonic::{Request, Response, Status};
 
 use crate::metrics::{
-    OPERATION_INDEX_ERROR_LABELS, OPERATION_INDEX_LABELS, REQUEST_DURATION_SECONDS,
+    OPERATION_INDEX_ERROR_LABEL_NAMES, OPERATION_INDEX_LABEL_NAMES, REQUEST_DURATION_SECONDS,
     REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
 };
 use crate::{JaegerService, SpanStream};
@@ -39,7 +39,7 @@ macro_rules! metrics {
         let start = std::time::Instant::now();
         let operation = stringify!($operation);
         let index = $index;
-        let labels = label_values!(OPERATION_INDEX_LABELS => operation, index);
+        let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation, index);
         counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
         let (res, is_error) = match $expr {
             ok @ Ok(_) => (ok, "false"),
@@ -50,7 +50,7 @@ macro_rules! metrics {
         };
         let elapsed = start.elapsed().as_secs_f64();
         let err_labels = label_values!(
-            OPERATION_INDEX_ERROR_LABELS => operation, index, is_error
+            OPERATION_INDEX_ERROR_LABEL_NAMES => operation, index, is_error
         );
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
             .record(elapsed);
