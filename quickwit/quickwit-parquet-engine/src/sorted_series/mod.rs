@@ -286,9 +286,10 @@ pub(crate) fn append_prefix_col_to_key<T>(
     value: &T,
     descending: bool,
 ) -> Result<()>
-where T: ?Sized + storekey::Encode {
-    storekey::encode(&mut *buf, &ordinal)
-        .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+where
+    T: ?Sized + storekey::Encode,
+{
+    storekey::encode(&mut *buf, &ordinal).map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
     let value_start = buf.len();
     storekey::encode(&mut *buf, value).map_err(|e| anyhow!("storekey encode value: {}", e))?;
     if descending {

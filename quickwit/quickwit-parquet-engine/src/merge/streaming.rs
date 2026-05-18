@@ -2250,10 +2250,8 @@ mod tests {
             1,
         );
         let bytes_b = make_nullable_prefix_input_single_rg(&[None, None, None], 1);
-        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![
-            open_stream(bytes_a).await,
-            open_stream(bytes_b).await,
-        ];
+        let inputs: Vec<Box<dyn ColumnPageStream>> =
+            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
 
         let tmp = TempDir::new().expect("tmpdir");
         let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
@@ -2278,7 +2276,10 @@ mod tests {
         use arrow::array::StringArray;
         let combined = read_output_to_record_batch(&outputs[0].path);
         let mn_idx = combined.schema().index_of("metric_name").expect("mn col");
-        let arr = combined.column(mn_idx).as_any().downcast_ref::<StringArray>();
+        let arr = combined
+            .column(mn_idx)
+            .as_any()
+            .downcast_ref::<StringArray>();
         let arr = arr.expect("metric_name should decode as StringArray");
         // First 3 rows are the non-null region, last 3 are all-null.
         for i in 0..3 {
@@ -2286,7 +2287,10 @@ mod tests {
             assert_eq!(arr.value(i), "cpu.usage");
         }
         for i in 3..6 {
-            assert!(arr.is_null(i), "row {i} should be null (all-null region sorts last)");
+            assert!(
+                arr.is_null(i),
+                "row {i} should be null (all-null region sorts last)"
+            );
         }
     }
 
@@ -2690,7 +2694,7 @@ mod tests {
         Bytes::from(buf)
     }
 
-/// End-to-end regression for DESC prefix columns. Three RGs with
+    /// End-to-end regression for DESC prefix columns. Three RGs with
     /// the same metric_name (ASC) and distinct `env` values; sort
     /// schema declares env DESC. The input file must itself be
     /// DESC-sorted on env (RGs in physical order staging → prod →

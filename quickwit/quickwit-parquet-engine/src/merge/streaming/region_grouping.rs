@@ -198,9 +198,9 @@ fn parquet_has_column(
 ///
 /// Null handling:
 /// - **All-null RG on a prefix column**: the column is skipped entirely (the next column's higher
-///   ordinal byte appears in its place), so the RG sorts after any RG carrying a non-null value
-///   for this column. This mirrors the row-level convention in `sorted_series` and gives
-///   nulls-last ordering for free.
+///   ordinal byte appears in its place), so the RG sorts after any RG carrying a non-null value for
+///   this column. This mirrors the row-level convention in `sorted_series` and gives nulls-last
+///   ordering for free.
 /// - **Mixed null + non-null in one RG**: rows in the RG would encode to two distinct prefix keys
 ///   (the non-null value's key and the column-skipped key), breaking the
 ///   at-most-one-prefix-value-per-RG invariant (PA-1). Reject.
@@ -245,9 +245,8 @@ pub(crate) fn extract_rg_composite_prefix_key(
             bail!(
                 "input {input_idx} rg {rg_idx} col '{}' is NOT prefix-aligned: contains \
                  {null_count} nulls plus {} non-null values. PA-1 requires each row group to \
-                 carry a single prefix value; rows with null on this column encode to a \
-                 different prefix key (with the column skipped) than rows with the non-null \
-                 value.",
+                 carry a single prefix value; rows with null on this column encode to a different \
+                 prefix key (with the column skipped) than rows with the non-null value.",
                 col.name,
                 num_values - null_count,
             );
@@ -259,22 +258,17 @@ pub(crate) fn extract_rg_composite_prefix_key(
     // Trailing prefix-length sentinel: an additional `u8(prefix_len)`
     // ordinal byte that does two things at once:
     //
-    // 1. **Forces nulls-last ordering across RGs.** For prefix_len=1
-    //    an all-null RG produces an empty per-column body and would
-    //    otherwise lex-sort *before* any non-null RG. With the
-    //    sentinel, the all-null key becomes `[prefix_len]` and the
-    //    non-null key becomes `[ord(0), storekey(value), ..., prefix_len]`.
-    //    The non-null key starts with `ord(0) = 0x00`, smaller than
-    //    `prefix_len >= 1`, so non-null RGs sort first — matching
-    //    `sorted_series`'s row-level nulls-last convention via the
-    //    same "the next ordinal byte appears in the skipped slot"
+    // 1. **Forces nulls-last ordering across RGs.** For prefix_len=1 an all-null RG produces an
+    //    empty per-column body and would otherwise lex-sort *before* any non-null RG. With the
+    //    sentinel, the all-null key becomes `[prefix_len]` and the non-null key becomes `[ord(0),
+    //    storekey(value), ..., prefix_len]`. The non-null key starts with `ord(0) = 0x00`, smaller
+    //    than `prefix_len >= 1`, so non-null RGs sort first — matching `sorted_series`'s row-level
+    //    nulls-last convention via the same "the next ordinal byte appears in the skipped slot"
     //    mechanism.
-    // 2. **Preserves the "literal prefix of sorted_series" property.**
-    //    The byte we append is exactly what `sorted_series` writes
-    //    right after the prefix columns: the ordinal of the next
-    //    sort-schema column (`u8(prefix_len)`). So the per-RG key
-    //    remains a byte-for-byte prefix of every row's
-    //    `sorted_series` value in that RG.
+    // 2. **Preserves the "literal prefix of sorted_series" property.** The byte we append is
+    //    exactly what `sorted_series` writes right after the prefix columns: the ordinal of the
+    //    next sort-schema column (`u8(prefix_len)`). So the per-RG key remains a byte-for-byte
+    //    prefix of every row's `sorted_series` value in that RG.
     storekey::encode(&mut key, &(prefix_cols.len() as u8))
         .map_err(|e| anyhow!("storekey encode prefix-length sentinel: {}", e))?;
 
