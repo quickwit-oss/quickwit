@@ -274,11 +274,26 @@ fn reencode_prefix_aligned(
         .map_err(LegacyAdapterError::ArrowDecode)?;
 
     if target_prefix_len == 0 {
-        // Single-RG passthrough: preserve original KV unchanged.
+        // Single-RG passthrough: re-encode the input as one row group
+        // with no prefix-alignment claim, so downstream readers take
+        // the legacy `prefix_len = 0` path.
+        //
+        // Preserving the original footer KVs unchanged would leak any
+        // pre-existing `qh.rg_partition_prefix_len = N` (nonzero)
+        // claim from the input into the output. The output is *one*
+        // row group whose rows can carry multiple prefix-column
+        // values, so advertising N > 0 would cause downstream to take
+        // the prefix-aware path and then fail PA-1 on the multi-value
+        // RG. Strip the prefix KV instead; absence of the key is the
+        // legacy convention for "no alignment claim".
+        let cleaned_kv = original_kv.map(|mut kvs| {
+            kvs.retain(|k| k.key != PARQUET_META_RG_PARTITION_PREFIX_LEN);
+            kvs
+        });
         let props = build_writer_properties(
             &arrow_schema,
             original_sorting_cols.unwrap_or_default(),
-            original_kv,
+            cleaned_kv,
             consolidated_batch.num_rows(),
         );
         return write_single_row_group(arrow_schema, props, consolidated_batch);
@@ -1417,6 +1432,119 @@ mod tests {
         assert!(
             prefix_kv.is_none(),
             "target_prefix_len = 0 must not stamp a prefix_len value; got {prefix_kv:?}",
+        );
+    }
+
+    /// Regression for Codex P2 on PR #6425: when the *input* file
+    /// already carries a stale nonzero `qh.rg_partition_prefix_len`
+    /// (e.g., it was produced by a prefix-aware writer and is now
+    /// being re-encoded through the legacy fallback path), passing
+    /// `target_prefix_len = 0` must STRIP that KV from the re-
+    /// encoded output. Without the strip, the consolidated single-RG
+    /// file would still advertise the stale prefix claim and
+    /// downstream metadata extraction would take the prefix-aware
+    /// path against a single RG that carries multiple first-prefix
+    /// values — failing PA-1 min/max on read.
+    #[tokio::test]
+    async fn test_target_prefix_len_zero_strips_stale_prefix_kv_from_input() {
+        // Build a 2-RG input with sort_fields AND a stale prefix KV
+        // (1) — simulating a prefix-aware input being demoted to the
+        // legacy single-RG path.
+        let metrics = [("cpu.usage", 30usize), ("memory.used", 30)];
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+        let total: usize = metrics.iter().map(|(_, n)| *n).sum();
+        let mut metric_keys: Vec<i32> = Vec::with_capacity(total);
+        let mut tsids: Vec<i64> = Vec::with_capacity(total);
+        let mut timestamps: Vec<u64> = Vec::with_capacity(total);
+        let mut values: Vec<f64> = Vec::with_capacity(total);
+        let mut row_idx: u64 = 0;
+        for (metric_idx, (_, count)) in metrics.iter().enumerate() {
+            for _ in 0..*count {
+                metric_keys.push(metric_idx as i32);
+                tsids.push(1000 + row_idx as i64);
+                timestamps.push(1_700_000_000 + (*count as u64) - (row_idx % *count as u64));
+                values.push(row_idx as f64);
+                row_idx += 1;
+            }
+        }
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(StringArray::from(
+                    metrics.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+                )),
+            )
+            .expect("metric dict"),
+        );
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; total]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(tsids));
+        let svc_keys: Vec<Option<i32>> = (0..total as i32).map(|i| Some(i % 3)).collect();
+        let service: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(svc_keys),
+                Arc::new(StringArray::from(vec!["api", "db", "cache"])),
+            )
+            .expect("svc dict"),
+        );
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .expect("batch");
+
+        let kvs = vec![
+            KeyValue::new(
+                PARQUET_META_SORT_FIELDS.to_string(),
+                "metric_name|-timestamp_secs/V2".to_string(),
+            ),
+            // The stale claim we want stripped.
+            KeyValue::new(
+                PARQUET_META_RG_PARTITION_PREFIX_LEN.to_string(),
+                "1".to_string(),
+            ),
+        ];
+        let bytes = write_multi_rg_file(&[batch], kvs, default_sorting_cols(&schema), 30);
+
+        let source = CountingInMemorySource::new(bytes);
+        let adapter = LegacyInputAdapter::try_open(source, dummy_path(), 0)
+            .await
+            .expect("adapter open with target_prefix_len = 0");
+
+        assert_eq!(
+            adapter.metadata().num_row_groups(),
+            1,
+            "target_prefix_len = 0 must consolidate to a single RG",
+        );
+        let prefix_kv = adapter
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert!(
+            prefix_kv.is_none(),
+            "stale `rg_partition_prefix_len = 1` from the input MUST be stripped when caller asks \
+             for target_prefix_len = 0; got {prefix_kv:?}",
         );
     }
 
