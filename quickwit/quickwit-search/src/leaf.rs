@@ -30,6 +30,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
@@ -55,7 +56,10 @@ use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::leaf_cache::LeafSearchCache;
-use crate::metrics::SplitSearchOutcomeCounters;
+use crate::metrics::{
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
+    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
     SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
@@ -529,7 +533,7 @@ async fn leaf_search_single_split(
 
     let split_id = split.split_id.to_string();
     let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
     // Wrap storage at request scope so we observe per-split download volume.
     // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
@@ -596,9 +600,7 @@ async fn leaf_search_single_split(
             "current leaf search is consuming more memory than the initial allocation"
         );
     }
-    crate::SEARCH_METRICS
-        .leaf_search_single_split_warmup_num_bytes
-        .observe(warmup_size.as_u64() as f64);
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1699,7 +1701,7 @@ pub async fn single_doc_mapping_leaf_search(
         make_merge_collector(&request, searcher_context.get_aggregation_limits())?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
-    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::new_unregistered());
+    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::default());
 
     // Sort out the splits that are already in the partial result cache.
     let uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
@@ -1908,7 +1910,7 @@ enum SplitSearchState {
 }
 
 impl SplitSearchState {
-    pub fn inc(self, counters: &SplitSearchOutcomeCounters) {
+    fn increment(self, counters: &SplitSearchOutcomeCounters) {
         match self {
             SplitSearchState::Start => counters.cancel_before_warmup.inc(),
             SplitSearchState::CacheHit => counters.cache_hit.inc(),
@@ -1924,9 +1926,9 @@ impl SplitSearchState {
 
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
+        self.state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
         self.state
-            .inc(&crate::metrics::SEARCH_METRICS.split_search_outcome_total);
-        self.state.inc(&self.local_split_search_outcome_counters);
+            .increment(&self.local_split_search_outcome_counters);
     }
 }
 
@@ -1939,7 +1941,7 @@ impl SplitSearchStateGuard {
     pub fn new(local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>) -> Self {
         SplitSearchStateGuard {
             state: SplitSearchState::Start,
-            local_split_search_outcome_counters: local_split_search_outcome_counters.clone(),
+            local_split_search_outcome_counters,
         }
     }
 
@@ -1964,9 +1966,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
-    let timer = crate::SEARCH_METRICS
-        .leaf_search_split_duration_secs
-        .start_timer();
+    let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
             request,

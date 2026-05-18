@@ -21,9 +21,13 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use tokio::sync::{mpsc, oneshot};
+
+use crate::metrics::{
+    LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
+};
 
 /// Distributor of permits to perform split search operation.
 ///
@@ -339,10 +343,7 @@ impl SearchPermitActor {
 
     fn assign_available_permits(&mut self) {
         while let Some(permit_request) = self.pop_next_request_if_serviceable() {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
-                &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
-            );
-            ongoing_gauge_guard.add(1);
+            let ongoing_gauge_guard = GaugeGuard::new(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, 1.0);
             self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
             permit_request
@@ -358,14 +359,12 @@ impl SearchPermitActor {
                 // created SearchPermit which releases the resources
                 .ok();
         }
-        crate::SEARCH_METRICS
-            .leaf_search_single_split_tasks_pending
-            .set(self.permits_requests.len() as i64);
+        LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING.set(self.permits_requests.len() as f64);
     }
 }
 
 pub struct SearchPermit {
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: GaugeGuard,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
     warmup_slot_freed: bool,
@@ -432,7 +431,9 @@ impl Future for SearchPermitFuture {
         let receiver = Pin::new(&mut self.get_mut().0);
         match receiver.poll(cx) {
             Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
-            Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+            Poll::Ready(Err(_)) => panic!(
+                "Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
+            ),
             Poll::Pending => Poll::Pending,
         }
     }

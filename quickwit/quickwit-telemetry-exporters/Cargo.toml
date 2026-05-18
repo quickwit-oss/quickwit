@@ -1,0 +1,30 @@
+[package]
+name = "quickwit-telemetry-exporters"
+description = "Telemetry exporters for Quickwit"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-otel = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+metrics-util = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true, features = ["parsing"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }

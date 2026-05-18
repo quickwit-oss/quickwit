@@ -38,7 +38,7 @@ pub struct MetricsApi;
 ///
 /// These are in the form of prometheus metrics.
 pub fn metrics_handler() -> impl warp::Reply {
-    match quickwit_common::metrics::metrics_text_payload() {
+    match quickwit_telemetry_exporters::prometheus::metrics::text_payload() {
         Ok(metrics) => with_status(metrics, StatusCode::OK),
         Err(e) => {
             error!("failed to encode prometheus metrics: {e}");

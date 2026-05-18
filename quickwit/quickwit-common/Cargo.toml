@@ -28,10 +28,12 @@ http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
+metrics = { workspace = true }
 opentelemetry = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
+quickwit-metrics = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
@@ -64,6 +66,7 @@ jemalloc-profiled = [
 
 [dev-dependencies]
 hyper-util = { workspace = true }
+metrics-util = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
