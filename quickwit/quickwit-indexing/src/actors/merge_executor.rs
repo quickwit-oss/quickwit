@@ -42,6 +42,7 @@ use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
 use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
@@ -56,6 +57,9 @@ pub struct MergeExecutor {
     doc_mapper: Arc<DocMapper>,
     io_controls: IoControls,
     merge_packager_mailbox: Mailbox<Packager>,
+    /// Bounds concurrent Tantivy merges across pipelines on this node.
+    /// `None` in the legacy indexing-side merge pipeline.
+    merge_execution_semaphore: Option<Arc<Semaphore>>,
 }
 
 #[async_trait]
@@ -95,6 +99,16 @@ impl Handler<MergeScratch> for MergeExecutor {
             merge_scratch_directory,
             ..
         } = merge_scratch;
+        // On nodes running the split compaction architecture, merge pipelines are ephemeral, and we
+        // need to make sure there aren't too many CPU-bound operations occurring concurrently.
+        let _cpu_permit = match &self.merge_execution_semaphore {
+            Some(semaphore) => Some(
+                ctx.protect_future(semaphore.clone().acquire_owned())
+                    .await
+                    .expect("merge execution semaphore should never be closed"),
+            ),
+            None => None,
+        };
         let indexed_split_opt: Option<IndexedSplit> = match merge_operation.operation_type {
             MergeOperationType::Merge => {
                 let merge_res = self
@@ -311,6 +325,7 @@ impl MergeExecutor {
         doc_mapper: Arc<DocMapper>,
         io_controls: IoControls,
         merge_packager_mailbox: Mailbox<Packager>,
+        merge_execution_semaphore: Option<Arc<Semaphore>>,
     ) -> Self {
         MergeExecutor {
             pipeline_id,
@@ -318,6 +333,7 @@ impl MergeExecutor {
             doc_mapper,
             io_controls,
             merge_packager_mailbox,
+            merge_execution_semaphore,
         }
     }
 
@@ -669,6 +685,7 @@ mod tests {
             test_sandbox.doc_mapper(),
             IoControls::default(),
             merge_packager_mailbox,
+            None,
         );
         let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
             .universe()
@@ -814,6 +831,7 @@ mod tests {
             test_sandbox.doc_mapper(),
             IoControls::default(),
             merge_packager_mailbox,
+            None,
         );
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);

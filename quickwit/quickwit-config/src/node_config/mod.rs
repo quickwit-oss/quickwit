@@ -230,9 +230,10 @@ impl Default for IndexerConfig {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompactorConfig {
-    /// Maximum number of concurrent merge pipelines. Defaults to CPU count.
-    #[serde(default = "CompactorConfig::default_max_concurrent_pipelines")]
-    pub max_concurrent_pipelines: NonZeroUsize,
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.
     #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
@@ -242,8 +243,9 @@ pub struct CompactorConfig {
 }
 
 impl CompactorConfig {
-    fn default_max_concurrent_pipelines() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus()).unwrap_or(NonZeroUsize::MIN)
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
     }
 
     fn default_max_concurrent_split_uploads() -> usize {
@@ -253,7 +255,7 @@ impl CompactorConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         CompactorConfig {
-            max_concurrent_pipelines: NonZeroUsize::new(2).unwrap(),
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
             max_concurrent_split_uploads: 4,
             max_merge_write_throughput: None,
         }
@@ -263,7 +265,7 @@ impl CompactorConfig {
 impl Default for CompactorConfig {
     fn default() -> Self {
         Self {
-            max_concurrent_pipelines: Self::default_max_concurrent_pipelines(),
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
         }

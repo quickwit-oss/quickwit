@@ -67,10 +67,10 @@ impl MultiPartPolicy {
 impl Default for MultiPartPolicy {
     fn default() -> Self {
         MultiPartPolicy {
-            /// We want to balance time spent waiting on uploads while still being careful about
-            /// not hammering S3 Puts, which can be expensive.
-            /// TODO: Dynamic multipart policy.
-            target_part_num_bytes: 512 * 1_024 * 1_024, // 5GB
+            // We want to balance time spent waiting on uploads while still being careful about
+            // not hammering S3 Puts, which can be expensive.
+            // TODO: Dynamic multipart policy.
+            target_part_num_bytes: 512 * 1_024 * 1_024, // 512mib
             multipart_threshold_num_bytes: 128 * 1_024 * 1_024, // 128 MiB
             max_num_parts: 10_000,
             max_object_num_bytes: 5_000_000_000_000u64, // S3 allows up to 5TB objects
