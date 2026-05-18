@@ -14,12 +14,30 @@
 
 //! Parquet merge executor actor.
 //!
-//! Calls the Phase 1 merge engine (`merge_sorted_parquet_files`) via
-//! `run_cpu_intensive()`, builds output split metadata using
-//! `merge_parquet_split_metadata()`, and sends the result to the uploader.
+//! Receives a `ParquetMergeScratch` from the downloader. Two merge
+//! paths, chosen on `target_prefix_len_override`:
+//!
+//! - **Regular merge** (`target_prefix_len_override == None`): the input splits already share
+//!   `qh.rg_partition_prefix_len` (MP-3). Run the in-memory `merge_sorted_parquet_files` engine
+//!   inside `run_cpu_intensive()`.
+//! - **Promotion merge** (`target_prefix_len_override == Some(target)`): the inputs may carry
+//!   *different* prefix lengths (the whole point of promotion). The in-memory path's
+//!   `extract_and_validate_input_metadata` would bail on the mismatch before any output is
+//!   produced, so promotion runs through `execute_merge_operation` instead — that path opens each
+//!   input through `LegacyInputAdapter` for splits below the target prefix len and through
+//!   `StreamingParquetReader` for splits at the target, so the streaming engine sees a homogeneous
+//!   stream advertising `prefix_len = target` on every input. `mixed_prefix_ok` is then passed to
+//!   `merge_parquet_split_metadata` so the post-merge aggregator skips the input-side equality
+//!   check.
+
+use std::io;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_dst::check_invariant;
@@ -28,15 +46,65 @@ use quickwit_dst::invariants::merge_policy::{
     all_same_compaction_scope, all_same_merge_level, has_minimum_splits,
 };
 use quickwit_parquet_engine::merge::metadata_aggregation::merge_parquet_split_metadata;
-use quickwit_parquet_engine::merge::{MergeConfig, MergeOutputFile, merge_sorted_parquet_files};
-use quickwit_parquet_engine::storage::ParquetWriterConfig;
+use quickwit_parquet_engine::merge::{
+    MergeConfig, MergeOutputFile, execute_merge_operation, merge_sorted_parquet_files,
+};
+use quickwit_parquet_engine::storage::{ParquetWriterConfig, RemoteByteSource};
 use quickwit_proto::types::IndexUid;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use tracing::{info, instrument, warn};
 
 use super::ParquetUploader;
 use super::parquet_indexer::ParquetSplitBatch;
 use super::parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask};
 use crate::models::PublishLock;
+
+/// `RemoteByteSource` adapter over a single local file. Used by the
+/// promotion-merge path to feed downloaded scratch-directory files
+/// into `execute_merge_operation` (which composes them with
+/// `LegacyInputAdapter` as needed).
+///
+/// Each instance is bound to one absolute path at construction time
+/// and ignores the `path` argument from the trait methods — the
+/// trait surface assumes a remote backend keyed by path, but the
+/// downloader has already resolved each split to a concrete local
+/// file before the executor runs.
+struct LocalFileByteSource {
+    path: PathBuf,
+}
+
+impl LocalFileByteSource {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+#[async_trait]
+impl RemoteByteSource for LocalFileByteSource {
+    async fn file_size(&self, _path: &Path) -> io::Result<u64> {
+        tokio::fs::metadata(&self.path).await.map(|m| m.len())
+    }
+
+    async fn get_slice(&self, _path: &Path, range: Range<u64>) -> io::Result<Bytes> {
+        let mut file = tokio::fs::File::open(&self.path).await?;
+        file.seek(io::SeekFrom::Start(range.start)).await?;
+        let len = (range.end - range.start) as usize;
+        let mut buf = vec![0u8; len];
+        file.read_exact(&mut buf).await?;
+        Ok(Bytes::from(buf))
+    }
+
+    async fn get_slice_stream(
+        &self,
+        _path: &Path,
+        range: Range<u64>,
+    ) -> io::Result<Box<dyn AsyncRead + Send + Unpin>> {
+        let mut file = tokio::fs::File::open(&self.path).await?;
+        file.seek(io::SeekFrom::Start(range.start)).await?;
+        let len = range.end - range.start;
+        Ok(Box::new(file.take(len)))
+    }
+}
 
 /// Executes Parquet merge operations using the Phase 1 k-way merge engine.
 ///
@@ -108,18 +176,46 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .context("failed to create merge output directory")
             .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-        // Run the CPU-intensive merge on the dedicated thread pool.
-        let input_paths = scratch.downloaded_parquet_files.clone();
-        let output_dir_clone = output_dir.clone();
-        let writer_config = self.writer_config.clone();
-        let merge_result = run_cpu_intensive(move || {
+        // Route promotion merges (`target_prefix_len_override.is_some()`)
+        // through `execute_merge_operation`. That path opens each input
+        // via `LegacyInputAdapter` when the split's prefix_len is below
+        // the target, so the streaming merge engine sees a homogeneous
+        // stream with all inputs at `prefix_len = target`. Without this
+        // routing the in-memory `merge_sorted_parquet_files` would bail
+        // in `extract_and_validate_input_metadata` on mixed prefix
+        // lengths before any output is produced.
+        let merge_result: Result<Result<Vec<MergeOutputFile>, _>, _> = if scratch
+            .merge_operation
+            .target_prefix_len_override
+            .is_some()
+        {
+            let sources: Vec<Arc<dyn RemoteByteSource>> = scratch
+                .downloaded_parquet_files
+                .iter()
+                .map(|path| Arc::new(LocalFileByteSource::new(path.clone())) as _)
+                .collect();
             let config = MergeConfig {
                 num_outputs: 1,
-                writer_config,
+                writer_config: self.writer_config.clone(),
             };
-            merge_sorted_parquet_files(&input_paths, &output_dir_clone, &config)
-        })
-        .await;
+            Ok(
+                execute_merge_operation(&scratch.merge_operation, sources, &output_dir, &config)
+                    .await,
+            )
+        } else {
+            // Regular merge: in-memory path under `run_cpu_intensive`.
+            let input_paths = scratch.downloaded_parquet_files.clone();
+            let output_dir_clone = output_dir.clone();
+            let writer_config = self.writer_config.clone();
+            run_cpu_intensive(move || {
+                let config = MergeConfig {
+                    num_outputs: 1,
+                    writer_config,
+                };
+                merge_sorted_parquet_files(&input_paths, &output_dir_clone, &config)
+            })
+            .await
+        };
 
         let outputs: Vec<MergeOutputFile> = match merge_result {
             Ok(Ok(outputs)) => outputs,
@@ -231,9 +327,17 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             return Ok(());
         }
 
+        // `mixed_prefix_ok` matches the operation's promotion mode:
+        // promote-legacy operations bundle inputs from different
+        // `rg_partition_prefix_len` buckets (the adapter normalizes
+        // them at read time), so the input-side equality check in
+        // `merge_parquet_split_metadata` would spuriously fail. Regular
+        // merges keep the strict check.
+        let mixed_prefix_ok = scratch.merge_operation.target_prefix_len_override.is_some();
+
         let mut merged_splits = Vec::with_capacity(outputs.len());
         for output in &outputs {
-            let mut metadata = merge_parquet_split_metadata(input_splits, output)
+            let mut metadata = merge_parquet_split_metadata(input_splits, output, mixed_prefix_ok)
                 .context("failed to build merge output metadata")
                 .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 

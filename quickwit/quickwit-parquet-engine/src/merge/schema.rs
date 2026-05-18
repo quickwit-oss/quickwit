@@ -300,13 +300,22 @@ fn align_batch_to_schema(batch: &RecordBatch, target_schema: &SchemaRef) -> Resu
 /// Normalize an Arrow data type for the internal union schema.
 ///
 /// All string-like types (Utf8, LargeUtf8, Dictionary(*, Utf8/LargeUtf8))
-/// are normalized to Utf8. This ensures `take` works uniformly across
-/// concatenated inputs regardless of their original encoding.
+/// are normalized to Utf8. All byte-array-like types (Binary,
+/// LargeBinary, Dictionary(*, Binary/LargeBinary)) are normalized to
+/// Binary. Parquet stores both string flavours under the same `BYTE_ARRAY`
+/// physical type and both binary flavours likewise, so two inputs whose
+/// schemas differ only by string/binary flavour represent the same
+/// logical data; the union must accept them as one column.
 ///
-/// Non-string types are returned as-is.
+/// This ensures `take` works uniformly across concatenated inputs
+/// regardless of their original encoding. Non-string/non-binary types
+/// are returned as-is.
 fn normalize_type(dt: &DataType) -> DataType {
     if is_string_type(dt) {
         return DataType::Utf8;
+    }
+    if is_byte_array_type(dt) {
+        return DataType::Binary;
     }
     dt.clone()
 }
@@ -316,6 +325,20 @@ fn is_string_type(dt: &DataType) -> bool {
     match dt {
         DataType::Utf8 | DataType::LargeUtf8 => true,
         DataType::Dictionary(_, value_type) => is_string_type(value_type),
+        _ => false,
+    }
+}
+
+/// Returns true if the data type represents raw byte arrays.
+///
+/// Parquet has a single `BYTE_ARRAY` physical type; Binary and
+/// LargeBinary (and dict-encoded variants) all map to it on the
+/// wire. Schema evolution that changes one to the other across
+/// ingester versions must merge cleanly.
+fn is_byte_array_type(dt: &DataType) -> bool {
+    match dt {
+        DataType::Binary | DataType::LargeBinary => true,
+        DataType::Dictionary(_, value_type) => is_byte_array_type(value_type),
         _ => false,
     }
 }

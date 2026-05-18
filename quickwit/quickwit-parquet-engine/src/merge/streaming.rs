@@ -3934,6 +3934,337 @@ mod tests {
         }
     }
 
+    /// Build two batches with the SAME sort schema but **different body-
+    /// col schemas**, exercising the merger's schema-evolution paths:
+    ///
+    /// - `body_string`: `Utf8` in A, `Dict<i32, Utf8>` in B (string-flavour variation —
+    ///   `normalize_type` collapses to Utf8).
+    /// - `body_bytes`: `LargeBinary` in A, `Binary` in B (byte-array-flavour variation — F6
+    ///   normalizer extension collapses to Binary).
+    /// - `body_list`: `List<Float64>` present in A, ABSENT from B (MC-4 column union — B's rows
+    ///   appear as nulls in the merged output; outer becomes nullable in the union, exercising the
+    ///   F13 nullable-outer list write path).
+    /// - `body_a_only`: `Int32` in A only (MC-4 column union — B's rows null).
+    /// - `body_b_only`: `Int64` in B only (MC-4 column union — A's rows null).
+    /// - `body_value`: `Float64` in both (common-typed control column).
+    ///
+    /// Each row is keyed by a unique `sorted_series` value, and the cell
+    /// values are derived from the key + column name so that comparison
+    /// is byte-stable.
+    fn make_mixed_schema_input_a(num_rows: usize, key_offset: u64) -> RecordBatch {
+        use arrow::array::{Int32Array, LargeBinaryArray, ListArray};
+        use arrow::buffer::OffsetBuffer;
+
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            // sort cols
+            Field::new("metric_name", dict_type, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            // body cols in lex order. body_a_only is A-exclusive.
+            // body_list is non-nullable here (A always has lists) but
+            // becomes nullable in the union because B lacks the col.
+            Field::new("body_a_only", DataType::Int32, true),
+            Field::new("body_bytes", DataType::LargeBinary, true),
+            Field::new(
+                "body_list",
+                DataType::List(Arc::new(Field::new("item", DataType::Float64, false))),
+                false,
+            ),
+            Field::new("body_string", DataType::Utf8, true),
+            Field::new("body_value", DataType::Float64, true),
+        ]));
+
+        let metric_keys: Vec<i32> = vec![0; num_rows];
+        let metric_values = StringArray::from(vec!["cpu.usage"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .expect("dict"),
+        );
+        let timestamps: Vec<u64> = (0..num_rows as u64)
+            .map(|i| 1_700_000_000 + (num_rows as u64 - i))
+            .collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let key_bytes: Vec<Vec<u8>> = (0..num_rows as u64)
+            .map(|i| (key_offset + i).to_be_bytes().to_vec())
+            .collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            key_bytes.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+        ));
+
+        let body_a_only: ArrayRef = Arc::new(Int32Array::from(
+            (0..num_rows).map(|i| i as i32 * 7 - 5).collect::<Vec<_>>(),
+        ));
+        let body_bytes_vals: Vec<Vec<u8>> = (0..num_rows)
+            .map(|i| format!("a-bytes-{i:04}").into_bytes())
+            .collect();
+        let body_bytes: ArrayRef = Arc::new(LargeBinaryArray::from(
+            body_bytes_vals
+                .iter()
+                .map(|v| Some(v.as_slice()))
+                .collect::<Vec<_>>(),
+        ));
+        let body_string_vals: Vec<String> =
+            (0..num_rows).map(|i| format!("a-str-{i:04}")).collect();
+        let body_string: ArrayRef = Arc::new(StringArray::from(body_string_vals));
+        let body_value: ArrayRef = Arc::new(Float64Array::from(
+            (0..num_rows).map(|i| i as f64 + 0.5).collect::<Vec<_>>(),
+        ));
+
+        // List<Float64> body col: row i has a list of length (i % 3) + 1.
+        let mut list_offsets: Vec<i32> = Vec::with_capacity(num_rows + 1);
+        let mut list_values: Vec<f64> = Vec::new();
+        list_offsets.push(0);
+        for i in 0..num_rows {
+            for j in 0..((i % 3) + 1) {
+                list_values.push((i * 10 + j) as f64 + 0.25);
+            }
+            list_offsets.push(list_values.len() as i32);
+        }
+        let list_inner: ArrayRef = Arc::new(Float64Array::from(list_values));
+        let body_list: ArrayRef = Arc::new(ListArray::new(
+            Arc::new(Field::new("item", DataType::Float64, false)),
+            OffsetBuffer::new(arrow::buffer::ScalarBuffer::from(list_offsets)),
+            list_inner,
+            None,
+        ));
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                body_a_only,
+                body_bytes,
+                body_list,
+                body_string,
+                body_value,
+            ],
+        )
+        .expect("input A batch")
+    }
+
+    fn make_mixed_schema_input_b(num_rows: usize, key_offset: u64) -> RecordBatch {
+        use arrow::array::{BinaryArray as BinArr, Int64Array as I64};
+
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            // Same sort cols.
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("sorted_series", DataType::Binary, false),
+            // Body cols in lex order. body_string is Dict (flavor
+            // change from A's Utf8). body_bytes is Binary (flavor
+            // change from A's LargeBinary). No body_list. Adds
+            // body_b_only.
+            Field::new("body_b_only", DataType::Int64, true),
+            Field::new("body_bytes", DataType::Binary, true),
+            Field::new("body_string", dict_type.clone(), true),
+            Field::new("body_value", DataType::Float64, true),
+        ]));
+
+        let metric_keys: Vec<i32> = vec![0; num_rows];
+        let metric_values = StringArray::from(vec!["cpu.usage"]);
+        let metric_name: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(metric_keys),
+                Arc::new(metric_values),
+            )
+            .expect("dict"),
+        );
+        let timestamps: Vec<u64> = (0..num_rows as u64)
+            .map(|i| 1_700_000_000 + (num_rows as u64 - i))
+            .collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let key_bytes: Vec<Vec<u8>> = (0..num_rows as u64)
+            .map(|i| (key_offset + i).to_be_bytes().to_vec())
+            .collect();
+        let sorted_series: ArrayRef = Arc::new(BinaryArray::from(
+            key_bytes.iter().map(|v| v.as_slice()).collect::<Vec<_>>(),
+        ));
+
+        let body_b_only: ArrayRef = Arc::new(I64::from(
+            (0..num_rows)
+                .map(|i| (i as i64) * 1_000_003 + 17)
+                .collect::<Vec<_>>(),
+        ));
+        let body_bytes_vals: Vec<Vec<u8>> = (0..num_rows)
+            .map(|i| format!("b-bytes-{i:04}").into_bytes())
+            .collect();
+        let body_bytes: ArrayRef = Arc::new(BinArr::from(
+            body_bytes_vals
+                .iter()
+                .map(|v| Some(v.as_slice()))
+                .collect::<Vec<_>>(),
+        ));
+
+        // Dict-encoded body_string.
+        let body_string_pool: Vec<String> =
+            (0..num_rows).map(|i| format!("b-str-{i:04}")).collect();
+        let body_string_keys: Vec<i32> = (0..num_rows as i32).collect();
+        let body_string: ArrayRef = Arc::new(
+            DictionaryArray::<Int32Type>::try_new(
+                arrow::array::Int32Array::from(body_string_keys),
+                Arc::new(StringArray::from(body_string_pool)),
+            )
+            .expect("dict"),
+        );
+
+        let body_value: ArrayRef = Arc::new(Float64Array::from(
+            (0..num_rows)
+                .map(|i| (i as f64) * -1.25 + 7.0)
+                .collect::<Vec<_>>(),
+        ));
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                timestamp_secs,
+                sorted_series,
+                body_b_only,
+                body_bytes,
+                body_string,
+                body_value,
+            ],
+        )
+        .expect("input B batch")
+    }
+
+    /// F6 — MC-2/MC-4 across heterogeneous body schemas. Inputs A and B
+    /// share the sort schema but differ in:
+    /// - body_string flavour (Utf8 vs Dict<i32,Utf8>)
+    /// - body_bytes flavour (LargeBinary vs Binary) — relies on the F6 `normalize_type` extension
+    /// - body_list present in A, missing in B
+    /// - body_a_only / body_b_only present in only one input
+    ///
+    /// After merging, the output must contain the union of body cols
+    /// (MC-4) with B's rows null in body_list / body_a_only and A's
+    /// rows null in body_b_only. Shared-col values must survive (MC-2)
+    /// despite the flavour differences.
+    #[tokio::test]
+    async fn test_mc2_mixed_schemas_round_trip() {
+        let batch_a = make_mixed_schema_input_a(40, 0);
+        let batch_b = make_mixed_schema_input_b(40, 10_000);
+        let bytes_a = write_input_parquet(std::slice::from_ref(&batch_a), &[]);
+        let bytes_b = write_input_parquet(std::slice::from_ref(&batch_b), &[]);
+
+        let inputs: Vec<Box<dyn ColumnPageStream>> =
+            vec![open_stream(bytes_a).await, open_stream(bytes_b).await];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+            .await
+            .expect("merge with mixed schemas");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(
+            outputs[0].num_rows, 80,
+            "rows preserved across schema-evolved inputs (MC-1)",
+        );
+
+        let merged = read_output_to_record_batch(&outputs[0].path);
+        let merged_schema = merged.schema();
+
+        // MC-4: union of body-col names must appear in the output. The
+        // streaming engine drops all-null sort cols, but body cols
+        // present in any input must survive (even if half the rows
+        // are null).
+        for col_name in [
+            "body_a_only",
+            "body_b_only",
+            "body_bytes",
+            "body_list",
+            "body_string",
+            "body_value",
+        ] {
+            merged_schema.index_of(col_name).unwrap_or_else(|_| {
+                panic!("merged output is missing body col '{col_name}' — MC-4 violated")
+            });
+        }
+
+        // MC-2: build (sorted_series → tuple) maps for each input and
+        // the output, then verify every input row's tuple matches the
+        // output row's tuple. `render_cell` normalizes the same
+        // string/byte flavour rendering so the type variations don't
+        // generate spurious diffs.
+        let series_idx_a = batch_a.schema().index_of("sorted_series").unwrap();
+        let series_idx_b = batch_b.schema().index_of("sorted_series").unwrap();
+        let body_col_names_union: Vec<&str> = vec![
+            "body_a_only",
+            "body_b_only",
+            "body_bytes",
+            "body_list",
+            "body_string",
+            "body_value",
+        ];
+
+        let render_row = |batch: &RecordBatch, row: usize| -> String {
+            let mut tuple = String::new();
+            for (n, &name) in body_col_names_union.iter().enumerate() {
+                if n > 0 {
+                    tuple.push('|');
+                }
+                match batch.schema().index_of(name) {
+                    Ok(col_idx) => {
+                        tuple.push_str(&render_cell(batch.column(col_idx).as_ref(), row))
+                    }
+                    // Col absent from this input → null when seen
+                    // in the merged output.
+                    Err(_) => tuple.push_str("<null>"),
+                }
+            }
+            tuple
+        };
+
+        let mut expected: HashMap<Vec<u8>, String> = HashMap::new();
+        let series_col_a = batch_a
+            .column(series_idx_a)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        for row in 0..batch_a.num_rows() {
+            let key = series_col_a.value(row).to_vec();
+            expected.insert(key, render_row(&batch_a, row));
+        }
+        let series_col_b = batch_b
+            .column(series_idx_b)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        for row in 0..batch_b.num_rows() {
+            let key = series_col_b.value(row).to_vec();
+            expected.insert(key, render_row(&batch_b, row));
+        }
+        assert_eq!(expected.len(), 80);
+
+        let series_idx_out = merged_schema.index_of("sorted_series").unwrap();
+        let series_col_out = merged
+            .column(series_idx_out)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        let mut observed: HashMap<Vec<u8>, String> = HashMap::with_capacity(merged.num_rows());
+        for row in 0..merged.num_rows() {
+            let key = series_col_out.value(row).to_vec();
+            observed.insert(key, render_row(&merged, row));
+        }
+        assert_eq!(observed.len(), 80, "MC-1 — no rows lost");
+
+        for (key, want) in &expected {
+            let got = observed
+                .get(key)
+                .unwrap_or_else(|| panic!("missing key {key:?} in merged output"));
+            assert_eq!(
+                got, want,
+                "MC-2 mismatch for sorted_series {key:?}: got {got}, want {want}",
+            );
+        }
+    }
+
     // ============================================================================
     // MS-7: page-cache bounded-memory contract. The streaming engine's
     // raison d'être is that body-col memory stays bounded by ~constant
@@ -4210,6 +4541,174 @@ mod tests {
             got,
             vec!["api".to_string(), "cache".to_string(), "db".to_string()],
             "service-name set must cover every distinct value in the sort col",
+        );
+    }
+
+    // ============================================================================
+    // (b) Legacy-promotion executor: an end-to-end test through
+    //     `ParquetMergeOperation::promote_legacy` →
+    //     `execute_merge_operation` → streaming engine output.
+    // ============================================================================
+
+    /// Build a minimal `ParquetSplitMetadata` for use by the promotion
+    /// executor. Only the routing-relevant fields are real — the rest
+    /// are placeholders sized to match across inputs so MP-3 holds.
+    fn make_promotion_split_meta(
+        split_id: &str,
+        rg_partition_prefix_len: u32,
+    ) -> crate::split::ParquetSplitMetadata {
+        crate::split::ParquetSplitMetadata::metrics_builder()
+            .split_id(crate::split::ParquetSplitId::new(split_id))
+            .index_uid("test-index:00000000000000000000000001")
+            .partition_id(0)
+            .time_range(crate::split::TimeRange::new(1_700_000_000, 1_700_000_060))
+            .sort_fields("metric_name|-timestamp_secs/V2")
+            .window_start_secs(1_700_000_000)
+            .window_duration_secs(60)
+            .num_merge_ops(0)
+            .rg_partition_prefix_len(rg_partition_prefix_len)
+            .num_rows(0)
+            .size_bytes(0)
+            .build()
+    }
+
+    /// End-to-end legacy promotion: a prefix_len=0 legacy single-RG
+    /// input + a prefix_len=1 aligned multi-RG input, merged via
+    /// `execute_merge_operation` with `target_prefix_len = 1`. The
+    /// legacy input is routed through `LegacyInputAdapter`, the
+    /// aligned one goes direct. The streaming engine sees uniform
+    /// prefix_len=1 inputs and produces aligned multi-RG output that
+    /// passes `assert_unique_rg_prefix_keys`.
+    #[tokio::test]
+    async fn test_promote_legacy_executor_end_to_end() {
+        use crate::merge::execute_merge_operation;
+        use crate::merge::policy::ParquetMergeOperation;
+        use crate::storage::RemoteByteSource;
+
+        // Legacy input: 3 metrics × 20 rows, prefix_len = 0.
+        let legacy_bytes = make_multi_metric_single_rg_input(&[
+            ("cpu.usage", 20),
+            ("memory.used", 20),
+            ("net.bytes", 20),
+        ]);
+        let legacy_meta = make_promotion_split_meta("legacy_001", 0);
+
+        // Aligned input: 2 metrics × 30 rows in 2 RGs, prefix_len = 1.
+        // `make_two_metric_aligned_input` uses metric names "cpu.usage"
+        // and "memory.used", overlapping with the legacy input — the
+        // merge engine must interleave by metric_name across inputs.
+        let aligned_bytes = make_two_metric_aligned_input();
+        let aligned_meta = make_promotion_split_meta("aligned_001", 1);
+
+        let op = ParquetMergeOperation::promote_legacy(vec![legacy_meta, aligned_meta], 1);
+
+        let sources: Vec<Arc<dyn RemoteByteSource>> = vec![
+            Arc::new(InMemorySource {
+                bytes: legacy_bytes,
+            }),
+            Arc::new(InMemorySource {
+                bytes: aligned_bytes,
+            }),
+        ];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let outputs = execute_merge_operation(&op, sources, tmp.path(), &merge_config(1))
+            .await
+            .expect("promote-legacy merge");
+
+        assert_eq!(outputs.len(), 1, "single output file");
+        assert_eq!(
+            outputs[0].num_rows,
+            60 + 60,
+            "legacy 3×20 + aligned 2×30 rows = 120 total",
+        );
+
+        // The streaming engine sees the legacy input as prefix_len=1
+        // (adapter rewrote the KV), and the aligned input is already
+        // prefix_len=1. So the output should advertise prefix_len=1.
+        assert_eq!(
+            outputs[0].output_rg_partition_prefix_len, 1,
+            "executor must produce an output that carries the promoted prefix_len",
+        );
+
+        // Read the on-disk KV: must match. (CS-1 inside the file.)
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        let prefix_kv = reader
+            .metadata()
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|k| k.key == PARQUET_META_RG_PARTITION_PREFIX_LEN)
+                    .and_then(|k| k.value.clone())
+            });
+        assert_eq!(
+            prefix_kv.as_deref(),
+            Some("1"),
+            "on-disk KV must declare prefix_len = 1 (target)",
+        );
+
+        // Output should have one RG per distinct metric_name. The
+        // union of legacy + aligned metric names is {cpu.usage,
+        // memory.used, net.bytes} → 3 RGs.
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            3,
+            "output should have one RG per distinct metric_name across inputs",
+        );
+
+        // PA-1 + PA-3: each output RG carries a unique, constant
+        // metric_name. This is the strong chunk-stats check that
+        // motivated F2.
+        assert_unique_rg_prefix_keys(
+            reader.metadata(),
+            "metric_name|-timestamp_secs/V2",
+            1,
+            "test_promote_legacy_executor_end_to_end output",
+        )
+        .expect("promoted output must satisfy PA-1 + PA-3");
+
+        // Metastore record (CS-1): builds successfully with
+        // mixed_prefix_ok = true, and `rg_partition_prefix_len`
+        // matches the on-disk KV.
+        let metastore_meta = crate::merge::metadata_aggregation::merge_parquet_split_metadata(
+            op.splits_as_slice(),
+            &outputs[0],
+            /* mixed_prefix_ok */ true,
+        )
+        .expect("metastore aggregation accepts mixed-prefix inputs in promotion mode");
+        assert_eq!(
+            metastore_meta.rg_partition_prefix_len, 1,
+            "metastore prefix_len must match the on-disk KV (CS-1)",
+        );
+    }
+
+    /// Negative: if the executor is given more sources than splits, or
+    /// fewer, it bails up-front rather than producing a partial merge.
+    #[tokio::test]
+    async fn test_executor_mismatched_sources_count_bails() {
+        use crate::merge::execute_merge_operation;
+        use crate::merge::policy::ParquetMergeOperation;
+        use crate::storage::RemoteByteSource;
+
+        let legacy_meta = make_promotion_split_meta("a", 0);
+        let aligned_meta = make_promotion_split_meta("b", 1);
+        let op = ParquetMergeOperation::promote_legacy(vec![legacy_meta, aligned_meta], 1);
+
+        // One source for two splits.
+        let sources: Vec<Arc<dyn RemoteByteSource>> = vec![Arc::new(InMemorySource {
+            bytes: make_multi_metric_single_rg_input(&[("cpu.usage", 10)]),
+        })];
+
+        let tmp = TempDir::new().expect("tmpdir");
+        let err = execute_merge_operation(&op, sources, tmp.path(), &merge_config(1))
+            .await
+            .expect_err("mismatched source/split count must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("sources.len()") && msg.contains("op.splits.len()"),
+            "error should explain the mismatch, got: {msg}",
         );
     }
 }
