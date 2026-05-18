@@ -26,6 +26,7 @@ bytesize = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
+console-subscriber = { workspace = true, optional = true }
 dialoguer = { workspace = true }
 futures = { workspace = true }
 humantime = { workspace = true }
@@ -91,8 +92,8 @@ openssl-support = ["openssl-probe"]
 metrics = [ "quickwit-indexing/metrics" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = [
+  "dep:console-subscriber",
   "quickwit-common/named_tasks",
-  "quickwit-telemetry-exporters/tokio-console",
 ]
 release-feature-set = [
   "jemalloc",

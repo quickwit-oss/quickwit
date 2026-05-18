@@ -8339,6 +8339,7 @@ dependencies = [
  "chrono",
  "clap",
  "colored",
+ "console-subscriber",
  "dialoguer",
  "futures",
  "humantime",
@@ -9388,7 +9389,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "backtrace",
- "console-subscriber",
  "metrics",
  "metrics-exporter-otel",
  "metrics-exporter-prometheus",

@@ -26,6 +26,9 @@ use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
 
+#[cfg(feature = "tokio-console")]
+const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
+
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
 /// QW_RUNTIME_NUM_THREADS environment variable.
 fn get_main_runtime_num_threads() -> usize {
@@ -76,13 +79,28 @@ fn parse_cli_command() -> (CliCommand, bool) {
     (command, ansi_colors)
 }
 
+fn init_telemetry(
+    service_version: &str,
+    level: tracing::Level,
+    ansi_colors: bool,
+) -> anyhow::Result<quickwit_telemetry_exporters::TelemetryHandle> {
+    #[cfg(feature = "tokio-console")]
+    {
+        if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
+            console_subscriber::init();
+            return Ok(quickwit_telemetry_exporters::TelemetryHandle::default());
+        }
+    }
+    quickwit_telemetry_exporters::init_telemetry(service_version, level, ansi_colors)
+}
+
 async fn main_impl() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
     install_default_crypto_ring_provider();
 
     let build_info = BuildInfo::get();
-    let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(
+    let telemetry_handle = init_telemetry(
         &build_info.version,
         command.default_log_level(),
         ansi_colors,

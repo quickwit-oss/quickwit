@@ -13,7 +13,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 backtrace = { workspace = true, optional = true }
-console-subscriber = { workspace = true, optional = true }
 metrics = { workspace = true }
 metrics-exporter-otel = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -35,9 +34,4 @@ quickwit-metrics = { workspace = true }
 jemalloc-profiled = [
   "dep:backtrace",
   "quickwit-common/jemalloc-profiled",
-]
-# Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
-tokio-console = [
-  "dep:console-subscriber",
-  "quickwit-common/named_tasks",
 ]

@@ -24,8 +24,6 @@ use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider as SdkMetricsProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-#[cfg(feature = "tokio-console")]
-use quickwit_common::get_bool_from_env;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -35,9 +33,6 @@ mod logs;
 mod metrics;
 mod otlp;
 pub mod prometheus;
-
-#[cfg(feature = "tokio-console")]
-const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
 
@@ -50,6 +45,17 @@ pub struct TelemetryHandle {
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
     meter_provider: Option<SdkMetricsProvider>,
+}
+
+impl Default for TelemetryHandle {
+    fn default() -> Self {
+        TelemetryHandle {
+            env_filter_reload_fn: do_nothing_env_filter_reload_fn(),
+            tracer_provider: None,
+            logger_provider: None,
+            meter_provider: None,
+        }
+    }
 }
 
 impl TelemetryHandle {
@@ -104,18 +110,6 @@ pub fn init_telemetry(
 
     let meter_provider = metrics::init_metrics_provider(service_version, &otlp_config)?;
 
-    #[cfg(feature = "tokio-console")]
-    {
-        if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
-            console_subscriber::init();
-            return Ok(TelemetryHandle {
-                env_filter_reload_fn: do_nothing_env_filter_reload_fn(),
-                tracer_provider: None,
-                logger_provider: None,
-                meter_provider,
-            });
-        }
-    }
     global::set_text_map_propagator(TraceContextPropagator::new());
 
     let event_format = logs::EventFormat::get_from_env();
