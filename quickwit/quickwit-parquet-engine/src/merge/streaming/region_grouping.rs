@@ -50,6 +50,7 @@ use super::super::InputMetadata;
 use super::super::merge_order::MergeRun;
 use super::InputDecoderState;
 use crate::sort_fields::{is_timestamp_column_name, parse_sort_fields};
+use crate::sorted_series::append_prefix_col_to_key;
 
 /// One merge region: a contiguous slice of the merged output, where all
 /// contributing inputs share the same sort-prefix value (e.g., one
@@ -99,15 +100,20 @@ impl Region {
 }
 
 /// A prefix column's location in the parquet schema, plus the sort
-/// direction declared for it. `name` is the sort-schema name (used in
-/// error messages); `parquet_col_idx` is the resolved index in the
-/// parquet schema's flat column list (after applying the
-/// `timestamp` / `timestamp_secs` alias).
+/// direction and ordinal position declared for it. `name` is the
+/// sort-schema name (used in error messages); `parquet_col_idx` is
+/// the resolved index in the parquet schema's flat column list
+/// (after applying the `timestamp` / `timestamp_secs` alias);
+/// `ordinal` is the column's 0-based position in `qh.sort_fields`,
+/// matching `sorted_series`'s ordinal assignment so the per-RG
+/// prefix key composes as a literal prefix of every row's
+/// `sorted_series` key.
 #[derive(Debug, Clone)]
 pub(crate) struct PrefixColumn {
     pub(crate) name: String,
     pub(crate) parquet_col_idx: usize,
     pub(crate) descending: bool,
+    pub(crate) ordinal: u8,
 }
 
 /// Resolve the first `prefix_len` sort columns to parquet leaf
@@ -155,10 +161,17 @@ pub(crate) fn find_prefix_parquet_col_indices(
         })?;
         let descending = sort_col.sort_direction
             == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
+        // Ordinal matches the column's position in `qh.sort_fields`.
+        // For prefix cols (always the first `prefix_len` entries of
+        // the sort schema) the ordinal equals the iteration index
+        // `pos`, which is also the ordinal `sorted_series` would
+        // assign — so the per-RG prefix key composes as a literal
+        // byte prefix of every sorted_series key.
         prefix_cols.push(PrefixColumn {
             name: sort_col.name.clone(),
             parquet_col_idx,
             descending,
+            ordinal: pos as u8,
         });
     }
     Ok(prefix_cols)
@@ -175,14 +188,23 @@ fn parquet_has_column(
 }
 
 /// Build the composite byte key identifying a row group's prefix
-/// values for grouping into a region. The key concatenates each
-/// prefix column's value bytes in declared order, with each column's
-/// encoding chosen so that lexicographic order on the composite
-/// matches the sort schema's order across the prefix columns. Each
-/// column is required to be **constant within the RG** — either
-/// `min == max` on the non-null cells with zero nulls, or all rows
-/// null. A mix of nulls and non-nulls in the same RG breaks the
-/// at-most-one-prefix-value-per-RG invariant (PA-1) and is rejected.
+/// values for grouping into a region. Per prefix column, contributes
+/// `storekey(ordinal) || storekey(value)` (with value bytes inverted
+/// for DESC columns) using
+/// [`crate::sorted_series::append_prefix_col_to_key`], the same
+/// encoding `sorted_series` produces — so this per-RG key is a
+/// literal byte prefix of every `sorted_series` key emitted by rows
+/// in this RG.
+///
+/// Null handling:
+/// - **All-null RG on a prefix column**: the column is skipped entirely (the next column's higher
+///   ordinal byte appears in its place), so the RG sorts after any RG carrying a non-null value
+///   for this column. This mirrors the row-level convention in `sorted_series` and gives
+///   nulls-last ordering for free.
+/// - **Mixed null + non-null in one RG**: rows in the RG would encode to two distinct prefix keys
+///   (the non-null value's key and the column-skipped key), breaking the
+///   at-most-one-prefix-value-per-RG invariant (PA-1). Reject.
+/// - **No nulls**: standard `min == max` check on stats, then encode that single value.
 pub(crate) fn extract_rg_composite_prefix_key(
     metadata: &ParquetMetaData,
     rg_idx: usize,
@@ -200,117 +222,112 @@ pub(crate) fn extract_rg_composite_prefix_key(
                 col.name,
             )
         })?;
-        let value_bytes = extract_aligned_prefix_value(chunk, stats, &col.name, rg_idx, input_idx)?;
-        let encoded = if col.descending {
-            invert_for_descending(&value_bytes)
-        } else {
-            value_bytes
-        };
-        key.extend_from_slice(&encoded);
+
+        // Parquet's `num_values` is total cell count including nulls.
+        // `null_count_opt()` returns the explicitly-recorded null
+        // count (defaulting to 0 when absent, per parquet-rs guidance).
+        let num_values = chunk.num_values().max(0) as u64;
+        let null_count = stats.null_count_opt().unwrap_or(0);
+
+        if num_values > 0 && null_count == num_values {
+            // All-null RG: skip the column entirely (don't write its
+            // ordinal byte or value). The trailing prefix-length
+            // sentinel below ensures the resulting all-null key
+            // still sorts after any non-null key. See the sentinel
+            // comment for the full argument.
+            continue;
+        }
+        if null_count > 0 {
+            // PA-1 violation: see function doc. Parquet's min/max
+            // hide nulls, so an RG with N nulls + 1 non-null cell
+            // reports `min == max == non_null_value` even though
+            // rows in that RG encode to two distinct prefix keys.
+            bail!(
+                "input {input_idx} rg {rg_idx} col '{}' is NOT prefix-aligned: contains \
+                 {null_count} nulls plus {} non-null values. PA-1 requires each row group to \
+                 carry a single prefix value; rows with null on this column encode to a \
+                 different prefix key (with the column skipped) than rows with the non-null \
+                 value.",
+                col.name,
+                num_values - null_count,
+            );
+        }
+
+        encode_prefix_col_value(stats, col, rg_idx, input_idx, &mut key)?;
     }
+
+    // Trailing prefix-length sentinel: an additional `u8(prefix_len)`
+    // ordinal byte that does two things at once:
+    //
+    // 1. **Forces nulls-last ordering across RGs.** For prefix_len=1
+    //    an all-null RG produces an empty per-column body and would
+    //    otherwise lex-sort *before* any non-null RG. With the
+    //    sentinel, the all-null key becomes `[prefix_len]` and the
+    //    non-null key becomes `[ord(0), storekey(value), ..., prefix_len]`.
+    //    The non-null key starts with `ord(0) = 0x00`, smaller than
+    //    `prefix_len >= 1`, so non-null RGs sort first — matching
+    //    `sorted_series`'s row-level nulls-last convention via the
+    //    same "the next ordinal byte appears in the skipped slot"
+    //    mechanism.
+    // 2. **Preserves the "literal prefix of sorted_series" property.**
+    //    The byte we append is exactly what `sorted_series` writes
+    //    right after the prefix columns: the ordinal of the next
+    //    sort-schema column (`u8(prefix_len)`). So the per-RG key
+    //    remains a byte-for-byte prefix of every row's
+    //    `sorted_series` value in that RG.
+    storekey::encode(&mut key, &(prefix_cols.len() as u8))
+        .map_err(|e| anyhow!("storekey encode prefix-length sentinel: {}", e))?;
+
     Ok(key)
 }
 
-/// Verify the column chunk carries a single prefix value within this
-/// RG (either `min == max` on the non-null cells with zero nulls, or
-/// all rows null) and return the value encoded as order-preserving
-/// big-endian bytes (without applying any direction inversion —
-/// that's the caller's job).
+/// Verify `min == max` on the column chunk's non-null stats and
+/// append the single value to `key` via
+/// [`crate::sorted_series::append_prefix_col_to_key`] (which handles
+/// the ordinal prefix + descending-direction byte inversion). Caller
+/// has already filtered out all-null and mixed-null cases.
 ///
-/// **Null handling.** Parquet's `min` / `max` statistics cover only
-/// the non-null cells, so the existing `min == max` check alone is
-/// not sufficient: a row group of 99 nulls + 1 non-null cell has
-/// `min == max == non_null_value` even though it carries two
-/// distinct prefix keys (null and the value). Without inspecting
-/// `null_count` such an RG would be silently accepted and grouped
-/// under the non-null key, breaking the at-most-one-prefix-value-
-/// per-RG invariant (PA-1). Conversely, an all-null RG is a *valid*
-/// aligned input (the constant value is "null"), but Parquet records
-/// no `min` / `max` for it — the legacy check would have bailed.
-///
-/// Therefore the function:
-/// 1. Reads `null_count` from the stats and `num_values` from the chunk metadata.
-/// 2. All-null (`null_count == num_values > 0`): emit the null marker. For byte-array types this is
-///    `[0x00, 0x00]` (the same byte sequence the missing-column path uses, so the consumer side
-///    stays consistent across "column absent" vs "column present but all-null"). For fixed-width
-///    types (Int32/Int64/ Boolean) we don't yet have an encoding that won't collide with a real
-///    value — bail with a clear pointer until the encoding is extended.
-/// 3. Mixed null + non-null (`0 < null_count < num_values`): bail with the PA-1 violation.
-/// 4. No nulls: the existing `min == max` check.
-fn extract_aligned_prefix_value(
-    chunk: &parquet::file::metadata::ColumnChunkMetaData,
+/// `Statistics::ByteArray` values are routed through the
+/// `Encode for str` impl after a UTF-8 check — every realistic sort
+/// prefix column (`metric_name`, `service`, tag names) is UTF-8
+/// text, and `sorted_series` itself only encodes strings, so the
+/// "byte prefix of sorted_series" property only holds for UTF-8
+/// values. Non-UTF-8 byte-array prefix cols would never match a
+/// `sorted_series` key in practice (sorted_series would not encode
+/// them either) and so are rejected up front.
+fn encode_prefix_col_value(
     stats: &parquet::file::statistics::Statistics,
-    sort_col_name: &str,
+    col: &PrefixColumn,
     rg_idx: usize,
     input_idx: usize,
-) -> Result<Vec<u8>> {
+    key: &mut Vec<u8>,
+) -> Result<()> {
     use parquet::file::statistics::Statistics;
-
-    // Parquet's `num_values` is total cell count including nulls.
-    // `null_count_opt()` returns the explicitly-recorded null count
-    // (defaulting to 0 when absent, per parquet-rs guidance).
-    let num_values = chunk.num_values().max(0) as u64;
-    let null_count = stats.null_count_opt().unwrap_or(0);
-
-    if null_count > 0 {
-        // Two failure modes Codex flagged:
-        //
-        // 1. **Mixed null + non-null.** Parquet's min/max stats cover only non-null cells, so an RG
-        //    with N nulls + 1 cell valued "x" reports `min == max == "x"` and the legacy check
-        //    would have accepted it. But two distinct prefix values (null and "x") live in that RG
-        //    → PA-1 violation.
-        // 2. **All-null** (`null_count == num_values`). The legacy check bails earlier because
-        //    `min` / `max` are missing. Logically the RG carries one prefix value (null) and is
-        //    aligned — but supporting it requires a null marker in the composite-key encoding that
-        //    sorts in agreement with the writer's null ordering (SS-2 says nulls last;
-        //    `encode_byte_array_prefix(&[])` would sort them first). Coordinating those is a
-        //    follow-up; reject for now with a clearer error than the missing-stats bail.
-        //
-        // Both cases bail. Producers that need null grouping must
-        // either drop the column from the advertised prefix or wait
-        // for null-marker support to land.
-        if null_count == num_values {
-            bail!(
-                "input {input_idx} rg {rg_idx} col '{sort_col_name}' is all-null. All-null prefix \
-                 RGs are not yet supported by the streaming-merge composite-key encoding (a null \
-                 marker that agrees with SS-2 ordering is a follow-up). Drop this column from the \
-                 advertised prefix, or pin a non-null sentinel value in the writer for the \
-                 all-null run."
-            );
-        }
-        bail!(
-            "input {input_idx} rg {rg_idx} col '{sort_col_name}' is NOT prefix-aligned: contains \
-             {null_count} nulls plus {} non-null values. PA-1 requires each row group to carry a \
-             single prefix value; parquet stats hide nulls from min/max, so this RG would have \
-             been accepted by a `min == max`-only check.",
-            num_values - null_count,
-        );
-    }
 
     fn require_eq<T: PartialEq + std::fmt::Debug>(
         min: Option<T>,
         max: Option<T>,
-        col: &str,
+        col_name: &str,
         rg_idx: usize,
         input_idx: usize,
     ) -> Result<T> {
         let min = min.ok_or_else(|| {
             anyhow!(
-                "input {input_idx} rg {rg_idx} col '{col}' has no min in stats — cannot determine \
-                 prefix alignment"
+                "input {input_idx} rg {rg_idx} col '{col_name}' has no min in stats — cannot \
+                 determine prefix alignment"
             )
         })?;
         let max = max.ok_or_else(|| {
             anyhow!(
-                "input {input_idx} rg {rg_idx} col '{col}' has no max in stats — cannot determine \
-                 prefix alignment"
+                "input {input_idx} rg {rg_idx} col '{col_name}' has no max in stats — cannot \
+                 determine prefix alignment"
             )
         })?;
         if min != max {
             bail!(
-                "input {input_idx} rg {rg_idx} is NOT prefix-aligned on col '{col}': min ({:?}) \
-                 != max ({:?}). Multi-RG inputs declaring `rg_partition_prefix_len >= 1` must \
-                 carry one prefix-value per RG.",
+                "input {input_idx} rg {rg_idx} is NOT prefix-aligned on col '{col_name}': min \
+                 ({:?}) != max ({:?}). Multi-RG inputs declaring `rg_partition_prefix_len >= 1` \
+                 must carry one prefix-value per RG.",
                 min,
                 max,
             );
@@ -318,101 +335,96 @@ fn extract_aligned_prefix_value(
         Ok(min)
     }
 
+    fn encode_byte_array_value(
+        min_bytes: Option<&[u8]>,
+        max_bytes: Option<&[u8]>,
+        col: &PrefixColumn,
+        rg_idx: usize,
+        input_idx: usize,
+        key: &mut Vec<u8>,
+    ) -> Result<()> {
+        let value = require_eq(
+            min_bytes.map(|b| b.to_vec()),
+            max_bytes.map(|b| b.to_vec()),
+            &col.name,
+            rg_idx,
+            input_idx,
+        )?;
+        let s = std::str::from_utf8(&value).map_err(|_| {
+            anyhow!(
+                "input {input_idx} rg {rg_idx} col '{}' has non-UTF-8 byte-array prefix value; \
+                 only UTF-8 string prefix columns are supported (matching sorted_series's `&str` \
+                 encoding)",
+                col.name,
+            )
+        })?;
+        append_prefix_col_to_key(key, col.ordinal, s, col.descending)
+    }
+
     match stats {
         Statistics::ByteArray(v) => {
-            let value = require_eq(
-                v.min_bytes_opt().map(|b| b.to_vec()),
-                v.max_bytes_opt().map(|b| b.to_vec()),
-                sort_col_name,
+            encode_byte_array_value(
+                v.min_bytes_opt(),
+                v.max_bytes_opt(),
+                col,
                 rg_idx,
                 input_idx,
+                key,
             )?;
-            Ok(encode_byte_array_prefix(&value))
         }
         Statistics::FixedLenByteArray(v) => {
-            let value = require_eq(
-                v.min_bytes_opt().map(|b| b.to_vec()),
-                v.max_bytes_opt().map(|b| b.to_vec()),
-                sort_col_name,
+            encode_byte_array_value(
+                v.min_bytes_opt(),
+                v.max_bytes_opt(),
+                col,
                 rg_idx,
                 input_idx,
+                key,
             )?;
-            Ok(encode_byte_array_prefix(&value))
         }
         Statistics::Int32(v) => {
             let value = require_eq(
                 v.min_opt().copied(),
                 v.max_opt().copied(),
-                sort_col_name,
+                &col.name,
                 rg_idx,
                 input_idx,
             )?;
-            // Sign-flip so the byte order of the BE encoding matches
-            // numeric order across the full i32 range.
-            Ok(((value as u32) ^ 0x8000_0000u32).to_be_bytes().to_vec())
+            append_prefix_col_to_key(key, col.ordinal, &value, col.descending)?;
         }
         Statistics::Int64(v) => {
             let value = require_eq(
                 v.min_opt().copied(),
                 v.max_opt().copied(),
-                sort_col_name,
+                &col.name,
                 rg_idx,
                 input_idx,
             )?;
-            Ok(((value as u64) ^ 0x8000_0000_0000_0000u64)
-                .to_be_bytes()
-                .to_vec())
+            append_prefix_col_to_key(key, col.ordinal, &value, col.descending)?;
         }
         Statistics::Boolean(v) => {
             let value = require_eq(
                 v.min_opt().copied(),
                 v.max_opt().copied(),
-                sort_col_name,
+                &col.name,
                 rg_idx,
                 input_idx,
             )?;
-            Ok(vec![value as u8])
+            append_prefix_col_to_key(key, col.ordinal, &value, col.descending)?;
         }
         Statistics::Float(_) | Statistics::Double(_) => bail!(
-            "prefix col '{sort_col_name}' is floating-point; composite-key extraction does not \
-             yet support IEEE-754 ordering. Open an issue if you hit this — the encoding needs a \
-             sign-aware bit flip on negative values."
+            "prefix col '{}' is floating-point; composite-key extraction does not yet support \
+             IEEE-754 ordering. Open an issue if you hit this — the encoding needs a sign-aware \
+             bit flip on negative values.",
+            col.name,
         ),
         Statistics::Int96(_) => bail!(
-            "prefix col '{sort_col_name}' is Int96 (deprecated timestamp type); use Int64-encoded \
-             `timestamp_secs` instead."
+            "prefix col '{}' is Int96 (deprecated timestamp type); use Int64-encoded \
+             `timestamp_secs` instead.",
+            col.name,
         ),
     }
-}
-
-/// Byte-stuffed escape encoding for a variable-width value: every
-/// `0x00` byte becomes `0x00 0x01`, and a `0x00 0x00` terminator is
-/// appended. This preserves lex order for single columns (`"aa"` <
-/// `"b"`) AND lets multiple values concatenate unambiguously — the
-/// terminator is the smallest possible 2-byte sequence after
-/// escaping, so a shorter value sorts before any longer value sharing
-/// its prefix.
-pub(crate) fn encode_byte_array_prefix(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len() + 2);
-    for &b in bytes {
-        if b == 0x00 {
-            out.push(0x00);
-            out.push(0x01);
-        } else {
-            out.push(b);
-        }
-    }
-    out.push(0x00);
-    out.push(0x00);
-    out
-}
-
-/// Bytewise complement: turns an ASC-ordered byte string into one
-/// that sorts in reverse. Applied to each prefix column whose sort
-/// direction is DESC so the BTreeMap iteration order matches the
-/// declared sort order for that column.
-pub(crate) fn invert_for_descending(bytes: &[u8]) -> Vec<u8> {
-    bytes.iter().map(|b| !b).collect()
+    Ok(())
 }
 
 /// MS-2: verify that, for each input, the regions list visits its

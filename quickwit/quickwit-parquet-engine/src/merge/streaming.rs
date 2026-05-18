@@ -1383,8 +1383,8 @@ mod tests {
     use tokio::io::AsyncRead;
 
     use super::region_grouping::{
-        assert_unique_rg_prefix_keys, encode_byte_array_prefix, extract_rg_composite_prefix_key,
-        find_prefix_parquet_col_indices, invert_for_descending,
+        assert_unique_rg_prefix_keys, extract_rg_composite_prefix_key,
+        find_prefix_parquet_col_indices,
     };
     use super::*;
     use crate::split::TAG_SERVICE;
@@ -2019,16 +2019,29 @@ mod tests {
              'host-b')",
         );
 
-        // Encoded representation: each byte-array column is the raw
-        // bytes (no null bytes in these test values, so escape-pass
-        // is a no-op) followed by a `0x00 0x00` terminator,
-        // concatenated. "cpu.usage" → 9 bytes + 2-byte terminator;
-        // "host-a" → 6 bytes + 2-byte terminator. Total = 19 bytes.
-        assert_eq!(&key_rg0[0..9], b"cpu.usage");
-        assert_eq!(&key_rg0[9..11], &[0x00, 0x00]);
-        assert_eq!(&key_rg0[11..17], b"host-a");
-        assert_eq!(&key_rg0[17..19], &[0x00, 0x00]);
-        assert_eq!(key_rg0.len(), 19);
+        // Encoded representation under the storekey-based encoding
+        // (shared with `sorted_series` via `append_prefix_col_to_key`):
+        // each prefix column contributes `storekey(u8 ord) ||
+        // storekey(str value)`, then the whole key ends with a
+        // `u8(prefix_len)` sentinel ordinal (so an all-null RG's
+        // empty body still sorts after any non-null key — see
+        // `extract_rg_composite_prefix_key` for the argument).
+        //
+        //   [0x00]              ord=0 (metric_name)
+        //   b"cpu.usage" + 0x00 storekey("cpu.usage") — 10 bytes
+        //   [0x01]              ord=1 (service)
+        //   b"host-a"    + 0x00 storekey("host-a")    —  7 bytes
+        //   [0x02]              sentinel u8(prefix_len)
+        //
+        // Total = 1 + 10 + 1 + 7 + 1 = 20 bytes.
+        assert_eq!(key_rg0[0], 0x00);
+        assert_eq!(&key_rg0[1..10], b"cpu.usage");
+        assert_eq!(key_rg0[10], 0x00);
+        assert_eq!(key_rg0[11], 0x01);
+        assert_eq!(&key_rg0[12..18], b"host-a");
+        assert_eq!(key_rg0[18], 0x00);
+        assert_eq!(key_rg0[19], 0x02);
+        assert_eq!(key_rg0.len(), 20);
     }
 
     /// Regression for Codex P1 on PR-6410 (positive coverage of the
@@ -2215,28 +2228,66 @@ mod tests {
     }
 
     /// Regression for Codex P1 on PR #6424 (null prefix handling):
-    /// an all-null prefix RG is logically aligned (constant value =
-    /// null), but the composite-key encoding's null marker has not
-    /// yet been coordinated with SS-2's null-ordering rule. Reject
-    /// upfront with a clearer error than "no min in stats" so
-    /// callers know this is a known-not-yet-supported case rather
-    /// than a stats-missing oddity.
+    /// an all-null prefix RG is logically aligned (its single prefix
+    /// "value" is null) and must successfully merge. The
+    /// composite-prefix encoding skips the column entirely for the
+    /// all-null RG; in a multi-input setup that mixes non-null and
+    /// all-null contributions on the same prefix column, BTreeMap
+    /// iteration order puts the all-null region AFTER any
+    /// non-null-prefix region (nulls-last), matching `sorted_series`'s
+    /// row-level null-skip convention.
     #[tokio::test]
-    async fn test_all_null_prefix_rg_rejected() {
-        // 1 RG, 3 rows, all `metric_name` null. Stats: min/max
-        // absent, null_count == num_values.
-        let bytes = make_nullable_prefix_input_single_rg(&[None, None, None], 1);
-        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![open_stream(bytes).await];
+    async fn test_all_null_prefix_rg_groups_into_separate_region_sorted_last() {
+        // Input A: one RG, metric_name = "cpu.usage" for all rows.
+        // Input B: one RG, metric_name = NULL for all rows.
+        // prefix_len = 1, merge into a single output. Each input
+        // contributes its own region; the all-null region should
+        // sort after the non-null region, so the merged output's
+        // RG 0 carries the non-null metric and RG 1 carries the
+        // all-null one.
+        let bytes_a = make_nullable_prefix_input_single_rg(
+            &[Some("cpu.usage"), Some("cpu.usage"), Some("cpu.usage")],
+            1,
+        );
+        let bytes_b = make_nullable_prefix_input_single_rg(&[None, None, None], 1);
+        let inputs: Vec<Box<dyn ColumnPageStream>> = vec![
+            open_stream(bytes_a).await,
+            open_stream(bytes_b).await,
+        ];
 
         let tmp = TempDir::new().expect("tmpdir");
-        let err = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
+        let outputs = streaming_merge_sorted_parquet_files(inputs, tmp.path(), &merge_config(1))
             .await
-            .expect_err("all-null prefix RG must be rejected for now");
-        let s = format!("{err:#}");
-        assert!(
-            s.contains("all-null") && s.contains("not yet supported"),
-            "expected all-null not-yet-supported error, got: {s}",
+            .expect("all-null prefix RG must merge cleanly via column-skip encoding");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].num_rows, 6, "3 non-null + 3 null = 6 rows total");
+
+        let bytes_out = std::fs::read(&outputs[0].path).expect("read");
+        let reader = SerializedFileReader::new(Bytes::from(bytes_out)).expect("ser");
+        assert_eq!(
+            reader.metadata().num_row_groups(),
+            2,
+            "two regions (non-null + all-null) → two output RGs",
         );
+
+        // Read the output back as Arrow and confirm RG 0 is the
+        // non-null region (rows have `metric_name = "cpu.usage"`)
+        // and RG 1 is the all-null region (rows have
+        // `metric_name = NULL`). This pins the nulls-last ordering
+        // produced by the composite-prefix's column-skip encoding.
+        use arrow::array::StringArray;
+        let combined = read_output_to_record_batch(&outputs[0].path);
+        let mn_idx = combined.schema().index_of("metric_name").expect("mn col");
+        let arr = combined.column(mn_idx).as_any().downcast_ref::<StringArray>();
+        let arr = arr.expect("metric_name should decode as StringArray");
+        // First 3 rows are the non-null region, last 3 are all-null.
+        for i in 0..3 {
+            assert!(arr.is_valid(i), "row {i} should be non-null");
+            assert_eq!(arr.value(i), "cpu.usage");
+        }
+        for i in 3..6 {
+            assert!(arr.is_null(i), "row {i} should be null (all-null region sorts last)");
+        }
     }
 
     /// Regression for Codex P1 on PR #6424: when a top-level region
@@ -2639,78 +2690,7 @@ mod tests {
         Bytes::from(buf)
     }
 
-    /// Unit test on `invert_for_descending`: byte-complement reverses
-    /// the lex order of two byte strings, so a DESC-encoded value's
-    /// lex position equals its reversed sort position. Covers the
-    /// equal-length case and the variable-length case (where the
-    /// escape encoding's `0x00 0x00` terminator does the work).
-    #[test]
-    fn test_invert_for_descending_reverses_lex_order() {
-        // Same length: per-byte order is reversed.
-        let a = encode_byte_array_prefix(b"host-a");
-        let b = encode_byte_array_prefix(b"host-b");
-        assert!(a < b, "ASC encoding: 'host-a' < 'host-b'");
-        let a_desc = invert_for_descending(&a);
-        let b_desc = invert_for_descending(&b);
-        assert!(
-            b_desc < a_desc,
-            "DESC encoding must reverse order: 'host-b' DESC < 'host-a' DESC",
-        );
-
-        // Variable length: "ab" vs "abc". Under escape encoding the
-        // terminator `0x00 0x00` after "ab" makes its third byte 0x00,
-        // which sorts before 'c' (0x63), so "ab" < "abc"; DESC must
-        // reverse to put the longer first.
-        let ab = encode_byte_array_prefix(b"ab");
-        let abc = encode_byte_array_prefix(b"abc");
-        assert!(ab < abc, "ASC: 'ab' < 'abc'");
-        let ab_desc = invert_for_descending(&ab);
-        let abc_desc = invert_for_descending(&abc);
-        assert!(
-            abc_desc < ab_desc,
-            "DESC: 'abc' DESC < 'ab' DESC (so iteration yields 'abc' before 'ab')",
-        );
-    }
-
-    /// Regression for Codex finding #2 on PR-6410: the previous
-    /// 4-byte length-prefix encoding made the encoded `"b"` (length=1)
-    /// sort BEFORE the encoded `"aa"` (length=2), violating the
-    /// declared ASC sort order on the byte-array column. Escape
-    /// encoding fixes this by emitting raw bytes with a 0x00 0x00
-    /// terminator — so `"aa"` ([0x61, 0x61, 0x00, 0x00]) correctly
-    /// sorts before `"b"` ([0x62, 0x00, 0x00]).
-    #[test]
-    fn test_byte_array_prefix_preserves_lex_order_across_lengths() {
-        let aa = encode_byte_array_prefix(b"aa");
-        let b = encode_byte_array_prefix(b"b");
-        assert!(
-            aa < b,
-            "ASC: 'aa' must encode lex-before 'b' (was broken under length-prefix encoding). got \
-             aa={aa:?} b={b:?}",
-        );
-
-        // Empty value sorts before any non-empty value sharing no prefix.
-        let empty = encode_byte_array_prefix(b"");
-        assert!(empty < aa, "ASC: '' must encode lex-before 'aa'");
-
-        // Same prefix, shorter sorts before longer (key property for
-        // composite keys with multiple variable-length columns).
-        let a = encode_byte_array_prefix(b"a");
-        let ab = encode_byte_array_prefix(b"ab");
-        assert!(a < ab, "ASC: 'a' must encode lex-before 'ab'");
-
-        // Null bytes inside the value are escaped, preserving order
-        // around the terminator.
-        let null_inside = encode_byte_array_prefix(b"\x00a");
-        let a_alone = encode_byte_array_prefix(b"a");
-        assert!(
-            null_inside < a_alone,
-            "ASC: '\\0a' (encoded as 0x00 0x01 0x61 0x00 0x00) must sort before 'a' (encoded as \
-             0x61 0x00 0x00)",
-        );
-    }
-
-    /// End-to-end regression for DESC prefix columns. Three RGs with
+/// End-to-end regression for DESC prefix columns. Three RGs with
     /// the same metric_name (ASC) and distinct `env` values; sort
     /// schema declares env DESC. The input file must itself be
     /// DESC-sorted on env (RGs in physical order staging → prod →

@@ -234,29 +234,16 @@ fn encode_row_key(
     buf: &mut Vec<u8>,
 ) -> Result<()> {
     // Encode non-null sort schema columns: ordinal + string value.
+    // Null columns are skipped entirely so the next column's higher
+    // ordinal byte appears in their place — that's how nulls-last
+    // ordering is achieved without a sentinel marker.
     for kc in tag_columns {
         let col = batch.column(kc.batch_idx);
         if col.is_null(row_idx) {
             continue;
         }
         let value = extract_string_value(col.as_ref(), row_idx)?;
-        if kc.descending {
-            // Ordinal is written normally (ascending) so that null rows
-            // (which skip this column entirely) sort after non-null rows
-            // — matching the writer's nulls_first=false behavior.
-            // Only the value bytes are inverted to reverse the sort order.
-            storekey::encode(&mut *buf, &kc.ordinal)
-                .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
-            let start = buf.len();
-            storekey::encode(&mut *buf, value)
-                .map_err(|e| anyhow!("storekey encode value: {}", e))?;
-            invert_bytes(&mut buf[start..]);
-        } else {
-            storekey::encode(&mut *buf, &kc.ordinal)
-                .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
-            storekey::encode(&mut *buf, value)
-                .map_err(|e| anyhow!("storekey encode value: {}", e))?;
-        }
+        append_prefix_col_to_key(buf, kc.ordinal, value, kc.descending)?;
     }
 
     // Append timeseries_id with its ordinal as the final discriminator.
@@ -270,11 +257,43 @@ fn encode_row_key(
         row_idx
     );
     let ts_id = extract_i64_value(col.as_ref(), row_idx);
-    storekey::encode(&mut *buf, &ts_id_column.ordinal)
-        .map_err(|e| anyhow!("storekey encode timeseries_id ordinal: {}", e))?;
-    storekey::encode(&mut *buf, &ts_id)
-        .map_err(|e| anyhow!("storekey encode timeseries_id: {}", e))?;
+    append_prefix_col_to_key(buf, ts_id_column.ordinal, &ts_id, false)?;
 
+    Ok(())
+}
+
+/// Append `(ordinal, value)` to `buf` using the project's standard
+/// storekey-based sort-prefix encoding. This is the single source of
+/// truth for the on-the-wire format of one sort-schema column's
+/// contribution to a composite key — used by both
+/// [`compute_sorted_series_column`] (per-row sorted_series key) and
+/// `merge::region_grouping::extract_rg_composite_prefix_key`
+/// (per-RG prefix key for region grouping). Because both call sites
+/// share this encoding, a per-RG prefix key is a *literal byte
+/// prefix* of every sorted_series key produced by rows in that RG.
+///
+/// Layout: `storekey(ordinal: u8) || storekey(value)`. For descending
+/// columns the *value* bytes are inverted in place (NOT the ordinal
+/// byte) so memcmp on the composite reverses the value's lex order
+/// while ordinals stay in declared order. Caller skips this function
+/// entirely for null columns — the next column's higher ordinal byte
+/// then appears in this column's place, which gives nulls-last
+/// ordering without a sentinel marker (matches the writer's
+/// `nulls_first=false` convention).
+pub(crate) fn append_prefix_col_to_key<T>(
+    buf: &mut Vec<u8>,
+    ordinal: u8,
+    value: &T,
+    descending: bool,
+) -> Result<()>
+where T: ?Sized + storekey::Encode {
+    storekey::encode(&mut *buf, &ordinal)
+        .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+    let value_start = buf.len();
+    storekey::encode(&mut *buf, value).map_err(|e| anyhow!("storekey encode value: {}", e))?;
+    if descending {
+        invert_bytes(&mut buf[value_start..]);
+    }
     Ok(())
 }
 
