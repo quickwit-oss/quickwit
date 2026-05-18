@@ -33,8 +33,9 @@ use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
-use base64::prelude::{BASE64_STANDARD, Engine};
+use aws_sdk_s3::types::{
+    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier,
+};
 use bytes::Bytes;
 use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
@@ -45,7 +46,7 @@ use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
@@ -251,26 +252,11 @@ struct MultipartUploadId(pub String);
 struct Part {
     pub part_number: usize,
     pub range: Range<u64>,
-    pub md5: md5::Digest,
 }
 
 impl Part {
     fn len(&self) -> u64 {
         self.range.end - self.range.start
-    }
-}
-
-const MD5_CHUNK_SIZE: usize = 1_000_000;
-
-async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
-    let mut checksum = md5::Context::new();
-    let mut buf = vec![0; MD5_CHUNK_SIZE];
-    loop {
-        let read_len = read.read(&mut buf).await?;
-        checksum.consume(&buf[..read_len]);
-        if read_len == 0 {
-            return Ok(checksum.finalize());
-        }
     }
 }
 
@@ -310,6 +296,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
+            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
             .send()
             .await
             .map_err(|sdk_error| {
@@ -322,6 +309,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn put_single_part<'a>(
         &'a self,
         key: &'a str,
@@ -343,6 +331,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
+                .checksum_algorithm(ChecksumAlgorithm::Crc32C)
                 .key(key)
                 .send()
                 .await
@@ -356,34 +345,16 @@ impl S3CompatibleObjectStorage {
         Ok(MultipartUploadId(upload_id))
     }
 
-    async fn create_multipart_requests(
-        &self,
-        payload: Box<dyn crate::PutPayload>,
-        len: u64,
-        part_len: u64,
-    ) -> io::Result<Vec<Part>> {
+    fn create_multipart_requests(&self, len: u64, part_len: u64) -> Vec<Part> {
         assert!(len > 0);
-        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+        chunk_range(0..len as usize, part_len as usize)
             .map(into_u64_range)
-            .collect::<Vec<_>>();
-
-        let mut parts = Vec::with_capacity(multipart_ranges.len());
-
-        for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
-            let read = payload
-                .range_byte_stream(multipart_range.clone())
-                .await?
-                .into_async_read();
-            let md5 = compute_md5(read).await?;
-
-            let part = Part {
+            .enumerate()
+            .map(|(multipart_id, multipart_range)| Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
                 range: multipart_range,
-                md5,
-            };
-            parts.push(part);
-        }
-        Ok(parts)
+            })
+            .collect()
     }
 
     fn build_delete_batch_requests<'a>(
@@ -420,6 +391,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
+    #[tracing::instrument(skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,
@@ -432,7 +404,6 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(StorageError::from)
             .map_err(Retry::Permanent)?;
-        let md5 = BASE64_STANDARD.encode(part.md5.0);
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
@@ -441,24 +412,25 @@ impl S3CompatibleObjectStorage {
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
+            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
-            .content_md5(md5)
             .part_number(part.part_number as i32)
             .upload_id(upload_id.0)
             .send()
             .await
-            .map_err(|sdk_error| {
-                if sdk_error.is_retryable() {
-                    Retry::Transient(StorageError::from(sdk_error))
+            .map_err(|s3_err| {
+                if s3_err.is_retryable() {
+                    Retry::Transient(StorageError::from(s3_err))
                 } else {
-                    Retry::Permanent(StorageError::from(sdk_error))
+                    Retry::Permanent(StorageError::from(s3_err))
                 }
             })?;
 
         let completed_part = CompletedPart::builder()
             .set_e_tag(upload_part_output.e_tag)
+            .set_checksum_crc32_c(upload_part_output.checksum_crc32_c)
             .part_number(part.part_number as i32)
             .build();
         Ok(completed_part)
@@ -472,9 +444,7 @@ impl S3CompatibleObjectStorage {
         total_len: u64,
     ) -> StorageResult<()> {
         let upload_id = self.create_multipart_upload(key).await?;
-        let parts = self
-            .create_multipart_requests(payload.clone(), total_len, part_len)
-            .await?;
+        let parts = self.create_multipart_requests(total_len, part_len);
         let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
             stream::iter(parts.into_iter().map(|part| {
@@ -488,7 +458,7 @@ impl S3CompatibleObjectStorage {
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .map(|res| res.map_err(|error| error.into_inner()))
+            .map(|res| res.map_err(|e| e.into_inner()))
             .collect();
         match completed_parts_res {
             Ok(completed_parts) => {
@@ -922,15 +892,6 @@ mod tests {
 
     use super::*;
     use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
-
-    #[tokio::test]
-    async fn test_md5_calc() -> std::io::Result<()> {
-        let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
-        let md5 = compute_md5(data.as_slice()).await?;
-        assert_eq!(md5, md5::compute(data));
-
-        Ok(())
-    }
 
     #[test]
     fn test_split_range_into_chunks_inexact() {
