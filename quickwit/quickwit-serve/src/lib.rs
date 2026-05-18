@@ -28,6 +28,7 @@ pub(crate) mod datadog_api;
 mod datafusion_api;
 mod decompression;
 mod delete_task_api;
+mod deployment_info;
 mod developer_api;
 mod elasticsearch_api;
 mod env_info;
@@ -134,6 +135,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
+pub use crate::deployment_info::DeploymentInfo;
 pub use crate::env_info::EnvInfo;
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};

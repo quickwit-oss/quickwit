@@ -296,6 +296,8 @@ pub struct NodeDiagnostics {
     pub node_config_json: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub env_info_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub deployment_info_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetClusterDiagnosticsRequest {

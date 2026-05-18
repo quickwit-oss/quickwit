@@ -34,7 +34,7 @@ use quickwit_proto::developer::{
 };
 use serde_json::json;
 
-use crate::{BuildInfo, EnvInfo, QuickwitServices, RuntimeInfo};
+use crate::{BuildInfo, DeploymentInfo, EnvInfo, QuickwitServices, RuntimeInfo};
 
 #[derive(Clone)]
 pub(crate) struct DeveloperApiServer {
@@ -159,11 +159,16 @@ impl DeveloperService for DeveloperApiServer {
         let env_info_json =
             serde_json::to_string(env_info).map_err(|e| DeveloperError::Internal(e.to_string()))?;
 
+        let deployment_info = DeploymentInfo::get();
+        let deployment_info_json = serde_json::to_string(deployment_info)
+            .map_err(|e| DeveloperError::Internal(e.to_string()))?;
+
         Ok(GetNodeDiagnosticsResponse {
             build_info_json,
             runtime_info_json,
             node_config_json,
             env_info_json,
+            deployment_info_json,
         })
     }
 }

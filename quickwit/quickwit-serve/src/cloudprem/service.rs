@@ -936,6 +936,7 @@ impl CloudPremService for CloudPremServiceImpl {
                     runtime_info_json: resp.runtime_info_json,
                     node_config_json: resp.node_config_json,
                     env_info_json: resp.env_info_json,
+                    deployment_info_json: resp.deployment_info_json,
                 },
                 Ok(Err(error)) => {
                     error!(%node_id, %error, "failed to get diagnostics from node");
