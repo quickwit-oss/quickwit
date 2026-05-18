@@ -24,7 +24,6 @@ use quickwit_cli::metrics::register_build_info_metric;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
-use quickwit_telemetry_exporters::TelemetryHandle;
 use tracing::error;
 
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
@@ -46,8 +45,6 @@ fn main() -> anyhow::Result<()> {
         openssl_probe::init_openssl_env_vars()
     };
 
-    let (command, ansi_colors) = parse_cli_command();
-
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -58,22 +55,7 @@ fn main() -> anyhow::Result<()> {
         .build()
         .context("failed to start main Tokio runtime")?;
 
-    rt.block_on(async move {
-        install_default_crypto_ring_provider();
-
-        let build_info = BuildInfo::get();
-        let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(
-            &build_info.version,
-            command.default_log_level(),
-            ansi_colors,
-        )?;
-        register_build_info_metric(build_info);
-
-        let runtime_handle = tokio::runtime::Handle::current();
-        scrape_tokio_runtime_metrics(&runtime_handle, "main");
-
-        main_impl(command, telemetry_handle).await
-    })
+    rt.block_on(main_impl())
 }
 
 fn parse_cli_command() -> (CliCommand, bool) {
@@ -94,7 +76,22 @@ fn parse_cli_command() -> (CliCommand, bool) {
     (command, ansi_colors)
 }
 
-async fn main_impl(command: CliCommand, telemetry_handle: TelemetryHandle) -> anyhow::Result<()> {
+async fn main_impl() -> anyhow::Result<()> {
+    let (command, ansi_colors) = parse_cli_command();
+
+    install_default_crypto_ring_provider();
+
+    let build_info = BuildInfo::get();
+    let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(
+        &build_info.version,
+        command.default_log_level(),
+        ansi_colors,
+    )?;
+    register_build_info_metric(build_info);
+
+    let runtime_handle = tokio::runtime::Handle::current();
+    scrape_tokio_runtime_metrics(&runtime_handle, "main");
+
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
