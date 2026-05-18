@@ -5152,7 +5152,6 @@ mod tests {
         write_input_parquet_with_small_pages(&[batch], page_rows)
     }
 
-
     // ============================================================================
     // Heterogeneous-output regressions (Codex P2 batch on PR-6409)
     // ============================================================================
