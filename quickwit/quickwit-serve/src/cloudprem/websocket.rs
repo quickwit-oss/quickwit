@@ -30,7 +30,29 @@ use tracing::{error, info, warn};
 // it was closed, and for which we log an error no matter what.
 const MIN_HEALTHY_CONN_DURATION: Duration = Duration::from_secs(60);
 
-// TODO we need to add trace id propagation, maybe some form of cancelation too?
+// TODO maybe we need to add some form of cancelation propagation?
+
+struct ContextCarrier<'a>(&'a HashMap<String, String>);
+
+impl opentelemetry::propagation::Extractor for ContextCarrier<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        // HTTP-style headers are case-insensitive; some senders capitalize
+        // (`Traceparent`, `X-Datadog-Trace-Id`). Match the existing carrier
+        // patterns in grpc.rs / cloudprem/server.rs and look up case-insensitively.
+        self.0
+            .get(key)
+            .or_else(|| {
+                self.0
+                    .iter()
+                    .find_map(|(k, v)| k.eq_ignore_ascii_case(key).then_some(v))
+            })
+            .map(String::as_str)
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(String::as_str).collect()
+    }
+}
 
 /// Manages pending requests with the ability to cancel them by request ID.
 struct PendingRequests {
@@ -124,8 +146,26 @@ impl PendingRequests {
     }
 }
 
-#[tracing::instrument(skip_all, fields(req_id = full_request.req_id))]
 async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest) -> AnyResponse {
+    use tracing::Instrument;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    let span = tracing::info_span!("handle_request", req_id = full_request.req_id);
+    if let Some(ctx) = &full_request.context {
+        let parent_cx = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&ContextCarrier(&ctx.values))
+        });
+        let _ = span.set_parent(parent_cx);
+    }
+    handle_request_inner(server, full_request)
+        .instrument(span)
+        .await
+}
+
+async fn handle_request_inner(
+    server: CloudPremServiceClient,
+    full_request: AnyRequest,
+) -> AnyResponse {
     use any_request::Request;
     use any_response::Response;
 
