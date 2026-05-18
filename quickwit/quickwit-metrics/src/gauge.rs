@@ -395,7 +395,7 @@ macro_rules! gauge {
 /// A lazily-initialized [`Gauge`].
 ///
 /// The gauge is registered with the recorder on first access.
-/// See [`lazy_gauge!`] for the recommended way to construct this type.
+/// See [`lazy_gauge!`][macro@crate::lazy_gauge] for the recommended way to construct this type.
 pub type LazyGauge = LazyLock<Gauge>;
 
 /// Wraps a [`gauge!`] invocation in a [`LazyGauge`].
