@@ -40,11 +40,11 @@ macro_rules! metrics {
         let operation = stringify!($operation);
         let index = $index;
         let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation, index);
-        counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).inc();
         let (res, is_error) = match $expr {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
-                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).inc();
                 (err, "true")
             },
         };
@@ -53,7 +53,7 @@ macro_rules! metrics {
             OPERATION_INDEX_ERROR_LABEL_NAMES => operation, index, is_error
         );
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
-            .record(elapsed);
+            .observe(elapsed);
 
         return res.map(Response::new);
     };

@@ -20,8 +20,8 @@ use std::sync::LazyLock;
 use bytesize::ByteSize;
 use quickwit_common::metrics::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{
-    Counter, Gauge, Histogram, LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, gauge,
-    histogram, label_names, lazy_counter, lazy_gauge, lazy_histogram,
+    Counter, LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, label_names, lazy_counter,
+    lazy_gauge, lazy_histogram,
 };
 
 pub(crate) const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");

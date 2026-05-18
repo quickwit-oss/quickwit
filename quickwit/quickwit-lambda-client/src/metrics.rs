@@ -14,12 +14,8 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
-use std::sync::LazyLock;
-
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{
-    Histogram, LazyCounter, LazyHistogram, histogram, lazy_counter, lazy_histogram,
-};
+use quickwit_metrics::{LazyCounter, LazyHistogram, lazy_counter, lazy_histogram};
 
 /// From 100ms to 73s seconds
 fn duration_buckets() -> Vec<f64> {

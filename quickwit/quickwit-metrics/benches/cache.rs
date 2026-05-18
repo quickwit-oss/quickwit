@@ -209,7 +209,7 @@ fn thread_local_refcell_bench(c: &mut Criterion) {
                 if let Some((h, ref cached)) = *slot
                     && h == 42
                 {
-                    cached.increment(1);
+                    cached.inc();
                     return;
                 }
                 unreachable!()
@@ -252,7 +252,7 @@ fn thread_local_refcell_bench(c: &mut Criterion) {
                 if let Some((h, ref cached)) = *slot
                     && h == 42
                 {
-                    cached.increment(1);
+                    cached.inc();
                     return;
                 }
                 unreachable!()
@@ -299,7 +299,7 @@ fn thread_local_refcell_bench(c: &mut Criterion) {
                 }
                 unreachable!()
             });
-            c.increment(1);
+            c.inc();
         });
     });
 
@@ -317,7 +317,7 @@ fn thread_local_refcell_bench(c: &mut Criterion) {
                 if let Some((h, ref cached)) = *slot
                     && h == 42
                 {
-                    cached.increment(1);
+                    cached.inc();
                     return;
                 }
                 unreachable!()

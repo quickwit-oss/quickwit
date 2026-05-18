@@ -73,14 +73,14 @@ const ROUTE_LABEL_NAMES: LabelNames<2> = label_names!("method", "path");
 
 fn record_request(method: &'static str, path: &'static str, duration: f64, size: f64) {
     let route = label_values!(ROUTE_LABEL_NAMES => method, path);
-    histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).record(duration);
-    histogram!(parent: HTTP_RESPONSE_SIZE, labels: [route]).record(size);
-    counter!(parent: HTTP_REQUESTS_TOTAL, labels: [route]).increment(1);
+    histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).observe(duration);
+    histogram!(parent: HTTP_RESPONSE_SIZE, labels: [route]).observe(size);
+    counter!(parent: HTTP_REQUESTS_TOTAL, labels: [route]).inc();
 }
 
 fn record_dynamic_request(method: String, path: String, duration: f64) {
     let route = label_values!(ROUTE_LABEL_NAMES => method, path);
-    histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).record(duration);
+    histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).observe(duration);
 }
 
 fn track_connection(region: &'static str) -> GaugeGuard {
@@ -113,19 +113,19 @@ fn handle_request(method: &'static str, path: &'static str, region: &'static str
     let duration_ms: f64 = (path.len() as f64) * 0.013;
 
     histogram!(parent: HTTP_REQUEST_DURATION, "method" => method, "path" => path)
-        .record(duration_ms);
+        .observe(duration_ms);
 
     let response_size = (path.len() * 100) as f64;
-    HTTP_RESPONSE_SIZE.record(response_size);
+    HTTP_RESPONSE_SIZE.observe(response_size);
 
-    HTTP_REQUESTS_TOTAL.increment(1);
+    HTTP_REQUESTS_TOTAL.inc();
 
     let status: &'static str = if path.starts_with("/err") {
         "500"
     } else {
         "200"
     };
-    counter!(parent: HTTP_REQUESTS_BY_METHOD, "path" => path, "status" => status).increment(1);
+    counter!(parent: HTTP_REQUESTS_BY_METHOD, "path" => path, "status" => status).inc();
 
     let conn_gauge = gauge!(parent: HTTP_ACTIVE_CONNECTIONS_BY_REGION, "method" => method);
     {
@@ -172,9 +172,9 @@ fn main() {
     println!("=== Gauge manipulation ===");
     HTTP_ACTIVE_CONNECTIONS.set(10.0);
     println!("  set active connections = 10");
-    HTTP_ACTIVE_CONNECTIONS.increment(3.0);
+    HTTP_ACTIVE_CONNECTIONS.inc_by(3.0);
     println!("  incremented by 3 -> 13");
-    HTTP_ACTIVE_CONNECTIONS.decrement(5.0);
+    HTTP_ACTIVE_CONNECTIONS.dec_by(5.0);
     println!("  decremented by 5 -> 8");
     println!();
 

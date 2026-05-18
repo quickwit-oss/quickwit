@@ -46,8 +46,8 @@ fn increment_decrement() {
             subsystem: "test",
         );
         g.set(10.0);
-        g.increment(5.0);
-        g.decrement(3.0);
+        g.inc_by(5.0);
+        g.dec_by(3.0);
     });
 
     assert_eq!(entries.len(), 1);
@@ -216,7 +216,7 @@ fn label_composition_same_hash_as_single() {
             labels: [labels!("region" => "us", "status" => "ok")],
         );
         via_compose.set(5.0);
-        via_single.increment(3.0);
+        via_single.inc_by(3.0);
 
         assert_eq!(via_compose.get(), 8.0);
         assert_eq!(via_single.get(), 8.0);
@@ -255,8 +255,8 @@ fn observable_inc_dec_matches_recorder() {
             subsystem: "test",
         );
         g.set(10.0);
-        g.increment(5.0);
-        g.decrement(3.0);
+        g.inc_by(5.0);
+        g.dec_by(3.0);
         g
     });
 
@@ -300,7 +300,7 @@ fn observable_parent_children_share_shadow() {
         let child_b = gauge!(parent: parent, "region" => "us-east");
 
         child_a.set(5.0);
-        child_b.increment(3.0);
+        child_b.inc_by(3.0);
 
         assert_eq!(child_a.get(), 8.0);
         assert_eq!(child_b.get(), 8.0);
@@ -318,8 +318,8 @@ fn local_set_and_get() {
 #[test]
 fn local_increment_decrement() {
     let g = Gauge::local();
-    g.increment(10.0);
-    g.decrement(3.0);
+    g.inc_by(10.0);
+    g.dec_by(3.0);
     assert_eq!(g.get(), 7.0);
 }
 

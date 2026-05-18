@@ -169,15 +169,25 @@ impl Gauge {
     }
 
     /// Adds `value` to the current gauge reading and its shadow atomic.
-    pub fn increment(&self, value: f64) {
+    pub fn inc_by(&self, value: f64) {
         self.0.shadow.fetch_add(value, Ordering::Relaxed);
         self.0.inner.increment(value);
     }
 
+    /// Increments the gauge by 1 and its shadow atomic.
+    pub fn inc(&self) {
+        self.inc_by(1.0);
+    }
+
     /// Subtracts `value` from the current gauge reading and its shadow atomic.
-    pub fn decrement(&self, value: f64) {
+    pub fn dec_by(&self, value: f64) {
         self.0.shadow.fetch_sub(value, Ordering::Relaxed);
         self.0.inner.decrement(value);
+    }
+
+    /// Decrements the gauge by 1 and its shadow atomic.
+    pub fn dec(&self) {
+        self.dec_by(1.0);
     }
 
     /// Replaces the current gauge reading and its shadow atomic with `value`.
@@ -196,11 +206,11 @@ impl Gauge {
 /// used wherever a `GaugeFn` is expected.
 impl GaugeFn for Gauge {
     fn increment(&self, value: f64) {
-        Self::increment(self, value);
+        Self::inc_by(self, value);
     }
 
     fn decrement(&self, value: f64) {
-        Self::decrement(self, value);
+        Self::dec_by(self, value);
     }
 
     fn set(&self, value: f64) {
@@ -252,7 +262,7 @@ impl GaugeGuard {
     /// Creates a guard that adds `delta` to `gauge` and tracks it until drop.
     pub fn new(gauge: &Gauge, delta: f64) -> Self {
         if delta != 0.0 {
-            gauge.increment(delta);
+            gauge.inc_by(delta);
         }
         Self {
             gauge: gauge.clone(),
@@ -267,7 +277,7 @@ impl GaugeGuard {
     /// the gauge (subtracting a negative value).
     pub fn increment(&self, delta: f64) {
         self.delta.fetch_add(delta, Ordering::Relaxed);
-        self.gauge.increment(delta);
+        self.gauge.inc_by(delta);
     }
 
     /// Subtracts `delta` from the gauge and from the value this guard tracks.
@@ -277,7 +287,7 @@ impl GaugeGuard {
     /// the gauge (subtracting a negative value).
     pub fn decrement(&self, delta: f64) {
         self.delta.fetch_sub(delta, Ordering::Relaxed);
-        self.gauge.decrement(delta);
+        self.gauge.dec_by(delta);
     }
 
     /// Returns the value this guard is tracking.
@@ -288,7 +298,7 @@ impl GaugeGuard {
 
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
-        self.gauge.decrement(self.delta.load(Ordering::Relaxed));
+        self.gauge.dec_by(self.delta.load(Ordering::Relaxed));
     }
 }
 

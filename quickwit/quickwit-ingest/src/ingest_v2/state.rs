@@ -466,7 +466,7 @@ pub(super) fn warn_on_long_lock_hold(
         parent: crate::ingest_v2::metrics::WAL_LOCK_HOLD_DURATION_SECS,
         labels: [labels],
     )
-    .record(elapsed.as_secs_f64());
+    .observe(elapsed.as_secs_f64());
 
     if elapsed > Duration::from_secs(1) {
         quickwit_common::rate_limited_warn!(
@@ -497,7 +497,7 @@ where
         parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
         labels: [labels],
     )
-    .increment(1.0);
+    .inc();
 
     let now = Instant::now();
     let guard = acquire_future.await;
@@ -518,12 +518,12 @@ where
         parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
         labels: [labels],
     )
-    .decrement(1.0);
+    .dec();
     histogram!(
         parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
         labels: [labels],
     )
-    .record(elapsed.as_secs_f64());
+    .observe(elapsed.as_secs_f64());
 
     (guard, acquired_at)
 }

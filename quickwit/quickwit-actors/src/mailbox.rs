@@ -205,7 +205,7 @@ impl<A: Actor> Mailbox<A> {
                     let now = Instant::now();
                     self.inner.tx.send_low_priority(envelope).await?;
                     let elapsed = now.elapsed();
-                    backpressure_micros_counter.increment(elapsed.as_micros() as u64);
+                    backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
                 } else {
                     self.inner.tx.send_low_priority(envelope).await?;
                 }

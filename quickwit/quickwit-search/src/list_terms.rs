@@ -356,7 +356,7 @@ pub async fn leaf_list_terms(
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
-                LEAF_LIST_TERMS_SPLITS_TOTAL.increment(1);
+                LEAF_LIST_TERMS_SPLITS_TOTAL.inc();
                 let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,

@@ -84,16 +84,16 @@ impl Socket for CountingUdpSocket {
     async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
         let msg_len = msg.serialized_len() as u64;
         self.socket.send(to, msg).await?;
-        GOSSIP_SENT_MESSAGES_TOTAL.increment(1);
-        GOSSIP_SENT_BYTES_TOTAL.increment(msg_len);
+        GOSSIP_SENT_MESSAGES_TOTAL.inc();
+        GOSSIP_SENT_BYTES_TOTAL.inc_by(msg_len);
         Ok(())
     }
 
     async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
         let (socket_addr, msg) = self.socket.recv().await?;
-        GOSSIP_RECV_MESSAGES_TOTAL.increment(1);
+        GOSSIP_RECV_MESSAGES_TOTAL.inc();
         let msg_len = msg.serialized_len() as u64;
-        GOSSIP_RECV_BYTES_TOTAL.increment(msg_len);
+        GOSSIP_RECV_BYTES_TOTAL.inc_by(msg_len);
         Ok((socket_addr, msg))
     }
 }

@@ -66,11 +66,11 @@ macro_rules! metrics {
         let operation = stringify!($operation);
         let index = $index;
         let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation, index);
-        counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).inc();
         let (res, is_error) = match $expr {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
-                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).inc();
                 (err, "true")
             },
         };
@@ -79,7 +79,7 @@ macro_rules! metrics {
             OPERATION_INDEX_ERROR_LABEL_NAMES => operation, index, is_error
         );
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
-            .record(elapsed);
+            .observe(elapsed);
 
         return res.map(Response::new);
     };
@@ -434,13 +434,13 @@ async fn stream_otel_spans_impl(
     record_send(operation_name, num_spans, num_bytes);
 
     let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
-    counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).increment(trace_ids.len() as u64);
+    counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).inc_by(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
     let err_labels = label_values!(
         OPERATION_INDEX_ERROR_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID, "false"
     );
-    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
+    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).observe(elapsed);
 
     Ok(qw_spans)
 }

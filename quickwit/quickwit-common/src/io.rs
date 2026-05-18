@@ -152,7 +152,7 @@ impl IoControls {
         if let Some(throughput_limiter) = &self.throughput_limiter_opt {
             throughput_limiter.blocking_consume(num_bytes);
         }
-        self.bytes_counter.increment(num_bytes as u64);
+        self.bytes_counter.inc_by(num_bytes as u64);
         Ok(())
     }
 }
@@ -205,7 +205,7 @@ impl<A: IoControlsAccess, W: AsyncWrite> ControlledWrite<A, W> {
             let len = *obj.as_ref().unwrap_or(&0);
             if len > 0 {
                 let waiter = this.io_controls_access.apply(|io_controls| {
-                    io_controls.bytes_counter.increment(len as u64);
+                    io_controls.bytes_counter.inc_by(len as u64);
                     io_controls
                         .throughput_limiter_opt
                         .as_ref()

@@ -173,15 +173,23 @@ impl Counter {
     }
 
     /// Adds `value` to the counter and its shadow atomic.
-    pub fn increment(&self, value: u64) {
+    pub fn inc_by(&self, value: u64) {
         self.0.shadow.fetch_add(value, Ordering::Relaxed);
         self.0.inner.increment(value);
     }
 
-    /// Sets the counter to an absolute `value`, useful for process-level
-    /// totals that are already tracked externally.
+    /// Increments the counter by 1 and its shadow atomic.
+    pub fn inc(&self) {
+        self.inc_by(1);
+    }
+
+    /// Bumps the counter to at least `value` (monotonic max).
+    ///
+    /// Useful for process-level totals that are already tracked externally:
+    /// the stored value advances to `value` only when it is greater than
+    /// the current one, preserving counter monotonicity.
     pub fn absolute(&self, value: u64) {
-        self.0.shadow.store(value, Ordering::Relaxed);
+        self.0.shadow.fetch_max(value, Ordering::Relaxed);
         self.0.inner.absolute(value);
     }
 
@@ -214,7 +222,7 @@ impl Counter {
 /// used wherever a `CounterFn` is expected.
 impl CounterFn for Counter {
     fn increment(&self, value: u64) {
-        Self::increment(self, value);
+        Self::inc_by(self, value);
     }
 
     fn absolute(&self, value: u64) {
@@ -237,7 +245,7 @@ impl CounterFn for Counter {
 ///     subsystem: "http",
 ///     "env" => "prod",
 /// );
-/// c.increment(1);
+/// c.inc();
 /// assert_eq!(c.get(), 1);
 /// ```
 ///
@@ -248,7 +256,7 @@ impl CounterFn for Counter {
 ///
 /// ```ignore
 /// let child = counter!(parent: base, "region" => region);
-/// child.increment(1);
+/// child.inc();
 /// ```
 #[macro_export]
 macro_rules! counter {

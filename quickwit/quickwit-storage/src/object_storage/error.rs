@@ -69,7 +69,7 @@ impl ToStorageErrorKind for GetObjectError {
             parent: OBJECT_STORAGE_GET_ERRORS_TOTAL,
             "code" => error_code,
         )
-        .increment(1);
+        .inc();
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,

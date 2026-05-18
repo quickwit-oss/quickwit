@@ -220,7 +220,7 @@ impl Actor for ControlPlane {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        RESTART_TOTAL.increment(1);
+        RESTART_TOTAL.inc();
 
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
@@ -569,13 +569,13 @@ fn convert_metastore_error<T>(
             // It will be up to the client to decide what to do there.
             error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         }
-        METASTORE_ERROR_ABORTED.increment(1);
+        METASTORE_ERROR_ABORTED.inc();
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
         error!(error=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
-        METASTORE_ERROR_MAYBE_EXECUTED.increment(1);
+        METASTORE_ERROR_MAYBE_EXECUTED.inc();
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }

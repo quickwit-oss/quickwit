@@ -304,8 +304,8 @@ impl DocProcessorCounter {
 
     fn record_doc(&self, num_bytes: u64) {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
-        self.num_docs_metric.increment(1);
-        self.num_bytes_metric.increment(num_bytes);
+        self.num_docs_metric.inc();
+        self.num_bytes_metric.inc_by(num_bytes);
     }
 }
 

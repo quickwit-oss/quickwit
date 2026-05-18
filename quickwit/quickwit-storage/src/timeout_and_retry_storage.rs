@@ -98,10 +98,9 @@ impl Storage for TimeoutAndRetryStorage {
             match tokio::time::timeout(timeout_duration, get_slice_fut).await {
                 Ok(result) => {
                     match attempt_id {
-                        0 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT.increment(1),
-                        1 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT.increment(1),
-                        _ => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT
-                            .increment(1),
+                        0 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT.inc(),
+                        1 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT.inc(),
+                        _ => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT.inc(),
                     }
                     return result;
                 }
@@ -112,7 +111,7 @@ impl Storage for TimeoutAndRetryStorage {
             }
         }
         rate_limited_warn!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), "all get_slice attempts timeouted");
-        crate::metrics::GET_SLICE_TIMEOUT_ALL_TIMEOUTS.increment(1);
+        crate::metrics::GET_SLICE_TIMEOUT_ALL_TIMEOUTS.inc();
         return Err(
             StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice"))
         );

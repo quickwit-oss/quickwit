@@ -75,11 +75,11 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
         };
 
         let labels = label_values!(STATUS_LABEL_NAMES => status);
-        counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
+        counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
         histogram!(parent: ROOT_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
-            .record(self.start.elapsed().as_secs_f64());
+            .observe(self.start.elapsed().as_secs_f64());
         histogram!(parent: ROOT_SEARCH_TARGETED_SPLITS, labels: [labels])
-            .record(num_targeted_splits as f64);
+            .observe(num_targeted_splits as f64);
     }
 }
 
@@ -117,11 +117,11 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
     fn drop(self: Pin<&mut Self>) {
         let status = self.status.unwrap_or("cancelled");
         let labels = label_values!(STATUS_LABEL_NAMES => status);
-        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
+        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
         histogram!(parent: LEAF_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
-            .record(self.start.elapsed().as_secs_f64());
+            .observe(self.start.elapsed().as_secs_f64());
         histogram!(parent: LEAF_SEARCH_TARGETED_SPLITS, labels: [labels])
-            .record(self.targeted_splits as f64);
+            .observe(self.targeted_splits as f64);
     }
 }
 

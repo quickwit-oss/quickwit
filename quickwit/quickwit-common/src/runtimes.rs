@@ -222,7 +222,7 @@ impl RuntimeMetricsRecorder {
         self.scheduled_tasks
             .set(runtime_metrics.total_local_queue_depth as f64);
         self.worker_busy_duration_milliseconds_total
-            .increment(runtime_metrics.total_busy_duration.as_millis() as u64);
+            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
         self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
         self.worker_threads
             .set(runtime_metrics.workers_count as f64);

@@ -45,25 +45,23 @@ impl SketchParquetIngestProcessor {
         let labels_kind = labels!("kind" => "sketches");
         let labels_operation = labels!("operation" => "ingest");
 
-        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind])
-            .increment(ipc_bytes.len() as u64);
+        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind]).inc_by(ipc_bytes.len() as u64);
 
         let batch = match super::processor::ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(err) => {
-                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
-                    .increment(1);
+                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
                 return Err(err);
             }
         };
 
         if let Err(err) = self.validate_schema(&batch) {
-            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
             return Err(err);
         }
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
-            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
             return Err(err);
         }
 

@@ -240,7 +240,7 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::metrics::OBJECT_STORAGE_PUT_PARTS.increment(1);
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
@@ -274,7 +274,7 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::metrics::OBJECT_STORAGE_PUT_PARTS.increment(1);
+                crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
                 crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
@@ -345,7 +345,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.increment(1);
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);

@@ -108,7 +108,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
             warn!("failed to fetch cluster state from node `{node_id}`");
             continue;
         };
-        GRPC_GOSSIP_ROUNDS_TOTAL.increment(1);
+        GRPC_GOSSIP_ROUNDS_TOTAL.inc();
 
         let mut chitchat_guard = chitchat.lock().await;
 

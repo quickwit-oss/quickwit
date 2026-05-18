@@ -595,7 +595,7 @@ async fn leaf_search_single_split(
             "current leaf search is consuming more memory than the initial allocation"
         );
     }
-    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.record(warmup_size.as_u64() as f64);
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1809,14 +1809,14 @@ enum SplitSearchState {
 impl SplitSearchState {
     fn increment(self, counters: &SplitSearchOutcomeCounters) {
         match self {
-            SplitSearchState::Start => counters.cancel_before_warmup.increment(1),
-            SplitSearchState::CacheHit => counters.cache_hit.increment(1),
-            SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.increment(1),
-            SplitSearchState::WarmUp => counters.cancel_warmup.increment(1),
-            SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.increment(1),
-            SplitSearchState::CpuQueue => counters.cancel_cpu_queue.increment(1),
-            SplitSearchState::Cpu => counters.cancel_cpu.increment(1),
-            SplitSearchState::Success => counters.success.increment(1),
+            SplitSearchState::Start => counters.cancel_before_warmup.inc(),
+            SplitSearchState::CacheHit => counters.cache_hit.inc(),
+            SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.inc(),
+            SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
+            SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
+            SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
+            SplitSearchState::Cpu => counters.cancel_cpu.inc(),
+            SplitSearchState::Success => counters.success.inc(),
         }
     }
 }

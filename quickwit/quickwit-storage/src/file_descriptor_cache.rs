@@ -116,7 +116,7 @@ impl FileDescriptorCache {
             .set(fd_cache_lock.len() as f64);
         self.fd_cache_metrics
             .evict_num_items
-            .increment(split_ids.len() as u64);
+            .inc_by(split_ids.len() as u64);
     }
 
     pub async fn get_or_open_split_file(
@@ -126,10 +126,10 @@ impl FileDescriptorCache {
         num_bytes: u64,
     ) -> std::io::Result<SplitFile> {
         if let Some(split_file) = self.get_split_file(split_id) {
-            self.fd_cache_metrics.hits_num_items.increment(1);
+            self.fd_cache_metrics.hits_num_items.inc();
             return Ok(split_file);
         } else {
-            self.fd_cache_metrics.misses_num_items.increment(1);
+            self.fd_cache_metrics.misses_num_items.inc();
         }
         let split_path = get_split_file_path(root_path, split_id);
         let fd_semaphore_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())

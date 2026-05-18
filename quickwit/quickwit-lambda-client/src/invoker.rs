@@ -176,8 +176,8 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
         let labels = labels!("status" => status);
-        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
-        histogram!(parent: LEAF_SEARCH_DURATION_SECONDS, labels: [labels]).record(elapsed);
+        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: LEAF_SEARCH_DURATION_SECONDS, labels: [labels]).observe(elapsed);
         result
     }
 }
@@ -232,7 +232,7 @@ impl AwsLambdaInvoker {
         let payload_json = serde_json::to_vec(&payload)
             .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
-        LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.record(payload_json.len() as f64);
+        LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.observe(payload_json.len() as f64);
 
         debug!(
             payload_size = payload_json.len(),
@@ -272,7 +272,7 @@ impl AwsLambdaInvoker {
             .payload()
             .ok_or_else(|| SearchError::Internal("no response payload from Lambda".into()))?;
 
-        LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES.record(response_payload.as_ref().len() as f64);
+        LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES.observe(response_payload.as_ref().len() as f64);
 
         let lambda_response: LambdaSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())

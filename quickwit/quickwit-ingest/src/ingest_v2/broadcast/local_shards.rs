@@ -197,8 +197,8 @@ impl ShardThroughputTimeSeriesMap {
                 .average()
                 .as_u64()
                 .div_ceil(ONE_MIB.as_u64());
-            SHARD_ST_THROUGHPUT_MIB.record(short_term_ingestion_rate_mib_per_sec_u64 as f64);
-            SHARD_LT_THROUGHPUT_MIB.record(long_term_ingestion_rate_mib_per_sec_u64 as f64);
+            SHARD_ST_THROUGHPUT_MIB.observe(short_term_ingestion_rate_mib_per_sec_u64 as f64);
+            SHARD_LT_THROUGHPUT_MIB.observe(long_term_ingestion_rate_mib_per_sec_u64 as f64);
 
             let short_term_ingestion_rate =
                 RateMibPerSec(short_term_ingestion_rate_mib_per_sec_u64 as u16);

@@ -125,7 +125,7 @@ impl<Evaluator> CircuitBreakerInner<Evaluator> {
     fn receive_error(&mut self) {
         match self.state {
             CircuitBreakerState::HalfOpen => {
-                self.circuit_break_total.increment(1);
+                self.circuit_break_total.inc();
                 self.state = CircuitBreakerState::Open {
                     until: Instant::now() + self.timeout,
                 }
@@ -144,7 +144,7 @@ impl<Evaluator> CircuitBreakerInner<Evaluator> {
                 }
                 let now = Instant::now();
                 if now < error_window_end {
-                    self.circuit_break_total.increment(1);
+                    self.circuit_break_total.inc();
                     self.state = CircuitBreakerState::Open {
                         until: now + self.timeout,
                     };

@@ -30,7 +30,7 @@ pub fn register_build_info_metric(build_info: &BuildInfo) {
         "commit_tags" => commit_tags,
         "target" => build_info.build_target,
     );
-    counter!(parent: BUILD_INFO, labels: [labels]).increment(1);
+    counter!(parent: BUILD_INFO, labels: [labels]).inc();
 }
 
 pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyHistogram = lazy_histogram!(

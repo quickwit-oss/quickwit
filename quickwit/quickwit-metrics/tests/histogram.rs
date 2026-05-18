@@ -28,7 +28,7 @@ fn base_records_value() {
             subsystem: "test",
             buckets: vec![1.0, 5.0, 10.0]
         );
-        h.record(3.5);
+        h.observe(3.5);
     });
 
     assert_eq!(entries.len(), 1);
@@ -55,7 +55,7 @@ fn base_with_static_labels() {
             "env" => "prod",
             "region" => "us",
         );
-        h.record(0.5);
+        h.observe(0.5);
     });
 
     assert_eq!(entries.len(), 1);
@@ -81,7 +81,7 @@ fn parent_extends_labels() {
             "env" => "prod",
         );
         let child = histogram!(parent: parent, "region" => "eu");
-        child.record(0.1);
+        child.observe(0.1);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 2);
@@ -113,7 +113,7 @@ fn label_composition_two_labels() {
             label_values!(REGION => "us-east"),
             label_values!(STATUS => "ok"),
         ]);
-        child.record(2.5);
+        child.observe(2.5);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
@@ -151,7 +151,7 @@ fn label_composition_three_labels() {
             labels!("region" => "eu"),
             labels!("az" => "eu-1a"),
         ]);
-        child.record(0.1);
+        child.observe(0.1);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);

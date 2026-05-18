@@ -182,7 +182,7 @@ impl Histogram {
     }
 
     /// Records a single observation.
-    pub fn record(&self, value: f64) {
+    pub fn observe(&self, value: f64) {
         self.0.inner.record(value);
     }
 }
@@ -191,7 +191,7 @@ impl Histogram {
 /// used wherever a `HistogramFn` is expected.
 impl HistogramFn for Histogram {
     fn record(&self, value: f64) {
-        Self::record(self, value);
+        Self::observe(self, value);
     }
 }
 
@@ -219,14 +219,14 @@ impl HistogramTimer {
     pub fn observe_duration(self) {
         let mut timer = self;
         timer.observed = true;
-        timer.histogram.record(timer.start.elapsed().as_secs_f64());
+        timer.histogram.observe(timer.start.elapsed().as_secs_f64());
     }
 }
 
 impl Drop for HistogramTimer {
     fn drop(&mut self) {
         if !self.observed {
-            self.histogram.record(self.start.elapsed().as_secs_f64());
+            self.histogram.observe(self.start.elapsed().as_secs_f64());
         }
     }
 }

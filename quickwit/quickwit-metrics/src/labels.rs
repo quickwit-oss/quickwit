@@ -64,7 +64,7 @@ macro_rules! label_names {
 /// let lv = label_values!(GC_KEYS => "success", split_type.to_string());
 ///
 /// // Reuse the same Labels across multiple metrics:
-/// counter!(parent: GC_COUNTER, labels: [lv]).increment(1);
+/// counter!(parent: GC_COUNTER, labels: [lv]).inc();
 /// gauge!(parent: GC_GAUGE, labels: [lv]).set(42.0);
 /// ```
 #[macro_export]

@@ -146,12 +146,12 @@ pub(crate) async fn start_rest_server(
             parent: REQUEST_DURATION_SECS,
             labels: [labels],
         )
-        .record(elapsed.as_secs_f64());
+        .observe(elapsed.as_secs_f64());
         counter!(
             parent: HTTP_REQUESTS_TOTAL,
             labels: [labels],
         )
-        .increment(1);
+        .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

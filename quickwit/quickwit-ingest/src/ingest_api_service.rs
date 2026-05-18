@@ -203,8 +203,8 @@ impl IngestApiService {
 
             num_docs += batch_num_docs;
             let labels = label_values!(VALIDITY => "valid");
-            counter!(parent: DOCS_BYTES_TOTAL, labels: [labels]).increment(batch_num_bytes as u64);
-            counter!(parent: DOCS_TOTAL, labels: [labels]).increment(batch_num_docs as u64);
+            counter!(parent: DOCS_BYTES_TOTAL, labels: [labels]).inc_by(batch_num_bytes as u64);
+            counter!(parent: DOCS_TOTAL, labels: [labels]).inc_by(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.
         Ok((

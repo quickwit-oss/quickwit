@@ -27,7 +27,7 @@ fn base_increments() {
             description: "test counter",
             subsystem: "test",
         );
-        c.increment(5);
+        c.inc_by(5);
     });
 
     assert_eq!(entries.len(), 1);
@@ -46,7 +46,7 @@ fn base_with_static_labels() {
             subsystem: "test",
             "env" => "staging",
         );
-        c.increment(1);
+        c.inc();
     });
 
     assert_eq!(entries.len(), 1);
@@ -64,7 +64,7 @@ fn parent_extends_labels() {
             "env" => "prod",
         );
         let child = counter!(parent: parent, "region" => "us-east");
-        child.increment(10);
+        child.inc_by(10);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 2);
@@ -106,7 +106,7 @@ fn parent_with_dynamic_label_value() {
         );
         let region = String::from("ap-south");
         let child = counter!(parent: parent, "region" => region);
-        child.increment(7);
+        child.inc_by(7);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 1);
@@ -127,7 +127,7 @@ fn nested_parent_extension() {
         );
         let child = counter!(parent: base, "region" => "eu");
         let grandchild = counter!(parent: child, "az" => "eu-1a");
-        grandchild.increment(1);
+        grandchild.inc();
     });
 
     let gc = entries.iter().find(|(_, labels, _)| labels.len() == 3);
@@ -157,8 +157,8 @@ fn observable_get_matches_recorder() {
             description: "observable counter",
             subsystem: "test",
         );
-        c.increment(3);
-        c.increment(7);
+        c.inc_by(3);
+        c.inc_by(7);
         c
     });
 
@@ -197,8 +197,8 @@ fn observable_parent_children_share_shadow() {
         let child_a = counter!(parent: parent, "region" => "us-east");
         let child_b = counter!(parent: parent, "region" => "us-east");
 
-        child_a.increment(3);
-        child_b.increment(7);
+        child_a.inc_by(3);
+        child_b.inc_by(7);
 
         assert_eq!(child_a.get(), 10);
         assert_eq!(child_b.get(), 10);
@@ -219,7 +219,7 @@ fn label_composition_two_labels() {
         let child = counter!(parent: parent, labels: [
             label_values!(REGION => "us-east"), label_values!(STATUS => "ok"),
         ]);
-        child.increment(3);
+        child.inc_by(3);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
@@ -248,7 +248,7 @@ fn label_composition_three_labels() {
         let child = counter!(parent: parent, labels: [
             labels!("env" => "staging"), labels!("region" => "eu"), labels!("az" => "eu-1a"),
         ]);
-        child.increment(7);
+        child.inc_by(7);
     });
 
     let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
@@ -285,8 +285,8 @@ fn label_composition_same_hash_as_single() {
             parent: parent,
             labels: [labels!("region" => "us", "status" => "ok")],
         );
-        via_compose.increment(1);
-        via_single.increment(2);
+        via_compose.inc();
+        via_single.inc_by(2);
 
         assert_eq!(via_compose.get(), 3);
         assert_eq!(via_single.get(), 3);
@@ -304,8 +304,8 @@ fn observable_parent_distinct_labels_separate_shadow() {
         let child_a = counter!(parent: parent, "region" => "us-east");
         let child_b = counter!(parent: parent, "region" => "eu-west");
 
-        child_a.increment(3);
-        child_b.increment(7);
+        child_a.inc_by(3);
+        child_b.inc_by(7);
 
         assert_eq!(child_a.get(), 3);
         assert_eq!(child_b.get(), 7);
@@ -316,8 +316,8 @@ fn observable_parent_distinct_labels_separate_shadow() {
 fn local_increments_shadow_only() {
     let c = Counter::local();
     assert_eq!(c.get(), 0);
-    c.increment(10);
-    c.increment(3);
+    c.inc_by(10);
+    c.inc_by(3);
     assert_eq!(c.get(), 13);
 }
 
@@ -325,8 +325,8 @@ fn local_increments_shadow_only() {
 fn local_counters_are_independent() {
     let a = Counter::local();
     let b = Counter::local();
-    a.increment(5);
-    b.increment(9);
+    a.inc_by(5);
+    b.inc_by(9);
     assert_eq!(a.get(), 5);
     assert_eq!(b.get(), 9);
 }
@@ -343,6 +343,6 @@ fn local_counter_clone_is_equal() {
     let a = Counter::local();
     let b = a.clone();
     assert_eq!(a, b);
-    a.increment(1);
+    a.inc();
     assert_eq!(b.get(), 1);
 }

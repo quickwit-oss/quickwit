@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_metrics::{
-    Gauge, LabelNames, LazyCounter, LazyGauge, gauge, label_names, lazy_counter, lazy_gauge,
-};
+use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {

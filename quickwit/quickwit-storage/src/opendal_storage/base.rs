@@ -81,7 +81,7 @@ impl Storage for OpendalStorage {
     }
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.increment(1);
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -120,7 +120,7 @@ impl Storage for OpendalStorage {
         // Unlike other object store implementations, in flight requests are
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
-        crate::metrics::OBJECT_STORAGE_GET_TOTAL.increment(1);
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
         // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
         // perform.
@@ -153,7 +153,7 @@ impl Storage for OpendalStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.increment(1);
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         self.op.delete(&path).await?;
         Ok(())
@@ -168,7 +168,7 @@ impl Storage for OpendalStorage {
             if storage_info.name().starts_with("sample-bucket") && storage_info.scheme() == "gcs" {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
-                    crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.increment(1);
+                    crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
                     let _timer = HistogramTimer::new(
                         &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
                     );

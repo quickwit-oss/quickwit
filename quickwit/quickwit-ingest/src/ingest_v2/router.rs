@@ -382,7 +382,7 @@ impl IngestRouter {
                 parent: INGEST_ATTEMPTS,
                 "az_routing" => az_locality,
             )
-            .increment(1);
+            .inc();
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
@@ -502,67 +502,61 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
     let num_subrequests = num_subrequests as u64;
     match ingest_result {
         Ok(ingest_response) => {
-            INGEST_RESULT_SUCCESS.increment(ingest_response.successes.len() as u64);
+            INGEST_RESULT_SUCCESS.inc_by(ingest_response.successes.len() as u64);
             for ingest_failure in &ingest_response.failures {
                 match ingest_failure.reason() {
                     IngestFailureReason::CircuitBreaker => {
-                        INGEST_RESULT_CIRCUIT_BREAKER.increment(1);
+                        INGEST_RESULT_CIRCUIT_BREAKER.inc();
                     }
-                    IngestFailureReason::Unspecified => INGEST_RESULT_UNSPECIFIED.increment(1),
-                    IngestFailureReason::IndexNotFound => {
-                        INGEST_RESULT_INDEX_NOT_FOUND.increment(1)
-                    }
-                    IngestFailureReason::SourceNotFound => {
-                        INGEST_RESULT_SOURCE_NOT_FOUND.increment(1)
-                    }
-                    IngestFailureReason::Internal => INGEST_RESULT_INTERNAL.increment(1),
+                    IngestFailureReason::Unspecified => INGEST_RESULT_UNSPECIFIED.inc(),
+                    IngestFailureReason::IndexNotFound => INGEST_RESULT_INDEX_NOT_FOUND.inc(),
+                    IngestFailureReason::SourceNotFound => INGEST_RESULT_SOURCE_NOT_FOUND.inc(),
+                    IngestFailureReason::Internal => INGEST_RESULT_INTERNAL.inc(),
                     IngestFailureReason::NoShardsAvailable => {
-                        INGEST_RESULT_NO_SHARDS_AVAILABLE.increment(1)
+                        INGEST_RESULT_NO_SHARDS_AVAILABLE.inc()
                     }
-                    IngestFailureReason::ShardRateLimited => {
-                        INGEST_RESULT_SHARD_RATE_LIMITED.increment(1)
-                    }
-                    IngestFailureReason::WalFull => INGEST_RESULT_WAL_FULL.increment(1),
-                    IngestFailureReason::Timeout => INGEST_RESULT_TIMEOUT.increment(1),
+                    IngestFailureReason::ShardRateLimited => INGEST_RESULT_SHARD_RATE_LIMITED.inc(),
+                    IngestFailureReason::WalFull => INGEST_RESULT_WAL_FULL.inc(),
+                    IngestFailureReason::Timeout => INGEST_RESULT_TIMEOUT.inc(),
                     IngestFailureReason::RouterLoadShedding => {
-                        INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(1)
+                        INGEST_RESULT_ROUTER_LOAD_SHEDDING.inc()
                     }
-                    IngestFailureReason::LoadShedding => INGEST_RESULT_LOAD_SHEDDING.increment(1),
+                    IngestFailureReason::LoadShedding => INGEST_RESULT_LOAD_SHEDDING.inc(),
                 }
             }
         }
         Err(ingest_error) => match ingest_error {
             IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
                 RateLimitingCause::RouterLoadShedding => {
-                    INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(num_subrequests);
+                    INGEST_RESULT_ROUTER_LOAD_SHEDDING.inc_by(num_subrequests);
                 }
                 RateLimitingCause::LoadShedding => {
-                    INGEST_RESULT_LOAD_SHEDDING.increment(num_subrequests)
+                    INGEST_RESULT_LOAD_SHEDDING.inc_by(num_subrequests)
                 }
                 RateLimitingCause::WalFull => {
-                    INGEST_RESULT_WAL_FULL.increment(num_subrequests);
+                    INGEST_RESULT_WAL_FULL.inc_by(num_subrequests);
                 }
                 RateLimitingCause::CircuitBreaker => {
-                    INGEST_RESULT_CIRCUIT_BREAKER.increment(num_subrequests);
+                    INGEST_RESULT_CIRCUIT_BREAKER.inc_by(num_subrequests);
                 }
                 RateLimitingCause::ShardRateLimiting => {
-                    INGEST_RESULT_SHARD_RATE_LIMITED.increment(num_subrequests);
+                    INGEST_RESULT_SHARD_RATE_LIMITED.inc_by(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {
-                    INGEST_RESULT_UNSPECIFIED.increment(num_subrequests);
+                    INGEST_RESULT_UNSPECIFIED.inc_by(num_subrequests);
                 }
             },
             IngestV2Error::Timeout(_) => {
-                INGEST_RESULT_ROUTER_TIMEOUT.increment(num_subrequests);
+                INGEST_RESULT_ROUTER_TIMEOUT.inc_by(num_subrequests);
             }
             IngestV2Error::ShardNotFound { .. } => {
-                INGEST_RESULT_SHARD_NOT_FOUND.increment(num_subrequests);
+                INGEST_RESULT_SHARD_NOT_FOUND.inc_by(num_subrequests);
             }
             IngestV2Error::Unavailable(_) => {
-                INGEST_RESULT_UNAVAILABLE.increment(num_subrequests);
+                INGEST_RESULT_UNAVAILABLE.inc_by(num_subrequests);
             }
             IngestV2Error::Internal(_) => {
-                INGEST_RESULT_INTERNAL.increment(num_subrequests);
+                INGEST_RESULT_INTERNAL.inc_by(num_subrequests);
             }
         },
     }

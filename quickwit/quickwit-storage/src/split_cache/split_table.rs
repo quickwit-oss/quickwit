@@ -157,19 +157,16 @@ impl SplitTable {
                 SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_count
-                    .decrement(1.0);
+                    .dec();
                 SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
-                    .decrement(num_bytes as f64);
-                SEARCHER_SPLIT_CACHE
-                    .cache_metrics
-                    .evict_num_items
-                    .increment(1);
+                    .dec_by(num_bytes as f64);
+                SEARCHER_SPLIT_CACHE.cache_metrics.evict_num_items.inc();
                 SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_bytes
-                    .increment(num_bytes);
+                    .inc_by(num_bytes);
                 &mut self.on_disk_splits
             }
         };
@@ -218,14 +215,11 @@ impl SplitTable {
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes += num_bytes;
-                SEARCHER_SPLIT_CACHE
-                    .cache_metrics
-                    .in_cache_count
-                    .increment(1.0);
+                SEARCHER_SPLIT_CACHE.cache_metrics.in_cache_count.inc();
                 SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
-                    .increment(num_bytes as f64);
+                    .inc_by(num_bytes as f64);
                 self.on_disk_splits.insert(split_info.split_key)
             }
         };

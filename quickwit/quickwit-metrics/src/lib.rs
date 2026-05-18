@@ -69,7 +69,7 @@
 //!
 //! ```rust,ignore
 //! let by_method = counter!(parent: HTTP_REQUESTS, "method" => "GET", "path" => path);
-//! by_method.increment(1);
+//! by_method.inc();
 //! ```
 //!
 //! ### 3. Reusable label templates with `LabelNames<N>`
@@ -87,7 +87,7 @@
 //! fn on_request(method: &'static str, path: &'static str, duration: f64) {
 //!     let route = label_values!(ROUTE => method, path);
 //!     histogram!(parent: REQUEST_DURATION, labels: [route]).record(duration);
-//!     counter!(parent: HTTP_REQUESTS, labels: [route]).increment(1);
+//!     counter!(parent: HTTP_REQUESTS, labels: [route]).inc();
 //! }
 //!
 //! // Mixed types work too — Into<SharedString> is called per-element:

@@ -79,7 +79,7 @@ where
             parent: self.requests_in_flight,
             "rpc" => rpc_name,
         )
-        .increment(1.0);
+        .inc();
 
         ResponseFuture {
             inner,
@@ -143,15 +143,16 @@ impl<F> PinnedDrop for ResponseFuture<F> {
         let elapsed = self.start.elapsed().as_secs_f64();
         let rpc_label = labels!("rpc" => self.rpc_name);
         let status_label = labels!("status" => self.status);
-        counter!(parent: self.requests_total, labels: [rpc_label, status_label]).increment(1);
+        counter!(parent: self.requests_total, labels: [rpc_label, status_label]).inc();
         histogram!(parent: self.request_duration_seconds, labels: [rpc_label, status_label])
-            .record(elapsed);
-        gauge!(parent: self.requests_in_flight, labels: [rpc_label]).decrement(1.0);
+            .observe(elapsed);
+        gauge!(parent: self.requests_in_flight, labels: [rpc_label]).dec();
     }
 }
 
 impl<F, T, E> Future for ResponseFuture<F>
-where F: Future<Output = Result<T, E>>
+where
+    F: Future<Output = Result<T, E>>,
 {
     type Output = Result<T, E>;
 

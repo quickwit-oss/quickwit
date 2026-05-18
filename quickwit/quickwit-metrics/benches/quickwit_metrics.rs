@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use quickwit_metrics::*;
@@ -114,7 +114,7 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 description: "bench counter",
                 subsystem: "bench"
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -126,7 +126,7 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 subsystem: "bench",
                 "service" => "api"
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -140,7 +140,7 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 "method" => "GET",
                 "endpoint" => "/health"
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -156,7 +156,7 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 "status" => "200",
                 "region" => "us-east-1"
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -237,7 +237,7 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 subsystem: "bench",
                 buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -250,7 +250,7 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
                 "service" => "api"
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -265,7 +265,7 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 "method" => "GET",
                 "endpoint" => "/health"
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -282,7 +282,7 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 "status" => "200",
                 "region" => "us-east-1"
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -401,7 +401,7 @@ fn static_counter(c: &mut Criterion) {
     for &(n, handle) in counters {
         let _ = &**handle;
         group.bench_function(format!("labels/{n}"), |b| {
-            b.iter(|| handle.increment(1));
+            b.iter(|| handle.inc());
         });
     }
     group.finish();
@@ -441,7 +441,7 @@ fn static_histogram(c: &mut Criterion) {
     for &(n, handle) in histograms {
         let _ = &**handle;
         group.bench_function(format!("labels/{n}"), |b| {
-            b.iter(|| handle.record(0.123));
+            b.iter(|| handle.observe(0.123));
         });
     }
     group.finish();
@@ -481,7 +481,7 @@ fn parent_counter(c: &mut Criterion) {
 
     group.bench_function("extend/1", |b| {
         b.iter(|| {
-            counter!(parent: PARENT_COUNTER, "method" => "GET").increment(1);
+            counter!(parent: PARENT_COUNTER, "method" => "GET").inc();
         });
     });
 
@@ -493,7 +493,7 @@ fn parent_counter(c: &mut Criterion) {
                 "endpoint" => "/health",
                 "status" => "200"
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -535,7 +535,7 @@ fn parent_histogram(c: &mut Criterion) {
 
     group.bench_function("extend/1", |b| {
         b.iter(|| {
-            histogram!(parent: PARENT_HISTOGRAM, "method" => "GET").record(0.123);
+            histogram!(parent: PARENT_HISTOGRAM, "method" => "GET").observe(0.123);
         });
     });
 
@@ -547,7 +547,7 @@ fn parent_histogram(c: &mut Criterion) {
                 "endpoint" => "/health",
                 "status" => "200"
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -581,7 +581,7 @@ fn dynamic_counter(c: &mut Criterion) {
     let method = "GET";
     group.bench_function("same_value", |b| {
         b.iter(|| {
-            counter!(parent: DYN_PARENT_COUNTER, "method" => method).increment(1);
+            counter!(parent: DYN_PARENT_COUNTER, "method" => method).inc();
         });
     });
 
@@ -593,7 +593,7 @@ fn dynamic_counter(c: &mut Criterion) {
         b.iter(|| {
             let method = methods[idx % methods.len()];
             idx += 1;
-            counter!(parent: DYN_PARENT_COUNTER, "method" => method).increment(1);
+            counter!(parent: DYN_PARENT_COUNTER, "method" => method).inc();
         });
     });
 
@@ -652,11 +652,11 @@ fn observable_counter(c: &mut Criterion) {
     let mut group = c.benchmark_group("macros/observable/counter");
 
     group.bench_function("increment", |b| {
-        b.iter(|| OBS_COUNTER.increment(1));
+        b.iter(|| OBS_COUNTER.inc());
     });
 
     group.bench_function("increment/baseline", |b| {
-        b.iter(|| STATIC_COUNTER_0.increment(1));
+        b.iter(|| STATIC_COUNTER_0.inc());
     });
 
     group.bench_function("get", |b| {
@@ -682,11 +682,11 @@ fn observable_gauge(c: &mut Criterion) {
     });
 
     group.bench_function("increment", |b| {
-        b.iter(|| OBS_GAUGE.increment(1.0));
+        b.iter(|| OBS_GAUGE.inc());
     });
 
     group.bench_function("increment/baseline", |b| {
-        b.iter(|| STATIC_GAUGE_0.increment(1.0));
+        b.iter(|| STATIC_GAUGE_0.inc());
     });
 
     group.bench_function("get", |b| {
@@ -711,8 +711,7 @@ fn labels_counter(c: &mut Criterion) {
 
     group.bench_function("static/1", |b| {
         b.iter(|| {
-            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => "GET")])
-                .increment(1);
+            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => "GET")]).inc();
         });
     });
 
@@ -722,7 +721,7 @@ fn labels_counter(c: &mut Criterion) {
                 parent: PARENT_COUNTER,
                 labels: [label_values!(LABELS_3 => "GET", "/health", "200")]
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -732,7 +731,7 @@ fn labels_counter(c: &mut Criterion) {
                 parent: PARENT_COUNTER,
                 labels: [label_values!(LABELS_1 => "GET".to_string())]
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -744,7 +743,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             let m = methods[idx % methods.len()];
             idx += 1;
-            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => m)]).increment(1);
+            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => m)]).inc();
         });
     });
 
@@ -785,7 +784,7 @@ fn labels_histogram(c: &mut Criterion) {
     group.bench_function("static/1", |b| {
         b.iter(|| {
             histogram!(parent: PARENT_HISTOGRAM, labels: [label_values!(LABELS_1 => "GET")])
-                .record(0.123);
+                .observe(0.123);
         });
     });
 
@@ -795,7 +794,7 @@ fn labels_histogram(c: &mut Criterion) {
                 parent: PARENT_HISTOGRAM,
                 labels: [label_values!(LABELS_3 => "GET", "/health", "200")]
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -823,7 +822,7 @@ fn composite_counter(c: &mut Criterion) {
                 parent: PARENT_COUNTER,
                 labels: [label_values!(COMP_ALL_3 => "GET", "/health", "200")],
             )
-            .increment(1);
+            .inc();
         });
     });
 
@@ -834,7 +833,7 @@ fn composite_counter(c: &mut Criterion) {
                 label_values!(COMP_ENDPOINT => "/health"),
                 label_values!(COMP_STATUS => "200"),
             ])
-            .increment(1);
+            .inc();
         });
     });
 
@@ -844,7 +843,7 @@ fn composite_counter(c: &mut Criterion) {
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
             ])
-            .increment(1);
+            .inc();
         });
     });
 
@@ -903,7 +902,7 @@ fn composite_histogram(c: &mut Criterion) {
                 parent: PARENT_HISTOGRAM,
                 labels: [label_values!(COMP_ALL_3 => "GET", "/health", "200")],
             )
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -914,7 +913,7 @@ fn composite_histogram(c: &mut Criterion) {
                 label_values!(COMP_ENDPOINT => "/health"),
                 label_values!(COMP_STATUS => "200"),
             ])
-            .record(0.123);
+            .observe(0.123);
         });
     });
 
@@ -924,7 +923,7 @@ fn composite_histogram(c: &mut Criterion) {
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
             ])
-            .record(0.123);
+            .observe(0.123);
         });
     });
 

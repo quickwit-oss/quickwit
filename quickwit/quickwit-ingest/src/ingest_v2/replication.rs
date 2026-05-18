@@ -666,8 +666,8 @@ impl ReplicationTask {
                 .expect("replica shard should be initialized")
                 .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-            REPLICATED_NUM_BYTES_TOTAL.increment(batch_num_bytes);
-            REPLICATED_NUM_DOCS_TOTAL.increment(batch_num_docs);
+            REPLICATED_NUM_BYTES_TOTAL.inc_by(batch_num_bytes);
+            REPLICATED_NUM_DOCS_TOTAL.inc_by(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,

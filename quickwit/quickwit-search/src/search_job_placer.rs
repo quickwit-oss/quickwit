@@ -219,7 +219,7 @@ impl SearchJobPlacer {
                 1 => "1",
                 _ => "> 1",
             };
-            counter!(parent: JOB_ASSIGNED_TOTAL, "affinity" => metric_node_idx).increment(1);
+            counter!(parent: JOB_ASSIGNED_TOTAL, "affinity" => metric_node_idx).inc();
             chosen_node.load += job.cost();
 
             job_assignments

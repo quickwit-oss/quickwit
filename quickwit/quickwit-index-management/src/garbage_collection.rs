@@ -53,9 +53,9 @@ pub(crate) trait RecordGcMetrics {
 impl RecordGcMetrics for Option<GcMetrics> {
     fn record(&self, num_deleted_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize) {
         if let Some(metrics) = self {
-            metrics.deleted_splits.increment(num_deleted_splits as u64);
-            metrics.deleted_bytes.increment(num_deleted_bytes);
-            metrics.failed_splits.increment(num_failed_splits as u64);
+            metrics.deleted_splits.inc_by(num_deleted_splits as u64);
+            metrics.deleted_bytes.inc_by(num_deleted_bytes);
+            metrics.failed_splits.inc_by(num_failed_splits as u64);
         }
     }
 }

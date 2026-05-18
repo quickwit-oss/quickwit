@@ -82,7 +82,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         } else if let Some((k, v)) = self.merge_ranges(&key, byte_range.end) {
             (k, v)
         } else {
-            self.cache_counters.misses_num_items.increment(1);
+            self.cache_counters.misses_num_items.inc();
             return None;
         };
 
@@ -90,10 +90,10 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         let end = byte_range.end - k.range_start;
         let result = v.bytes.slice(start..end);
 
-        self.cache_counters.hits_num_items.increment(1);
+        self.cache_counters.hits_num_items.inc();
         self.cache_counters
             .hits_num_bytes
-            .increment((end - start) as u64);
+            .inc_by((end - start) as u64);
 
         Some(result)
     }
@@ -295,7 +295,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         self.num_items -= (part_count - 1) as u64;
         self.cache_counters
             .in_cache_count
-            .decrement((part_count - 1) as f64);
+            .dec_by((part_count - 1) as f64);
 
         self.get_block(start, range_end)
     }
@@ -303,23 +303,21 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
     fn update_counter_record_item(&mut self, num_bytes: usize) {
         self.num_items += 1;
         self.num_bytes += num_bytes as u64;
-        self.cache_counters.in_cache_count.increment(1.0);
+        self.cache_counters.in_cache_count.inc();
         self.cache_counters
             .in_cache_num_bytes
-            .increment(num_bytes as f64);
+            .inc_by(num_bytes as f64);
     }
 
     fn update_counter_drop_item(&mut self, num_bytes: usize) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes as u64;
-        self.cache_counters.in_cache_count.decrement(1.0);
+        self.cache_counters.in_cache_count.dec();
         self.cache_counters
             .in_cache_num_bytes
-            .decrement(num_bytes as f64);
-        self.cache_counters.evict_num_items.increment(1);
-        self.cache_counters
-            .evict_num_bytes
-            .increment(num_bytes as u64);
+            .dec_by(num_bytes as f64);
+        self.cache_counters.evict_num_items.inc();
+        self.cache_counters.evict_num_bytes.inc_by(num_bytes as u64);
     }
 }
 
@@ -327,10 +325,10 @@ impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
     fn drop(&mut self) {
         self.cache_counters
             .in_cache_count
-            .decrement(self.num_items as f64);
+            .dec_by(self.num_items as f64);
         self.cache_counters
             .in_cache_num_bytes
-            .decrement(self.num_bytes as f64);
+            .dec_by(self.num_bytes as f64);
     }
 }
 

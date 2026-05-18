@@ -89,8 +89,8 @@ impl ParquetBatchAccumulator {
         let batch_bytes = estimate_batch_bytes(&batch);
 
         // Record index metrics
-        INDEX_BATCHES_TOTAL.increment(1);
-        INDEX_ROWS_TOTAL.increment(batch_rows as u64);
+        INDEX_BATCHES_TOTAL.inc();
+        INDEX_ROWS_TOTAL.inc_by(batch_rows as u64);
 
         // Merge fields into union schema before pushing (we need the schema reference)
         for field in batch.schema().fields() {
@@ -125,7 +125,7 @@ impl ParquetBatchAccumulator {
         };
 
         // Record batch processing duration
-        INDEX_BATCH_DURATION_SECONDS.record(start.elapsed().as_secs_f64());
+        INDEX_BATCH_DURATION_SECONDS.observe(start.elapsed().as_secs_f64());
 
         Ok(flushed)
     }
