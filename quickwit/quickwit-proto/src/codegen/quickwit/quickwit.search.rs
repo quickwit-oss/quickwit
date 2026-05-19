@@ -62,7 +62,7 @@ pub struct ListFieldsRequest {
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "2")]
-    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Time filter, expressed in seconds since epoch.
     /// That filter is to be interpreted as the semi-open interval:
     /// \[start_timestamp, end_timestamp).
@@ -91,20 +91,29 @@ pub struct LeafListFieldsRequest {
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
-    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// / Message returned by leaf and root list fields requests.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFieldsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+    pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
+}
+/// / Message containing the fields metadata for a split sorted by (name, type) and stored zstd-compressed in the split. Currently duplicate of ListFieldsResponse, but kept
+/// / distinct so they can evolve independently.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsMetadata {
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListFieldsEntryResponse {
+pub struct ListFieldsEntry {
     #[prost(string, tag = "1")]
     pub field_name: ::prost::alloc::string::String,
-    #[prost(enumeration = "ListFieldType", tag = "2")]
+    #[prost(enumeration = "ListFieldsType", tag = "2")]
     pub field_type: i32,
     /// The index ids the field exists
     #[prost(string, repeated, tag = "3")]
@@ -127,12 +136,6 @@ pub struct ListFieldsEntryResponse {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListFields {
-    #[prost(message, repeated, tag = "1")]
-    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Hash, Eq)]
@@ -739,7 +742,7 @@ pub struct LeafListTermsResponse {
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum ListFieldType {
+pub enum ListFieldsType {
     Str = 0,
     U64 = 1,
     I64 = 2,
@@ -751,7 +754,7 @@ pub enum ListFieldType {
     IpAddr = 8,
     Json = 9,
 }
-impl ListFieldType {
+impl ListFieldsType {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable

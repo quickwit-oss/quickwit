@@ -216,7 +216,7 @@ pub(crate) async fn es_compat_index_mapping(
         .collect();
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
-        fields: Vec::new(),
+        field_patterns: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
         query_ast: None,
