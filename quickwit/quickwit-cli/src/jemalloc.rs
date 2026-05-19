@@ -14,6 +14,10 @@
 
 use std::time::Duration;
 
+use quickwit_common::metrics::{
+    MEMORY_ACTIVE_BYTES, MEMORY_ALLOCATED_BYTES, MEMORY_RESIDENT_BYTES,
+};
+use quickwit_common::rate_limited_warn;
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
@@ -26,7 +30,7 @@ pub static GLOBAL: quickwit_common::jemalloc_profiled::JemallocProfiled =
 #[global_allocator]
 pub static GLOBAL: Jemalloc = Jemalloc;
 
-const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
+const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(5);
 
 pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     // Obtain a MIB for the `epoch`, `stats.active`, `stats.allocated`, and `stats.resident` keys:
@@ -36,22 +40,33 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
     let resident_mib = tikv_jemalloc_ctl::stats::resident::mib()?;
 
     let mut poll_interval = tokio::time::interval(JEMALLOC_METRICS_POLLING_INTERVAL);
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         poll_interval.tick().await;
 
-        // Many statistics are cached and only updated when the epoch is advanced:
-        epoch_mib.advance()?;
-
-        // Read statistics using MIB keys:
-        let active = active_mib.read()?;
-        quickwit_common::metrics::MEMORY_ACTIVE_BYTES.set(active as f64);
-
-        let allocated = allocated_mib.read()?;
-        quickwit_common::metrics::MEMORY_ALLOCATED_BYTES.set(allocated as f64);
-
-        let resident = resident_mib.read()?;
-        quickwit_common::metrics::MEMORY_RESIDENT_BYTES.set(resident as f64);
+        if let Err(error) = epoch_mib.advance() {
+            rate_limited_warn!(limit_per_min = 1, %error, "failed to advance jemalloc epoch");
+            continue;
+        }
+        match active_mib.read() {
+            Ok(active) => MEMORY_ACTIVE_BYTES.set(active as f64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.active");
+            }
+        }
+        match allocated_mib.read() {
+            Ok(allocated) => MEMORY_ALLOCATED_BYTES.set(allocated as f64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.allocated");
+            }
+        }
+        match resident_mib.read() {
+            Ok(resident) => MEMORY_RESIDENT_BYTES.set(resident as f64),
+            Err(error) => {
+                rate_limited_warn!(limit_per_min = 1, %error, "failed to read jemalloc stats.resident");
+            }
+        }
     }
 }
 
