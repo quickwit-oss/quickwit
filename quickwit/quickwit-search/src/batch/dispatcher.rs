@@ -15,10 +15,10 @@
 //! Async batching runtime: collects requests, dispatches batches.
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_common::metrics::{Histogram, IntCounter, new_counter, new_histogram};
+use quickwit_metrics::{LazyCounter, LazyHistogram, lazy_counter, lazy_histogram};
 use quickwit_proto::search::{SearchRequest, SearchResponse};
 use tokio::sync::{mpsc, oneshot};
 use tracing::*;
@@ -27,30 +27,22 @@ use super::combine::{build_combined_request, unbatch_response};
 use crate::SearchError;
 use crate::service::SearchService;
 
-/// Metrics for the batching layer.
-pub(super) struct BatchMetrics {
-    /// Distribution of batch sizes (requests per dispatch).
-    /// avg > 1 means batching is effective. count = number of dispatches.
-    /// sum = total requests processed.
-    pub batch_size: Histogram,
-    /// Batches that fell back to individual calls due to incompatible requests.
-    pub fallbacks_total: IntCounter,
-}
+/// Distribution of batch sizes (requests per dispatch).
+/// avg > 1 means batching is effective. count = number of dispatches.
+/// sum = total requests processed.
+static BATCH_SIZE: LazyHistogram = lazy_histogram!(
+    name: "batch_size",
+    description: "number of requests per batch dispatch",
+    subsystem: "quickwit_search",
+    buckets: vec![1.0, 2.0, 3.0, 4.0, 5.0, 8.0, 16.0],
+);
 
-pub(super) static BATCH_METRICS: LazyLock<BatchMetrics> = LazyLock::new(|| BatchMetrics {
-    batch_size: new_histogram(
-        "batch_size",
-        "number of requests per batch dispatch",
-        "quickwit_search",
-        vec![1.0, 2.0, 3.0, 4.0, 5.0, 8.0, 16.0],
-    ),
-    fallbacks_total: new_counter(
-        "batch_fallbacks_total",
-        "batches that fell back to individual root_search calls",
-        "quickwit_search",
-        &[],
-    ),
-});
+/// Batches that fell back to individual calls due to incompatible requests.
+static BATCH_FALLBACKS_TOTAL: LazyCounter = lazy_counter!(
+    name: "batch_fallbacks_total",
+    description: "batches that fell back to individual root_search calls",
+    subsystem: "quickwit_search",
+);
 
 pub(super) struct BatchEntry {
     pub(super) request: SearchRequest,
@@ -144,7 +136,7 @@ pub(super) async fn batch_execute(
         return Vec::new();
     }
     let num_requests = requests.len();
-    BATCH_METRICS.batch_size.observe(num_requests as f64);
+    BATCH_SIZE.observe(num_requests as f64);
 
     if requests.len() == 1 {
         let result = search_service
@@ -160,7 +152,7 @@ pub(super) async fn batch_execute(
             num_requests,
             "batch combine failed, falling back to individual root_search calls"
         );
-        BATCH_METRICS.fallbacks_total.inc();
+        BATCH_FALLBACKS_TOTAL.inc();
         let futures = requests
             .into_iter()
             .map(|req| search_service.root_search(req));

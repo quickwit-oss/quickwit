@@ -14,6 +14,7 @@
 
 use std::sync::LazyLock;
 
+use metrics::Gauge as MetricsGauge;
 pub use prometheus::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{Gauge, LazyGauge, gauge, lazy_gauge};
 
@@ -45,6 +46,13 @@ pub static MEMORY_RESIDENT_BYTES: LazyGauge = lazy_gauge!(
         description: " Total number of bytes in physically resident data pages mapped by the allocator, as reported by jemalloc `stats.resident`.",
         subsystem: "memory",
 );
+
+pub static DD_MEMORY_ALLOCATED_BYTES: LazyLock<MetricsGauge> =
+    LazyLock::new(|| metrics::gauge!("memory.allocated_bytes.gauge"));
+
+pub fn register_dd_memory_metrics() {
+    LazyLock::force(&DD_MEMORY_ALLOCATED_BYTES);
+}
 
 static IN_FLIGHT_DATA_BYTES: LazyGauge = lazy_gauge!(
         name: "in_flight_data_bytes",

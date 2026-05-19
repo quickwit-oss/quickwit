@@ -18,8 +18,8 @@ use anyhow::Context;
 use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
-use quickwit_cli::{busy_detector, install_default_crypto_ring_provider, start_metrics_loops};
 use quickwit_cli::metrics::register_build_info_metric;
+use quickwit_cli::{busy_detector, install_default_crypto_ring_provider, start_metrics_loops};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
@@ -108,15 +108,6 @@ fn init_telemetry(
     Ok((telemetry_handle, env_filter_reload_fn))
 }
 
-#[cfg(not(any(test, feature = "testsuite")))]
-fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
-    let name = invariant_id.as_str();
-    ::metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
-    if !passed {
-        ::metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);
-    }
-}
-
 async fn main_impl() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
@@ -132,9 +123,6 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let runtime_handle = tokio::runtime::Handle::current();
     scrape_tokio_runtime_metrics(&runtime_handle, "main");
-
-    #[cfg(not(any(test, feature = "testsuite")))]
-    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
 
     start_metrics_loops();
 

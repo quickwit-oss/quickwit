@@ -12,21 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shared invariant definitions — the single source of truth.
-//!
-//! This module contains pure-Rust functions and types that express the
-//! invariants verified across all layers of the verification pyramid:
-//! TLA+ specs, stateright models, DST tests, and production code.
-//!
-//! No external dependencies — only `std`.
-
-mod check;
-pub mod merge_pipeline;
-pub mod merge_policy;
-pub mod recorder;
-pub mod registry;
-pub mod sort;
-pub mod window;
-
-pub use recorder::record_invariant_check;
-pub use registry::InvariantId;
+pub(crate) mod metrics;

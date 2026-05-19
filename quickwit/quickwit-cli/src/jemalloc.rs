@@ -49,7 +49,7 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
 
         let allocated = allocated_mib.read()?;
         quickwit_common::metrics::MEMORY_ALLOCATED_BYTES.set(allocated as f64);
-        ::metrics::gauge!("memory.allocated_bytes.gauge").set(allocated as f64);
+        quickwit_common::metrics::DD_MEMORY_ALLOCATED_BYTES.set(allocated as f64);
 
         let resident = resident_mib.read()?;
         quickwit_common::metrics::MEMORY_RESIDENT_BYTES.set(resident as f64);

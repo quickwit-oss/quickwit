@@ -12,112 +12,62 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pluggable invariant recorder — Layer 4 of the verification stack.
+//! Invariant metrics recorder — Layer 4 of the verification stack.
 //!
 //! Every call to [`check_invariant!`](crate::check_invariant) evaluates the
 //! condition in **all** build profiles (debug and release). The result is
-//! forwarded to a recorder function that can emit metrics (StatsD/DogStatsD,
-//! Prometheus, etc.), log violations, or take any other action.
-//!
-//! # Wiring up a metrics recorder
-//!
-//! Call [`set_invariant_recorder`] once at process startup. The OSS Quickwit
-//! binary wires a Prometheus-backed recorder in `quickwit_cli::logger`; the
-//! example below shows the minimal recorder shape:
-//!
-//! ```rust
-//! use quickwit_dst::invariants::{InvariantId, set_invariant_recorder};
-//!
-//! fn my_recorder(id: InvariantId, passed: bool) {
-//!     if !passed {
-//!         eprintln!("{} violated in production", id);
-//!     }
-//! }
-//!
-//! set_invariant_recorder(my_recorder);
-//! ```
+//! recorded as metrics.
 
-use std::sync::OnceLock;
+use quickwit_metrics::{LabelNames, LazyCounter, counter, label_names, label_values, lazy_counter};
 
 use super::InvariantId;
 
-/// Signature for an invariant recorder function.
-///
-/// Called on every `check_invariant!` invocation with the invariant ID and
-/// whether the check passed. Implementations must be cheap — this is called
-/// on hot paths.
-pub type InvariantRecorder = fn(InvariantId, bool);
+const INVARIANT_LABEL_NAMES: LabelNames<1> = label_names!("invariant");
 
-/// Global recorder. When unset, [`record_invariant_check`] is a no-op.
-static RECORDER: OnceLock<InvariantRecorder> = OnceLock::new();
+static POMSKY_INVARIANT_CHECKED_TOTAL: LazyCounter = lazy_counter!(
+        name: "checked_total",
+        description: "Number of invariant checks performed by Pomsky.",
+        subsystem: "pomsky_invariant",
+);
 
-/// Register a global invariant recorder.
-///
-/// Should be called once at process startup. Subsequent calls are ignored
-/// (first writer wins). This is safe to call from any thread.
-pub fn set_invariant_recorder(recorder: InvariantRecorder) {
-    // OnceLock::set returns Err if already initialized — that's fine.
-    let _ = RECORDER.set(recorder);
-}
+static POMSKY_INVARIANT_VIOLATED_TOTAL: LazyCounter = lazy_counter!(
+        name: "violated_total",
+        description: "Number of invariant violations observed by Pomsky.",
+        subsystem: "pomsky_invariant",
+);
 
 /// Record an invariant check result.
 ///
 /// Called by [`check_invariant!`](crate::check_invariant) on every invocation,
-/// in both debug and release builds. If no recorder has been registered via
-/// [`set_invariant_recorder`], this is a no-op (single atomic load).
+/// in both debug and release builds.
 #[inline]
-pub fn record_invariant_check(id: InvariantId, passed: bool) {
-    if let Some(recorder) = RECORDER.get() {
-        recorder(id, passed);
+pub fn record_invariant_check(invariant_id: InvariantId, passed: bool) {
+    let invariant_name = invariant_id.as_str();
+    let labels = label_values!(INVARIANT_LABEL_NAMES => invariant_name);
+    counter!(parent: POMSKY_INVARIANT_CHECKED_TOTAL, labels: [labels]).inc();
+    if !passed {
+        counter!(parent: POMSKY_INVARIANT_VIOLATED_TOTAL, labels: [labels]).inc();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU32, Ordering};
-
     use super::*;
 
-    // Note: these tests use a process-global OnceLock, so only the first
-    // test to run can set the recorder. We test the no-recorder path and
-    // the recorder path in a single test to avoid ordering issues.
-
     #[test]
-    fn record_without_recorder_is_noop() {
-        // Before any recorder is set, this should not panic.
-        // (In the test binary, another test may have set it, so we just
-        // verify it doesn't panic either way.)
-        record_invariant_check(InvariantId::SS1, true);
-        record_invariant_check(InvariantId::SS1, false);
-    }
+    fn records_checked_and_violated_metrics() {
+        let invariant_id = InvariantId::TW2;
+        let labels = label_values!(INVARIANT_LABEL_NAMES => invariant_id.as_str());
+        let checked_counter = counter!(parent: POMSKY_INVARIANT_CHECKED_TOTAL, labels: [labels]);
+        let violated_counter = counter!(parent: POMSKY_INVARIANT_VIOLATED_TOTAL, labels: [labels]);
 
-    #[test]
-    fn recorder_receives_calls() {
-        static CHECKS: AtomicU32 = AtomicU32::new(0);
-        static VIOLATIONS: AtomicU32 = AtomicU32::new(0);
+        let initial_checked = checked_counter.get();
+        let initial_violated = violated_counter.get();
 
-        fn test_recorder(_id: InvariantId, passed: bool) {
-            CHECKS.fetch_add(1, Ordering::Relaxed);
-            if !passed {
-                VIOLATIONS.fetch_add(1, Ordering::Relaxed);
-            }
-        }
+        record_invariant_check(invariant_id, true);
+        record_invariant_check(invariant_id, false);
 
-        // May fail if another test already set the recorder — that's OK,
-        // the test still verifies the function doesn't panic.
-        let _ = RECORDER.set(test_recorder);
-
-        let before_checks = CHECKS.load(Ordering::Relaxed);
-        let before_violations = VIOLATIONS.load(Ordering::Relaxed);
-
-        record_invariant_check(InvariantId::TW2, true);
-        record_invariant_check(InvariantId::TW2, false);
-
-        // If our recorder was set, we should see the increments.
-        // If another recorder was set first, we can't assert on counts.
-        if RECORDER.get() == Some(&(test_recorder as InvariantRecorder)) {
-            assert_eq!(CHECKS.load(Ordering::Relaxed), before_checks + 2);
-            assert_eq!(VIOLATIONS.load(Ordering::Relaxed), before_violations + 1);
-        }
+        assert_eq!(checked_counter.get(), initial_checked + 2);
+        assert_eq!(violated_counter.get(), initial_violated + 1);
     }
 }

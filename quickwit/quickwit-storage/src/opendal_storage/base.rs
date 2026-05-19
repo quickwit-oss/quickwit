@@ -22,7 +22,7 @@ use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use quickwit_metrics::HistogramTimer;
 use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
-use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::instrument;
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
@@ -88,13 +88,14 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
-        let mut storage_writer = self
+        let storage_writer = self
             .op
             .writer_with(&path)
             .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)
             .await?
-            .into_futures_async_write()
-            .compat_write();
+            .into_futures_async_write();
+        let mut storage_writer =
+            tokio_util::compat::FuturesAsyncWriteCompatExt::compat_write(storage_writer);
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
@@ -115,8 +116,7 @@ impl Storage for OpendalStorage {
         ::metrics::counter!("object_storage_get_requests.count").increment(1);
         let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
-        ::metrics::counter!("object_storage_get_requests_bytes.count")
-            .increment(num_bytes_copied);
+        ::metrics::counter!("object_storage_get_requests_bytes.count").increment(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }

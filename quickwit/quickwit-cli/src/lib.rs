@@ -344,6 +344,9 @@ fn prompt_confirmation(prompt: &str, default: bool) -> bool {
 
 /// Starts the system and jemalloc (if the feature is enabled) metrics loops.
 pub fn start_metrics_loops() {
+    quickwit_common::metrics::register_dd_memory_metrics();
+    quickwit_indexing::register_dd_indexing_metrics();
+    quickwit_storage::metrics::register_dd_object_storage_metrics();
     system::start_sys_metrics_loop();
 
     #[cfg(feature = "jemalloc")]

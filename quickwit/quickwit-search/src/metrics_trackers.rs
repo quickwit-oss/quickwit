@@ -24,6 +24,7 @@ use quickwit_proto::search::LeafSearchResponse;
 
 use crate::SearchError;
 use crate::metrics::{
+    DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS, DD_ROOT_SEARCH_REQUESTS_TOTAL,
     LEAF_SEARCH_REQUEST_DURATION_SECONDS, LEAF_SEARCH_REQUESTS_TOTAL, LEAF_SEARCH_TARGETED_SPLITS,
     ROOT_SEARCH_REQUEST_DURATION_SECONDS, ROOT_SEARCH_REQUESTS_TOTAL, ROOT_SEARCH_TARGETED_SPLITS,
     STATUS_LABEL_NAMES,
@@ -80,12 +81,8 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             .observe(self.start.elapsed().as_secs_f64());
         histogram!(parent: ROOT_SEARCH_TARGETED_SPLITS, labels: [labels])
             .observe(num_targeted_splits as f64);
-        SEARCH_METRICS
-            .dd_root_search_requests_total
-            .get(status)
-            .increment(1);
-        SEARCH_METRICS
-            .dd_root_search_request_duration_seconds
+        DD_ROOT_SEARCH_REQUESTS_TOTAL.get(status).increment(1);
+        DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS
             .get(status)
             .record(self.start.elapsed().as_secs_f64());
     }

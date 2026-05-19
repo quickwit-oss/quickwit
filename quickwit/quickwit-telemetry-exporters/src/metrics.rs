@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use metrics_util::layers::FanoutBuilder;
+use metrics_util::MetricKindMask;
+use metrics_util::layers::{FanoutBuilder, RouterBuilder};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::otlp::OtlpExporterConfig;
@@ -24,7 +25,7 @@ pub(crate) fn init_metrics_provider(
 ) -> anyhow::Result<Option<SdkMeterProvider>> {
     let prometheus_recorder = crate::prometheus::metrics::build_recorder()?;
 
-    let (recorder, meter_provider) = if otlp_config.is_enabled() {
+    let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
         let (otlp_recorder, meter_provider) =
             crate::otlp::metrics::build_recorder(service_version, otlp_config)?;
         let recorder = FanoutBuilder::default()
@@ -38,6 +39,17 @@ pub(crate) fn init_metrics_provider(
             .build();
         (recorder, None)
     };
+
+    let dogstatsd_recorder = crate::dogstatsd::metrics::build_recorder(service_version)?;
+    let mut router = RouterBuilder::from_recorder(quickwit_recorder);
+    // Pomsky invariant metrics use the Quickwit metrics API, so route their generated prefix
+    // explicitly instead of letting the default route send them to Prometheus/OTLP.
+    router.add_route(
+        MetricKindMask::ALL,
+        "quickwit_pomsky_invariant_",
+        dogstatsd_recorder,
+    );
+    let recorder = router.build();
 
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;

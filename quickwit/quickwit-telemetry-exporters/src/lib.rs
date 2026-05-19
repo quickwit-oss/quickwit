@@ -18,8 +18,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use opentelemetry::global;
+use opentelemetry::propagation::TextMapCompositePropagator;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_datadog::DatadogPropagator;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider as SdkMetricsProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -30,6 +32,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
 
+mod dogstatsd;
 mod logs;
 mod metrics;
 mod otlp;
@@ -130,7 +133,10 @@ pub fn init_telemetry(
 
     let meter_provider = metrics::init_metrics_provider(service_version, &otlp_config)?;
 
-    global::set_text_map_propagator(TraceContextPropagator::new());
+    global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
+        Box::new(DatadogPropagator::new()),
+        Box::new(TraceContextPropagator::new()),
+    ]));
 
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817

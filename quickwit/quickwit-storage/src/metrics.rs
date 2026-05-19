@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
+use metrics::Counter as MetricsCounter;
 use quickwit_config::CacheConfig;
 use quickwit_metrics::{
     Counter, Gauge, GaugeGuard, LabelNames, Labels, LazyCounter, LazyGauge, LazyHistogram, counter,
@@ -129,6 +130,30 @@ pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyCounter = lazy_counter!(
         description: "Amount of data uploaded to an object storage.",
         subsystem: "storage",
 );
+
+static DD_OBJECT_STORAGE_GET_REQUESTS: LazyLock<MetricsCounter> =
+    LazyLock::new(|| metrics::counter!("object_storage_get_requests.count"));
+
+static DD_OBJECT_STORAGE_GET_REQUESTS_BYTES: LazyLock<MetricsCounter> =
+    LazyLock::new(|| metrics::counter!("object_storage_get_requests_bytes.count"));
+
+static DD_OBJECT_STORAGE_PUT_REQUESTS: LazyLock<MetricsCounter> =
+    LazyLock::new(|| metrics::counter!("object_storage_put_requests.count"));
+
+static DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES: LazyLock<MetricsCounter> =
+    LazyLock::new(|| metrics::counter!("object_storage_put_requests_bytes.count"));
+
+static DD_OBJECT_STORAGE_DELETE_REQUESTS: LazyLock<MetricsCounter> =
+    LazyLock::new(|| metrics::counter!("object_storage_delete_requests.count"));
+
+/// Registers legacy Datadog object storage metrics expected by existing dashboards and tests.
+pub fn register_dd_object_storage_metrics() {
+    LazyLock::force(&DD_OBJECT_STORAGE_GET_REQUESTS);
+    LazyLock::force(&DD_OBJECT_STORAGE_GET_REQUESTS_BYTES);
+    LazyLock::force(&DD_OBJECT_STORAGE_PUT_REQUESTS);
+    LazyLock::force(&DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES);
+    LazyLock::force(&DD_OBJECT_STORAGE_DELETE_REQUESTS);
+}
 
 /// Metrics for a named cache component (e.g. "shortlived", "splitfooter").
 ///

@@ -797,8 +797,7 @@ impl Storage for S3CompatibleObjectStorage {
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
         let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
-        ::metrics::counter!("object_storage_get_requests_bytes.count")
-            .increment(num_bytes_copied);
+        ::metrics::counter!("object_storage_get_requests_bytes.count").increment(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }

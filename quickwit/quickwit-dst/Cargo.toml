@@ -13,4 +13,6 @@ description = "Deterministic simulation testing and stateright model checking fo
 model-checking = ["stateright"]
 
 [dependencies]
+quickwit-metrics = { workspace = true }
+
 stateright = { workspace = true, optional = true }

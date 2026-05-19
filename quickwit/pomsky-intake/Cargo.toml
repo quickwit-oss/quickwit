@@ -42,7 +42,9 @@ serde_yaml = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
+# Vector's `GenerateConfig` trait exposes `toml::Value` from Vector's 0.9
+# dependency. Keep this crate on the same package version for those impls.
+toml = { version = "0.9.8", default-features = false, features = ["serde", "display", "parse"] }
 tracing = { workspace = true }
 typetag = { workspace = true }
 vector = { workspace = true }

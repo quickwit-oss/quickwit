@@ -50,8 +50,8 @@ use tracing::{error, info};
 use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::metrics::{
-    DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE,
-    PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL, PROCESSED_BYTES, PROCESSED_DOCS_TOTAL,
+    DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, PROCESSED_BYTES,
+    PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
 };
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
