@@ -334,7 +334,9 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
-                .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
+                .set_checksum_algorithm(
+                    (!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C),
+                )
                 .key(key)
                 .send()
                 .await
