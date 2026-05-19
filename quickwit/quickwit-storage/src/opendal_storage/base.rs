@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
+use quickwit_metrics::HistogramTimer;
 use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use tracing::instrument;
@@ -36,7 +37,7 @@ use crate::{
 /// # TODO
 ///
 /// - Implement REQUEST_SEMAPHORE to control the concurrency.
-/// - Implement STORAGE_METRICS for metrics.
+/// - Implement object storage metrics.
 pub struct OpendalStorage {
     uri: Uri,
     op: Operator,
@@ -82,7 +83,7 @@ impl Storage for OpendalStorage {
 
     #[instrument(name = "storage.gcs.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -95,9 +96,7 @@ impl Storage for OpendalStorage {
             .compat_write();
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(payload.len());
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         Ok(())
     }
 
@@ -112,9 +111,7 @@ impl Storage for OpendalStorage {
             .await?
             .compat();
         let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
-        crate::STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -127,7 +124,7 @@ impl Storage for OpendalStorage {
         // Unlike other object store implementations, in flight requests are
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
-        crate::STORAGE_METRICS.object_storage_get_total.inc();
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
         // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
         // perform.
@@ -163,12 +160,8 @@ impl Storage for OpendalStorage {
     #[instrument(name = "storage.gcs.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        crate::STORAGE_METRICS
-            .object_storage_delete_requests_total
-            .inc();
-        let _timer = crate::STORAGE_METRICS
-            .object_storage_delete_request_duration
-            .start_timer();
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         self.op.delete(&path).await?;
         Ok(())
     }
@@ -183,12 +176,10 @@ impl Storage for OpendalStorage {
             if storage_info.name().starts_with("sample-bucket") && storage_info.scheme() == "gcs" {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
-                    crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_requests_total
-                        .inc();
-                    let _timer = crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_request_duration
-                        .start_timer();
+                    crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
+                    let _timer = HistogramTimer::new(
+                        &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
+                    );
                     let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();

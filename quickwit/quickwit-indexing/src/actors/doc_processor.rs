@@ -20,11 +20,11 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
@@ -40,12 +40,12 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
+use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
 };
 
 const PLAIN_TEXT: &str = "plain_text";
-
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
     num_bytes: usize,
@@ -270,8 +270,8 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 #[derive(Debug)]
 pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
-    pub num_docs_metric: IntCounter,
-    pub num_bytes_metric: IntCounter,
+    pub num_docs_metric: Counter,
+    pub num_bytes_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -282,17 +282,18 @@ impl Serialize for DocProcessorCounter {
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
-        let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, outcome];
+    fn for_index_and_doc_processor_outcome(
+        index: &str,
+        outcome: &'static str,
+    ) -> DocProcessorCounter {
+        let labels = labels!(
+            "index" => quickwit_common::metrics::index_label(index).to_string(),
+            "docs_processed_status" => outcome
+        );
         DocProcessorCounter {
             num_docs: Default::default(),
-            num_docs_metric: crate::metrics::INDEXER_METRICS
-                .processed_docs_total
-                .with_label_values(labels),
-            num_bytes_metric: crate::metrics::INDEXER_METRICS
-                .processed_bytes
-                .with_label_values(labels),
+            num_docs_metric: counter!(parent: PROCESSED_DOCS_TOTAL, labels: [labels]),
+            num_bytes_metric: counter!(parent: PROCESSED_BYTES, labels: [labels]),
         }
     }
 

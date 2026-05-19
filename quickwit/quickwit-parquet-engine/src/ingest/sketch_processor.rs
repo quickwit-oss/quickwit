@@ -16,10 +16,11 @@
 
 use arrow::array::AsArray;
 use arrow::record_batch::RecordBatch;
+use quickwit_metrics::{counter, labels};
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;
-use crate::metrics::PARQUET_ENGINE_METRICS;
+use crate::metrics::{ERRORS_TOTAL, INGEST_BYTES_TOTAL};
 use crate::schema::validate_required_sketch_fields;
 
 /// Processor that converts Arrow IPC bytes to RecordBatch for DDSketch data.
@@ -41,35 +42,26 @@ impl SketchParquetIngestProcessor {
     /// sketch arrays are inconsistent.
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
-        PARQUET_ENGINE_METRICS
-            .ingest_bytes_total
-            .with_label_values(["sketches"])
-            .inc_by(ipc_bytes.len() as u64);
+        let labels_kind = labels!("kind" => "sketches");
+        let labels_operation = labels!("operation" => "ingest");
+
+        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind]).inc_by(ipc_bytes.len() as u64);
 
         let batch = match super::processor::ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(err) => {
-                PARQUET_ENGINE_METRICS
-                    .errors_total
-                    .with_label_values(["ingest", "sketches"])
-                    .inc();
+                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
                 return Err(err);
             }
         };
 
         if let Err(err) = self.validate_schema(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "sketches"])
-                .inc();
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
             return Err(err);
         }
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "sketches"])
-                .inc();
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
             return Err(err);
         }
 

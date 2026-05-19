@@ -61,6 +61,7 @@ use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -219,7 +220,7 @@ impl Actor for ControlPlane {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        crate::metrics::CONTROL_PLANE_METRICS.restart_total.inc();
+        RESTART_TOTAL.inc();
 
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
@@ -568,17 +569,13 @@ fn convert_metastore_error<T>(
             // It will be up to the client to decide what to do there.
             error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         }
-        crate::metrics::CONTROL_PLANE_METRICS
-            .metastore_error_aborted
-            .inc();
+        METASTORE_ERROR_ABORTED.inc();
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
         error!(error=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
-        crate::metrics::CONTROL_PLANE_METRICS
-            .metastore_error_maybe_executed
-            .inc();
+        METASTORE_ERROR_MAYBE_EXECUTED.inc();
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }

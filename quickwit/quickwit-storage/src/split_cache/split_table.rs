@@ -21,6 +21,8 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use ulid::Ulid;
 
+use crate::metrics::SEARCHER_SPLIT_CACHE;
+
 type LastAccessDate = u64;
 
 /// Maximum number of splits to track.
@@ -152,23 +154,13 @@ impl SplitTable {
             Status::Downloading { .. } => &mut self.downloading_splits,
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes -= num_bytes;
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
-                    .cache_metrics
-                    .in_cache_count
-                    .dec();
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                SEARCHER_SPLIT_CACHE.cache_metrics.in_cache_count.dec();
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
-                    .sub(num_bytes as i64);
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
-                    .cache_metrics
-                    .evict_num_items
-                    .inc();
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                    .dec_by(num_bytes as f64);
+                SEARCHER_SPLIT_CACHE.cache_metrics.evict_num_items.inc();
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_bytes
                     .inc_by(num_bytes);
@@ -220,16 +212,11 @@ impl SplitTable {
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes += num_bytes;
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
-                    .cache_metrics
-                    .in_cache_count
-                    .inc();
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                SEARCHER_SPLIT_CACHE.cache_metrics.in_cache_count.inc();
+                SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
-                    .add(num_bytes as i64);
+                    .inc_by(num_bytes as f64);
                 self.on_disk_splits.insert(split_info.split_key)
             }
         };

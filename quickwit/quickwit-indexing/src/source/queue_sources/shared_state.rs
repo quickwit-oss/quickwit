@@ -155,7 +155,9 @@ impl QueueSharedState {
                 info!(previous_token = shard.publish_token, "shard re-acquired");
                 re_acquired_shards.push(shard.shard_id().clone());
             } else if is_owned && !position.is_beginning() {
-                bail!("Partition is owned by this indexing pipeline but is not at the beginning. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+                bail!(
+                    "Partition is owned by this indexing pipeline but is not at the beginning. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
+                )
             }
         }
 

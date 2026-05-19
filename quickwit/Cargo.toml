@@ -26,6 +26,9 @@ members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
+  "quickwit-metrics",
+  "quickwit-telemetry-exporters",
+  "quickwit-metrics-inventory",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
@@ -68,6 +71,9 @@ default-members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
+  "quickwit-metrics",
+  "quickwit-telemetry-exporters",
+  "quickwit-metrics-inventory",
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
   "quickwit-proto",
@@ -95,6 +101,7 @@ assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
+atomic_float = "1.1"
 backtrace = "0.3"
 base64 = "0.22"
 binggan = { version = "0.17" }
@@ -111,8 +118,10 @@ clap = { version = "4.6", features = ["env", "string"] }
 coarsetime = "0.1"
 colored = "3.1"
 console-subscriber = "0.5"
+const_format = "0.2"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.16"
+dashmap = "6.1"
 dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
@@ -152,6 +161,7 @@ hyper-util = { version = "0.1", default-features = false, features = [
 ] }
 indexmap = { version = "2.14", features = ["serde"] }
 indicatif = "0.18"
+inventory = "0.3"
 itertools = "0.14"
 lambda_runtime = "1.2"
 json_comments = "0.2"
@@ -159,6 +169,10 @@ libz-sys = "1.1"
 lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
+metrics = "0.24"
+metrics-exporter-otel = "0.3"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
@@ -197,6 +211,7 @@ pulsar = { version = "6.7", default-features = false, features = [
   "compression",
   "tokio-runtime",
 ] }
+quanta = "0.12"
 quick_cache = "0.6.21"
 quote = "1.0"
 rand = "0.10"
@@ -373,6 +388,9 @@ quickwit-lambda-client = { path = "quickwit-lambda-client" }
 quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
+quickwit-metrics = { path = "quickwit-metrics" }
+quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
+quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
 quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
 quickwit-proto = { path = "quickwit-proto" }

@@ -30,6 +30,7 @@ use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
     SplitState,
 };
+use quickwit_metrics::{counter, label_values};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
@@ -44,6 +45,7 @@ use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
+use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, ONGOING_MERGE_OPERATIONS};
 use crate::models::MergeStatistics;
 use crate::split_store::IndexingSplitStore;
 
@@ -272,11 +274,7 @@ impl MergePipeline {
         let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_publisher"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_publisher")]))
             .spawn(merge_publisher);
 
         // Merge uploader
@@ -322,11 +320,7 @@ impl MergePipeline {
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_executor"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_executor")]))
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
@@ -338,11 +332,7 @@ impl MergePipeline {
         let (merge_split_downloader_mailbox, merge_split_downloader_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_split_downloader"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_split_downloader")]))
             .spawn(merge_split_downloader);
 
         // Merge planner
@@ -397,9 +387,7 @@ impl MergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
-        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .get();
+        let num_ongoing_merges = ONGOING_MERGE_OPERATIONS.get();
         self.statistics = self
             .previous_generations_statistics
             .clone()
@@ -409,7 +397,7 @@ impl MergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
+            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize);
     }
 
     async fn perform_health_check(

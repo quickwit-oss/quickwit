@@ -31,7 +31,7 @@ impl ListFieldsCache {
         ListFieldsCache {
             content: MemorySizedCache::from_config(
                 config,
-                &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+                &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
             ),
         }
     }
