@@ -43,7 +43,7 @@ use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
-use quickwit_config::S3StorageConfig;
+use quickwit_config::{ChecksumStrategy, S3StorageConfig};
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader, ReadBuf};
@@ -95,7 +95,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
-    disable_checksums: bool,
+    checksum_strategy: ChecksumStrategy,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -156,7 +156,10 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
-    if s3_storage_config.disable_checksums {
+    if matches!(
+        s3_storage_config.checksum_strategy,
+        ChecksumStrategy::Disabled
+    ) {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
         s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
@@ -200,7 +203,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
-            disable_checksums: s3_storage_config.disable_checksums,
+            checksum_strategy: s3_storage_config.checksum_strategy,
         })
     }
 
@@ -218,7 +221,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
-            disable_checksums: self.disable_checksums,
+            checksum_strategy: self.checksum_strategy,
         }
     }
 
@@ -246,6 +249,17 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
         .map(|prefix_match| PathBuf::from(prefix_match.as_str()))
         .unwrap_or_default();
     Some((bucket, prefix))
+}
+
+/// Maps a configured [`ChecksumStrategy`] onto the AWS SDK's [`ChecksumAlgorithm`].
+/// The SDK computes & trails both CRC32C and MD5 internally; `Disabled` returns `None`
+/// so no algorithm is advertised.
+fn aws_checksum_algorithm(strategy: ChecksumStrategy) -> Option<ChecksumAlgorithm> {
+    match strategy {
+        ChecksumStrategy::Crc32c => Some(ChecksumAlgorithm::Crc32C),
+        ChecksumStrategy::Md5 => Some(ChecksumAlgorithm::Md5),
+        ChecksumStrategy::Disabled => None,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -299,7 +313,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
-            .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
             .send()
             .await
             .map_err(|sdk_error| {
@@ -334,9 +348,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
-                .set_checksum_algorithm(
-                    (!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C),
-                )
+                .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
                 .key(key)
                 .send()
                 .await
@@ -417,7 +429,7 @@ impl S3CompatibleObjectStorage {
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
-            .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
@@ -433,9 +445,12 @@ impl S3CompatibleObjectStorage {
                 }
             })?;
 
+        // Only one checksum field is populated by the SDK, matching the algorithm we
+        // advertised on the upload; the rest stay `None`.
         let completed_part = CompletedPart::builder()
             .set_e_tag(upload_part_output.e_tag)
             .set_checksum_crc32_c(upload_part_output.checksum_crc32_c)
+            .set_checksum_md5(upload_part_output.checksum_md5)
             .part_number(part.part_number as i32)
             .build();
         Ok(completed_part)
@@ -960,7 +975,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            disable_checksums: false,
+            checksum_strategy: ChecksumStrategy::Crc32c,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1008,7 +1023,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
-            disable_checksums: false,
+            checksum_strategy: ChecksumStrategy::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1046,7 +1061,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            disable_checksums: false,
+            checksum_strategy: ChecksumStrategy::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1129,7 +1144,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            disable_checksums: false,
+            checksum_strategy: ChecksumStrategy::Crc32c,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1221,7 +1236,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            disable_checksums: false,
+            checksum_strategy: ChecksumStrategy::Crc32c,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
