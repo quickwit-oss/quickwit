@@ -331,17 +331,19 @@ impl Drop for GaugeGuard {
 /// ```
 #[macro_export]
 macro_rules! gauge {
-    // Base declaration: all-static name, labels, and key — zero allocations.
+    // Base declaration with explicit system and subsystem prefix - zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:tt
+        system: $system:expr,
+        subsystem: $subsystem:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Gauge,
             name: $name,
             description: $description,
+            system: $system,
             subsystem: $subsystem
             $(, $label => $value)*
         );
@@ -349,6 +351,22 @@ macro_rules! gauge {
             metric_type: $crate::Gauge,
             register_fn: $crate::__gauge_get_or_register,
             metric_info: &INFO
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::gauge!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem
             $(, $label => $value)*
         )
     }};

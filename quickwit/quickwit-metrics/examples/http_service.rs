@@ -67,6 +67,34 @@ static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyGauge = lazy_gauge!(
         "region" => "us-east-1",
 );
 
+// ─── Custom system prefix ───
+//
+// Override the default system prefix ("quickwit") with a custom value.
+// This produces metric names like "myapp_db_queries_total" instead of
+// "quickwit_db_queries_total".
+
+static DB_QUERIES_TOTAL: LazyCounter = lazy_counter!(
+        name: "queries_total",
+        description: "Total number of database queries",
+        system: "myapp",
+        subsystem: "db",
+);
+
+static DB_QUERY_DURATION: LazyHistogram = lazy_histogram!(
+        name: "query_duration_seconds",
+        description: "Time spent executing database queries",
+        system: "myapp",
+        subsystem: "db",
+        buckets: vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
+);
+
+static DB_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "connections",
+        description: "Number of active database connections",
+        system: "myapp",
+        subsystem: "db",
+);
+
 // ─── LabelNames<N> examples ───
 
 const ROUTE_LABEL_NAMES: LabelNames<2> = label_names!("method", "path");
@@ -181,6 +209,15 @@ fn main() {
     println!("=== Counter absolute ===");
     HTTP_REQUESTS_TOTAL.absolute(1_000_000);
     println!("  set quickwit_http_requests_total absolute = 1,000,000");
+    println!();
+
+    println!("=== Custom system prefix ===");
+    DB_QUERIES_TOTAL.inc();
+    println!("  myapp_db_queries_total = {}", DB_QUERIES_TOTAL.get());
+    DB_QUERY_DURATION.observe(0.042);
+    println!("  myapp_db_query_duration_seconds observed 0.042");
+    DB_CONNECTIONS.set(5.0);
+    println!("  myapp_db_connections = {}", DB_CONNECTIONS.get());
     println!();
 
     println!("Prometheus scrape endpoint: http://127.0.0.1:9000/metrics");
