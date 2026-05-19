@@ -14,21 +14,27 @@
 
 //! Parquet merge executor actor.
 //!
-//! Receives a `ParquetMergeScratch` from the downloader. Two merge
-//! paths, chosen on `target_prefix_len_override`:
+//! Receives a `ParquetMergeScratch` from the downloader. Two engines are available:
 //!
-//! - **Regular merge** (`target_prefix_len_override == None`): the input splits already share
-//!   `qh.rg_partition_prefix_len` (MP-3). Run the in-memory `merge_sorted_parquet_files` engine
-//!   inside `run_cpu_intensive()`.
-//! - **Promotion merge** (`target_prefix_len_override == Some(target)`): the inputs may carry
-//!   *different* prefix lengths (the whole point of promotion). The in-memory path's
-//!   `extract_and_validate_input_metadata` would bail on the mismatch before any output is
-//!   produced, so promotion runs through `execute_merge_operation` instead — that path opens each
-//!   input through `LegacyInputAdapter` for splits below the target prefix len and through
-//!   `StreamingParquetReader` for splits at the target, so the streaming engine sees a homogeneous
-//!   stream advertising `prefix_len = target` on every input. `mixed_prefix_ok` is then passed to
-//!   `merge_parquet_split_metadata` so the post-merge aggregator skips the input-side equality
-//!   check.
+//! - **Streaming engine** (`execute_merge_operation`): column-major, page-bounded body cache. Used
+//!   unconditionally for promotion merges (the in-memory path can't handle mixed prefix lengths).
+//!   Optionally used for regular merges when the node-level
+//!   `IndexerConfig::parquet_merge_use_streaming_engine` flag is true.
+//! - **In-memory engine** (`merge_sorted_parquet_files`): buffers all inputs in memory and runs
+//!   inside `run_cpu_intensive`. Kept as the runtime fallback so production can flip back via YAML
+//!   config if the streaming engine hits a bug. To be removed once the streaming path has soaked.
+//!
+//! Routing in `handle()`:
+//!
+//! - `target_prefix_len_override.is_some()` → streaming engine. Promotion is the whole point of
+//!   `target_prefix_len_override`, and the in-memory path's `extract_and_validate_input_metadata`
+//!   would bail on the mixed `rg_partition_prefix_len` before any output is produced.
+//! - Else `use_streaming_engine == true` → streaming engine (the new default once soaked).
+//! - Else → in-memory engine (the runtime fallback).
+//!
+//! `mixed_prefix_ok` is passed to `merge_parquet_split_metadata` only for promotion merges so
+//! the post-merge aggregator's strict input-side equality check stays on for ordinary
+//! same-prefix merges.
 
 use std::io;
 use std::ops::Range;
@@ -117,17 +123,57 @@ impl RemoteByteSource for LocalFileByteSource {
 pub struct ParquetMergeExecutor {
     uploader_mailbox: Mailbox<ParquetUploader>,
     writer_config: ParquetWriterConfig,
+    /// When true, regular merges run through the streaming engine. When
+    /// false, they run through the in-memory `merge_sorted_parquet_files`
+    /// fallback. Promotion merges always use the streaming engine
+    /// regardless of this flag.
+    use_streaming_engine: bool,
+    /// Target output split size, sourced from the merge policy. Drives
+    /// `num_outputs`: the executor asks the merge engine for
+    /// `ceil(total_input_bytes / target_split_size_bytes)` outputs so a
+    /// merge that ingests more than one target's worth of data spreads
+    /// across multiple output files. The engine clamps the request to
+    /// the number of `sorted_series` boundaries actually available, so
+    /// the result is an upper bound rather than an exact count.
+    /// Operations whose inputs already fit in one target naturally get
+    /// `num_outputs = 1`.
+    target_split_size_bytes: u64,
 }
 
 impl ParquetMergeExecutor {
     pub fn new(
         uploader_mailbox: Mailbox<ParquetUploader>,
         writer_config: ParquetWriterConfig,
+        use_streaming_engine: bool,
+        target_split_size_bytes: u64,
     ) -> Self {
         Self {
             uploader_mailbox,
             writer_config,
+            use_streaming_engine,
+            target_split_size_bytes,
         }
+    }
+
+    /// Compute the requested `num_outputs` for a merge. Returns at
+    /// least 1 (the merge always produces at least one output unless
+    /// every input is empty). Guards against the
+    /// `target_split_size_bytes = 0` misconfiguration — falling back to
+    /// 1 rather than dividing by zero.
+    fn compute_num_outputs(&self, total_input_bytes: u64) -> usize {
+        if self.target_split_size_bytes == 0 {
+            return 1;
+        }
+        // Ceiling division without overflow: `(a + b - 1) / b` would
+        // overflow at u64::MAX; use the explicit add-one-after-divide
+        // form when `a` is non-zero.
+        let quot = total_input_bytes / self.target_split_size_bytes;
+        let extra = if total_input_bytes.is_multiple_of(self.target_split_size_bytes) {
+            0
+        } else {
+            1
+        };
+        ((quot + extra) as usize).max(1)
     }
 }
 
@@ -176,18 +222,29 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .context("failed to create merge output directory")
             .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-        // Route promotion merges (`target_prefix_len_override.is_some()`)
-        // through `execute_merge_operation`. That path opens each input
-        // via `LegacyInputAdapter` when the split's prefix_len is below
-        // the target, so the streaming merge engine sees a homogeneous
-        // stream with all inputs at `prefix_len = target`. Without this
-        // routing the in-memory `merge_sorted_parquet_files` would bail
-        // in `extract_and_validate_input_metadata` on mixed prefix
-        // lengths before any output is produced.
-        let merge_result: Result<Result<Vec<MergeOutputFile>, _>, _> = if scratch
-            .merge_operation
-            .target_prefix_len_override
-            .is_some()
+        // Promotion merges (`target_prefix_len_override.is_some()`) must
+        // use the streaming engine; the in-memory path's
+        // `extract_and_validate_input_metadata` would bail on mixed
+        // `rg_partition_prefix_len` before producing any output. Regular
+        // merges follow the operator-controlled `use_streaming_engine`
+        // flag: true means the streaming engine, false means the
+        // in-memory fallback. Keeping the in-memory branch lets
+        // production flip back at runtime if the streaming engine hits a
+        // bug; once the streaming path has soaked, the in-memory branch
+        // and `merge_sorted_parquet_files` itself can be removed.
+        let total_input_bytes = scratch.merge_operation.total_size_bytes();
+        let num_outputs = self.compute_num_outputs(total_input_bytes);
+        info!(
+            merge_split_id = %merge_split_id,
+            total_input_bytes,
+            target_split_size_bytes = self.target_split_size_bytes,
+            num_outputs,
+            "computed num_outputs from total input bytes / target split size"
+        );
+
+        let is_promotion = scratch.merge_operation.target_prefix_len_override.is_some();
+        let merge_result: Result<Result<Vec<MergeOutputFile>, _>, _> = if is_promotion
+            || self.use_streaming_engine
         {
             let sources: Vec<Arc<dyn RemoteByteSource>> = scratch
                 .downloaded_parquet_files
@@ -195,7 +252,7 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 .map(|path| Arc::new(LocalFileByteSource::new(path.clone())) as _)
                 .collect();
             let config = MergeConfig {
-                num_outputs: 1,
+                num_outputs,
                 writer_config: self.writer_config.clone(),
             };
             Ok(
@@ -203,13 +260,15 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                     .await,
             )
         } else {
-            // Regular merge: in-memory path under `run_cpu_intensive`.
+            // Fallback: in-memory engine under `run_cpu_intensive`.
+            // Kept as the runtime rollback target while the streaming
+            // engine soaks in production.
             let input_paths = scratch.downloaded_parquet_files.clone();
             let output_dir_clone = output_dir.clone();
             let writer_config = self.writer_config.clone();
             run_cpu_intensive(move || {
                 let config = MergeConfig {
-                    num_outputs: 1,
+                    num_outputs,
                     writer_config,
                 };
                 merge_sorted_parquet_files(&input_paths, &output_dir_clone, &config)
@@ -336,16 +395,21 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
         let mixed_prefix_ok = scratch.merge_operation.target_prefix_len_override.is_some();
 
         let mut merged_splits = Vec::with_capacity(outputs.len());
-        for output in &outputs {
+        // First output keeps the planner-assigned `merge_split_id` so
+        // existing observability paths (logs, metrics, traces keyed on
+        // this ID) continue to see the planned ID at execute time. For
+        // n>1 the subsequent outputs get fresh IDs generated by
+        // `merge_parquet_split_metadata`. Assigning the same ID to
+        // multiple outputs would collide on the rename below and
+        // overwrite earlier files.
+        for (output_idx, output) in outputs.iter().enumerate() {
             let mut metadata = merge_parquet_split_metadata(input_splits, output, mixed_prefix_ok)
                 .context("failed to build merge output metadata")
                 .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-            // Use the split ID that was assigned when the merge operation was
-            // planned, rather than the one generated inside
-            // merge_parquet_split_metadata(). This keeps the ID consistent
-            // across scheduling, tracing, and the final published split.
-            metadata.split_id = scratch.merge_operation.merge_split_id.clone();
+            if output_idx == 0 {
+                metadata.split_id = scratch.merge_operation.merge_split_id.clone();
+            }
             metadata.parquet_file = metadata.split_id.to_string() + ".parquet";
 
             // Rename the output file to match the split ID.
