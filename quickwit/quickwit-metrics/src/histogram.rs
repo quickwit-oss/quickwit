@@ -261,12 +261,13 @@ impl Drop for HistogramTimer {
 /// ```
 #[macro_export]
 macro_rules! histogram {
-    // Base declaration with explicit system and subsystem prefix - zero allocations.
+    // Base declaration with explicit separator, system, and subsystem prefix - zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
         system: $system:expr,
         subsystem: $subsystem:expr,
+        separator: $separator:expr,
         buckets: $buckets:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
@@ -275,7 +276,8 @@ macro_rules! histogram {
             name: $name,
             description: $description,
             system: $system,
-            subsystem: $subsystem
+            subsystem: $subsystem,
+            separator: $separator
             $(, $label => $value)*
         );
         static HISTOGRAM_CONFIG: $crate::HistogramConfig = $crate::HistogramConfig {
@@ -287,6 +289,26 @@ macro_rules! histogram {
             metric_type: $crate::Histogram,
             register_fn: $crate::__histogram_get_or_register,
             metric_info: &HISTOGRAM_CONFIG
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with explicit system and subsystem prefix - zero allocations.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        system: $system:expr,
+        subsystem: $subsystem:expr,
+        buckets: $buckets:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::histogram!(
+            name: $name,
+            description: $description,
+            system: $system,
+            subsystem: $subsystem,
+            separator: $crate::SEPARATOR,
+            buckets: $buckets
             $(, $label => $value)*
         )
     }};

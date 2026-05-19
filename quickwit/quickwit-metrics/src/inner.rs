@@ -52,13 +52,13 @@ macro_rules! __metadata {
     };
 }
 
-/// Returns `"_"` for non-empty strings, `""` for empty ones.
+/// Returns `separator` for non-empty strings, `""` for empty ones.
 ///
 /// Used inside `concatcp!` to conditionally insert separators when
 /// composing metric key names at compile time.
 #[doc(hidden)]
-pub const fn __sep(s: &str) -> &str {
-    if s.is_empty() { "" } else { "_" }
+pub const fn __sep<'a>(s: &'a str, separator: &'a str) -> &'a str {
+    if s.is_empty() { "" } else { separator }
 }
 
 /// Declares the compile-time statics that every metric declaration arm needs:
@@ -72,12 +72,13 @@ macro_rules! __key_info_metadata {
         name: $name:literal,
         description: $description:literal,
         system: $system:expr,
-        subsystem: $subsystem:tt
+        subsystem: $subsystem:tt,
+        separator: $separator:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {
         const KEY_NAME: &str = $crate::__concatcp!(
-            $system, $crate::__sep($system),
-            $subsystem, $crate::__sep($subsystem),
+            $system, $crate::__sep($system, $separator),
+            $subsystem, $crate::__sep($subsystem, $separator),
             $name
         );
         static METADATA: $crate::__metrics::Metadata<'static> = $crate::__metadata!($subsystem);

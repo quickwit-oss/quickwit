@@ -348,3 +348,23 @@ fn const_system_key_name() {
     assert_eq!(name, "custom_rpc_latency_ms");
     assert_eq!(value, &DebugValue::Histogram(vec![5.0.into()]));
 }
+
+#[test]
+fn custom_separator_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "myapp",
+            subsystem: "http",
+            separator: ".",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp.http.duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}

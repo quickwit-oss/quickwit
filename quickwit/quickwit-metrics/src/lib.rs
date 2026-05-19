@@ -266,6 +266,7 @@
 /// Every metric declared via [`counter!`], [`gauge!`], or [`histogram!`]
 /// has its name composed at compile time as `{system}_{subsystem}_{name}`.
 pub const SYSTEM: &str = "quickwit";
+pub const SEPARATOR: &str = "_";
 
 // ─── Metric modules ───
 mod counter;
