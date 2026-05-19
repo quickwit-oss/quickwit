@@ -95,6 +95,19 @@ static DB_CONNECTIONS: LazyGauge = lazy_gauge!(
         subsystem: "db",
 );
 
+// ─── Custom separator ───
+//
+// Override the default "_" separator with ".".
+// This produces metric names like "myapp.http.requests_total".
+
+static HTTP_REQUESTS_DOTTED: LazyCounter = lazy_counter!(
+        name: "requests_total",
+        description: "Total HTTP requests with dotted metric name",
+        system: "myapp",
+        subsystem: "http",
+        separator: ".",
+);
+
 // ─── LabelNames<N> examples ───
 
 const ROUTE_LABEL_NAMES: LabelNames<2> = label_names!("method", "path");
@@ -218,6 +231,11 @@ fn main() {
     println!("  myapp_db_query_duration_seconds observed 0.042");
     DB_CONNECTIONS.set(5.0);
     println!("  myapp_db_connections = {}", DB_CONNECTIONS.get());
+    println!();
+
+    println!("=== Custom separator ===");
+    HTTP_REQUESTS_DOTTED.inc_by(3);
+    println!("  myapp.http.requests_total = {}", HTTP_REQUESTS_DOTTED.get());
     println!();
 
     println!("Prometheus scrape endpoint: http://127.0.0.1:9000/metrics");
