@@ -156,7 +156,7 @@ impl ActorRegistry {
                 });
             }
         }
-        future::join_all(obs_futures.into_iter()).await
+        future::join_all(obs_futures).await
     }
 
     pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {

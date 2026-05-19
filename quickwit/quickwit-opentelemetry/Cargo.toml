@@ -24,6 +24,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-parquet-engine = { workspace = true }

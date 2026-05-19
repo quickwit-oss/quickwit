@@ -293,7 +293,9 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         self.cache.insert(new_key, new_value);
 
         self.num_items -= (part_count - 1) as u64;
-        self.cache_counters.in_cache_count.sub(part_count - 1);
+        self.cache_counters
+            .in_cache_count
+            .dec_by((part_count - 1) as f64);
 
         self.get_block(start, range_end)
     }
@@ -302,14 +304,18 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         self.num_items += 1;
         self.num_bytes += num_bytes as u64;
         self.cache_counters.in_cache_count.inc();
-        self.cache_counters.in_cache_num_bytes.add(num_bytes as i64);
+        self.cache_counters
+            .in_cache_num_bytes
+            .inc_by(num_bytes as f64);
     }
 
     fn update_counter_drop_item(&mut self, num_bytes: usize) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes as u64;
         self.cache_counters.in_cache_count.dec();
-        self.cache_counters.in_cache_num_bytes.sub(num_bytes as i64);
+        self.cache_counters
+            .in_cache_num_bytes
+            .dec_by(num_bytes as f64);
         self.cache_counters.evict_num_items.inc();
         self.cache_counters.evict_num_bytes.inc_by(num_bytes as u64);
     }
@@ -319,10 +325,10 @@ impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
     fn drop(&mut self) {
         self.cache_counters
             .in_cache_count
-            .sub(self.num_items as i64);
+            .dec_by(self.num_items as f64);
         self.cache_counters
             .in_cache_num_bytes
-            .sub(self.num_bytes as i64);
+            .dec_by(self.num_bytes as f64);
     }
 }
 
@@ -542,9 +548,9 @@ mod tests {
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 4);
             assert_eq!(mutable_cache.num_items, 4);
-            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 4);
+            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 4.0);
             assert_eq!(mutable_cache.num_bytes, 20);
-            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20);
+            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20.0);
         }
 
         cache.get_slice(&key, 3..12).unwrap();
@@ -554,9 +560,9 @@ mod tests {
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 2);
             assert_eq!(mutable_cache.num_items, 2);
-            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 2);
+            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 2.0);
             assert_eq!(mutable_cache.num_bytes, 20);
-            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20);
+            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20.0);
         }
     }
 }

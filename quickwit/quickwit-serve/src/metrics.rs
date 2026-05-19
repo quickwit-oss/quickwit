@@ -12,64 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_common::metrics::{
-    HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
-    new_gauge_vec, new_histogram_vec,
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{
+    LazyCounter, LazyGauge, LazyHistogram, lazy_counter, lazy_gauge, lazy_histogram,
 };
 
-pub struct ServeMetrics {
-    pub http_requests_total: IntCounterVec<2>,
-    pub request_duration_secs: HistogramVec<2>,
-    pub ongoing_requests: IntGaugeVec<1>,
-    pub pending_requests: IntGaugeVec<1>,
-    pub circuit_break_total: IntCounter,
-}
+pub(crate) static HTTP_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "http_requests_total",
+        description: "Total number of HTTP requests processed.",
+        subsystem: "",
+);
 
-impl Default for ServeMetrics {
-    fn default() -> Self {
-        let circuit_break_total = new_counter(
-            "circuit_break_total",
-            "Circuit breaker counter",
-            "grpc",
-            &[],
-        );
-        ServeMetrics {
-            http_requests_total: new_counter_vec(
-                "http_requests_total",
-                "Total number of HTTP requests processed.",
-                "",
-                &[],
-                ["method", "status_code"],
-            ),
-            request_duration_secs: new_histogram_vec(
-                "request_duration_secs",
-                "Response time in seconds",
-                "",
-                &[],
-                ["method", "status_code"],
-                // last bucket is 163.84s
-                quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
-            ),
-            ongoing_requests: new_gauge_vec(
-                "ongoing_requests",
-                "Number of ongoing requests.",
-                "",
-                &[],
-                ["endpoint_group"],
-            ),
-            pending_requests: new_gauge_vec(
-                "pending_requests",
-                "Number of pending requests.",
-                "",
-                &[],
-                ["endpoint_group"],
-            ),
-            circuit_break_total,
-        }
-    }
-}
+pub(crate) static REQUEST_DURATION_SECS: LazyHistogram = lazy_histogram!(
+        name: "request_duration_secs",
+        description: "Response time in seconds",
+        subsystem: "",
+        // last bucket is 163.84s
+        buckets: exponential_buckets(0.02, 2.0, 14).unwrap(),
+);
 
-/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static SERVE_METRICS: LazyLock<ServeMetrics> = LazyLock::new(ServeMetrics::default);
+pub(crate) static ONGOING_REQUESTS: LazyGauge = lazy_gauge!(
+        name: "ongoing_requests",
+        description: "Number of ongoing requests.",
+        subsystem: "",
+);
+
+pub(crate) static PENDING_REQUESTS: LazyGauge = lazy_gauge!(
+        name: "pending_requests",
+        description: "Number of pending requests.",
+        subsystem: "",
+);
+
+pub(crate) static CIRCUIT_BREAK_TOTAL: LazyCounter = lazy_counter!(
+        name: "circuit_break_total",
+        description: "Circuit breaker counter",
+        subsystem: "grpc",
+);

@@ -43,6 +43,7 @@ use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
+use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -53,8 +54,8 @@ use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -300,13 +301,9 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(|io_error| Retry::Permanent(StorageError::from(io_error)))?;
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(len);
-        crate::STORAGE_METRICS
-            .dd_object_storage_put_bytes_total
-            .increment(len);
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
+        ::metrics::counter!("object_storage_put_requests_bytes.count").increment(len);
 
         self.s3_client
             .put_object()
@@ -438,13 +435,9 @@ impl S3CompatibleObjectStorage {
             .map_err(Retry::Permanent)?;
         let md5 = BASE64_STANDARD.encode(part.md5.0);
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(part.len());
-        crate::STORAGE_METRICS
-            .dd_object_storage_put_bytes_total
-            .increment(part.len());
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
+        ::metrics::counter!("object_storage_put_requests_bytes.count").increment(part.len());
 
         let upload_part_output = self
             .s3_client
@@ -564,10 +557,8 @@ impl S3CompatibleObjectStorage {
         let key = self.key(path);
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
-        crate::STORAGE_METRICS.object_storage_get_total.inc();
-        crate::STORAGE_METRICS
-            .dd_object_storage_get_total
-            .increment(1);
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        ::metrics::counter!("object_storage_get_requests.count").increment(1);
 
         let get_object_output = self
             .s3_client
@@ -577,12 +568,6 @@ impl S3CompatibleObjectStorage {
             .set_range(range_str)
             .send()
             .await?;
-
-        let num_bytes = get_object_output.content_length.unwrap_or(0);
-        crate::STORAGE_METRICS
-            .dd_object_storage_get_bytes_total
-            .increment(num_bytes as u64);
-
         Ok(get_object_output)
     }
 
@@ -666,15 +651,12 @@ impl S3CompatibleObjectStorage {
         for (path_chunk, delete) in &mut delete_requests_it {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
                 aws_retry(&self.retry_params, || async {
-                    crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_requests_total
-                        .inc();
-                    crate::STORAGE_METRICS
-                        .dd_object_storage_delete_total
+                    crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
+                    ::metrics::counter!("object_storage_delete_requests.count")
                         .increment(path_chunk.len() as u64);
-                    let _timer = crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_request_duration
-                        .start_timer();
+                    let _timer = HistogramTimer::new(
+                        &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
+                    );
                     self.s3_client
                         .delete_objects()
                         .bucket(self.bucket.clone())
@@ -750,9 +732,8 @@ async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
     // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the body
     // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
     let bytes = aggregated.into_bytes();
-    STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .inc_by(bytes.len() as u64);
+    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
+    ::metrics::counter!("object_storage_get_requests_bytes.count").increment(bytes.len() as u64);
     Ok(bytes)
 }
 
@@ -793,10 +774,8 @@ impl Storage for S3CompatibleObjectStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
-        crate::STORAGE_METRICS
-            .dd_object_storage_put_total
-            .increment(1);
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
+        ::metrics::counter!("object_storage_put_requests.count").increment(1);
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
@@ -817,9 +796,9 @@ impl Storage for S3CompatibleObjectStorage {
             aws_retry(&self.retry_params, || self.get_object(path, None)).await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
         let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
-        STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
+        ::metrics::counter!("object_storage_get_requests_bytes.count")
+            .increment(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -830,15 +809,10 @@ impl Storage for S3CompatibleObjectStorage {
         let bucket = self.bucket.clone();
         let key = self.key(path);
         let delete_res = aws_retry(&self.retry_params, || async {
-            crate::STORAGE_METRICS
-                .object_storage_delete_requests_total
-                .inc();
-            crate::STORAGE_METRICS
-                .dd_object_storage_delete_total
-                .increment(1);
-            let _timer = crate::STORAGE_METRICS
-                .object_storage_delete_request_duration
-                .start_timer();
+            crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+            ::metrics::counter!("object_storage_delete_requests.count").increment(1);
+            let _timer =
+                HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)

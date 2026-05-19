@@ -33,6 +33,7 @@ opentelemetry = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
+quickwit-metrics = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
@@ -68,7 +69,7 @@ jemalloc-profiled = [
 [dev-dependencies]
 binggan = { workspace = true }
 hyper-util = { workspace = true }
-metrics-util = "0.20"
+metrics-util = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 ordered-float = "5.1"
 proptest = { workspace = true }

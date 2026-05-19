@@ -18,8 +18,9 @@ use std::time::{Duration, Instant};
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use mrecordlog::error::CreateQueueError;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_INGESTER_REPLICATE;
 use quickwit_common::{ServiceStream, rate_limited_warn};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, IngesterStatus, InitReplicaRequest, InitReplicaResponse,
     ReplicateFailure, ReplicateFailureReason, ReplicateRequest, ReplicateResponse,
@@ -39,7 +40,7 @@ use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::estimate_size;
 use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
-use crate::metrics::INGEST_METRICS;
+use crate::metrics::{REPLICATED_NUM_BYTES_TOTAL, REPLICATED_NUM_DOCS_TOTAL};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -505,8 +506,8 @@ impl ReplicationTask {
             )));
         }
         let request_size_bytes = replicate_request.num_bytes();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_replicate);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard =
+            GaugeGuard::new(&IN_FLIGHT_INGESTER_REPLICATE, request_size_bytes as f64);
 
         self.current_replication_seqno += 1;
 
@@ -667,12 +668,8 @@ impl ReplicationTask {
                 .expect("replica shard should be initialized")
                 .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-            INGEST_METRICS
-                .replicated_num_bytes_total
-                .inc_by(batch_num_bytes);
-            INGEST_METRICS
-                .replicated_num_docs_total
-                .inc_by(batch_num_docs);
+            REPLICATED_NUM_BYTES_TOTAL.inc_by(batch_num_bytes);
+            REPLICATED_NUM_DOCS_TOTAL.inc_by(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,

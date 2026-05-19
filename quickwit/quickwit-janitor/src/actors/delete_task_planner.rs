@@ -26,6 +26,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::{MergeSchedulerService, MergeSplitDownloader, schedule_merge};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{ListSplitsResponseExt, Split, split_tag_filter, split_time_range_filter};
+use quickwit_metrics::gauge;
 use quickwit_proto::metastore::{
     DeleteTask, LastDeleteOpstampRequest, ListDeleteTasksRequest, ListStaleSplitsRequest,
     MetastoreResult, MetastoreService, MetastoreServiceClient, UpdateSplitsDeleteOpstampRequest,
@@ -37,7 +38,7 @@ use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
 
-use crate::metrics::JANITOR_METRICS;
+use crate::metrics::ONGOING_NUM_DELETE_OPERATIONS_TOTAL;
 
 const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
@@ -205,11 +206,13 @@ impl DeleteTaskPlanner {
                 )
                 .await?;
                 let index_label =
-                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str());
-                JANITOR_METRICS
-                    .ongoing_num_delete_operations_total
-                    .with_label_values([index_label])
-                    .set(self.ongoing_delete_operations_inventory.list().len() as i64);
+                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str())
+                        .to_string();
+                gauge!(
+                    parent: ONGOING_NUM_DELETE_OPERATIONS_TOTAL,
+                    "index" => index_label,
+                )
+                .set(self.ongoing_delete_operations_inventory.list().len() as f64);
             }
         }
 

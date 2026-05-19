@@ -23,10 +23,12 @@ use async_trait::async_trait;
 use quickwit_common::SocketAddrLegacyHash;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
+use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 
-use crate::{SEARCH_METRICS, SearchJob, SearchServiceClient, SearcherPool};
+use crate::metrics::JOB_ASSIGNED_TOTAL;
+use crate::{SearchJob, SearchServiceClient, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -217,10 +219,7 @@ impl SearchJobPlacer {
                 1 => "1",
                 _ => "> 1",
             };
-            SEARCH_METRICS
-                .job_assigned_total
-                .with_label_values([metric_node_idx])
-                .inc();
+            counter!(parent: JOB_ASSIGNED_TOTAL, "affinity" => metric_node_idx).inc();
             chosen_node.load += job.cost();
 
             job_assignments

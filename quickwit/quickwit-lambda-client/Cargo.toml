@@ -23,6 +23,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-lambda-server = { workspace = true }
 quickwit-proto = { workspace = true }

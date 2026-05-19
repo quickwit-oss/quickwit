@@ -12,34 +12,6 @@ pub struct GetDebugInfoResponse {
     #[prost(bytes = "bytes", tag = "1")]
     pub debug_info_json: ::prost::bytes::Bytes,
 }
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PullMetricsRequest {}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PullMetricsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub metric_families: ::prost::alloc::vec::Vec<
-        super::super::cloudprem::metrics::MetricFamily,
-    >,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetNodeDiagnosticsRequest {}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetNodeDiagnosticsResponse {
-    #[prost(string, tag = "1")]
-    pub build_info_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub runtime_info_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub node_config_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub env_info_json: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub deployment_info_json: ::prost::alloc::string::String,
-}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -50,16 +22,6 @@ impl RpcName for GetDebugInfoRequest {
         "get_debug_info"
     }
 }
-impl RpcName for PullMetricsRequest {
-    fn rpc_name() -> &'static str {
-        "pull_metrics"
-    }
-}
-impl RpcName for GetNodeDiagnosticsRequest {
-    fn rpc_name() -> &'static str {
-        "get_node_diagnostics"
-    }
-}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait DeveloperService: std::fmt::Debug + Send + Sync + 'static {
@@ -67,14 +29,6 @@ pub trait DeveloperService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse>;
-    async fn pull_metrics(
-        &self,
-        request: PullMetricsRequest,
-    ) -> crate::developer::DeveloperResult<PullMetricsResponse>;
-    async fn get_node_diagnostics(
-        &self,
-        request: GetNodeDiagnosticsRequest,
-    ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct DeveloperServiceClient {
@@ -190,20 +144,6 @@ impl DeveloperService for DeveloperServiceClient {
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
         self.inner.0.get_debug_info(request).await
     }
-    #[tracing::instrument(skip_all, name = "developer.pull_metrics")]
-    async fn pull_metrics(
-        &self,
-        request: PullMetricsRequest,
-    ) -> crate::developer::DeveloperResult<PullMetricsResponse> {
-        self.inner.0.pull_metrics(request).await
-    }
-    #[tracing::instrument(skip_all, name = "developer.get_node_diagnostics")]
-    async fn get_node_diagnostics(
-        &self,
-        request: GetNodeDiagnosticsRequest,
-    ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
-        self.inner.0.get_node_diagnostics(request).await
-    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_developer_service {
@@ -219,18 +159,6 @@ pub mod mock_developer_service {
             request: super::GetDebugInfoRequest,
         ) -> crate::developer::DeveloperResult<super::GetDebugInfoResponse> {
             self.inner.lock().await.get_debug_info(request).await
-        }
-        async fn pull_metrics(
-            &self,
-            request: super::PullMetricsRequest,
-        ) -> crate::developer::DeveloperResult<super::PullMetricsResponse> {
-            self.inner.lock().await.pull_metrics(request).await
-        }
-        async fn get_node_diagnostics(
-            &self,
-            request: super::GetNodeDiagnosticsRequest,
-        ) -> crate::developer::DeveloperResult<super::GetNodeDiagnosticsResponse> {
-            self.inner.lock().await.get_node_diagnostics(request).await
         }
     }
 }
@@ -253,38 +181,6 @@ impl tower::Service<GetDebugInfoRequest> for InnerDeveloperServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<PullMetricsRequest> for InnerDeveloperServiceClient {
-    type Response = PullMetricsResponse;
-    type Error = crate::developer::DeveloperError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: PullMetricsRequest) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.pull_metrics(request).await };
-        Box::pin(fut)
-    }
-}
-impl tower::Service<GetNodeDiagnosticsRequest> for InnerDeveloperServiceClient {
-    type Response = GetNodeDiagnosticsResponse;
-    type Error = crate::developer::DeveloperError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: GetNodeDiagnosticsRequest) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.get_node_diagnostics(request).await };
-        Box::pin(fut)
-    }
-}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct DeveloperServiceTowerServiceStack {
@@ -295,16 +191,6 @@ struct DeveloperServiceTowerServiceStack {
         GetDebugInfoResponse,
         crate::developer::DeveloperError,
     >,
-    pull_metrics_svc: quickwit_common::tower::BoxService<
-        PullMetricsRequest,
-        PullMetricsResponse,
-        crate::developer::DeveloperError,
-    >,
-    get_node_diagnostics_svc: quickwit_common::tower::BoxService<
-        GetNodeDiagnosticsRequest,
-        GetNodeDiagnosticsResponse,
-        crate::developer::DeveloperError,
-    >,
 }
 #[async_trait::async_trait]
 impl DeveloperService for DeveloperServiceTowerServiceStack {
@@ -313,18 +199,6 @@ impl DeveloperService for DeveloperServiceTowerServiceStack {
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
         self.get_debug_info_svc.clone().ready().await?.call(request).await
-    }
-    async fn pull_metrics(
-        &self,
-        request: PullMetricsRequest,
-    ) -> crate::developer::DeveloperResult<PullMetricsResponse> {
-        self.pull_metrics_svc.clone().ready().await?.call(request).await
-    }
-    async fn get_node_diagnostics(
-        &self,
-        request: GetNodeDiagnosticsRequest,
-    ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
-        self.get_node_diagnostics_svc.clone().ready().await?.call(request).await
     }
 }
 type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
@@ -337,31 +211,9 @@ type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
     GetDebugInfoResponse,
     crate::developer::DeveloperError,
 >;
-type PullMetricsLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        PullMetricsRequest,
-        PullMetricsResponse,
-        crate::developer::DeveloperError,
-    >,
-    PullMetricsRequest,
-    PullMetricsResponse,
-    crate::developer::DeveloperError,
->;
-type GetNodeDiagnosticsLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        GetNodeDiagnosticsRequest,
-        GetNodeDiagnosticsResponse,
-        crate::developer::DeveloperError,
-    >,
-    GetNodeDiagnosticsRequest,
-    GetNodeDiagnosticsResponse,
-    crate::developer::DeveloperError,
->;
 #[derive(Debug, Default)]
 pub struct DeveloperServiceTowerLayerStack {
     get_debug_info_layers: Vec<GetDebugInfoLayer>,
-    pull_metrics_layers: Vec<PullMetricsLayer>,
-    get_node_diagnostics_layers: Vec<GetNodeDiagnosticsLayer>,
 }
 impl DeveloperServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -391,64 +243,8 @@ impl DeveloperServiceTowerLayerStack {
                 crate::developer::DeveloperError,
             >,
         >>::Service as tower::Service<GetDebugInfoRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    PullMetricsRequest,
-                    PullMetricsResponse,
-                    crate::developer::DeveloperError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                PullMetricsRequest,
-                PullMetricsResponse,
-                crate::developer::DeveloperError,
-            >,
-        >>::Service: tower::Service<
-                PullMetricsRequest,
-                Response = PullMetricsResponse,
-                Error = crate::developer::DeveloperError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                PullMetricsRequest,
-                PullMetricsResponse,
-                crate::developer::DeveloperError,
-            >,
-        >>::Service as tower::Service<PullMetricsRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    GetNodeDiagnosticsRequest,
-                    GetNodeDiagnosticsResponse,
-                    crate::developer::DeveloperError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                GetNodeDiagnosticsRequest,
-                GetNodeDiagnosticsResponse,
-                crate::developer::DeveloperError,
-            >,
-        >>::Service: tower::Service<
-                GetNodeDiagnosticsRequest,
-                Response = GetNodeDiagnosticsResponse,
-                Error = crate::developer::DeveloperError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                GetNodeDiagnosticsRequest,
-                GetNodeDiagnosticsResponse,
-                crate::developer::DeveloperError,
-            >,
-        >>::Service as tower::Service<
-            GetNodeDiagnosticsRequest,
-        >>::Future: Send + 'static,
     {
         self.get_debug_info_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.pull_metrics_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.get_node_diagnostics_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -469,47 +265,6 @@ impl DeveloperServiceTowerLayerStack {
         <L::Service as tower::Service<GetDebugInfoRequest>>::Future: Send + 'static,
     {
         self.get_debug_info_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_pull_metrics_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    PullMetricsRequest,
-                    PullMetricsResponse,
-                    crate::developer::DeveloperError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                PullMetricsRequest,
-                Response = PullMetricsResponse,
-                Error = crate::developer::DeveloperError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PullMetricsRequest>>::Future: Send + 'static,
-    {
-        self.pull_metrics_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_get_node_diagnostics_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    GetNodeDiagnosticsRequest,
-                    GetNodeDiagnosticsResponse,
-                    crate::developer::DeveloperError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                GetNodeDiagnosticsRequest,
-                Response = GetNodeDiagnosticsResponse,
-                Error = crate::developer::DeveloperError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            GetNodeDiagnosticsRequest,
-        >>::Future: Send + 'static,
-    {
-        self.get_node_diagnostics_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> DeveloperServiceClient
@@ -580,27 +335,9 @@ impl DeveloperServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let pull_metrics_svc = self
-            .pull_metrics_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
-        let get_node_diagnostics_svc = self
-            .get_node_diagnostics_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let tower_svc_stack = DeveloperServiceTowerServiceStack {
             inner: inner_client,
             get_debug_info_svc,
-            pull_metrics_svc,
-            get_node_diagnostics_svc,
         };
         DeveloperServiceClient::new(tower_svc_stack)
     }
@@ -678,43 +415,16 @@ where
     DeveloperServiceMailbox<
         A,
     >: tower::Service<
-            GetDebugInfoRequest,
-            Response = GetDebugInfoResponse,
-            Error = crate::developer::DeveloperError,
-            Future = BoxFuture<GetDebugInfoResponse, crate::developer::DeveloperError>,
-        >
-        + tower::Service<
-            PullMetricsRequest,
-            Response = PullMetricsResponse,
-            Error = crate::developer::DeveloperError,
-            Future = BoxFuture<PullMetricsResponse, crate::developer::DeveloperError>,
-        >
-        + tower::Service<
-            GetNodeDiagnosticsRequest,
-            Response = GetNodeDiagnosticsResponse,
-            Error = crate::developer::DeveloperError,
-            Future = BoxFuture<
-                GetNodeDiagnosticsResponse,
-                crate::developer::DeveloperError,
-            >,
-        >,
+        GetDebugInfoRequest,
+        Response = GetDebugInfoResponse,
+        Error = crate::developer::DeveloperError,
+        Future = BoxFuture<GetDebugInfoResponse, crate::developer::DeveloperError>,
+    >,
 {
     async fn get_debug_info(
         &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
-        self.clone().call(request).await
-    }
-    async fn pull_metrics(
-        &self,
-        request: PullMetricsRequest,
-    ) -> crate::developer::DeveloperResult<PullMetricsResponse> {
-        self.clone().call(request).await
-    }
-    async fn get_node_diagnostics(
-        &self,
-        request: GetNodeDiagnosticsRequest,
-    ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
         self.clone().call(request).await
     }
 }
@@ -770,42 +480,6 @@ where
                 GetDebugInfoRequest::rpc_name(),
             ))
     }
-    async fn pull_metrics(
-        &self,
-        request: PullMetricsRequest,
-    ) -> crate::developer::DeveloperResult<PullMetricsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
-        quickwit_common::tracing_utils::inject_current_context(
-            tonic_request.metadata_mut(),
-        );
-        self.inner
-            .clone()
-            .pull_metrics(tonic_request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                PullMetricsRequest::rpc_name(),
-            ))
-    }
-    async fn get_node_diagnostics(
-        &self,
-        request: GetNodeDiagnosticsRequest,
-    ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
-        quickwit_common::tracing_utils::inject_current_context(
-            tonic_request.metadata_mut(),
-        );
-        self.inner
-            .clone()
-            .get_node_diagnostics(tonic_request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                GetNodeDiagnosticsRequest::rpc_name(),
-            ))
-    }
 }
 #[derive(Debug)]
 pub struct DeveloperServiceGrpcServerAdapter {
@@ -841,52 +515,6 @@ for DeveloperServiceGrpcServerAdapter {
             self.inner
                 .0
                 .get_debug_info(request)
-                .await
-                .map(tonic::Response::new)
-                .map_err(crate::error::grpc_error_to_grpc_status)
-        };
-        <_ as tracing::Instrument>::instrument(fut, span).await
-    }
-    async fn pull_metrics(
-        &self,
-        tonic_request: tonic::Request<PullMetricsRequest>,
-    ) -> Result<tonic::Response<PullMetricsResponse>, tonic::Status> {
-        let parent_context = quickwit_common::tracing_utils::extract_context(
-            tonic_request.metadata(),
-        );
-        let request = tonic_request.into_inner();
-        let span = tracing::info_span!("developer.pull_metrics");
-        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
-            &span,
-            parent_context,
-        );
-        let fut = async move {
-            self.inner
-                .0
-                .pull_metrics(request)
-                .await
-                .map(tonic::Response::new)
-                .map_err(crate::error::grpc_error_to_grpc_status)
-        };
-        <_ as tracing::Instrument>::instrument(fut, span).await
-    }
-    async fn get_node_diagnostics(
-        &self,
-        tonic_request: tonic::Request<GetNodeDiagnosticsRequest>,
-    ) -> Result<tonic::Response<GetNodeDiagnosticsResponse>, tonic::Status> {
-        let parent_context = quickwit_common::tracing_utils::extract_context(
-            tonic_request.metadata(),
-        );
-        let request = tonic_request.into_inner();
-        let span = tracing::info_span!("developer.get_node_diagnostics");
-        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
-            &span,
-            parent_context,
-        );
-        let fut = async move {
-            self.inner
-                .0
-                .get_node_diagnostics(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1014,61 +642,6 @@ pub mod developer_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn pull_metrics(
-            &mut self,
-            request: impl tonic::IntoRequest<super::PullMetricsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PullMetricsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.developer.DeveloperService/PullMetrics",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("quickwit.developer.DeveloperService", "PullMetrics"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_node_diagnostics(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetNodeDiagnosticsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetNodeDiagnosticsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.developer.DeveloperService/GetNodeDiagnostics",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.developer.DeveloperService",
-                        "GetNodeDiagnostics",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -1089,20 +662,6 @@ pub mod developer_service_grpc_server {
             request: tonic::Request<super::GetDebugInfoRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetDebugInfoResponse>,
-            tonic::Status,
-        >;
-        async fn pull_metrics(
-            &self,
-            request: tonic::Request<super::PullMetricsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PullMetricsResponse>,
-            tonic::Status,
-        >;
-        async fn get_node_diagnostics(
-            &self,
-            request: tonic::Request<super::GetNodeDiagnosticsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetNodeDiagnosticsResponse>,
             tonic::Status,
         >;
     }
@@ -1214,101 +773,6 @@ pub mod developer_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetDebugInfoSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.developer.DeveloperService/PullMetrics" => {
-                    #[allow(non_camel_case_types)]
-                    struct PullMetricsSvc<T: DeveloperServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: DeveloperServiceGrpc,
-                    > tonic::server::UnaryService<super::PullMetricsRequest>
-                    for PullMetricsSvc<T> {
-                        type Response = super::PullMetricsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::PullMetricsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as DeveloperServiceGrpc>::pull_metrics(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = PullMetricsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.developer.DeveloperService/GetNodeDiagnostics" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetNodeDiagnosticsSvc<T: DeveloperServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: DeveloperServiceGrpc,
-                    > tonic::server::UnaryService<super::GetNodeDiagnosticsRequest>
-                    for GetNodeDiagnosticsSvc<T> {
-                        type Response = super::GetNodeDiagnosticsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetNodeDiagnosticsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as DeveloperServiceGrpc>::get_node_diagnostics(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetNodeDiagnosticsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

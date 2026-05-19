@@ -164,11 +164,6 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    ///Sets the index routing table. The control plane validates invariants and gossips the change.
-    async fn set_index_routing_table(
-        &self,
-        request: super::metastore::SetIndexRoutingTableRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     ///Returns the list of open shards for one or several sources. If the control plane is not able to find any
     ///for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
     async fn get_or_create_open_shards(
@@ -346,13 +341,6 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.delete_source(request).await
     }
-    #[tracing::instrument(skip_all, name = "control_plane.set_index_routing_table")]
-    async fn set_index_routing_table(
-        &self,
-        request: super::metastore::SetIndexRoutingTableRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.0.set_index_routing_table(request).await
-    }
     #[tracing::instrument(skip_all, name = "control_plane.get_or_create_open_shards")]
     async fn get_or_create_open_shards(
         &self,
@@ -439,14 +427,6 @@ pub mod mock_control_plane_service {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.delete_source(request).await
-        }
-        async fn set_index_routing_table(
-            &self,
-            request: super::super::metastore::SetIndexRoutingTableRequest,
-        ) -> crate::control_plane::ControlPlaneResult<
-            super::super::metastore::EmptyResponse,
-        > {
-            self.inner.lock().await.set_index_routing_table(request).await
         }
         async fn get_or_create_open_shards(
             &self,
@@ -594,26 +574,6 @@ for InnerControlPlaneServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<super::metastore::SetIndexRoutingTableRequest>
-for InnerControlPlaneServiceClient {
-    type Response = super::metastore::EmptyResponse;
-    type Error = crate::control_plane::ControlPlaneError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(
-        &mut self,
-        request: super::metastore::SetIndexRoutingTableRequest,
-    ) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.set_index_routing_table(request).await };
-        Box::pin(fut)
-    }
-}
 impl tower::Service<GetOrCreateOpenShardsRequest> for InnerControlPlaneServiceClient {
     type Response = GetOrCreateOpenShardsResponse;
     type Error = crate::control_plane::ControlPlaneError;
@@ -703,11 +663,6 @@ struct ControlPlaneServiceTowerServiceStack {
         super::metastore::EmptyResponse,
         crate::control_plane::ControlPlaneError,
     >,
-    set_index_routing_table_svc: quickwit_common::tower::BoxService<
-        super::metastore::SetIndexRoutingTableRequest,
-        super::metastore::EmptyResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
     get_or_create_open_shards_svc: quickwit_common::tower::BoxService<
         GetOrCreateOpenShardsRequest,
         GetOrCreateOpenShardsResponse,
@@ -771,12 +726,6 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.delete_source_svc.clone().ready().await?.call(request).await
-    }
-    async fn set_index_routing_table(
-        &self,
-        request: super::metastore::SetIndexRoutingTableRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.set_index_routing_table_svc.clone().ready().await?.call(request).await
     }
     async fn get_or_create_open_shards(
         &self,
@@ -867,16 +816,6 @@ type DeleteSourceLayer = quickwit_common::tower::BoxLayer<
     super::metastore::EmptyResponse,
     crate::control_plane::ControlPlaneError,
 >;
-type SetIndexRoutingTableLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        super::metastore::SetIndexRoutingTableRequest,
-        super::metastore::EmptyResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
-    super::metastore::SetIndexRoutingTableRequest,
-    super::metastore::EmptyResponse,
-    crate::control_plane::ControlPlaneError,
->;
 type GetOrCreateOpenShardsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         GetOrCreateOpenShardsRequest,
@@ -916,7 +855,6 @@ pub struct ControlPlaneServiceTowerLayerStack {
     update_source_layers: Vec<UpdateSourceLayer>,
     toggle_source_layers: Vec<ToggleSourceLayer>,
     delete_source_layers: Vec<DeleteSourceLayer>,
-    set_index_routing_table_layers: Vec<SetIndexRoutingTableLayer>,
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
     prune_shards_layers: Vec<PruneShardsLayer>,
@@ -1115,33 +1053,6 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    super::metastore::SetIndexRoutingTableRequest,
-                    super::metastore::EmptyResponse,
-                    crate::control_plane::ControlPlaneError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                super::metastore::SetIndexRoutingTableRequest,
-                super::metastore::EmptyResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >>::Service: tower::Service<
-                super::metastore::SetIndexRoutingTableRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                super::metastore::SetIndexRoutingTableRequest,
-                super::metastore::EmptyResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >>::Service as tower::Service<
-            super::metastore::SetIndexRoutingTableRequest,
-        >>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
                     GetOrCreateOpenShardsRequest,
                     GetOrCreateOpenShardsResponse,
                     crate::control_plane::ControlPlaneError,
@@ -1233,8 +1144,6 @@ impl ControlPlaneServiceTowerLayerStack {
         self.toggle_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_source_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.set_index_routing_table_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_or_create_open_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1389,28 +1298,6 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.delete_source_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_set_index_routing_table_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    super::metastore::SetIndexRoutingTableRequest,
-                    super::metastore::EmptyResponse,
-                    crate::control_plane::ControlPlaneError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::SetIndexRoutingTableRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::SetIndexRoutingTableRequest,
-        >>::Future: Send + 'static,
-    {
-        self.set_index_routing_table_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_get_or_create_open_shards_layer<L>(mut self, layer: L) -> Self
@@ -1595,14 +1482,6 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let set_index_routing_table_svc = self
-            .set_index_routing_table_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let get_or_create_open_shards_svc = self
             .get_or_create_open_shards_layers
             .into_iter()
@@ -1636,7 +1515,6 @@ impl ControlPlaneServiceTowerLayerStack {
             update_source_svc,
             toggle_source_svc,
             delete_source_svc,
-            set_index_routing_table_svc,
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
             prune_shards_svc,
@@ -1780,15 +1658,6 @@ where
             >,
         >
         + tower::Service<
-            super::metastore::SetIndexRoutingTableRequest,
-            Response = super::metastore::EmptyResponse,
-            Error = crate::control_plane::ControlPlaneError,
-            Future = BoxFuture<
-                super::metastore::EmptyResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >
-        + tower::Service<
             GetOrCreateOpenShardsRequest,
             Response = GetOrCreateOpenShardsResponse,
             Error = crate::control_plane::ControlPlaneError,
@@ -1859,12 +1728,6 @@ where
     async fn delete_source(
         &self,
         request: super::metastore::DeleteSourceRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.clone().call(request).await
-    }
-    async fn set_index_routing_table(
-        &self,
-        request: super::metastore::SetIndexRoutingTableRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.clone().call(request).await
     }
@@ -2049,24 +1912,6 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 super::metastore::DeleteSourceRequest::rpc_name(),
-            ))
-    }
-    async fn set_index_routing_table(
-        &self,
-        request: super::metastore::SetIndexRoutingTableRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
-        quickwit_common::tracing_utils::inject_current_context(
-            tonic_request.metadata_mut(),
-        );
-        self.inner
-            .clone()
-            .set_index_routing_table(tonic_request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                super::metastore::SetIndexRoutingTableRequest::rpc_name(),
             ))
     }
     async fn get_or_create_open_shards(
@@ -2299,29 +2144,6 @@ for ControlPlaneServiceGrpcServerAdapter {
             self.inner
                 .0
                 .delete_source(request)
-                .await
-                .map(tonic::Response::new)
-                .map_err(crate::error::grpc_error_to_grpc_status)
-        };
-        <_ as tracing::Instrument>::instrument(fut, span).await
-    }
-    async fn set_index_routing_table(
-        &self,
-        tonic_request: tonic::Request<super::metastore::SetIndexRoutingTableRequest>,
-    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        let parent_context = quickwit_common::tracing_utils::extract_context(
-            tonic_request.metadata(),
-        );
-        let request = tonic_request.into_inner();
-        let span = tracing::info_span!("control_plane.set_index_routing_table");
-        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
-            &span,
-            parent_context,
-        );
-        let fut = async move {
-            self.inner
-                .0
-                .set_index_routing_table(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2707,38 +2529,6 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Sets the index routing table. The control plane validates invariants and gossips the change.
-        pub async fn set_index_routing_table(
-            &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::metastore::SetIndexRoutingTableRequest,
-            >,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.control_plane.ControlPlaneService/SetIndexRoutingTable",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.control_plane.ControlPlaneService",
-                        "SetIndexRoutingTable",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
         /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
         pub async fn get_or_create_open_shards(
@@ -2897,14 +2687,6 @@ pub mod control_plane_service_grpc_server {
         async fn delete_source(
             &self,
             request: tonic::Request<super::super::metastore::DeleteSourceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
-            tonic::Status,
-        >;
-        /// Sets the index routing table. The control plane validates invariants and gossips the change.
-        async fn set_index_routing_table(
-            &self,
-            request: tonic::Request<super::super::metastore::SetIndexRoutingTableRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::metastore::EmptyResponse>,
             tonic::Status,
@@ -3358,60 +3140,6 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteSourceSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.control_plane.ControlPlaneService/SetIndexRoutingTable" => {
-                    #[allow(non_camel_case_types)]
-                    struct SetIndexRoutingTableSvc<T: ControlPlaneServiceGrpc>(
-                        pub Arc<T>,
-                    );
-                    impl<
-                        T: ControlPlaneServiceGrpc,
-                    > tonic::server::UnaryService<
-                        super::super::metastore::SetIndexRoutingTableRequest,
-                    > for SetIndexRoutingTableSvc<T> {
-                        type Response = super::super::metastore::EmptyResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                super::super::metastore::SetIndexRoutingTableRequest,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ControlPlaneServiceGrpc>::set_index_routing_table(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SetIndexRoutingTableSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

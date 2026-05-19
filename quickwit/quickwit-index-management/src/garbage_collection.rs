@@ -20,13 +20,13 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::{Progress, rate_limited_info};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
 };
+use quickwit_metrics::Counter;
 use quickwit_proto::metastore::{
     DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreService, MetastoreServiceClient,
@@ -41,9 +41,9 @@ use tracing::{error, instrument};
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
 pub struct GcMetrics {
-    pub deleted_splits: IntCounter,
-    pub deleted_bytes: IntCounter,
-    pub failed_splits: IntCounter,
+    pub deleted_splits: Counter,
+    pub deleted_bytes: Counter,
+    pub failed_splits: Counter,
 }
 
 pub(crate) trait RecordGcMetrics {

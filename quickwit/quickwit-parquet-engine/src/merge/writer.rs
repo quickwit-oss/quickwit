@@ -219,7 +219,7 @@ fn apply_merge_permutation(
 
     // Concatenate all inputs into one batch.
     let all_batches: Vec<&RecordBatch> = inputs.iter().collect();
-    let concatenated = arrow::compute::concat_batches(union_schema, all_batches.into_iter())
+    let concatenated = arrow::compute::concat_batches(union_schema, all_batches)
         .context("concatenating inputs for merge")?;
 
     // Apply permutation. Use UInt64 indices to support >4B row merges.
