@@ -235,7 +235,10 @@ fn main() {
 
     println!("=== Custom separator ===");
     HTTP_REQUESTS_DOTTED.inc_by(3);
-    println!("  myapp.http.requests_total = {}", HTTP_REQUESTS_DOTTED.get());
+    println!(
+        "  myapp.http.requests_total = {}",
+        HTTP_REQUESTS_DOTTED.get()
+    );
     println!();
 
     println!("Prometheus scrape endpoint: http://127.0.0.1:9000/metrics");
