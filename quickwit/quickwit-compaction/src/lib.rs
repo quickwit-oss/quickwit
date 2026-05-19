@@ -25,7 +25,6 @@ use std::sync::Arc;
 
 pub use compactor_supervisor::CompactorSupervisor;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_common::io;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::CompactorConfig;
@@ -53,16 +52,13 @@ pub async fn start_compactor_service(
     compaction_root_directory: TempDirectory,
 ) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
     info!("starting compactor service");
-    let io_throughput_limiter = compactor_config.max_merge_write_throughput.map(io::limiter);
     let supervisor = CompactorSupervisor::new(
         node_id,
         compaction_client,
-        compactor_config.max_concurrent_merge_executions.get(),
-        io_throughput_limiter,
+        compactor_config,
         metastore,
         storage_resolver,
         split_cache,
-        compactor_config.max_concurrent_split_uploads,
         event_broker,
         compaction_root_directory,
     );

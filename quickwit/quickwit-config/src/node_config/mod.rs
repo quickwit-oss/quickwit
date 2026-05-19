@@ -251,6 +251,10 @@ pub struct CompactorConfig {
     /// a long time. Defaults to `num_cpus - 1`.
     #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
     pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved. 
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.
     #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
@@ -265,6 +269,10 @@ impl CompactorConfig {
         NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
     }
 
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
     fn default_max_concurrent_split_uploads() -> usize {
         12
     }
@@ -273,6 +281,7 @@ impl CompactorConfig {
     pub fn for_test() -> Self {
         CompactorConfig {
             max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: 4,
             max_merge_write_throughput: None,
         }
@@ -283,6 +292,7 @@ impl Default for CompactorConfig {
     fn default() -> Self {
         Self {
             max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
         }
