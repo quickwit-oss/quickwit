@@ -49,7 +49,7 @@ pub async fn start_janitor_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
     run_delete_task_service: bool,
-    compaction_planner_handle: ActorHandle<CompactionPlanner>,
+    compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
