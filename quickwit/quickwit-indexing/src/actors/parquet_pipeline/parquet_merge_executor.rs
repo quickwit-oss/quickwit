@@ -16,21 +16,19 @@
 //!
 //! Receives a `ParquetMergeScratch` from the downloader. Two engines are available:
 //!
-//! - **Streaming engine** (`execute_merge_operation`): column-major, page-bounded body cache.
-//!   Used unconditionally for promotion merges (the in-memory path can't handle mixed
-//!   prefix lengths). Optionally used for regular merges when the node-level
+//! - **Streaming engine** (`execute_merge_operation`): column-major, page-bounded body cache. Used
+//!   unconditionally for promotion merges (the in-memory path can't handle mixed prefix lengths).
+//!   Optionally used for regular merges when the node-level
 //!   `IndexerConfig::parquet_merge_use_streaming_engine` flag is true.
-//! - **In-memory engine** (`merge_sorted_parquet_files`): buffers all inputs in memory and
-//!   runs inside `run_cpu_intensive`. Kept as the runtime fallback so production can flip
-//!   back via YAML config if the streaming engine hits a bug. To be removed once the
-//!   streaming path has soaked.
+//! - **In-memory engine** (`merge_sorted_parquet_files`): buffers all inputs in memory and runs
+//!   inside `run_cpu_intensive`. Kept as the runtime fallback so production can flip back via YAML
+//!   config if the streaming engine hits a bug. To be removed once the streaming path has soaked.
 //!
 //! Routing in `handle()`:
 //!
-//! - `target_prefix_len_override.is_some()` → streaming engine. Promotion is the whole point
-//!   of `target_prefix_len_override`, and the in-memory path's
-//!   `extract_and_validate_input_metadata` would bail on the mixed `rg_partition_prefix_len`
-//!   before any output is produced.
+//! - `target_prefix_len_override.is_some()` → streaming engine. Promotion is the whole point of
+//!   `target_prefix_len_override`, and the in-memory path's `extract_and_validate_input_metadata`
+//!   would bail on the mixed `rg_partition_prefix_len` before any output is produced.
 //! - Else `use_streaming_engine == true` → streaming engine (the new default once soaked).
 //! - Else → in-memory engine (the runtime fallback).
 //!

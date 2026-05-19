@@ -18,27 +18,24 @@
 //! (which covers the simpler two-input, one-metric-per-input case) with
 //! the harder scenarios:
 //!
-//! - **Three inputs**, each carrying **three metrics** (`aaa.alpha`, `bbb.beta`,
-//!   `ccc.gamma`). Across inputs, the metrics overlap and the per-metric
-//!   timeseries IDs collide (each row's `timeseries_id` is derived from the
-//!   metric name, so input-x, input-y, input-z all share the same set of IDs
-//!   per metric). Timestamps within each (metric, timeseries) overlap across
-//!   inputs but are unique — the merge must interleave rows from all three
-//!   inputs heavily, not concatenate them.
-//! - **Multi-row-group output** via `ParquetWriterConfig::row_group_size = 50`
-//!   on the n=1 tests, so the 180-row merge output breaks into 4 row groups.
-//!   Exercises the writer's multi-RG path in both engines.
-//! - **Multi-row-group inputs with `rg_partition_prefix_len = 1`** in the
-//!   bonus tests (`write_prefix_aligned_input`): the writer flushes one row
-//!   group per distinct `metric_name`, so each input file carries three row
-//!   groups in alignment with the sort prefix. The streaming engine reads
-//!   these through its prefix-aware fast path.
+//! - **Three inputs**, each carrying **three metrics** (`aaa.alpha`, `bbb.beta`, `ccc.gamma`).
+//!   Across inputs, the metrics overlap and the per-metric timeseries IDs collide (each row's
+//!   `timeseries_id` is derived from the metric name, so input-x, input-y, input-z all share the
+//!   same set of IDs per metric). Timestamps within each (metric, timeseries) overlap across inputs
+//!   but are unique — the merge must interleave rows from all three inputs heavily, not concatenate
+//!   them.
+//! - **Multi-row-group output** via `ParquetWriterConfig::row_group_size = 50` on the n=1 tests, so
+//!   the 180-row merge output breaks into 4 row groups. Exercises the writer's multi-RG path in
+//!   both engines.
+//! - **Multi-row-group inputs with `rg_partition_prefix_len = 1`** in the bonus tests
+//!   (`write_prefix_aligned_input`): the writer flushes one row group per distinct `metric_name`,
+//!   so each input file carries three row groups in alignment with the sort prefix. The streaming
+//!   engine reads these through its prefix-aware fast path.
 //! - **m:n merges** in the bonus tests: a small
-//!   `ParquetMergePipelineParams::target_split_size_bytes` forces the
-//!   executor to ask the engine for `num_outputs > 1`. The bonus
-//!   assertions cover the multi-output contract — sum-equals-total,
-//!   internal monotonicity, inter-output `sorted_series` disjointness,
-//!   and union-equals-full-set on metrics/services.
+//!   `ParquetMergePipelineParams::target_split_size_bytes` forces the executor to ask the engine
+//!   for `num_outputs > 1`. The bonus assertions cover the multi-output contract —
+//!   sum-equals-total, internal monotonicity, inter-output `sorted_series` disjointness, and
+//!   union-equals-full-set on metrics/services.
 //!
 //! Both `ParquetMergePipelineParams::use_streaming_engine = false` (the
 //! in-memory engine) and `= true` (the streaming engine) are exercised
@@ -689,14 +686,11 @@ async fn assert_three_input_three_metric_single_output_correct(
 /// - The pipeline staged at least two output splits (proves splitting happened).
 /// - The sum of per-output row counts equals the total input row count.
 /// - Each output is internally sorted on `sorted_series`.
-/// - Across outputs, the `sorted_series` partition is **disjoint** (no two
-///   outputs share any `sorted_series` value — the merge engine splits at
-///   series boundaries, never inside).
-/// - The union of metric_names / services across outputs covers the full
-///   input set.
-/// - Every output declares `num_merge_ops = 1` (first merge over level-0
-///   inputs) and has `row_keys_proto` + `metric_name` zonemap regex
-///   populated.
+/// - Across outputs, the `sorted_series` partition is **disjoint** (no two outputs share any
+///   `sorted_series` value — the merge engine splits at series boundaries, never inside).
+/// - The union of metric_names / services across outputs covers the full input set.
+/// - Every output declares `num_merge_ops = 1` (first merge over level-0 inputs) and has
+///   `row_keys_proto` + `metric_name` zonemap regex populated.
 async fn assert_three_input_three_metric_multi_output_correct(
     staged_metadata: &Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
     replaced_ids: &Arc<std::sync::Mutex<Vec<String>>>,
@@ -749,8 +743,8 @@ async fn assert_three_input_three_metric_multi_output_correct(
         let series = extract_binary_column(&batch, SORTED_SERIES_COLUMN);
         assert!(
             !series.is_empty(),
-            "every output must have at least one row (empty outputs should be dropped \
-             by the engine)"
+            "every output must have at least one row (empty outputs should be dropped by the \
+             engine)"
         );
         for i in 1..series.len() {
             assert!(
@@ -773,8 +767,7 @@ async fn assert_three_input_three_metric_multi_output_correct(
         let (right_min, _, right_file) = &window[1];
         assert!(
             left_max < right_min,
-            "outputs {} and {} overlap on sorted_series: \
-             left max = {:?}, right min = {:?}",
+            "outputs {} and {} overlap on sorted_series: left max = {:?}, right min = {:?}",
             left_file,
             right_file,
             left_max,
@@ -929,8 +922,8 @@ async fn test_multi_metric_three_input_single_output_streaming_engine() {
         |staged, replaced, storage| async move {
             assert!(
                 PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed) > 0,
-                "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — \
-                 routing may have silently fallen back to the in-memory engine",
+                "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — routing may \
+                 have silently fallen back to the in-memory engine",
             );
             assert_three_input_three_metric_single_output_correct(&staged, &replaced, &storage)
                 .await;
@@ -1052,8 +1045,8 @@ async fn test_prefix_aligned_multi_metric_three_input_multi_output_streaming_eng
         |staged, replaced, storage| async move {
             assert!(
                 PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed) > 0,
-                "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — \
-                 routing may have silently fallen back to the in-memory engine",
+                "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — routing may \
+                 have silently fallen back to the in-memory engine",
             );
             assert_three_input_three_metric_multi_output_correct(
                 &staged,

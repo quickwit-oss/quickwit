@@ -1923,13 +1923,10 @@ mod parity {
 
     /// Verify the m:n merge contract on a single engine's outputs:
     ///
-    /// 1. Sum of per-output row counts equals the total input row count
-    ///    (no duplication, no loss).
-    /// 2. Within each output, the `sorted_series` column is monotonically
-    ///    non-decreasing.
-    /// 3. Across outputs, after sorting by min `sorted_series`, every
-    ///    output's max sorted_series is strictly less than the next
-    ///    output's min — the partition is disjoint on the keyspace.
+    /// 1. Sum of per-output row counts equals the total input row count (no duplication, no loss).
+    /// 2. Within each output, the `sorted_series` column is monotonically non-decreasing.
+    /// 3. Across outputs, after sorting by min `sorted_series`, every output's max sorted_series is
+    ///    strictly less than the next output's min — the partition is disjoint on the keyspace.
     ///
     /// Holds for any merge with `num_outputs >= 1`. Trivial for n=1
     /// (only invariant 2 is non-trivial there).
@@ -1976,8 +1973,7 @@ mod parity {
             let (right_min, _, right_path) = &window[1];
             assert!(
                 left_max < right_min,
-                "outputs {} and {} overlap on sorted_series: \
-                 left max = {:?}, right min = {:?}",
+                "outputs {} and {} overlap on sorted_series: left max = {:?}, right min = {:?}",
                 left_path.display(),
                 right_path.display(),
                 left_max,

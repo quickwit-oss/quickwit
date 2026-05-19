@@ -447,19 +447,17 @@ async fn test_merge_pipeline_end_to_end() {
 ///
 /// Verifies, in order:
 /// - **Step 5**: `replaced_split_ids = [split-a, split-b]`.
-/// - **Step 6**: staged `ParquetSplitMetadata` — `num_rows = 100`,
-///   `time_range = [100, 250)`, `metric_names = {cpu.usage, mem.usage}`,
-///   `num_merge_ops = 1`, `sort_fields` matches the table config,
-///   `row_keys_proto` present + non-empty, `zonemap_regexes` contains
-///   `metric_name`, `low_cardinality_tags["service"] = {web, api}`.
-/// - **Step 7**: merged Parquet file content — row count, all 100 timestamps
-///   match expected and metadata `time_range`, both service / host values
-///   survive, `sorted_series` is monotonically non-decreasing, and
-///   `cpu.usage` rows precede `mem.usage` rows (the global sort order
+/// - **Step 6**: staged `ParquetSplitMetadata` — `num_rows = 100`, `time_range = [100, 250)`,
+///   `metric_names = {cpu.usage, mem.usage}`, `num_merge_ops = 1`, `sort_fields` matches the table
+///   config, `row_keys_proto` present + non-empty, `zonemap_regexes` contains `metric_name`,
+///   `low_cardinality_tags["service"] = {web, api}`.
+/// - **Step 7**: merged Parquet file content — row count, all 100 timestamps match expected and
+///   metadata `time_range`, both service / host values survive, `sorted_series` is monotonically
+///   non-decreasing, and `cpu.usage` rows precede `mem.usage` rows (the global sort order
 ///   semantics).
-/// - **Step 8**: Parquet KV metadata — `qh.sort_fields`, `qh.num_merge_ops`,
-///   `qh.row_keys` (non-empty), `qh.zonemap_regexes` parses as JSON and
-///   contains `metric_name`, and cross-validates with the staged metadata.
+/// - **Step 8**: Parquet KV metadata — `qh.sort_fields`, `qh.num_merge_ops`, `qh.row_keys`
+///   (non-empty), `qh.zonemap_regexes` parses as JSON and contains `metric_name`, and
+///   cross-validates with the staged metadata.
 async fn assert_cpu_mem_merge_outputs_correct(
     staged_metadata: &Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
     replaced_ids: &Arc<std::sync::Mutex<Vec<String>>>,
@@ -639,8 +637,8 @@ async fn assert_cpu_mem_merge_outputs_correct(
             sorted_series[i] >= sorted_series[i - 1],
             "sorted_series must be monotonically non-decreasing at row {}: {:?} < {:?}",
             i,
-            &sorted_series[i],
-            &sorted_series[i - 1]
+            sorted_series[i],
+            sorted_series[i - 1]
         );
     }
 
@@ -718,20 +716,18 @@ async fn assert_cpu_mem_merge_outputs_correct(
 /// reachable path — there is no silent fallback. The test confirms
 /// this by:
 ///
-/// 1. Asserting the merge published with the right `replaced_split_ids`
-///    (the merge actually ran end-to-end through the executor).
-/// 2. Reading `PEAK_BODY_COL_PAGE_CACHE_LEN` and asserting it is
-///    non-zero (the streaming engine writes to this atomic on every
-///    body-col page assembly; if the in-memory engine had run instead
-///    the counter would stay at zero).
-/// 3. Asserting row count and metric names on the output match the
-///    inputs (the streaming engine produces correct results, not just
-///    "something").
+/// 1. Asserting the merge published with the right `replaced_split_ids` (the merge actually ran
+///    end-to-end through the executor).
+/// 2. Reading `PEAK_BODY_COL_PAGE_CACHE_LEN` and asserting it is non-zero (the streaming engine
+///    writes to this atomic on every body-col page assembly; if the in-memory engine had run
+///    instead the counter would stay at zero).
+/// 3. Asserting row count and metric names on the output match the inputs (the streaming engine
+///    produces correct results, not just "something").
 #[allow(
     clippy::await_holding_lock,
-    reason = "the lock is `std::sync::Mutex` and the `#[tokio::test]` runtime is \
-              single-threaded, so holding the guard across await won't deadlock another \
-              thread — see `ms7_serial_lock` rationale"
+    reason = "the lock is `std::sync::Mutex` and the `#[tokio::test]` runtime is single-threaded, \
+              so holding the guard across await won't deadlock another thread — see \
+              `ms7_serial_lock` rationale"
 )]
 #[tokio::test]
 async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
