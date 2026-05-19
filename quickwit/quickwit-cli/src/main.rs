@@ -91,9 +91,11 @@ fn init_telemetry(
     #[cfg(feature = "tokio-console")]
     {
         if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
+            let telemetry_handle =
+                quickwit_telemetry_exporters::init_meter_provider_only(service_version)?;
             console_subscriber::init();
             return Ok((
-                quickwit_telemetry_exporters::TelemetryHandle::default(),
+                telemetry_handle,
                 quickwit_telemetry_exporters::do_nothing_env_filter_reload_fn(),
             ));
         }

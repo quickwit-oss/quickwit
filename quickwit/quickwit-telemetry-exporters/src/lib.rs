@@ -41,7 +41,6 @@ pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
     Arc::new(|_| Ok(()))
 }
 
-#[derive(Default)]
 pub struct TelemetryHandle {
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
@@ -169,4 +168,18 @@ pub fn init_telemetry(
     };
 
     Ok(telemetry_handle)
+}
+
+/// Initializes only metrics providers for the process.
+///
+/// This is useful when another component owns the tracing subscriber setup but
+/// Quickwit still needs to install its metrics recorder.
+pub fn init_meter_provider_only(service_version: &str) -> anyhow::Result<TelemetryHandle> {
+    let otlp_config = otlp::OtlpExporterConfig::load_from_env();
+    let meter_provider = metrics::init_metrics_provider(service_version, &otlp_config)?;
+    Ok(TelemetryHandle {
+        tracer_provider: None,
+        logger_provider: None,
+        meter_provider,
+    })
 }
