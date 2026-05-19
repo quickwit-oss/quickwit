@@ -43,7 +43,7 @@ use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
-use quickwit_config::{S3StorageConfig, StorageBackendFlavor};
+use quickwit_config::S3StorageConfig;
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader, ReadBuf};
@@ -95,9 +95,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
-    // `None` means native AWS S3. Non-S3 flavors (GCS, MinIO, Garage, DigitalOcean) do not
-    // reliably honor CRC32C, so we only request the SDK to compute & send it for native S3.
-    flavor: Option<StorageBackendFlavor>,
+    disable_checksums: bool,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -202,7 +200,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
-            flavor: s3_storage_config.flavor,
+            disable_checksums: s3_storage_config.disable_checksums,
         })
     }
 
@@ -220,7 +218,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
-            flavor: self.flavor,
+            disable_checksums: self.disable_checksums,
         }
     }
 
@@ -266,15 +264,6 @@ impl Part {
 }
 
 impl S3CompatibleObjectStorage {
-    /// Returns the checksum algorithm to advertise on uploads, or `None` to omit it.
-    /// Only native AWS S3 reliably supports CRC32C.
-    fn upload_checksum_algorithm(&self) -> Option<ChecksumAlgorithm> {
-        match self.flavor {
-            None => Some(ChecksumAlgorithm::Crc32C),
-            Some(_) => None,
-        }
-    }
-
     fn key(&self, relative_path: &Path) -> String {
         // FIXME: This may not work on Windows.
         let key_path = self.prefix.join(relative_path);
@@ -310,7 +299,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
-            .set_checksum_algorithm(self.upload_checksum_algorithm())
+            .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
             .send()
             .await
             .map_err(|sdk_error| {
@@ -345,7 +334,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
-                .set_checksum_algorithm(self.upload_checksum_algorithm())
+                .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
                 .key(key)
                 .send()
                 .await
@@ -426,7 +415,7 @@ impl S3CompatibleObjectStorage {
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
-            .set_checksum_algorithm(self.upload_checksum_algorithm())
+            .set_checksum_algorithm((!self.disable_checksums).then_some(ChecksumAlgorithm::Crc32C))
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
@@ -969,7 +958,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            flavor: None,
+            disable_checksums: false,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1017,7 +1006,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
-            flavor: None,
+            disable_checksums: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1055,7 +1044,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            flavor: None,
+            disable_checksums: false,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1138,7 +1127,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            flavor: None,
+            disable_checksums: false,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1230,7 +1219,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            flavor: None,
+            disable_checksums: false,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
