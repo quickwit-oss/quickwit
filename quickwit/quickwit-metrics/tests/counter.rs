@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{Counter, counter, label_names, label_values, labels};
+use quickwit_metrics::{Counter, SYSTEM, counter, label_names, label_values, labels};
 
 #[test]
 fn base_increments() {
@@ -345,4 +345,112 @@ fn local_counter_clone_is_equal() {
     assert_eq!(a, b);
     a.inc();
     assert_eq!(b.get(), 1);
+}
+
+#[test]
+fn custom_system_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            system: "myapp",
+            subsystem: "http",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_http_requests_total");
+    assert_eq!(*value, DebugValue::Counter(1));
+}
+
+#[test]
+fn default_system_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            subsystem: "http",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, &format!("{SYSTEM}_http_requests_total"));
+    assert_eq!(*value, DebugValue::Counter(1));
+}
+
+#[test]
+fn empty_system_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            system: "",
+            subsystem: "http",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "http_requests_total");
+    assert_eq!(*value, DebugValue::Counter(1));
+}
+
+#[test]
+fn empty_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            system: "myapp",
+            subsystem: "",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_requests_total");
+    assert_eq!(*value, DebugValue::Counter(1));
+}
+
+#[test]
+fn empty_system_and_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            system: "",
+            subsystem: "",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "requests_total");
+    assert_eq!(*value, DebugValue::Counter(1));
+}
+
+#[test]
+fn const_system_key_name() {
+    const MY_SYSTEM: &str = "custom";
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "ops_total",
+            description: "total ops",
+            system: MY_SYSTEM,
+            subsystem: "db",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "custom_db_ops_total");
+    assert_eq!(*value, DebugValue::Counter(1));
 }

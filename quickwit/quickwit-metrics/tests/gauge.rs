@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{Gauge, GaugeGuard, gauge, label_names, label_values, labels};
+use quickwit_metrics::{Gauge, GaugeGuard, SYSTEM, gauge, label_names, label_values, labels};
 
 #[test]
 fn set() {
@@ -347,4 +347,112 @@ fn local_gauge_clone_is_equal() {
     assert_eq!(a, b);
     a.set(7.0);
     assert_eq!(b.get(), 7.0);
+}
+
+#[test]
+fn custom_system_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            system: "myapp",
+            subsystem: "db",
+        );
+        g.set(5.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_db_connections");
+    assert_eq!(*value, DebugValue::Gauge(5.0.into()));
+}
+
+#[test]
+fn default_system_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            subsystem: "db",
+        );
+        g.set(1.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, &format!("{SYSTEM}_db_connections"));
+    assert_eq!(*value, DebugValue::Gauge(1.0.into()));
+}
+
+#[test]
+fn empty_system_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            system: "",
+            subsystem: "db",
+        );
+        g.set(1.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "db_connections");
+    assert_eq!(*value, DebugValue::Gauge(1.0.into()));
+}
+
+#[test]
+fn empty_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            system: "myapp",
+            subsystem: "",
+        );
+        g.set(1.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_connections");
+    assert_eq!(*value, DebugValue::Gauge(1.0.into()));
+}
+
+#[test]
+fn empty_system_and_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            system: "",
+            subsystem: "",
+        );
+        g.set(1.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "connections");
+    assert_eq!(*value, DebugValue::Gauge(1.0.into()));
+}
+
+#[test]
+fn const_system_key_name() {
+    const MY_SYSTEM: &str = "custom";
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "pool_size",
+            description: "pool size",
+            system: MY_SYSTEM,
+            subsystem: "db",
+        );
+        g.set(8.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "custom_db_pool_size");
+    assert_eq!(*value, DebugValue::Gauge(8.0.into()));
 }
