@@ -36,6 +36,7 @@ use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{
     ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier,
 };
+use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
 use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
@@ -46,7 +47,7 @@ use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::{ChecksumStrategy, S3StorageConfig};
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
-use tokio::io::{AsyncRead, AsyncWriteExt, BufReader, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
@@ -251,14 +252,27 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((bucket, prefix))
 }
 
-/// Maps a configured [`ChecksumStrategy`] onto the AWS SDK's [`ChecksumAlgorithm`].
-/// The SDK computes & trails both CRC32C and MD5 internally; `Disabled` returns `None`
-/// so no algorithm is advertised.
+/// Maps a [`ChecksumStrategy`] onto the AWS SDK's flexible-checksum algorithm.
+/// `Md5` returns `None` because the S3 SDK silently no-ops `ChecksumAlgorithm::Md5`;
+/// MD5 is instead sent via the legacy `Content-MD5` header, computed client-side.
 fn aws_checksum_algorithm(strategy: ChecksumStrategy) -> Option<ChecksumAlgorithm> {
     match strategy {
         ChecksumStrategy::Crc32c => Some(ChecksumAlgorithm::Crc32C),
-        ChecksumStrategy::Md5 => Some(ChecksumAlgorithm::Md5),
-        ChecksumStrategy::Disabled => None,
+        ChecksumStrategy::Md5 | ChecksumStrategy::Disabled => None,
+    }
+}
+
+const MD5_CHUNK_SIZE: usize = 1_000_000;
+
+async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
+    let mut checksum = md5::Context::new();
+    let mut buf = vec![0; MD5_CHUNK_SIZE];
+    loop {
+        let read_len = read.read(&mut buf).await?;
+        checksum.consume(&buf[..read_len]);
+        if read_len == 0 {
+            return Ok(checksum.finalize());
+        }
     }
 }
 
@@ -269,6 +283,9 @@ struct MultipartUploadId(pub String);
 struct Part {
     pub part_number: usize,
     pub range: Range<u64>,
+    /// Pre-computed MD5 of the part bytes; only populated when
+    /// [`ChecksumStrategy::Md5`] is in use.
+    pub md5: Option<md5::Digest>,
 }
 
 impl Part {
@@ -362,16 +379,41 @@ impl S3CompatibleObjectStorage {
         Ok(MultipartUploadId(upload_id))
     }
 
-    fn create_multipart_requests(&self, len: u64, part_len: u64) -> Vec<Part> {
+    /// Returns the MD5 of the byte range when the configured strategy is
+    /// [`ChecksumStrategy::Md5`], otherwise `None` (no I/O performed).
+    async fn maybe_compute_part_md5(
+        &self,
+        payload: &dyn crate::PutPayload,
+        range: Range<u64>,
+    ) -> io::Result<Option<md5::Digest>> {
+        if !matches!(self.checksum_strategy, ChecksumStrategy::Md5) {
+            return Ok(None);
+        }
+        let read = payload.range_byte_stream(range).await?.into_async_read();
+        Ok(Some(compute_md5(read).await?))
+    }
+
+    async fn create_multipart_requests(
+        &self,
+        payload: &dyn crate::PutPayload,
+        len: u64,
+        part_len: u64,
+    ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        chunk_range(0..len as usize, part_len as usize)
+        let multipart_ranges: Vec<Range<u64>> = chunk_range(0..len as usize, part_len as usize)
             .map(into_u64_range)
-            .enumerate()
-            .map(|(multipart_id, multipart_range)| Part {
+            .collect();
+        let mut parts = Vec::with_capacity(multipart_ranges.len());
+        for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
+            parts.push(Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
+                md5: self
+                    .maybe_compute_part_md5(payload, multipart_range.clone())
+                    .await?,
                 range: multipart_range,
-            })
-            .collect()
+            });
+        }
+        Ok(parts)
     }
 
     fn build_delete_batch_requests<'a>(
@@ -425,11 +467,14 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
 
+        let content_md5 = part.md5.map(|digest| BASE64_STANDARD.encode(digest.0));
         let upload_part_output = self
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
             .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
+            // None if checksum isnt md5.
+            .set_content_md5(content_md5)
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
@@ -464,7 +509,9 @@ impl S3CompatibleObjectStorage {
         total_len: u64,
     ) -> StorageResult<()> {
         let upload_id = self.create_multipart_upload(key).await?;
-        let parts = self.create_multipart_requests(total_len, part_len);
+        let parts = self
+            .create_multipart_requests(payload.as_ref(), total_len, part_len)
+            .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
             stream::iter(parts.into_iter().map(|part| {
@@ -912,6 +959,14 @@ mod tests {
 
     use super::*;
     use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
+
+    #[tokio::test]
+    async fn test_md5_calc() -> std::io::Result<()> {
+        let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
+        let md5 = compute_md5(data.as_slice()).await?;
+        assert_eq!(md5, md5::compute(data));
+        Ok(())
+    }
 
     #[test]
     fn test_split_range_into_chunks_inexact() {
