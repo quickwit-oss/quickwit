@@ -75,4 +75,4 @@ jobs:
           file: quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip
           overwrite: true
           draft: true
-          tag_name: ${{ env.ASSET_VERSION }}
+          tag_name: lambda-${{ env.ASSET_VERSION }}
