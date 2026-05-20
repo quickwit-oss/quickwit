@@ -14,8 +14,7 @@
 
 use std::sync::LazyLock;
 
-use metrics::Gauge as MetricsGauge;
-pub use prometheus::{exponential_buckets, linear_buckets};
+pub use prometheus::{DEFAULT_BUCKETS, exponential_buckets, linear_buckets};
 use quickwit_metrics::{Gauge, LazyCounter, LazyGauge, gauge, lazy_counter, lazy_gauge};
 
 pub fn index_label(index_id: &str) -> &str {
@@ -47,12 +46,13 @@ pub static MEMORY_RESIDENT_BYTES: LazyGauge = lazy_gauge!(
         subsystem: "memory",
 );
 
-pub static DD_MEMORY_ALLOCATED_BYTES: LazyLock<MetricsGauge> =
-    LazyLock::new(|| metrics::gauge!("memory.allocated_bytes.gauge"));
-
-pub fn register_dd_memory_metrics() {
-    LazyLock::force(&DD_MEMORY_ALLOCATED_BYTES);
-}
+pub static DD_MEMORY_ALLOCATED_BYTES: LazyGauge = lazy_gauge!(
+    name: "memory.allocated_bytes.gauge",
+    description: "Total number of bytes allocated by the application for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
 static IN_FLIGHT_DATA_BYTES: LazyGauge = lazy_gauge!(
         name: "in_flight_data_bytes",

@@ -84,7 +84,7 @@ impl Storage for OpendalStorage {
     #[instrument(name = "storage.gcs.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
-        ::metrics::counter!("object_storage_put_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS.inc();
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -99,7 +99,7 @@ impl Storage for OpendalStorage {
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
-        ::metrics::counter!("object_storage_put_requests_bytes.count").increment(payload.len());
+        crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES.inc_by(payload.len());
         Ok(())
     }
 
@@ -113,10 +113,10 @@ impl Storage for OpendalStorage {
             .into_futures_async_read(..)
             .await?
             .compat();
-        ::metrics::counter!("object_storage_get_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
         let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
-        ::metrics::counter!("object_storage_get_requests_bytes.count").increment(num_bytes_copied);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -130,13 +130,12 @@ impl Storage for OpendalStorage {
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        ::metrics::counter!("object_storage_get_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
         // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
         // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
         // perform.
         let storage_content = self.op.read_with(&path).range(range).await?.to_bytes();
-        ::metrics::counter!("object_storage_get_requests_bytes.count")
-            .increment(storage_content.len() as u64);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS_BYTES.inc_by(storage_content.len() as u64);
         Ok(into_owned_bytes(storage_content))
     }
 
@@ -149,7 +148,7 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        ::metrics::counter!("object_storage_get_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
         let storage_reader = self
             .op
             .reader_with(&path)
@@ -164,10 +163,9 @@ impl Storage for OpendalStorage {
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        ::metrics::counter!("object_storage_get_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
         let storage_content = self.op.read(&path).await?.to_bytes();
-        ::metrics::counter!("object_storage_get_requests_bytes.count")
-            .increment(storage_content.len() as u64);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS_BYTES.inc_by(storage_content.len() as u64);
         Ok(into_owned_bytes(storage_content))
     }
 
@@ -175,7 +173,7 @@ impl Storage for OpendalStorage {
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
-        ::metrics::counter!("object_storage_delete_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_DELETE_REQUESTS.inc();
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         self.op.delete(&path).await?;
         Ok(())
@@ -192,7 +190,7 @@ impl Storage for OpendalStorage {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
                     crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
-                    ::metrics::counter!("object_storage_delete_requests.count").increment(1);
+                    crate::metrics::DD_OBJECT_STORAGE_DELETE_REQUESTS.inc();
                     let _timer = HistogramTimer::new(
                         &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
                     );
@@ -231,7 +229,7 @@ impl Storage for OpendalStorage {
             .collect();
 
         crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
-        ::metrics::counter!("object_storage_delete_requests.count").increment(paths.len() as u64);
+        crate::metrics::DD_OBJECT_STORAGE_DELETE_REQUESTS.inc_by(paths.len() as u64);
         let _timer =
             HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION);
         self.op

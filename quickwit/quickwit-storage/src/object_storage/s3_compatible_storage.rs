@@ -303,7 +303,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
-        ::metrics::counter!("object_storage_put_requests_bytes.count").increment(len);
+        crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES.inc_by(len);
 
         self.s3_client
             .put_object()
@@ -437,7 +437,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
-        ::metrics::counter!("object_storage_put_requests_bytes.count").increment(part.len());
+        crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES.inc_by(part.len());
 
         let upload_part_output = self
             .s3_client
@@ -558,7 +558,7 @@ impl S3CompatibleObjectStorage {
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        ::metrics::counter!("object_storage_get_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
 
         let get_object_output = self
             .s3_client
@@ -568,6 +568,10 @@ impl S3CompatibleObjectStorage {
             .set_range(range_str)
             .send()
             .await?;
+
+        let num_bytes = get_object_output.content_length.unwrap_or(0);
+        crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS_BYTES.inc_by(num_bytes as u64);
+
         Ok(get_object_output)
     }
 
@@ -652,8 +656,8 @@ impl S3CompatibleObjectStorage {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
                 aws_retry(&self.retry_params, || async {
                     crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
-                    ::metrics::counter!("object_storage_delete_requests.count")
-                        .increment(path_chunk.len() as u64);
+                    crate::metrics::DD_OBJECT_STORAGE_DELETE_REQUESTS
+                        .inc_by(path_chunk.len() as u64);
                     let _timer = HistogramTimer::new(
                         &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
                     );
@@ -733,7 +737,6 @@ async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
     // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
     let bytes = aggregated.into_bytes();
     crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
-    ::metrics::counter!("object_storage_get_requests_bytes.count").increment(bytes.len() as u64);
     Ok(bytes)
 }
 
@@ -775,7 +778,7 @@ impl Storage for S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
-        ::metrics::counter!("object_storage_put_requests.count").increment(1);
+        crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS.inc();
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
@@ -797,7 +800,6 @@ impl Storage for S3CompatibleObjectStorage {
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
         let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
-        ::metrics::counter!("object_storage_get_requests_bytes.count").increment(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -809,7 +811,7 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let delete_res = aws_retry(&self.retry_params, || async {
             crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
-            ::metrics::counter!("object_storage_delete_requests.count").increment(1);
+            crate::metrics::DD_OBJECT_STORAGE_DELETE_REQUESTS.inc_by(1);
             let _timer =
                 HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
             self.s3_client

@@ -47,7 +47,6 @@ pub(crate) fn build_recorder(service_version: &str) -> anyhow::Result<DogStatsDR
     }
 
     metrics_exporter_dogstatsd::DogStatsDBuilder::default()
-        .set_global_prefix("cloudprem")
         .with_global_labels(global_labels)
         .with_remote_address(addr)
         .context("failed to parse DogStatsD server address")?

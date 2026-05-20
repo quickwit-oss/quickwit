@@ -18,8 +18,7 @@ use std::fmt;
 use std::sync::LazyLock;
 
 use bytesize::ByteSize;
-use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
-use quickwit_common::metrics::{exponential_buckets, linear_buckets};
+use quickwit_common::metrics::{DEFAULT_BUCKETS, exponential_buckets, linear_buckets};
 use quickwit_metrics::{
     Counter, LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, label_names, lazy_counter,
     lazy_gauge, lazy_histogram,
@@ -27,36 +26,22 @@ use quickwit_metrics::{
 
 pub(crate) const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");
 
-pub(crate) static DD_ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<DDCounters> = LazyLock::new(|| {
-    DDCounters::new(
-        "search_requests.count",
-        "status",
-        &[
-            "success",
-            "error",
-            "cancelled",
-            "plan-error",
-            "plan-cancelled",
-        ],
-        &[],
-    )
-});
+pub(crate) static DD_ROOT_SEARCH_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+    name: "search_requests.count",
+    description: "Number of root search requests by status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-pub(crate) static DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<DDHistograms> =
-    LazyLock::new(|| {
-        DDHistograms::new(
-            "search_requests.duration_seconds",
-            "status",
-            &[
-                "success",
-                "error",
-                "cancelled",
-                "plan-error",
-                "plan-cancelled",
-            ],
-            &[],
-        )
-    });
+pub(crate) static DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+    name: "search_requests.duration_seconds",
+    description: "Duration of root search requests in seconds by status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+    buckets: DEFAULT_BUCKETS.to_vec(),
+);
 
 fn print_if_not_null(
     field_name: &'static str,

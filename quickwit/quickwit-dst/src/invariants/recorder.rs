@@ -25,15 +25,19 @@ use super::InvariantId;
 const INVARIANT_LABEL_NAMES: LabelNames<1> = label_names!("invariant");
 
 static POMSKY_INVARIANT_CHECKED_TOTAL: LazyCounter = lazy_counter!(
-        name: "checked_total",
+        name: "checked",
         description: "Number of invariant checks performed by Pomsky.",
-        subsystem: "pomsky_invariant",
+        system: "pomsky",
+        subsystem: "invariant",
+        separator: ".",
 );
 
 static POMSKY_INVARIANT_VIOLATED_TOTAL: LazyCounter = lazy_counter!(
-        name: "violated_total",
+        name: "violated",
         description: "Number of invariant violations observed by Pomsky.",
-        subsystem: "pomsky_invariant",
+        system: "pomsky",
+        subsystem: "invariant",
+        separator: ".",
 );
 
 /// Record an invariant check result.
@@ -60,6 +64,9 @@ mod tests {
         let labels = label_values!(INVARIANT_LABEL_NAMES => invariant_id.as_str());
         let checked_counter = counter!(parent: POMSKY_INVARIANT_CHECKED_TOTAL, labels: [labels]);
         let violated_counter = counter!(parent: POMSKY_INVARIANT_VIOLATED_TOTAL, labels: [labels]);
+
+        assert_eq!(checked_counter.key().name(), "pomsky.invariant.checked");
+        assert_eq!(violated_counter.key().name(), "pomsky.invariant.violated");
 
         let initial_checked = checked_counter.get();
         let initial_violated = violated_counter.get();

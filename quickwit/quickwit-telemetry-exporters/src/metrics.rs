@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use metrics_util::MetricKindMask;
 use metrics_util::layers::{FanoutBuilder, RouterBuilder};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -41,14 +43,14 @@ pub(crate) fn init_metrics_provider(
     };
 
     let dogstatsd_recorder = crate::dogstatsd::metrics::build_recorder(service_version)?;
+    let dogstatsd_recorder = Arc::new(dogstatsd_recorder);
     let mut router = RouterBuilder::from_recorder(quickwit_recorder);
-    // Pomsky invariant metrics use the Quickwit metrics API, so route their generated prefix
-    // explicitly instead of letting the default route send them to Prometheus/OTLP.
     router.add_route(
         MetricKindMask::ALL,
-        "quickwit_pomsky_invariant_",
-        dogstatsd_recorder,
+        "cloudprem.",
+        Arc::clone(&dogstatsd_recorder),
     );
+    router.add_route(MetricKindMask::ALL, "pomsky.", dogstatsd_recorder);
     let recorder = router.build();
 
     metrics::set_global_recorder(recorder)

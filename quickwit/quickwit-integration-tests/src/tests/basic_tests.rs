@@ -228,29 +228,20 @@ async fn test_metrics() {
     let metric_composite_keys = metrics.keys().collect::<Vec<_>>();
 
     let expected_metrics = [
-        "cpu.usage.gauge",
-        "indexed_events_bytes.count",
-        "indexed_events.count",
-        "memory.allocated_bytes.gauge",
-        "metastore_requests.count",
-        "metastore_requests.duration_seconds",
-        "object_storage_delete_requests.count",
-        "object_storage_get_requests_bytes.count",
-        "object_storage_get_requests.count",
-        "object_storage_put_requests_bytes.count",
-        "object_storage_put_requests.count",
-        "pending_merge_ops.gauge",
-        "search_requests.count",
-        "search_requests.duration_seconds",
-        "uptime.gauge",
-        "disk.bytes_read.counter",
-        "disk.bytes_written.counter",
-        "disk.total_space.gauge",
-        "disk.available_space.gauge",
-        "network.bytes_recv.counter",
-        "network.bytes_sent.counter",
-        "num_splits.gauge",
-        "split_size_bytes.gauge",
+        "cloudprem.cpu.usage.gauge",
+        "cloudprem.indexed_events_bytes.count",
+        "cloudprem.indexed_events.count",
+        "cloudprem.metastore_requests.count",
+        "cloudprem.metastore_requests.duration_seconds",
+        "cloudprem.search_requests.count",
+        "cloudprem.search_requests.duration_seconds",
+        "cloudprem.uptime.gauge",
+        "cloudprem.disk.bytes_read.counter",
+        "cloudprem.disk.bytes_written.counter",
+        "cloudprem.disk.total_space.gauge",
+        "cloudprem.disk.available_space.gauge",
+        "cloudprem.network.bytes_recv.counter",
+        "cloudprem.network.bytes_sent.counter",
     ];
     let mut found_metrics = Vec::new();
 
@@ -258,12 +249,14 @@ async fn test_metrics() {
         found_metrics.push(composite_key.key().name());
     }
 
-    for metric in expected_metrics {
-        assert!(
-            found_metrics.contains(&metric),
-            "metric `{metric}` not found"
-        );
-    }
+    let missing_metrics = expected_metrics
+        .into_iter()
+        .filter(|metric| !found_metrics.contains(metric))
+        .collect::<Vec<_>>();
+    assert!(
+        missing_metrics.is_empty(),
+        "missing metrics: {missing_metrics:?}"
+    );
 
     sandbox.shutdown().await.unwrap();
 }

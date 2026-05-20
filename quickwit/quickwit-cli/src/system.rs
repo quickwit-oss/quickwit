@@ -14,53 +14,89 @@
 
 use std::sync::LazyLock;
 
-use metrics::{Counter, Gauge, Label, counter, gauge};
+use quickwit_metrics::{Labels, LazyCounter, LazyGauge, gauge, labels, lazy_counter, lazy_gauge};
 use sysinfo::{CpuRefreshKind, Disks, Networks, RefreshKind, System};
 
-struct SystemMetrics {
-    uptime: Gauge,
-    cpu_usage: Gauge,
-    disk_bytes_read: Counter,
-    disk_bytes_written: Counter,
-    disk_size: Gauge,
-    disk_space_available: Gauge,
-    network_bytes_recv: Counter,
-    network_bytes_sent: Counter,
-}
+static UPTIME: LazyGauge = lazy_gauge!(
+    name: "uptime.gauge",
+    description: "Process uptime for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-impl Default for SystemMetrics {
-    fn default() -> Self {
-        let mut uptime_labels = Vec::with_capacity(4);
-        let keys = [
-            ("KUBERNETES_LIMITS_CPU", "kube_limits_cpu"),
-            ("KUBERNETES_LIMITS_MEMORY", "kube_limits_memory"),
-            ("KUBERNETES_REQUESTS_CPU", "kube_requests_cpu"),
-            ("KUBERNETES_REQUESTS_MEMORY", "kube_requests_memory"),
-        ];
-        for (env_var_key, label_key) in keys {
-            if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false)
-            {
-                uptime_labels.push(Label::new(label_key, label_val));
-            }
-        }
-        Self {
-            uptime: gauge!("uptime.gauge", uptime_labels),
-            cpu_usage: gauge!("cpu.usage.gauge"),
-            disk_bytes_read: counter!("disk.bytes_read.counter"),
-            disk_bytes_written: counter!("disk.bytes_written.counter"),
-            disk_size: gauge!("disk.total_space.gauge"),
-            disk_space_available: gauge!("disk.available_space.gauge"),
-            network_bytes_recv: counter!("network.bytes_recv.counter"),
-            network_bytes_sent: counter!("network.bytes_sent.counter"),
-        }
-    }
-}
+static UPTIME_LABELS: LazyLock<Labels<4>> = LazyLock::new(|| {
+    let env_label_value = |env_var_key| {
+        quickwit_common::get_from_env_opt::<String>(env_var_key, false)
+            .unwrap_or_else(|| "N/A".to_string())
+    };
 
-static SYSTEM_METRICS: LazyLock<SystemMetrics> = LazyLock::new(SystemMetrics::default);
+    let uptime_labels = labels!(
+        "kube_limits_cpu" => env_label_value("KUBERNETES_LIMITS_CPU"),
+        "kube_limits_memory" => env_label_value("KUBERNETES_LIMITS_MEMORY"),
+        "kube_requests_cpu" => env_label_value("KUBERNETES_REQUESTS_CPU"),
+        "kube_requests_memory" => env_label_value("KUBERNETES_REQUESTS_MEMORY"),
+    );
+    uptime_labels
+});
+
+static CPU_USAGE: LazyGauge = lazy_gauge!(
+    name: "cpu.usage.gauge",
+    description: "CPU usage for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DISK_BYTES_READ: LazyCounter = lazy_counter!(
+    name: "disk.bytes_read.counter",
+    description: "Disk bytes read for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DISK_BYTES_WRITTEN: LazyCounter = lazy_counter!(
+    name: "disk.bytes_written.counter",
+    description: "Disk bytes written for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DISK_SIZE: LazyGauge = lazy_gauge!(
+    name: "disk.total_space.gauge",
+    description: "Total disk space for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DISK_SPACE_AVAILABLE: LazyGauge = lazy_gauge!(
+    name: "disk.available_space.gauge",
+    description: "Available disk space for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static NETWORK_BYTES_RECV: LazyCounter = lazy_counter!(
+    name: "network.bytes_recv.counter",
+    description: "Network bytes received for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static NETWORK_BYTES_SENT: LazyCounter = lazy_counter!(
+    name: "network.bytes_sent.counter",
+    description: "Network bytes sent for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
 async fn sys_metrics_loop() {
-    let sys_metrics = &*SYSTEM_METRICS;
-
     let mut poll_interval = tokio::time::interval(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
     let mut system =
         System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()));
@@ -74,35 +110,29 @@ async fn sys_metrics_loop() {
         networks.refresh(true);
 
         let cpu_usage = system.global_cpu_usage();
-        sys_metrics.cpu_usage.set(cpu_usage as f64);
+        CPU_USAGE.set(cpu_usage as f64);
 
         let uptime = System::uptime();
-        sys_metrics.uptime.set(uptime as f64);
+        gauge!(parent: UPTIME, labels: [UPTIME_LABELS.clone()]).set(uptime as f64);
 
         let mut total_size = 0;
         let mut total_space_available = 0;
         for disk in &disks {
             let usage = disk.usage();
-            sys_metrics
-                .disk_bytes_read
-                .increment(usage.total_read_bytes);
-            sys_metrics
-                .disk_bytes_written
-                .increment(usage.total_written_bytes);
+            DISK_BYTES_READ.inc_by(usage.total_read_bytes);
+            DISK_BYTES_WRITTEN.inc_by(usage.total_written_bytes);
 
             total_size += disk.total_space();
             total_space_available += disk.available_space();
         }
-        sys_metrics.disk_size.set(total_size as f64);
-        sys_metrics
-            .disk_space_available
-            .set(total_space_available as f64);
+        DISK_SIZE.set(total_size as f64);
+        DISK_SPACE_AVAILABLE.set(total_space_available as f64);
 
         for (_, network) in &networks {
             let received = network.received();
             let transmitted = network.transmitted();
-            sys_metrics.network_bytes_recv.increment(received);
-            sys_metrics.network_bytes_sent.increment(transmitted);
+            NETWORK_BYTES_RECV.inc_by(received);
+            NETWORK_BYTES_SENT.inc_by(transmitted);
         }
     }
 }

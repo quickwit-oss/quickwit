@@ -21,7 +21,6 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use fnv::FnvHashMap;
-use metrics::Counter as DdCounter;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
@@ -50,7 +49,7 @@ use tracing::{error, info};
 use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::metrics::{
-    DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, PROCESSED_BYTES,
+    DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, INDEXING_STATUS, PROCESSED_BYTES,
     PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
 };
 use crate::models::{
@@ -340,8 +339,8 @@ pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
     pub num_docs_metric: Counter,
     pub num_bytes_metric: Counter,
-    pub dd_indexed_events_metric: DdCounter,
-    pub dd_indexed_bytes_metric: DdCounter,
+    pub dd_indexed_events_metric: Counter,
+    pub dd_indexed_bytes_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -360,12 +359,13 @@ impl DocProcessorCounter {
             "index" => quickwit_common::metrics::index_label(index).to_string(),
             "docs_processed_status" => outcome
         );
+        let dd_labels = label_values!(INDEXING_STATUS => outcome);
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(parent: PROCESSED_DOCS_TOTAL, labels: [labels]),
             num_bytes_metric: counter!(parent: PROCESSED_BYTES, labels: [labels]),
-            dd_indexed_events_metric: DD_INDEXED_EVENTS.get(outcome).clone(),
-            dd_indexed_bytes_metric: DD_INDEXED_EVENTS_BYTES.get(outcome).clone(),
+            dd_indexed_events_metric: counter!(parent: DD_INDEXED_EVENTS, labels: [dd_labels]),
+            dd_indexed_bytes_metric: counter!(parent: DD_INDEXED_EVENTS_BYTES, labels: [dd_labels]),
         }
     }
 
@@ -378,8 +378,8 @@ impl DocProcessorCounter {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
         self.num_docs_metric.inc();
         self.num_bytes_metric.inc_by(num_bytes);
-        self.dd_indexed_events_metric.increment(1);
-        self.dd_indexed_bytes_metric.increment(num_bytes);
+        self.dd_indexed_events_metric.inc();
+        self.dd_indexed_bytes_metric.inc_by(num_bytes);
     }
 }
 

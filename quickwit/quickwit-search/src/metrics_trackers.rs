@@ -81,10 +81,9 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             .observe(self.start.elapsed().as_secs_f64());
         histogram!(parent: ROOT_SEARCH_TARGETED_SPLITS, labels: [labels])
             .observe(num_targeted_splits as f64);
-        DD_ROOT_SEARCH_REQUESTS_TOTAL.get(status).increment(1);
-        DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS
-            .get(status)
-            .record(self.start.elapsed().as_secs_f64());
+        counter!(parent: DD_ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
+            .observe(self.start.elapsed().as_secs_f64());
     }
 }
 

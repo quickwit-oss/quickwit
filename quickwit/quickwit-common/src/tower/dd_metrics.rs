@@ -18,15 +18,36 @@ use std::time::Instant;
 
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyHistogram, counter, histogram, label_names, label_values,
+    lazy_counter, lazy_histogram,
+};
 use tower::{Layer, Service};
 
-use crate::dd_metrics::{DDCounters, DDHistograms};
+use crate::metrics::DEFAULT_BUCKETS;
+
+const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");
+
+static METASTORE_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+    name: "metastore_requests.count",
+    description: "Number of metastore gRPC requests by status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static METASTORE_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+    name: "metastore_requests.duration_seconds",
+    description: "Duration of metastore gRPC requests in seconds by status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+    buckets: DEFAULT_BUCKETS.to_vec(),
+);
 
 #[derive(Clone)]
 pub struct DDGrpcMetrics<S> {
     inner: S,
-    requests_total: DDCounters,
-    request_duration_seconds: DDHistograms,
 }
 
 impl<S, R> Service<R> for DDGrpcMetrics<S>
@@ -48,34 +69,16 @@ where S: Service<R>
             inner,
             start,
             status: "cancelled",
-            requests_total: self.requests_total.clone(),
-            request_duration_seconds: self.request_duration_seconds.clone(),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct DDGrpcMetricsLayer {
-    requests_total: DDCounters,
-    request_duration_seconds: DDHistograms,
-}
+pub struct DDGrpcMetricsLayer;
 
 impl DDGrpcMetricsLayer {
     pub fn for_metastore() -> Self {
-        Self {
-            requests_total: DDCounters::new(
-                "metastore_requests.count",
-                "status",
-                &["cancelled", "success", "error"],
-                &[],
-            ),
-            request_duration_seconds: DDHistograms::new(
-                "metastore_requests.duration_seconds",
-                "status",
-                &["cancelled", "success", "error"],
-                &[],
-            ),
-        }
+        Self
     }
 }
 
@@ -83,11 +86,7 @@ impl<S> Layer<S> for DDGrpcMetricsLayer {
     type Service = DDGrpcMetrics<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        DDGrpcMetrics {
-            inner,
-            requests_total: self.requests_total.clone(),
-            request_duration_seconds: self.request_duration_seconds.clone(),
-        }
+        DDGrpcMetrics { inner }
     }
 }
 
@@ -98,18 +97,15 @@ pub struct ResponseFuture<F> {
     inner: F,
     start: Instant,
     status: &'static str,
-    requests_total: DDCounters,
-    request_duration_seconds: DDHistograms,
 }
 
 #[pinned_drop]
 impl<F> PinnedDrop for ResponseFuture<F> {
     fn drop(self: Pin<&mut Self>) {
         let elapsed = self.start.elapsed().as_secs_f64();
-        self.requests_total.get(self.status).increment(1);
-        self.request_duration_seconds
-            .get(self.status)
-            .record(elapsed);
+        let labels = label_values!(STATUS_LABEL_NAMES => self.status);
+        counter!(parent: METASTORE_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: METASTORE_REQUEST_DURATION_SECONDS, labels: [labels]).observe(elapsed);
     }
 }
 

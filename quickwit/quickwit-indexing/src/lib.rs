@@ -55,13 +55,6 @@ pub use self::source::check_source_connectivity;
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct IndexingApiSchemas;
 
-/// Registers legacy Datadog indexing metrics expected by existing dashboards and tests.
-pub fn register_dd_indexing_metrics() {
-    std::sync::LazyLock::force(&metrics::DD_INDEXED_EVENTS);
-    std::sync::LazyLock::force(&metrics::DD_INDEXED_EVENTS_BYTES);
-    std::sync::LazyLock::force(&metrics::DD_PENDING_MERGE_OPS);
-}
-
 pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
 }

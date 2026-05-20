@@ -22,7 +22,6 @@ http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
-metrics = { workspace = true }
 mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
 pin-project = { workspace = true }

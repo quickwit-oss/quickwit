@@ -15,10 +15,14 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use quickwit_common::dd_metrics::DD_INGEST_METRICS;
+use quickwit_common::metrics::DEFAULT_BUCKETS;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyHistogram, counter, histogram, label_names, label_values,
+    lazy_counter, lazy_histogram,
+};
 use quickwit_processing::{DatadogLogMsg, MessageValue};
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
@@ -38,6 +42,40 @@ use crate::datadog_api::get_error_code_and_message;
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
+
+const STATUS_CODE: LabelNames<1> = label_names!("status_code");
+
+static DD_INGEST_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+    name: "ingest_requests.count",
+    description: "Number of Datadog ingest requests by status code.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DD_INGEST_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+    name: "ingest_requests.duration_seconds",
+    description: "Duration of Datadog ingest requests in seconds by status code.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+    buckets: DEFAULT_BUCKETS.to_vec(),
+);
+
+static DD_INGEST_UNROUTED_DOCS_TOTAL: LazyCounter = lazy_counter!(
+    name: "ingest_unrouted_docs.count",
+    description: "Number of Datadog ingest documents with no matching routing rule.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+fn record_dd_ingest_request(status_code: http::StatusCode, start: Instant) {
+    let labels = label_values!(STATUS_CODE => status_code.as_str().to_string());
+    counter!(parent: DD_INGEST_REQUESTS_TOTAL, labels: [labels]).inc();
+    histogram!(parent: DD_INGEST_REQUEST_DURATION_SECONDS, labels: [labels])
+        .observe(start.elapsed().as_secs_f64());
+}
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -277,9 +315,7 @@ async fn datadog_ingest_logs(
         }
 
         if num_unrouted_docs > 0 {
-            DD_INGEST_METRICS
-                .ingest_unrouted_docs_total
-                .increment(num_unrouted_docs);
+            DD_INGEST_UNROUTED_DOCS_TOTAL.inc_by(num_unrouted_docs);
             rate_limited_warn!(
                 limit_per_min = 10,
                 num_unrouted_docs = num_unrouted_docs,
@@ -325,14 +361,7 @@ async fn datadog_ingest_logs(
     );
 
     if num_failures == 0 {
-        DD_INGEST_METRICS
-            .ingest_requests_total
-            .get("200")
-            .increment(1);
-        DD_INGEST_METRICS
-            .ingest_request_duration_seconds
-            .get("200")
-            .record(start.elapsed().as_secs_f64());
+        record_dd_ingest_request(http::StatusCode::OK, start);
         return Ok(());
     }
     // Return the first failure reason (could be improved to aggregate errors).
@@ -340,14 +369,7 @@ async fn datadog_ingest_logs(
     let (error_code, error_message) = get_error_code_and_message(failure_reason);
 
     let status_code = error_code.http_status_code();
-    DD_INGEST_METRICS
-        .ingest_requests_total
-        .get(status_code.as_str())
-        .increment(1);
-    DD_INGEST_METRICS
-        .ingest_request_duration_seconds
-        .get(status_code.as_str())
-        .record(start.elapsed().as_secs_f64());
+    record_dd_ingest_request(status_code, start);
 
     Err(DatadogApiError::Ingest(
         error_code,

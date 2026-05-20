@@ -16,12 +16,11 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use bytes::Bytes;
-use metrics::Counter;
-use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_opentelemetry::otlp::{
     ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType,
 };
@@ -43,7 +42,10 @@ use time::format_description::well_known::Iso8601;
 use tracing::debug;
 use warp::{Filter, Rejection};
 
-use super::BYOC_METRICS;
+use super::{
+    BYOC_INGEST_BYTES_TOTAL, BYOC_INGEST_REQUEST_DURATION_SECONDS, BYOC_INGEST_REQUESTS_TOTAL,
+    BYOC_INGEST_UNMATCHED_EVENTS_TOTAL, SIGNAL, SIGNAL_STATUS_CODE,
+};
 use crate::datadog_api::{IndexRouter, custom_field_accessor, get_error_code, tag_accessor};
 use crate::decompression::get_body_bytes;
 use crate::ingest_api::lines;
@@ -248,14 +250,7 @@ async fn byoc_ingest_logs(
 
     if body.content.is_empty() {
         rate_limited_warn!(limit_per_min = 6, "received empty logs request from intake");
-        record_metrics(
-            &BYOC_METRICS.log_requests_total,
-            &BYOC_METRICS.log_request_duration_seconds,
-            &BYOC_METRICS.log_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("log", &Ok(()), start, 0);
         return Ok(());
     }
     let num_bytes = body.content.len() as u64;
@@ -267,14 +262,7 @@ async fn byoc_ingest_logs(
 
     let Some(subrequests) = subrequests_opt else {
         rate_limited_warn!(limit_per_min = 6, "received empty logs request from intake");
-        record_metrics(
-            &BYOC_METRICS.log_requests_total,
-            &BYOC_METRICS.log_request_duration_seconds,
-            &BYOC_METRICS.log_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("log", &Ok(()), start, 0);
         return Ok(());
     };
     if num_unmatched_events > 0 {
@@ -282,9 +270,9 @@ async fn byoc_ingest_logs(
             limit_per_min = 6,
             "discarded {num_unmatched_events} log events with no matching routing rule"
         );
-        BYOC_METRICS
-            .log_unmatched_events_total
-            .increment(num_unmatched_events);
+        let signal_labels = label_values!(SIGNAL => "log");
+        counter!(parent: BYOC_INGEST_UNMATCHED_EVENTS_TOTAL, labels: [signal_labels])
+            .inc_by(num_unmatched_events);
     }
     let request = IngestRequestV2 {
         commit_type: CommitTypeV2::Auto as i32,
@@ -294,14 +282,7 @@ async fn byoc_ingest_logs(
         Ok(response) => process_ingest_response(response, "logs"),
         Err(error) => Err(ByocApiError::IngestError(error)),
     };
-    record_metrics(
-        &BYOC_METRICS.log_requests_total,
-        &BYOC_METRICS.log_request_duration_seconds,
-        &BYOC_METRICS.log_bytes_total,
-        &ingest_result,
-        start,
-        num_bytes,
-    );
+    record_metrics("log", &ingest_result, start, num_bytes);
     ingest_result
 }
 
@@ -396,14 +377,7 @@ async fn byoc_ingest_metrics(
             limit_per_min = 6,
             "received empty metrics request from intake"
         );
-        record_metrics(
-            &BYOC_METRICS.metric_requests_total,
-            &BYOC_METRICS.metric_request_duration_seconds,
-            &BYOC_METRICS.metric_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("metric", &Ok(()), start, 0);
         return Ok(());
     }
     let num_bytes = body.content.len() as u64;
@@ -428,14 +402,7 @@ async fn byoc_ingest_metrics(
         Ok(response) => process_ingest_response(response, "metrics"),
         Err(error) => Err(ByocApiError::IngestError(error)),
     };
-    record_metrics(
-        &BYOC_METRICS.metric_requests_total,
-        &BYOC_METRICS.metric_request_duration_seconds,
-        &BYOC_METRICS.metric_bytes_total,
-        &ingest_result,
-        start,
-        num_bytes,
-    );
+    record_metrics("metric", &ingest_result, start, num_bytes);
     ingest_result
 }
 
@@ -475,14 +442,7 @@ async fn byoc_ingest_sketches(
             limit_per_min = 6,
             "received empty sketches request from intake"
         );
-        record_metrics(
-            &BYOC_METRICS.sketch_requests_total,
-            &BYOC_METRICS.sketch_request_duration_seconds,
-            &BYOC_METRICS.sketch_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("sketch", &Ok(()), start, 0);
         return Ok(());
     }
     let num_bytes = body.content.len() as u64;
@@ -507,14 +467,7 @@ async fn byoc_ingest_sketches(
         Ok(response) => process_ingest_response(response, "sketches"),
         Err(error) => Err(ByocApiError::IngestError(error)),
     };
-    record_metrics(
-        &BYOC_METRICS.sketch_requests_total,
-        &BYOC_METRICS.sketch_request_duration_seconds,
-        &BYOC_METRICS.sketch_bytes_total,
-        &ingest_result,
-        start,
-        num_bytes,
-    );
+    record_metrics("sketch", &ingest_result, start, num_bytes);
     ingest_result
 }
 
@@ -545,14 +498,7 @@ async fn byoc_ingest_traces(
             limit_per_min = 6,
             "received empty traces request from intake"
         );
-        record_metrics(
-            &BYOC_METRICS.trace_requests_total,
-            &BYOC_METRICS.trace_request_duration_seconds,
-            &BYOC_METRICS.trace_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("trace", &Ok(()), start, 0);
         return Ok(());
     }
     let num_bytes = body.content.len() as u64;
@@ -568,14 +514,7 @@ async fn byoc_ingest_traces(
             limit_per_min = 6,
             "received empty traces request from intake"
         );
-        record_metrics(
-            &BYOC_METRICS.trace_requests_total,
-            &BYOC_METRICS.trace_request_duration_seconds,
-            &BYOC_METRICS.trace_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("trace", &Ok(()), start, 0);
         return Ok(());
     };
     let subrequest = IngestSubrequest {
@@ -592,14 +531,7 @@ async fn byoc_ingest_traces(
         Ok(response) => process_ingest_response(response, "metrics"),
         Err(error) => Err(ByocApiError::IngestError(error)),
     };
-    record_metrics(
-        &BYOC_METRICS.trace_requests_total,
-        &BYOC_METRICS.trace_request_duration_seconds,
-        &BYOC_METRICS.trace_bytes_total,
-        &ingest_result,
-        start,
-        num_bytes,
-    );
+    record_metrics("trace", &ingest_result, start, num_bytes);
     ingest_result
 }
 
@@ -627,14 +559,7 @@ async fn byoc_ingest_temp_metrics(
 
     if body.content.is_empty() {
         rate_limited_warn!(limit_per_min = 6, "received empty metrics request");
-        record_metrics(
-            &BYOC_METRICS.metric_requests_total,
-            &BYOC_METRICS.metric_request_duration_seconds,
-            &BYOC_METRICS.metric_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("metric", &Ok(()), start, 0);
         return Ok(());
     }
     let num_bytes = body.content.len() as u64;
@@ -705,14 +630,7 @@ async fn byoc_ingest_temp_metrics(
     })??;
 
     if subrequests.is_empty() {
-        record_metrics(
-            &BYOC_METRICS.metric_requests_total,
-            &BYOC_METRICS.metric_request_duration_seconds,
-            &BYOC_METRICS.metric_bytes_total,
-            &Ok(()),
-            start,
-            0,
-        );
+        record_metrics("metric", &Ok(()), start, 0);
         return Ok(());
     }
 
@@ -724,14 +642,7 @@ async fn byoc_ingest_temp_metrics(
         Ok(response) => process_ingest_response(response, "temp metrics"),
         Err(error) => Err(ByocApiError::IngestError(error)),
     };
-    record_metrics(
-        &BYOC_METRICS.metric_requests_total,
-        &BYOC_METRICS.metric_request_duration_seconds,
-        &BYOC_METRICS.metric_bytes_total,
-        &ingest_result,
-        start,
-        num_bytes,
-    );
+    record_metrics("metric", &ingest_result, start, num_bytes);
     ingest_result
 }
 
@@ -954,9 +865,7 @@ fn process_ingest_response(response: IngestResponseV2, signal: &str) -> Result<(
 }
 
 fn record_metrics(
-    requests_total: &DDCounters,
-    request_duration: &DDHistograms,
-    bytes_total: &Counter,
+    signal: &'static str,
     result: &Result<(), ByocApiError>,
     start: Instant,
     num_bytes: u64,
@@ -965,13 +874,16 @@ fn record_metrics(
         Ok(()) => http::StatusCode::OK,
         Err(error) => error.error_code().http_status_code(),
     };
-    let status_code_str = status_code.as_str();
+    let request_labels = label_values!(
+        SIGNAL_STATUS_CODE => signal,
+        status_code.as_str().to_string()
+    );
+    counter!(parent: BYOC_INGEST_REQUESTS_TOTAL, labels: [request_labels]).inc();
+    histogram!(parent: BYOC_INGEST_REQUEST_DURATION_SECONDS, labels: [request_labels])
+        .observe(start.elapsed().as_secs_f64());
 
-    requests_total.get(status_code_str).increment(1);
-    request_duration
-        .get(status_code_str)
-        .record(start.elapsed().as_secs_f64());
-    bytes_total.increment(num_bytes);
+    let signal_labels = label_values!(SIGNAL => signal);
+    counter!(parent: BYOC_INGEST_BYTES_TOTAL, labels: [signal_labels]).inc_by(num_bytes);
 }
 
 #[cfg(test)]

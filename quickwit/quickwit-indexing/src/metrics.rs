@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_common::dd_metrics::DDCounters;
 use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
 pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
+pub(crate) const INDEXING_STATUS: LabelNames<1> = label_names!("indexing_status");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "processed_docs_total",
@@ -33,42 +31,29 @@ pub(crate) static PROCESSED_BYTES: LazyCounter = lazy_counter!(
         subsystem: "indexing",
 );
 
-pub(crate) static DD_INDEXED_EVENTS: LazyLock<DDCounters> = LazyLock::new(|| {
-    DDCounters::new(
-        "indexed_events.count",
-        "indexing_status",
-        &[
-            "valid",
-            "schema_error",
-            "processing_pipeline_error",
-            "transform_error",
-            "json_parse_error",
-            "otlp_parse_error",
-            "outside_time_range",
-        ],
-        &[],
-    )
-});
+pub(crate) static DD_INDEXED_EVENTS: LazyCounter = lazy_counter!(
+    name: "indexed_events.count",
+    description: "Number of indexed events by indexing status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-pub(crate) static DD_INDEXED_EVENTS_BYTES: LazyLock<DDCounters> = LazyLock::new(|| {
-    DDCounters::new(
-        "indexed_events_bytes.count",
-        "indexing_status",
-        &[
-            "valid",
-            "schema_error",
-            "processing_pipeline_error",
-            "transform_error",
-            "json_parse_error",
-            "otlp_parse_error",
-            "outside_time_range",
-        ],
-        &[],
-    )
-});
+pub(crate) static DD_INDEXED_EVENTS_BYTES: LazyCounter = lazy_counter!(
+    name: "indexed_events_bytes.count",
+    description: "Number of indexed event bytes by indexing status for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-pub(crate) static DD_PENDING_MERGE_OPS: LazyLock<::metrics::Gauge> =
-    LazyLock::new(|| ::metrics::gauge!("pending_merge_ops.gauge"));
+pub(crate) static DD_PENDING_MERGE_OPS: LazyGauge = lazy_gauge!(
+    name: "pending_merge_ops.gauge",
+    description: "Number of pending merge operations for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
 pub(crate) static INDEXING_PIPELINES: LazyGauge = lazy_gauge!(
         name: "indexing_pipelines",

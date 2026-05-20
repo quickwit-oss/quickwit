@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
 use std::time::Duration;
 
-use metrics::{Gauge, Label, gauge};
-use quickwit_proto::metastore::{ListIndexStatsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_metrics::{
+    LabelNames, Labels, LazyGauge, gauge, label_names, label_values, labels, lazy_gauge,
+};
+use quickwit_proto::metastore::{
+    ListIndexStatsRequest, MetastoreService, MetastoreServiceClient, SplitStats,
+};
 use tracing::error;
 
 // short interval for tests so metrics are emitted during the test
@@ -26,68 +29,76 @@ const INDEX_METRICS_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 #[cfg(not(any(test, feature = "testsuite")))]
 const INDEX_METRICS_POLLING_INTERVAL: Duration = Duration::from_mins(5);
 
+static DD_SPLIT_SIZE_BYTES: LazyGauge = lazy_gauge!(
+    name: "split_size_bytes.gauge",
+    description: "Split size bytes by index and split state for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static DD_NUM_SPLITS: LazyGauge = lazy_gauge!(
+    name: "num_splits.gauge",
+    description: "Number of splits by index and split state for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
 /// This loop gets index stats from the metastore and updates the corresponding gauges
 async fn index_metrics_loop(metastore: MetastoreServiceClient) -> anyhow::Result<()> {
     let mut poll_interval = tokio::time::interval(INDEX_METRICS_POLLING_INTERVAL);
-    let mut index_metrics = DDIndexMetrics::default();
 
     loop {
         poll_interval.tick().await;
-        if let Err(error) = update_index_metrics(&metastore, &mut index_metrics).await {
+        if let Err(error) = update_index_metrics(&metastore).await {
             error!(%error, "failed to update index metrics");
         }
     }
 }
 
-async fn update_index_metrics(
-    metastore: &MetastoreServiceClient,
-    index_metrics: &mut DDIndexMetrics,
-) -> anyhow::Result<()> {
+const INDEX_LABEL: LabelNames<1> = label_names!("index");
+const STAGE_LABEL: Labels<1> = labels!("split_state" => "staged");
+const PUBLISHED_LABEL: Labels<1> = labels!("split_state" => "published");
+const MARKED_FOR_DELETION_LABEL: Labels<1> = labels!("split_state" => "marked_for_deletion");
+async fn update_index_metrics(metastore: &MetastoreServiceClient) -> anyhow::Result<()> {
     let response = metastore
         .list_index_stats(ListIndexStatsRequest {
             index_id_patterns: vec!["*".to_string()],
         })
         .await?;
 
+    let total_size_bytes = |split_stats: Option<SplitStats>| {
+        split_stats
+            .map(|split_stats| split_stats.total_size_bytes as f64)
+            .unwrap_or(0.0)
+    };
+    let num_splits = |split_stats: Option<SplitStats>| {
+        split_stats
+            .map(|split_stats| split_stats.num_splits as f64)
+            .unwrap_or(0.0)
+    };
+
     for index_stats in response.index_stats {
         let index_id = index_stats
             .index_uid
             .expect("`index_uid` should be populated")
             .index_id;
+        let index_label = label_values!(INDEX_LABEL => index_id);
 
-        // update total_size_bytes
-        index_metrics.dd_index_size_bytes.set(
-            index_id.clone(),
-            index_stats
-                .staged
-                .map(|split_stats| split_stats.total_size_bytes as f64)
-                .unwrap_or(0.0),
-            index_stats
-                .published
-                .map(|split_stats| split_stats.total_size_bytes as f64)
-                .unwrap_or(0.0),
-            index_stats
-                .marked_for_deletion
-                .map(|split_stats| split_stats.total_size_bytes as f64)
-                .unwrap_or(0.0),
-        )?;
+        gauge!(parent: &DD_SPLIT_SIZE_BYTES, labels: [index_label, STAGE_LABEL])
+            .set(total_size_bytes(index_stats.staged));
+        gauge!(parent: &DD_SPLIT_SIZE_BYTES, labels: [index_label, PUBLISHED_LABEL])
+            .set(total_size_bytes(index_stats.published));
+        gauge!(parent: &DD_SPLIT_SIZE_BYTES, labels: [index_label, MARKED_FOR_DELETION_LABEL])
+            .set(total_size_bytes(index_stats.marked_for_deletion));
 
-        // update num_splits
-        index_metrics.dd_num_splits.set(
-            index_id.clone(),
-            index_stats
-                .staged
-                .map(|split_stats| split_stats.num_splits as f64)
-                .unwrap_or(0.0),
-            index_stats
-                .published
-                .map(|split_stats| split_stats.num_splits as f64)
-                .unwrap_or(0.0),
-            index_stats
-                .marked_for_deletion
-                .map(|split_stats| split_stats.num_splits as f64)
-                .unwrap_or(0.0),
-        )?;
+        gauge!(parent: &DD_NUM_SPLITS, labels: [index_label, STAGE_LABEL])
+            .set(num_splits(index_stats.staged));
+        gauge!(parent: &DD_NUM_SPLITS, labels: [index_label, PUBLISHED_LABEL])
+            .set(num_splits(index_stats.published));
+        gauge!(parent: &DD_NUM_SPLITS, labels: [index_label, MARKED_FOR_DELETION_LABEL])
+            .set(num_splits(index_stats.marked_for_deletion));
     }
     Ok(())
 }
@@ -96,71 +107,10 @@ pub(crate) fn start_index_metrics_loop(metastore: MetastoreServiceClient) {
     tokio::task::spawn(index_metrics_loop(metastore));
 }
 
-#[derive(Clone)]
-pub struct DDIndexGauges {
-    name: &'static str,
-    gauges: HashMap<String, (Gauge, Gauge, Gauge)>,
-}
-
-impl DDIndexGauges {
-    pub fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            gauges: HashMap::new(),
-        }
-    }
-
-    pub fn set(
-        &mut self,
-        index_id: String,
-        staged_value: f64,
-        published_value: f64,
-        marked_for_deletion_value: f64,
-    ) -> anyhow::Result<()> {
-        // if gauges entry is not found, register a new one
-        let gauges = self.gauges.entry(index_id.clone()).or_insert_with(|| {
-            let staged_labels = vec![
-                Label::new("index", index_id.clone()),
-                Label::new("split_state", "staged".to_string()),
-            ];
-            let published_labels = vec![
-                Label::new("index", index_id.clone()),
-                Label::new("split_state", "published".to_string()),
-            ];
-            let marked_for_deletion_labels = vec![
-                Label::new("index", index_id),
-                Label::new("split_state", "marked_for_deletion".to_string()),
-            ];
-            (
-                gauge!(self.name, staged_labels),
-                gauge!(self.name, published_labels),
-                gauge!(self.name, marked_for_deletion_labels),
-            )
-        });
-        gauges.0.set(staged_value);
-        gauges.1.set(published_value);
-        gauges.2.set(marked_for_deletion_value);
-        Ok(())
-    }
-}
-
-#[derive(Clone)]
-pub struct DDIndexMetrics {
-    pub dd_index_size_bytes: DDIndexGauges,
-    pub dd_num_splits: DDIndexGauges,
-}
-
-impl Default for DDIndexMetrics {
-    fn default() -> Self {
-        Self {
-            dd_index_size_bytes: DDIndexGauges::new("split_size_bytes.gauge"),
-            dd_num_splits: DDIndexGauges::new("num_splits.gauge"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use metrics_util::debugging::{DebugValue, DebuggingRecorder, Snapshot};
     use ordered_float::OrderedFloat;
     use quickwit_config::IndexConfig;
@@ -217,16 +167,26 @@ mod tests {
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
-        let mut index_metrics = DDIndexMetrics::default();
-        let _ = update_index_metrics(&metastore, &mut index_metrics).await;
+        update_index_metrics(&metastore).await.unwrap();
 
         let snapshot = snapshot_as_map_for_test(snapshotter.snapshot());
-        assert_eq!(snapshot.len(), 6);
+        assert_eq!(snapshot.len(), 8);
+
+        assert_eq!(
+            snapshot
+                .get("Key(cloudprem.split_size_bytes.gauge)")
+                .unwrap(),
+            &DebugValue::Gauge(OrderedFloat(0.0))
+        );
+        assert_eq!(
+            snapshot.get("Key(cloudprem.num_splits.gauge)").unwrap(),
+            &DebugValue::Gauge(OrderedFloat(0.0))
+        );
 
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(split_size_bytes.gauge, [index = {}, split_state = staged])",
+                    "Key(cloudprem.split_size_bytes.gauge, [index = {}, split_state = staged])",
                     index_id
                 ))
                 .unwrap(),
@@ -235,7 +195,7 @@ mod tests {
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(split_size_bytes.gauge, [index = {}, split_state = published])",
+                    "Key(cloudprem.split_size_bytes.gauge, [index = {}, split_state = published])",
                     index_id
                 ))
                 .unwrap(),
@@ -244,7 +204,8 @@ mod tests {
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(split_size_bytes.gauge, [index = {}, split_state = marked_for_deletion])",
+                    "Key(cloudprem.split_size_bytes.gauge, [index = {}, split_state = \
+                     marked_for_deletion])",
                     index_id
                 ))
                 .unwrap(),
@@ -254,7 +215,7 @@ mod tests {
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(num_splits.gauge, [index = {}, split_state = staged])",
+                    "Key(cloudprem.num_splits.gauge, [index = {}, split_state = staged])",
                     index_id
                 ))
                 .unwrap(),
@@ -263,7 +224,7 @@ mod tests {
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(num_splits.gauge, [index = {}, split_state = published])",
+                    "Key(cloudprem.num_splits.gauge, [index = {}, split_state = published])",
                     index_id
                 ))
                 .unwrap(),
@@ -272,7 +233,8 @@ mod tests {
         assert_eq!(
             snapshot
                 .get(&format!(
-                    "Key(num_splits.gauge, [index = {}, split_state = marked_for_deletion])",
+                    "Key(cloudprem.num_splits.gauge, [index = {}, split_state = \
+                     marked_for_deletion])",
                     index_id
                 ))
                 .unwrap(),
