@@ -574,9 +574,8 @@ mod tests {
         // V8 prefix is [0x08][u16 LE header_len], header starts at offset 3.
         assert_eq!(envelope[0], V8_VERSION_BYTE);
         let header_len = u16::from_le_bytes([envelope[1], envelope[2]]) as usize;
-        let header =
-            MessageHeader::decode(&envelope[V8_PREFIX_LEN..V8_PREFIX_LEN + header_len])
-                .expect("header decodes");
+        let header = MessageHeader::decode(&envelope[V8_PREFIX_LEN..V8_PREFIX_LEN + header_len])
+            .expect("header decodes");
         assert_eq!(header.encoding, MessageEncoding::Protobuf as i32);
         assert_eq!(header.r#type, MessageType::TypeResCollector as i32);
     }
