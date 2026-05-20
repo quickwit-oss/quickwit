@@ -217,23 +217,31 @@ fn parse_field_patterns(params: &IndexMappingQueryParams) -> Option<Vec<String>>
 }
 
 fn collect_declared_top_level_names(indexes_metadata: &[IndexMetadata]) -> HashSet<String> {
-    indexes_metadata
+    let upper_bound: usize = indexes_metadata
         .iter()
-        .flat_map(|m| &m.index_config.doc_mapping.field_mappings)
-        .map(|entry| entry.name.clone())
-        .collect()
+        .map(|m| m.index_config.doc_mapping.field_mappings.len())
+        .sum();
+    let mut names = HashSet::with_capacity(upper_bound);
+    for metadata in indexes_metadata {
+        for entry in &metadata.index_config.doc_mapping.field_mappings {
+            names.insert(entry.name.clone());
+        }
+    }
+    names
 }
 
-/// `_mapping(s)` handler. With `?field_patterns=…` listing only flat declared
-/// fields, serves the response from `doc_mapping` and skips `list_fields`.
-/// Anything else falls through to a split fan-out filtered by `[start, end)`.
+/// `_mapping(s)` handler. `field_patterns` is a hint: when every requested
+/// pattern matches a flat declared field, we skip `list_fields` and return the
+/// declared schema directly. Anything else falls through to a split fan-out
+/// filtered by `[start, end)`, with the same patterns pushed down to the
+/// leaves for dynamic-field filtering.
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
     params: IndexMappingQueryParams,
     mut metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
-    let mut indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
+    let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
         let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
         resolve_index_patterns(&patterns, &mut metastore).await?
     } else {
@@ -247,8 +255,8 @@ pub(crate) async fn es_compat_index_mapping(
     let field_patterns = parse_field_patterns(&params);
 
     // Fast path: every requested name is a flat declared field — skip
-    // `list_fields` entirely and trim the declared subtree in-place so we don't
-    // pay for building / discarding properties downstream.
+    // `list_fields` entirely. The declared schema is returned as-is; dynamic
+    // discovery is not needed.
     if let Some(field_patterns) = &field_patterns {
         let declared_top: HashSet<String> = collect_declared_top_level_names(&indexes_metadata);
         let all_declared = field_patterns.iter().all(|pattern| {
@@ -258,14 +266,6 @@ pub(crate) async fn es_compat_index_mapping(
                 && declared_top.contains(pattern.as_str())
         });
         if all_declared {
-            let keep: HashSet<&str> = field_patterns.iter().map(String::as_str).collect();
-            for metadata in &mut indexes_metadata {
-                metadata
-                    .index_config
-                    .doc_mapping
-                    .field_mappings
-                    .retain(|entry| keep.contains(entry.name.as_str()));
-            }
             return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
                 indexes_metadata,
                 None,

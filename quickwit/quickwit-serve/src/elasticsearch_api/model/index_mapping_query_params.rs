@@ -18,8 +18,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// Timestamps are epoch seconds, half-open `[start, end)` — forwarded into
 /// `ListFieldsRequest` to prune splits. `field_patterns` is a comma-separated
-/// hint mirroring `ListFieldsRequest.field_patterns`; see `parse_field_patterns`
-/// in `rest_handler.rs` for the fast-path semantics.
+/// hint mirroring `ListFieldsRequest.field_patterns`: it is pushed down to the
+/// leaves for dynamic-field filtering and, when every pattern matches a flat
+/// declared field, triggers a fast path that skips `list_fields` entirely.
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct IndexMappingQueryParams {
@@ -98,8 +99,7 @@ mod tests {
 
     #[test]
     fn empty_field_patterns_value() {
-        // `serde_qs` collapses an empty value to `None` (unlike `serde_urlencoded`,
-        // which would yield `Some("")`).
+        // `serde_qs` collapses an empty value to `None`.
         let qs = "field_patterns=";
         let params: IndexMappingQueryParams = serde_qs::from_str(qs).unwrap();
         assert!(params.field_patterns.is_none());

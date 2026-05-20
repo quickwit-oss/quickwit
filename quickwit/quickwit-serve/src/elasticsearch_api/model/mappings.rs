@@ -63,10 +63,9 @@ enum FieldMapping {
 
 impl ElasticsearchMappingsResponse {
     /// Builds a response from declared doc-mapping field mappings, optionally
-    /// merged with dynamic fields discovered via `ListFields`. Callers that
-    /// need to restrict the declared subtree should filter
-    /// `index_config.doc_mapping.field_mappings` before invoking — see the
-    /// `field_patterns` fast path in `rest_handler.rs`.
+    /// merged with dynamic fields discovered via `ListFields`. Dynamic-field
+    /// filtering (when requested via `field_patterns`) is handled at the
+    /// leaves; this function does not filter on its own.
     pub fn from_doc_mapping(
         indexes_metadata: Vec<IndexMetadata>,
         list_fields_response: Option<&ListFieldsResponse>,
