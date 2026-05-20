@@ -24,20 +24,7 @@ use std::hash::{Hash, Hasher};
 pub use const_format::concatcp as __concatcp;
 use rustc_hash::FxHasher;
 
-// ─── Helper macros ───
-
-/// Builds the fully-qualified metric key name at compile time:
-/// `"{SYSTEM}_{name}"` or `"{SYSTEM}_{subsystem}_{name}"`.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __key_name {
-    ("", $name:literal) => {
-        $crate::__concatcp!($crate::SYSTEM, "_", $name)
-    };
-    ($subsystem:literal, $name:literal) => {
-        $crate::__concatcp!($crate::SYSTEM, "_", $subsystem, "_", $name)
-    };
-}
+// ─── Helper functions ───
 
 /// Counts the number of token-tree arguments at compile time.
 #[doc(hidden)]
@@ -65,6 +52,15 @@ macro_rules! __metadata {
     };
 }
 
+/// Returns `separator` for non-empty strings, `""` for empty ones.
+///
+/// Used inside `concatcp!` to conditionally insert separators when
+/// composing metric key names at compile time.
+#[doc(hidden)]
+pub const fn __sep<'a>(s: &'a str, separator: &'a str) -> &'a str {
+    if s.is_empty() { "" } else { separator }
+}
+
 /// Declares the compile-time statics that every metric declaration arm needs:
 /// `KEY_NAME`, `INFO`, `KEY`, `LABELS`, and `METADATA`.
 /// Also registers `INFO` with the `inventory` crate for runtime discovery.
@@ -75,10 +71,16 @@ macro_rules! __key_info_metadata {
         kind: $kind:expr,
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:tt
+        system: $system:expr,
+        subsystem: $subsystem:tt,
+        separator: $separator:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {
-        const KEY_NAME: &str = $crate::__key_name!($subsystem, $name);
+        const KEY_NAME: &str = $crate::__concatcp!(
+            $system, $crate::__sep($system, $separator),
+            $subsystem, $crate::__sep($subsystem, $separator),
+            $name
+        );
         static METADATA: $crate::__metrics::Metadata<'static> = $crate::__metadata!($subsystem);
         static INFO: $crate::MetricInfo = $crate::MetricInfo {
             key_name: KEY_NAME,

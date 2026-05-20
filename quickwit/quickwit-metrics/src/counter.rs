@@ -260,24 +260,80 @@ impl CounterFn for Counter {
 /// ```
 #[macro_export]
 macro_rules! counter {
-    // Base declaration: all-static name, labels, and key — zero allocations.
+    // Base declaration with explicit separator, system, and subsystem prefix - zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:tt
+        system: $system:expr,
+        subsystem: $subsystem:expr,
+        separator: $separator:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Counter,
             name: $name,
             description: $description,
-            subsystem: $subsystem
+            system: $system,
+            subsystem: $subsystem,
+            separator: $separator
             $(, $label => $value)*
         );
         $crate::__metric_declaration!(
             metric_type: $crate::Counter,
             register_fn: $crate::__counter_get_or_register,
             metric_info: &INFO
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with explicit system and subsystem prefix - zero allocations.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        system: $system:expr,
+        subsystem: $subsystem:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::counter!(
+            name: $name,
+            description: $description,
+            system: $system,
+            subsystem: $subsystem,
+            separator: $crate::SEPARATOR
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr,
+        separator: $separator:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::counter!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem,
+            separator: $separator
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::counter!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem
             $(, $label => $value)*
         )
     }};

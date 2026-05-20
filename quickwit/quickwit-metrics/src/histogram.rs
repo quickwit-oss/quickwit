@@ -261,34 +261,92 @@ impl Drop for HistogramTimer {
 /// ```
 #[macro_export]
 macro_rules! histogram {
-    // Base declaration: all-static name, labels, and key — zero allocations.
+    // Base declaration with explicit separator, system, and subsystem prefix - zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:tt,
+        system: $system:expr,
+        subsystem: $subsystem:expr,
+        separator: $separator:expr,
         buckets: $buckets:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
-        // Expand compile-time statics: KEY_NAME, INFO, KEY, LABELS, METADATA.
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Histogram,
             name: $name,
             description: $description,
-            subsystem: $subsystem
+            system: $system,
+            subsystem: $subsystem,
+            separator: $separator
             $(, $label => $value)*
         );
-        // Link histogram bucket configuration to the metric info and register it
-        // with the inventory so the recorder can configure bucket boundaries.
         static HISTOGRAM_CONFIG: $crate::HistogramConfig = $crate::HistogramConfig {
             info: &INFO,
             buckets_fn: || $buckets,
         };
         $crate::__inventory::submit!(HISTOGRAM_CONFIG);
-        // Thread-local cache + global DashMap registration.
         $crate::__metric_declaration!(
             metric_type: $crate::Histogram,
             register_fn: $crate::__histogram_get_or_register,
             metric_info: &HISTOGRAM_CONFIG
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with explicit system and subsystem prefix - zero allocations.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        system: $system:expr,
+        subsystem: $subsystem:expr,
+        buckets: $buckets:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::histogram!(
+            name: $name,
+            description: $description,
+            system: $system,
+            subsystem: $subsystem,
+            separator: $crate::SEPARATOR,
+            buckets: $buckets
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr,
+        separator: $separator:expr,
+        buckets: $buckets:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::histogram!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem,
+            separator: $separator,
+            buckets: $buckets
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr,
+        buckets: $buckets:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::histogram!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem,
+            buckets: $buckets
             $(, $label => $value)*
         )
     }};

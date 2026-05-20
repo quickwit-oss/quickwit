@@ -264,10 +264,9 @@
 /// System-level prefix prepended to every metric name.
 ///
 /// Every metric declared via [`counter!`], [`gauge!`], or [`histogram!`]
-/// has its name composed at compile time as `{SYSTEM}_{subsystem}_{name}`.
-///
-/// Hardcoded for now — making this configurable is tracked separately.
+/// has its name composed at compile time as `{system}_{subsystem}_{name}`.
 pub const SYSTEM: &str = "quickwit";
+pub const SEPARATOR: &str = "_";
 
 // ─── Metric modules ───
 mod counter;
@@ -289,7 +288,7 @@ pub use gauge::__gauge_get_or_register;
 #[doc(hidden)]
 pub use histogram::__histogram_get_or_register;
 #[doc(hidden)]
-pub use inner::{__concatcp, __key_hash};
+pub use inner::{__concatcp, __key_hash, __sep};
 
 // Re-exports of `metrics` and `inventory` used inside macro expansions.
 #[doc(hidden)]
