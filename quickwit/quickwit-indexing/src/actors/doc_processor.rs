@@ -21,14 +21,13 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use fnv::FnvHashMap;
-use metrics::Counter;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::serialized_json_size::serialized_json_obj_approx;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+use quickwit_metrics::{Counter, counter, label_values, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
@@ -49,6 +48,10 @@ use tracing::{error, info};
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
+use crate::metrics::{
+    DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, INDEXING_STATUS, PROCESSED_BYTES,
+    PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
+};
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
 };
@@ -59,7 +62,6 @@ const DEFAULT_MAX_LOG_FUTURE_AGE_HOURS: u64 = 12;
 const MAX_LOG_PAST_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_PAST_AGE_HOURS";
 const MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_FUTURE_AGE_HOURS";
 const UNSET_PIPELINE_SOURCE_LABEL: &str = "unset";
-
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
     num_bytes: usize,
@@ -335,8 +337,8 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 #[derive(Debug)]
 pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
-    pub num_docs_metric: IntCounter,
-    pub num_bytes_metric: IntCounter,
+    pub num_docs_metric: Counter,
+    pub num_bytes_metric: Counter,
     pub dd_indexed_events_metric: Counter,
     pub dd_indexed_bytes_metric: Counter,
 }
@@ -349,26 +351,21 @@ impl Serialize for DocProcessorCounter {
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
-        let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, outcome];
-
+    fn for_index_and_doc_processor_outcome(
+        index: &str,
+        outcome: &'static str,
+    ) -> DocProcessorCounter {
+        let labels = labels!(
+            "index" => quickwit_common::metrics::index_label(index).to_string(),
+            "docs_processed_status" => outcome
+        );
+        let dd_labels = label_values!(INDEXING_STATUS => outcome);
         DocProcessorCounter {
             num_docs: Default::default(),
-            num_docs_metric: crate::metrics::INDEXER_METRICS
-                .processed_docs_total
-                .with_label_values(labels),
-            num_bytes_metric: crate::metrics::INDEXER_METRICS
-                .processed_bytes
-                .with_label_values(labels),
-            dd_indexed_events_metric: crate::metrics::INDEXER_METRICS
-                .dd_indexed_events
-                .get(outcome)
-                .clone(),
-            dd_indexed_bytes_metric: crate::metrics::INDEXER_METRICS
-                .dd_indexed_events_bytes
-                .get(outcome)
-                .clone(),
+            num_docs_metric: counter!(parent: PROCESSED_DOCS_TOTAL, labels: [labels]),
+            num_bytes_metric: counter!(parent: PROCESSED_BYTES, labels: [labels]),
+            dd_indexed_events_metric: counter!(parent: DD_INDEXED_EVENTS, labels: [dd_labels]),
+            dd_indexed_bytes_metric: counter!(parent: DD_INDEXED_EVENTS_BYTES, labels: [dd_labels]),
         }
     }
 
@@ -381,8 +378,8 @@ impl DocProcessorCounter {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
         self.num_docs_metric.inc();
         self.num_bytes_metric.inc_by(num_bytes);
-        self.dd_indexed_events_metric.increment(1);
-        self.dd_indexed_bytes_metric.increment(num_bytes);
+        self.dd_indexed_events_metric.inc();
+        self.dd_indexed_bytes_metric.inc_by(num_bytes);
     }
 }
 
@@ -507,9 +504,8 @@ impl DocProcessorCounters {
 
     pub fn record_processing_pipeline_cpu_micros(&self, source: &str, micros: u64) {
         let index_label = quickwit_common::metrics::index_label(&self.index_id);
-        crate::metrics::INDEXER_METRICS
-            .processing_pipeline_thread_cpu_micros_total
-            .with_label_values([index_label, source])
+        let labels = label_values!(INDEX_SOURCE => index_label.to_string(), source.to_string());
+        counter!(parent: PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL, labels: [labels])
             .inc_by(micros);
     }
 }

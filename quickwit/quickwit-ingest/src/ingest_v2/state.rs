@@ -27,6 +27,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
+use quickwit_metrics::{gauge, histogram, labels};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
@@ -462,10 +463,12 @@ pub(super) fn warn_on_long_lock_hold(
 ) {
     let elapsed = acquired_at.elapsed();
 
-    crate::ingest_v2::metrics::INGEST_V2_METRICS
-        .wal_lock_hold_duration_secs
-        .with_label_values([operation, lock_type])
-        .observe(elapsed.as_secs_f64());
+    let labels = labels!("operation" => operation, "type" => lock_type);
+    histogram!(
+        parent: crate::ingest_v2::metrics::WAL_LOCK_HOLD_DURATION_SECS,
+        labels: [labels],
+    )
+    .observe(elapsed.as_secs_f64());
 
     if elapsed > Duration::from_secs(1) {
         quickwit_common::rate_limited_warn!(
@@ -490,12 +493,13 @@ pub(super) async fn track_acquire_lock<F, R>(
 where
     F: std::future::Future<Output = R>,
 {
-    let metrics = &crate::ingest_v2::metrics::INGEST_V2_METRICS;
+    let labels = labels!("operation" => operation, "type" => lock_type);
 
-    metrics
-        .wal_acquire_lock_requests_in_flight
-        .with_label_values([operation, lock_type])
-        .inc();
+    gauge!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
+        labels: [labels],
+    )
+    .inc();
 
     let now = Instant::now();
     let guard = acquire_future.await;
@@ -512,14 +516,16 @@ where
             elapsed.pretty_display()
         );
     }
-    metrics
-        .wal_acquire_lock_requests_in_flight
-        .with_label_values([operation, lock_type])
-        .dec();
-    metrics
-        .wal_acquire_lock_request_duration_secs
-        .with_label_values([operation, lock_type])
-        .observe(elapsed.as_secs_f64());
+    gauge!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
+        labels: [labels],
+    )
+    .dec();
+    histogram!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
+        labels: [labels],
+    )
+    .observe(elapsed.as_secs_f64());
 
     (guard, acquired_at)
 }

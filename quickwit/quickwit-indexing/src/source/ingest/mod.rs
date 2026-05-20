@@ -665,7 +665,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
-    use quickwit_common::metrics::MEMORY_METRICS;
+    use quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_ingest::IngesterPoolEntry;
@@ -1434,11 +1434,8 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         let fetch_payload = FetchPayload {
@@ -1451,11 +1448,8 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         let fetch_eof = FetchEof {
@@ -1465,11 +1459,8 @@ mod tests {
             eof_position: Some(Position::eof(23u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            ByteSize(0),
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, ByteSize(0), &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();
@@ -1526,11 +1517,8 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();

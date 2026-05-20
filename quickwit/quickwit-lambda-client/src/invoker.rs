@@ -25,11 +25,15 @@ use base64::prelude::*;
 use prost::Message;
 use quickwit_common::retry::RetryParams;
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument};
 
-use crate::metrics::LAMBDA_METRICS;
+use crate::metrics::{
+    LEAF_SEARCH_DURATION_SECONDS, LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES,
+    LEAF_SEARCH_REQUESTS_TOTAL, LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES,
+};
 
 /// Upper bound on the retry-after hint we will honor from Lambda rate-limit responses.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
@@ -175,14 +179,9 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
             Err(SearchError::Timeout(_)) => "timeout",
             Err(_) => "other",
         };
-        LAMBDA_METRICS
-            .leaf_search_requests_total
-            .with_label_values([outcome])
-            .inc();
-        LAMBDA_METRICS
-            .leaf_search_duration_seconds
-            .with_label_values([outcome])
-            .observe(elapsed);
+        let labels = labels!("outcome" => outcome);
+        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: LEAF_SEARCH_DURATION_SECONDS, labels: [labels]).observe(elapsed);
         result
     }
 }
@@ -237,9 +236,7 @@ impl AwsLambdaInvoker {
         let payload_json = serde_json::to_vec(&payload)
             .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
-        LAMBDA_METRICS
-            .leaf_search_request_payload_size_bytes
-            .observe(payload_json.len() as f64);
+        LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.observe(payload_json.len() as f64);
 
         debug!(
             payload_size = payload_json.len(),
@@ -279,9 +276,7 @@ impl AwsLambdaInvoker {
             .payload()
             .ok_or_else(|| SearchError::Internal("no response payload from Lambda".into()))?;
 
-        LAMBDA_METRICS
-            .leaf_search_response_payload_size_bytes
-            .observe(response_payload.as_ref().len() as f64);
+        LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES.observe(response_payload.as_ref().len() as f64);
 
         let lambda_response: LambdaSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())

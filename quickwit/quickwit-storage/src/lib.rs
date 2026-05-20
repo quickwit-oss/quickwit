@@ -29,13 +29,12 @@ mod cache;
 mod counting_storage;
 mod debouncer;
 mod file_descriptor_cache;
-mod metrics;
+pub mod metrics;
 mod storage;
 mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
-pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 

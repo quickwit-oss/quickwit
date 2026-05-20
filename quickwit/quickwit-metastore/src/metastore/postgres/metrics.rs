@@ -12,41 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
+use quickwit_metrics::{LazyGauge, lazy_gauge};
 
-use quickwit_common::metrics::{IntGauge, new_gauge};
+pub(super) static ACQUIRE_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "acquire_connections",
+        description: "Number of connections being acquired.",
+        subsystem: "metastore",
+);
 
-#[derive(Clone)]
-pub(super) struct PostgresMetrics {
-    pub acquire_connections: IntGauge,
-    pub active_connections: IntGauge,
-    pub idle_connections: IntGauge,
-}
+pub(super) static ACTIVE_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "active_connections",
+        description: "Number of active (used + idle) connections.",
+        subsystem: "metastore",
+);
 
-impl Default for PostgresMetrics {
-    fn default() -> Self {
-        Self {
-            acquire_connections: new_gauge(
-                "acquire_connections",
-                "Number of connections being acquired.",
-                "metastore",
-                &[],
-            ),
-            active_connections: new_gauge(
-                "active_connections",
-                "Number of active (used + idle) connections.",
-                "metastore",
-                &[],
-            ),
-            idle_connections: new_gauge(
-                "idle_connections",
-                "Number of idle connections.",
-                "metastore",
-                &[],
-            ),
-        }
-    }
-}
-
-pub(super) static POSTGRES_METRICS: LazyLock<PostgresMetrics> =
-    LazyLock::new(PostgresMetrics::default);
+pub(super) static IDLE_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "idle_connections",
+        description: "Number of idle connections.",
+        subsystem: "metastore",
+);

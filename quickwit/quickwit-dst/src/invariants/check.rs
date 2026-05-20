@@ -18,17 +18,12 @@
 //!
 //! - **Debug builds (Layer 3 — Prevention):** panics on violation via `debug_assert!`, catching
 //!   bugs during development and testing.
-//! - **All builds (Layer 4 — Production):** forwards the result to the registered
-//!   [`InvariantRecorder`](super::recorder::InvariantRecorder) for metrics emission. No-op if no
-//!   recorder is set.
+//! - **All builds (Layer 4 — Production):** records invariant check and violation metrics.
 
 /// Check an invariant condition in all build profiles.
 ///
 /// The condition is always evaluated. In debug builds, a violation panics.
-/// In all builds, the result is forwarded to the registered invariant
-/// recorder for metrics emission (see [`set_invariant_recorder`]).
-///
-/// [`set_invariant_recorder`]: crate::invariants::set_invariant_recorder
+/// In all builds, the result is recorded as invariant check and violation metrics.
 ///
 /// # Examples
 ///

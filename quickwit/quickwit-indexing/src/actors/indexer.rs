@@ -27,12 +27,13 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
@@ -51,6 +52,7 @@ use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -219,9 +221,7 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
-        let mut split_builders_guard =
-            GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
-        split_builders_guard.add(1);
+        let split_builders_guard = GaugeGuard::new(&SPLIT_BUILDERS, 1.0);
 
         let workbench = IndexingWorkbench {
             workbench_id,
@@ -233,11 +233,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::from_gauge(
-                &quickwit_common::metrics::MEMORY_METRICS
-                    .in_flight
-                    .index_writer,
-            ),
+            memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
             cooperative_indexing_period,
             split_builders_guard,
         };
@@ -335,7 +331,7 @@ impl IndexerState {
             memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
             ctx.record_progress();
         }
-        memory_usage.add(memory_usage_delta);
+        memory_usage.increment(memory_usage_delta as f64);
         Ok(())
     }
 }
@@ -358,8 +354,8 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: GaugeGuard<'static>,
-    split_builders_guard: GaugeGuard<'static>,
+    memory_usage: GaugeGuard,
+    split_builders_guard: GaugeGuard,
     cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
 }
 
@@ -583,7 +579,7 @@ impl Indexer {
 
     fn memory_usage(&self) -> ByteSize {
         if let Some(workbench) = &self.indexing_workbench_opt {
-            ByteSize(workbench.memory_usage.get() as u64)
+            ByteSize(workbench.memory_usage.delta() as u64)
         } else {
             ByteSize(0u64)
         }

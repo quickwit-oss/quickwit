@@ -22,9 +22,12 @@ use quickwit_common::metrics::index_label;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
+
+use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABEL_NAMES, OPEN_SHARDS};
 
 /// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
@@ -461,14 +464,10 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            crate::metrics::CONTROL_PLANE_METRICS
-                .open_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_open_shards as i64);
-            crate::metrics::CONTROL_PLANE_METRICS
-                .closed_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_closed_shards as i64);
+            let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
+            gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_stats.num_open_shards as f64);
+            gauge!(parent: CLOSED_SHARDS, labels: [labels])
+                .set(shard_stats.num_closed_shards as f64);
             return;
         }
         // Per-index metrics are disabled, so we update the metrics for all sources.
@@ -482,14 +481,9 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        crate::metrics::CONTROL_PLANE_METRICS
-            .open_shards
-            .with_label_values([index_label])
-            .set(num_open_shards as i64);
-        crate::metrics::CONTROL_PLANE_METRICS
-            .closed_shards
-            .with_label_values([index_label])
-            .set(num_closed_shards as i64);
+        let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
+        gauge!(parent: OPEN_SHARDS, labels: [labels]).set(num_open_shards as f64);
+        gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
     }
 
     pub fn update_shards(

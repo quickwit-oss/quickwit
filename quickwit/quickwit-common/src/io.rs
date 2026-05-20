@@ -25,7 +25,6 @@ use std::future::Future;
 use std::io;
 use std::io::IoSlice;
 use std::pin::Pin;
-use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -34,10 +33,9 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
-use prometheus::IntCounter;
+use quickwit_metrics::{Counter, LazyCounter, counter, lazy_counter};
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{IntCounterVec, new_counter_vec};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -48,25 +46,11 @@ fn truncate_bytes(bytes: &[u8]) -> &[u8] {
     &bytes[..num_bytes]
 }
 
-struct IoMetrics {
-    write_bytes: IntCounterVec<1>,
-}
-
-impl Default for IoMetrics {
-    fn default() -> Self {
-        let write_bytes = new_counter_vec(
-            "write_bytes",
-            "Number of bytes written by a given component in [indexer, merger, deleter, \
-             split_downloader_{merge,delete}]",
-            "",
-            &[],
-            ["component"],
-        );
-        Self { write_bytes }
-    }
-}
-
-static IO_METRICS: LazyLock<IoMetrics> = LazyLock::new(IoMetrics::default);
+static WRITE_BYTES: LazyCounter = lazy_counter!(
+        name: "write_bytes",
+        description: "Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]",
+        subsystem: "",
+);
 
 /// Parameter used in `async_speed_limit`.
 ///
@@ -91,20 +75,18 @@ pub fn limiter(throughput: ByteSize) -> Limiter {
 #[derive(Clone)]
 pub struct IoControls {
     throughput_limiter_opt: Option<Limiter>,
-    bytes_counter: IntCounter,
+    bytes_counter: Counter,
     progress: Progress,
     kill_switch: KillSwitch,
 }
 
 impl Default for IoControls {
     fn default() -> Self {
-        let default_bytes_counter =
-            IntCounter::new("default_write_num_bytes", "Default write counter.").unwrap();
-        IoControls {
+        Self {
             throughput_limiter_opt: None,
+            bytes_counter: Counter::local(),
             progress: Progress::default(),
             kill_switch: KillSwitch::default(),
-            bytes_counter: default_bytes_counter,
         }
     }
 }
@@ -131,8 +113,11 @@ impl IoControls {
         Ok(guard)
     }
 
-    pub fn set_component(mut self, component: &str) -> Self {
-        self.bytes_counter = IO_METRICS.write_bytes.with_label_values([component]);
+    pub fn set_component(mut self, component: &'static str) -> Self {
+        self.bytes_counter = counter!(
+            parent: WRITE_BYTES,
+            "component" => component,
+        );
         self
     }
 
@@ -148,7 +133,7 @@ impl IoControls {
         self
     }
 
-    pub fn set_bytes_counter(mut self, bytes_counter: IntCounter) -> Self {
+    pub fn set_bytes_counter(mut self, bytes_counter: Counter) -> Self {
         self.bytes_counter = bytes_counter;
         self
     }

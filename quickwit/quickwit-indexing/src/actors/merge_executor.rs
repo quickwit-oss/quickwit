@@ -504,7 +504,7 @@ impl MergeExecutor {
             output_directory.box_clone(),
             Box::new(shadowing_meta_json_directory),
         ];
-        directory_stack.extend(split_directories.into_iter());
+        directory_stack.extend(split_directories);
         let union_directory = UnionDirectory::union_of(directory_stack);
         let union_index = open_index(
             union_directory,

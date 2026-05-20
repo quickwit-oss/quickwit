@@ -28,6 +28,7 @@ use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::{IndexUid, PublishToken};
@@ -40,7 +41,7 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::merge_policy::{MergePolicy, MergeTask};
-use crate::metrics::INDEXER_METRICS;
+use crate::metrics::{AVAILABLE_CONCURRENT_UPLOAD_PERMITS, COMPONENT};
 use crate::models::{
     EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
 };
@@ -199,30 +200,25 @@ impl Uploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) =
-            match self.uploader_type {
-                UploaderType::IndexUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_INDEX,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["indexer"]),
-                ),
-                UploaderType::MergeUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
-                ),
-                UploaderType::DeleteUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
-                ),
-            };
+        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) = match self
+            .uploader_type
+        {
+            UploaderType::IndexUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_INDEX,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "indexer")]),
+            ),
+            UploaderType::MergeUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "merger")]),
+            ),
+            UploaderType::DeleteUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "merger")]),
+            ),
+        };
         let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
-        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
             .acquire()
             .await

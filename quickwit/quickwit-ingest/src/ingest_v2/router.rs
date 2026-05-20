@@ -20,9 +20,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
+use quickwit_metrics::{GaugeGuard, counter};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -45,12 +46,18 @@ use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
-use super::metrics::IngestResultMetrics;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
-use crate::ingest_v2::metrics::INGEST_V2_METRICS;
+use crate::ingest_v2::metrics::{
+    INGEST_ATTEMPTS, INGEST_RESULT_CIRCUIT_BREAKER, INGEST_RESULT_INDEX_NOT_FOUND,
+    INGEST_RESULT_INTERNAL, INGEST_RESULT_LOAD_SHEDDING, INGEST_RESULT_NO_SHARDS_AVAILABLE,
+    INGEST_RESULT_ROUTER_LOAD_SHEDDING, INGEST_RESULT_ROUTER_TIMEOUT,
+    INGEST_RESULT_SHARD_NOT_FOUND, INGEST_RESULT_SHARD_RATE_LIMITED,
+    INGEST_RESULT_SOURCE_NOT_FOUND, INGEST_RESULT_SUCCESS, INGEST_RESULT_TIMEOUT,
+    INGEST_RESULT_UNAVAILABLE, INGEST_RESULT_UNSPECIFIED, INGEST_RESULT_WAL_FULL,
+};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -371,10 +378,11 @@ impl IngestRouter {
             let az_locality = state_guard
                 .routing_table
                 .classify_az_locality(&ingester_node.node_id, &self.ingester_pool);
-            INGEST_V2_METRICS
-                .ingest_attempts
-                .with_label_values([az_locality])
-                .inc();
+            counter!(
+                parent: INGEST_ATTEMPTS,
+                "az_routing" => az_locality,
+            )
+            .inc();
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
@@ -492,82 +500,63 @@ impl IngestRouter {
 
 fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_subrequests: usize) {
     let num_subrequests = num_subrequests as u64;
-    let ingest_results_metrics: &IngestResultMetrics = &INGEST_V2_METRICS.ingest_results;
     match ingest_result {
         Ok(ingest_response) => {
-            ingest_results_metrics
-                .success
-                .inc_by(ingest_response.successes.len() as u64);
+            INGEST_RESULT_SUCCESS.inc_by(ingest_response.successes.len() as u64);
             for ingest_failure in &ingest_response.failures {
                 match ingest_failure.reason() {
                     IngestFailureReason::CircuitBreaker => {
-                        ingest_results_metrics.circuit_breaker.inc();
+                        INGEST_RESULT_CIRCUIT_BREAKER.inc();
                     }
-                    IngestFailureReason::Unspecified => ingest_results_metrics.unspecified.inc(),
-                    IngestFailureReason::IndexNotFound => {
-                        ingest_results_metrics.index_not_found.inc()
-                    }
-                    IngestFailureReason::SourceNotFound => {
-                        ingest_results_metrics.source_not_found.inc()
-                    }
-                    IngestFailureReason::Internal => ingest_results_metrics.internal.inc(),
+                    IngestFailureReason::Unspecified => INGEST_RESULT_UNSPECIFIED.inc(),
+                    IngestFailureReason::IndexNotFound => INGEST_RESULT_INDEX_NOT_FOUND.inc(),
+                    IngestFailureReason::SourceNotFound => INGEST_RESULT_SOURCE_NOT_FOUND.inc(),
+                    IngestFailureReason::Internal => INGEST_RESULT_INTERNAL.inc(),
                     IngestFailureReason::NoShardsAvailable => {
-                        ingest_results_metrics.no_shards_available.inc()
+                        INGEST_RESULT_NO_SHARDS_AVAILABLE.inc()
                     }
-                    IngestFailureReason::ShardRateLimited => {
-                        ingest_results_metrics.shard_rate_limited.inc()
-                    }
-                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.inc(),
-                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.inc(),
+                    IngestFailureReason::ShardRateLimited => INGEST_RESULT_SHARD_RATE_LIMITED.inc(),
+                    IngestFailureReason::WalFull => INGEST_RESULT_WAL_FULL.inc(),
+                    IngestFailureReason::Timeout => INGEST_RESULT_TIMEOUT.inc(),
                     IngestFailureReason::RouterLoadShedding => {
-                        ingest_results_metrics.router_load_shedding.inc()
+                        INGEST_RESULT_ROUTER_LOAD_SHEDDING.inc()
                     }
-                    IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+                    IngestFailureReason::LoadShedding => INGEST_RESULT_LOAD_SHEDDING.inc(),
                 }
             }
         }
         Err(ingest_error) => match ingest_error {
             IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
                 RateLimitingCause::RouterLoadShedding => {
-                    ingest_results_metrics
-                        .router_load_shedding
-                        .inc_by(num_subrequests);
+                    INGEST_RESULT_ROUTER_LOAD_SHEDDING.inc_by(num_subrequests);
                 }
                 RateLimitingCause::LoadShedding => {
-                    ingest_results_metrics.load_shedding.inc_by(num_subrequests)
+                    INGEST_RESULT_LOAD_SHEDDING.inc_by(num_subrequests)
                 }
                 RateLimitingCause::WalFull => {
-                    ingest_results_metrics.wal_full.inc_by(num_subrequests);
+                    INGEST_RESULT_WAL_FULL.inc_by(num_subrequests);
                 }
                 RateLimitingCause::CircuitBreaker => {
-                    ingest_results_metrics
-                        .circuit_breaker
-                        .inc_by(num_subrequests);
+                    INGEST_RESULT_CIRCUIT_BREAKER.inc_by(num_subrequests);
                 }
                 RateLimitingCause::ShardRateLimiting => {
-                    ingest_results_metrics
-                        .shard_rate_limited
-                        .inc_by(num_subrequests);
+                    INGEST_RESULT_SHARD_RATE_LIMITED.inc_by(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {
-                    ingest_results_metrics.unspecified.inc_by(num_subrequests);
+                    INGEST_RESULT_UNSPECIFIED.inc_by(num_subrequests);
                 }
             },
             IngestV2Error::Timeout(_) => {
-                ingest_results_metrics
-                    .router_timeout
-                    .inc_by(num_subrequests);
+                INGEST_RESULT_ROUTER_TIMEOUT.inc_by(num_subrequests);
             }
             IngestV2Error::ShardNotFound { .. } => {
-                ingest_results_metrics
-                    .shard_not_found
-                    .inc_by(num_subrequests);
+                INGEST_RESULT_SHARD_NOT_FOUND.inc_by(num_subrequests);
             }
             IngestV2Error::Unavailable(_) => {
-                ingest_results_metrics.unavailable.inc_by(num_subrequests);
+                INGEST_RESULT_UNAVAILABLE.inc_by(num_subrequests);
             }
             IngestV2Error::Internal(_) => {
-                ingest_results_metrics.internal.inc_by(num_subrequests);
+                INGEST_RESULT_INTERNAL.inc_by(num_subrequests);
             }
         },
     }
@@ -578,8 +567,7 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard = GaugeGuard::new(&IN_FLIGHT_INGEST_ROUTER, request_size_bytes as f64);
         let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self

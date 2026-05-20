@@ -14,14 +14,12 @@
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_metrics::GaugeGuard;
 use sqlx::pool::PoolConnection;
 use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
-
-use super::metrics::POSTGRES_METRICS;
 
 #[derive(Debug)]
 pub(super) struct TrackedPool<DB: Database> {
@@ -50,16 +48,11 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
     fn acquire(self) -> BoxFuture<'static, Result<Self::Connection, Error>> {
         let acquire_conn_fut = self.inner_pool.acquire();
 
-        POSTGRES_METRICS
-            .active_connections
-            .set(self.inner_pool.size() as i64);
-        POSTGRES_METRICS
-            .idle_connections
-            .set(self.inner_pool.num_idle() as i64);
+        super::metrics::ACTIVE_CONNECTIONS.set(self.inner_pool.size() as f64);
+        super::metrics::IDLE_CONNECTIONS.set(self.inner_pool.num_idle() as f64);
 
         Box::pin(async move {
-            let mut gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);
-            gauge_guard.add(1);
+            let _gauge_guard = GaugeGuard::new(&super::metrics::ACQUIRE_CONNECTIONS, 1.0);
 
             let conn = acquire_conn_fut.await?;
             Ok(conn)

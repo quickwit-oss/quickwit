@@ -28,5 +28,5 @@ pub mod registry;
 pub mod sort;
 pub mod window;
 
-pub use recorder::{record_invariant_check, set_invariant_recorder};
+pub use recorder::record_invariant_check;
 pub use registry::InvariantId;

@@ -124,6 +124,7 @@ use quickwit_search::{
     create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
+pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -139,7 +140,7 @@ pub use crate::deployment_info::DeploymentInfo;
 pub use crate::env_info::EnvInfo;
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
-pub use crate::metrics::SERVE_METRICS;
+use crate::metrics::CIRCUIT_BREAK_TOTAL;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
 use crate::rest::recover_fn;
@@ -154,12 +155,6 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
-
-pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
-
-pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
-    Arc::new(|_| Ok(()))
-}
 
 fn get_metastore_client_max_concurrency() -> usize {
     quickwit_common::get_from_env(
@@ -956,7 +951,7 @@ fn ingester_service_layer_stack(
             PersistCircuitBreakerEvaluator.make_layer(
                 3,
                 Duration::from_millis(500),
-                crate::metrics::SERVE_METRICS.circuit_break_total.clone(),
+                CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
         .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)

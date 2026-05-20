@@ -30,7 +30,6 @@ mod invoker;
 pub mod leaf;
 mod leaf_cache;
 mod list_fields;
-mod list_fields_cache;
 mod list_terms;
 mod metrics_trackers;
 mod retry;
@@ -48,7 +47,6 @@ mod search_permit_provider;
 mod tests;
 
 pub use collector::QuickwitAggregations;
-use metrics::SEARCH_METRICS;
 use quickwit_common::thread_pool::ThreadPool;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;

@@ -16,9 +16,25 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use metrics::{Counter, counter};
 use pin_project::pin_project;
+use quickwit_metrics::{Counter, LazyCounter, lazy_counter};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+static INGRESS_BYTES: LazyCounter = lazy_counter!(
+    name: "ingress_bytes.count",
+    description: "CloudPrem ingress bytes for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static EGRESS_BYTES: LazyCounter = lazy_counter!(
+    name: "egress_bytes.count",
+    description: "CloudPrem egress bytes for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
 /// Wraps a stream and instruments its read and write operations
 /// to report ingress/egress metrics.
@@ -34,8 +50,8 @@ impl<T> InstrumentedStream<T> {
     pub fn new(inner: T) -> Self {
         InstrumentedStream {
             inner,
-            ingress_bytes: counter!("ingress_bytes.count"),
-            egress_bytes: counter!("egress_bytes.count"),
+            ingress_bytes: INGRESS_BYTES.clone(),
+            egress_bytes: EGRESS_BYTES.clone(),
         }
     }
 }
@@ -51,7 +67,7 @@ impl<T: AsyncRead> AsyncRead for InstrumentedStream<T> {
         let result = this.inner.poll_read(cx, buf);
         if let Poll::Ready(Ok(())) = &result {
             let bytes_read = buf.filled().len() - bytes_before;
-            this.ingress_bytes.increment(bytes_read as u64);
+            this.ingress_bytes.inc_by(bytes_read as u64);
         }
         result
     }
@@ -66,7 +82,7 @@ impl<T: AsyncWrite> AsyncWrite for InstrumentedStream<T> {
         let this = self.project();
         let result = this.inner.poll_write(cx, buf);
         if let Poll::Ready(Ok(bytes_written)) = &result {
-            this.egress_bytes.increment(*bytes_written as u64);
+            this.egress_bytes.inc_by(*bytes_written as u64);
         }
         result
     }
@@ -100,7 +116,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_egress_counter() {
+    async fn test_instrumented_stream_counters() {
         let recorder = DebuggingRecorder::default();
         let snapshotter = recorder.snapshotter();
         let _recorder_guard = metrics::set_default_local_recorder(Box::leak(Box::new(recorder)));
@@ -108,24 +124,6 @@ mod tests {
         let (client, _server) = tokio::io::duplex(1024);
         let mut stream = InstrumentedStream::new(client);
         let bytes_written = stream.write(&[1u8; 100]).await.unwrap();
-        let snapshot = snapshot_as_map_for_test(snapshotter.snapshot());
-        assert_eq!(snapshot.len(), 2);
-
-        assert_eq!(
-            snapshot.get("Key(egress_bytes.count)").unwrap(),
-            &DebugValue::Counter(bytes_written as u64)
-        );
-        assert_eq!(
-            snapshot.get("Key(ingress_bytes.count)").unwrap(),
-            &DebugValue::Counter(0)
-        );
-    }
-
-    #[tokio::test]
-    async fn test_ingress_counter() {
-        let recorder = DebuggingRecorder::default();
-        let snapshotter = recorder.snapshotter();
-        let _recorder_guard = metrics::set_default_local_recorder(Box::leak(Box::new(recorder)));
 
         let (client, mut server) = tokio::io::duplex(1024);
         tokio::spawn(async move {
@@ -140,12 +138,12 @@ mod tests {
         assert_eq!(snapshot.len(), 2);
 
         assert_eq!(
-            snapshot.get("Key(ingress_bytes.count)").unwrap(),
+            snapshot.get("Key(cloudprem.ingress_bytes.count)").unwrap(),
             &DebugValue::Counter(bytes_read as u64)
         );
         assert_eq!(
-            snapshot.get("Key(egress_bytes.count)").unwrap(),
-            &DebugValue::Counter(0)
+            snapshot.get("Key(cloudprem.egress_bytes.count)").unwrap(),
+            &DebugValue::Counter(bytes_written as u64)
         );
     }
 }

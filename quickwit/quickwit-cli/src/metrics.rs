@@ -12,28 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{LazyCounter, LazyHistogram, counter, labels, lazy_counter, lazy_histogram};
+use quickwit_serve::BuildInfo;
 
-use quickwit_common::metrics::{HistogramVec, new_histogram_vec};
-
-pub struct CliMetrics {
-    pub thread_unpark_duration_microseconds: HistogramVec<0>,
+static BUILD_INFO: LazyCounter = lazy_counter!(
+        name: "build_info",
+        description: "Quickwit's build info",
+        subsystem: "",
+);
+pub fn register_build_info_metric(build_info: &BuildInfo) {
+    let commit_tags = build_info.commit_tags.join(",");
+    let labels = labels!(
+        "build_date" => build_info.build_date,
+        "commit_hash" => build_info.commit_short_hash,
+        "version" => build_info.version.clone(),
+        "commit_tags" => commit_tags,
+        "target" => build_info.build_target,
+    );
+    counter!(parent: BUILD_INFO, labels: [labels]).inc();
 }
 
-impl Default for CliMetrics {
-    fn default() -> Self {
-        CliMetrics {
-            thread_unpark_duration_microseconds: new_histogram_vec(
-                "thread_unpark_duration_microseconds",
-                "Duration for which a thread of the main tokio runtime is unparked.",
-                "cli",
-                &[],
-                [],
-                quickwit_common::metrics::exponential_buckets(5.0, 5.0, 5).unwrap(),
-            ),
-        }
-    }
-}
-
-/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static CLI_METRICS: LazyLock<CliMetrics> = LazyLock::new(CliMetrics::default);
+pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyHistogram = lazy_histogram!(
+        name: "thread_unpark_duration_microseconds",
+        description: "Duration for which a thread of the main tokio runtime is unparked.",
+        subsystem: "cli",
+        buckets: exponential_buckets(5.0, 5.0, 5).unwrap(),
+);

@@ -19,7 +19,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use pin_project::pin_project;
-use prometheus::IntCounter;
+use quickwit_metrics::Counter;
 use tokio::time::Instant;
 use tower::{Layer, Service};
 
@@ -49,7 +49,7 @@ pub struct CircuitBreakerLayer<Evaluator> {
     time_window: Duration,
     timeout: Duration,
     evaluator: Evaluator,
-    circuit_break_total: prometheus::IntCounter,
+    circuit_break_total: Counter,
 }
 
 pub trait CircuitBreakerEvaluator: Clone {
@@ -61,7 +61,7 @@ pub trait CircuitBreakerEvaluator: Clone {
         self,
         max_num_errors_per_secs: u32,
         timeout: Duration,
-        circuit_break_total: prometheus::IntCounter,
+        circuit_break_total: Counter,
     ) -> CircuitBreakerLayer<Self> {
         CircuitBreakerLayer {
             max_error_count_per_time_window: max_num_errors_per_secs,
@@ -102,7 +102,7 @@ struct CircuitBreakerInner<Evaluator> {
     timeout: Duration,
     evaluator: Evaluator,
     state: CircuitBreakerState,
-    circuit_break_total: IntCounter,
+    circuit_break_total: Counter,
 }
 
 impl<Evaluator> CircuitBreakerInner<Evaluator> {
@@ -268,6 +268,7 @@ where
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use quickwit_metrics::counter;
     use tower::{ServiceBuilder, ServiceExt};
 
     use super::*;
@@ -301,8 +302,11 @@ mod tests {
 
         const TIMEOUT: Duration = Duration::from_millis(500);
 
-        let int_counter: prometheus::IntCounter =
-            IntCounter::new("circuit_break_total_test", "test circuit breaker counter").unwrap();
+        let int_counter = counter!(
+            name: "circuit_break_total",
+            description: "test circuit breaker counter",
+            subsystem: "test",
+        );
         let mut service = ServiceBuilder::new()
             .layer(TestCircuitBreakerEvaluator.make_layer(10, TIMEOUT, int_counter))
             .service_fn(|_| async {

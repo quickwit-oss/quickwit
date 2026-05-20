@@ -14,101 +14,44 @@
 
 mod rest_handler;
 
-use std::sync::LazyLock;
-
-use metrics::{Counter, Label, counter};
-use quickwit_common::dd_metrics::{DD_STATUS_CODES, DDCounters, DDHistograms};
+use quickwit_common::metrics::DEFAULT_BUCKETS;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyHistogram, label_names, lazy_counter, lazy_histogram,
+};
 pub(crate) use rest_handler::byoc_api_handlers;
 
-pub(crate) struct ByocApiMetrics {
-    pub log_requests_total: DDCounters,
-    pub log_request_duration_seconds: DDHistograms,
-    pub log_bytes_total: Counter,
-    pub log_unmatched_events_total: Counter,
-    pub metric_requests_total: DDCounters,
-    pub metric_request_duration_seconds: DDHistograms,
-    pub metric_bytes_total: Counter,
-    #[cfg(feature = "metrics")]
-    pub sketch_requests_total: DDCounters,
-    #[cfg(feature = "metrics")]
-    pub sketch_request_duration_seconds: DDHistograms,
-    #[cfg(feature = "metrics")]
-    pub sketch_bytes_total: Counter,
-    pub trace_requests_total: DDCounters,
-    pub trace_request_duration_seconds: DDHistograms,
-    pub trace_bytes_total: Counter,
-}
+const SIGNAL: LabelNames<1> = label_names!("signal");
+const SIGNAL_STATUS_CODE: LabelNames<2> = label_names!("signal", "status_code");
 
-impl Default for ByocApiMetrics {
-    fn default() -> Self {
-        let log = Label::new("signal", "log");
-        let metric = Label::new("signal", "metric");
-        #[cfg(feature = "metrics")]
-        let sketch = Label::new("signal", "sketch");
-        let trace = Label::new("signal", "trace");
+static BYOC_INGEST_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+    name: "byoc_ingest_requests.count",
+    description: "Number of BYOC ingest requests by signal and status code.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-        Self {
-            log_requests_total: DDCounters::new(
-                "byoc_ingest_requests.count",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&log),
-            ),
-            log_request_duration_seconds: DDHistograms::new(
-                "byoc_ingest_requests.duration_seconds",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&log),
-            ),
-            log_bytes_total: counter!("byoc_ingest_bytes.count", vec![log.clone()]),
-            log_unmatched_events_total: counter!("byoc_ingest_unmatched_events.count", vec![log]),
+static BYOC_INGEST_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+    name: "byoc_ingest_requests.duration_seconds",
+    description: "Duration of BYOC ingest requests in seconds by signal and status code.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+    buckets: DEFAULT_BUCKETS.to_vec(),
+);
 
-            metric_requests_total: DDCounters::new(
-                "byoc_ingest_requests.count",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&metric),
-            ),
-            metric_request_duration_seconds: DDHistograms::new(
-                "byoc_ingest_requests.duration_seconds",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&metric),
-            ),
-            metric_bytes_total: counter!("byoc_ingest_bytes.count", vec![metric]),
+static BYOC_INGEST_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "byoc_ingest_bytes.count",
+    description: "Number of BYOC ingest bytes by signal.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
 
-            #[cfg(feature = "metrics")]
-            sketch_requests_total: DDCounters::new(
-                "byoc_ingest_requests.count",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&sketch),
-            ),
-            #[cfg(feature = "metrics")]
-            sketch_request_duration_seconds: DDHistograms::new(
-                "byoc_ingest_requests.duration_seconds",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&sketch),
-            ),
-            #[cfg(feature = "metrics")]
-            sketch_bytes_total: counter!("byoc_ingest_bytes.count", vec![sketch]),
-
-            trace_requests_total: DDCounters::new(
-                "byoc_ingest_requests.count",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&trace),
-            ),
-            trace_request_duration_seconds: DDHistograms::new(
-                "byoc_ingest_requests.duration_seconds",
-                "status_code",
-                DD_STATUS_CODES,
-                std::slice::from_ref(&trace),
-            ),
-            trace_bytes_total: counter!("byoc_ingest_bytes.count", vec![trace]),
-        }
-    }
-}
-
-pub(crate) static BYOC_METRICS: LazyLock<ByocApiMetrics> = LazyLock::new(ByocApiMetrics::default);
+static BYOC_INGEST_UNMATCHED_EVENTS_TOTAL: LazyCounter = lazy_counter!(
+    name: "byoc_ingest_unmatched_events.count",
+    description: "Number of BYOC log events with no matching routing rule.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);

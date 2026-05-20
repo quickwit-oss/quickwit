@@ -19,10 +19,16 @@ use std::task::{Context, Poll, ready};
 use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_proto::search::LeafSearchResponse;
 
 use crate::SearchError;
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics::{
+    DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS, DD_ROOT_SEARCH_REQUESTS_TOTAL,
+    LEAF_SEARCH_REQUEST_DURATION_SECONDS, LEAF_SEARCH_REQUESTS_TOTAL, LEAF_SEARCH_TARGETED_SPLITS,
+    ROOT_SEARCH_REQUEST_DURATION_SECONDS, ROOT_SEARCH_REQUESTS_TOTAL, ROOT_SEARCH_TARGETED_SPLITS,
+    STATUS_LABEL_NAMES,
+};
 
 // root
 
@@ -69,27 +75,15 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             ) => (*num_targeted_splits, "cancelled"),
         };
 
-        let label_values = [status];
-        SEARCH_METRICS
-            .root_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .root_search_request_duration_seconds
-            .with_label_values(label_values)
+        let labels = label_values!(STATUS_LABEL_NAMES => status);
+        counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: ROOT_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
             .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .root_search_targeted_splits
-            .with_label_values(label_values)
+        histogram!(parent: ROOT_SEARCH_TARGETED_SPLITS, labels: [labels])
             .observe(num_targeted_splits as f64);
-        SEARCH_METRICS
-            .dd_root_search_requests_total
-            .get(status)
-            .increment(1);
-        SEARCH_METRICS
-            .dd_root_search_request_duration_seconds
-            .get(status)
-            .record(self.start.elapsed().as_secs_f64());
+        counter!(parent: DD_ROOT_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: DD_ROOT_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
+            .observe(self.start.elapsed().as_secs_f64());
     }
 }
 
@@ -125,18 +119,12 @@ impl<F> PinnedDrop for LeafSearchMetricsFuture<F>
 where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 {
     fn drop(self: Pin<&mut Self>) {
-        let label_values = [self.status.unwrap_or("cancelled")];
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
+        let status = self.status.unwrap_or("cancelled");
+        let labels = label_values!(STATUS_LABEL_NAMES => status);
+        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).inc();
+        histogram!(parent: LEAF_SEARCH_REQUEST_DURATION_SECONDS, labels: [labels])
             .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .leaf_search_targeted_splits
-            .with_label_values(label_values)
+        histogram!(parent: LEAF_SEARCH_TARGETED_SPLITS, labels: [labels])
             .observe(self.targeted_splits as f64);
     }
 }
