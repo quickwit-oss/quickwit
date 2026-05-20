@@ -13,7 +13,7 @@ search_settings:
   default_search_fields:
     - service
     - resource_name
-    - opeartion_name
+    - operation_name
 
 retention:
   period: 30 days
