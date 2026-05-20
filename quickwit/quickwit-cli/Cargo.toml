@@ -66,6 +66,9 @@ quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = { workspace = true }
+
 [dev-dependencies]
 predicates = { workspace = true }
 reqwest = { workspace = true }

@@ -15,7 +15,7 @@
 use std::sync::LazyLock;
 
 pub use prometheus::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Gauge, LazyGauge, gauge, lazy_gauge};
+use quickwit_metrics::{Gauge, LazyCounter, LazyGauge, gauge, lazy_counter, lazy_gauge};
 
 pub fn index_label(index_id: &str) -> &str {
     static PER_INDEX_METRICS_ENABLED: LazyLock<bool> =
@@ -105,6 +105,30 @@ pub static IN_FLIGHT_OTHER_SOURCE: LazyGauge =
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
     gauge!(parent: IN_FLIGHT_DATA_BYTES, "component" => component)
 }
+
+pub static IO_READ_BYTES: LazyCounter = lazy_counter!(
+    name: "read_bytes_total",
+    description: "Cumulative bytes read from storage by the process, as reported by `/proc/self/io` `read_bytes`. Reflects block-layer I/O after page cache absorbs reads served from memory.",
+    subsystem: "io",
+);
+
+pub static IO_WRITE_BYTES: LazyCounter = lazy_counter!(
+    name: "write_bytes_total",
+    description: "Cumulative bytes written to storage by the process, as reported by `/proc/self/io` `write_bytes`. Reflects block-layer I/O after page cache coalescing.",
+    subsystem: "io",
+);
+
+pub static IO_READ_SYSCALLS: LazyCounter = lazy_counter!(
+    name: "read_syscalls_total",
+    description: "Cumulative number of read syscalls issued by the process, as reported by `/proc/self/io` `syscr`.",
+    subsystem: "io",
+);
+
+pub static IO_WRITE_SYSCALLS: LazyCounter = lazy_counter!(
+    name: "write_syscalls_total",
+    description: "Cumulative number of write syscalls issued by the process, as reported by `/proc/self/io` `syscw`.",
+    subsystem: "io",
+);
 
 #[cfg(test)]
 mod tests {

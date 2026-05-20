@@ -36,8 +36,7 @@ use tantivy::aggregation::AggregationLimitsGuard;
 use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
-use crate::list_fields::{leaf_list_fields, root_list_fields};
-use crate::list_fields_cache::ListFieldsCache;
+use crate::list_fields::{ListFieldsCache, leaf_list_fields, root_list_fields};
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
@@ -252,7 +251,7 @@ impl SearchService for SearchServiceImpl {
         let leaf_search_response = leaf_list_terms(
             self.searcher_context.clone(),
             &search_request,
-            storage.clone(),
+            storage,
             &split_ids[..],
         )
         .await?;
@@ -305,10 +304,10 @@ impl SearchService for SearchServiceImpl {
         let split_ids = list_fields_req.split_offsets;
         leaf_list_fields(
             index_id,
+            &list_fields_req.field_patterns,
+            split_ids,
+            self.searcher_context.clone(),
             storage,
-            &self.searcher_context,
-            &split_ids[..],
-            &list_fields_req.fields,
         )
         .await
     }
@@ -419,7 +418,7 @@ pub struct SearcherContext {
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
-    /// List fields cache. Caches the list fields response for a given split.
+    /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
     /// This object is shared across all request.
