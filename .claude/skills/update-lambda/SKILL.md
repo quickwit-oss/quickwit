@@ -64,6 +64,9 @@ gh run list --repo quickwit-oss/quickwit \
 
 Look for the run where `headBranch` equals `lambda-{COMMIT_HASH}`.
 
+Note: the GitHub release will be tagged `{COMMIT_HASH}` (not `lambda-{COMMIT_HASH}`)
+because the workflow strips the `lambda-` prefix when setting `ASSET_VERSION`.
+
 - If `status` is `completed` and `conclusion` is `success`: proceed to Step 7.
 - If `status` is `completed` and `conclusion` is not `success`: abort and report
   the failure URL to the user.
@@ -75,7 +78,7 @@ Look for the run where `headBranch` equals `lambda-{COMMIT_HASH}`.
 Once the workflow succeeds:
 
 ```bash
-gh release view lambda-{COMMIT_HASH} \
+gh release view {COMMIT_HASH} \
   --repo quickwit-oss/quickwit \
   --json assets,isDraft
 ```
@@ -94,7 +97,7 @@ The release is created as a draft by the workflow. Make it publicly accessible s
 `build.rs` can download the artifact:
 
 ```bash
-gh release edit lambda-{COMMIT_HASH} \
+gh release edit {COMMIT_HASH} \
   --repo quickwit-oss/quickwit \
   --draft=false
 ```
