@@ -23,9 +23,9 @@ env:
 jobs:
   build-lambda:
     name: Build Lambda ARM64
-    # Only build a fresh lambda when publishing a versioned release.
-    # Branch/edge builds fall back to the pinned URL in build.rs.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Only build a fresh lambda for tag-triggered builds (v*, qw*, etc.).
+    # Branch/edge builds and workflow_dispatch fall back to the pinned URL in build.rs.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
