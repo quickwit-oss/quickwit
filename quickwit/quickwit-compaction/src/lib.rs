@@ -14,14 +14,14 @@
 
 #![deny(clippy::disallowed_methods)]
 
-#[allow(dead_code)]
 mod compaction_pipeline;
-#[allow(dead_code)]
 mod compactor_supervisor;
 mod metrics;
 pub mod planner;
 
 pub type TaskId = String;
+
+use std::sync::Arc;
 
 pub use compactor_supervisor::CompactorSupervisor;
 use quickwit_actors::{Mailbox, Universe};
@@ -29,6 +29,7 @@ use quickwit_common::io;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::CompactorConfig;
+use quickwit_indexing::IndexingSplitCache;
 use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, NodeId, SourceId};
@@ -47,11 +48,11 @@ pub async fn start_compactor_service(
     compactor_config: &CompactorConfig,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
+    split_cache: Arc<IndexingSplitCache>,
     event_broker: EventBroker,
     compaction_root_directory: TempDirectory,
 ) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
     info!("starting compactor service");
-    // TODO: configure this for real
     let io_throughput_limiter = compactor_config.max_merge_write_throughput.map(io::limiter);
     let supervisor = CompactorSupervisor::new(
         node_id,
@@ -60,6 +61,7 @@ pub async fn start_compactor_service(
         io_throughput_limiter,
         metastore,
         storage_resolver,
+        split_cache,
         compactor_config.max_concurrent_split_uploads,
         event_broker,
         compaction_root_directory,

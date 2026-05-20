@@ -81,7 +81,7 @@ use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::start_indexing_service;
+use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
@@ -610,7 +610,27 @@ pub async fn serve_quickwit(
         .await
         .context("failed to initialize compaction service client")?;
 
+    // Build the indexing split cache once and share it between the indexing
+    // service and the compactor supervisor (when both run on the same node).
+    // A zero quota in `IndexerConfig` produces a no-op cache.
+    let indexing_split_cache_opt: Option<Arc<IndexingSplitCache>> = if node_config
+        .is_service_enabled(QuickwitService::Indexer)
+        || node_config.is_service_enabled(QuickwitService::Compactor)
+    {
+        let cache = IndexingSplitCache::from_config(
+            &node_config.indexer_config,
+            &node_config.data_dir_path,
+        )
+        .await?;
+        Some(Arc::new(cache))
+    } else {
+        None
+    };
+
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        let split_cache = indexing_split_cache_opt
+            .clone()
+            .expect("indexing split cache must exist on indexer nodes");
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
@@ -620,6 +640,7 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            split_cache,
         )
         .await
         .context("failed to start indexing service")?;
@@ -797,6 +818,9 @@ pub async fn serve_quickwit(
         let compaction_client = compaction_service_client_opt
             .clone()
             .expect("compactor service enabled but no compaction client available");
+        let split_cache = indexing_split_cache_opt
+            .clone()
+            .expect("indexing split cache must exist on compactor nodes");
         let compactor_mailbox = start_compactor_service(
             &universe,
             cluster.self_node_id().into(),
@@ -804,6 +828,7 @@ pub async fn serve_quickwit(
             &node_config.compactor_config,
             metastore_client.clone(),
             storage_resolver.clone(),
+            split_cache,
             event_broker.clone(),
             compaction_root_directory,
         )

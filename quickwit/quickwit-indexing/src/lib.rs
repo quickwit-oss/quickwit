@@ -14,6 +14,8 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::sync::Arc;
+
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
@@ -71,6 +73,7 @@ pub async fn start_indexing_service(
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    indexing_split_cache: Arc<IndexingSplitCache>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
@@ -85,6 +88,7 @@ pub async fn start_indexing_service(
         ingester_pool,
         storage_resolver,
         event_broker,
+        indexing_split_cache,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
