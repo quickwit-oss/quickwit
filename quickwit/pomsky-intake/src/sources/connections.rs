@@ -206,11 +206,22 @@ async fn handle_connections(
 
     debug!(bytes = proto_bytes.len(), "received connections payload");
 
+    // The DD Agent populates neither `MessageHeader.Timestamp` nor
+    // `MessageHeader.AgentTimestamp` in the proto body — it only sends
+    // `X-DD-Agent-Timestamp` as an HTTP header. The intake stamps these
+    // fields at receive time. See dd-go
+    // `process/apps/process-intake/intake.go:187,283-298` ("This must be
+    // calculated as time.Now() at intake, the first time the message is
+    // seen.").
+    //
+    // Without a receive-time fallback, every metric the transform emits
+    // downstream lands at epoch 0 in parquet and becomes invisible to any
+    // time-windowed UI query. Mirror process-intake by defaulting to
+    // `now()` when both envelope fields are zero.
+    let ts = timestamp_opt.unwrap_or_else(|| chrono::Utc::now().timestamp());
     let mut log = LogEvent::default();
     log.insert(CONNECTIONS_PROTO_FIELD, proto_bytes);
-    if let Some(ts) = timestamp_opt {
-        log.insert(CONNECTIONS_TIMESTAMP_FIELD, ts);
-    }
+    log.insert(CONNECTIONS_TIMESTAMP_FIELD, ts);
 
     if let Err(err) = out.send_event(Event::Log(log)).await {
         error!(%err, "failed to forward connections event");
