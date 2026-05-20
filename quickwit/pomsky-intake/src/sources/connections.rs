@@ -36,7 +36,8 @@ use vector_lib::configurable::NamedComponent;
 use warp::reply::Response;
 use warp::{Filter, Rejection, Reply};
 
-use crate::protos::conn::{MessageEncoding, MessageHeader};
+use crate::protos::conn::{MessageEncoding, MessageHeader, MessageType};
+use crate::protos::process::{CollectorStatus, ResCollector, res_collector};
 
 /// Receives raw agent CollectorConnections payloads over HTTP.
 ///
@@ -219,7 +220,55 @@ async fn handle_connections(
         );
     }
 
-    Ok(warp::reply::with_status("accepted", StatusCode::ACCEPTED).into_response())
+    // The DD Agent's `readResponseStatuses` (dd-go `pkg/process/runner/runner.go`)
+    // expects the response body to be a V8-wrapped `ResCollector` protobuf with
+    // a CollectorStatus carrying the next-check `interval`. Returning plain
+    // text — which the warp helper would do — makes the agent log
+    // `invalid message version: <ascii byte>` per submission and treat the
+    // submission as failed. Mirror what dd-source's byoc-usm-stats returned.
+    let body = encode_response_envelope();
+    let response = http::Response::builder()
+        .status(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/x-protobuf")
+        .body(body.into())
+        .expect("response builder produces a valid response");
+    Ok(response)
+}
+
+/// Default connections-check interval to echo back to the agent (seconds).
+/// Matches the upstream process-agent default. The agent reads this from
+/// `CollectorStatus.interval` to schedule the next submission.
+const RESPONSE_INTERVAL_SECS: i32 = 30;
+
+/// Builds the V8-encoded `ResCollector` response body the agent expects after
+/// a successful `POST /api/v1/connections`. Uses `Protobuf` encoding (no zstd)
+/// because the body is tiny and the agent decoder accepts raw protobuf.
+fn encode_response_envelope() -> Bytes {
+    let res = ResCollector {
+        header: Some(res_collector::Header { r#type: 0 }),
+        message: String::new(),
+        status: Some(CollectorStatus {
+            active_clients: 0,
+            interval: RESPONSE_INTERVAL_SECS,
+        }),
+    };
+    let body = res.encode_to_vec();
+
+    let header = MessageHeader {
+        r#type: MessageType::TypeResCollector as i32,
+        encoding: MessageEncoding::Protobuf as i32,
+        ..Default::default()
+    };
+    let header_bytes = header.encode_to_vec();
+    // V8 header length is a u16; ResCollector's header is well under 64 KiB.
+    let header_len = u16::try_from(header_bytes.len()).expect("V8 header fits in u16");
+
+    let mut envelope = Vec::with_capacity(V8_PREFIX_LEN + header_bytes.len() + body.len());
+    envelope.push(V8_VERSION_BYTE);
+    envelope.extend_from_slice(&header_len.to_le_bytes());
+    envelope.extend_from_slice(&header_bytes);
+    envelope.extend_from_slice(&body);
+    Bytes::from(envelope)
 }
 
 // DD Agent message envelope versions. V3-V7 use fixed-size headers; V8 uses
@@ -499,4 +548,36 @@ mod tests {
     // tests exercising the full HTTP path belong in a separate tests/ file
     // once that feature is wired into pomsky-intake's dev-deps. The sync
     // envelope/proto tests above cover the source's non-plumbing logic.
+
+    #[test]
+    fn response_envelope_round_trips_through_decoder() {
+        // The agent decodes the response through the same V8 envelope path it
+        // uses for requests: `readResponseStatuses` in dd-go
+        // `pkg/process/runner/runner.go`. Roundtripping through our own
+        // `decode_envelope` is a faithful proxy: it ensures the first byte is
+        // a valid version marker (not ASCII 'a'/97 like the old "accepted"
+        // body), the header parses, and the body is the `ResCollector`
+        // proto the agent expects.
+        let envelope = encode_response_envelope();
+        let (body, _ts) = decode_envelope(&envelope).expect("envelope decodes");
+        let res = ResCollector::decode(body.as_ref()).expect("body is a ResCollector");
+        let status = res.status.expect("status set");
+        assert_eq!(status.interval, RESPONSE_INTERVAL_SECS);
+    }
+
+    #[test]
+    fn response_envelope_uses_protobuf_encoding() {
+        // We use raw protobuf (not zstd) for the response — the body is
+        // small, and the agent's response decoder doesn't require
+        // compression. If this ever changes, both sides must move together.
+        let envelope = encode_response_envelope();
+        // V8 prefix is [0x08][u16 LE header_len], header starts at offset 3.
+        assert_eq!(envelope[0], V8_VERSION_BYTE);
+        let header_len = u16::from_le_bytes([envelope[1], envelope[2]]) as usize;
+        let header =
+            MessageHeader::decode(&envelope[V8_PREFIX_LEN..V8_PREFIX_LEN + header_len])
+                .expect("header decodes");
+        assert_eq!(header.encoding, MessageEncoding::Protobuf as i32);
+        assert_eq!(header.r#type, MessageType::TypeResCollector as i32);
+    }
 }
