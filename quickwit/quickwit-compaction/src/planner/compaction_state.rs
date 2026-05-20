@@ -85,6 +85,22 @@ impl CompactionState {
             || self.in_flight_split_ids.contains(split_id)
     }
 
+    /// All split IDs the planner is currently tracking. Used by the metastore
+    /// scan to exclude already-known splits so each tick returns fresh work.
+    pub fn tracked_split_ids(&self, max_size: usize) -> Vec<SplitId> {
+        let mut out = Vec::with_capacity(
+            (self.needs_compaction_split_ids.len() + self.in_flight_split_ids.len()).min(max_size),
+        );
+        out.extend(
+            self.needs_compaction_split_ids
+                .iter()
+                .chain(self.in_flight_split_ids.iter())
+                .take(max_size)
+                .cloned(),
+        );
+        out
+    }
+
     /// Adds a split to the needs_compaction set.
     pub fn track_split(&mut self, split: SplitMetadata) {
         let split_id = split.split_id().to_string();

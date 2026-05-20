@@ -35,6 +35,7 @@ use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
+use tokio::sync::Semaphore;
 use tracing::{error, info};
 
 use crate::compaction_pipeline::{CompactionPipeline, PipelineStatus, PipelineStatusUpdate};
@@ -54,7 +55,10 @@ pub struct CompactorSupervisor {
     node_id: NodeId,
     planner_client: CompactionPlannerServiceClient,
     pipelines: Vec<Option<CompactionPipeline>>,
-
+    // Bounds the number of pipelines running Tantivy merge step concurrently. There are 2x as many
+    // pipeline slots as permits, so half the pipelines can be doing IO while the other half hold a
+    // permit.
+    merge_execution_semaphore: Arc<Semaphore>,
     // Shared resources distributed to pipelines when spawning actor chains.
     io_throughput_limiter: Option<Limiter>,
     metastore: MetastoreServiceClient,
@@ -62,7 +66,6 @@ pub struct CompactorSupervisor {
     split_cache: Arc<IndexingSplitCache>,
     max_concurrent_split_uploads: usize,
     event_broker: EventBroker,
-
     // Scratch directory root (<data_dir>/compaction/).
     compaction_root_directory: TempDirectory,
 }
@@ -72,7 +75,7 @@ impl CompactorSupervisor {
     pub fn new(
         node_id: NodeId,
         planner_client: CompactionPlannerServiceClient,
-        num_pipeline_slots: usize,
+        max_concurrent_merge_executions: usize,
         io_throughput_limiter: Option<Limiter>,
         metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
@@ -81,11 +84,14 @@ impl CompactorSupervisor {
         event_broker: EventBroker,
         compaction_root_directory: TempDirectory,
     ) -> Self {
+        let num_pipeline_slots = max_concurrent_merge_executions * 2;
         let pipelines = (0..num_pipeline_slots).map(|_| None).collect();
+        let merge_execution_semaphore = Arc::new(Semaphore::new(max_concurrent_merge_executions));
         CompactorSupervisor {
             node_id,
             planner_client,
             pipelines,
+            merge_execution_semaphore,
             io_throughput_limiter,
             metastore,
             storage_resolver,
@@ -124,8 +130,14 @@ impl CompactorSupervisor {
                 error!(%task_id, %error, "failed to spawn compaction task");
             }
         }
-        let available_slots = self.pipelines.iter().filter(|pipeline_opt| pipeline_opt.is_none()).count();
-        COMPACTOR_METRICS.available_slots.set(available_slots as i64);
+        let available_slots = self
+            .pipelines
+            .iter()
+            .filter(|pipeline_opt| pipeline_opt.is_none())
+            .count();
+        COMPACTOR_METRICS
+            .available_slots
+            .set(available_slots as i64);
     }
 
     async fn spawn_task(
@@ -211,6 +223,7 @@ impl CompactorSupervisor {
             self.io_throughput_limiter.clone(),
             self.max_concurrent_split_uploads,
             self.event_broker.clone(),
+            self.merge_execution_semaphore.clone(),
         ))
     }
 
@@ -324,14 +337,16 @@ mod tests {
     use super::*;
     use crate::compaction_pipeline::tests::test_pipeline;
 
-    fn test_supervisor(num_slots: usize) -> CompactorSupervisor {
+    /// Builds a test supervisor with `max_concurrent_merge_executions` permits
+    /// and `2 * max_concurrent_merge_executions` pipeline slots.
+    fn test_supervisor(max_concurrent_merge_executions: usize) -> CompactorSupervisor {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let compaction_client =
             CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
         CompactorSupervisor::new(
             NodeId::from("test-node"),
             compaction_client,
-            num_slots,
+            max_concurrent_merge_executions,
             None,
             metastore,
             StorageResolver::for_test(),
@@ -374,6 +389,7 @@ mod tests {
     #[tokio::test]
     async fn test_end_to_end_statuses_to_proto() {
         let universe = Universe::new();
+        // 3 merge-executions → 6 pipeline slots
         let mut supervisor = test_supervisor(3);
 
         let mut pipeline = test_pipeline("task-1", &["s1", "s2"]);
@@ -384,8 +400,8 @@ mod tests {
         let request = supervisor.build_report_status_request(&statuses);
 
         assert_eq!(request.node_id, "test-node");
-        // 3 slots, 1 in-progress = 2 available
-        assert_eq!(request.available_slots, 2);
+        // 6 slots, 1 in-progress = 5 available
+        assert_eq!(request.available_slots, 5);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
         assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
@@ -396,10 +412,11 @@ mod tests {
 
     #[test]
     fn test_build_report_status_request_empty() {
+        // 4 merge-executions → 8 pipeline slots
         let supervisor = test_supervisor(4);
         let request = supervisor.build_report_status_request(&[]);
         assert_eq!(request.node_id, "test-node");
-        assert_eq!(request.available_slots, 4);
+        assert_eq!(request.available_slots, 8);
         assert!(request.in_progress.is_empty());
         assert!(request.successes.is_empty());
         assert!(request.failures.is_empty());
@@ -499,7 +516,8 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_task_fails_when_all_slots_occupied() {
         let universe = Universe::new();
-        let mut supervisor = test_supervisor(2);
+        // 1 merge-execution → 2 pipeline slots
+        let mut supervisor = test_supervisor(1);
 
         supervisor
             .spawn_task(test_assignment("task-1", &["s1"]), universe.spawn_ctx())
@@ -538,6 +556,7 @@ mod tests {
 
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
+        // 3 merge-executions → 6 pipeline slots
         let mut supervisor = CompactorSupervisor::new(
             NodeId::from("test-node"),
             client,
@@ -554,7 +573,7 @@ mod tests {
         // Simulate what the handler does: collect statuses, report, process response.
         let statuses = supervisor.check_pipeline_statuses();
         let request = supervisor.build_report_status_request(&statuses);
-        assert_eq!(request.available_slots, 3);
+        assert_eq!(request.available_slots, 6);
 
         let response = supervisor
             .planner_client
@@ -571,13 +590,14 @@ mod tests {
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "planner-task-1");
         assert_eq!(request.in_progress[0].split_ids.len(), 2);
-        assert_eq!(request.available_slots, 2);
+        assert_eq!(request.available_slots, 5);
 
         universe.assert_quit().await;
     }
 
     #[test]
     fn test_build_report_status_request_mixed_statuses() {
+        // 4 merge-executions → 8 pipeline slots
         let supervisor = test_supervisor(4);
         let statuses = vec![
             PipelineStatusUpdate {
@@ -607,7 +627,8 @@ mod tests {
 
         let request = supervisor.build_report_status_request(&statuses);
 
-        assert_eq!(request.available_slots, 3);
+        // 8 slots, 1 in-progress = 7 available
+        assert_eq!(request.available_slots, 7);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
         assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);

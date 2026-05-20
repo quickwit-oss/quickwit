@@ -57,7 +57,7 @@ pub async fn start_compactor_service(
     let supervisor = CompactorSupervisor::new(
         node_id,
         compaction_client,
-        compactor_config.max_concurrent_pipelines.get(),
+        compactor_config.max_concurrent_merge_executions.get(),
         io_throughput_limiter,
         metastore,
         storage_resolver,
