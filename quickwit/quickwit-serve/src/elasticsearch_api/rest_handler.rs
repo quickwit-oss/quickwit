@@ -199,41 +199,41 @@ async fn get_index_metadata(
     Ok(index_metadata)
 }
 
-/// Splits `fields=` on commas, trims, drops empties. `None` if nothing usable remains.
-fn parse_field_hints(params: &IndexMappingQueryParams) -> Option<Vec<String>> {
-    let raw = params.fields.as_deref()?;
-    let tokens: Vec<String> = raw
+/// Splits `field_patterns=` on commas, trims, drops empties. `None` if nothing
+/// usable remains.
+fn parse_field_patterns(params: &IndexMappingQueryParams) -> Option<Vec<String>> {
+    let raw = params.field_patterns.as_deref()?;
+    let patterns: Vec<String> = raw
         .split(',')
-        .map(|s| s.trim().to_string())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
+        .map(str::to_string)
         .collect();
-    if tokens.is_empty() {
+    if patterns.is_empty() {
         None
     } else {
-        Some(tokens)
+        Some(patterns)
     }
 }
 
 fn collect_declared_top_level_names(indexes_metadata: &[IndexMetadata]) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for metadata in indexes_metadata {
-        for entry in &metadata.index_config.doc_mapping.field_mappings {
-            names.insert(entry.name.clone());
-        }
-    }
-    names
+    indexes_metadata
+        .iter()
+        .flat_map(|m| &m.index_config.doc_mapping.field_mappings)
+        .map(|entry| entry.name.clone())
+        .collect()
 }
 
-/// `_mapping(s)` handler. With `?fields=…` listing only flat declared fields,
-/// serves the response from `doc_mapping` and skips `list_fields`. Anything
-/// else falls through to a split fan-out filtered by `[start, end)`.
+/// `_mapping(s)` handler. With `?field_patterns=…` listing only flat declared
+/// fields, serves the response from `doc_mapping` and skips `list_fields`.
+/// Anything else falls through to a split fan-out filtered by `[start, end)`.
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
     params: IndexMappingQueryParams,
     mut metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
-    let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
+    let mut indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
         let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
         resolve_index_patterns(&patterns, &mut metastore).await?
     } else {
@@ -244,29 +244,38 @@ pub(crate) async fn es_compat_index_mapping(
         .map(|m| m.index_id().to_string())
         .collect();
 
-    let requested_fields = parse_field_hints(&params);
+    let field_patterns = parse_field_patterns(&params);
 
-    // Fast path: every requested name is a flat declared field — skip list_fields.
-    if let Some(requested_fields) = &requested_fields {
+    // Fast path: every requested name is a flat declared field — skip
+    // `list_fields` entirely and trim the declared subtree in-place so we don't
+    // pay for building / discarding properties downstream.
+    if let Some(field_patterns) = &field_patterns {
         let declared_top: HashSet<String> = collect_declared_top_level_names(&indexes_metadata);
-        let all_declared = requested_fields.iter().all(|requested| {
-            !requested.contains('*')
-                && !requested.contains('?')
-                && !requested.contains('.')
-                && declared_top.contains(requested.as_str())
+        let all_declared = field_patterns.iter().all(|pattern| {
+            !pattern.contains('*')
+                && !pattern.contains('?')
+                && !pattern.contains('.')
+                && declared_top.contains(pattern.as_str())
         });
         if all_declared {
-            return Ok(ElasticsearchMappingsResponse::from_doc_mapping_filtered(
+            let keep: HashSet<&str> = field_patterns.iter().map(String::as_str).collect();
+            for metadata in &mut indexes_metadata {
+                metadata
+                    .index_config
+                    .doc_mapping
+                    .field_mappings
+                    .retain(|entry| keep.contains(entry.name.as_str()));
+            }
+            return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
                 indexes_metadata,
                 None,
-                requested_fields,
             ));
         }
     }
 
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
-        field_patterns: requested_fields.unwrap_or_default(),
+        field_patterns: field_patterns.unwrap_or_default(),
         start_timestamp: params.start_timestamp,
         end_timestamp: params.end_timestamp,
         query_ast: None,
