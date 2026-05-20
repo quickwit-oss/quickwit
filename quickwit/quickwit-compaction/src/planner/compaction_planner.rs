@@ -19,7 +19,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
@@ -32,6 +31,7 @@ use time::OffsetDateTime;
 use tracing::{error, info};
 use ulid::Ulid;
 
+use super::PendingMerge;
 use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
@@ -194,18 +194,19 @@ impl CompactionPlanner {
     }
 
     fn assign_tasks(&mut self, node_id: &NodeId, available_slots: u32) -> Vec<MergeTaskAssignment> {
-        let pending = self.state.pop_pending(available_slots as usize);
-        let mut assignments = Vec::with_capacity(pending.len());
+        let pending_merge_ops = self.state.pop_pending(available_slots as usize);
+        let mut assignments = Vec::with_capacity(pending_merge_ops.len());
 
-        for operation in pending {
+        for merge_op in pending_merge_ops {
             let task_id = Ulid::new().to_string();
-            let Some(index_entry) = self.index_config_metastore.get(&operation.index_uid) else {
-                error!(index_uid=%operation.index_uid, "index config not found for pending operation, skipping");
+            let Some(index_entry) = self.index_config_metastore.get(&merge_op.index_uid) else {
+                error!(index_uid=%merge_op.index_uid, "index config not found for pending operation, skipping");
                 continue;
             };
-            let assignment = build_task_assignment(&task_id, index_entry, &operation);
+            let assignment = build_task_assignment(&task_id, index_entry, &merge_op);
 
-            let split_ids = operation
+            let split_ids = merge_op
+                .operation
                 .splits_as_slice()
                 .iter()
                 .map(|s| s.split_id().to_string())
@@ -236,11 +237,12 @@ fn emit_metastore_scan_metrics(new_splits: &[Split]) {
 fn build_task_assignment(
     task_id: &str,
     index_entry: &IndexEntry,
-    operation: &MergeOperation,
+    merge_op: &PendingMerge,
 ) -> MergeTaskAssignment {
     MergeTaskAssignment {
         task_id: task_id.to_string(),
-        splits_metadata_json: operation
+        splits_metadata_json: merge_op
+            .operation
             .splits_as_slice()
             .iter()
             .map(|s| {
@@ -251,10 +253,10 @@ fn build_task_assignment(
         search_settings_json: index_entry.search_settings_json(),
         indexing_settings_json: index_entry.indexing_settings_json(),
         retention_policy_json: index_entry.retention_policy_json(),
-        index_uid: Some(operation.index_uid.clone()),
-        source_id: operation.source_id.clone(),
+        index_uid: Some(merge_op.index_uid.clone()),
+        source_id: merge_op.source_id.clone(),
         index_storage_uri: index_entry.index_storage_uri(),
-        merge_level: operation.merge_level() as u64,
+        merge_level: merge_op.operation.merge_level() as u64,
     }
 }
 

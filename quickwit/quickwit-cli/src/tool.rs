@@ -455,8 +455,13 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     )?;
     let universe = Universe::new();
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
-    let split_cache =
-        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
+    let split_cache = if config.is_service_enabled(QuickwitService::Indexer)
+        && config.is_service_enabled(QuickwitService::Compactor)
+    {
+        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?)
+    } else {
+        Arc::new(IndexingSplitCache::no_caching())
+    };
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),

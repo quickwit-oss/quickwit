@@ -26,7 +26,7 @@ pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::IndexingSettings;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
-use quickwit_proto::types::{IndexUid, SourceId, SplitId};
+use quickwit_proto::types::SplitId;
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tantivy::TrackedObject;
@@ -83,35 +83,20 @@ pub struct MergeOperation {
     #[serde(skip_serializing)]
     pub merge_parent_span: Span,
     pub merge_split_id: SplitId,
-    pub index_uid: IndexUid,
-    pub source_id: SourceId,
     pub splits: Vec<SplitMetadata>,
     pub operation_type: MergeOperationType,
-    /// Priority score, computed once at construction. Higher = run sooner.
-    /// `Ord`/`Eq` for `MergeOperation` are defined purely on this field so a
-    /// `BinaryHeap<MergeOperation>` is a max-heap by score.
-    pub score: u64,
 }
 
 impl MergeOperation {
-    /// All splits must belong to the same `(index_uid, source_id)` — a precondition
-    /// merge policies already satisfy because they partition before merging.
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
-        let first_split = splits.first().expect("merge operation must have splits");
-        let index_uid = first_split.index_uid.clone();
-        let source_id = first_split.source_id.clone();
         let merge_split_id = new_split_id();
         let split_ids = splits.iter().map(|split| split.split_id()).collect_vec();
         let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, split_ids=?split_ids, typ=%MergeOperationType::Merge);
-        let score = compute_score(&splits);
         Self {
             merge_parent_span,
             merge_split_id,
-            index_uid,
-            source_id,
             splits,
             operation_type: MergeOperationType::Merge,
-            score,
         }
     }
 
@@ -123,20 +108,13 @@ impl MergeOperation {
     }
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
-        let index_uid = split.index_uid.clone();
-        let source_id = split.source_id.clone();
         let merge_split_id = new_split_id();
         let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split_ids=?split.split_id(), typ=%MergeOperationType::DeleteAndMerge);
-        let splits = vec![split];
-        let score = compute_score(&splits);
         Self {
             merge_parent_span,
             merge_split_id,
-            index_uid,
-            source_id,
-            splits,
+            splits: vec![split],
             operation_type: MergeOperationType::DeleteAndMerge,
-            score,
         }
     }
 
@@ -157,7 +135,7 @@ impl MergeOperation {
 /// A good merge operation:
 /// - strongly reduces the number of splits
 /// - is light.
-fn compute_score(splits: &[SplitMetadata]) -> u64 {
+pub fn compute_score(splits: &[SplitMetadata]) -> u64 {
     let total_num_bytes: u64 = splits.iter().map(|split| split.footer_offsets.end).sum();
     if total_num_bytes == 0 {
         // Silly corner case that should never happen.
@@ -169,31 +147,6 @@ fn compute_score(splits: &[SplitMetadata]) -> u64 {
     (delta_num_splits << 48)
         .checked_div(total_num_bytes)
         .unwrap_or(1u64)
-}
-
-impl PartialEq for MergeOperation {
-    fn eq(&self, other: &Self) -> bool {
-        self.merge_split_id == other.merge_split_id
-    }
-}
-
-impl Eq for MergeOperation {}
-
-impl PartialOrd for MergeOperation {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MergeOperation {
-    /// The way we reason about ordering merge operations is that a highest score should take
-    /// precedence over a lower score; by that logic, score already serves the Ord property; we
-    /// formalize that here.
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.score
-            .cmp(&other.score)
-            .then_with(|| self.merge_split_id.cmp(&other.merge_split_id))
-    }
 }
 
 impl fmt::Debug for MergeOperation {
@@ -308,25 +261,25 @@ pub mod tests {
 
     #[test]
     fn test_score() {
-        fn op(num_splits: usize, num_bytes_per_split: u64) -> MergeOperation {
+        fn score(num_splits: usize, num_bytes_per_split: u64) -> u64 {
             let splits: Vec<SplitMetadata> = (0..num_splits)
                 .map(|_| SplitMetadata {
                     footer_offsets: 0..num_bytes_per_split,
                     ..Default::default()
                 })
                 .collect();
-            MergeOperation::new_merge_operation(splits)
+            compute_score(&splits)
         }
         // Lighter merge (smaller total bytes) at the same split count scores higher.
-        assert!(op(10, 10_000_000).score < op(10, 999_999).score);
+        assert!(score(10, 10_000_000) < score(10, 999_999));
         // More splits removed at the same total bytes scores higher.
-        assert!(op(10, 10_000_000).score > op(9, 10_000_000).score);
+        assert!(score(10, 10_000_000) > score(9, 10_000_000));
         // Score is `(delta_splits << 48) / total_bytes` — equal ratios yield equal scores.
         assert_eq!(
             // 9 splits, 90M bytes → delta=8.
-            op(9, 10_000_000).score,
+            score(9, 10_000_000),
             // 5 splits, 45M bytes → delta=4 (same 8/90M ratio).
-            op(5, 10_000_000 * 9 / 10).score,
+            score(5, 10_000_000 * 9 / 10),
         );
     }
 

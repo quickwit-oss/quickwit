@@ -25,7 +25,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::error;
 
 use super::MergeSplitDownloader;
-use crate::merge_policy::{MergeOperation, MergeTask};
+use crate::merge_policy::{MergeOperation, MergeTask, compute_score};
 
 pub struct MergePermit {
     _semaphore_permit: Option<OwnedSemaphorePermit>,
@@ -214,7 +214,7 @@ impl ScheduleMerge {
         merge_operation: TrackedObject<MergeOperation>,
         split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> ScheduleMerge {
-        let score = merge_operation.score;
+        let score = compute_score(&merge_operation.splits);
         ScheduleMerge {
             score,
             merge_operation,

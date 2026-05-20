@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
+    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
@@ -413,7 +413,7 @@ pub struct SearcherContext {
     /// Per-split and per-predicate cache.
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
-    pub split_cache_opt: Option<Arc<SplitCache>>,
+    pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// List fields cache. Caches the list fields response for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -442,7 +442,7 @@ impl SearcherContext {
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
@@ -454,7 +454,7 @@ impl SearcherContext {
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(

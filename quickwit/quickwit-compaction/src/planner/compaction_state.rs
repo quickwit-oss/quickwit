@@ -18,13 +18,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
-use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
+use quickwit_indexing::merge_policy::MergePolicy;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, CompactionSuccess};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
-use crate::planner::PendingOperations;
+use crate::planner::{PendingMerge, PendingOperations};
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 use crate::{TaskId, source_uid_metrics_label};
 
@@ -136,7 +136,7 @@ impl CompactionState {
                     self.in_flight_split_ids
                         .insert(split.split_id().to_string());
                 }
-                self.pending_operations.push(operation);
+                self.pending_operations.push(PendingMerge::new(operation));
             }
         }
         if splits.is_empty() {
@@ -212,14 +212,14 @@ impl CompactionState {
         }
     }
 
-    /// Pops up to `count` pending operations for assignment, highest-score first.
-    pub fn pop_pending(&mut self, count: usize) -> Vec<MergeOperation> {
+    /// Pops up to `count` pending merges for assignment, highest-priority first.
+    pub fn pop_pending(&mut self, count: usize) -> Vec<PendingMerge> {
         let count = count.min(self.pending_operations.len());
-        let mut operations = Vec::with_capacity(count);
+        let mut pending = Vec::with_capacity(count);
         for _ in 0..count {
-            operations.push(self.pending_operations.pop().unwrap());
+            pending.push(self.pending_operations.pop().unwrap());
         }
-        operations
+        pending
     }
 
     /// Records that an operation has been assigned to a worker.
@@ -340,8 +340,8 @@ mod tests {
 
         // Splits moved from needs_compaction to in_flight.
         assert!(!state.pending_operations.is_empty());
-        for op in state.pending_operations.iter() {
-            for split in op.splits_as_slice() {
+        for pending in state.pending_operations.iter() {
+            for split in pending.operation.splits_as_slice() {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
                 assert!(state.in_flight_split_ids.contains(split.split_id()));
             }
@@ -423,7 +423,7 @@ mod tests {
         let pending = state.pop_pending(1);
         assert_eq!(pending.len(), 1);
 
-        let operation = &pending[0];
+        let operation = &pending[0].operation;
         let split_ids: Vec<String> = operation
             .splits_as_slice()
             .iter()

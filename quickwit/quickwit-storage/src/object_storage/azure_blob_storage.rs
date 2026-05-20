@@ -27,6 +27,7 @@ use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::Bytes;
+use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
@@ -110,10 +111,10 @@ impl AzureBlobStorage {
             multipart_policy: MultiPartPolicy {
                 // Azure max part size is 100MB
                 // https://azure.microsoft.com/en-us/blog/general-availability-larger-block-blobs-in-azure-storage/
-                target_part_num_bytes: 100_000_000,
-                multipart_threshold_num_bytes: 100_000_000,
+                target_part_num_bytes: ByteSize::mb(100),
+                multipart_threshold_num_bytes: ByteSize::mb(100),
                 max_num_parts: 50_000, // Azure allows up to 50,000 blocks
-                max_object_num_bytes: 4_770_000_000_000u64, // Azure allows up to 4.77TB objects
+                max_object_num_bytes: ByteSize::b(4_770_000_000_000), // Azure allows up to 4.77TB objects
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),

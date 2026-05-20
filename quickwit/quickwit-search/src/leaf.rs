@@ -39,7 +39,7 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
+    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SearchSplitCache, Storage,
     StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
@@ -169,7 +169,7 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
+            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
         } else {
             index_storage.clone()
         };

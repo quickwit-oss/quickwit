@@ -17,42 +17,95 @@ mod compaction_state;
 mod index_config_metastore;
 pub(crate) mod metrics;
 
+use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 pub use compaction_planner::CompactionPlanner;
-use quickwit_indexing::merge_policy::MergeOperation;
+use quickwit_indexing::merge_policy::{MergeOperation, compute_score};
+use quickwit_proto::types::{IndexUid, SourceId};
 
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 use crate::source_uid_metrics_label;
 
-/// Max-heap of merge operations awaiting assignment, ordered by
-/// `MergeOperation`'s score-based `Ord`. The `pending_merge_operations` gauge
-/// is maintained inline; push/pop are the only mutation paths so the metric
+/// A `MergeOperation` waiting to be assigned, with `priority_score` used to order the heap.
+#[derive(Debug)]
+pub(super) struct PendingMerge {
+    pub(super) operation: MergeOperation,
+    pub(super) index_uid: IndexUid,
+    pub(super) source_id: SourceId,
+    pub(super) priority_score: u64,
+}
+
+impl PendingMerge {
+    pub(super) fn new(operation: MergeOperation) -> Self {
+        let first_split = operation
+            .splits
+            .first()
+            .expect("merge operation must have splits");
+        let index_uid = first_split.index_uid.clone();
+        let source_id = first_split.source_id.clone();
+        let priority_score = compute_score(&operation.splits);
+        Self {
+            operation,
+            index_uid,
+            source_id,
+            priority_score,
+        }
+    }
+}
+
+impl PartialEq for PendingMerge {
+    fn eq(&self, other: &Self) -> bool {
+        self.operation.merge_split_id == other.operation.merge_split_id
+    }
+}
+
+impl Eq for PendingMerge {}
+
+impl PartialOrd for PendingMerge {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PendingMerge {
+    /// Higher `priority_score` sorts first (max-heap); ties broken by
+    /// `merge_split_id` so `Ord::cmp == Equal` agrees with `PartialEq`.
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.priority_score
+            .cmp(&other.priority_score)
+            .then_with(|| self.operation.merge_split_id.cmp(&other.operation.merge_split_id))
+    }
+}
+
+/// Max-heap of pending merges awaiting assignment, ordered by
+/// `PendingMerge`'s priority score. The `pending_merge_operations` gauge is
+/// maintained inline; push/pop are the only mutation paths so the metric
 /// stays consistent with `len()`.
 #[derive(Debug)]
-struct PendingOperations {
-    inner: BinaryHeap<MergeOperation>,
+pub(super) struct PendingOperations {
+    inner: BinaryHeap<PendingMerge>,
 }
 
 impl PendingOperations {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             inner: BinaryHeap::new(),
         }
     }
 
-    fn push(&mut self, operation: MergeOperation) {
-        Self::adjust_gauge(&operation, 1);
-        self.inner.push(operation);
+    pub(super) fn push(&mut self, pending: PendingMerge) {
+        Self::adjust_gauge(&pending, 1);
+        self.inner.push(pending);
     }
 
-    fn pop(&mut self) -> Option<MergeOperation> {
-        let operation = self.inner.pop()?;
-        Self::adjust_gauge(&operation, -1);
-        Some(operation)
+    pub(super) fn pop(&mut self) -> Option<PendingMerge> {
+        let pending = self.inner.pop()?;
+        Self::adjust_gauge(&pending, -1);
+        Some(pending)
     }
 
-    fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.inner.len()
     }
 
@@ -62,13 +115,13 @@ impl PendingOperations {
     }
 
     #[cfg(test)]
-    fn iter(&self) -> impl Iterator<Item = &MergeOperation> {
+    fn iter(&self) -> impl Iterator<Item = &PendingMerge> {
         self.inner.iter()
     }
 
-    fn adjust_gauge(operation: &MergeOperation, delta: i64) {
-        let source_uid_label = source_uid_metrics_label(&operation.index_uid, &operation.source_id);
-        let merge_level = operation.merge_level().to_string();
+    fn adjust_gauge(pending: &PendingMerge, delta: i64) {
+        let source_uid_label = source_uid_metrics_label(&pending.index_uid, &pending.source_id);
+        let merge_level = pending.operation.merge_level().to_string();
         COMPACTION_PLANNER_METRICS
             .pending_merge_operations
             .with_label_values([source_uid_label.as_str(), merge_level.as_str()])
