@@ -50,6 +50,8 @@ pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
 pub mod metrics;
+#[cfg(target_os = "linux")]
+pub mod proc_io;
 pub mod service;
 pub mod source;
 pub mod split;
