@@ -455,6 +455,7 @@ vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d608
 vector-lib = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = ["vrl"] }
 
 [patch.crates-io]
+datasketches = { git = "https://github.com/apache/datasketches-rust", rev = "9a80c604bec14b14000fc20d47f9f4b3c2baa5a1" }
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
