@@ -140,6 +140,24 @@ pub(super) static WAL_MEMORY_USED_BYTES: LazyGauge = lazy_gauge!(
         subsystem: "ingest",
 );
 
+static WAL_BYTES_WRITTEN_TOTAL: LazyCounter = lazy_counter!(
+    name: "wal_bytes_written_total",
+    description: "Total number of bytes written to the WAL by write operations (create_queue, append_records, truncate_queue, delete_queue), including frame headers and end-of-block padding.",
+    subsystem: "ingest",
+);
+
+pub(crate) static WAL_BYTES_WRITTEN_CREATE_QUEUE: LazyCounter =
+    lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "create_queue");
+
+pub(crate) static WAL_BYTES_WRITTEN_DELETE_QUEUE: LazyCounter =
+    lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "delete_queue");
+
+pub(crate) static WAL_BYTES_WRITTEN_APPEND: LazyCounter =
+    lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "append");
+
+pub(crate) static WAL_BYTES_WRITTEN_TRUNCATE: LazyCounter =
+    lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "truncate");
+
 pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
     WAL_DISK_USED_BYTES.set(wal_usage.disk_used_bytes as f64);
     IN_FLIGHT_WAL.set(wal_usage.memory_allocated_bytes as f64);

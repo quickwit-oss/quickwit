@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use quickwit_doc_mapper::{FieldMappingEntry, FieldMappingType};
 use quickwit_metastore::IndexMetadata;
-use quickwit_proto::search::{ListFieldType, ListFieldsResponse};
+use quickwit_proto::search::{ListFieldsResponse, ListFieldsType};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -131,7 +131,7 @@ fn merge_dynamic_fields(
     properties: &mut HashMap<String, FieldMapping>,
     list_fields_response: &ListFieldsResponse,
 ) {
-    for field_entry in &list_fields_response.fields {
+    for field_entry in &list_fields_response.entries {
         let field_name = &field_entry.field_name;
         if field_name.starts_with('_') {
             continue;
@@ -139,7 +139,7 @@ fn merge_dynamic_fields(
         if properties.contains_key(field_name) {
             continue;
         }
-        let Ok(field_type) = ListFieldType::try_from(field_entry.field_type) else {
+        let Ok(field_type) = ListFieldsType::try_from(field_entry.field_type) else {
             continue;
         };
         if let Some(es_type) = es_type_from_list_field_type(field_type) {
@@ -148,16 +148,16 @@ fn merge_dynamic_fields(
     }
 }
 
-fn es_type_from_list_field_type(field_type: ListFieldType) -> Option<&'static str> {
+fn es_type_from_list_field_type(field_type: ListFieldsType) -> Option<&'static str> {
     match field_type {
-        ListFieldType::Str => Some("keyword"),
-        ListFieldType::U64 | ListFieldType::I64 => Some("long"),
-        ListFieldType::F64 => Some("double"),
-        ListFieldType::Bool => Some("boolean"),
-        ListFieldType::Date => Some("date"),
-        ListFieldType::Bytes => Some("binary"),
-        ListFieldType::IpAddr => Some("ip"),
-        ListFieldType::Facet | ListFieldType::Json => None,
+        ListFieldsType::Str => Some("keyword"),
+        ListFieldsType::U64 | ListFieldsType::I64 => Some("long"),
+        ListFieldsType::F64 => Some("double"),
+        ListFieldsType::Bool => Some("boolean"),
+        ListFieldsType::Date => Some("date"),
+        ListFieldsType::Bytes => Some("binary"),
+        ListFieldsType::IpAddr => Some("ip"),
+        ListFieldsType::Facet | ListFieldsType::Json => None,
     }
 }
 
@@ -274,26 +274,26 @@ mod tests {
 
     #[test]
     fn test_merge_dynamic_fields_skips_existing_and_internal() {
-        use quickwit_proto::search::ListFieldsEntryResponse;
+        use quickwit_proto::search::ListFieldsEntry;
 
         let mut properties = HashMap::new();
         properties.insert("title".to_string(), FieldMapping::Leaf { typ: "text" });
 
         let list_fields = ListFieldsResponse {
-            fields: vec![
-                ListFieldsEntryResponse {
+            entries: vec![
+                ListFieldsEntry {
                     field_name: "title".to_string(),
-                    field_type: ListFieldType::Str as i32,
+                    field_type: ListFieldsType::Str as i32,
                     ..Default::default()
                 },
-                ListFieldsEntryResponse {
+                ListFieldsEntry {
                     field_name: "_timestamp".to_string(),
-                    field_type: ListFieldType::Date as i32,
+                    field_type: ListFieldsType::Date as i32,
                     ..Default::default()
                 },
-                ListFieldsEntryResponse {
+                ListFieldsEntry {
                     field_name: "dynamic_field".to_string(),
-                    field_type: ListFieldType::Str as i32,
+                    field_type: ListFieldsType::Str as i32,
                     ..Default::default()
                 },
             ],

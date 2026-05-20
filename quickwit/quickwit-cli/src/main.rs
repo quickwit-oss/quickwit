@@ -19,6 +19,8 @@ use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 use quickwit_cli::metrics::register_build_info_metric;
+#[cfg(target_os = "linux")]
+use quickwit_cli::proc_io::start_proc_io_metrics_loop;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider, start_metrics_loops};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
@@ -89,9 +91,11 @@ fn init_telemetry(
     #[cfg(feature = "tokio-console")]
     {
         if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
+            let telemetry_handle =
+                quickwit_telemetry_exporters::init_meter_provider_only(service_version)?;
             console_subscriber::init();
             return Ok((
-                quickwit_telemetry_exporters::TelemetryHandle::default(),
+                telemetry_handle,
                 quickwit_telemetry_exporters::do_nothing_env_filter_reload_fn(),
             ));
         }
@@ -125,6 +129,9 @@ async fn main_impl() -> anyhow::Result<()> {
     scrape_tokio_runtime_metrics(&runtime_handle, "main");
 
     start_metrics_loops();
+
+    #[cfg(target_os = "linux")]
+    start_proc_io_metrics_loop();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

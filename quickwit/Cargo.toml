@@ -186,7 +186,7 @@ md5 = "0.8"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 murmur3 = "0.5"
 new_string_template = "1.5"
 nom = "8.0"
@@ -212,6 +212,7 @@ predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", default-features = false, features = ["process", "protobuf"] }
+procfs = { version = "0.17", default-features = false }
 proptest = "1"
 prost = { version = "0.14", default-features = false, features = [
   "derive",
@@ -416,7 +417,7 @@ quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "edfb02b", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "46b3fb9", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

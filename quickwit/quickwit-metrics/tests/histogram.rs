@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{HistogramTimer, histogram, label_names, label_values, labels};
+use quickwit_metrics::{HistogramTimer, SYSTEM, histogram, label_names, label_values, labels};
 
 #[test]
 fn base_records_value() {
@@ -233,4 +233,157 @@ fn timer_observe_duration_records_once() {
         }
         other => panic!("expected Histogram, got {other:?}"),
     }
+}
+
+#[test]
+fn custom_system_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "myapp",
+            subsystem: "http",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_http_duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn default_system_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            subsystem: "http",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, &format!("{SYSTEM}_http_duration_seconds"));
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn empty_system_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "",
+            subsystem: "http",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "http_duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn empty_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "myapp",
+            subsystem: "",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp_duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn empty_system_and_subsystem_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "",
+            subsystem: "",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn const_system_key_name() {
+    const MY_SYSTEM: &str = "custom";
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "latency_ms",
+            description: "latency",
+            system: MY_SYSTEM,
+            subsystem: "rpc",
+            buckets: vec![1.0, 10.0, 100.0]
+        );
+        h.observe(5.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "custom_rpc_latency_ms");
+    assert_eq!(value, &DebugValue::Histogram(vec![5.0.into()]));
+}
+
+#[test]
+fn custom_separator_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            system: "myapp",
+            subsystem: "http",
+            separator: ".",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "myapp.http.duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
+}
+
+#[test]
+fn default_system_custom_separator_key_name() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "duration_seconds",
+            description: "request duration",
+            subsystem: "http",
+            separator: ".",
+            buckets: vec![0.01, 0.1, 1.0]
+        );
+        h.observe(0.05);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "quickwit.http.duration_seconds");
+    assert_eq!(value, &DebugValue::Histogram(vec![0.05.into()]));
 }
