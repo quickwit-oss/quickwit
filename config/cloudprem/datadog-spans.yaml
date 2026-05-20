@@ -10,10 +10,7 @@ indexing_settings:
   commit_timeout_secs: 30
 
 search_settings:
-  default_search_fields:
-    - service
-    - resource_name
-    - operation_name
+  default_search_fields: []
 
 retention:
   period: 30 days
@@ -23,7 +20,7 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KQCFTFGRMNMBGHCWHWHN56C2"
+  doc_mapping_uid: "01KQCFTFGRMNMBGHCWHWHN56C3"
   mode: lenient
 
   field_mappings:
@@ -143,6 +140,20 @@ doc_mapping:
       tokenizer: raw
       fast: true
       expand_dots: true
+
+    # Combined FTS field: concatenates the key span identity fields so that
+    # bare text queries (no field:value syntax) coming through the cloudprem
+    # EVP path have a target. The cloudprem query layer expands _default_ to
+    # ["message", "extra_fts"]; without this field every unfielded query
+    # (e.g. `env:prod my-service`) would be rejected with an invalid argument
+    # error on the spans index.
+    - name: message
+      type: concatenate
+      concatenate_fields:
+        - service
+        - resource_name
+        - operation_name
+      tokenizer: datadog
 
   tag_fields: []
   timestamp_field: timestamp
