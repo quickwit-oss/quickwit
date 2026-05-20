@@ -39,17 +39,50 @@ const MAX_LAMBDA_ZIP_SIZE: usize = 50 * 1024 * 1024;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=LAMBDA_ZIP_PATH");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let zip_path = out_dir.join("lambda_bootstrap.zip");
+    let zip_dest = out_dir.join("lambda_bootstrap.zip");
 
-    fetch_lambda_zip(&zip_path);
+    let sha256 = if let Ok(local_path) = env::var("LAMBDA_ZIP_PATH") {
+        // CI mode: a pre-built zip is provided via env; skip the remote download.
+        use_local_lambda_zip(Path::new(&local_path), &zip_dest)
+    } else {
+        fetch_lambda_zip(&zip_dest);
+        LAMBDA_ZIP_SHA256.to_string()
+    };
 
     // Export first 8 hex chars of the SHA256 as environment variable.
     // This is used to create a unique qualifier for Lambda versioning.
-    let hash_short = &LAMBDA_ZIP_SHA256[..8];
+    let hash_short = &sha256[..8];
     println!("cargo:rustc-env=LAMBDA_BINARY_HASH={}", hash_short);
     println!("lambda binary hash (short): {}", hash_short);
+}
+
+/// Copy a locally-built Lambda zip into OUT_DIR and return its SHA256.
+///
+/// Used by CI to embed a freshly-built binary without downloading from a remote URL.
+fn use_local_lambda_zip(src: &Path, dest: &Path) -> String {
+    let data = std::fs::read(src)
+        .unwrap_or_else(|err| panic!("failed to read LAMBDA_ZIP_PATH {:?}: {}", src, err));
+    if data.len() > MAX_LAMBDA_ZIP_SIZE {
+        panic!(
+            "Lambda zip at {:?} is too large ({} bytes, max {} bytes)",
+            src,
+            data.len(),
+            MAX_LAMBDA_ZIP_SIZE
+        );
+    }
+    let sha256 = sha256_hex(&data);
+    std::fs::write(dest, &data)
+        .unwrap_or_else(|err| panic!("failed to write lambda zip to {:?}: {}", dest, err));
+    println!(
+        "cargo:warning=using local Lambda zip from {:?} ({} bytes, sha256: {})",
+        src,
+        data.len(),
+        sha256
+    );
+    sha256
 }
 
 /// Fetch the Lambda zip and save it to `local_cache_path`.
