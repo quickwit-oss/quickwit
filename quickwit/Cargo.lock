@@ -9225,6 +9225,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tracing",
+ "unicode-segmentation",
 ]
 
 [[package]]
