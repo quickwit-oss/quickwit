@@ -324,6 +324,7 @@ username = "0.2"
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
 utoipa = { version = "4.2", features = ["time", "ulid"] }
+unicode-segmentation = "1.12"
 uuid = { version = "1.23", features = ["v4", "serde"] }
 vrl = { version = "0.32", default-features = false, features = [
   "compiler",
