@@ -473,3 +473,21 @@ fn custom_separator_key_name() {
     assert_eq!(name, "myapp.http.requests_total");
     assert_eq!(*value, DebugValue::Counter(1));
 }
+
+#[test]
+fn default_system_custom_separator_key_name() {
+    let entries = with_recorder(|| {
+        let c = counter!(
+            name: "requests_total",
+            description: "total requests",
+            subsystem: "http",
+            separator: ".",
+        );
+        c.inc();
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "quickwit.http.requests_total");
+    assert_eq!(*value, DebugValue::Counter(1));
+}

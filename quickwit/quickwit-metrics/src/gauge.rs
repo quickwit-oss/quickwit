@@ -379,6 +379,24 @@ macro_rules! gauge {
     (
         name: $name:literal,
         description: $description:literal,
+        subsystem: $subsystem:expr,
+        separator: $separator:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::gauge!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem,
+            separator: $separator
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
         subsystem: $subsystem:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{

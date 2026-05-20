@@ -475,3 +475,21 @@ fn custom_separator_key_name() {
     assert_eq!(name, "myapp.db.connections");
     assert_eq!(*value, DebugValue::Gauge(5.0.into()));
 }
+
+#[test]
+fn default_system_custom_separator_key_name() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "connections",
+            description: "active connections",
+            subsystem: "db",
+            separator: ".",
+        );
+        g.set(5.0);
+    });
+
+    assert_eq!(entries.len(), 1);
+    let (name, _, value) = &entries[0];
+    assert_eq!(name, "quickwit.db.connections");
+    assert_eq!(*value, DebugValue::Gauge(5.0.into()));
+}

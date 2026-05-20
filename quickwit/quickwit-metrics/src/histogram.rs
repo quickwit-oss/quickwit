@@ -318,6 +318,26 @@ macro_rules! histogram {
         name: $name:literal,
         description: $description:literal,
         subsystem: $subsystem:expr,
+        separator: $separator:expr,
+        buckets: $buckets:expr
+        $(, $label:literal => $value:literal)* $(,)?
+    ) => {{
+        $crate::histogram!(
+            name: $name,
+            description: $description,
+            system: $crate::SYSTEM,
+            subsystem: $subsystem,
+            separator: $separator,
+            buckets: $buckets
+            $(, $label => $value)*
+        )
+    }};
+
+    // Base declaration with subsystem only — system defaults to SYSTEM.
+    (
+        name: $name:literal,
+        description: $description:literal,
+        subsystem: $subsystem:expr,
         buckets: $buckets:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
