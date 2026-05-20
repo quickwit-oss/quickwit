@@ -78,6 +78,7 @@ jobs:
 
   docker:
     needs: [build-lambda]
+    if: always() && (needs.build-lambda.result == 'success' || needs.build-lambda.result == 'skipped')
     strategy:
       matrix:
         include:
