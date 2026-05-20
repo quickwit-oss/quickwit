@@ -81,6 +81,22 @@ fn pick_from(candidates: Vec<&IngesterNode>) -> Option<&IngesterNode> {
 }
 
 impl RoutingEntry {
+    /// Advances `self`'s incarnation to `index_uid` if the signal carries a newer one, clearing
+    /// stale nodes and forcing a control-plane re-seed. Returns `false` if `self` already holds a
+    /// newer incarnation, signalling the caller to drop the update.
+    fn reconcile(&mut self, index_uid: &IndexUid) -> bool {
+        match self.index_uid.cmp(index_uid) {
+            Ordering::Less => {
+                self.index_uid = index_uid.clone();
+                self.nodes.clear();
+                self.seeded_from_cp = false;
+                true
+            }
+            Ordering::Greater => false,
+            Ordering::Equal => true,
+        }
+    }
+
     /// Pick an ingester node to persist the request to. Uses power of two choices based on reported
     /// ingester capacity, if more than one eligible node exists. Prefers nodes in the same
     /// availability zone, falling back to remote nodes.
@@ -93,15 +109,7 @@ impl RoutingEntry {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
             .values()
-            .filter(|node| {
-                node.capacity_score > 0
-                    && node.open_shard_count > 0
-                    && ingester_pool
-                        .get(&node.node_id)
-                        .map(|entry| entry.status.is_ready())
-                        .unwrap_or(false)
-                    && !unavailable_leaders.contains(&node.node_id)
-            })
+            .filter(|node| node.is_eligible(ingester_pool, unavailable_leaders))
             .partition(|node| {
                 let node_az = ingester_pool
                     .get(&node.node_id)
@@ -110,6 +118,95 @@ impl RoutingEntry {
             });
 
         pick_from(local_ingesters).or_else(|| pick_from(remote_ingesters))
+    }
+
+    /// Returns `true` if any node on this entry is open and reachable. Returns `false` until the
+    /// entry has been seeded from a control plane response — see [`Self::seeded_from_cp`].
+    fn has_open_nodes(
+        &self,
+        ingester_pool: &IngesterPool,
+        unavailable_leaders: &HashSet<NodeId>,
+    ) -> bool {
+        if !self.seeded_from_cp {
+            return false;
+        }
+        self.nodes
+            .values()
+            .any(|node| node.is_eligible(ingester_pool, unavailable_leaders))
+    }
+
+    fn apply_capacity_update(
+        &mut self,
+        node_id: NodeId,
+        index_uid: IndexUid,
+        capacity_score: usize,
+        open_shard_count: usize,
+    ) {
+        if !self.reconcile(&index_uid) {
+            return;
+        }
+        let ingester_node = IngesterNode {
+            node_id: node_id.clone(),
+            index_uid,
+            capacity_score,
+            open_shard_count,
+        };
+        self.nodes.insert(node_id, ingester_node);
+    }
+
+    fn mark_node_no_shards(&mut self, node_id: &NodeId, index_uid: &IndexUid) {
+        if !self.reconcile(index_uid) {
+            return;
+        }
+        if let Some(node) = self.nodes.get_mut(node_id) {
+            node.open_shard_count = 0;
+        }
+    }
+
+    fn merge_from_shards(&mut self, index_uid: &IndexUid, shards: Vec<Shard>) {
+        if !self.reconcile(index_uid) {
+            // this shouldnt happen - the control plane should never have older data than us- but
+            // just in case.
+            return;
+        }
+        let per_leader_count: HashMap<NodeId, usize> = shards
+            .iter()
+            .map(|shard| {
+                let num_open_shards = shard.is_open() as usize;
+                let leader_id = NodeId::from_str(&*shard.leader_id.clone());
+                (leader_id, num_open_shards)
+            })
+            .into_grouping_map()
+            .sum();
+
+        for (node_id, open_shard_count) in per_leader_count {
+            self.nodes
+                .entry(node_id.clone())
+                .and_modify(|node| node.open_shard_count = open_shard_count)
+                .or_insert_with(|| IngesterNode {
+                    node_id,
+                    index_uid: index_uid.clone(),
+                    capacity_score: 5,
+                    open_shard_count,
+                });
+        }
+        self.seeded_from_cp = true;
+    }
+}
+
+impl IngesterNode {
+    fn is_eligible(
+        &self,
+        ingester_pool: &IngesterPool,
+        unavailable_leaders: &HashSet<NodeId>,
+    ) -> bool {
+        self.capacity_score > 0
+            && self.open_shard_count > 0
+            && ingester_pool
+                .get(&self.node_id)
+                .map(|entry| entry.status.is_ready())
+                .unwrap_or(false)
+            && !unavailable_leaders.contains(&self.node_id)
     }
 }
 
@@ -195,19 +292,7 @@ impl RoutingTable {
         let Some(entry) = self.table.get(&key) else {
             return false;
         };
-        // Routers must sync with the control plane at least once per (index, source).
-        if !entry.seeded_from_cp {
-            return false;
-        }
-        entry.nodes.values().any(|node| {
-            node.capacity_score > 0
-                && node.open_shard_count > 0
-                && ingester_pool
-                    .get(&node.node_id)
-                    .map(|entry| entry.status.is_ready())
-                    .unwrap_or(false)
-                && !unavailable_leaders.contains(&node.node_id)
-        })
+        entry.has_open_nodes(ingester_pool, unavailable_leaders)
     }
 
     /// Applies a capacity update from the IngesterCapacityScoreUpdate broadcast. This is the
@@ -221,58 +306,20 @@ impl RoutingTable {
         open_shard_count: usize,
     ) {
         let key = (index_uid.index_id.to_string(), source_id);
-
-        let entry = self
-            .table
+        self.table
             .entry(key)
-            .or_insert_with(|| RoutingEntry::new(index_uid.clone()));
-        match entry.index_uid.cmp(&index_uid) {
-            // If we receive an update for a new incarnation of the index, then we clear the entry.
-            Ordering::Less => {
-                entry.index_uid = index_uid.clone();
-                entry.nodes.clear();
-                entry.seeded_from_cp = false;
-            }
-            // If we receive an update for a previous incarnation of the index, then we ignore it.
-            Ordering::Greater => return,
-            Ordering::Equal => {}
-        }
-        let ingester_node = IngesterNode {
-            node_id: node_id.clone(),
-            index_uid,
-            capacity_score,
-            open_shard_count,
-        };
-        entry.nodes.insert(node_id, ingester_node);
+            .or_insert_with(|| RoutingEntry::new(index_uid.clone()))
+            .apply_capacity_update(node_id, index_uid, capacity_score, open_shard_count);
     }
 
     /// Zeros out the open shard count for `node_id` on the (index, source) entry while preserving
     /// its capacity score. Called when a persist response reports that the ingester no longer
     /// holds a shard for this (index_uid, source_id), so the entry stops being picked until a
     /// fresh routing update or control-plane response repopulates it.
-    ///
-    /// Mirrors the incarnation handling of [`Self::apply_capacity_update`]: a stale signal
-    /// (entry newer than `index_uid`) is ignored, and a signal for a newer incarnation advances
-    /// the entry and clears stale nodes so the next attempt re-queries the control plane.
     pub fn mark_node_no_shards(&mut self, node_id: &NodeId, index_uid: &IndexUid, source_id: &str) {
         let key = (index_uid.index_id.to_string(), source_id.to_string());
-        let Some(entry) = self.table.get_mut(&key) else {
-            return;
-        };
-        match entry.index_uid.cmp(index_uid) {
-            // The entry is stale relative to the signal: advance it, drop stale nodes, and force
-            // a control-plane re-seed on the next attempt.
-            Ordering::Less => {
-                entry.index_uid = index_uid.clone();
-                entry.nodes.clear();
-                entry.seeded_from_cp = false;
-            }
-            // The signal is stale relative to the entry: leave the fresher entry alone.
-            Ordering::Greater => return,
-            Ordering::Equal => {}
-        }
-        if let Some(node) = entry.nodes.get_mut(node_id) {
-            node.open_shard_count = 0;
+        if let Some(entry) = self.table.get_mut(&key) {
+            entry.mark_node_no_shards(node_id, index_uid);
         }
     }
 
@@ -287,44 +334,10 @@ impl RoutingTable {
         shards: Vec<Shard>,
     ) {
         let key = (index_uid.index_id.to_string(), source_id);
-        let entry = self
-            .table
+        self.table
             .entry(key)
-            .or_insert_with(|| RoutingEntry::new(index_uid.clone()));
-        match entry.index_uid.cmp(&index_uid) {
-            // If we receive an update for a new incarnation of the index, then we clear the entry.
-            Ordering::Less => {
-                entry.index_uid = index_uid.clone();
-                entry.nodes.clear();
-            }
-            // If we receive an update for a previous incarnation of the index, then we ignore it.
-            Ordering::Greater => return,
-            Ordering::Equal => {}
-        }
-
-        let per_leader_count: HashMap<NodeId, usize> = shards
-            .iter()
-            .map(|shard| {
-                let num_open_shards = shard.is_open() as usize;
-                let leader_id = NodeId::from_str(&shard.leader_id);
-                (leader_id, num_open_shards)
-            })
-            .into_grouping_map()
-            .sum();
-
-        for (node_id, open_shard_count) in per_leader_count {
-            entry
-                .nodes
-                .entry(node_id.clone())
-                .and_modify(|node| node.open_shard_count = open_shard_count)
-                .or_insert_with(|| IngesterNode {
-                    node_id,
-                    index_uid: index_uid.clone(),
-                    capacity_score: 5,
-                    open_shard_count,
-                });
-        }
-        entry.seeded_from_cp = true;
+            .or_insert_with(|| RoutingEntry::new(index_uid.clone()))
+            .merge_from_shards(&index_uid, shards);
     }
 }
 
@@ -757,19 +770,19 @@ mod tests {
         let key = ("test-index".to_string(), "test-source".to_string());
 
         // Missing entry: no-op, no panic, nothing inserted.
-        table.mark_node_no_shards(&"node-1".into(), &index_uid, "test-source");
+        table.mark_node_no_shards(&NodeId::from_str("node-1"), &index_uid, "test-source");
         assert!(table.table.get(&key).is_none());
 
         // Seed an entry with two nodes carrying real capacity scores.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             index_uid.clone(),
             "test-source".into(),
             8,
             3,
         );
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             index_uid.clone(),
             "test-source".into(),
             6,
@@ -777,13 +790,13 @@ mod tests {
         );
 
         // Missing node within the entry: no-op.
-        table.mark_node_no_shards(&"unknown".into(), &index_uid, "test-source");
+        table.mark_node_no_shards(&NodeId::from_str("unknown"), &index_uid, "test-source");
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 3);
         assert_eq!(entry.nodes.get("node-2").unwrap().open_shard_count, 2);
 
         // Matching incarnation: zero only the open shard count, capacity score is preserved.
-        table.mark_node_no_shards(&"node-1".into(), &index_uid, "test-source");
+        table.mark_node_no_shards(&NodeId::from_str("node-1"), &index_uid, "test-source");
         let entry = table.table.get(&key).unwrap();
         let node_1 = entry.nodes.get("node-1").unwrap();
         assert_eq!(node_1.open_shard_count, 0);
@@ -795,7 +808,7 @@ mod tests {
 
         // Older incarnation argument: no-op (must not roll the entry back).
         let stale_index_uid = IndexUid::for_test("test-index", 0);
-        table.mark_node_no_shards(&"node-2".into(), &stale_index_uid, "test-source");
+        table.mark_node_no_shards(&NodeId::from_str("node-2"), &stale_index_uid, "test-source");
         assert_eq!(
             table
                 .table
@@ -812,7 +825,7 @@ mod tests {
         // re-seed (mirrors apply_capacity_update's Less arm). No node is inserted — the next
         // CP query is responsible for repopulating the entry.
         let newer_index_uid = IndexUid::for_test("test-index", 2);
-        table.mark_node_no_shards(&"node-2".into(), &newer_index_uid, "test-source");
+        table.mark_node_no_shards(&NodeId::from_str("node-2"), &newer_index_uid, "test-source");
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.index_uid, newer_index_uid);
         assert!(entry.nodes.is_empty());
