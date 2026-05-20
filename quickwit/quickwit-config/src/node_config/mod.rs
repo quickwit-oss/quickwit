@@ -146,6 +146,15 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
+    /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
+    /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
+    /// does not starve indexing itself (as it is a latency sensitive operation).
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum number of merge or delete operation that can be executed concurrently.
+    /// (defaults to num_cpu / 2).
+    #[serde(default = "IndexerConfig::default_merge_concurrency")]
+    pub merge_concurrency: NonZeroUsize,
     /// Enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry
     /// Protocol (OTLP).
     #[serde(default = "IndexerConfig::default_enable_otlp_endpoint")]
@@ -163,10 +172,6 @@ pub struct IndexerConfig {
 
 impl IndexerConfig {
     fn default_enable_cooperative_indexing() -> bool {
-        false
-    }
-
-    fn default_enable_standalone_compactors() -> bool {
         false
     }
 
@@ -193,8 +198,16 @@ impl IndexerConfig {
         1_000
     }
 
+    pub fn default_merge_concurrency() -> NonZeroUsize {
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
+    }
+
     fn default_cpu_capacity() -> CpuCapacity {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
+    }
+
+    fn default_enable_standalone_compactors() -> bool {
+        false
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -207,6 +220,8 @@ impl IndexerConfig {
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
+            max_merge_write_throughput: None,
+            merge_concurrency: NonZeroUsize::new(3).unwrap(),
             enable_standalone_compactors: false,
         };
         Ok(indexer_config)
@@ -222,6 +237,8 @@ impl Default for IndexerConfig {
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
+            merge_concurrency: Self::default_merge_concurrency(),
+            max_merge_write_throughput: None,
             enable_standalone_compactors: Self::default_enable_standalone_compactors(),
         }
     }
@@ -234,6 +251,10 @@ pub struct CompactorConfig {
     /// a long time. Defaults to `num_cpus - 1`.
     #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
     pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved. 
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.
     #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
@@ -248,6 +269,10 @@ impl CompactorConfig {
         NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
     }
 
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
     fn default_max_concurrent_split_uploads() -> usize {
         12
     }
@@ -256,6 +281,7 @@ impl CompactorConfig {
     pub fn for_test() -> Self {
         CompactorConfig {
             max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: 4,
             max_merge_write_throughput: None,
         }
@@ -266,6 +292,7 @@ impl Default for CompactorConfig {
     fn default() -> Self {
         Self {
             max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
         }

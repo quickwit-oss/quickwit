@@ -87,9 +87,12 @@ impl FromStr for List {
 }
 
 fn default_enabled_services() -> ConfigValue<List, QW_ENABLED_SERVICES> {
+    // The compactor is excluded by default — it only runs in standalone mode,
+    // which an operator must explicitly opt into via `enable_standalone_compactors`.
     ConfigValue::with_default(List(
         QuickwitService::supported_services()
             .into_iter()
+            .filter(|service| *service != QuickwitService::Compactor)
             .map(|service| service.to_string())
             .collect(),
     ))
@@ -234,21 +237,13 @@ impl NodeConfigBuilder {
         self.indexer_config.enable_standalone_compactors =
             self.enable_standalone_compactors.resolve(env_vars)?;
 
-        let mut enabled_services: HashSet<QuickwitService> = self
+        let enabled_services: HashSet<QuickwitService> = self
             .enabled_services
             .resolve(env_vars)?
             .0
             .into_iter()
             .map(|service| service.parse())
             .collect::<Result<_, _>>()?;
-
-        // Indexers implicitly run the compactor unless standalone compactors
-        // are enabled.
-        if enabled_services.contains(&QuickwitService::Indexer)
-            && !self.indexer_config.enable_standalone_compactors
-        {
-            enabled_services.insert(QuickwitService::Compactor);
-        }
 
         let listen_address = self.listen_address.resolve(env_vars)?;
         let listen_host = listen_address.parse::<Host>()?;
@@ -364,6 +359,15 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     }
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
+    }
+    if node_config.is_service_enabled(QuickwitService::Compactor)
+        && !node_config.indexer_config.enable_standalone_compactors
+    {
+        bail!(
+            "the `compactor` service can only be enabled when `enable_standalone_compactors` is \
+             true (or `QW_ENABLE_STANDALONE_COMPACTORS=true`). With the default \
+             indexer-local merge pipeline, the compactor service must not be enabled."
+        );
     }
     validate_disk_usage(node_config);
     Ok(())
@@ -673,8 +677,10 @@ mod tests {
                 split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
+                merge_concurrency: NonZeroUsize::new(2).unwrap(),
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
+                max_merge_write_throughput: Some(ByteSize::mb(100)),
                 enable_standalone_compactors: false,
             }
         );
@@ -786,6 +792,9 @@ mod tests {
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()
+                .into_iter()
+                .filter(|service| *service != QuickwitService::Compactor)
+                .collect::<HashSet<_>>(),
         );
         assert_eq!(
             config.rest_config.listen_addr,
@@ -1376,24 +1385,6 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error_message.contains("replication factor"));
-    }
-
-    #[tokio::test]
-    async fn test_indexer_implicitly_enables_compactor() {
-        let config_yaml = r#"
-            version: 0.8
-            enabled_services: [indexer]
-        "#;
-        let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &HashMap::new())
-                .await
-                .unwrap();
-        assert!(config.enabled_services.contains(&QuickwitService::Indexer));
-        assert!(
-            config
-                .enabled_services
-                .contains(&QuickwitService::Compactor)
-        );
     }
 
     #[tokio::test]

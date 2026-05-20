@@ -18,11 +18,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext};
-use quickwit_common::io::Limiter;
+use quickwit_common::io::{self, Limiter};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexingSettings, RetentionPolicy, SearchSettings, build_doc_mapper};
+use quickwit_config::{
+    CompactorConfig, IndexingSettings, RetentionPolicy, SearchSettings, build_doc_mapper,
+};
 use quickwit_doc_mapper::DocMapping;
 use quickwit_indexing::merge_policy::{MergeOperation, merge_policy_from_settings};
 use quickwit_indexing::{IndexingSplitCache, IndexingSplitStore};
@@ -75,18 +77,25 @@ impl CompactorSupervisor {
     pub fn new(
         node_id: NodeId,
         planner_client: CompactionPlannerServiceClient,
-        max_concurrent_merge_executions: usize,
-        io_throughput_limiter: Option<Limiter>,
+        compactor_config: &CompactorConfig,
         metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
         split_cache: Arc<IndexingSplitCache>,
-        max_concurrent_split_uploads: usize,
         event_broker: EventBroker,
         compaction_root_directory: TempDirectory,
     ) -> Self {
-        let num_pipeline_slots = max_concurrent_merge_executions * 2;
+        let &CompactorConfig {
+            max_concurrent_merge_executions,
+            pipeline_slots_per_merge_execution,
+            max_concurrent_split_uploads,
+            max_merge_write_throughput,
+        } = compactor_config;
+        let num_pipeline_slots =
+            max_concurrent_merge_executions.get() * pipeline_slots_per_merge_execution.get();
         let pipelines = (0..num_pipeline_slots).map(|_| None).collect();
-        let merge_execution_semaphore = Arc::new(Semaphore::new(max_concurrent_merge_executions));
+        let merge_execution_semaphore =
+            Arc::new(Semaphore::new(max_concurrent_merge_executions.get()));
+        let io_throughput_limiter = max_merge_write_throughput.map(io::limiter);
         CompactorSupervisor {
             node_id,
             planner_client,
@@ -325,6 +334,8 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use quickwit_actors::Universe;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_proto::compaction::{
@@ -343,15 +354,18 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let compaction_client =
             CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
+        let compactor_config = CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(max_concurrent_merge_executions)
+                .expect("max_concurrent_merge_executions must be non-zero"),
+            ..CompactorConfig::for_test()
+        };
         CompactorSupervisor::new(
             NodeId::from("test-node"),
             compaction_client,
-            max_concurrent_merge_executions,
-            None,
+            &compactor_config,
             metastore,
             StorageResolver::for_test(),
             Arc::new(IndexingSplitCache::no_caching()),
-            2,
             EventBroker::default(),
             TempDirectory::for_test(),
         )
@@ -557,15 +571,17 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
         // 3 merge-executions → 6 pipeline slots
+        let compactor_config = CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(3).unwrap(),
+            ..CompactorConfig::for_test()
+        };
         let mut supervisor = CompactorSupervisor::new(
             NodeId::from("test-node"),
             client,
-            3,
-            None,
+            &compactor_config,
             metastore,
             StorageResolver::for_test(),
             Arc::new(IndexingSplitCache::no_caching()),
-            2,
             EventBroker::default(),
             TempDirectory::for_test(),
         );

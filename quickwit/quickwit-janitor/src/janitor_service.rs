@@ -25,7 +25,7 @@ pub struct JanitorService {
     delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
     garbage_collector_handle: ActorHandle<GarbageCollector>,
     retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
-    compaction_planner_handle: ActorHandle<CompactionPlanner>,
+    compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
 }
 
 impl JanitorService {
@@ -33,7 +33,7 @@ impl JanitorService {
         delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
         garbage_collector_handle: ActorHandle<GarbageCollector>,
         retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
-        compaction_planner_handle: ActorHandle<CompactionPlanner>,
+        compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
     ) -> Self {
         Self {
             delete_task_service_handle,
@@ -50,10 +50,16 @@ impl JanitorService {
             } else {
                 true
             };
+        let compaction_planner_is_not_failure: bool =
+            if let Some(compaction_planner_handle) = &self.compaction_planner_handle {
+                compaction_planner_handle.state() != ActorState::Failure
+            } else {
+                true
+            };
         delete_task_is_not_failure
             && self.garbage_collector_handle.state() != ActorState::Failure
             && self.retention_policy_executor_handle.state() != ActorState::Failure
-            && self.compaction_planner_handle.state() != ActorState::Failure
+            && compaction_planner_is_not_failure
     }
 }
 
