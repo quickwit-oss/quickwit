@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::models::DetachMergePipeline;
-use quickwit_common::io;
-use futures::TryStreamExt;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
@@ -22,6 +19,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
@@ -29,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::temp_dir;
+use quickwit_common::{io, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
     indexing_pipeline_params_fingerprint,
@@ -40,7 +38,8 @@ use quickwit_ingest::{
 };
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, IndexesMetadataResponseExt,
-    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
@@ -48,22 +47,23 @@ use quickwit_proto::indexing::{
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataSubrequest, IndexesMetadataRequest,
-    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient, ListSplitsRequest, MetastoreResult,
+    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreResult, MetastoreService,
+    MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use crate::models::{DetachIndexingPipeline, ObservePipeline, SpawnPipeline};
-use crate::source::{AssignShards, Assignment};
-use time::OffsetDateTime;
-use crate::split_store::IndexingSplitCache;
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
+use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
+use crate::source::{AssignShards, Assignment};
+use crate::split_store::IndexingSplitCache;
+use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -244,7 +244,7 @@ impl IndexingService {
             None,
             None,
         )
-            .await?;
+        .await?;
         Ok(pipeline_id)
     }
 
@@ -354,27 +354,30 @@ impl IndexingService {
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
 
-        let merge_planner_mailbox_opt = if let Some(merge_scheduler_service) =
-            self.merge_scheduler_service_opt.clone()
-        {
-            let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
-            let merge_pipeline_params = MergePipelineParams {
-                pipeline_id: merge_pipeline_id,
-                doc_mapper: doc_mapper.clone(),
-                indexing_directory: indexing_directory.clone(),
-                metastore: self.metastore.clone(),
-                split_store: split_store.clone(),
-                merge_scheduler_service,
-                merge_policy: merge_policy.clone(),
-                retention_policy: retention_policy.clone(),
-                merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
-                max_concurrent_split_uploads: self.max_concurrent_split_uploads,
-                event_broker: self.event_broker.clone(),
+        let merge_planner_mailbox_opt =
+            if let Some(merge_scheduler_service) = self.merge_scheduler_service_opt.clone() {
+                let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
+                let merge_pipeline_params = MergePipelineParams {
+                    pipeline_id: merge_pipeline_id,
+                    doc_mapper: doc_mapper.clone(),
+                    indexing_directory: indexing_directory.clone(),
+                    metastore: self.metastore.clone(),
+                    split_store: split_store.clone(),
+                    merge_scheduler_service,
+                    merge_policy: merge_policy.clone(),
+                    retention_policy: retention_policy.clone(),
+                    merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
+                    max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+                    event_broker: self.event_broker.clone(),
+                };
+                Some(self.get_or_create_merge_pipeline(
+                    merge_pipeline_params,
+                    immature_splits_opt,
+                    ctx,
+                )?)
+            } else {
+                None
             };
-            Some(self.get_or_create_merge_pipeline(merge_pipeline_params, immature_splits_opt, ctx)?)
-        } else {
-            None
-        };
 
         let max_concurrent_split_uploads_index = if self.merge_scheduler_service_opt.is_some() {
             (self.max_concurrent_split_uploads / 2).max(1)
@@ -1180,7 +1183,8 @@ mod tests {
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataResponse,
         IndexesMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
-        MockMetastoreService,    };
+        MockMetastoreService,
+    };
 
     use super::*;
     use crate::actors::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
@@ -1731,8 +1735,8 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
         let pipeline_id = indexing_server_mailbox
@@ -1828,8 +1832,8 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
 
@@ -1909,8 +1913,8 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         let (indexing_server_mailbox, indexing_server_handle) =
             universe.spawn_builder().spawn(indexing_server);
 

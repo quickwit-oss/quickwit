@@ -252,7 +252,7 @@ pub struct CompactorConfig {
     #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
     pub max_concurrent_merge_executions: NonZeroUsize,
     /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
-    /// of IO, multiple concurrent merges can be interleaved. 
+    /// of IO, multiple concurrent merges can be interleaved.
     #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
     pub pipeline_slots_per_merge_execution: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.

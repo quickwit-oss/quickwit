@@ -8558,7 +8558,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "itertools 0.14.0",
- "once_cell",
  "quickwit-actors",
  "quickwit-common",
  "quickwit-config",

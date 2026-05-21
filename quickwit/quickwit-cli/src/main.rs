@@ -167,8 +167,8 @@ mod tests {
     };
     use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
     use quickwit_cli::tool::{
-        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs,
-        ToolCliCommand, MergeArgs
+        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
+        ToolCliCommand,
     };
     use quickwit_common::uri::Uri;
     use quickwit_config::SourceInputFormat;

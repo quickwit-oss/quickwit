@@ -29,6 +29,7 @@ use quickwit_doc_mapper::DocMapping;
 use quickwit_indexing::merge_policy::{MergeOperation, merge_policy_from_settings};
 use quickwit_indexing::{IndexingSplitCache, IndexingSplitStore};
 use quickwit_metastore::SplitMetadata;
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::compaction::{
     CompactionFailure, CompactionInProgress, CompactionPlannerService,
     CompactionPlannerServiceClient, CompactionSuccess, MergeTaskAssignment, ReportStatusRequest,
@@ -39,8 +40,6 @@ use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
 use tokio::sync::Semaphore;
 use tracing::{error, info};
-
-use quickwit_metrics::{gauge, label_values};
 
 use crate::compaction_pipeline::{CompactionPipeline, PipelineStatus, PipelineStatusUpdate};
 use crate::metrics::{AVAILABLE_SLOTS, COMPACTIONS_IN_PROGRESS, SOURCE_UID_MERGE_LEVEL};

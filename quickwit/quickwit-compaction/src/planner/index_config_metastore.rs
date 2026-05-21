@@ -19,11 +19,10 @@ use quickwit_config::{IndexConfig, build_doc_mapper};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::merge_policy::{MergePolicy, merge_policy_from_settings};
 use quickwit_metastore::{IndexMetadataResponseExt, SplitMaturity, SplitMetadata};
+use quickwit_metrics::{counter, label_values};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{DocMappingUid, IndexUid};
 use tracing::error;
-
-use quickwit_metrics::{counter, label_values};
 
 use crate::planner::metrics::{METASTORE_ERRORS, OPERATION};
 

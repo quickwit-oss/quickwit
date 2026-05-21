@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use quickwit_actors::{ActorHandle, HEARTBEAT, Health, SpawnContext, Supervisable, QueueCapacity};
+use quickwit_actors::{ActorHandle, HEARTBEAT, Health, QueueCapacity, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
@@ -27,13 +27,12 @@ use quickwit_indexing::actors::{
 };
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
+use quickwit_metrics::{counter, gauge, histogram, label_values};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
 use tokio::sync::Semaphore;
 use tracing::{error, info};
-
-use quickwit_metrics::{counter, gauge, histogram, label_values};
 
 use crate::metrics::{
     COMPACTION_DURATION, COMPACTIONS_FAILED, COMPACTIONS_IN_PROGRESS, COMPACTIONS_SUCCEEDED,

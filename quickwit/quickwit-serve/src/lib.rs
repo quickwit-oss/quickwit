@@ -116,8 +116,8 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 use quickwit_storage::{SearchSplitCache, StorageResolver};
+pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -629,7 +629,9 @@ pub async fn serve_quickwit(
         .await
         .context("failed to initialize compaction service client")?;
 
-    // In the case where a compactor and indexer run on the same node (in a single node deployment, for example), they should share the split cache so that downloads/new splits end up in predictable locations. If there's only one service enabled, no harm, no foul.
+    // In the case where a compactor and indexer run on the same node (in a single node deployment,
+    // for example), they should share the split cache so that downloads/new splits end up in
+    // predictable locations. If there's only one service enabled, no harm, no foul.
     let indexing_split_cache: Arc<IndexingSplitCache> = if node_config
         .is_service_enabled(QuickwitService::Indexer)
         && node_config.is_service_enabled(QuickwitService::Compactor)
@@ -2027,10 +2029,8 @@ mod tests {
         // Standalone compactors disabled: short-circuit returns (None, None) regardless of
         // which services are enabled.
         node_config.indexer_config.enable_standalone_compactors = false;
-        node_config.enabled_services = HashSet::from([
-            QuickwitService::Janitor,
-            QuickwitService::Indexer,
-        ]);
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
         let (client_opt, handle_opt) =
             get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
                 .await

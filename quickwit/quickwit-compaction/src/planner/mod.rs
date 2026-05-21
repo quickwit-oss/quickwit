@@ -22,9 +22,8 @@ use std::collections::BinaryHeap;
 
 pub use compaction_planner::CompactionPlanner;
 use quickwit_indexing::merge_policy::{MergeOperation, compute_merge_score};
-use quickwit_proto::types::{IndexUid, SourceId};
-
 use quickwit_metrics::{gauge, label_values};
+use quickwit_proto::types::{IndexUid, SourceId};
 
 use crate::planner::metrics::{PENDING_MERGE_OPERATIONS, SOURCE_UID_MERGE_LEVEL};
 use crate::source_uid_metrics_label;
@@ -81,7 +80,11 @@ impl Ord for PendingMerge {
     fn cmp(&self, other: &Self) -> Ordering {
         self.priority_score
             .cmp(&other.priority_score)
-            .then_with(|| self.operation.merge_split_id.cmp(&other.operation.merge_split_id))
+            .then_with(|| {
+                self.operation
+                    .merge_split_id
+                    .cmp(&other.operation.merge_split_id)
+            })
     }
 }
 

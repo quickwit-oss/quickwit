@@ -115,7 +115,8 @@ impl AzureBlobStorage {
                 target_part_num_bytes: ByteSize::mb(100),
                 multipart_threshold_num_bytes: ByteSize::mb(100),
                 max_num_parts: 50_000, // Azure allows up to 50,000 blocks
-                max_object_num_bytes: ByteSize::b(4_770_000_000_000), // Azure allows up to 4.77TB objects
+                max_object_num_bytes: ByteSize::b(4_770_000_000_000), /* Azure allows up to
+                                        * 4.77TB objects */
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),
@@ -215,8 +216,7 @@ impl AzureBlobStorage {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
-            let _timer =
-                HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
+            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
                 let stream = self
                     .container_client
@@ -282,9 +282,8 @@ impl AzureBlobStorage {
                 crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
                 crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
-                    let _timer = HistogramTimer::new(
-                        &crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION,
-                    );
+                    let _timer =
+                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
                         let block_id = format!("block:{:05}", num);

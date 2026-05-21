@@ -13,11 +13,13 @@
 // limitations under the License.
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, LazyHistogram, lazy_counter, lazy_gauge, lazy_histogram, label_names};
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyGauge, LazyHistogram, label_names, lazy_counter, lazy_gauge,
+    lazy_histogram,
+};
 
 /// Shared label template for the per-compaction metrics keyed by source and merge level.
-pub(crate) const SOURCE_UID_MERGE_LEVEL: LabelNames<2> =
-    label_names!("source_uid", "merge_level");
+pub(crate) const SOURCE_UID_MERGE_LEVEL: LabelNames<2> = label_names!("source_uid", "merge_level");
 
 pub(crate) static COMPACTIONS_IN_PROGRESS: LazyGauge = lazy_gauge!(
     name: "compactions_in_progress",

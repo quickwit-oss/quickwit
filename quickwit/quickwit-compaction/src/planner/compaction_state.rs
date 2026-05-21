@@ -20,16 +20,13 @@ use std::time::{Duration, Instant};
 use itertools::Itertools;
 use quickwit_indexing::merge_policy::MergePolicy;
 use quickwit_metastore::SplitMetadata;
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, CompactionSuccess};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
+use crate::planner::metrics::{SOURCE_UID, SPLITS_NEEDING_COMPACTION, TIMED_OUT_OPERATIONS};
 use crate::planner::{PendingMerge, PendingOperations};
-use quickwit_metrics::{gauge, label_values};
-
-use crate::planner::metrics::{
-    SOURCE_UID, SPLITS_NEEDING_COMPACTION, TIMED_OUT_OPERATIONS,
-};
 use crate::{TaskId, source_uid_metrics_label};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);

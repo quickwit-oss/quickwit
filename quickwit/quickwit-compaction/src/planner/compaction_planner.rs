@@ -22,6 +22,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
+use quickwit_metrics::{counter, label_values};
 use quickwit_proto::compaction::{
     CompactionResult, MergeTaskAssignment, ReportStatusRequest, ReportStatusResponse,
 };
@@ -34,8 +35,6 @@ use ulid::Ulid;
 use super::PendingMerge;
 use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
-use quickwit_metrics::{counter, label_values};
-
 use crate::planner::metrics::{METASTORE_ERRORS, NEW_SPLITS_SCANNED, OPERATION, SOURCE_UID};
 
 /// Cap on splits fetched per tick. Every tick, the planner re-scans the immature published set,

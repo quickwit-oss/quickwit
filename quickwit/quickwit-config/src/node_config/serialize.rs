@@ -365,8 +365,8 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     {
         bail!(
             "the `compactor` service can only be enabled when `enable_standalone_compactors` is \
-             true (or `QW_ENABLE_STANDALONE_COMPACTORS=true`). With the default \
-             indexer-local merge pipeline, the compactor service must not be enabled."
+             true (or `QW_ENABLE_STANDALONE_COMPACTORS=true`). With the default indexer-local \
+             merge pipeline, the compactor service must not be enabled."
         );
     }
     validate_disk_usage(node_config);

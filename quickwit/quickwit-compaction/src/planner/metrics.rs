@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_metrics::{
-    LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge,
-};
+use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
 pub(crate) const SOURCE_UID: LabelNames<1> = label_names!("source_uid");
-pub(crate) const SOURCE_UID_MERGE_LEVEL: LabelNames<2> =
-    label_names!("source_uid", "merge_level");
+pub(crate) const SOURCE_UID_MERGE_LEVEL: LabelNames<2> = label_names!("source_uid", "merge_level");
 pub(crate) const OPERATION: LabelNames<1> = label_names!("operation");
 
 pub(crate) static NEW_SPLITS_SCANNED: LazyCounter = lazy_counter!(
