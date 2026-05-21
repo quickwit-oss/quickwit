@@ -44,3 +44,7 @@ states/
 
 # CI-downloaded Lambda artifacts (used by Docker builds; not committed)
 quickwit/lambda-artifact/
+
+
+# Claude settings
+.claude/settings.json
