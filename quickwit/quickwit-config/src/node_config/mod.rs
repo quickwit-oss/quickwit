@@ -216,7 +216,9 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
-    fn default_enable_standalone_compactors() -> bool { false }
+    fn default_enable_standalone_compactors() -> bool {
+        false
+    }
 
     fn default_parquet_merge_use_streaming_engine() -> bool {
         false
