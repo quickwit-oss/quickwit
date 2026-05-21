@@ -32,6 +32,26 @@ pub struct IndexMappingQueryParams {
     pub field_patterns: Option<String>,
 }
 
+impl IndexMappingQueryParams {
+    /// Splits `field_patterns` on commas, trims, and drops empties.
+    /// Returns an empty `Vec` when the parameter is absent or blank.
+    pub fn field_patterns(&self) -> Vec<String> {
+        self.field_patterns
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|pattern| {
+                let trimmed = pattern.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::IndexMappingQueryParams;

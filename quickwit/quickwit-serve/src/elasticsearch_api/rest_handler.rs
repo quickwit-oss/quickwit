@@ -199,23 +199,6 @@ async fn get_index_metadata(
     Ok(index_metadata)
 }
 
-/// Splits `field_patterns=` on commas, trims, drops empties. `None` if nothing
-/// usable remains.
-fn parse_field_patterns(params: &IndexMappingQueryParams) -> Option<Vec<String>> {
-    let raw = params.field_patterns.as_deref()?;
-    let patterns: Vec<String> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    if patterns.is_empty() {
-        None
-    } else {
-        Some(patterns)
-    }
-}
-
 /// `_mapping(s)` handler. Pushes `field_patterns`, `start_timestamp`, and
 /// `end_timestamp` down to `root_list_fields` so splits can be pruned and
 /// dynamic fields filtered at the leaves.
@@ -236,11 +219,9 @@ pub(crate) async fn es_compat_index_mapping(
         .map(|m| m.index_id().to_string())
         .collect();
 
-    let field_patterns = parse_field_patterns(&params);
-
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
-        field_patterns: field_patterns.unwrap_or_default(),
+        field_patterns: params.field_patterns(),
         start_timestamp: params.start_timestamp,
         end_timestamp: params.end_timestamp,
         query_ast: None,
@@ -249,10 +230,11 @@ pub(crate) async fn es_compat_index_mapping(
         .root_list_fields(list_fields_request)
         .await
         .ok();
-    Ok(ElasticsearchMappingsResponse::from_doc_mapping(
+    let response = ElasticsearchMappingsResponse::from_doc_mapping(
         indexes_metadata,
         list_fields_response.as_ref(),
-    ))
+    );
+    Ok(response)
 }
 
 /// GET or POST _elastic/_search
