@@ -28,7 +28,8 @@ pub struct IndexMappingQueryParams {
     pub start_timestamp: Option<i64>,
     #[serde(default)]
     pub end_timestamp: Option<i64>,
-    #[serde(default)]
+    /// Accepts both `field_patterns` (Quickwit) and `fields` (ES-compatible).
+    #[serde(default, alias = "fields")]
     pub field_patterns: Option<String>,
 }
 
@@ -123,5 +124,22 @@ mod tests {
         let qs = "field_patterns=";
         let params: IndexMappingQueryParams = serde_qs::from_str(qs).unwrap();
         assert!(params.field_patterns.is_none());
+    }
+
+    #[test]
+    fn es_compatible_fields_alias_accepted() {
+        // ES clients send `?fields=` — must map to the same field as `field_patterns`.
+        let qs = "fields=host,message";
+        let params: IndexMappingQueryParams = serde_qs::from_str(qs).unwrap();
+        assert_eq!(params.field_patterns.as_deref(), Some("host,message"));
+    }
+
+    #[test]
+    fn fields_alias_combined_with_timestamps() {
+        let qs = "start_timestamp=1&end_timestamp=2&fields=host";
+        let params: IndexMappingQueryParams = serde_qs::from_str(qs).unwrap();
+        assert_eq!(params.start_timestamp, Some(1));
+        assert_eq!(params.end_timestamp, Some(2));
+        assert_eq!(params.field_patterns.as_deref(), Some("host"));
     }
 }
