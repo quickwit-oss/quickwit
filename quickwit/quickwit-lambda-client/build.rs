@@ -44,12 +44,17 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let zip_dest = out_dir.join("lambda_bootstrap.zip");
 
-    let sha256 = if let Ok(local_path) = env::var("LAMBDA_ZIP_PATH") {
-        // CI mode: a pre-built zip is provided via env; skip the remote download.
-        use_local_lambda_zip(Path::new(&local_path), &zip_dest)
-    } else {
-        fetch_lambda_zip(&zip_dest);
-        LAMBDA_ZIP_SHA256.to_string()
+    // Treat LAMBDA_ZIP_PATH="" (set but empty, e.g. from a Dockerfile ARG with no value passed)
+    // the same as unset — fall back to downloading the zip from the remote URL.
+    let sha256 = match env::var("LAMBDA_ZIP_PATH").ok().filter(|p| !p.is_empty()) {
+        Some(local_path) => {
+            // CI mode: a pre-built zip is provided via env; skip the remote download.
+            use_local_lambda_zip(Path::new(&local_path), &zip_dest)
+        }
+        None => {
+            fetch_lambda_zip(&zip_dest);
+            LAMBDA_ZIP_SHA256.to_string()
+        }
     };
 
     // Export first 8 hex chars of the SHA256 as environment variable.
