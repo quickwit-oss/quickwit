@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use metrics_util::MetricKindMask;
 use metrics_util::layers::{FanoutBuilder, RouterBuilder};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -43,14 +41,8 @@ pub(crate) fn init_metrics_provider(
     };
 
     let dogstatsd_recorder = crate::dogstatsd::metrics::build_recorder(service_version)?;
-    let dogstatsd_recorder = Arc::new(dogstatsd_recorder);
     let mut router = RouterBuilder::from_recorder(quickwit_recorder);
-    router.add_route(
-        MetricKindMask::ALL,
-        "cloudprem.",
-        Arc::clone(&dogstatsd_recorder),
-    );
-    router.add_route(MetricKindMask::ALL, "pomsky.", dogstatsd_recorder);
+    router.add_route(MetricKindMask::ALL, "cloudprem.", dogstatsd_recorder);
     let recorder = router.build();
 
     metrics::set_global_recorder(recorder)

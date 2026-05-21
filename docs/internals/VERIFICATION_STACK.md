@@ -211,17 +211,9 @@ pub fn publish_splits(&self, splits: &[SplitMetadata]) -> Result<()> {
 **Purpose:** Prove properties hold in the real world. Close the feedback loop.
 
 **Invariant Metrics:**
-```rust
-pub fn record_invariant(name: &str, passed: bool) {
-    statsd.count("pomsky.invariant.checked", 1,
-        &[&format!("name:{}", name)]);
 
-    if !passed {
-        statsd.count("pomsky.invariant.violated", 1,
-            &[&format!("name:{}", name)]);
-    }
-}
-```
+- `quickwit_invariant_checked{invariant:<id>}` records every invariant check.
+- `quickwit_invariant_violated{invariant:<id>}` records failed invariant checks.
 
 **Datadog Integration (What Each Feature Provides):**
 

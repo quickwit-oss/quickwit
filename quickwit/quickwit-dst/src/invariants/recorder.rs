@@ -24,20 +24,16 @@ use super::InvariantId;
 
 const INVARIANT_LABEL_NAMES: LabelNames<1> = label_names!("invariant");
 
-static POMSKY_INVARIANT_CHECKED_TOTAL: LazyCounter = lazy_counter!(
-        name: "checked",
-        description: "Number of invariant checks performed by Pomsky.",
-        system: "pomsky",
-        subsystem: "invariant",
-        separator: ".",
+static INVARIANT_CHECKED_TOTAL: LazyCounter = lazy_counter!(
+    name: "checked",
+    description: "Number of invariant checks performed.",
+    subsystem: "invariant",
 );
 
-static POMSKY_INVARIANT_VIOLATED_TOTAL: LazyCounter = lazy_counter!(
-        name: "violated",
-        description: "Number of invariant violations observed by Pomsky.",
-        system: "pomsky",
-        subsystem: "invariant",
-        separator: ".",
+static INVARIANT_VIOLATED_TOTAL: LazyCounter = lazy_counter!(
+    name: "violated",
+    description: "Number of invariant violations observed.",
+    subsystem: "invariant",
 );
 
 /// Record an invariant check result.
@@ -48,9 +44,9 @@ static POMSKY_INVARIANT_VIOLATED_TOTAL: LazyCounter = lazy_counter!(
 pub fn record_invariant_check(invariant_id: InvariantId, passed: bool) {
     let invariant_name = invariant_id.as_str();
     let labels = label_values!(INVARIANT_LABEL_NAMES => invariant_name);
-    counter!(parent: POMSKY_INVARIANT_CHECKED_TOTAL, labels: [labels]).inc();
+    counter!(parent: INVARIANT_CHECKED_TOTAL, labels: [labels]).inc();
     if !passed {
-        counter!(parent: POMSKY_INVARIANT_VIOLATED_TOTAL, labels: [labels]).inc();
+        counter!(parent: INVARIANT_VIOLATED_TOTAL, labels: [labels]).inc();
     }
 }
 
@@ -62,11 +58,11 @@ mod tests {
     fn records_checked_and_violated_metrics() {
         let invariant_id = InvariantId::TW2;
         let labels = label_values!(INVARIANT_LABEL_NAMES => invariant_id.as_str());
-        let checked_counter = counter!(parent: POMSKY_INVARIANT_CHECKED_TOTAL, labels: [labels]);
-        let violated_counter = counter!(parent: POMSKY_INVARIANT_VIOLATED_TOTAL, labels: [labels]);
+        let checked_counter = counter!(parent: INVARIANT_CHECKED_TOTAL, labels: [labels]);
+        let violated_counter = counter!(parent: INVARIANT_VIOLATED_TOTAL, labels: [labels]);
 
-        assert_eq!(checked_counter.key().name(), "pomsky.invariant.checked");
-        assert_eq!(violated_counter.key().name(), "pomsky.invariant.violated");
+        assert_eq!(checked_counter.key().name(), "quickwit_invariant_checked");
+        assert_eq!(violated_counter.key().name(), "quickwit_invariant_violated");
 
         let initial_checked = checked_counter.get();
         let initial_violated = violated_counter.get();
