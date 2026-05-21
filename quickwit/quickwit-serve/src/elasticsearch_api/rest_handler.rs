@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -216,25 +216,9 @@ fn parse_field_patterns(params: &IndexMappingQueryParams) -> Option<Vec<String>>
     }
 }
 
-fn collect_declared_top_level_names(indexes_metadata: &[IndexMetadata]) -> HashSet<String> {
-    let upper_bound: usize = indexes_metadata
-        .iter()
-        .map(|m| m.index_config.doc_mapping.field_mappings.len())
-        .sum();
-    let mut names = HashSet::with_capacity(upper_bound);
-    for metadata in indexes_metadata {
-        for entry in &metadata.index_config.doc_mapping.field_mappings {
-            names.insert(entry.name.clone());
-        }
-    }
-    names
-}
-
-/// `_mapping(s)` handler. `field_patterns` is a hint: when every requested
-/// pattern matches a flat declared field, we skip `list_fields` and return the
-/// declared schema directly. Anything else falls through to a split fan-out
-/// filtered by `[start, end)`, with the same patterns pushed down to the
-/// leaves for dynamic-field filtering.
+/// `_mapping(s)` handler. Pushes `field_patterns`, `start_timestamp`, and
+/// `end_timestamp` down to `root_list_fields` so splits can be pruned and
+/// dynamic fields filtered at the leaves.
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
     params: IndexMappingQueryParams,
@@ -253,25 +237,6 @@ pub(crate) async fn es_compat_index_mapping(
         .collect();
 
     let field_patterns = parse_field_patterns(&params);
-
-    // Fast path: every requested name is a flat declared field — skip
-    // `list_fields` entirely. The declared schema is returned as-is; dynamic
-    // discovery is not needed.
-    if let Some(field_patterns) = &field_patterns {
-        let declared_top: HashSet<String> = collect_declared_top_level_names(&indexes_metadata);
-        let all_declared = field_patterns.iter().all(|pattern| {
-            !pattern.contains('*')
-                && !pattern.contains('?')
-                && !pattern.contains('.')
-                && declared_top.contains(pattern.as_str())
-        });
-        if all_declared {
-            return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
-                indexes_metadata,
-                None,
-            ));
-        }
-    }
 
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
