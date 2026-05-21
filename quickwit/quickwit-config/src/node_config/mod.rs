@@ -163,6 +163,11 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
+    /// When true, the compactor service is not implicitly started on indexer
+    /// nodes. Dedicated compactor nodes must be deployed separately.
+    /// When false (default), every indexer node also runs the compactor.
+    #[serde(default = "IndexerConfig::default_enable_standalone_compactors")]
+    pub enable_standalone_compactors: bool,
 }
 
 impl IndexerConfig {
@@ -201,6 +206,10 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
+    fn default_enable_standalone_compactors() -> bool {
+        false
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
@@ -213,6 +222,7 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
+            enable_standalone_compactors: false,
         };
         Ok(indexer_config)
     }
@@ -228,6 +238,62 @@ impl Default for IndexerConfig {
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
+            max_merge_write_throughput: None,
+            enable_standalone_compactors: Self::default_enable_standalone_compactors(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved. 
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: usize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
+    fn default_max_concurrent_split_uploads() -> usize {
+        12
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: 4,
+            max_merge_write_throughput: None,
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
         }
     }
@@ -778,6 +844,7 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
 }
 
 impl NodeConfig {
@@ -874,23 +941,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {

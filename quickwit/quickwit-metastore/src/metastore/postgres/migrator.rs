@@ -27,40 +27,45 @@ fn get_migrations() -> Migrator {
 
 /// Initializes the database and runs the SQL migrations stored in the
 /// `quickwit-metastore/migrations` directory.
+///
+/// Runs on a raw pooled connection -- not wrapped in an outer transaction.
+/// sqlx's `Migrator::run_direct` handles per-migration transactionality
+/// itself, honoring each migration's `no_tx` flag (set by a
+/// `-- no-transaction` directive as the first line of the migration file).
+/// Wrapping the run in our own transaction would defeat that for migrations
+/// that must execute outside a transaction block (e.g. `CREATE INDEX
+/// CONCURRENTLY`).
+///
+/// Atomicity is per-migration, not per-run: a failure on migration N leaves
+/// migrations 1..N-1 applied and committed in `_sqlx_migrations`. The
+/// operator fixes the failing migration and re-runs.
 #[instrument(skip_all)]
 pub(super) async fn run_migrations(
     pool: &TrackedPool<Postgres>,
     skip_migrations: bool,
     skip_locking: bool,
 ) -> MetastoreResult<()> {
-    let mut tx = pool.begin().await?;
-    let conn = tx.acquire().await?;
-
+    let mut conn = pool.acquire().await?;
     let mut migrator = get_migrations();
 
     if skip_locking {
         migrator.set_locking(false);
     }
 
-    if !skip_migrations {
-        // this is an hidden function, made to get "around the annoying "implementation of `Acquire`
-        // is not general enough" error", which is the error we get otherwise.
-        let migrate_result = migrator.run_direct(conn).await;
+    if skip_migrations {
+        return check_migrations(migrator, &mut conn).await;
+    }
 
-        let Err(migrate_error) = migrate_result else {
-            tx.commit().await?;
-            return Ok(());
-        };
-        tx.rollback().await?;
+    // this is an hidden function, made to get "around the annoying "implementation of `Acquire`
+    // is not general enough" error", which is the error we get otherwise.
+    if let Err(migrate_error) = migrator.run_direct(&mut *conn).await {
         error!(error=%migrate_error, "failed to run PostgreSQL migrations");
-
-        Err(MetastoreError::Internal {
+        return Err(MetastoreError::Internal {
             message: "failed to run PostgreSQL migrations".to_string(),
             cause: migrate_error.to_string(),
-        })
-    } else {
-        check_migrations(migrator, conn).await
+        });
     }
+    Ok(())
 }
 
 async fn check_migrations(migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {

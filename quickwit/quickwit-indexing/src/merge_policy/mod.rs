@@ -121,6 +121,31 @@ impl MergeOperation {
     pub fn splits_as_slice(&self) -> &[SplitMetadata] {
         self.splits.as_slice()
     }
+
+    pub fn merge_level(&self) -> usize {
+        self.splits
+            .iter()
+            .map(|s| s.num_merge_ops)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+// The higher, the sooner we will execute the merge operation.
+// A good merge operation:
+// - strongly reduces the number of splits
+// - is light.
+pub fn compute_merge_score(num_splits: usize, total_num_bytes: u64) -> u64 {
+    if total_num_bytes == 0 {
+        // Silly corner case that should never happen.
+        return u64::MAX;
+    }
+    // We will remove num_splits and add 1 merge split.
+    let delta_num_splits = num_splits.saturating_sub(1) as u64;
+    // Integer arithmetic to avoid `f64 are not ordered` silliness.
+    (delta_num_splits << 48)
+        .checked_div(total_num_bytes)
+        .unwrap_or(1u64)
 }
 
 impl fmt::Debug for MergeOperation {
@@ -253,6 +278,21 @@ pub mod tests {
         merge_split_attrs,
     };
     use crate::models::{NewSplits, create_split_metadata};
+
+    #[test]
+    fn test_score() {
+        // Lighter merge at the same split count scores higher.
+        assert!(compute_merge_score(10, 100_000_000) < compute_merge_score(10, 9_999_990));
+        // More splits removed at the same total bytes scores higher.
+        assert!(compute_merge_score(10, 100_000_000) > compute_merge_score(9, 100_000_000));
+        // Equal `(delta_splits / total_bytes)` ratios yield equal scores.
+        assert_eq!(
+            // delta=8, 90M bytes.
+            compute_merge_score(9, 90_000_000),
+            // delta=4, 45M bytes (same 8/90M ratio).
+            compute_merge_score(5, 45_000_000),
+        );
+    }
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)

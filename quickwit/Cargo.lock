@@ -8552,6 +8552,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-compaction"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "itertools 0.14.0",
+ "once_cell",
+ "quickwit-actors",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-doc-mapper",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-metrics",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "quickwit-config"
 version = "0.8.0"
 dependencies = [
@@ -8956,6 +8980,7 @@ dependencies = [
  "mockall",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-doc-mapper",
  "quickwit-index-management",
@@ -9330,6 +9355,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-control-plane",
  "quickwit-datafusion",

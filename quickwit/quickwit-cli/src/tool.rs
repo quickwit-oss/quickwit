@@ -12,11 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::info;
+use quickwit_config::VecSourceParams;
+use quickwit_actors::Mailbox;
+use quickwit_actors::ActorExitStatus;
+use quickwit_proto::types::SourceId;
 use std::collections::{HashSet, VecDeque};
 use std::io::{IsTerminal, Stdout, Write, stdout};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -24,7 +30,7 @@ use anyhow::{Context, bail};
 use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
-use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
+use quickwit_actors::{ActorHandle, Universe};
 use quickwit_cluster::{
     ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_grpc_config,
 };
@@ -34,7 +40,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
-    TransformConfig, VecSourceParams,
+    TransformConfig,
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::BoxedPipelineHandle;
@@ -42,20 +48,21 @@ use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerSe
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
+use quickwit_indexing::IndexingSplitCache;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
-use quickwit_proto::types::{IndexId, PipelineUid, SourceId, SplitId};
+use quickwit_proto::types::{IndexId, PipelineUid, SplitId};
 use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
@@ -221,8 +228,8 @@ pub enum ToolCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
     LocalSearch(LocalSearchArgs),
-    Merge(MergeArgs),
     ExtractSplit(ExtractSplitArgs),
+    Merge(MergeArgs),
 }
 
 impl ToolCliCommand {
@@ -448,6 +455,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     )?;
     let universe = Universe::new();
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
+    let split_cache = Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -456,10 +464,11 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
-        merge_scheduler_service_mailbox,
+        Some(merge_scheduler_service_mailbox),
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        split_cache,
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -493,11 +502,13 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let statistics =
         start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
             .await?;
+
     merge_pipeline_handle
         .mailbox()
         .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
         .await?;
     merge_pipeline_handle.join().await;
+
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -593,12 +604,13 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         cluster,
         metastore,
         None,
-        merge_scheduler_service,
+        Some(merge_scheduler_service),
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        Arc::new(IndexingSplitCache::no_caching()),
     )
-    .await?;
+        .await?;
     let (indexing_service_mailbox, indexing_service_handle) =
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_service_mailbox

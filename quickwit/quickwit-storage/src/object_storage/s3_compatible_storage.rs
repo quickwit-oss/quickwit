@@ -303,6 +303,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
 
         self.s3_client
             .put_object()
@@ -420,6 +421,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
+    #[tracing::instrument(skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,
@@ -436,6 +438,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
 
         let upload_part_output = self
             .s3_client
@@ -556,6 +559,7 @@ impl S3CompatibleObjectStorage {
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
 
         let get_object_output = self
             .s3_client

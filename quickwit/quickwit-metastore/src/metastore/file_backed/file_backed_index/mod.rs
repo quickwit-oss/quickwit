@@ -1290,6 +1290,14 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         }
     }
 
+    if query
+        .excluded_split_ids
+        .iter()
+        .any(|excluded| excluded == &split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     true
 }
 

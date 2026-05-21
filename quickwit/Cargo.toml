@@ -14,6 +14,7 @@ members = [
   "quickwit-datetime",
   "quickwit-df-core",
   "quickwit-directories",
+  "quickwit-compaction",
   "quickwit-doc-mapper",
   "quickwit-dst",
   "quickwit-index-management",
@@ -60,6 +61,7 @@ default-members = [
   "quickwit-control-plane",
   "quickwit-datetime",
   "quickwit-directories",
+  "quickwit-compaction",
   "quickwit-doc-mapper",
   "quickwit-index-management",
   "quickwit-indexing",
@@ -242,6 +244,7 @@ sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
+  "postgres-array",
 ] }
 # ^1.0.184 due to serde-rs/serde#2538
 serde = { version = "1.0.228", features = ["derive", "rc"] }
@@ -372,6 +375,7 @@ quickwit-cluster = { path = "quickwit-cluster" }
 quickwit-codegen = { path = "quickwit-codegen" }
 quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
+quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datafusion = { path = "quickwit-datafusion" }

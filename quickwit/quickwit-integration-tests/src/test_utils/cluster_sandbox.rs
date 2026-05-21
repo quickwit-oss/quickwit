@@ -76,6 +76,11 @@ impl TestNodeConfig {
         tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
         config.indexer_config.enable_otlp_endpoint = self.enable_otlp;
         config.enabled_services.clone_from(&self.services);
+        if config.enabled_services.contains(&QuickwitService::Indexer)
+            && !config.indexer_config.enable_standalone_compactors
+        {
+            config.enabled_services.insert(QuickwitService::Compactor);
+        }
         config.jaeger_config.enable_endpoint = true;
         config.cluster_id.clone_from(&cluster_id);
         config.node_id = NodeId::new(format!("test-node-{node_idx}"));
@@ -678,7 +683,11 @@ impl ClusterSandbox {
 #[tokio::test]
 async fn test_sandbox_happy_path() {
     let sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Indexer])
         .build_and_start()
@@ -691,7 +700,11 @@ async fn test_sandbox_happy_path() {
 #[tokio::test]
 async fn test_sandbox_add_node_dynamically() {
     let mut sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
         .add_node([QuickwitService::Searcher])
         .build_and_start()
         .await;

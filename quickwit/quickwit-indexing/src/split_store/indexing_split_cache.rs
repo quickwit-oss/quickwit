@@ -21,11 +21,13 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
 use bytesize::ByteSize;
+use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::split_file;
+use quickwit_config::IndexerConfig;
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::StorageResult;
 use tantivy::Directory;
-use tantivy::directory::MmapDirectory;
+use tantivy::directory::{Advice, MmapDirectory};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 use ulid::Ulid;
@@ -38,12 +40,15 @@ const SPLIT_MAX_AGE: Duration = Duration::from_secs(2 * 24 * 3_600); // 2 days
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
 ) -> StorageResult<Box<dyn Directory>> {
-    let mmap_directory = MmapDirectory::open(split_file.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("couldn't find parent for {}", split_file.display()),
-        )
-    })?)?;
+    let mmap_directory = MmapDirectory::open_with_madvice(
+        split_file.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("couldn't find parent for {}", split_file.display()),
+            )
+        })?,
+        Advice::Sequential,
+    )?;
     let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
     Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
 }
@@ -361,6 +366,22 @@ impl IndexingSplitCache {
         IndexingSplitCache { inner }
     }
 
+    /// Builds an [`IndexingSplitCache`] from an [`IndexerConfig`], rooted at
+    /// `<data_dir>/indexer-split-cache/splits`.
+    pub async fn from_config(
+        indexer_config: &IndexerConfig,
+        data_dir_path: &Path,
+    ) -> anyhow::Result<IndexingSplitCache> {
+        let cache_path = get_cache_directory_path(data_dir_path);
+        let quota = SplitStoreQuota::try_new(
+            indexer_config.split_store_max_num_splits,
+            indexer_config.split_store_max_num_bytes,
+        )?;
+        IndexingSplitCache::open(cache_path, quota)
+            .await
+            .context("failed to open indexing split cache")
+    }
+
     /// Try to open an existing local split store directory.
     ///
     /// If the directory does not exists, it will be created.
@@ -508,6 +529,7 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
+    use quickwit_config::IndexerConfig;
     use quickwit_directories::BundleDirectory;
     use quickwit_storage::{PutPayload, SplitPayloadBuilder};
     use tantivy::Directory;
@@ -528,6 +550,20 @@ mod tests {
         fs::create_dir(&split_path).await?;
         fs::write(split_path.join("splitdata"), &vec![0u8; len]).await?;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_from_config() {
+        let data_dir = tempdir().unwrap();
+        let config = IndexerConfig::for_test().unwrap();
+        let _cache = IndexingSplitCache::from_config(&config, data_dir.path())
+            .await
+            .unwrap();
+        let cache_dir = data_dir.path().join("indexer-split-cache").join("splits");
+        assert!(
+            cache_dir.is_dir(),
+            "from_config must open (and create) the cache directory",
+        );
     }
 
     #[tokio::test]

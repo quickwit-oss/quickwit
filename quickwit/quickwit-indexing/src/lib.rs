@@ -14,6 +14,8 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::sync::Arc;
+
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
@@ -27,11 +29,14 @@ use tracing::info;
 use crate::actors::MergeSchedulerService;
 pub use crate::actors::{
     BoxedPipelineHandle, FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
-    IndexingPipelineParams, IndexingService, Sequencer, SplitsUpdateMailbox,
+    IndexingPipelineParams, IndexingService, MERGE_PUBLISHER_NAME, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;
-pub use crate::split_store::{IndexingSplitStore, get_tantivy_directory_from_split_bundle};
+pub use crate::split_store::{
+    IndexingSplitCache, IndexingSplitStore, SplitStoreQuota,
+    get_tantivy_directory_from_split_bundle,
+};
 
 pub mod actors;
 mod controlled_directory;
@@ -69,13 +74,11 @@ pub async fn start_indexing_service(
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    merge_scheduler_mailbox_opt: Option<Mailbox<MergeSchedulerService>>,
+    indexing_split_cache: Arc<IndexingSplitCache>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
-    let (merge_scheduler_mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
-        config.indexer_config.merge_concurrency.get(),
-    ));
-    // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
@@ -84,10 +87,11 @@ pub async fn start_indexing_service(
         cluster,
         metastore.clone(),
         ingest_api_service_mailbox,
-        merge_scheduler_mailbox,
+        merge_scheduler_mailbox_opt,
         ingester_pool,
         storage_resolver,
         event_broker,
+        indexing_split_cache,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);

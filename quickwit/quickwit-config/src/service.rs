@@ -29,6 +29,7 @@ pub enum QuickwitService {
     Searcher,
     Janitor,
     Metastore,
+    Compactor,
 }
 
 #[allow(clippy::from_over_into)]
@@ -46,6 +47,7 @@ impl QuickwitService {
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::Compactor => "compactor",
         }
     }
 
@@ -70,6 +72,7 @@ impl FromStr for QuickwitService {
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
+            "compactor" => Ok(QuickwitService::Compactor),
             _ => {
                 bail!(
                     "failed to parse service `{service_str}`. supported services are: `{}`",

@@ -992,13 +992,28 @@ pub struct ListSplitsQuery {
 
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
+
+    /// Exclude any split whose `split_id` appears in this list. Empty means no
+    /// exclusion.
+    pub excluded_split_ids: Vec<SplitId>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Ordering applied to the result of a [`ListSplitsQuery`].
 pub enum SortBy {
+    /// No ordering — the metastore may return splits in any order.
     None,
+    /// Order by `(delete_opstamp ASC, publish_timestamp ASC)`. Used by the
+    /// delete pipeline to process the splits with the most pending delete
+    /// work first.
     Staleness,
+    /// Order by `(index_uid ASC, split_id ASC)`, matching the splits-table
+    /// primary key. Used for stable pagination across all indexes.
     IndexUid,
+    /// Order by `(maturity_timestamp ASC, split_id ASC)`. Used by the
+    /// compaction planner so that under a backlog the splits closest to
+    /// becoming mature are processed first.
+    MaturityTimestamp,
 }
 
 impl SortBy {
@@ -1018,6 +1033,16 @@ impl SortBy {
                 .split_metadata
                 .index_uid
                 .cmp(&right_split.split_metadata.index_uid)
+                .then_with(|| {
+                    left_split
+                        .split_metadata
+                        .split_id
+                        .cmp(&right_split.split_metadata.split_id)
+                }),
+            SortBy::MaturityTimestamp => left_split
+                .split_metadata
+                .maturity_unix_timestamp()
+                .cmp(&right_split.split_metadata.maturity_unix_timestamp())
                 .then_with(|| {
                     left_split
                         .split_metadata
@@ -1047,6 +1072,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         }
     }
 
@@ -1071,6 +1097,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         })
     }
 
@@ -1091,6 +1118,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            excluded_split_ids: Vec::new(),
         }
     }
 
@@ -1274,10 +1302,23 @@ impl ListSplitsQuery {
         self
     }
 
+    /// Sorts the splits by maturity_timestamp ascending, with split_id as a tiebreaker.
+    pub fn sort_by_maturity_timestamp(mut self) -> Self {
+        self.sort_by = SortBy::MaturityTimestamp;
+        self
+    }
+
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split.
     /// This is only useful if results are sorted by index_uid and split_id.
     pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
         self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
+        self
+    }
+
+    /// Excludes splits whose `split_id` is in the provided list. Used by the
+    /// compaction planner to skip splits it is already tracking locally.
+    pub fn with_excluded_split_ids(mut self, excluded_split_ids: Vec<SplitId>) -> Self {
+        self.excluded_split_ids = excluded_split_ids;
         self
     }
 }
