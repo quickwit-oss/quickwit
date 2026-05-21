@@ -70,7 +70,9 @@ impl IndexingService {
         // Spawn the Parquet merge pipeline (or reuse an existing one for this
         // index). The planner mailbox is wired into the MetricsPipeline's
         // Publisher so newly ingested splits are fed back for merging.
-        let merge_planner_mailbox = self.get_or_create_parquet_merge_pipeline(
+        // Returns `None` when there is no local merge scheduler — the metrics
+        // pipeline then runs without local merging (mirrors the log path).
+        let merge_planner_mailbox_opt = self.get_or_create_parquet_merge_pipeline(
             indexing_pipeline_id.index_uid.clone(),
             &index_config,
             storage.clone(),
@@ -97,7 +99,7 @@ impl IndexingService {
             use_sketch_processors,
             partition_key,
             max_num_partitions: index_config.doc_mapping.max_num_partitions,
-            parquet_merge_planner_mailbox_opt: Some(merge_planner_mailbox),
+            parquet_merge_planner_mailbox_opt: merge_planner_mailbox_opt,
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);

@@ -680,6 +680,10 @@ impl IndexingService {
     /// Returns the Parquet merge planner mailbox for the given index, creating
     /// a new ParquetMergePipeline if one isn't already running.
     ///
+    /// Returns `Ok(None)` when there is no `merge_scheduler_service_opt` on the
+    /// service — mirrors the log pipeline path, which does not spawn a merge
+    /// pipeline in that case.
+    ///
     /// Keyed by IndexUid (not MergePipelineId) because Parquet merge pipelines
     /// are shared across all sources for the same index — unlike Tantivy merge
     /// pipelines which are per-source.
@@ -692,9 +696,12 @@ impl IndexingService {
         indexing_directory: quickwit_common::temp_dir::TempDirectory,
         immature_splits_opt: Option<Vec<quickwit_parquet_engine::split::ParquetSplitMetadata>>,
         ctx: &ActorContext<Self>,
-    ) -> Result<Mailbox<super::parquet_pipeline::ParquetMergePlanner>, IndexingError> {
+    ) -> Result<Option<Mailbox<super::parquet_pipeline::ParquetMergePlanner>>, IndexingError> {
+        let Some(merge_scheduler_service) = self.merge_scheduler_service_opt.clone() else {
+            return Ok(None);
+        };
         if let Some(handle) = self.parquet_merge_pipeline_handles.get(&index_uid) {
-            return Ok(handle.mailbox.clone());
+            return Ok(Some(handle.mailbox.clone()));
         }
 
         // Convert the config-crate merge policy into the engine-crate type.
@@ -722,7 +729,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             storage,
             merge_policy,
-            merge_scheduler_service: self.merge_scheduler_service.clone(),
+            merge_scheduler_service,
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
             writer_config,
@@ -741,7 +748,7 @@ impl IndexingService {
         };
         self.parquet_merge_pipeline_handles
             .insert(index_uid, handle);
-        Ok(merge_planner_mailbox)
+        Ok(Some(merge_planner_mailbox))
     }
 
     /// For all Ingest V2 pipelines, assigns the set of shards they should be working on.
