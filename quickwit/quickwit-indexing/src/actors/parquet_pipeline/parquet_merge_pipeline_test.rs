@@ -405,6 +405,8 @@ async fn test_merge_pipeline_end_to_end() {
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
+        use_streaming_engine: false,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let initial_splits = vec![meta_a, meta_b];
@@ -424,6 +426,43 @@ async fn test_merge_pipeline_end_to_end() {
     .await
     .expect("timed out waiting for merge publish");
 
+    assert_cpu_mem_merge_outputs_correct(&staged_metadata, &replaced_ids, &ram_storage).await;
+
+    universe.assert_quit().await;
+}
+
+/// Asserts the post-merge state captured from the metastore mock and the
+/// Parquet file in storage for the canonical two-input fixture used by
+/// the end-to-end tests:
+///
+/// - `split-a`: 50 rows of `cpu.usage`, ts 100..150, service `web`, host `host-1`
+/// - `split-b`: 50 rows of `mem.usage`, ts 200..250, service `api`, host `host-2`
+///
+/// Both engines (in-memory and streaming) must produce a merged split that
+/// passes every check below — that is the **contract** of a regular merge,
+/// independent of which engine ran. Driven by both
+/// `test_merge_pipeline_end_to_end` (in-memory engine via the flag default)
+/// and `test_merge_pipeline_end_to_end_with_streaming_engine_flag`
+/// (streaming engine via the flag).
+///
+/// Verifies, in order:
+/// - **Step 5**: `replaced_split_ids = [split-a, split-b]`.
+/// - **Step 6**: staged `ParquetSplitMetadata` — `num_rows = 100`, `time_range = [100, 250)`,
+///   `metric_names = {cpu.usage, mem.usage}`, `num_merge_ops = 1`, `sort_fields` matches the table
+///   config, `row_keys_proto` present + non-empty, `zonemap_regexes` contains `metric_name`,
+///   `low_cardinality_tags["service"] = {web, api}`.
+/// - **Step 7**: merged Parquet file content — row count, all 100 timestamps match expected and
+///   metadata `time_range`, both service / host values survive, `sorted_series` is monotonically
+///   non-decreasing, and `cpu.usage` rows precede `mem.usage` rows (the global sort order
+///   semantics).
+/// - **Step 8**: Parquet KV metadata — `qh.sort_fields`, `qh.num_merge_ops`, `qh.row_keys`
+///   (non-empty), `qh.zonemap_regexes` parses as JSON and contains `metric_name`, and
+///   cross-validates with the staged metadata.
+async fn assert_cpu_mem_merge_outputs_correct(
+    staged_metadata: &Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>>,
+    replaced_ids: &Arc<std::sync::Mutex<Vec<String>>>,
+    ram_storage: &Arc<dyn Storage>,
+) {
     // --- Step 5: Verify replaced_split_ids ---
 
     let mut replaced_sorted: Vec<String> = replaced_ids.lock().unwrap().clone();
@@ -598,8 +637,8 @@ async fn test_merge_pipeline_end_to_end() {
             sorted_series[i] >= sorted_series[i - 1],
             "sorted_series must be monotonically non-decreasing at row {}: {:?} < {:?}",
             i,
-            &sorted_series[i],
-            &sorted_series[i - 1]
+            sorted_series[i],
+            sorted_series[i - 1]
         );
     }
 
@@ -663,6 +702,174 @@ async fn test_merge_pipeline_end_to_end() {
         merged_meta.zonemap_regexes, zonemaps_parsed,
         "metadata zonemap_regexes must match Parquet qh.zonemap_regexes"
     );
+}
+
+/// End-to-end production-path test for the YAML-flag-gated streaming
+/// engine wire-in. Runs the full actor chain — planner → downloader →
+/// executor → uploader → publisher — with
+/// `ParquetMergePipelineParams::use_streaming_engine = true` and asserts
+/// the merge completed correctly.
+///
+/// The executor's branch is `if is_promotion || use_streaming_engine
+/// { streaming } else { in-memory }`. With promotion off and
+/// `use_streaming_engine = true`, the streaming engine is the only
+/// reachable path — there is no silent fallback. The test confirms
+/// this by:
+///
+/// 1. Asserting the merge published with the right `replaced_split_ids` (the merge actually ran
+///    end-to-end through the executor).
+/// 2. Reading `PEAK_BODY_COL_PAGE_CACHE_LEN` and asserting it is non-zero (the streaming engine
+///    writes to this atomic on every body-col page assembly; if the in-memory engine had run
+///    instead the counter would stay at zero).
+/// 3. Asserting row count and metric names on the output match the inputs (the streaming engine
+///    produces correct results, not just "something").
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the lock is `std::sync::Mutex` and the `#[tokio::test]` runtime is single-threaded, \
+              so holding the guard across await won't deadlock another thread — see \
+              `ms7_serial_lock` rationale"
+)]
+#[tokio::test]
+async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
+    use std::sync::atomic::Ordering;
+
+    use quickwit_parquet_engine::merge::streaming::{
+        PEAK_BODY_COL_PAGE_CACHE_LEN, ms7_serial_lock,
+    };
+
+    // Serialise against every other test in this binary that runs a
+    // streaming merge: they all touch the same process-global atomic,
+    // and a concurrent `store(0)` would race our load. The lock is
+    // re-exported from `quickwit_parquet_engine` under the `testsuite`
+    // feature for exactly this cross-crate case.
+    let _ms7_guard = ms7_serial_lock();
+    PEAK_BODY_COL_PAGE_CACHE_LEN.store(0, Ordering::Relaxed);
+
+    quickwit_common::setup_logging_for_tests();
+
+    let universe = Universe::with_accelerated_time();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let ram_storage: Arc<dyn Storage> = Arc::new(RamStorage::default());
+
+    let batch_a = create_custom_test_batch("cpu.usage", 100, 50, "web", "host-1");
+    let meta_a = make_test_split_metadata("split-a", 50, 0, 100, "cpu.usage");
+    let size_a = write_test_parquet_file(temp_dir.path(), "split-a.parquet", &batch_a, &meta_a);
+    let meta_a = {
+        let mut m = meta_a;
+        m.size_bytes = size_a;
+        m.parquet_file = "split-a.parquet".to_string();
+        m
+    };
+    let batch_b = create_custom_test_batch("mem.usage", 200, 50, "api", "host-2");
+    let meta_b = make_test_split_metadata("split-b", 50, 0, 200, "mem.usage");
+    let size_b = write_test_parquet_file(temp_dir.path(), "split-b.parquet", &batch_b, &meta_b);
+    let meta_b = {
+        let mut m = meta_b;
+        m.size_bytes = size_b;
+        m.parquet_file = "split-b.parquet".to_string();
+        m
+    };
+
+    let content_a = std::fs::read(temp_dir.path().join("split-a.parquet")).unwrap();
+    ram_storage
+        .put(Path::new("split-a.parquet"), Box::new(content_a))
+        .await
+        .unwrap();
+    let content_b = std::fs::read(temp_dir.path().join("split-b.parquet")).unwrap();
+    ram_storage
+        .put(Path::new("split-b.parquet"), Box::new(content_b))
+        .await
+        .unwrap();
+
+    let mut mock_metastore = MockMetastoreService::new();
+    let staged_metadata: Arc<std::sync::Mutex<Vec<ParquetSplitMetadata>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let staged_metadata_clone = staged_metadata.clone();
+    mock_metastore.expect_stage_metrics_splits().returning(
+        move |request: StageMetricsSplitsRequest| {
+            let splits = request
+                .deserialize_splits_metadata()
+                .expect("failed to deserialize staged metadata");
+            staged_metadata_clone.lock().unwrap().extend(splits);
+            Ok(EmptyResponse {})
+        },
+    );
+    let publish_called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let publish_called_clone = publish_called.clone();
+    let replaced_ids = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let replaced_ids_clone = replaced_ids.clone();
+    mock_metastore
+        .expect_publish_metrics_splits()
+        .returning(move |request| {
+            replaced_ids_clone
+                .lock()
+                .unwrap()
+                .extend(request.replaced_split_ids.clone());
+            publish_called_clone.store(true, Ordering::SeqCst);
+            Ok(EmptyResponse {})
+        });
+    let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+    let merge_policy = Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
+        ParquetMergePolicyConfig {
+            merge_factor: 2,
+            max_merge_factor: 2,
+            max_merge_ops: 5,
+            target_split_size_bytes: 256 * 1024 * 1024,
+            maturation_period: Duration::from_secs(3600),
+            max_finalize_merge_operations: 3,
+        },
+    ));
+
+    let params = ParquetMergePipelineParams {
+        index_uid: quickwit_proto::types::IndexUid::for_test("test-merge-index-streaming", 0),
+        indexing_directory: TempDirectory::for_test(),
+        metastore,
+        storage: ram_storage.clone(),
+        merge_policy,
+        merge_scheduler_service: universe.get_or_spawn_one(),
+        max_concurrent_split_uploads: 4,
+        event_broker: EventBroker::default(),
+        writer_config: ParquetWriterConfig::default(),
+        // This is the bit under test: regular merges must route through
+        // `execute_merge_operation`, not the in-memory fallback.
+        use_streaming_engine: true,
+        target_split_size_bytes: 256 * 1024 * 1024,
+    };
+
+    let initial_splits = vec![meta_a, meta_b];
+    let pipeline = ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
+    let (_pipeline_mailbox, _pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+
+    wait_until_predicate(
+        || {
+            let publish_called = publish_called.clone();
+            async move { publish_called.load(Ordering::SeqCst) }
+        },
+        Duration::from_secs(30),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("timed out waiting for streaming-engine merge publish");
+
+    // The streaming engine writes to `PEAK_BODY_COL_PAGE_CACHE_LEN` on
+    // every body-col page assembly; the in-memory engine never touches
+    // it. A non-zero post-merge value is direct evidence the streaming
+    // engine ran the body-col path — distinguishes this test from a
+    // silent fallback to the in-memory engine.
+    let peak = PEAK_BODY_COL_PAGE_CACHE_LEN.load(Ordering::Relaxed);
+    assert!(
+        peak > 0,
+        "streaming engine did not write to PEAK_BODY_COL_PAGE_CACHE_LEN — routing may have \
+         silently fallen back to the in-memory engine",
+    );
+
+    // Same correctness contract as the in-memory variant: every check on
+    // the merged metadata, the Parquet file content, and the Parquet KV
+    // headers must hold regardless of which engine ran. This shared
+    // helper is the executable parity between engines at the
+    // pipeline-integration level.
+    assert_cpu_mem_merge_outputs_correct(&staged_metadata, &replaced_ids, &ram_storage).await;
 
     universe.assert_quit().await;
 }

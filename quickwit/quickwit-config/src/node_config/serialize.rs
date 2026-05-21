@@ -682,6 +682,7 @@ mod tests {
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
                 enable_standalone_compactors: false,
+                parquet_merge_use_streaming_engine: true,
             }
         );
         assert_eq!(

@@ -168,6 +168,16 @@ pub struct IndexerConfig {
     /// When false (default), every indexer node also runs the compactor.
     #[serde(default = "IndexerConfig::default_enable_standalone_compactors")]
     pub enable_standalone_compactors: bool,
+    /// If true, run Parquet merges through the streaming column-major engine
+    /// (`execute_merge_operation`). If false (default), use the in-memory
+    /// `merge_sorted_parquet_files` engine. The legacy in-memory engine is
+    /// kept as the runtime fallback so production can flip back to it
+    /// without redeploying if the streaming engine hits a bug. Promotion
+    /// merges (those with `target_prefix_len_override`) always go through
+    /// the streaming engine regardless of this flag — the in-memory path
+    /// can't handle mixed prefix lengths.
+    #[serde(default = "IndexerConfig::default_parquet_merge_use_streaming_engine")]
+    pub parquet_merge_use_streaming_engine: bool,
 }
 
 impl IndexerConfig {
@@ -206,7 +216,9 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
-    fn default_enable_standalone_compactors() -> bool {
+    fn default_enable_standalone_compactors() -> bool { false }
+
+    fn default_parquet_merge_use_streaming_engine() -> bool {
         false
     }
 
@@ -223,6 +235,7 @@ impl IndexerConfig {
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
             enable_standalone_compactors: false,
+            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         };
         Ok(indexer_config)
     }
@@ -240,6 +253,7 @@ impl Default for IndexerConfig {
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
             enable_standalone_compactors: Self::default_enable_standalone_compactors(),
+            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         }
     }
 }
