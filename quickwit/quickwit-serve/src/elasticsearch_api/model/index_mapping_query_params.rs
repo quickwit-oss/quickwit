@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 
 /// Query parameters for `_mapping(s)`. Unknown params are silently ignored.
 ///
-/// Timestamps are epoch seconds, half-open `[start, end)` — forwarded into
-/// `ListFieldsRequest` to prune splits. `field_patterns` is a comma-separated
-/// hint mirroring `ListFieldsRequest.field_patterns`: it is pushed down to the
-/// leaves for dynamic-field filtering and, when every pattern matches a flat
-/// declared field, triggers a fast path that skips `list_fields` entirely.
+/// Timestamps (`start_timestamp`, `end_timestamp`) are epoch seconds,
+/// half-open `[start, end)`, forwarded to `ListFieldsRequest` to prune splits.
+/// `field_patterns` is a comma-separated list mirroring
+/// `ListFieldsRequest.field_patterns`, pushed down to the leaves for
+/// dynamic-field filtering.
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct IndexMappingQueryParams {
