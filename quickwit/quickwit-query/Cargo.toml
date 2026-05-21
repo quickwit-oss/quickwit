@@ -25,11 +25,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
+unicode-segmentation = { workspace = true }
 tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-unicode-segmentation = { workspace = true }
 rustc-hash = { workspace = true }
 
 quickwit-common = { workspace = true }

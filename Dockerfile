@@ -28,6 +28,7 @@ ARG CARGO_PROFILE=release
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
+ARG LAMBDA_ZIP_PATH
 
 ARG INCLUDE_POMSKY_INTAKE=true
 ARG INCLUDE_QUICKWIT_METRICS=true
@@ -35,6 +36,7 @@ ARG INCLUDE_QUICKWIT_METRICS=true
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
+ENV LAMBDA_ZIP_PATH=$LAMBDA_ZIP_PATH
 
 # dd-octo-sts CLI copied from its published scratch image.
 COPY --from=registry.ddbuild.io/images/dd-octo-sts-ci-base:v107310663-4dd9003-2026.04-2 /usr/local/bin/dd-octo-sts /usr/local/bin/dd-octo-sts

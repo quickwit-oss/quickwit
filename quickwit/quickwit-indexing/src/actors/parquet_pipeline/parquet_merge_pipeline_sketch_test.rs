@@ -172,6 +172,8 @@ async fn test_merge_pipeline_end_to_end_sketches() {
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
         writer_config: ParquetWriterConfig::default(),
+        use_streaming_engine: false,
+        target_split_size_bytes: 256 * 1024 * 1024,
     };
 
     let initial_splits = vec![meta_a, meta_b];

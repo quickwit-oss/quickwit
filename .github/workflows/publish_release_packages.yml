@@ -9,9 +9,62 @@ permissions:
   contents: read
 
 jobs:
+  build-lambda:
+    name: Build Lambda ARM64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      artifact-name: ${{ steps.set-artifact-name.outputs.name }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Extract asset version
+        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Retrieve and export commit date, hash, and tags
+        run: |
+          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+
+      - name: Build Lambda binary
+        run: cross build --release --features lambda-release --target aarch64-unknown-linux-gnu -p quickwit-lambda-server --bin quickwit-aws-lambda-leaf-search
+        env:
+          QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
+          QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
+          QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+        working-directory: ./quickwit
+
+      - name: Create Lambda zip
+        run: |
+          cd quickwit/target/aarch64-unknown-linux-gnu/release
+          cp quickwit-aws-lambda-leaf-search bootstrap
+          zip quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip bootstrap
+          mv quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip ../../../../
+
+      - name: Set artifact name
+        id: set-artifact-name
+        run: echo "name=lambda-zip-${{ env.ASSET_VERSION }}" >> $GITHUB_OUTPUT
+
+      - name: Upload Lambda zip as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.set-artifact-name.outputs.name }}
+          path: quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip
+          retention-days: 3
+
   build-macos-binaries:
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
+    needs: [build-lambda]
     permissions:
       contents: write
       actions: write
@@ -23,6 +76,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      - name: Download Lambda artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-lambda.outputs.artifact-name }}
+          path: /tmp/lambda-artifact
+      - name: Set LAMBDA_ZIP_PATH
+        run: echo "LAMBDA_ZIP_PATH=$(ls /tmp/lambda-artifact/*.zip)" >> $GITHUB_ENV
       - uses: ./.github/actions/cargo-build-macos-binary
         with:
           target: ${{ matrix.target }}
@@ -35,6 +95,7 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    needs: [build-lambda]
     permissions:
       contents: write
       actions: write
@@ -42,6 +103,16 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      - name: Download Lambda artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-lambda.outputs.artifact-name }}
+          # Must be within the workspace so cross can mount it into the build container.
+          path: ./lambda-artifact
+      - name: Set LAMBDA_ZIP_PATH
+        run: |
+          ZIP=$(ls lambda-artifact/*.zip)
+          echo "LAMBDA_ZIP_PATH=$(pwd)/$ZIP" >> $GITHUB_ENV
       - uses: ./.github/actions/cross-build-binary
         with:
           target: ${{ matrix.target }}

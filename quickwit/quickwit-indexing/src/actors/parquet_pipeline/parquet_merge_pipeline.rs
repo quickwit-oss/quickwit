@@ -309,8 +309,12 @@ impl ParquetMergePipeline {
             .spawn(merge_uploader);
 
         // 4. Merge executor
-        let merge_executor =
-            ParquetMergeExecutor::new(merge_uploader_mailbox, self.params.writer_config.clone());
+        let merge_executor = ParquetMergeExecutor::new(
+            merge_uploader_mailbox,
+            self.params.writer_config.clone(),
+            self.params.use_streaming_engine,
+            self.params.target_split_size_bytes,
+        );
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -601,6 +605,20 @@ pub struct ParquetMergePipelineParams {
     /// Should match the ingest pipeline's writer config so merged files have
     /// consistent compression.
     pub writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig,
+    /// When true, regular merges run through the streaming engine
+    /// (`execute_merge_operation`); when false, they run through the
+    /// in-memory `merge_sorted_parquet_files` fallback. Promotion
+    /// merges always use the streaming engine. Sourced from
+    /// `IndexerConfig::parquet_merge_use_streaming_engine`.
+    pub use_streaming_engine: bool,
+    /// Target output split size in bytes, sourced from the merge
+    /// policy. The executor uses this to compute `num_outputs` from
+    /// total input size, so a merge that ingests more than one
+    /// target's worth of data is allowed to spread across multiple
+    /// output files. Smaller values increase output split count
+    /// (subject to the number of `sorted_series` boundaries actually
+    /// available in the input).
+    pub target_split_size_bytes: u64,
 }
 
 #[cfg(test)]
@@ -646,6 +664,8 @@ mod tests {
             max_concurrent_split_uploads: 4,
             event_broker: EventBroker::default(),
             writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
+            use_streaming_engine: false,
+            target_split_size_bytes: 256 * 1024 * 1024,
         }
     }
 

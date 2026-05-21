@@ -200,7 +200,7 @@ opentelemetry-datadog = "0.19"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
-parquet = { version = "58", default-features = false, features = ["arrow", "snap", "variant_experimental", "zstd"] }
+parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -337,6 +337,7 @@ username = "0.2"
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
 utoipa = { version = "4.2", features = ["time", "ulid"] }
+unicode-segmentation = "1.12"
 uuid = { version = "1.23", features = ["v4", "serde"] }
 vrl = { version = "0.32", default-features = false, features = [
   "compiler",
@@ -440,7 +441,6 @@ quickwit-processing = { path = "quickwit-processing" }
 ryu = "1.0.20"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 uaparser = "0.6.4"
-unicode-segmentation = "1.12"
 urlencoding = "2"
 vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = [
   "api",

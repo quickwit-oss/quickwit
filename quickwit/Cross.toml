@@ -3,6 +3,7 @@ passthrough = [
     "QW_COMMIT_DATE",
     "QW_COMMIT_HASH",
     "QW_COMMIT_TAGS",
+    "LAMBDA_ZIP_PATH",
 ]
 
 [target.x86_64-unknown-linux-gnu]
