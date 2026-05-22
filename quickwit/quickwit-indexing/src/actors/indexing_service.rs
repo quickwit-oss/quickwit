@@ -1398,9 +1398,9 @@ mod tests {
         // change whenever IndexingSettings fields are added/removed. Recompute
         // by temporarily adding a test that prints
         // `indexing_pipeline_params_fingerprint(&index_config, &source_config)`.
-        const PARAMS_FINGERPRINT_INGEST_API: u64 = 1637744865450232394;
-        const PARAMS_FINGERPRINT_SOURCE_1: u64 = 1705211905504908791;
-        const PARAMS_FINGERPRINT_SOURCE_2: u64 = 8706667372658059428;
+        const PARAMS_FINGERPRINT_INGEST_API: u64 = 7973087274884969148;
+        const PARAMS_FINGERPRINT_SOURCE_1: u64 = 9420938500552890840;
+        const PARAMS_FINGERPRINT_SOURCE_2: u64 = 16199199787360162635;
 
         quickwit_common::setup_logging_for_tests();
         let transport = ChannelTransport::default();
