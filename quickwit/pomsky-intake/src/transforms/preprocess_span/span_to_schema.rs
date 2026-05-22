@@ -54,6 +54,7 @@ const KEEP_NAMESPACES: &[&str] = &[
 /// `trace/intake/events/mapper.go`.
 static KEEP_ATTRIBUTES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
+        "_dd.agent_hostname",
         "_dd.tracer_version",
         "_dd.agent_version",
         "_dd.application.id",
@@ -142,8 +143,38 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
     trace.insert("tiebreaker", tiebreaker);
 
     derive_resource_fields(trace);
+    backfill_agent_hostname(trace);
     trace.remove("start");
     fold_into_custom(trace);
+}
+
+/// If `meta._dd.agent_hostname` is absent or empty, copies `meta._dd.hostname`
+/// into it so that trace-query's `flattenCustom` can populate
+/// `span.Meta["_dd.agent_hostname"]` for the waterfall UI — which is what
+/// SaaS spans carry but BYOC spans were missing.
+fn backfill_agent_hostname(trace: &mut TraceEvent) {
+    let hostname_opt = {
+        let empty = ObjectMap::new();
+        let meta = match trace.get("meta") {
+            Some(Value::Object(m)) => m,
+            _ => &empty,
+        };
+        let agent_hostname = meta.get("_dd.agent_hostname");
+        let already_set = agent_hostname
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        if already_set {
+            None
+        } else {
+            meta.get("_dd.hostname").cloned()
+        }
+    };
+    if let Some(hostname) = hostname_opt {
+        if let Some(Value::Object(meta)) = trace.get_mut("meta") {
+            meta.insert("_dd.agent_hostname".into(), hostname);
+        }
+    }
 }
 
 /// Promotes `meta._dd.hostname` → `host` and `meta.env` → `env`. Keys in
@@ -648,6 +679,62 @@ mod tests {
             panic!("custom['_dd.appsec.json'] should be an object");
         };
         assert_eq!(appsec_out.get("enabled"), Some(&Value::Integer(1)));
+    }
+
+    #[test]
+    fn test_backfill_agent_hostname_from_dd_hostname() {
+        // When _dd.agent_hostname is absent, _dd.hostname is copied into it.
+        let mut meta = ObjectMap::new();
+        meta.insert("_dd.hostname".into(), Value::from("i-0701afde620240d89"));
+        let trace = run(|t| {
+            t.insert("meta", Value::Object(meta));
+        });
+        let Some(Value::Object(custom)) = trace.get("custom") else {
+            panic!("custom should be an object");
+        };
+        assert_eq!(
+            custom.get("_dd.agent_hostname"),
+            Some(&Value::from("i-0701afde620240d89")),
+            "_dd.agent_hostname should be backfilled from _dd.hostname",
+        );
+    }
+
+    #[test]
+    fn test_backfill_agent_hostname_not_overwritten_when_set() {
+        // When _dd.agent_hostname is already set, it is preserved as-is.
+        let mut meta = ObjectMap::new();
+        meta.insert("_dd.hostname".into(), Value::from("node-hostname"));
+        meta.insert("_dd.agent_hostname".into(), Value::from("agent-hostname"));
+        let trace = run(|t| {
+            t.insert("meta", Value::Object(meta));
+        });
+        let Some(Value::Object(custom)) = trace.get("custom") else {
+            panic!("custom should be an object");
+        };
+        assert_eq!(
+            custom.get("_dd.agent_hostname"),
+            Some(&Value::from("agent-hostname")),
+            "_dd.agent_hostname should not be overwritten when already set",
+        );
+    }
+
+    #[test]
+    fn test_backfill_agent_hostname_empty_string_is_overwritten() {
+        // An empty _dd.agent_hostname is treated as absent and backfilled.
+        let mut meta = ObjectMap::new();
+        meta.insert("_dd.hostname".into(), Value::from("i-0abc123"));
+        meta.insert("_dd.agent_hostname".into(), Value::from(""));
+        let trace = run(|t| {
+            t.insert("meta", Value::Object(meta));
+        });
+        let Some(Value::Object(custom)) = trace.get("custom") else {
+            panic!("custom should be an object");
+        };
+        assert_eq!(
+            custom.get("_dd.agent_hostname"),
+            Some(&Value::from("i-0abc123")),
+            "empty _dd.agent_hostname should be backfilled from _dd.hostname",
+        );
     }
 
     #[test]
