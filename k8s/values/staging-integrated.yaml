@@ -11,6 +11,9 @@ image:
 # Datadog site for reverse connection
 datadog:
   site: dd.datad0g.com  # Staging environment
+  byocTelemetry:
+    enabled: true
+    host: datad0g.com
 
 cloudprem:
   index:
@@ -79,10 +82,11 @@ metastore:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /secrets/dd-api-key.env
+    DD_API_KEY_FILE: &ddApiKeyFile /secrets/dd-api-key.env
 
   initContainers:
-    - name: consul-template-init
+    - &ddApiKeyInitContainer
+      name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
@@ -104,10 +108,12 @@ metastore:
           mountPath: /secrets
 
   extraVolumes:
-    - name: dd-api-key
+    - &ddApiKeyVolume
+      name: dd-api-key
       emptyDir:
         medium: Memory
-    - name: dd-api-key-template
+    - &ddApiKeyTemplateVolume
+      name: dd-api-key-template
       configMap:
         name: pomsky-staging-cloudprem-dd-api-key-template
         items:
@@ -115,7 +121,8 @@ metastore:
             path: dd-api-key.tpl
 
   extraVolumeMounts:
-    - name: dd-api-key
+    - &ddApiKeyVolumeMount
+      name: dd-api-key
       mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
@@ -130,46 +137,17 @@ control_plane:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /secrets/dd-api-key.env
+    DD_API_KEY_FILE: *ddApiKeyFile
 
   initContainers:
-    - name: consul-template-init
-      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
-      args:
-        - -once
-        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
-      resources:
-        limits:
-          cpu: 200m
-          memory: 200Mi
-        requests:
-          cpu: 200m
-          memory: 200Mi
-      securityContext:
-        runAsUser: 1005
-      volumeMounts:
-        - name: dd-api-key-template
-          mountPath: /template/dd-api-key.tpl
-          subPath: dd-api-key.tpl
-        - name: dd-api-key
-          mountPath: /secrets
+    - *ddApiKeyInitContainer
 
   extraVolumes:
-    - name: dd-api-key
-      emptyDir:
-        medium: Memory
-    - name: dd-api-key-template
-      configMap:
-        name: pomsky-staging-cloudprem-dd-api-key-template
-        items:
-          - key: dd-api-key.tpl
-            path: dd-api-key.tpl
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
 
   extraVolumeMounts:
-    - name: dd-api-key
-      mountPath: /secrets/dd-api-key.env
-      subPath: dd-api-key.env
-      readOnly: true
+    - *ddApiKeyVolumeMount
 
 indexer:
   replicaCount: 1
@@ -188,46 +166,17 @@ indexer:
     storageClass: gp3
 
   extraEnv:
-    DD_API_KEY_FILE: /secrets/dd-api-key.env
+    DD_API_KEY_FILE: *ddApiKeyFile
 
   initContainers:
-    - name: consul-template-init
-      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
-      args:
-        - -once
-        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
-      resources:
-        limits:
-          cpu: 200m
-          memory: 200Mi
-        requests:
-          cpu: 200m
-          memory: 200Mi
-      securityContext:
-        runAsUser: 1005
-      volumeMounts:
-        - name: dd-api-key-template
-          mountPath: /template/dd-api-key.tpl
-          subPath: dd-api-key.tpl
-        - name: dd-api-key
-          mountPath: /secrets
+    - *ddApiKeyInitContainer
 
   extraVolumes:
-    - name: dd-api-key
-      emptyDir:
-        medium: Memory
-    - name: dd-api-key-template
-      configMap:
-        name: pomsky-staging-cloudprem-dd-api-key-template
-        items:
-          - key: dd-api-key.tpl
-            path: dd-api-key.tpl
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
 
   extraVolumeMounts:
-    - name: dd-api-key
-      mountPath: /secrets/dd-api-key.env
-      subPath: dd-api-key.env
-      readOnly: true
+    - *ddApiKeyVolumeMount
 
 searcher:
   replicaCount: 3
@@ -247,47 +196,17 @@ searcher:
       memory: 8Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /secrets/dd-api-key.env
+    DD_API_KEY_FILE: *ddApiKeyFile
 
   initContainers:
-    # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
-    - name: consul-template-init
-      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
-      args:
-        - -once
-        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
-      resources:
-        limits:
-          cpu: 200m
-          memory: 200Mi
-        requests:
-          cpu: 200m
-          memory: 200Mi
-      securityContext:
-        runAsUser: 1005
-      volumeMounts:
-        - name: dd-api-key-template
-          mountPath: /template/dd-api-key.tpl
-          subPath: dd-api-key.tpl
-        - name: dd-api-key
-          mountPath: /secrets
+    - *ddApiKeyInitContainer
 
   extraVolumes:
-    - name: dd-api-key
-      emptyDir:
-        medium: Memory
-    - name: dd-api-key-template
-      configMap:
-        name: pomsky-staging-cloudprem-dd-api-key-template
-        items:
-          - key: dd-api-key.tpl
-            path: dd-api-key.tpl
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
 
   extraVolumeMounts:
-    - name: dd-api-key
-      mountPath: /secrets/dd-api-key.env
-      subPath: dd-api-key.env
-      readOnly: true
+    - *ddApiKeyVolumeMount
 
 janitor:
   resources:
@@ -299,46 +218,17 @@ janitor:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /secrets/dd-api-key.env
+    DD_API_KEY_FILE: *ddApiKeyFile
 
   initContainers:
-    - name: consul-template-init
-      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
-      args:
-        - -once
-        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
-      resources:
-        limits:
-          cpu: 200m
-          memory: 200Mi
-        requests:
-          cpu: 200m
-          memory: 200Mi
-      securityContext:
-        runAsUser: 1005
-      volumeMounts:
-        - name: dd-api-key-template
-          mountPath: /template/dd-api-key.tpl
-          subPath: dd-api-key.tpl
-        - name: dd-api-key
-          mountPath: /secrets
+    - *ddApiKeyInitContainer
 
   extraVolumes:
-    - name: dd-api-key
-      emptyDir:
-        medium: Memory
-    - name: dd-api-key-template
-      configMap:
-        name: pomsky-staging-cloudprem-dd-api-key-template
-        items:
-          - key: dd-api-key.tpl
-            path: dd-api-key.tpl
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
 
   extraVolumeMounts:
-    - name: dd-api-key
-      mountPath: /secrets/dd-api-key.env
-      subPath: dd-api-key.env
-      readOnly: true
+    - *ddApiKeyVolumeMount
 
 config:
   # S3-based storage paths for integrated staging
