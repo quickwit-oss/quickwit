@@ -14,12 +14,8 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
-use std::sync::LazyLock;
-
-use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram,
-    new_histogram_vec,
-};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{LazyCounter, LazyHistogram, lazy_counter, lazy_histogram};
 
 /// From 100ms to 73s seconds
 fn duration_buckets() -> Vec<f64> {
@@ -31,45 +27,29 @@ fn payload_size_buckets() -> Vec<f64> {
     exponential_buckets(1024.0, 4.0, 8).unwrap()
 }
 
-pub struct LambdaMetrics {
-    pub leaf_search_requests_total: IntCounterVec<1>,
-    pub leaf_search_duration_seconds: HistogramVec<1>,
-    pub leaf_search_request_payload_size_bytes: Histogram,
-    pub leaf_search_response_payload_size_bytes: Histogram,
-}
+pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "leaf_search_requests_total",
+        description: "Total number of Lambda leaf search invocations.",
+        subsystem: "lambda",
+);
 
-impl Default for LambdaMetrics {
-    fn default() -> Self {
-        LambdaMetrics {
-            leaf_search_requests_total: new_counter_vec(
-                "leaf_search_requests_total",
-                "Total number of Lambda leaf search invocations.",
-                "lambda",
-                &[],
-                ["status"],
-            ),
-            leaf_search_duration_seconds: new_histogram_vec(
-                "leaf_search_duration_seconds",
-                "Duration of Lambda leaf search invocations in seconds.",
-                "lambda",
-                &[],
-                ["status"],
-                duration_buckets(),
-            ),
-            leaf_search_request_payload_size_bytes: new_histogram(
-                "leaf_search_request_payload_size_bytes",
-                "Size of the request payload sent to Lambda in bytes.",
-                "lambda",
-                payload_size_buckets(),
-            ),
-            leaf_search_response_payload_size_bytes: new_histogram(
-                "leaf_search_response_payload_size_bytes",
-                "Size of the response payload received from Lambda in bytes.",
-                "lambda",
-                payload_size_buckets(),
-            ),
-        }
-    }
-}
+pub(crate) static LEAF_SEARCH_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+        name: "leaf_search_duration_seconds",
+        description: "Duration of Lambda leaf search invocations in seconds.",
+        subsystem: "lambda",
+        buckets: duration_buckets(),
+);
 
-pub static LAMBDA_METRICS: LazyLock<LambdaMetrics> = LazyLock::new(LambdaMetrics::default);
+pub(crate) static LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES: LazyHistogram = lazy_histogram!(
+    name: "leaf_search_request_payload_size_bytes",
+    description: "Size of the request payload sent to Lambda in bytes.",
+    subsystem: "lambda",
+    buckets: payload_size_buckets(),
+);
+
+pub(crate) static LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES: LazyHistogram = lazy_histogram!(
+    name: "leaf_search_response_payload_size_bytes",
+    description: "Size of the response payload received from Lambda in bytes.",
+    subsystem: "lambda",
+    buckets: payload_size_buckets(),
+);

@@ -99,6 +99,17 @@ impl<'a> QuickwitSubstraitConsumer<'a> {
     }
 }
 
+pub(crate) async fn logical_plan_from_substrait(
+    plan: &Plan,
+    state: &SessionState,
+    extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
+) -> DFResult<LogicalPlan> {
+    let extensions = Extensions::try_from(&plan.extensions)
+        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+    let consumer = QuickwitSubstraitConsumer::new(&extensions, state, extensions_for_reads);
+    from_substrait_plan_with_consumer(&consumer, plan).await
+}
+
 #[async_trait]
 impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
     // ── Required boilerplate ─────────────────────────────────────────
@@ -233,11 +244,7 @@ pub async fn execute_substrait_plan(
     extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
 ) -> DFResult<Vec<arrow::array::RecordBatch>> {
     let state = ctx.state();
-    let extensions = Extensions::try_from(&plan.extensions)
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
-
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
-    let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
+    let logical_plan = logical_plan_from_substrait(plan, &state, extensions_for_reads).await?;
 
     tracing::debug!(
         plan = %logical_plan.display_indent(),
@@ -266,11 +273,7 @@ pub async fn execute_substrait_plan_streaming(
     extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
 ) -> DFResult<SendableRecordBatchStream> {
     let state = ctx.state();
-    let extensions = Extensions::try_from(&plan.extensions)
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
-
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
-    let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
+    let logical_plan = logical_plan_from_substrait(plan, &state, extensions_for_reads).await?;
 
     tracing::debug!(
         plan = %logical_plan.display_indent(),
@@ -278,33 +281,5 @@ pub async fn execute_substrait_plan_streaming(
     );
 
     let df = ctx.execute_logical_plan(logical_plan).await?;
-    let stream = df.execute_stream().await?;
-    Ok(stream)
-}
-
-/// Same as `execute_substrait_plan_streaming` but returns the EXPLAIN output
-/// (logical + physical plan text) instead of executing the plan.
-///
-/// Substrait has no in-plan explain mode, so we expose this at the RPC layer.
-/// The returned stream emits a single batch with the same schema as SQL
-/// `EXPLAIN` (two columns: `plan_type`, `plan`) so the client side can reuse
-/// its existing rendering.
-pub async fn explain_substrait_plan_streaming(
-    plan: &Plan,
-    ctx: &datafusion::prelude::SessionContext,
-    extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
-) -> DFResult<SendableRecordBatchStream> {
-    let state = ctx.state();
-    let extensions = Extensions::try_from(&plan.extensions)
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
-
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
-    let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
-
-    let df = ctx.execute_logical_plan(logical_plan).await?;
-    // verbose=true exposes every optimizer pass; analyze=false means we don't
-    // actually execute the plan (no storage I/O, no aggregation work).
-    let explain_df = df.explain(true, false)?;
-    let stream = explain_df.execute_stream().await?;
-    Ok(stream)
+    df.execute_stream().await
 }

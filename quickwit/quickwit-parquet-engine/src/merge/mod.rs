@@ -24,12 +24,14 @@ mod merge_order;
 pub mod metadata_aggregation;
 pub mod policy;
 mod schema;
+pub mod streaming;
 mod writer;
 
 #[cfg(test)]
 mod tests;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use arrow::array::RecordBatch;
@@ -40,8 +42,9 @@ pub use self::merge_order::MergeRun;
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 use crate::storage::{
-    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
-    PARQUET_META_WINDOW_START, ParquetWriterConfig,
+    ColumnPageStream, LegacyInputAdapter, PARQUET_META_NUM_MERGE_OPS,
+    PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
+    PARQUET_META_WINDOW_START, ParquetWriterConfig, RemoteByteSource, StreamingParquetReader,
 };
 
 /// Configuration for a merge operation.
@@ -62,12 +65,22 @@ pub struct MergeConfig {
 }
 
 /// Metadata extracted from input files' Parquet KV metadata.
-/// All inputs must agree on sort_fields, window_start, and window_duration.
-struct InputMetadata {
+/// All inputs must agree on sort_fields, window_start, window_duration,
+/// and rg_partition_prefix_len.
+#[derive(Clone)]
+pub(crate) struct InputMetadata {
     sort_fields: String,
     window_start_secs: Option<i64>,
     window_duration_secs: u32,
     num_merge_ops: u32,
+    /// Number of leading sort columns whose transitions align with row
+    /// group boundaries. All input files must agree on this value (it's
+    /// part of the compaction scope key). The streaming merge engine
+    /// (PR-6c.2) honours this on input AND produces prefix-aligned
+    /// output: when inputs have `prefix_len == 0`, the engine
+    /// synthesizes prefix-aligned regions from the merge order and
+    /// promotes the output's `rg_partition_prefix_len` accordingly.
+    rg_partition_prefix_len: u32,
 }
 
 /// Result of a single output file from the merge.
@@ -76,12 +89,29 @@ struct InputMetadata {
 /// logical metadata (metric names, tags, time range) extracted from the
 /// actual rows in this output file. When the merge produces multiple
 /// outputs, each has metadata reflecting only its own rows.
+#[derive(Debug)]
 pub struct MergeOutputFile {
     /// Path to the output Parquet file.
     pub path: PathBuf,
 
     /// Number of rows in this output file.
     pub num_rows: usize,
+
+    /// Number of row groups the writer produced for this file.
+    pub num_row_groups: usize,
+
+    /// `qh.rg_partition_prefix_len` value the writer embedded in this
+    /// file's KV metadata. The legacy `merge/writer.rs` writer demotes
+    /// to 0 when it produces multi-RG output (its RG boundaries are
+    /// row-count-driven, not prefix-aligned). The streaming writer
+    /// (`merge/streaming/output.rs`) propagates the inputs' prefix
+    /// unchanged because it splits at prefix transitions AND
+    /// `assert_unique_rg_prefix_keys` verifies the file. Carrying the
+    /// value here lets `merge_parquet_split_metadata` (CS-1: metastore
+    /// == KV) propagate it directly to `ParquetSplitMetadata` instead
+    /// of re-deriving — preventing the metastore from disagreeing with
+    /// the on-disk KV when both engines coexist.
+    pub output_rg_partition_prefix_len: u32,
 
     /// File size in bytes.
     pub size_bytes: u64,
@@ -305,6 +335,7 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
     let mut consensus_sort_fields: Option<String> = None;
     let mut consensus_window_start: Option<Option<i64>> = None;
     let mut consensus_window_duration: Option<u32> = None;
+    let mut consensus_prefix_len: Option<u32> = None;
     let mut max_merge_ops: u32 = 0;
 
     for path in paths {
@@ -419,6 +450,31 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         if file_merge_ops > max_merge_ops {
             max_merge_ops = file_merge_ops;
         }
+
+        // Row group partition prefix length: must be consistent across all
+        // inputs. Absent KV → 0 (legacy default; no alignment claim).
+        let file_prefix_len = find_kv(PARQUET_META_RG_PARTITION_PREFIX_LEN)
+            .map(|s| s.parse::<u32>())
+            .transpose()
+            .with_context(|| format!("parsing rg_partition_prefix_len from {}", path.display()))?
+            .unwrap_or(0);
+
+        match consensus_prefix_len {
+            Some(expected) => {
+                if file_prefix_len != expected {
+                    bail!(
+                        "rg_partition_prefix_len mismatch in {}: expected {}, found {} — splits \
+                         with different prefix lengths must not appear in the same merge",
+                        path.display(),
+                        expected,
+                        file_prefix_len
+                    );
+                }
+            }
+            None => {
+                consensus_prefix_len = Some(file_prefix_len);
+            }
+        }
     }
 
     Ok(InputMetadata {
@@ -426,5 +482,81 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         window_start_secs: consensus_window_start.expect("at least one input required"),
         window_duration_secs: consensus_window_duration.unwrap_or(0),
         num_merge_ops: max_merge_ops + 1,
+        rg_partition_prefix_len: consensus_prefix_len.unwrap_or(0),
     })
+}
+
+/// Execute a [`policy::ParquetMergeOperation`] by opening each input through
+/// the appropriate `ColumnPageStream` impl, then feeding the streams
+/// to the streaming merge engine.
+///
+/// Routing per input:
+/// - **Regular merge** (`op.target_prefix_len_override == None`): every split is opened directly
+///   via [`StreamingParquetReader`]. MP-3 already requires inputs to share
+///   `rg_partition_prefix_len`, so the streaming engine sees uniform metadata.
+/// - **Promotion merge** (`op.target_prefix_len_override == Some(target)`): splits with
+///   `rg_partition_prefix_len < target` are opened through [`LegacyInputAdapter`] with the same
+///   target — the adapter re-encodes the file in memory as prefix-aligned and rewrites the
+///   `qh.rg_partition_prefix_len` KV. Splits already at `target` are opened directly. The streaming
+///   engine then consumes a homogeneous stream advertising `prefix_len = target` on every input.
+///
+/// `sources` is parallel to `op.splits`: `sources[i]` provides byte-
+/// range reads against `op.splits[i].parquet_file`. The caller (e.g.
+/// the executor wrapper that lives outside this crate) is responsible
+/// for materializing one [`RemoteByteSource`] per split based on its
+/// storage backend (S3, local FS, etc.). Splits with names that
+/// cannot be opened by the source surface as `LegacyAdapterError::Io`
+/// or `ParquetReadError`.
+///
+/// Returns the merge engine's [`MergeOutputFile`]s. Conversion to
+/// `ParquetSplitMetadata` for the metastore is the caller's
+/// responsibility — use [`metadata_aggregation::merge_parquet_split_metadata`]
+/// with `mixed_prefix_ok = op.target_prefix_len_override.is_some()`.
+pub async fn execute_merge_operation(
+    op: &policy::ParquetMergeOperation,
+    sources: Vec<Arc<dyn RemoteByteSource>>,
+    output_dir: &Path,
+    config: &MergeConfig,
+) -> Result<Vec<MergeOutputFile>> {
+    if sources.len() != op.splits.len() {
+        bail!(
+            "execute_merge_operation: sources.len() ({}) != op.splits.len() ({})",
+            sources.len(),
+            op.splits.len(),
+        );
+    }
+
+    let mut streams: Vec<Box<dyn ColumnPageStream>> = Vec::with_capacity(op.splits.len());
+    for (split, source) in op.splits.iter().zip(sources) {
+        let path = PathBuf::from(&split.parquet_file);
+        let stream: Box<dyn ColumnPageStream> = match op.target_prefix_len_override {
+            Some(target) if split.rg_partition_prefix_len < target => {
+                // Promote this legacy input. The adapter re-encodes in
+                // memory and presents itself as a prefix_len = target
+                // single-RG stream to the merge engine.
+                let adapter = LegacyInputAdapter::try_open(source, path, target)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "opening legacy adapter for split {} with target_prefix_len = {target}",
+                            split.split_id,
+                        )
+                    })?;
+                Box::new(adapter)
+            }
+            _ => {
+                // Direct streaming reader: regular merge, or promotion
+                // where this input already satisfies the target.
+                let reader = StreamingParquetReader::try_open(source, path)
+                    .await
+                    .with_context(|| {
+                        format!("opening streaming reader for split {}", split.split_id)
+                    })?;
+                Box::new(reader)
+            }
+        };
+        streams.push(stream);
+    }
+
+    streaming::streaming_merge_sorted_parquet_files(streams, output_dir, config).await
 }

@@ -47,8 +47,8 @@ use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
-    StorageError, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.
@@ -240,10 +240,8 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(payload.len());
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -276,10 +274,8 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::STORAGE_METRICS.object_storage_put_parts.inc();
-                crate::STORAGE_METRICS
-                    .object_storage_upload_num_bytes
-                    .inc_by(range.end - range.start);
+                crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+                crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
@@ -344,12 +340,13 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
@@ -363,6 +360,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let name = self.blob_name(path);
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
@@ -376,14 +374,13 @@ impl Storage for AzureBlobStorage {
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
             let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-            STORAGE_METRICS
-                .object_storage_download_num_bytes
-                .inc_by(num_bytes_copied);
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         }
         output.flush().await?;
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
@@ -397,6 +394,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         // See https://github.com/Azure/azure-sdk-for-rust/issues/1068
         warn!(
@@ -439,7 +437,7 @@ impl Storage for AzureBlobStorage {
         }
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         self.get_to_bytes(path, Some(range.clone()))
             .await
@@ -454,7 +452,7 @@ impl Storage for AzureBlobStorage {
             })
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -489,7 +487,12 @@ impl Storage for AzureBlobStorage {
         .map_err(|e| e.into())
     }
 
-    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
+    #[instrument(
+        name = "storage.azure.get_all",
+        level = "debug",
+        skip(self),
+        fields(fetched_bytes_len)
+    )]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let data = self
             .get_to_bytes(path, None)
@@ -506,6 +509,7 @@ impl Storage for AzureBlobStorage {
         Ok(data)
     }
 
+    #[instrument(name = "storage.azure.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let name = self.blob_name(path);
         let properties_result = self
@@ -577,9 +581,7 @@ async fn download_all(
             segments.push(bytes);
         }
     }
-    crate::STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .inc_by(total_num_bytes as u64);
+    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(total_num_bytes as u64);
     Ok(coalesce_segments(segments, total_num_bytes))
 }
 

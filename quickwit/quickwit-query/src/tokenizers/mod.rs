@@ -15,6 +15,7 @@
 mod chinese_compatible;
 mod code_tokenizer;
 mod tokenizer_manager;
+mod unicode_segmenter_tokenizer;
 
 use std::sync::LazyLock;
 
@@ -26,6 +27,7 @@ use tantivy::tokenizer::{
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
 pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
+pub use self::unicode_segmenter_tokenizer::UnicodeSegmenterTokenizer;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -80,6 +82,16 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
         true,
     );
+    let unicode_segmenter_tokenizer = TextAnalyzer::builder(UnicodeSegmenterTokenizer)
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
+    tokenizer_manager.register(
+        "unicode_segmenter",
+        unicode_segmenter_tokenizer.clone(),
+        true,
+    );
+    tokenizer_manager.register("datadog", unicode_segmenter_tokenizer, true);
     tokenizer_manager
 }
 

@@ -14,10 +14,12 @@
 
 use std::collections::HashMap;
 
-use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsResponse};
+use itertools::Itertools;
+use quickwit_proto::search::{ListFieldsEntry, ListFieldsResponse, ListFieldsType};
 use quickwit_query::ElasticQueryDsl;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
@@ -110,7 +112,7 @@ struct FieldCapabilityEntryResponse {
     non_searchable_indices: Vec<String>, // [ "index1" ]
 }
 impl FieldCapabilityEntryResponse {
-    fn from_list_field_entry_response(entry: ListFieldsEntryResponse) -> Self {
+    fn from_list_fields_entry(entry: ListFieldsEntry) -> Self {
         Self {
             metadata_field: false,
             searchable: entry.searchable,
@@ -123,42 +125,43 @@ impl FieldCapabilityEntryResponse {
     }
 }
 
+#[instrument(name = "build_field_capabilities_response", skip_all, fields(num_fields = response.entries.len()))]
 pub fn convert_to_es_field_capabilities_response(
-    resp: ListFieldsResponse,
+    response: ListFieldsResponse,
 ) -> FieldCapabilityResponse {
-    let mut indices = resp
-        .fields
+    let indices: Vec<String> = response
+        .entries
         .iter()
         .flat_map(|entry| entry.index_ids.iter().cloned())
-        .collect::<Vec<_>>();
-    indices.sort();
-    indices.dedup();
+        .sorted()
+        .dedup()
+        .collect();
 
     let mut fields: HashMap<String, FieldCapabilityFieldTypesResponse> = HashMap::new();
-    for list_field_resp in resp.fields {
+
+    for list_fields_entry in response.entries {
         let entry = fields
-            .entry(list_field_resp.field_name.to_string())
+            .entry(list_fields_entry.field_name.to_string())
             .or_default();
 
-        let field_type = ListFieldType::try_from(list_field_resp.field_type).unwrap();
-        let add_entry =
-            FieldCapabilityEntryResponse::from_list_field_entry_response(list_field_resp);
+        let field_type = list_fields_entry.field_type();
+        let add_entry = FieldCapabilityEntryResponse::from_list_fields_entry(list_fields_entry);
         let types = match field_type {
-            ListFieldType::Str => {
+            ListFieldsType::Str => {
                 vec![
                     FieldCapabilityEntryType::Keyword,
                     FieldCapabilityEntryType::Text,
                 ]
             }
-            ListFieldType::U64 => vec![FieldCapabilityEntryType::Long],
-            ListFieldType::I64 => vec![FieldCapabilityEntryType::Long],
-            ListFieldType::F64 => vec![FieldCapabilityEntryType::Double],
-            ListFieldType::Bool => vec![FieldCapabilityEntryType::Boolean],
-            ListFieldType::Date => vec![FieldCapabilityEntryType::DateNanos],
-            ListFieldType::Facet => continue,
-            ListFieldType::Json => continue,
-            ListFieldType::Bytes => vec![FieldCapabilityEntryType::Binary],
-            ListFieldType::IpAddr => vec![FieldCapabilityEntryType::Ip],
+            ListFieldsType::U64 => vec![FieldCapabilityEntryType::Long],
+            ListFieldsType::I64 => vec![FieldCapabilityEntryType::Long],
+            ListFieldsType::F64 => vec![FieldCapabilityEntryType::Double],
+            ListFieldsType::Bool => vec![FieldCapabilityEntryType::Boolean],
+            ListFieldsType::Date => vec![FieldCapabilityEntryType::DateNanos],
+            ListFieldsType::Facet => continue,
+            ListFieldsType::Json => continue,
+            ListFieldsType::Bytes => vec![FieldCapabilityEntryType::Binary],
+            ListFieldsType::IpAddr => vec![FieldCapabilityEntryType::Ip],
         };
         for field_type in types {
             let mut add_entry = add_entry.clone();
@@ -222,7 +225,7 @@ pub fn build_list_field_request_for_es_api(
 
     Ok(quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
-        fields: search_params.fields.unwrap_or_default(),
+        field_patterns: search_params.fields.unwrap_or_default(),
         start_timestamp: search_params.start_timestamp,
         end_timestamp: search_params.end_timestamp,
         query_ast: query_ast_json,
@@ -362,8 +365,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            result.fields,
-            vec!["field1".to_string(), "field2".to_string()]
+            result.field_patterns,
+            ["field1".to_string(), "field2".to_string()]
         );
         assert_eq!(result.start_timestamp, Some(1000));
         assert_eq!(result.end_timestamp, Some(2000));

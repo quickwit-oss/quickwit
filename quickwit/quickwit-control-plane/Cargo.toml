@@ -30,6 +30,7 @@ ulid = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }

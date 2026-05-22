@@ -21,6 +21,7 @@ use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -47,6 +48,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::metrics::{HTTP_REQUESTS_TOTAL, REQUEST_DURATION_SECS};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -136,16 +138,20 @@ pub(crate) async fn start_rest_server(
 ) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|info: Info| {
         let elapsed = info.elapsed();
-        let status = info.status();
-        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
-        crate::SERVE_METRICS
-            .request_duration_secs
-            .with_label_values(label_values)
-            .observe(elapsed.as_secs_f64());
-        crate::SERVE_METRICS
-            .http_requests_total
-            .with_label_values(label_values)
-            .inc();
+        let labels = labels!(
+            "method" => info.method().as_str().to_string(),
+            "status_code" => info.status().as_str().to_string()
+        );
+        histogram!(
+            parent: REQUEST_DURATION_SECS,
+            labels: [labels],
+        )
+        .observe(elapsed.as_secs_f64());
+        counter!(
+            parent: HTTP_REQUESTS_TOTAL,
+            labels: [labels],
+        )
+        .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

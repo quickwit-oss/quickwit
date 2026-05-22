@@ -15,13 +15,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::tracing_utils::set_current_span_parent_from_metadata;
 use quickwit_proto::error::convert_to_grpc_result;
 use quickwit_proto::search::{
     GetKvRequest, GetKvResponse, GetLoadRequest, GetLoadResponse, LeafListFieldsRequest,
     ListFieldsRequest, ListFieldsResponse, ReportSplitsRequest, ReportSplitsResponse,
     search_service_server as grpc,
 };
-use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
+use quickwit_proto::tonic;
 use quickwit_search::SearchService;
 use tracing::instrument;
 
@@ -41,7 +42,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::SearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::SearchResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let search_request = request.into_inner();
         let search_result = self.0.root_search(search_request).await;
         convert_to_grpc_result(search_result)
@@ -52,7 +53,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::LeafSearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::LeafSearchResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self.0.leaf_search(leaf_search_request).await;
         convert_to_grpc_result(leaf_search_result)
@@ -63,7 +64,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::FetchDocsRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::FetchDocsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let fetch_docs_request = request.into_inner();
         let fetch_docs_result = self.0.fetch_docs(fetch_docs_request).await;
         convert_to_grpc_result(fetch_docs_result)
@@ -74,7 +75,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::ListTermsRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::ListTermsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let search_request = request.into_inner();
         let search_result = self.0.root_list_terms(search_request).await;
         convert_to_grpc_result(search_result)
@@ -85,7 +86,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::LeafListTermsRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::LeafListTermsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self.0.leaf_list_terms(leaf_search_request).await;
         convert_to_grpc_result(leaf_search_result)
@@ -105,7 +106,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::PutKvRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::PutKvResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let put_request = request.into_inner();
         self.0.put_kv(put_request).await;
         Ok(tonic::Response::new(
@@ -118,7 +119,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<GetKvRequest>,
     ) -> Result<tonic::Response<GetKvResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let get_search_after_context_request = request.into_inner();
         let payload = self.0.get_kv(get_search_after_context_request).await;
         let get_response = GetKvResponse { payload };
@@ -130,7 +131,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<ReportSplitsRequest>,
     ) -> Result<tonic::Response<ReportSplitsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let get_search_after_context_request = request.into_inner();
         self.0.report_splits(get_search_after_context_request).await;
         Ok(tonic::Response::new(ReportSplitsResponse {}))
@@ -141,7 +142,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<ListFieldsRequest>,
     ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let resp = self.0.root_list_fields(request.into_inner()).await;
         convert_to_grpc_result(resp)
     }
@@ -150,7 +151,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<LeafListFieldsRequest>,
     ) -> Result<tonic::Response<ListFieldsResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let resp = self.0.leaf_list_fields(request.into_inner()).await;
         convert_to_grpc_result(resp)
     }
@@ -160,7 +161,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
         &self,
         request: tonic::Request<quickwit_proto::search::SearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::search::SearchPlanResponse>, tonic::Status> {
-        set_parent_span_from_request_metadata(request.metadata());
+        set_current_span_parent_from_metadata(request.metadata());
         let search_request = request.into_inner();
         let search_result = self.0.search_plan(search_request).await;
         convert_to_grpc_result(search_result)

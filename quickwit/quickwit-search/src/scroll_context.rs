@@ -22,10 +22,12 @@ use std::time::Duration;
 use anyhow::Context;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
+use quickwit_metrics::GaugeGuard;
+use quickwit_proto::search::{
+    LeafSearchResponse, PartialHit, RootResourceStats, SearchRequest, SplitSearchError,
+};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -33,6 +35,7 @@ use ttl_cache::TtlCache;
 use ulid::Ulid;
 
 use crate::ClusterClient;
+use crate::metrics::SEARCHER_LOCAL_KV_STORE_SIZE_BYTES;
 use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
 
@@ -99,15 +102,21 @@ impl ScrollContext {
 
     /// Loads in the `ScrollContext` cache all the
     /// hits in range [start_offset..start_offset + SCROLL_BATCH_LEN).
+    ///
+    /// Returns the per-search `RootResourceStats`, if any, so the caller can
+    /// surface them on the scroll response.
     pub async fn load_batch_starting_at(
         &mut self,
         start_offset: u64,
         previous_last_hit: PartialHit,
         cluster_client: &ClusterClient,
         searcher_context: &SearcherContext,
-    ) -> crate::Result<bool> {
+    ) -> crate::Result<Option<RootResourceStats>> {
         self.search_request.search_after = Some(previous_last_hit);
-        let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
+        let (leaf_search_response, root_resource_stats): (
+            LeafSearchResponse,
+            Option<RootResourceStats>,
+        ) = crate::root::search_partial_hits_phase(
             searcher_context,
             &self.indexes_metas_for_leaf_search,
             &self.search_request,
@@ -117,13 +126,13 @@ impl ScrollContext {
         .await?;
         self.cached_partial_hits_start_offset = start_offset;
         self.cached_partial_hits = leaf_search_response.partial_hits;
-        Ok(true)
+        Ok(root_resource_stats)
     }
 }
 
 struct TrackedValue {
     content: Vec<u8>,
-    _total_size_metric_guard: GaugeGuard<'static>,
+    _total_size_metric_guard: GaugeGuard,
 }
 
 /// In memory key value store with TTL and limited size.
@@ -148,9 +157,8 @@ impl Default for MiniKV {
 
 impl MiniKV {
     pub async fn put(&self, key: Vec<u8>, payload: Vec<u8>, ttl: Duration) {
-        let mut metric_guard =
-            GaugeGuard::from_gauge(&crate::SEARCH_METRICS.searcher_local_kv_store_size_bytes);
-        metric_guard.add(payload.len() as i64);
+        let metric_guard =
+            GaugeGuard::new(&SEARCHER_LOCAL_KV_STORE_SIZE_BYTES, payload.len() as f64);
         let mut cache_lock = self.ttl_with_cache.write().await;
         cache_lock.insert(
             key,

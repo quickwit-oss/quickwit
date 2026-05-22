@@ -22,6 +22,7 @@ use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     LeafListTermsRequest, LeafListTermsResponse, ListTermsRequest, ListTermsResponse,
@@ -34,6 +35,7 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
+use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
@@ -214,7 +216,7 @@ async fn leaf_list_terms_single_split(
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
     let (index, _) =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
@@ -358,10 +360,8 @@ pub async fn leaf_list_terms(
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
-                crate::SEARCH_METRICS.leaf_list_terms_splits_total.inc();
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
+                LEAF_LIST_TERMS_SPLITS_TOTAL.inc();
+                let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
                     request,

@@ -40,10 +40,17 @@ use crate::split::{ParquetSplitId, ParquetSplitMetadata};
 /// # Preconditions
 ///
 /// All input splits must share the same kind, index_uid, partition_id,
-/// sort_fields, and window.
+/// sort_fields, and window. In the default case (`mixed_prefix_ok = false`)
+/// they must also share `rg_partition_prefix_len`. In legacy-promotion
+/// mode (`mixed_prefix_ok = true`) the prefix-len equality check is
+/// skipped because inputs come from different prefix buckets — the
+/// output's prefix_len is taken from the writer's KV stamp via
+/// `output.output_rg_partition_prefix_len` (CS-1), so the input-side
+/// equality is no longer load-bearing for the metastore record.
 pub fn merge_parquet_split_metadata(
     inputs: &[ParquetSplitMetadata],
     output: &MergeOutputFile,
+    mixed_prefix_ok: bool,
 ) -> Result<ParquetSplitMetadata> {
     if inputs.is_empty() {
         bail!("merge_parquet_split_metadata requires at least one input split");
@@ -93,6 +100,16 @@ pub fn merge_parquet_split_metadata(
                 first.window
             );
         }
+        if !mixed_prefix_ok && input.rg_partition_prefix_len != first.rg_partition_prefix_len {
+            bail!(
+                "input {} has rg_partition_prefix_len {}, expected {} — splits with different \
+                 prefix lengths must not appear in the same regular merge (legacy-promotion \
+                 operations bypass this check)",
+                i,
+                input.rg_partition_prefix_len,
+                first.rg_partition_prefix_len
+            );
+        }
     }
 
     // Each merge adds one to the lineage depth. The policy uses this to
@@ -109,6 +126,19 @@ pub fn merge_parquet_split_metadata(
     // this name before handing it to the uploader.
     let split_id = ParquetSplitId::generate(first.kind);
     let parquet_file = format!("{split_id}.parquet");
+
+    // CS-1: the metastore-recorded `rg_partition_prefix_len` must equal
+    // the value the writer embedded in the file's
+    // `qh.rg_partition_prefix_len` KV. Each writer makes its own
+    // decision (the legacy `merge/writer.rs` demotes to 0 on multi-RG
+    // output because its boundaries are row-count-driven; the streaming
+    // writer propagates the inputs' prefix unchanged because it splits
+    // at prefix transitions and verifies via `assert_unique_rg_prefix_keys`)
+    // and reports it via `MergeOutputFile.output_rg_partition_prefix_len`.
+    // We propagate that one source of truth — re-deriving here from
+    // `num_row_groups` would silently diverge from the streaming
+    // engine's prefix-aligned multi-RG output.
+    let output_prefix_len = output.output_rg_partition_prefix_len;
 
     // Data-dependent fields come from the MergeOutputFile (extracted from
     // this output's actual rows during the merge write pass).
@@ -130,6 +160,7 @@ pub fn merge_parquet_split_metadata(
         num_merge_ops,
         row_keys_proto: output.row_keys_proto.clone(),
         zonemap_regexes: output.zonemap_regexes.clone(),
+        rg_partition_prefix_len: output_prefix_len,
     };
 
     // Finalize: tag sets may exceed the cardinality threshold.
@@ -176,9 +207,39 @@ mod tests {
         time_range: (u64, u64),
         metric_names: &[&str],
     ) -> MergeOutputFile {
+        make_output_full(num_rows, size_bytes, 1, time_range, metric_names)
+    }
+
+    fn make_output_full(
+        num_rows: usize,
+        size_bytes: u64,
+        num_row_groups: usize,
+        time_range: (u64, u64),
+        metric_names: &[&str],
+    ) -> MergeOutputFile {
+        make_output_full_with_prefix(
+            num_rows,
+            size_bytes,
+            num_row_groups,
+            0,
+            time_range,
+            metric_names,
+        )
+    }
+
+    fn make_output_full_with_prefix(
+        num_rows: usize,
+        size_bytes: u64,
+        num_row_groups: usize,
+        output_rg_partition_prefix_len: u32,
+        time_range: (u64, u64),
+        metric_names: &[&str],
+    ) -> MergeOutputFile {
         MergeOutputFile {
             path: PathBuf::from("/tmp/merged.parquet"),
             num_rows,
+            num_row_groups,
+            output_rg_partition_prefix_len,
             size_bytes,
             row_keys_proto: Some(vec![0x08, 0x01]),
             zonemap_regexes: HashMap::from([("metric_name".to_string(), "cpu\\..*".to_string())]),
@@ -195,7 +256,7 @@ mod tests {
             make_test_split("s1", (1200, 2000), 0),
         ];
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         // Invariant fields come from inputs.
         assert_eq!(result.kind, ParquetSplitKind::Metrics);
@@ -214,7 +275,7 @@ mod tests {
             make_test_split("s1", (1200, 2000), 0),
         ];
         let output = make_output_with_metadata(200, 9000, (1000, 2000), &["cpu.usage", "mem.used"]);
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         // Data-dependent fields come from the output, not inputs.
         assert_eq!(result.time_range.start_secs, 1000);
@@ -249,7 +310,7 @@ mod tests {
             .or_default()
             .insert("api".to_string());
 
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         let service_values = result.low_cardinality_tags.get("service").unwrap();
         assert_eq!(service_values.len(), 2);
@@ -270,7 +331,7 @@ mod tests {
                 .insert(format!("host-{i}"));
         }
 
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         assert!(result.high_cardinality_tag_keys.contains("host"));
         assert!(!result.low_cardinality_tags.contains_key("host"));
@@ -284,7 +345,7 @@ mod tests {
             make_test_split("s2", (1000, 2000), 2),
         ];
         let output = make_output(300, 12000);
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         assert_eq!(result.num_merge_ops, 3); // max(2,2,2) + 1
     }
@@ -292,7 +353,7 @@ mod tests {
     #[test]
     fn test_empty_inputs_error() {
         let output = make_output(0, 0);
-        let result = merge_parquet_split_metadata(&[], &output);
+        let result = merge_parquet_split_metadata(&[], &output, false);
         assert!(result.is_err());
         assert!(
             result
@@ -309,7 +370,7 @@ mod tests {
         s1.kind = ParquetSplitKind::Sketches;
 
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
         assert!(result.is_err());
     }
 
@@ -320,7 +381,7 @@ mod tests {
         s1.index_uid = "other-index:00000000000000000000000002".to_string();
 
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
         assert!(result.is_err());
     }
 
@@ -331,7 +392,7 @@ mod tests {
         s1.partition_id = 99;
 
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
         assert!(result.is_err());
     }
 
@@ -342,7 +403,7 @@ mod tests {
         s1.sort_fields = "different|schema/V2".to_string();
 
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
         assert!(result.is_err());
     }
 
@@ -353,8 +414,117 @@ mod tests {
         s1.window = Some(2000..5600);
 
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_rg_partition_prefix_len_error() {
+        let s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s1.rg_partition_prefix_len = 1;
+
+        let output = make_output(200, 9000);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false);
+        let err = result.expect_err("merge must reject mismatched prefix lengths");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rg_partition_prefix_len"),
+            "error should mention rg_partition_prefix_len, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_output_prefix_len_carries_writers_value_when_demoted() {
+        // CS-1: the metastore-recorded value must match the writer's
+        // KV stamp. Legacy `merge/writer.rs` demotes to 0 when its
+        // row-count-driven RG layout produces multi-RG output and
+        // reports that demoted value on the `MergeOutputFile`. The
+        // metastore aggregator must propagate it as-is (NOT re-derive
+        // from inputs) so the metastore agrees with the file's KV.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 3;
+        s1.rg_partition_prefix_len = 3;
+
+        // num_row_groups = 2 + writer reports demoted prefix_len = 0
+        // (the legacy writer's choice for a row-count-driven multi-RG).
+        let output = make_output_full_with_prefix(200, 9000, 2, 0, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false).unwrap();
+        assert_eq!(result.rg_partition_prefix_len, 0);
+    }
+
+    #[test]
+    fn test_output_prefix_len_preserved_when_single_rg() {
+        // A single-RG output vacuously satisfies any prefix alignment
+        // claim (one RG, no boundary to misalign). The writer reports
+        // the inputs' prefix; aggregator propagates it.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 3;
+        s1.rg_partition_prefix_len = 3;
+
+        let output = make_output_full_with_prefix(200, 9000, 1, 3, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false).unwrap();
+        assert_eq!(result.rg_partition_prefix_len, 3);
+    }
+
+    #[test]
+    fn test_mixed_prefix_ok_skips_input_equality_check() {
+        // Promotion mode: inputs come from different prefix buckets
+        // (e.g. one prefix_len=0 legacy + one prefix_len=2 aligned).
+        // With `mixed_prefix_ok = true` the aggregator must accept this
+        // and take the output prefix from the writer's stamp.
+        let mut legacy = make_test_split("s0", (1000, 2000), 0);
+        legacy.rg_partition_prefix_len = 0;
+        let mut aligned = make_test_split("s1", (1000, 2000), 0);
+        aligned.rg_partition_prefix_len = 2;
+
+        // Writer stamps prefix_len = 2 on the multi-RG output (streaming
+        // engine output that successfully promoted the legacy input).
+        let output = make_output_full_with_prefix(300, 12000, 3, 2, (1000, 2000), &["cpu.usage"]);
+
+        let result =
+            merge_parquet_split_metadata(&[legacy.clone(), aligned.clone()], &output, true)
+                .expect("mixed-prefix inputs must be accepted in promotion mode");
+        assert_eq!(
+            result.rg_partition_prefix_len, 2,
+            "output prefix matches the writer's stamp (CS-1)",
+        );
+
+        // Same inputs without the mixed_prefix_ok flag must still fail.
+        let strict = merge_parquet_split_metadata(&[legacy, aligned], &output, false);
+        let err = strict.expect_err("strict mode must reject mixed-prefix inputs");
+        assert!(
+            err.to_string().contains("rg_partition_prefix_len"),
+            "error should mention the prefix-len mismatch, got: {err}",
+        );
+    }
+
+    #[test]
+    fn test_output_prefix_len_preserved_on_multi_rg_streaming_engine() {
+        // CS-1 regression for F1: the streaming engine produces
+        // sort-prefix-aligned multi-RG output and reports the inputs'
+        // prefix unchanged via `MergeOutputFile.output_rg_partition_prefix_len`.
+        // Before this fix, `merge_parquet_split_metadata` would
+        // unconditionally demote to 0 whenever `num_row_groups > 1`,
+        // breaking CS-1 (metastore disagreed with the file's KV) and
+        // leaking aligned outputs into the unaligned compaction bucket
+        // on every subsequent merge.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 2;
+        s1.rg_partition_prefix_len = 2;
+
+        // num_row_groups = 3 (multi-RG) AND writer reports prefix_len = 2
+        // (the streaming engine's stamp because it verified alignment).
+        let output = make_output_full_with_prefix(300, 12000, 3, 2, (1000, 2000), &["cpu.usage"]);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output, false).unwrap();
+        assert_eq!(
+            result.rg_partition_prefix_len, 2,
+            "metastore must mirror the writer's KV (CS-1); multi-RG aligned output keeps its \
+             prefix claim"
+        );
     }
 
     #[test]
@@ -364,7 +534,7 @@ mod tests {
             make_test_split("s1", (1000, 2000), 0),
         ];
         let output = make_output(200, 9000);
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         assert_ne!(result.split_id.as_str(), "s0");
         assert_ne!(result.split_id.as_str(), "s1");
@@ -380,7 +550,7 @@ mod tests {
         output.row_keys_proto = None;
         output.zonemap_regexes = HashMap::new();
 
-        let result = merge_parquet_split_metadata(&inputs, &output).unwrap();
+        let result = merge_parquet_split_metadata(&inputs, &output, false).unwrap();
 
         assert!(result.row_keys_proto.is_none());
         assert!(result.zonemap_regexes.is_empty());

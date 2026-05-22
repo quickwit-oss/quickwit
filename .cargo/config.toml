@@ -3,10 +3,15 @@ rustflags = ["--cfg", "tokio_unstable"]
 rustdocflags = ["--cfg", "tokio_unstable"]
 
 [target.x86_64-unknown-linux-gnu]
-# Targeting x86-64-v2 gives a ~2% performance boost while only
-# disallowing Intel CPUs older than 2008 and AMD CPUs older than 2011.
-# None of those very old CPUs are used in GCP
-# (https://cloud.google.com/compute/docs/cpu-platforms). Unfortunately,
-# AWS does not seem to disclose the exact CPUs they use.
-rustflags = ["-C", "target-cpu=x86-64-v2", "--cfg", "tokio_unstable"]
+# x86-64-v3 requires AVX2, BMI1/BMI2, FMA — available on Intel Haswell (2013)+
+# and AMD Zen 1 (2017)+. Covers all current-gen AWS and GCP instance families.
+# GCP N1 on Sandy/Ivy Bridge is the only notable exclusion (legacy, not recommended).
+# BMI2 (PEXT/PDEP) benefits bit-manipulation-heavy paths in Tantivy.
+rustflags = ["-C", "target-cpu=x86-64-v3", "--cfg", "tokio_unstable"]
+
+[target.aarch64-unknown-linux-gnu]
+# Targeting neoverse-n1 covers AWS Graviton2+ and GCP T2A (Ampere Altra).
+# Key gains over generic ARMv8-A: LSE atomics (better concurrency), dot
+# product instructions, and ARMv8.2 crypto extensions.
+rustflags = ["-C", "target-cpu=neoverse-n1", "--cfg", "tokio_unstable"]
 

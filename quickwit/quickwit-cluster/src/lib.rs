@@ -31,7 +31,6 @@ use chitchat::transport::{Socket, Transport, UdpSocket};
 use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
@@ -49,6 +48,10 @@ pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
 };
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
+use crate::metrics::{
+    GOSSIP_RECV_BYTES_TOTAL, GOSSIP_RECV_MESSAGES_TOTAL, GOSSIP_SENT_BYTES_TOTAL,
+    GOSSIP_SENT_MESSAGES_TOTAL,
+};
 pub use crate::node::ClusterNode;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -74,10 +77,6 @@ struct CountingUdpTransport;
 
 struct CountingUdpSocket {
     socket: UdpSocket,
-    gossip_recv: IntCounter,
-    gossip_recv_bytes: IntCounter,
-    gossip_send: IntCounter,
-    gossip_send_bytes: IntCounter,
 }
 
 #[async_trait]
@@ -85,16 +84,16 @@ impl Socket for CountingUdpSocket {
     async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
         let msg_len = msg.serialized_len() as u64;
         self.socket.send(to, msg).await?;
-        self.gossip_send.inc();
-        self.gossip_send_bytes.inc_by(msg_len);
+        GOSSIP_SENT_MESSAGES_TOTAL.inc();
+        GOSSIP_SENT_BYTES_TOTAL.inc_by(msg_len);
         Ok(())
     }
 
     async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
         let (socket_addr, msg) = self.socket.recv().await?;
-        self.gossip_recv.inc();
+        GOSSIP_RECV_MESSAGES_TOTAL.inc();
         let msg_len = msg.serialized_len() as u64;
-        self.gossip_recv_bytes.inc_by(msg_len);
+        GOSSIP_RECV_BYTES_TOTAL.inc_by(msg_len);
         Ok((socket_addr, msg))
     }
 }
@@ -103,21 +102,7 @@ impl Socket for CountingUdpSocket {
 impl Transport for CountingUdpTransport {
     async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
         let socket = UdpSocket::open(listen_addr).await?;
-        Ok(Box::new(CountingUdpSocket {
-            socket,
-            gossip_recv: crate::metrics::CLUSTER_METRICS
-                .gossip_recv_messages_total
-                .clone(),
-            gossip_recv_bytes: crate::metrics::CLUSTER_METRICS
-                .gossip_recv_bytes_total
-                .clone(),
-            gossip_send: crate::metrics::CLUSTER_METRICS
-                .gossip_sent_messages_total
-                .clone(),
-            gossip_send_bytes: crate::metrics::CLUSTER_METRICS
-                .gossip_sent_bytes_total
-                .clone(),
-        }))
+        Ok(Box::new(CountingUdpSocket { socket }))
     }
 }
 

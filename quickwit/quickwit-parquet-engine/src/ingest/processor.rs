@@ -18,9 +18,10 @@ use std::io::Cursor;
 
 use arrow::ipc::reader::StreamReader;
 use arrow::record_batch::RecordBatch;
+use quickwit_metrics::{counter, labels};
 use tracing::{debug, instrument, warn};
 
-use crate::metrics::PARQUET_ENGINE_METRICS;
+use crate::metrics::{ERRORS_TOTAL, INGEST_BYTES_TOTAL};
 use crate::schema::validate_required_fields;
 
 /// Error type for ingest operations.
@@ -62,28 +63,21 @@ impl ParquetIngestProcessor {
     /// Returns error if IPC is malformed or schema doesn't match.
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
+        let labels_kind = labels!("kind" => "points");
+        let labels_operation = labels!("operation" => "ingest");
         // Record bytes ingested
-        PARQUET_ENGINE_METRICS
-            .ingest_bytes_total
-            .with_label_values(["points"])
-            .inc_by(ipc_bytes.len() as u64);
+        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind]).inc_by(ipc_bytes.len() as u64);
 
         let batch = match ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(e) => {
-                PARQUET_ENGINE_METRICS
-                    .errors_total
-                    .with_label_values(["ingest", "points"])
-                    .inc();
+                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
                 return Err(e);
             }
         };
 
         if let Err(e) = self.validate_schema(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "points"])
-                .inc();
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).inc();
             return Err(e);
         }
 

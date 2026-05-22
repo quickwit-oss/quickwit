@@ -74,7 +74,7 @@ pub struct ListFieldsRequest {
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "2")]
-    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Time filter, expressed in seconds since epoch.
     /// That filter is to be interpreted as the semi-open interval:
     /// \[start_timestamp, end_timestamp).
@@ -103,20 +103,29 @@ pub struct LeafListFieldsRequest {
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
-    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// / Message returned by leaf and root list fields requests.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFieldsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+    pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
+}
+/// / Message containing the fields metadata for a split sorted by (name, type) and stored zstd-compressed in the split. Currently duplicate of ListFieldsResponse, but kept
+/// / distinct so they can evolve independently.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsMetadata {
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<ListFieldsEntry>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListFieldsEntryResponse {
+pub struct ListFieldsEntry {
     #[prost(string, tag = "1")]
     pub field_name: ::prost::alloc::string::String,
-    #[prost(enumeration = "ListFieldType", tag = "2")]
+    #[prost(enumeration = "ListFieldsType", tag = "2")]
     pub field_type: i32,
     /// The index ids the field exists
     #[prost(string, repeated, tag = "3")]
@@ -139,12 +148,6 @@ pub struct ListFieldsEntryResponse {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListFields {
-    #[prost(message, repeated, tag = "1")]
-    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Hash, Eq)]
@@ -252,6 +255,9 @@ pub struct SearchResponse {
     /// Total number of successful splits searched.
     #[prost(uint64, tag = "8")]
     pub num_successful_splits: u64,
+    /// Resource statistics for the root search.
+    #[prost(message, optional, tag = "10")]
+    pub resource_stats: ::core::option::Option<RootResourceStats>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -293,19 +299,149 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Per-split resource statistics.
+///
+/// All fields are extensive (sum across splits is meaningful) except where noted.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ResourceStats {
+pub struct SplitResourceStats {
+    /// Number of documents in the split.
     #[prost(uint64, tag = "1")]
-    pub short_lived_cache_num_bytes: u64,
-    #[prost(uint64, tag = "2")]
     pub split_num_docs: u64,
+    /// Bytes resident in the warmup short-lived cache after warmup
+    /// (measure of input data the search needed to process).
+    #[prost(uint64, tag = "2")]
+    pub input_memory_bytes: u64,
+    /// Bytes downloaded from storage during the request, as measured
+    /// by a request-scoped storage wrapper.
     #[prost(uint64, tag = "3")]
-    pub warmup_microsecs: u64,
+    pub download_num_bytes: u64,
+    /// Number of storage GET requests issued during the request.
     #[prost(uint64, tag = "4")]
-    pub cpu_thread_pool_wait_microsecs: u64,
+    pub download_num_requests: u64,
+    /// Number of documents matched by the query in this split (we always count).
     #[prost(uint64, tag = "5")]
-    pub cpu_microsecs: u64,
+    pub matched_num_docs: u64,
+    /// Time the split spent waiting to acquire its search permit.
+    #[prost(uint64, tag = "6")]
+    pub wait_for_search_permit_microsecs: u64,
+    /// Time spent in the warmup phase (downloading and indexing data into caches).
+    #[prost(uint64, tag = "7")]
+    pub warmup_microsecs: u64,
+    /// Time the split spent waiting for a slot on the CPU pool after warmup.
+    #[prost(uint64, tag = "8")]
+    pub wait_for_cpu_pool_microsecs: u64,
+    /// CPU time spent in the search itself (predicate matching + collection +
+    /// per-segment harvest), as measured around the tantivy search call.
+    /// Excludes any cross-split finalize work performed outside the single-split
+    /// search.
+    #[prost(uint64, tag = "9")]
+    pub cpu_search_microsecs: u64,
+}
+/// Resource statistics for a single leaf-search call (over one or more splits).
+/// If the configuration allows it, leaf nodes can offload part of their computation to
+/// lambdas.
+///
+/// `split_resources_worst` / `split_resources_sum` aggregations on
+/// `LeafResourceStats` are only computed for locally-executed splits.
+///
+/// All numeric fields are extensive (summed when merging across leaves).
+/// `split_resources_worst` is the exception — it is selected by ranking, not
+/// summed. `lambda_bottleneck` is 0 or 1 at the source and becomes a count of
+/// leaves where lambda was the bottleneck once aggregated.
+/// `min_wait_for_search_permit_microsecs` and `min_wait_for_cpu_pool_microsecs`
+/// are also exceptions — they are merged with `min` rather than `sum` (see
+/// their per-field doc below).
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LeafResourceStats {
+    /// Number of splits whose results came from the partial result cache.
+    #[prost(uint64, tag = "1")]
+    pub partial_result_cache_num_splits: u64,
+    /// Sum of `split.num_docs` across cache-hit splits.
+    #[prost(uint64, tag = "2")]
+    pub partial_result_cache_num_docs: u64,
+    /// Number of splits executed locally (excluding cache hits and lambda).
+    #[prost(uint64, tag = "3")]
+    pub localexec_num_splits: u64,
+    /// Sum of `split.num_docs` across locally-executed splits.
+    #[prost(uint64, tag = "4")]
+    pub localexec_num_docs: u64,
+    /// The worst single-split contribution, ranked by `warmup + cpu_search`
+    /// (intentionally excludes the queueing phases `wait_for_search_permit`
+    /// and `wait_for_cpu_pool` so the ranking reflects "how much work this
+    /// split actually did").
+    #[prost(message, optional, tag = "5")]
+    pub split_resources_worst: ::core::option::Option<SplitResourceStats>,
+    /// Field-wise sum of `SplitResourceStats` across all locally-executed splits.
+    /// If you want to compute averages, divide by localexec_num_splits.
+    #[prost(message, optional, tag = "6")]
+    pub split_resources_sum: ::core::option::Option<SplitResourceStats>,
+    /// Minimum `wait_for_search_permit_microsecs` across the locally-executed
+    /// splits represented by this stats record. Useful to detect a busy leaf:
+    /// if even the luckiest split waited long, the node was already saturated
+    /// before this query arrived. Splits that did not execute locally (cache
+    /// hits, lambda-dispatched) do NOT contribute — they leave the field unset.
+    ///
+    /// Aggregation is MIN everywhere (not extensive sum like most fields).
+    /// `add_leaf_stats` takes the min of two `Option<u64>` with
+    /// `min(None, x) = x`.
+    #[prost(uint64, optional, tag = "7")]
+    pub min_wait_for_search_permit_microsecs: ::core::option::Option<u64>,
+    /// Same as above, but for `wait_for_cpu_pool_microsecs`.
+    #[prost(uint64, optional, tag = "8")]
+    pub min_wait_for_cpu_pool_microsecs: ::core::option::Option<u64>,
+    /// Wall-clock duration of the leaf search (set in `multi_index_leaf_search`).
+    #[prost(uint64, tag = "9")]
+    pub wall_time_microsecs: u64,
+    /// Number of splits dispatched to lambda (offloaded execution).
+    #[prost(uint64, tag = "10")]
+    pub lambda_num_splits: u64,
+    /// Sum of `split.num_docs` across lambda-dispatched splits.
+    #[prost(uint64, tag = "11")]
+    pub lambda_num_docs: u64,
+    /// Number of lambda-dispatched splits that succeeded.
+    #[prost(uint64, tag = "12")]
+    pub lambda_success_num_splits: u64,
+    /// Sum of `split.num_docs` across successful lambda-dispatched splits.
+    #[prost(uint64, tag = "13")]
+    pub lambda_success_num_docs: u64,
+    /// At the source (a single leaf call) this is 1 if the offloaded path
+    /// finished after the local path (lambda was the bottleneck), 0 otherwise.
+    /// Forced to 0 when `lambda_num_splits == 0`. At aggregate levels (merged
+    /// across leaves) it is the count of leaves where lambda was the
+    /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
+    #[prost(uint64, tag = "14")]
+    pub lambda_bottleneck: u64,
+}
+/// Resource statistics for a root search.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RootResourceStats {
+    /// The leaf with the largest `wall_time_microsecs`.
+    #[prost(message, optional, tag = "1")]
+    pub leaf_resources_worst: ::core::option::Option<LeafResourceStats>,
+    /// Field-wise sum of all leaf stats. `wall_time_microsecs` is summed even though
+    /// it is not strictly extensive — the sum still gives a useful view of total leaf time.
+    /// If you want to compute averages, divide by leaf_num_calls: failed leaf attempts
+    /// usually do not come with proper counters.
+    #[prost(message, optional, tag = "2")]
+    pub leaf_resources_sum: ::core::option::Option<LeafResourceStats>,
+    /// Number of leaf calls excluding retries.
+    #[prost(uint64, tag = "3")]
+    pub leaf_num_calls: u64,
+    /// Number of leaf calls, including retries.
+    #[prost(uint64, tag = "4")]
+    pub leaf_num_calls_including_retries: u64,
+    /// Number of failed splits across all leaves.
+    #[prost(uint64, tag = "5")]
+    pub num_failed_splits: u64,
+    /// Per-leaf `wall_time_microsecs`, one entry per leaf that contributed
+    /// stats, sorted in descending order (largest first). Useful for
+    /// distinguishing "one straggler" from "all leaves comparably slow"
+    /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
+    #[prost(uint64, repeated, tag = "6")]
+    pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -472,8 +608,8 @@ pub struct LeafSearchResponse {
     pub intermediate_aggregation_result: ::core::option::Option<
         ::prost::alloc::vec::Vec<u8>,
     >,
-    #[prost(message, optional, tag = "8")]
-    pub resource_stats: ::core::option::Option<ResourceStats>,
+    #[prost(message, optional, tag = "9")]
+    pub resource_stats: ::core::option::Option<LeafResourceStats>,
 }
 /// The result of searching a single split in a Lambda invocation.
 /// Each result is tagged with its split_id so that ordering is irrelevant.
@@ -494,7 +630,7 @@ pub mod lambda_single_split_result {
     pub enum Outcome {
         /// On success, the leaf search response for this split.
         #[prost(message, tag = "2")]
-        Response(super::LeafSearchResponse),
+        Response(::prost::alloc::boxed::Box<super::LeafSearchResponse>),
         /// On failure, the error message.
         #[prost(string, tag = "3")]
         Error(::prost::alloc::string::String),
@@ -618,7 +754,7 @@ pub struct LeafListTermsResponse {
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum ListFieldType {
+pub enum ListFieldsType {
     Str = 0,
     U64 = 1,
     I64 = 2,
@@ -630,7 +766,7 @@ pub enum ListFieldType {
     IpAddr = 8,
     Json = 9,
 }
-impl ListFieldType {
+impl ListFieldsType {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable

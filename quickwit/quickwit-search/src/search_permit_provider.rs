@@ -19,12 +19,17 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use tokio::sync::{mpsc, oneshot};
 use tracing::warn;
+
+use crate::metrics::{
+    LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
+};
 
 /// Distributor of permits to perform split search operation.
 ///
@@ -209,6 +214,7 @@ struct SingleSplitPermitRequest {
     permit_sender: oneshot::Sender<SearchPermit>,
     permit_size: u64,
     job_cost: usize,
+    requested_at: Instant,
 }
 
 struct LeafPermitRequest {
@@ -248,6 +254,10 @@ impl LeafPermitRequest {
         task_metadata: Vec<SplitSearchTaskMetadata>,
     ) -> (Self, Vec<SearchPermitFuture>) {
         assert!(!task_metadata.is_empty(), "task_metadata must not be empty");
+        // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
+        // The actor will compute `requested_at.elapsed()` at grant time to
+        // report the permit's acquisition latency.
+        let requested_at = Instant::now();
         let mut permits = Vec::with_capacity(task_metadata.len());
         let mut single_split_permit_requests = Vec::with_capacity(task_metadata.len());
         for meta in task_metadata {
@@ -259,6 +269,7 @@ impl LeafPermitRequest {
                 permit_sender: tx,
                 permit_size: meta.memory_allocation.as_u64(),
                 job_cost: meta.job_cost,
+                requested_at,
             });
             permits.push(SearchPermitFuture(rx));
         }
@@ -383,10 +394,7 @@ impl SearchPermitActor {
 
     fn assign_available_permits(&mut self) {
         while let Some(permit_request) = self.pop_next_request_if_serviceable() {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
-                &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
-            );
-            ongoing_gauge_guard.add(1);
+            let ongoing_gauge_guard = GaugeGuard::new(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, 1.0);
             self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
             permit_request
@@ -398,14 +406,13 @@ impl SearchPermitActor {
                     warmup_slot_freed: false,
                     job_cost: permit_request.job_cost,
                     total_job_cost: self.total_job_cost.clone(),
+                    wait_for_acquisition: permit_request.requested_at.elapsed(),
                 })
                 // if the requester dropped its receiver, we drop the newly
                 // created SearchPermit which releases the resources
                 .ok();
         }
-        crate::SEARCH_METRICS
-            .leaf_search_single_split_tasks_pending
-            .set(self.permits_requests.len() as i64);
+        LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING.set(self.permits_requests.len() as f64);
 
         // Invariant: when the queue is empty and no memory is allocated, no tasks are
         // in-flight, so total_job_cost must be zero.
@@ -423,16 +430,23 @@ impl SearchPermitActor {
 }
 
 pub struct SearchPermit {
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: GaugeGuard,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
     warmup_slot_freed: bool,
     job_cost: usize,
     /// Shared with the actor; decremented in `Drop`.
     total_job_cost: Arc<AtomicUsize>,
+    /// Time the request spent in the permit queue.
+    wait_for_acquisition: Duration,
 }
 
 impl SearchPermit {
+    /// Time spent acquiring this permit (request → grant).
+    pub fn wait_for_acquisition(&self) -> Duration {
+        self.wait_for_acquisition
+    }
+
     /// Update the memory usage attached to this permit.
     ///
     /// This will increase or decrease the available memory in the [`SearchPermitProvider`].
@@ -499,7 +513,9 @@ impl Future for SearchPermitFuture {
         let receiver = Pin::new(&mut self.get_mut().0);
         match receiver.poll(cx) {
             Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
-            Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+            Poll::Ready(Err(_)) => panic!(
+                "Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
+            ),
             Poll::Pending => Poll::Pending,
         }
     }
