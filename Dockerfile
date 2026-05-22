@@ -110,8 +110,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     if [ "$INCLUDE_QUICKWIT_METRICS" = "true" ]; then \
         echo "Building quickwit-metrics with feature(s) '$CARGO_FEATURES_METRICS'"; \
         RUSTFLAGS="--cfg tokio_unstable" \
-            cargo build -p quickwit-cli --features "$CARGO_FEATURES_METRICS" --bin quickwit $RELEASE_FLAG; \
-        cp "target/$TARGET_DIR/quickwit" /quickwit/bin/quickwit-metrics; \
+            cargo build -p quickwit-cli --features "$CARGO_FEATURES_METRICS" --bin quickwit --target-dir target/metrics $RELEASE_FLAG; \
+        cp "target/metrics/$TARGET_DIR/quickwit" /quickwit/bin/quickwit-metrics; \
     fi; \
     if [ "$INCLUDE_POMSKY_INTAKE" = "true" ]; then \
         echo "Building pomsky-intake"; \
