@@ -44,7 +44,7 @@ use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
-use quickwit_config::{ChecksumStrategy, S3StorageConfig};
+use quickwit_config::S3StorageConfig;
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
@@ -96,7 +96,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
-    checksum_strategy: ChecksumStrategy,
+    checksum_strategy:  quickwit_config::ChecksumAlgorithm,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -158,8 +158,8 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if matches!(
-        s3_storage_config.checksum_strategy,
-        ChecksumStrategy::Disabled
+        s3_storage_config.checksum_algorithm,
+        quickwit_config::ChecksumAlgorithm::Disabled
     ) {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
         s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
@@ -204,7 +204,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
-            checksum_strategy: s3_storage_config.checksum_strategy,
+            checksum_strategy: s3_storage_config.checksum_algorithm,
         })
     }
 
@@ -252,13 +252,13 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((bucket, prefix))
 }
 
-/// Maps a [`ChecksumStrategy`] onto the AWS SDK's flexible-checksum algorithm.
+/// Maps a [`ChecksumAlgorithm`] onto the AWS SDK's flexible-checksum algorithm.
 /// `Md5` returns `None` because the S3 SDK silently no-ops `ChecksumAlgorithm::Md5`;
 /// MD5 is instead sent via the legacy `Content-MD5` header, computed client-side.
-fn aws_checksum_algorithm(strategy: ChecksumStrategy) -> Option<ChecksumAlgorithm> {
+fn aws_checksum_algorithm(strategy:  quickwit_config::ChecksumAlgorithm) -> Option<ChecksumAlgorithm> {
     match strategy {
-        ChecksumStrategy::Crc32c => Some(ChecksumAlgorithm::Crc32C),
-        ChecksumStrategy::Md5 | ChecksumStrategy::Disabled => None,
+        quickwit_config::ChecksumAlgorithm::Crc32c => Some(ChecksumAlgorithm::Crc32C),
+        quickwit_config::ChecksumAlgorithm::Md5 |  quickwit_config::ChecksumAlgorithm::Disabled => None,
     }
 }
 
@@ -284,7 +284,7 @@ struct Part {
     pub part_number: usize,
     pub range: Range<u64>,
     /// Pre-computed MD5 of the part bytes; only populated when
-    /// [`ChecksumStrategy::Md5`] is in use.
+    /// [`ChecksumAlgorithm::Md5`] is in use.
     pub md5: Option<md5::Digest>,
 }
 
@@ -380,13 +380,13 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Returns the MD5 of the byte range when the configured strategy is
-    /// [`ChecksumStrategy::Md5`], otherwise `None` (no I/O performed).
+    /// [`ChecksumAlgorithm::Md5`], otherwise `None` (no I/O performed).
     async fn maybe_compute_part_md5(
         &self,
         payload: &dyn crate::PutPayload,
         range: Range<u64>,
     ) -> io::Result<Option<md5::Digest>> {
-        if !matches!(self.checksum_strategy, ChecksumStrategy::Md5) {
+        if !matches!(self.checksum_strategy,  quickwit_config::ChecksumAlgorithm::Md5) {
             return Ok(None);
         }
         let read = payload.range_byte_stream(range).await?.into_async_read();
@@ -450,7 +450,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
-    #[tracing::instrument(skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
+    #[tracing::instrument(level = "debug", skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,
@@ -1030,7 +1030,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: ChecksumStrategy::Crc32c,
+            checksum_strategy:  quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1078,7 +1078,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
-            checksum_strategy: ChecksumStrategy::Crc32c,
+            checksum_strategy:  quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1116,7 +1116,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: ChecksumStrategy::Crc32c,
+            checksum_strategy:  quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1199,7 +1199,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: ChecksumStrategy::Crc32c,
+            checksum_strategy:  quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1291,7 +1291,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: ChecksumStrategy::Crc32c,
+            checksum_strategy:  quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))

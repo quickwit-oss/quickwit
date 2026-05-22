@@ -80,7 +80,7 @@ pub use crate::node_config::{
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
-    AzureStorageConfig, ChecksumStrategy, FileStorageConfig, GoogleCloudStorageConfig,
+    AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig, GoogleCloudStorageConfig,
     RamStorageConfig, S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig,
     StorageConfigs,
 };

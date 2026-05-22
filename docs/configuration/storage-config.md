@@ -46,17 +46,18 @@ This section contains one configuration subsection per storage provider. If a st
 
 ### S3 storage configuration
 
-| Property | Description | Default value |
-| --- | --- | --- |
-| `flavor` |  The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
-| `access_key_id` | The AWS access key ID. | |
-| `secret_access_key` | The AWS secret access key. | |
-| `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
-| `endpoint` | Custom endpoint for use with S3-compatible providers. | SDK default |
-| `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
-| `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
-| `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
-| `disable_checksums` | Disables [checksums](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) on requests and responses. Required by S3-compatible providers that do not support the additional checksum algorithms enabled by default in recent versions of the AWS SDK (Digital Ocean, Garage, GCS, MinIO). | `false` |
+| Property | Description                                                                                                                                                                                                                                                                                                         | Default value             |
+| --- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| `flavor` | The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`.                                                                                                                                                                                                            |                           |
+| `access_key_id` | The AWS access key ID.                                                                                                                                                                                                                                                                                              |                           |
+| `secret_access_key` | The AWS secret access key.                                                                                                                                                                                                                                                                                          |                           |
+| `region` | The AWS region to send requests to.                                                                                                                                                                                                                                                                                 | `us-east-1` (SDK default) |
+| `endpoint` | Custom endpoint for use with S3-compatible providers.                                                                                                                                                                                                                                                               | SDK default               |
+| `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO).                                                                                                                                        | `false`                   |
+| `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS).                                                                                                                                                    | `false`                   |
+| `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS).                                                                                                                                                     | `false`                   |
+| `checksum_algorithm` | Upload [checksum](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) algorithm. Allowed values: `crc32c` (computed and validated by the AWS SDK), `md5` (sent client-side via `Content-MD5`; useful for S3-compatible providers that predate `x-amz-checksum-*`), or `disabled`. | `crc32c`                  |
+| `disable_checksums` | **Deprecated.** Previously a boolean that disabled all request/response checksums. Equivalent to setting `checksum_algorithm: disabled`.                                                                                                                                                                            | `false`                     |
 
 :::warning
 Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
@@ -79,11 +80,11 @@ Storage flavors ensure that Quickwit works correctly with storage providers that
 
 *Digital Ocean*
 
-The Digital Ocean flavor (`digital_ocean`) forces path-style access, turns off multi-object delete requests, and disables checksums.
+The Digital Ocean flavor (`digital_ocean`) forces path-style access and turns off multi-object delete requests.
 
 *Garage flavor*
 
-The Garage flavor (`garage`) overrides the `region` parameter to `garage`, forces path-style access, and disables checksums.
+The Garage flavor (`garage`) overrides the `region` parameter to `garage` and forces path-style access.
 
 *Google Cloud Storage*
 
@@ -91,7 +92,7 @@ The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests, 
 
 *MinIO flavor*
 
-The MinIO flavor (`minio`) overrides the `region` parameter to `minio`, forces path-style access, and disables checksums.
+The MinIO flavor (`minio`) overrides the `region` parameter to `minio` and forces path-style access.
 
 Example of a storage configuration for Google Cloud Storage in YAML format:
 

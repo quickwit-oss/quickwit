@@ -41,7 +41,7 @@ pub enum StorageBackend {
 /// Strategy used to checksum object-storage uploads.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChecksumStrategy {
+pub enum ChecksumAlgorithm {
     /// CRC32C, computed and validated by the AWS SDK. Native S3 default.
     #[default]
     Crc32c,
@@ -344,7 +344,10 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
-    pub checksum_strategy: ChecksumStrategy,
+    pub checksum_algorithm: ChecksumAlgorithm,
+    /// Deprecated: applies into `checksum_algorithm: disabled`.
+    #[serde(default, skip_serializing)]
+    disable_checksums: Option<bool>,
     #[serde(default)]
     pub disable_stalled_stream_protection_upload: bool,
     #[serde(default)]
@@ -357,24 +360,26 @@ impl S3StorageConfig {
             Some(StorageBackendFlavor::DigitalOcean) => {
                 self.force_path_style_access = true;
                 self.disable_multi_object_delete = true;
-                self.checksum_strategy = ChecksumStrategy::Disabled;
             }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
-                self.checksum_strategy = ChecksumStrategy::Disabled;
             }
             Some(StorageBackendFlavor::Gcs) => {
                 self.disable_multi_object_delete = true;
                 self.disable_multipart_upload = true;
-                self.checksum_strategy = ChecksumStrategy::Disabled;
+                // doesnt support CRC32C via the S3 SDK
+                self.checksum_algorithm = ChecksumAlgorithm::Disabled;
             }
             Some(StorageBackendFlavor::MinIO) => {
                 self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
-                self.checksum_strategy = ChecksumStrategy::Disabled;
             }
             _ => {}
+        }
+        // Legacy: honor `disable_checksums: true` from older configs.
+        if matches!(self.disable_checksums, Some(true)) {
+            self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
     }
 
@@ -418,7 +423,7 @@ impl fmt::Debug for S3StorageConfig {
                 &self.disable_multi_object_delete,
             )
             .field("disable_multipart_upload", &self.disable_multipart_upload)
-            .field("checksum_strategy", &self.checksum_strategy)
+            .field("checksum_algorithm", &self.checksum_algorithm)
             .field(
                 "disable_stalled_stream_protection_upload",
                 &self.disable_stalled_stream_protection_upload,
@@ -661,7 +666,7 @@ mod tests {
                 force_path_style_access: true
                 disable_multi_object_delete_requests: true
                 disable_multipart_upload: true
-                checksum_strategy: disabled
+                checksum_algorithm: disabled
                 disable_stalled_stream_protection_upload: true
                 disable_stalled_stream_protection_download: true
             "#;
@@ -674,7 +679,7 @@ mod tests {
                 force_path_style_access: true,
                 disable_multi_object_delete: true,
                 disable_multipart_upload: true,
-                checksum_strategy: ChecksumStrategy::Disabled,
+                checksum_algorithm: ChecksumAlgorithm::Disabled,
                 disable_stalled_stream_protection_upload: true,
                 disable_stalled_stream_protection_download: true,
                 ..Default::default()
