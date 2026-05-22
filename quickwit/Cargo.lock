@@ -11059,6 +11059,7 @@ dependencies = [
  "quickwit-metrics",
  "serde_json",
  "time",
+ "tonic 0.14.6",
  "tracing 0.1.44",
  "tracing-opentelemetry",
  "tracing-subscriber",

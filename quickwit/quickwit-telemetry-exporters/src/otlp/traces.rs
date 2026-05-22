@@ -13,23 +13,33 @@
 // limitations under the License.
 
 use anyhow::Context;
-use opentelemetry_otlp::{Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{
+    Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
 
-use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
+use crate::otlp::{OtlpExporterConfig, OtlpHeaders, OtlpProtocol};
 
 impl OtlpProtocol {
-    pub(crate) fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
+    pub(crate) fn span_exporter(&self, headers: &OtlpHeaders) -> anyhow::Result<SpanExporter> {
         match self {
-            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
+            OtlpProtocol::Grpc => {
+                let metadata = headers.grpc_metadata()?;
+                SpanExporter::builder()
+                    .with_tonic()
+                    .with_metadata(metadata)
+                    .build()
+            }
             OtlpProtocol::HttpProtobuf => SpanExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpBinary)
+                .with_headers(headers.http_headers())
                 .build(),
             OtlpProtocol::HttpJson => SpanExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpJson)
+                .with_headers(headers.http_headers())
                 .build(),
         }
         .context("failed to initialize OTLP traces exporter")
@@ -41,7 +51,7 @@ pub(crate) fn init_tracer_provider(
     resource: Resource,
 ) -> anyhow::Result<SdkTracerProvider> {
     let traces_protocol = otlp_config.traces_protocol()?;
-    let span_exporter = traces_protocol.span_exporter()?;
+    let span_exporter = traces_protocol.span_exporter(otlp_config.headers())?;
     let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
         .with_batch_config(
             BatchConfigBuilder::default()
