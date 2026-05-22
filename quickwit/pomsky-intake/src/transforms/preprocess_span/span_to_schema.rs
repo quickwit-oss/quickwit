@@ -153,28 +153,20 @@ pub(super) fn span_to_schema(trace: &mut TraceEvent) {
 /// `span.Meta["_dd.agent_hostname"]` for the waterfall UI — which is what
 /// SaaS spans carry but BYOC spans were missing.
 fn backfill_agent_hostname(trace: &mut TraceEvent) {
-    let hostname_opt = {
-        let empty = ObjectMap::new();
-        let meta = match trace.get("meta") {
-            Some(Value::Object(m)) => m,
-            _ => &empty,
-        };
-        let agent_hostname = meta.get("_dd.agent_hostname");
-        let already_set = agent_hostname
-            .and_then(|v| v.as_str())
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-        if already_set {
-            None
-        } else {
-            meta.get("_dd.hostname").cloned()
-        }
+    let Some(Value::Object(meta)) = trace.get_mut("meta") else {
+        return;
     };
-    if let Some(hostname) = hostname_opt {
-        if let Some(Value::Object(meta)) = trace.get_mut("meta") {
-            meta.insert("_dd.agent_hostname".into(), hostname);
-        }
+    let already_set = matches!(
+        meta.get("_dd.agent_hostname").and_then(Value::as_str),
+        Some(s) if !s.is_empty(),
+    );
+    if already_set {
+        return;
     }
+    let Some(hostname) = meta.get("_dd.hostname").cloned() else {
+        return;
+    };
+    meta.insert("_dd.agent_hostname".into(), hostname);
 }
 
 /// Promotes `meta._dd.hostname` → `host` and `meta.env` → `env`. Keys in
