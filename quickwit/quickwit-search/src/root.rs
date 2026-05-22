@@ -1764,6 +1764,8 @@ async fn assign_client_fetch_docs_jobs(
 pub(crate) fn compute_split_cost(num_docs: u64) -> usize {
     // TODO this formula could be tuned a lot more. The general idea is that there is a fixed
     // cost to searching a split, plus a somewhat-linear cost depending on the size of the split
+    // This should also factor the query shape (is it an expensive filter, is it an expensive
+    // aggregation...)
     5 + (num_docs / 100_000) as usize
 }
 
