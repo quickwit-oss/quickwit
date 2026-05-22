@@ -483,12 +483,10 @@ mod tests {
             merge_planner_handle.process_pending_and_observe().await;
             let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
             assert_eq!(operations.len(), 3);
-            let mut merge_operations = operations
-                .into_iter()
-                .sorted_by_key(|op| {
-                    let op = op.as_operation();
-                    (op.splits[0].partition_id, op.splits[0].doc_mapping_uid)
-                });
+            let mut merge_operations = operations.into_iter().sorted_by_key(|op| {
+                let op = op.as_operation();
+                (op.splits[0].partition_id, op.splits[0].doc_mapping_uid)
+            });
 
             let first_merge_operation = merge_operations.next().unwrap();
             assert_eq!(first_merge_operation.as_operation().splits.len(), 4);
