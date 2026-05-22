@@ -376,7 +376,7 @@ mod tests {
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{
-        MergePolicy, MergeTask, StableLogMergePolicy, merge_policy_from_settings,
+        MergePolicy, MergeSource, StableLogMergePolicy, merge_policy_from_settings,
     };
     use crate::models::NewSplits;
 
@@ -481,16 +481,20 @@ mod tests {
             };
             merge_planner_mailbox.send_message(message).await?;
             merge_planner_handle.process_pending_and_observe().await;
-            let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+            let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
             assert_eq!(operations.len(), 3);
             let mut merge_operations = operations
                 .into_iter()
-                .sorted_by_key(|op| (op.splits[0].partition_id, op.splits[0].doc_mapping_uid));
+                .sorted_by_key(|op| {
+                    let op = op.as_operation();
+                    (op.splits[0].partition_id, op.splits[0].doc_mapping_uid)
+                });
 
             let first_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(first_merge_operation.splits.len(), 4);
+            assert_eq!(first_merge_operation.as_operation().splits.len(), 4);
             assert!(
                 first_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 1
@@ -498,9 +502,10 @@ mod tests {
             );
 
             let second_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(second_merge_operation.splits.len(), 3);
+            assert_eq!(second_merge_operation.as_operation().splits.len(), 3);
             assert!(
                 second_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 1
@@ -508,9 +513,10 @@ mod tests {
             );
 
             let third_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(third_merge_operation.splits.len(), 3);
+            assert_eq!(third_merge_operation.as_operation().splits.len(), 3);
             assert!(
                 third_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 2
@@ -580,7 +586,7 @@ mod tests {
         // We wait for the first merge ops. If we sent the Quit message right away, it would have
         // been queue before first `PlanMerge` message.
         let merge_task_res = merge_split_downloader_inbox
-            .recv_typed_message::<MergeTask>()
+            .recv_typed_message::<MergeSource>()
             .await;
         assert!(merge_task_res.is_ok());
 
@@ -594,7 +600,7 @@ mod tests {
 
         let _ = merge_planner_handle.process_pending_and_observe().await;
 
-        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
 
         assert!(merge_ops.is_empty());
 
@@ -602,7 +608,7 @@ mod tests {
 
         let (exit_status, _last_state) = merge_planner_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert!(merge_ops.is_empty());
         universe.assert_quit().await;
         Ok(())
@@ -672,7 +678,7 @@ mod tests {
         merge_planner_mailbox.send_message(Command::Quit).await?;
         let (exit_status, _last_state) = merge_planner_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
 
         assert!(merge_tasks.is_empty());
         universe.assert_quit().await;
@@ -750,7 +756,7 @@ mod tests {
 
         // Instead, we wait for the first merge ops.
         let merge_task_res = merge_split_downloader_inbox
-            .recv_typed_message::<MergeTask>()
+            .recv_typed_message::<MergeSource>()
             .await;
         assert!(merge_task_res.is_ok());
 
@@ -759,7 +765,7 @@ mod tests {
         let (exit_status, _last_state) = merge_planner_handle.join().await;
 
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert!(merge_tasks.is_empty());
 
         universe.assert_quit().await;
