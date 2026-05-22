@@ -13,7 +13,6 @@ datadog:
   site: dd.datad0g.com
   byocTelemetry:
     enabled: true
-    host: datad0g.com
 
 environment:
   - name: QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER

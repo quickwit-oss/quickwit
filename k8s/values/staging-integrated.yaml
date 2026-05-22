@@ -13,7 +13,6 @@ datadog:
   site: dd.datad0g.com  # Staging environment
   byocTelemetry:
     enabled: true
-    host: datad0g.com
 
 cloudprem:
   index:
