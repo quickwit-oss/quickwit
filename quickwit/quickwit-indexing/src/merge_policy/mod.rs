@@ -64,6 +64,28 @@ impl MergeTask {
     }
 }
 
+/// Carries either a scheduled merge task (old pipeline, with RAII permit + inventory tracking)
+/// or a bare operation (compactor pipeline, which manages concurrency and dedup independently).
+pub enum MergeSource {
+    Task(MergeTask),
+    Operation(MergeOperation),
+}
+
+impl MergeSource {
+    pub fn as_operation(&self) -> &MergeOperation {
+        match self {
+            MergeSource::Task(task) => task,
+            MergeSource::Operation(op) => op,
+        }
+    }
+}
+
+impl fmt::Debug for MergeSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_operation().fmt(f)
+    }
+}
+
 impl fmt::Debug for MergeTask {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.merge_operation.as_ref().fmt(f)

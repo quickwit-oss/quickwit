@@ -29,7 +29,7 @@ use tracing::error;
 use super::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
 use super::parquet_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
-use crate::merge_policy::{MergeOperation, MergeTask, compute_merge_score};
+use crate::merge_policy::{MergeOperation, MergeSource, MergeTask, compute_merge_score};
 use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 
 pub struct MergePermit {
@@ -229,7 +229,7 @@ impl MergeSchedulerService {
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
             PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
             PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
-            match split_downloader_mailbox.try_send_message(merge_task) {
+            match split_downloader_mailbox.try_send_message(MergeSource::Task(merge_task)) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
                     // The split downloader mailbox has an unbounded queue capacity,
