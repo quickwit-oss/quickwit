@@ -240,3 +240,9 @@ pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",
         subsystem: "search",
 );
+
+pub(crate) static SEARCHER_NODE_LOAD: LazyGauge = lazy_gauge!(
+        name: "searcher_node_load",
+        description: "Current load on this searcher node, expressed as the sum of job costs for all queued and active split search tasks.",
+        subsystem: "search",
+);

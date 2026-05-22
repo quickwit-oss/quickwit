@@ -29,6 +29,7 @@ use tracing::warn;
 
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING,
+    SEARCHER_NODE_LOAD,
 };
 
 /// Distributor of permits to perform split search operation.
@@ -332,7 +333,9 @@ impl SearchPermitActor {
                 // Increment total_job_cost for all tasks entering the queue (both pending and
                 // those that will be granted immediately by assign_available_permits below).
                 let added: usize = task_metadata.iter().map(|m| m.job_cost).sum();
-                self.total_job_cost.fetch_add(added, Ordering::Relaxed);
+                // fetch_add returns the previous value, so add `added` to get the new total.
+                let new_load = self.total_job_cost.fetch_add(added, Ordering::Relaxed) + added;
+                SEARCHER_NODE_LOAD.set(new_load as f64);
 
                 let (leaf_permit_request, permit_futures) =
                     LeafPermitRequest::from_task_metadata(task_metadata);
@@ -424,6 +427,7 @@ impl SearchPermitActor {
                     total_job_cost = prev,
                     "total_job_cost is non-zero with no tasks in queue or active; resetting to 0"
                 );
+                SEARCHER_NODE_LOAD.set(0.0);
             }
         }
     }
@@ -497,6 +501,8 @@ impl Drop for SearchPermit {
                 "job cost underflow: more job cost released than allocated"
             );
         }
+        // fetch_update returns the previous value, so subtract job_cost to get the new total.
+        SEARCHER_NODE_LOAD.set(prev.saturating_sub(self.job_cost) as f64);
         self.send_if_still_running(SearchPermitMessage::Drop {
             memory_size: self.memory_allocation,
             warmup_slot_freed: self.warmup_slot_freed,
