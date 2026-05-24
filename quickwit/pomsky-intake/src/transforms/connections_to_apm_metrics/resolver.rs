@@ -30,11 +30,21 @@
 //! (`encoded_tags` for container/host tags, `encoded_connections_tags`
 //! for per-connection tags).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
+use super::types::ConnectionTags;
 use crate::protos::process::{
     CollectorConnections, Connection, ConnectionDirection, ConnectionType, EphemeralPortState,
 };
+
+/// Tag keys that NSX's `iisTags` allowlist picks up from process tags only.
+/// Mirrors `dd-go/trace/apps/network-stats-extractor/converter/inventory.go`.
+const IIS_TAG_KEYS: &[&str] = &[
+    "http.iis.app_pool",
+    "http.iis.site",
+    "http.iis.sitename",
+    "http.iis.subsite",
+];
 
 /// Well-known DNS port. Traffic on this remote port is assumed to be DNS
 /// regardless of UDP/TCP or the agent's direction heuristic.
@@ -335,22 +345,90 @@ fn split_tag(tag: &[u8]) -> Option<(&str, &str)> {
 /// Resolves the env tag for a connection with the same precedence chain
 /// as `resolve_service` but no fallback (returns `None` if absent).
 pub(super) fn resolve_env(cc: &CollectorConnections, conn: &Connection) -> Option<String> {
+    resolve_simple_tag(cc, conn, "env")
+}
+
+/// Resolves the version tag for a connection, mirroring NSX's
+/// `processTagForHTTPInfo` behavior (`dd-go/trace/apps/network-stats-extractor/
+/// converter/inventory.go::processTagForHTTPInfo`): take the first non-empty
+/// `version:X` found across the three tag sources, in process → container →
+/// host priority. No fallback — returns `None` if no tag source provides one.
+pub(super) fn resolve_version(cc: &CollectorConnections, conn: &Connection) -> Option<String> {
+    resolve_simple_tag(cc, conn, "version")
+}
+
+/// Shared implementation behind `resolve_env` and `resolve_version`: walk the
+/// three tag buffers in the standard priority order and return the first
+/// non-empty value found for `key`.
+fn resolve_simple_tag(cc: &CollectorConnections, conn: &Connection, key: &str) -> Option<String> {
     if conn.tags_idx > 0
-        && let Some(v) = find_tag(&cc.encoded_connections_tags, conn.tags_idx, "env")
+        && let Some(v) = find_tag(&cc.encoded_connections_tags, conn.tags_idx, key)
     {
         return Some(v);
     }
     if conn.local_container_tags_index >= 0
-        && let Some(v) = find_tag(&cc.encoded_tags, conn.local_container_tags_index, "env")
+        && let Some(v) = find_tag(&cc.encoded_tags, conn.local_container_tags_index, key)
     {
         return Some(v);
     }
     if cc.host_tags_index > 0
-        && let Some(v) = find_tag(&cc.encoded_tags, cc.host_tags_index, "env")
+        && let Some(v) = find_tag(&cc.encoded_tags, cc.host_tags_index, key)
     {
         return Some(v);
     }
     None
+}
+
+/// Look up a tag only on the per-connection (process) tag buffer. Mirrors
+/// NSX's gating in `processTagForHTTPInfo` where `tls.library` and the
+/// `iisTags` set are restricted to `tagSource == usm.ProcessSource`.
+fn resolve_process_only_tag(
+    cc: &CollectorConnections,
+    conn: &Connection,
+    key: &str,
+) -> Option<String> {
+    if conn.tags_idx > 0 {
+        find_tag(&cc.encoded_connections_tags, conn.tags_idx, key)
+    } else {
+        None
+    }
+}
+
+/// Resolves the TLS library name a process is linking against (e.g.
+/// `openssl`, `gotls`, `nodejs`). Process-source only, no fallback.
+pub(super) fn resolve_tls_library(cc: &CollectorConnections, conn: &Connection) -> Option<String> {
+    resolve_process_only_tag(cc, conn, "tls.library")
+}
+
+/// Resolves the IIS-specific tag set ([`IIS_TAG_KEYS`]) attached to a
+/// connection's process. Process-source only — IIS only runs on Windows and
+/// these tags never appear on container/host tag sources.
+///
+/// Returns an empty map (no heap allocation) when none of the keys are set,
+/// which is the common case for Linux workloads.
+pub(super) fn resolve_iis_tags(
+    cc: &CollectorConnections,
+    conn: &Connection,
+) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for key in IIS_TAG_KEYS {
+        if let Some(value) = resolve_process_only_tag(cc, conn, key) {
+            out.insert((*key).to_string(), value);
+        }
+    }
+    out
+}
+
+/// Convenience: resolve every non-service per-connection enrichment in one
+/// call. Mirrors the way NSX's `FindLocalUSMInfo` populates `USMInfo` in a
+/// single pass.
+pub(super) fn resolve_tags(cc: &CollectorConnections, conn: &Connection) -> ConnectionTags {
+    ConnectionTags {
+        env: resolve_env(cc, conn),
+        version: resolve_version(cc, conn),
+        tls_library: resolve_tls_library(cc, conn),
+        iis_tags: resolve_iis_tags(cc, conn),
+    }
 }
 
 /// Applies NSX's two direction-fixup heuristics in place.
@@ -705,6 +783,156 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(resolve_env(&cc, &conn), None);
+    }
+
+    #[test]
+    fn resolve_version_picks_first_available_source() {
+        // Process tags win over container tags, container wins over host.
+        let cc = CollectorConnections {
+            encoded_connections_tags: v1_buffer(&["version:from-process"]),
+            encoded_tags: v1_buffer(&["version:from-host"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: 1,
+            local_container_tags_index: -1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_version(&cc, &conn).as_deref(), Some("from-process"));
+
+        let conn_no_proc = Connection {
+            tags_idx: -1,
+            local_container_tags_index: -1,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_version(&cc, &conn_no_proc).as_deref(),
+            Some("from-host"),
+        );
+    }
+
+    #[test]
+    fn resolve_version_returns_none_without_tag() {
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["service:web", "env:prod"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: -1,
+            local_container_tags_index: -1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_version(&cc, &conn), None);
+    }
+
+    #[test]
+    fn resolve_tls_library_only_from_process_source() {
+        // NSX restricts `tls.library` to ProcessSource. We must not pick up
+        // a `tls.library:from-container` tag from the container tag buffer.
+        let cc = CollectorConnections {
+            encoded_connections_tags: v1_buffer(&["tls.library:gotls"]),
+            encoded_tags: v1_buffer(&["tls.library:from-container"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: 1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_tls_library(&cc, &conn).as_deref(), Some("gotls"));
+
+        // No process tags → no tls.library, even if container has it.
+        let conn_no_proc = Connection {
+            tags_idx: -1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_tls_library(&cc, &conn_no_proc), None);
+    }
+
+    #[test]
+    fn resolve_iis_tags_collects_only_allowlisted_process_keys() {
+        let cc = CollectorConnections {
+            encoded_connections_tags: v1_buffer(&[
+                "http.iis.app_pool:DefaultAppPool",
+                "http.iis.site:Default Web Site",
+                "http.iis.unknown_key:ignored",
+                "service:iis-app",
+            ]),
+            // Even if container tags carry IIS keys, they must NOT be picked
+            // up — NSX restricts the iisTags allowlist to ProcessSource.
+            encoded_tags: v1_buffer(&["http.iis.app_pool:from-container"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: 1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        let iis = resolve_iis_tags(&cc, &conn);
+        assert_eq!(
+            iis.get("http.iis.app_pool").map(String::as_str),
+            Some("DefaultAppPool"),
+        );
+        assert_eq!(
+            iis.get("http.iis.site").map(String::as_str),
+            Some("Default Web Site"),
+        );
+        // sitename/subsite weren't on the buffer → not in the map.
+        assert!(!iis.contains_key("http.iis.sitename"));
+        assert!(!iis.contains_key("http.iis.subsite"));
+        // Non-allowlisted keys never enter the map even when present on the
+        // process tag buffer.
+        assert!(!iis.contains_key("http.iis.unknown_key"));
+    }
+
+    #[test]
+    fn resolve_iis_tags_returns_empty_map_for_linux_workloads() {
+        // Typical Linux/K8s workload: no IIS tags anywhere.
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["service:web", "env:prod", "kube_deployment:web"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: -1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert!(resolve_iis_tags(&cc, &conn).is_empty());
+    }
+
+    #[test]
+    fn resolve_tags_aggregates_all_fields() {
+        // End-to-end through `resolve_tags`: env from container, version from
+        // process, tls.library + iis tags from process only.
+        let cc = CollectorConnections {
+            encoded_connections_tags: v1_buffer(&[
+                "version:2.0.1",
+                "tls.library:openssl",
+                "http.iis.app_pool:Pool1",
+            ]),
+            encoded_tags: v1_buffer(&["env:prod"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: 1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        let tags = resolve_tags(&cc, &conn);
+        assert_eq!(tags.env.as_deref(), Some("prod"));
+        assert_eq!(tags.version.as_deref(), Some("2.0.1"));
+        assert_eq!(tags.tls_library.as_deref(), Some("openssl"));
+        assert_eq!(
+            tags.iis_tags.get("http.iis.app_pool").map(String::as_str),
+            Some("Pool1"),
+        );
     }
 
     #[test]

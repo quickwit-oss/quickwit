@@ -18,6 +18,8 @@
 //! `aggregator.BucketKey` / `aggregator.ServiceIndexKey` tuples; the
 //! struct names follow the Rust idiom but the fields are a 1:1 port.
 
+use std::collections::BTreeMap;
+
 use bytes::Bytes;
 
 use crate::protos::process::ConnectionDirection;
@@ -40,11 +42,31 @@ pub(super) struct ProtoStat {
     pub(super) first_latency_sample: Option<f64>,
 }
 
-/// Per-connection per-endpoint record with service/env/direction resolved.
+/// Per-connection enrichment resolved before the protocol parsers run.
+///
+/// Grouped into one struct to keep `UsmStat::from_proto_stat`'s signature
+/// from drifting open-ended as we add tag families (env, version, tls.library,
+/// iis.*, …). Mirrors NSX's `USMInfo` shape minus the SaaS-only `PrimaryTags`
+/// (those need per-org configuration we don't have in BYOC).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub(super) struct ConnectionTags {
+    pub(super) env: Option<String>,
+    pub(super) version: Option<String>,
+    /// TLS library name (e.g. `openssl`, `gotls`). Process-source only.
+    /// Matches `dd-go/trace/apps/network-stats-extractor/converter/inventory.
+    /// go::processTagForHTTPInfo`.
+    pub(super) tls_library: Option<String>,
+    /// IIS-related per-process tags. Process-source only. Keys are restricted
+    /// to `http.iis.{app_pool,site,sitename,subsite}` — matches NSX's `iisTags`
+    /// allowlist. Empty for non-Windows workloads.
+    pub(super) iis_tags: BTreeMap<String, String>,
+}
+
+/// Per-connection per-endpoint record with service/direction + connection tags resolved.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct UsmStat {
     pub(super) service: String,
-    pub(super) env: Option<String>,
+    pub(super) tags: ConnectionTags,
     pub(super) direction: Direction,
     pub(super) operation: Operation,
     pub(super) resource: String,
@@ -59,12 +81,12 @@ impl UsmStat {
     pub(super) fn from_proto_stat(
         ps: ProtoStat,
         service: String,
-        env: Option<String>,
+        tags: ConnectionTags,
         direction: Direction,
     ) -> Self {
         Self {
             service,
-            env,
+            tags,
             direction,
             operation: ps.operation,
             resource: ps.resource,
@@ -133,7 +155,7 @@ impl Operation {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BucketKey {
     pub(super) service: String,
-    pub(super) env: Option<String>,
+    pub(super) tags: ConnectionTags,
     pub(super) operation: String,
     pub(super) resource: String,
     pub(super) status_class: Option<StatusClass>,
@@ -145,7 +167,7 @@ pub(super) struct BucketKey {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ServiceIndexKey {
     pub(super) service: String,
-    pub(super) env: Option<String>,
+    pub(super) tags: ConnectionTags,
     pub(super) operation: String,
 }
 

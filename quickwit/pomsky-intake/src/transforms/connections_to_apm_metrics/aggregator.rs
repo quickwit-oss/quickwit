@@ -57,11 +57,27 @@ fn cmp_by_bucket_key(left: &UsmStat, right: &UsmStat) -> Ordering {
     left.service
         .cmp(&right.service)
         .then_with(|| {
-            left.env
+            left.tags
+                .env
                 .as_deref()
                 .unwrap_or("")
-                .cmp(right.env.as_deref().unwrap_or(""))
+                .cmp(right.tags.env.as_deref().unwrap_or(""))
         })
+        .then_with(|| {
+            left.tags
+                .version
+                .as_deref()
+                .unwrap_or("")
+                .cmp(right.tags.version.as_deref().unwrap_or(""))
+        })
+        .then_with(|| {
+            left.tags
+                .tls_library
+                .as_deref()
+                .unwrap_or("")
+                .cmp(right.tags.tls_library.as_deref().unwrap_or(""))
+        })
+        .then_with(|| left.tags.iis_tags.cmp(&right.tags.iis_tags))
         .then_with(|| left.operation.as_str().cmp(right.operation.as_str()))
         .then_with(|| left.direction.as_str().cmp(right.direction.as_str()))
         .then_with(|| left.resource.cmp(&right.resource))
@@ -84,7 +100,7 @@ pub(super) fn aggregate(stats: &[UsmStat]) -> Buckets {
         let operation = full_operation(stat.operation, stat.direction);
         let fine_key = BucketKey {
             service: stat.service.clone(),
-            env: stat.env.clone(),
+            tags: stat.tags.clone(),
             operation: operation.clone(),
             resource: stat.resource.clone(),
             status_class,
@@ -92,7 +108,7 @@ pub(super) fn aggregate(stats: &[UsmStat]) -> Buckets {
         };
         let index_key = ServiceIndexKey {
             service: stat.service.clone(),
-            env: stat.env.clone(),
+            tags: stat.tags.clone(),
             operation,
         };
 
@@ -144,7 +160,7 @@ fn merge_into<K: std::hash::Hash + Eq>(
 mod tests {
     use bytes::Bytes;
 
-    use super::super::types::{Direction, Operation, UsmStat};
+    use super::super::types::{ConnectionTags, Direction, Operation, UsmStat};
     use super::*;
 
     #[allow(clippy::too_many_arguments)]
@@ -160,7 +176,10 @@ mod tests {
     ) -> UsmStat {
         UsmStat {
             service: service.into(),
-            env: Some("prod".into()),
+            tags: ConnectionTags {
+                env: Some("prod".into()),
+                ..Default::default()
+            },
             direction: dir,
             operation: op,
             resource: resource.into(),

@@ -164,11 +164,14 @@ fn build_universal_tags(host: &str, key: &BucketKey) -> MetricTags {
         tags.replace("host".into(), host.to_string());
     }
     tags.replace("service".into(), key.service.clone());
-    if let Some(env) = key.env.as_ref() {
-        tags.replace("env".into(), env.clone());
-    }
+    apply_connection_tags(&mut tags, &key.tags);
     if !key.resource.is_empty() {
         tags.replace("resource_name".into(), key.resource.clone());
+        // `resource` is the murmur3-hashed resource-name ID the SaaS UI uses
+        // for resource-page URL routing. Hash function matches dd-go's
+        // `trace/model/resource.go::HashResourceMurmur3` exactly (`Sum64` of
+        // the Go `twmb/murmur3` package = low 64 bits of x64_128).
+        tags.replace("resource".into(), hash_resource(&key.resource));
     }
     if let Some(sc) = key.status_class {
         tags.replace("http.status_class".into(), sc.as_tag_value().to_string());
@@ -190,23 +193,71 @@ fn build_service_index_tags(host: &str, key: &ServiceIndexKey) -> MetricTags {
     tags.replace("operation_name".into(), key.operation.clone());
     tags.replace("base_service".into(), key.service.clone());
     tags.replace("instr_src".into(), "usm".to_string());
-    if let Some(env) = key.env.as_ref() {
+    apply_connection_tags(&mut tags, &key.tags);
+    tags
+}
+
+/// Mirrors NSX's `USMInfo`-to-tag projection: copy each populated optional
+/// onto the metric tag set and expand the `iisTags` map into individual
+/// `http.iis.*` tags. Empty optionals and empty IIS maps are skipped so the
+/// emitter never produces `version:` or `http.iis.app_pool:` for workloads
+/// that don't set those tags.
+fn apply_connection_tags(tags: &mut MetricTags, ct: &super::types::ConnectionTags) {
+    if let Some(env) = ct.env.as_ref() {
         tags.replace("env".into(), env.clone());
     }
-    tags
+    if let Some(version) = ct.version.as_ref() {
+        tags.replace("version".into(), version.clone());
+    }
+    if let Some(tls_library) = ct.tls_library.as_ref() {
+        tags.replace("tls.library".into(), tls_library.clone());
+    }
+    for (key, value) in &ct.iis_tags {
+        tags.replace(key.clone(), value.clone());
+    }
+}
+
+/// Resource-name → resource-ID hash. Mirrors the SaaS-side
+/// `dd-go/trace/model/resource.go::HashResourceMurmur3`:
+///
+/// ```go
+/// func HashResourceMurmur3(r string) string {
+///     return strconv.FormatUint(murmur3.Sum64([]byte(r)), 16)
+/// }
+/// ```
+///
+/// `twmb/murmur3.Sum64` returns the low 64 bits of the 128-bit x64 hash
+/// with seed=0. We replicate that exactly so resource IDs emitted by BYOC
+/// match the SaaS UI's expected format (lowercase hex, no leading zeros).
+fn hash_resource(resource: &str) -> String {
+    let mut cursor = std::io::Cursor::new(resource.as_bytes());
+    let h128 = murmur3::murmur3_x64_128(&mut cursor, 0)
+        .expect("murmur3 over an in-memory cursor cannot fail");
+    let h64 = (h128 & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+    format!("{h64:x}")
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::super::aggregator::{Bucket, Buckets};
-    use super::super::types::{BucketKey, ServiceIndexKey, StatusClass};
+    use super::super::types::{BucketKey, ConnectionTags, ServiceIndexKey, StatusClass};
     use super::*;
+
+    fn sample_tags() -> ConnectionTags {
+        ConnectionTags {
+            env: Some("prod".into()),
+            version: Some("v1.2.3".into()),
+            ..Default::default()
+        }
+    }
 
     fn sample_buckets() -> Buckets {
         let mut buckets = Buckets::default();
         let key = BucketKey {
             service: "web".into(),
-            env: Some("prod".into()),
+            tags: sample_tags(),
             operation: "universal.http.server".into(),
             resource: "GET /x".into(),
             status_class: Some(StatusClass::TwoXx),
@@ -222,7 +273,7 @@ mod tests {
         );
         let idx = ServiceIndexKey {
             service: "web".into(),
-            env: Some("prod".into()),
+            tags: sample_tags(),
             operation: "universal.http.server".into(),
         };
         buckets.service_index.insert(
@@ -253,7 +304,10 @@ mod tests {
         let tags = counter.tags().expect("tags");
         assert_eq!(tags.get("service"), Some("web"));
         assert_eq!(tags.get("env"), Some("prod"));
+        assert_eq!(tags.get("version"), Some("v1.2.3"));
         assert_eq!(tags.get("resource_name"), Some("GET /x"));
+        // Murmur3-hashed resource ID — see hash_resource for the parity test.
+        assert_eq!(tags.get("resource"), Some(hash_resource("GET /x").as_str()));
         assert_eq!(tags.get("http.status_class"), Some("2xx"));
         assert_eq!(tags.get("error"), Some("false"));
         assert_eq!(tags.get("instr_src"), Some("usm"));
@@ -262,6 +316,135 @@ mod tests {
             MetricValue::Counter { value } => assert_eq!(*value, 5.0),
             _ => panic!("expected counter"),
         }
+    }
+
+    #[test]
+    fn service_index_carries_version_tag() {
+        let buckets = sample_buckets();
+        let mut output = OutputBuffer::default();
+        emit_all("host-1", None, &buckets, &mut output);
+        let events: Vec<_> = output.drain().collect();
+        let hits = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Metric(m) if m.name() == "trace.services_by_operation.hits" => Some(m),
+                _ => None,
+            })
+            .expect("service-index hits emitted");
+        let tags = hits.tags().expect("tags");
+        assert_eq!(tags.get("service"), Some("web"));
+        assert_eq!(tags.get("env"), Some("prod"));
+        assert_eq!(tags.get("version"), Some("v1.2.3"));
+        assert_eq!(tags.get("operation_name"), Some("universal.http.server"));
+        assert_eq!(tags.get("base_service"), Some("web"));
+    }
+
+    #[test]
+    fn hash_resource_matches_dd_go_reference() {
+        // Reference values produced by Go's
+        // `trace/model/resource.go::HashResourceMurmur3` (= `twmb/murmur3.Sum64`)
+        // for these exact inputs. If this assertion ever fails, the BYOC
+        // resource-page URL routing in the SaaS UI silently breaks because the
+        // emitted `resource` tag won't match the resource catalog's hash. So
+        // we pin the algorithm against known good outputs rather than just
+        // exercising the function.
+        assert_eq!(hash_resource(""), "0");
+        assert_eq!(hash_resource("GET /health"), "29b4fb26dc503948");
+        assert_eq!(hash_resource("get_/api/v1/users"), "588c5864905328a8");
+        assert_eq!(hash_resource("hello world"), "533f6046eb7f610e");
+        assert_eq!(hash_resource("POST /api/v1/orders"), "5595737db9746ba2");
+    }
+
+    #[test]
+    fn no_optional_tags_when_unset() {
+        // All optional ConnectionTags fields default-empty → emitter omits
+        // every one (no `version:`, no `tls.library:`, no `http.iis.*`). This
+        // is the common case for Linux/K8s workloads.
+        let mut buckets = Buckets::default();
+        buckets.fine_grained.insert(
+            BucketKey {
+                service: "web".into(),
+                tags: ConnectionTags {
+                    env: Some("prod".into()),
+                    ..Default::default()
+                },
+                operation: "universal.http.server".into(),
+                resource: "GET /x".into(),
+                status_class: Some(StatusClass::TwoXx),
+                is_error: false,
+            },
+            Bucket {
+                hits: 1,
+                errors: 0,
+                sketch: None,
+            },
+        );
+        let mut output = OutputBuffer::default();
+        emit_all("host-1", None, &buckets, &mut output);
+        let events: Vec<_> = output.drain().collect();
+        let counter = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Metric(m) if m.name() == "universal.http.server.hits" => Some(m),
+                _ => None,
+            })
+            .expect("hits counter emitted");
+        let tags = counter.tags().expect("tags");
+        assert!(tags.get("version").is_none());
+        assert!(tags.get("tls.library").is_none());
+        assert!(tags.get("http.iis.app_pool").is_none());
+        assert!(tags.get("http.iis.site").is_none());
+        assert!(tags.get("http.iis.sitename").is_none());
+        assert!(tags.get("http.iis.subsite").is_none());
+    }
+
+    #[test]
+    fn emits_tls_library_and_iis_tags_when_present() {
+        let mut iis = BTreeMap::new();
+        iis.insert(
+            "http.iis.app_pool".to_string(),
+            "DefaultAppPool".to_string(),
+        );
+        iis.insert("http.iis.site".to_string(), "Default Web Site".to_string());
+        let key = BucketKey {
+            service: "iis-app".into(),
+            tags: ConnectionTags {
+                env: Some("prod".into()),
+                version: Some("1.0".into()),
+                tls_library: Some("openssl".into()),
+                iis_tags: iis,
+            },
+            operation: "universal.http.server".into(),
+            resource: "GET /".into(),
+            status_class: Some(StatusClass::TwoXx),
+            is_error: false,
+        };
+        let mut buckets = Buckets::default();
+        buckets.fine_grained.insert(
+            key,
+            Bucket {
+                hits: 3,
+                errors: 0,
+                sketch: None,
+            },
+        );
+        let mut output = OutputBuffer::default();
+        emit_all("host-1", None, &buckets, &mut output);
+        let events: Vec<_> = output.drain().collect();
+        let counter = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Metric(m) if m.name() == "universal.http.server.hits" => Some(m),
+                _ => None,
+            })
+            .expect("hits counter emitted");
+        let tags = counter.tags().expect("tags");
+        assert_eq!(tags.get("tls.library"), Some("openssl"));
+        assert_eq!(tags.get("http.iis.app_pool"), Some("DefaultAppPool"));
+        assert_eq!(tags.get("http.iis.site"), Some("Default Web Site"));
+        // Keys that aren't in the IIS map shouldn't be emitted.
+        assert!(tags.get("http.iis.sitename").is_none());
+        assert!(tags.get("http.iis.subsite").is_none());
     }
 
     #[test]
