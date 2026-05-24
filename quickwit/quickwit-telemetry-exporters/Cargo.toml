@@ -13,13 +13,13 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 metrics = { workspace = true }
-metrics-exporter-otel = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+portable-atomic = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["parsing"] }
 tracing = { workspace = true }
@@ -28,3 +28,6 @@ tracing-subscriber = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }

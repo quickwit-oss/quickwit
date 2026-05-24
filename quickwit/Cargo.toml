@@ -170,7 +170,6 @@ lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
-metrics-exporter-otel = "0.3"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
@@ -192,6 +191,7 @@ parquet = { version = "58", default-features = false, features = ["arrow", "expe
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
+portable-atomic = { version = "1", features = ["float"] }
 postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }

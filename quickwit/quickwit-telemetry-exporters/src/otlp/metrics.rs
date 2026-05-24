@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use anyhow::Context;
-use metrics_exporter_otel::OpenTelemetryRecorder;
 use opentelemetry::metrics::MeterProvider;
 use opentelemetry_otlp::{MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 
+use super::metrics_exporter::OtlpMetricsRecorder;
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
 
 impl OtlpProtocol {
@@ -48,7 +48,7 @@ impl OtlpProtocol {
 pub(crate) fn build_recorder(
     service_version: &str,
     otlp_config: &OtlpExporterConfig,
-) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
+) -> anyhow::Result<(OtlpMetricsRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
     let temporality = otlp_config.metrics_temporality()?;
     let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
@@ -58,7 +58,7 @@ pub(crate) fn build_recorder(
         .build();
     let meter = metrics_provider.meter("quickwit");
 
-    let recorder = OpenTelemetryRecorder::new(meter);
+    let recorder = OtlpMetricsRecorder::new(meter);
     for (name, buckets) in quickwit_metrics::histogram_buckets() {
         recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
     }

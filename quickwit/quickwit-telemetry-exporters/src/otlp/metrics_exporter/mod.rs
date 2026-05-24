@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod config;
-pub(crate) mod logs;
-pub(crate) mod metrics;
-mod metrics_exporter;
-pub(crate) mod traces;
+mod recorder;
+mod state;
+mod storage;
 
-pub(crate) use config::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
+pub(crate) use recorder::OtlpMetricsRecorder;
+
+#[cfg(test)]
+mod tests;

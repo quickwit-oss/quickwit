@@ -2481,12 +2481,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "critical-section"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
-
-[[package]]
 name = "cron"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6197,19 +6191,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics-exporter-otel"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58b8984fa38406b80c094943c0ba90e53d5fff0aea051ff9fac96cf6940993c8"
-dependencies = [
- "metrics",
- "metrics-util",
- "opentelemetry",
- "portable-atomic",
- "scc",
-]
-
-[[package]]
 name = "metrics-exporter-prometheus"
 version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7852,9 +7833,6 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "portable-atomic-util"
@@ -9505,13 +9483,13 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "metrics",
- "metrics-exporter-otel",
  "metrics-exporter-prometheus",
  "metrics-util",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "portable-atomic",
  "quickwit-common",
  "quickwit-metrics",
  "serde_json",
