@@ -226,10 +226,7 @@ pub(crate) async fn es_compat_index_mapping(
         end_timestamp: params.end_timestamp,
         query_ast: None,
     };
-    let list_fields_response = match search_service
-        .root_list_fields(list_fields_request)
-        .await
-    {
+    let list_fields_response = match search_service.root_list_fields(list_fields_request).await {
         Ok(response) => Some(response),
         // Bad field pattern supplied by the caller — surface as 400.
         Err(err @ SearchError::InvalidArgument(_)) => {
