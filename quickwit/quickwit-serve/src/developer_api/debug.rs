@@ -107,7 +107,7 @@ async fn get_node_debug_infos(
         if node_id_patterns.matches(&ready_node.node_id) {
             let node_id = ready_node.node_id.clone();
             let client = DeveloperServiceClient::from_channel(
-                ready_node.grpc_advertise_addr(),
+                ready_node.grpc_advertise_addr,
                 ready_node.channel(),
                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
                 Some(CompressionEncoding::Zstd),

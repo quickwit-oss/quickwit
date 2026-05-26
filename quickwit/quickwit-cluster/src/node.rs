@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
 use std::fmt::Debug;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+#[cfg(any(test, feature = "testsuite"))]
+use quickwit_proto::indexing::IndexingTask;
+#[cfg(any(test, feature = "testsuite"))]
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use tonic::transport::Channel;
 
@@ -80,49 +80,24 @@ impl ClusterNode {
         self.inner.channel.clone()
     }
 
-    pub fn enabled_services(&self) -> &HashSet<QuickwitService> {
-        &self.inner.member.enabled_services
+    pub fn member(&self) -> &ClusterMember {
+        &self.inner.member
+    }
+
+    pub fn is_service_enabled(&self, service: QuickwitService) -> bool {
+        self.enabled_services.contains(&service)
     }
 
     pub fn is_indexer(&self) -> bool {
-        self.inner
-            .member
-            .enabled_services
-            .contains(&QuickwitService::Indexer)
+        self.is_service_enabled(QuickwitService::Indexer)
     }
 
     pub fn is_ingester(&self) -> bool {
-        self.inner
-            .member
-            .enabled_services
-            .contains(&QuickwitService::Indexer)
+        self.is_service_enabled(QuickwitService::Indexer)
     }
 
     pub fn is_searcher(&self) -> bool {
-        self.inner
-            .member
-            .enabled_services
-            .contains(&QuickwitService::Searcher)
-    }
-
-    pub fn grpc_advertise_addr(&self) -> SocketAddr {
-        self.inner.member.grpc_advertise_addr
-    }
-
-    pub fn indexing_tasks(&self) -> &[IndexingTask] {
-        &self.inner.member.indexing_tasks
-    }
-
-    pub fn indexing_capacity(&self) -> CpuCapacity {
-        self.inner.member.indexing_cpu_capacity
-    }
-
-    pub fn ingester_status(&self) -> IngesterStatus {
-        self.inner.member.ingester_status
-    }
-
-    pub fn is_ready(&self) -> bool {
-        self.inner.member.is_ready
+        self.is_service_enabled(QuickwitService::Searcher)
     }
 
     pub fn is_self_node(&self) -> bool {
@@ -138,7 +113,7 @@ impl std::ops::Deref for ClusterNode {
     type Target = ClusterMember;
 
     fn deref(&self) -> &ClusterMember {
-        &self.inner.member
+        self.member()
     }
 }
 

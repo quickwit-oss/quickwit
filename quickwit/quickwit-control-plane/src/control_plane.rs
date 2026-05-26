@@ -1132,12 +1132,12 @@ async fn watcher_indexers(
         // We rebalance shards when either readiness level changes.
         let mut trigger_rebalance = false;
         match cluster_change {
-            ClusterChange::Add(node) if node.is_indexer() && node.ingester_status().is_ready() => {
+            ClusterChange::Add(node) if node.is_indexer() && node.ingester_status.is_ready() => {
                 info!(
                     "indexer `{}` with status `{}` joined the cluster: rebalancing shards and \
                      rebuilding indexing plan",
                     node.node_id,
-                    node.ingester_status().as_json_str_name()
+                    node.ingester_status.as_json_str_name()
                 );
                 trigger_rebalance = true;
             }
@@ -1150,15 +1150,15 @@ async fn watcher_indexers(
                 trigger_rebalance = true
             }
             ClusterChange::Update { previous, updated } if updated.is_indexer() => {
-                let was_ready = previous.ingester_status().is_ready();
-                let is_ready = updated.ingester_status().is_ready();
+                let was_ready = previous.ingester_status.is_ready();
+                let is_ready = updated.ingester_status.is_ready();
 
                 if was_ready ^ is_ready {
                     info!(
                         "indexer `{}` status changed to `{}`: rebalancing shards and rebuilding \
                          indexing plan",
                         updated.node_id,
-                        updated.ingester_status().as_json_str_name()
+                        updated.ingester_status.as_json_str_name()
                     );
                     trigger_rebalance = true;
                 }

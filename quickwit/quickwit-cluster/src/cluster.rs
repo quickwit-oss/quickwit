@@ -253,7 +253,7 @@ impl Cluster {
             .await
             .live_nodes
             .values()
-            .filter(|node| node.is_ready())
+            .filter(|node| node.is_ready)
             .cloned()
             .collect()
     }
@@ -266,7 +266,7 @@ impl Cluster {
         let future = async move {
             let mut inner = inner.write().await;
             for node in inner.live_nodes.values() {
-                if node.is_ready() {
+                if node.is_ready {
                     change_stream_tx
                         .send(ClusterChange::Add(node.clone()))
                         .expect("receiver end of the channel should be open");

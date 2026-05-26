@@ -236,7 +236,7 @@ async fn balance_channel_for_service(
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Add(node) if node.enabled_services.contains(&service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
@@ -245,9 +245,9 @@ async fn balance_channel_for_service(
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                    Some(Change::Insert(node.grpc_advertise_addr, node.channel()))
                 }
-                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Remove(node) if node.enabled_services.contains(&service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
@@ -256,7 +256,7 @@ async fn balance_channel_for_service(
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -1038,7 +1038,7 @@ fn setup_ingester_pool(
                 // unnecessary churn
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
-                        && previous.ingester_status() != updated.ingester_status() =>
+                        && previous.ingester_status != updated.ingester_status =>
                 {
                     let change = build_ingester_insert_change(
                         &updated,
@@ -1071,7 +1071,7 @@ fn build_ingester_insert_change(
         generation_id = chitchat_id.generation_id,
         "adding/updating node `{}` with ingester status `{}` to ingester pool",
         chitchat_id.node_id,
-        node.ingester_status(),
+        node.ingester_status,
     );
     let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
@@ -1082,7 +1082,7 @@ fn build_ingester_insert_change(
     );
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
-        status: node.ingester_status(),
+        status: node.ingester_status,
         availability_zone: node.availability_zone().map(|az| az.to_string()),
     };
     Change::Insert(node_id, pool_entry)
@@ -1121,7 +1121,7 @@ fn build_ingester_service(
         .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             grpc_compression_encoding_opt,
@@ -1160,7 +1160,7 @@ async fn setup_searcher(
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
-                    let grpc_addr = node.grpc_advertise_addr();
+                    let grpc_addr = node.grpc_advertise_addr;
 
                     if node.is_self_node() {
                         let search_client =
@@ -1184,7 +1184,7 @@ async fn setup_searcher(
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -1288,7 +1288,7 @@ fn build_indexer_insert_change(
         generation_id = chitchat_id.generation_id,
         "adding node `{}` with ingester status `{}` to indexer pool",
         chitchat_id.node_id,
-        node.ingester_status()
+        node.ingester_status
     );
     let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
@@ -1298,8 +1298,8 @@ fn build_indexer_insert_change(
             node_id,
             generation_id: chitchat_id.generation_id,
             client,
-            indexing_tasks: node.indexing_tasks().to_vec(),
-            indexing_capacity: node.indexing_capacity(),
+            indexing_tasks: node.indexing_tasks.to_vec(),
+            indexing_capacity: node.indexing_cpu_capacity,
         },
     )
 }
@@ -1339,7 +1339,7 @@ fn build_indexing_service(
         .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             None,

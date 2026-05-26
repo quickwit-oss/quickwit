@@ -163,7 +163,7 @@ async fn compute_cluster_change_events_on_added(
         let previous_node = previous_node_entry.remove();
         verb = "rejoined";
 
-        if previous_node.is_ready() {
+        if previous_node.is_ready {
             events.push(ClusterChange::Remove(previous_node));
         }
     }
@@ -187,7 +187,7 @@ async fn compute_cluster_change_events_on_added(
     let new_node_id: NodeId = new_node.node_id.clone();
     previous_nodes.insert(new_node_id, new_node.clone());
 
-    if new_node.is_ready() {
+    if new_node.is_ready {
         info!(
             node_id=%new_chitchat_id.node_id,
             generation_id=%new_chitchat_id.generation_id,
@@ -230,7 +230,7 @@ async fn compute_cluster_change_events_on_updated(
     let updated_node_id: NodeId = NodeId::from(updated_node.chitchat_id().node_id.clone());
     previous_nodes.insert(updated_node_id, updated_node.clone());
 
-    if !previous_node.is_ready() && updated_node.is_ready() {
+    if !previous_node.is_ready && updated_node.is_ready {
         warmup_channel(updated_node.channel()).await;
 
         info!(
@@ -240,7 +240,7 @@ async fn compute_cluster_change_events_on_updated(
             updated_chitchat_id.node_id
         );
         Some(ClusterChange::Add(updated_node))
-    } else if previous_node.is_ready() && !updated_node.is_ready() {
+    } else if previous_node.is_ready && !updated_node.is_ready {
         info!(
             node_id=%updated_chitchat_id.node_id,
             generation_id=%updated_chitchat_id.generation_id,
@@ -248,7 +248,7 @@ async fn compute_cluster_change_events_on_updated(
             updated_chitchat_id.node_id
         );
         Some(ClusterChange::Remove(updated_node))
-    } else if previous_node.is_ready() && updated_node.is_ready() {
+    } else if previous_node.is_ready && updated_node.is_ready {
         Some(ClusterChange::Update {
             previous: previous_node,
             updated: updated_node,
@@ -276,7 +276,7 @@ fn compute_cluster_change_events_on_removed(
             );
             let previous_node = previous_node_entry.remove();
 
-            if previous_node.is_ready() {
+            if previous_node.is_ready {
                 return Some(ClusterChange::Remove(previous_node));
             }
         }
@@ -485,9 +485,9 @@ pub(crate) mod tests {
             let node = previous_nodes.get(&*new_chitchat_id.node_id).unwrap();
 
             assert_eq!(node.chitchat_id(), new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(!node.is_ready());
+            assert!(!node.is_ready);
         }
         {
             // New node joins the cluster and is ready.
@@ -514,9 +514,9 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
             assert_eq!(node.chitchat_id(), new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(node.is_ready());
+            assert!(node.is_ready);
             assert_eq!(previous_nodes.get(&*new_chitchat_id.node_id).unwrap(), node);
 
             // Node rejoins with same node ID but newer generation ID.
@@ -592,9 +592,9 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
             assert_eq!(node.chitchat_id(), new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(node.is_self_node());
-            assert!(node.is_ready());
+            assert!(node.is_ready);
             assert_eq!(previous_nodes.get(&*new_chitchat_id.node_id).unwrap(), node);
         }
     }
@@ -643,8 +643,8 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Add` event, got `{event:?}`");
             };
             assert_eq!(node.chitchat_id(), updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
-            assert!(node.is_ready());
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
+            assert!(node.is_ready);
             assert!(!node.is_self_node());
             assert_eq!(
                 previous_nodes.get(&*updated_chitchat_id.node_id).unwrap(),
@@ -691,9 +691,9 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
             assert_eq!(updated.chitchat_id(), updated_chitchat_id);
-            assert_eq!(updated.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(updated.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!updated.is_self_node());
-            assert!(updated.is_ready());
+            assert!(updated.is_ready);
             assert_eq!(
                 previous_nodes.get(&*updated_chitchat_id.node_id).unwrap(),
                 &updated
@@ -738,9 +738,9 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
             assert_eq!(node.chitchat_id(), updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(!node.is_ready());
+            assert!(!node.is_ready);
             assert_eq!(
                 previous_nodes.get(&*updated_chitchat_id.node_id).unwrap(),
                 &node
@@ -858,9 +858,9 @@ pub(crate) mod tests {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
             assert_eq!(node.chitchat_id(), removed_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(node.is_ready());
+            assert!(node.is_ready);
             assert!(!previous_nodes.contains_key(&*removed_chitchat_id.node_id));
         }
         {
