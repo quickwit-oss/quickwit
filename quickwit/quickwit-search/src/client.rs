@@ -504,9 +504,7 @@ mod tests {
     async fn test_load_cache_error_not_cached() {
         let cache = Arc::new(LoadCache::new());
         let result1 = Arc::clone(&cache)
-            .get(|| {
-                Box::pin(async { Err(SearchError::Internal("oops".to_string())) })
-            })
+            .get(|| Box::pin(async { Err(SearchError::Internal("oops".to_string())) }))
             .await;
         assert!(result1.is_err());
         let result2 = Arc::clone(&cache)
