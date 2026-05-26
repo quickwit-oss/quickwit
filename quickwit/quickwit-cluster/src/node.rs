@@ -75,7 +75,7 @@ impl ClusterNode {
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
-        let chitchat_id = ChitchatId::new(node_id.to_string(), 0, gossip_advertise_addr);
+        let chitchat_id = ChitchatId::new(node_id, 0, gossip_advertise_addr);
         let channel = make_channel(grpc_advertise_addr, ClientGrpcConfig::default()).await;
         let mut node_state = NodeState::for_test();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));

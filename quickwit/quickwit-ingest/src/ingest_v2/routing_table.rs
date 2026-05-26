@@ -276,7 +276,7 @@ impl RoutingTable {
             .iter()
             .map(|shard| {
                 let num_open_shards = shard.is_open() as usize;
-                let leader_id = NodeId::from(shard.leader_id.clone());
+                let leader_id = NodeId::from_str(&shard.leader_id);
                 (leader_id, num_open_shards)
             })
             .into_grouping_map()

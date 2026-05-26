@@ -157,7 +157,7 @@ impl IngestSource {
         source_runtime: SourceRuntime,
         retry_params: RetryParams,
     ) -> anyhow::Result<IngestSource> {
-        let self_node_id: NodeId = source_runtime.node_id().into();
+        let self_node_id: NodeId = source_runtime.node_id().to_owned();
         let client_id = ClientId::new(
             self_node_id.clone(),
             SourceUid {
@@ -349,7 +349,7 @@ impl IngestSource {
                 continue;
             };
             let truncate_shards_request = TruncateShardsRequest {
-                ingester_id: ingester_id.clone().into(),
+                ingester_id: ingester_id.to_string(),
                 subrequests: truncate_subrequests,
             };
             let truncate_future = async move {
@@ -566,8 +566,9 @@ impl Source for IngestSource {
             let index_uid = acquired_shard.index_uid().clone();
             let shard_id = acquired_shard.shard_id().clone();
             let mut current_position_inclusive = acquired_shard.publish_position_inclusive();
-            let leader_id: NodeId = acquired_shard.leader_id.into();
-            let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
+            let leader_id: NodeId = NodeId::from_str(&acquired_shard.leader_id);
+            let follower_id_opt: Option<NodeId> =
+                acquired_shard.follower_id.map(|id| NodeId::from_str(&id));
             let source_id: SourceId = acquired_shard.source_id;
             let partition_id = PartitionId::from(shard_id.as_str());
             let from_position_exclusive = current_position_inclusive.clone();

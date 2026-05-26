@@ -458,7 +458,7 @@ impl IngestController {
         let unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_leaders
             .into_iter()
-            .map(NodeId::from)
+            .map(|id| NodeId::from_str(&id))
             .collect();
 
         // We do a first pass to identify the shards that are missing from the model and need to be
@@ -572,7 +572,7 @@ impl IngestController {
         }
 
         for shard in model.all_shards() {
-            if shard.is_open() && !unavailable_leaders.contains(&shard.leader_id) {
+            if shard.is_open() && !unavailable_leaders.contains(shard.leader_id.as_str()) {
                 for ingest_node in shard.ingesters() {
                     if let Some(shard_count) =
                         per_node_num_open_shards.get_mut(ingest_node.as_str())
@@ -641,7 +641,7 @@ impl IngestController {
                     }
                 })
                 .collect();
-            let Some(leader) = self.ingester_pool.get(&leader_id) else {
+            let Some(leader) = self.ingester_pool.get(leader_id.as_str()) else {
                 warn!("failed to init shards: ingester `{leader_id}` is unavailable");
                 failures.extend(init_shard_failures);
                 continue;
@@ -1210,7 +1210,7 @@ impl IngestController {
                 source_id: shard.source_id,
                 shard_id: shard.shard_id,
             };
-            let leader_id = NodeId::from(shard.leader_id);
+            let leader_id = NodeId::from_str(&shard.leader_id);
             per_leader_shards_to_close
                 .entry(leader_id)
                 .or_default()
@@ -1302,7 +1302,7 @@ fn find_scale_down_candidate(
         .max_by_key(|(_leader_id, shard_entries)| (shard_entries.len(), rng.next_u32()))
         .map(|(leader_id, shard_entries)| {
             (
-                leader_id.clone().into(),
+                NodeId::from_str(leader_id),
                 shard_entries.choose(&mut rng).unwrap().shard_id().clone(),
             )
         })

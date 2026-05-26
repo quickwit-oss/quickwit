@@ -361,7 +361,7 @@ impl ControlPlane {
             ingesters.insert(ingester_id.clone(), ingester_json);
         }
         for shard in self.model.all_shards() {
-            let ingester_id = NodeId::from(shard.leader_id.clone());
+            let ingester_id = NodeId::from_str(&shard.leader_id);
 
             if let Entry::Vacant(entry) = ingesters.entry(ingester_id.clone()) {
                 let ingester_json = json!({

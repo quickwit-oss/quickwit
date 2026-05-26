@@ -345,8 +345,8 @@ impl ReplicationClient {
         commit_type: CommitTypeV2,
     ) -> impl Future<Output = Result<ReplicateResponse, ReplicationError>> + Send + 'static {
         let replicate_request = ReplicateRequest {
-            leader_id: leader_id.into(),
-            follower_id: follower_id.into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             subrequests,
             commit_type: commit_type as i32,
             replication_seqno: 0, // replication number are generated further down
@@ -469,7 +469,7 @@ impl ReplicationTask {
         let index_uid = replica_shard.index_uid().clone();
         let shard_id = replica_shard.shard_id().clone();
         let source_id = replica_shard.source_id;
-        let leader_id = NodeId::from(replica_shard.leader_id);
+        let leader_id = NodeId::from_str(&replica_shard.leader_id);
 
         let replica_shard =
             IngesterShard::new_replica(index_uid, source_id, shard_id, leader_id).build();
@@ -703,7 +703,7 @@ impl ReplicationTask {
 
         report_wal_usage(wal_usage);
 
-        let follower_id = self.follower_id.clone().into();
+        let follower_id = self.follower_id.to_string();
 
         let replicate_response = ReplicateResponse {
             follower_id,

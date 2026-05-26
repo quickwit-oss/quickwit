@@ -282,7 +282,7 @@ impl IngestRouter {
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
                 Ok(persist_response) => {
-                    let leader_id = NodeId::from(persist_response.leader_id.clone());
+                    let leader_id = NodeId::from_str(&persist_response.leader_id);
 
                     for persist_success in persist_response.successes {
                         workbench.record_persist_success(persist_success);
@@ -411,7 +411,7 @@ impl IngestRouter {
                 subrequest_ids,
             };
             let persist_request = PersistRequest {
-                leader_id: leader_id.into(),
+                leader_id: leader_id.to_string(),
                 subrequests,
                 commit_type: commit_type as i32,
             };

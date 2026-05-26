@@ -446,7 +446,8 @@ impl ShardTable {
             .shard_entries
             .values()
             .filter(|shard_entry| {
-                shard_entry.shard.is_open() && !unavailable_leaders.contains(&shard_entry.leader_id)
+                shard_entry.shard.is_open()
+                    && !unavailable_leaders.contains(shard_entry.leader_id.as_str())
             })
             .cloned()
             .collect();

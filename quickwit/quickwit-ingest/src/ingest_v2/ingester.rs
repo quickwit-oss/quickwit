@@ -129,7 +129,7 @@ impl Ingester {
         replication_factor: usize,
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id().to_owned();
         let state = IngesterState::load(
             cluster.clone(),
             wal_dir_path,
@@ -220,8 +220,8 @@ impl Ingester {
         let rate_meter = RateMeter::default();
 
         let primary_shard = if let Some(follower_id) = &shard.follower_id {
-            let leader_id: NodeId = shard.leader_id.clone().into();
-            let follower_id: NodeId = follower_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&shard.leader_id);
+            let follower_id: NodeId = NodeId::from_str(&follower_id);
 
             let replication_client = self
                 .init_replication_stream(
@@ -388,8 +388,8 @@ impl Ingester {
             Entry::Vacant(entry) => entry,
         };
         let open_request = OpenReplicationStreamRequest {
-            leader_id: leader_id.clone().into(),
-            follower_id: follower_id.clone().into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             replication_seqno: 0,
         };
         let open_message = SynReplicationMessage::new_open_request(open_request);
@@ -868,8 +868,8 @@ impl Ingester {
         if open_replication_stream_request.follower_id != self.self_node_id {
             return Err(IngestV2Error::Internal("routing error".to_string()));
         }
-        let leader_id: NodeId = open_replication_stream_request.leader_id.into();
-        let follower_id: NodeId = open_replication_stream_request.follower_id.into();
+        let leader_id: NodeId = NodeId::from_str(&open_replication_stream_request.leader_id);
+        let follower_id: NodeId = NodeId::from_str(&open_replication_stream_request.follower_id);
 
         let mut state_guard = self.state.lock_partially("open_replication_stream").await?;
         let status = state_guard.status();
@@ -947,7 +947,7 @@ impl Ingester {
         let self_node_id = self.self_node_id.clone();
         let observation_stream = status_stream.map(move |status| {
             let observation_message = ObservationMessage {
-                node_id: self_node_id.clone().into(),
+                node_id: self_node_id.to_string(),
                 status: status as i32,
             };
             Ok(observation_message)

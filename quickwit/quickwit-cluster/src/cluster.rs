@@ -373,7 +373,7 @@ impl Cluster {
 
         ClusterSnapshot {
             cluster_id: self.cluster_id.clone(),
-            self_node_id: self.self_chitchat_id.node_id.clone(),
+            self_node_id: self.self_chitchat_id.node_id.to_string(),
             ready_nodes,
             live_nodes,
             dead_nodes,
