@@ -54,6 +54,7 @@ const KEEP_NAMESPACES: &[&str] = &[
 /// `trace/intake/events/mapper.go`.
 static KEEP_ATTRIBUTES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
+        "_dd.hostname",
         "_dd.agent_hostname",
         "_dd.tracer_version",
         "_dd.agent_version",
@@ -586,9 +587,9 @@ mod tests {
         let Some(Value::Object(custom)) = trace.get("custom") else {
             panic!("custom should be an object, got {:?}", trace.get("custom"),);
         };
-        // `_dd.hostname` is underscore-prefixed and not allowlisted, so the
-        // tag filter strips it from custom.
-        assert!(custom.get("_dd.hostname").is_none());
+        // `_dd.hostname` is allowlisted so it survives the tag filter and
+        // appears in custom (as well as being promoted to top-level `host`).
+        assert_eq!(custom.get("_dd.hostname"), Some(&Value::from("host-1")));
         assert_eq!(custom.get("env"), Some(&Value::from("prod")));
         assert_eq!(
             custom.get("custom_tag"),
