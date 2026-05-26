@@ -74,7 +74,7 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
-        let node_id = NodeId::new(append_random_suffix("test-node"));
+        let node_id = NodeId::from_str(&append_random_suffix("test-node"));
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await

@@ -236,7 +236,7 @@ async fn balance_channel_for_service(
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services.contains(&service) => {
+                ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
@@ -247,7 +247,7 @@ async fn balance_channel_for_service(
                     );
                     Some(Change::Insert(node.grpc_advertise_addr, node.channel()))
                 }
-                ClusterChange::Remove(node) if node.enabled_services.contains(&service) => {
+                ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,

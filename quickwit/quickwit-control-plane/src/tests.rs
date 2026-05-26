@@ -18,7 +18,9 @@ use std::time::Duration;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{ChannelTransport, Cluster, ClusterChange, create_cluster_for_test};
+use quickwit_cluster::{
+    ChannelTransport, Cluster, ClusterChange, ClusterMember, create_cluster_for_test,
+};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;
@@ -70,9 +72,7 @@ pub fn test_indexer_change_stream(
         let indexing_clients = indexing_clients.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
+                ClusterChange::Add(node) if node.is_service_enabled(QuickwitService::Indexer) => {
                     let node_id = node.node_id.clone();
                     let generation_id = node.chitchat_id().generation_id;
                     let indexing_tasks = node.indexing_tasks().to_vec();
@@ -329,11 +329,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .any(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-            },
+            |members| members.iter().any(ClusterMember::is_indexer),
             Duration::from_secs(5),
         )
         .await
@@ -391,13 +387,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .filter(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-                    .count()
-                    == 1
-            },
+            |members| members.iter().filter(|member| member.is_indexer()).count() == 1,
             Duration::from_secs(5),
         )
         .await

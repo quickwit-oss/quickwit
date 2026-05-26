@@ -135,6 +135,22 @@ impl ClusterMember {
             self.gossip_advertise_addr,
         )
     }
+
+    pub fn is_service_enabled(&self, service: QuickwitService) -> bool {
+        self.enabled_services.contains(&service)
+    }
+
+    pub fn is_indexer(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_ingester(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_searcher(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Searcher)
+    }
 }
 
 impl From<ClusterMember> for ChitchatId {
