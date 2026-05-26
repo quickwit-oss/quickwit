@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_node_id() {
-        let node_id = NodeId::new("test-node".to_string());
+        let node_id = NodeId::from_str("test-node");
         assert_eq!(node_id.as_str(), "test-node");
         assert_eq!(node_id, NodeIdRef::from_str("test-node"));
     }

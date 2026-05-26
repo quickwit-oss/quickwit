@@ -19,6 +19,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(any(test, feature = "testsuite"))]
 use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
@@ -31,6 +32,7 @@ use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics
 use quickwit_proto::types::{NodeId, NodeIdRef, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
+#[cfg(any(test, feature = "testsuite"))]
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::WatchStream;
@@ -213,11 +215,12 @@ impl Cluster {
     }
 
     /// Deprecated: this is going away soon.
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn ready_members(&self) -> Vec<ClusterMember> {
         self.inner.read().await.ready_members_rx.borrow().clone()
     }
 
-    /// Deprecated: this is going away soon.
+    #[cfg(any(test, feature = "testsuite"))]
     async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
         WatchStream::new(self.inner.read().await.ready_members_rx.clone())
     }
@@ -330,6 +333,7 @@ impl Cluster {
     }
 
     /// Waits until the predicate holds true for the set of ready members.
+    #[cfg(any(test, feature = "testsuite"))]
     pub async fn wait_for_ready_members<F>(
         &self,
         mut predicate: F,
