@@ -356,6 +356,7 @@ mod tests {
     fn test_otlp_exporter_config_uses_signal_specific_protocol() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_SIGNAL_PROTOCOL";
 
+        let _lock = lock_env();
         let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/json");
 
         assert_eq!(
@@ -370,6 +371,7 @@ mod tests {
     fn test_otlp_exporter_config_falls_back_to_default_protocol() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_DEFAULT_PROTOCOL_FALLBACK";
 
+        let _lock = lock_env();
         let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
 
         assert_eq!(
@@ -503,6 +505,7 @@ mod tests {
     fn test_otlp_exporter_config_signal_protocol_error_names_signal_env_var() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_SIGNAL_PROTOCOL";
 
+        let _lock = lock_env();
         let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/xml");
 
         let error = otlp_exporter_config("grpc")
@@ -517,6 +520,7 @@ mod tests {
     fn test_otlp_exporter_config_default_protocol_error_names_default_env_var() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_DEFAULT_PROTOCOL";
 
+        let _lock = lock_env();
         let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
 
         let error = otlp_exporter_config("http/xml")
