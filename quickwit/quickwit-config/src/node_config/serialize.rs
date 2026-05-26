@@ -766,7 +766,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(config.node_id.as_str(), get_short_hostname().unwrap());
         assert_eq!(config.availability_zone, None);
         assert_eq!(
             config.enabled_services,

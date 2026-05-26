@@ -901,7 +901,7 @@ mod tests {
         is_replica: bool,
     ) -> IngesterShard {
         let builder = if is_replica {
-            IngesterShard::new_replica(index_uid, source_id, shard_id, NodeId::from("test-leader"))
+            IngesterShard::new_replica(index_uid, source_id, shard_id, NodeId::from_str("test-leader"))
         } else {
             IngesterShard::new_solo(index_uid, source_id, shard_id)
         };

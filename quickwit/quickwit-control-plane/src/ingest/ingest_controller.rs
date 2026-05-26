@@ -1394,7 +1394,7 @@ mod tests {
 
         let ingester_pool = IngesterPool::default();
         ingester_pool.insert(
-            NodeId::from("test-ingester-1"),
+            NodeId::from_str("test-ingester-1"),
             IngesterPoolEntry::ready_with_client(client.clone()),
         );
 
@@ -1425,7 +1425,7 @@ mod tests {
             });
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
         ingester_pool.insert(
-            NodeId::from("test-ingester-2"),
+            NodeId::from_str("test-ingester-2"),
             IngesterPoolEntry::ready_with_client(ingester.clone()),
         );
 
@@ -1614,7 +1614,7 @@ mod tests {
 
         let ingester_pool = IngesterPool::default();
         ingester_pool.insert(
-            NodeId::from("test-ingester-1"),
+            NodeId::from_str("test-ingester-1"),
             IngesterPoolEntry::ready_with_client(client.clone()),
         );
 
@@ -1728,7 +1728,7 @@ mod tests {
         assert!(leader_follower_pairs_opt.is_none());
 
         ingester_pool.insert(
-            NodeId::from("test-ingester-1"),
+            NodeId::from_str("test-ingester-1"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
 
@@ -1740,7 +1740,7 @@ mod tests {
         assert!(leader_follower_pairs_opt.is_none());
 
         ingester_pool.insert(
-            "test-ingester-2".into(),
+            NodeId::from_str("test-ingester-2"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
 
@@ -1761,13 +1761,13 @@ mod tests {
         if leader_follower_pairs[0].0 == "test-ingester-1" {
             assert_eq!(
                 leader_follower_pairs[0].1,
-                Some(NodeId::from("test-ingester-2"))
+                Some(NodeId::from_str("test-ingester-2"))
             );
         } else {
             assert_eq!(leader_follower_pairs[0].0, "test-ingester-2");
             assert_eq!(
                 leader_follower_pairs[0].1,
-                Some(NodeId::from("test-ingester-1"))
+                Some(NodeId::from_str("test-ingester-1"))
             );
         }
 
@@ -1780,13 +1780,13 @@ mod tests {
             if leader_follower_pair.0 == "test-ingester-1" {
                 assert_eq!(
                     leader_follower_pair.1,
-                    Some(NodeId::from("test-ingester-2"))
+                    Some(NodeId::from_str("test-ingester-2"))
                 );
             } else {
                 assert_eq!(leader_follower_pair.0, "test-ingester-2");
                 assert_eq!(
                     leader_follower_pair.1,
-                    Some(NodeId::from("test-ingester-1"))
+                    Some(NodeId::from_str("test-ingester-1"))
                 );
             }
         }
@@ -1815,19 +1815,19 @@ mod tests {
         assert_eq!(leader_follower_pairs[0].0, "test-ingester-2");
         assert_eq!(
             leader_follower_pairs[0].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         assert_eq!(leader_follower_pairs[1].0, "test-ingester-2");
         assert_eq!(
             leader_follower_pairs[1].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         assert_eq!(leader_follower_pairs[2].0, "test-ingester-2");
         assert_eq!(
             leader_follower_pairs[2].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         let open_shards = vec![
@@ -1858,14 +1858,14 @@ mod tests {
         assert_eq!(leader_follower_pairs[0].0, "test-ingester-2");
         assert_eq!(
             leader_follower_pairs[0].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         ingester_pool.insert(
-            "test-ingester-3".into(),
+            NodeId::from_str("test-ingester-3"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
-        let unavailable_leaders = FnvHashSet::from_iter([NodeId::from("test-ingester-2")]);
+        let unavailable_leaders = FnvHashSet::from_iter([NodeId::from_str("test-ingester-2")]);
         let leader_follower_pairs = controller
             .allocate_shards(4, &unavailable_leaders, &model)
             .unwrap();
@@ -1874,25 +1874,25 @@ mod tests {
         assert_eq!(leader_follower_pairs[0].0, "test-ingester-3");
         assert_eq!(
             leader_follower_pairs[0].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         assert_eq!(leader_follower_pairs[1].0, "test-ingester-3");
         assert_eq!(
             leader_follower_pairs[1].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         assert_eq!(leader_follower_pairs[2].0, "test-ingester-3");
         assert_eq!(
             leader_follower_pairs[2].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
 
         assert_eq!(leader_follower_pairs[3].0, "test-ingester-3");
         assert_eq!(
             leader_follower_pairs[3].1,
-            Some(NodeId::from("test-ingester-1"))
+            Some(NodeId::from_str("test-ingester-1"))
         );
     }
 
@@ -1910,7 +1910,7 @@ mod tests {
             1.001,
         );
 
-        let ingester_id_0 = NodeId::from("test-ingester-0");
+        let ingester_id_0 = NodeId::from_str("test-ingester-0");
         let mut mock_ingester_0 = MockIngesterService::new();
         mock_ingester_0
             .expect_init_shards()
@@ -1962,7 +1962,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(ingester_0),
         );
 
-        let ingester_id_1 = NodeId::from("test-ingester-1");
+        let ingester_id_1 = NodeId::from_str("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
         mock_ingester_1
             .expect_init_shards()
@@ -1985,7 +1985,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert(ingester_id_1, ingester_1);
 
-        let ingester_id_2 = NodeId::from("test-ingester-2");
+        let ingester_id_2 = NodeId::from_str("test-ingester-2");
         let mut mock_ingester_2 = MockIngesterService::new();
         mock_ingester_2.expect_init_shards().never();
 
@@ -2202,7 +2202,7 @@ mod tests {
             });
 
         ingester_pool.insert(
-            NodeId::from("test-ingester-1"),
+            NodeId::from_str("test-ingester-1"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester)),
         );
         let source_uids: HashMap<SourceUid, usize> = HashMap::from_iter([(source_uid.clone(), 1)]);
@@ -2317,7 +2317,7 @@ mod tests {
             long_term_ingestion_rate: RateMibPerSec(1),
         }]);
         let local_shards_update = LocalShardsUpdate {
-            leader_id: "test-ingester".into(),
+            leader_id: NodeId::from_str("test-ingester"),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -2375,7 +2375,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         let shard_infos = BTreeSet::from_iter([
             ShardInfo {
@@ -2392,7 +2392,7 @@ mod tests {
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
-            leader_id: "test-ingester".into(),
+            leader_id: NodeId::from_str("test-ingester"),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -2417,7 +2417,7 @@ mod tests {
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
-            leader_id: "test-ingester".into(),
+            leader_id: NodeId::from_str("test-ingester"),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -2529,7 +2529,7 @@ mod tests {
 
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         let shard_infos = BTreeSet::from_iter([ShardInfo {
             shard_id: ShardId::from(1),
@@ -2538,7 +2538,7 @@ mod tests {
             long_term_ingestion_rate: RateMibPerSec(4),
         }]);
         let local_shards_update = LocalShardsUpdate {
-            leader_id: "test-ingester".into(),
+            leader_id: NodeId::from_str("test-ingester"),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -2676,7 +2676,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         // Test failed to open shards.
         controller
@@ -2799,7 +2799,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         // Test failed to close shard.
         controller
@@ -3029,18 +3029,18 @@ mod tests {
                 Ok(RetainShardsResponse {})
             });
         ingester_pool.insert(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1)),
         );
         ingester_pool.insert(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_2)),
         );
         ingester_pool.insert(
-            "node-3".into(),
+            NodeId::from_str("node-3"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3)),
         );
-        let node_id = "node-1".into();
+        let node_id = NodeId::from_str("node-1");
         let wait_handle = controller.sync_with_ingester(&node_id, &model);
         wait_handle.wait().await;
         assert_eq!(count_calls.load(Ordering::Acquire), 1);
@@ -3140,7 +3140,7 @@ mod tests {
         let closed_shards = controller.close_shards(Vec::new()).await;
         assert_eq!(closed_shards.len(), 0);
 
-        let ingester_id_0 = NodeId::from("test-ingester-0");
+        let ingester_id_0 = NodeId::from_str("test-ingester-0");
         let mut mock_ingester_0 = MockIngesterService::new();
         mock_ingester_0
             .expect_close_shards()
@@ -3173,7 +3173,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(ingester_0),
         );
 
-        let ingester_id_1 = NodeId::from("test-ingester-1");
+        let ingester_id_1 = NodeId::from_str("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
         mock_ingester_1
             .expect_close_shards()
@@ -3194,7 +3194,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(ingester_1),
         );
 
-        let ingester_id_2 = NodeId::from("test-ingester-2");
+        let ingester_id_2 = NodeId::from_str("test-ingester-2");
         let mut mock_ingester_2 = MockIngesterService::new();
         mock_ingester_2.expect_close_shards().never();
 
@@ -3365,7 +3365,7 @@ mod tests {
         ];
         model.insert_shards(&index_uid, &INGEST_V2_SOURCE_ID.to_string(), open_shards);
 
-        let ingester_id_0 = NodeId::from("test-ingester-0");
+        let ingester_id_0 = NodeId::from_str("test-ingester-0");
         let mut mock_ingester_0 = MockIngesterService::new();
         mock_ingester_0
             .expect_close_shards()
@@ -3389,7 +3389,7 @@ mod tests {
             IngesterPoolEntry::ready_with_client(ingester_0),
         );
 
-        let ingester_id_1 = NodeId::from("test-ingester-1");
+        let ingester_id_1 = NodeId::from_str("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
         mock_ingester_1.expect_init_shards().return_once(|request| {
             assert_eq!(request.subrequests.len(), 2);
@@ -3515,7 +3515,7 @@ mod tests {
             .map(|i| format!("shard-{i}"))
             .collect();
         for (shard, &shard_count) in shards.into_iter().zip(shard_counts.iter()) {
-            shard_counts_map.insert(NodeId::from(shard), shard_count);
+            shard_counts_map.insert(NodeId::from_str(&shard), shard_count);
         }
         for i in 0..10 {
             test_allocate_shards_aux_aux(&shard_counts_map, i, false);
@@ -3619,7 +3619,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
             };
-            ingester_pool.insert(NodeId::from(ingester_id.clone()), ingester);
+            ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
         }
 
         let unavailable_ids: Vec<String> = (0..unavailable_ingester_shards.len())
@@ -3636,7 +3636,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
             };
-            ingester_pool.insert(NodeId::from(ingester_id.clone()), ingester);
+            ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
         }
 
         let mut shards: Vec<Shard> = Vec::new();
@@ -3777,7 +3777,7 @@ mod tests {
                     status: IngesterStatus::Decommissioned,
                     availability_zone: None,
                 };
-                ingester_pool.insert(NodeId::from(ingester_id.clone()), ingester);
+                ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
             }
             model.insert_shards(&index_uid, &source_id, opened_shards);
 

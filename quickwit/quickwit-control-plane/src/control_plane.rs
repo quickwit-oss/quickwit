@@ -1214,7 +1214,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_create_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1270,7 +1270,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1312,7 +1312,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_add_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1375,7 +1375,7 @@ mod tests {
     async fn test_control_plane_update_source() {
         let universe = Universe::with_accelerated_time();
         let pipelines_after_update = 3;
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let mut mock_indexer = MockIndexingService::new();
         // call when starting the cp
@@ -1473,7 +1473,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1551,7 +1551,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1598,7 +1598,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_get_or_create_open_shards() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -1678,7 +1678,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_supervision_reload_from_metastore() {
         let universe = Universe::default();
-        let node_id = NodeId::new("test_node".to_string());
+        let node_id = NodeId::from_str("test_node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -1814,12 +1814,12 @@ mod tests {
     #[tokio::test]
     async fn test_delete_shard_on_eof() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -1924,8 +1924,8 @@ mod tests {
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index-0:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index-0:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001000");
 
@@ -1963,12 +1963,12 @@ mod tests {
     #[tokio::test]
     async fn test_fill_shard_table_position_from_metastore_on_startup() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -2029,8 +2029,8 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
         );
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001234");
 
@@ -2041,12 +2041,12 @@ mod tests {
     async fn test_delete_non_existing_shard() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -2134,7 +2134,7 @@ mod tests {
     async fn test_delete_index() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2220,7 +2220,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -2249,7 +2249,7 @@ mod tests {
     async fn test_delete_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2267,7 +2267,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let index_uid_clone = index_0.index_uid.clone();
@@ -2350,7 +2350,7 @@ mod tests {
         let mut cluster_config = ClusterConfig::for_test();
         cluster_config.auto_create_indexes = true;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
@@ -2552,7 +2552,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
@@ -2620,12 +2620,12 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
             .expect_retain_shards()
@@ -2746,8 +2746,8 @@ mod tests {
         control_plane_mailbox.ask(callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "closed");
 
@@ -2759,11 +2759,11 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
 
         let mut mock_indexer = MockIndexingService::new();
         mock_indexer
@@ -2886,8 +2886,8 @@ mod tests {
             control_plane_debug_info["physical_indexing_plan"][0]["node_id"],
             "test-ingester"
         );
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["index_uid"], "test-index:00000000000000000000000000");
         assert_eq!(shard["source_id"], INGEST_V2_SOURCE_ID);
         assert_eq!(shard["shard_id"], "00000000000000000000");

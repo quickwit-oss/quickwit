@@ -730,7 +730,7 @@ pub async fn create_cluster_for_test(
 
     static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
     let gossip_advertise_port = GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let node_id: NodeId = format!("node-{gossip_advertise_port}").into();
+    let node_id: NodeId = NodeId::from_str(&format!("node-{gossip_advertise_port}"));
 
     let enabled_services = enabled_services
         .iter()
@@ -1170,7 +1170,7 @@ mod tests {
         let transport = ChannelTransport::default();
 
         let cluster1a = create_cluster_for_test_with_id(
-            "node-11".into(),
+            NodeId::from_str("node-11"),
             11,
             "cluster1".to_string(),
             Vec::new(),
@@ -1180,7 +1180,7 @@ mod tests {
         )
         .await?;
         let cluster2a = create_cluster_for_test_with_id(
-            "node-21".into(),
+            NodeId::from_str("node-21"),
             21,
             "cluster2".to_string(),
             vec![cluster1a.gossip_listen_addr.to_string()],
@@ -1190,7 +1190,7 @@ mod tests {
         )
         .await?;
         let cluster1b = create_cluster_for_test_with_id(
-            "node-12".into(),
+            NodeId::from_str("node-12"),
             12,
             "cluster1".to_string(),
             vec![
@@ -1203,7 +1203,7 @@ mod tests {
         )
         .await?;
         let cluster2b = create_cluster_for_test_with_id(
-            "node-22".into(),
+            NodeId::from_str("node-22"),
             22,
             "cluster2".to_string(),
             vec![

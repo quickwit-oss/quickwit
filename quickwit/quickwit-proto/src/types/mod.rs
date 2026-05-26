@@ -13,11 +13,9 @@
 // limitations under the License.
 
 use std::borrow::Borrow;
-use std::convert::Infallible;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -101,6 +99,10 @@ impl NodeId {
     pub fn from_str(node_id: &str) -> Self {
         Self(Arc::from(node_id))
     }
+
+    pub fn from_arc_str(node_id: Arc<str>) -> Self {
+        Self(node_id)
+    }
 }
 
 impl AsRef<NodeIdRef> for NodeId {
@@ -135,58 +137,14 @@ impl Display for NodeId {
     }
 }
 
-impl From<Arc<str>> for NodeId {
-    fn from(node_id: Arc<str>) -> Self {
-        Self(node_id)
-    }
-}
-
 impl From<NodeId> for Arc<str> {
     fn from(node_id: NodeId) -> Self {
         node_id.0
     }
 }
 
-impl From<&'_ str> for NodeId {
-    fn from(node_id: &str) -> Self {
-        Self(Arc::from(node_id))
-    }
-}
-
-impl From<String> for NodeId {
-    fn from(node_id: String) -> Self {
-        Self(Arc::from(node_id))
-    }
-}
-
-impl From<NodeId> for String {
-    fn from(node_id: NodeId) -> Self {
-        node_id.0.to_string()
-    }
-}
-
-impl From<&'_ NodeIdRef> for NodeId {
-    fn from(node_id: &NodeIdRef) -> Self {
-        node_id.to_owned()
-    }
-}
-
-impl FromStr for NodeId {
-    type Err = Infallible;
-
-    fn from_str(node_id: &str) -> Result<Self, Self::Err> {
-        Ok(NodeId(Arc::from(node_id)))
-    }
-}
-
 impl PartialEq<&str> for NodeId {
     fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
-}
-
-impl PartialEq<String> for NodeId {
-    fn eq(&self, other: &String) -> bool {
         self.as_str() == *other
     }
 }
@@ -328,7 +286,7 @@ mod tests {
             node_id: NodeId,
         }
         let node = Node {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
         };
         let serialized = serde_json::to_string(&node).unwrap();
         assert_eq!(serialized, r#"{"node_id":"test-node"}"#);

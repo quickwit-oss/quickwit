@@ -694,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -930,7 +930,7 @@ mod tests {
 
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0.clone());
 
         let event_broker = EventBroker::default();
 
@@ -1018,7 +1018,7 @@ mod tests {
 
         let assigned_shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         let expected_assigned_shard = AssignedShard {
-            leader_id: "test-ingester-0".into(),
+            leader_id: NodeId::from_str("test-ingester-0"),
             follower_id_opt: None,
             partition_id: 1u64.into(),
             current_position_inclusive: Position::offset(11u64),
@@ -1028,7 +1028,7 @@ mod tests {
 
         let assigned_shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         let expected_assigned_shard = AssignedShard {
-            leader_id: "test-ingester-0".into(),
+            leader_id: NodeId::from_str("test-ingester-0"),
             follower_id_opt: None,
             partition_id: 2u64.into(),
             current_position_inclusive: Position::offset(12u64),
@@ -1047,7 +1047,7 @@ mod tests {
         // - emission of a suggest truncate
         // - no stream request is emitted
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1129,7 +1129,7 @@ mod tests {
 
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0.clone());
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1194,7 +1194,7 @@ mod tests {
         // - emission of a suggest truncate
         // - the stream request emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1296,7 +1296,7 @@ mod tests {
 
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0.clone());
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1364,7 +1364,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1402,7 +1402,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
-                leader_id: "test-ingester-0".into(),
+                leader_id: NodeId::from_str("test-ingester-0"),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::offset(11u64),
@@ -1412,7 +1412,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(2),
             AssignedShard {
-                leader_id: "test-ingester-1".into(),
+                leader_id: NodeId::from_str("test-ingester-1"),
                 follower_id_opt: None,
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::offset(22u64),
@@ -1530,7 +1530,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1583,7 +1583,7 @@ mod tests {
 
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0.clone());
 
         let event_broker = EventBroker::default();
         let source_runtime = SourceRuntime {
@@ -1639,7 +1639,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_source_suggest_truncate() {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),
@@ -1682,7 +1682,7 @@ mod tests {
             });
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0.clone());
 
         let mut mock_ingester_1 = MockIngesterService::new();
         mock_ingester_1
@@ -1710,7 +1710,7 @@ mod tests {
             });
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
-        ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-1"), ingester_1.clone());
 
         let mut mock_ingester_3 = MockIngesterService::new();
         mock_ingester_3
@@ -1731,7 +1731,7 @@ mod tests {
             });
         let ingester_3 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3));
-        ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
+        ingester_pool.insert(NodeId::from_str("test-ingester-3"), ingester_3.clone());
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1767,7 +1767,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
-                leader_id: "test-ingester-0".into(),
+                leader_id: NodeId::from_str("test-ingester-0"),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::offset(11u64),
@@ -1777,8 +1777,8 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(2),
             AssignedShard {
-                leader_id: "test-ingester-0".into(),
-                follower_id_opt: Some("test-ingester-1".into()),
+                leader_id: NodeId::from_str("test-ingester-0"),
+                follower_id_opt: Some(NodeId::from_str("test-ingester-1")),
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::offset(22u64),
                 status: IndexingStatus::Active,
@@ -1787,8 +1787,8 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(3),
             AssignedShard {
-                leader_id: "test-ingester-1".into(),
-                follower_id_opt: Some("test-ingester-0".into()),
+                leader_id: NodeId::from_str("test-ingester-1"),
+                follower_id_opt: Some(NodeId::from_str("test-ingester-0")),
                 partition_id: 3u64.into(),
                 current_position_inclusive: Position::offset(33u64),
                 status: IndexingStatus::Active,
@@ -1797,8 +1797,8 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(4),
             AssignedShard {
-                leader_id: "test-ingester-2".into(),
-                follower_id_opt: Some("test-ingester-3".into()),
+                leader_id: NodeId::from_str("test-ingester-2"),
+                follower_id_opt: Some(NodeId::from_str("test-ingester-3")),
                 partition_id: 4u64.into(),
                 current_position_inclusive: Position::offset(44u64),
                 status: IndexingStatus::Active,
@@ -1807,8 +1807,8 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(5),
             AssignedShard {
-                leader_id: "test-ingester-2".into(),
-                follower_id_opt: Some("test-ingester-3".into()),
+                leader_id: NodeId::from_str("test-ingester-2"),
+                follower_id_opt: Some(NodeId::from_str("test-ingester-3")),
                 partition_id: 5u64.into(),
                 current_position_inclusive: Position::Beginning,
                 status: IndexingStatus::Active,
@@ -1850,7 +1850,7 @@ mod tests {
         // away. In that case, the ingester should just ignore the assigned shard, as
         // opposed to fail as the metastore does not let it `acquire` the shard.
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
             pipeline_uid: PipelineUid::default(),

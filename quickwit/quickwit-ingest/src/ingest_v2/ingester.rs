@@ -1359,7 +1359,7 @@ mod tests {
             let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
             Self {
-                node_id: "test-ingester".into(),
+                node_id: NodeId::from_str("test-ingester"),
                 control_plane,
                 ingester_pool: IngesterPool::default(),
                 disk_capacity: ByteSize::mb(256),
@@ -1373,7 +1373,7 @@ mod tests {
 
     impl IngesterForTest {
         pub fn with_node_id(mut self, node_id: &str) -> Self {
-            self.node_id = node_id.into();
+            self.node_id = NodeId::from_str(node_id);
             self
         }
 

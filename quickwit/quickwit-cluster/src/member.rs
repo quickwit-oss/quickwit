@@ -196,7 +196,7 @@ pub(crate) fn build_cluster_member(
     let availability_zone = node_state.availability_zone();
 
     let member = ClusterMember {
-        node_id: NodeId::from(chitchat_id.node_id.clone()),
+        node_id: NodeId::from_arc_str(chitchat_id.node_id.clone()),
         generation_id: chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,

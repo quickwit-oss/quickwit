@@ -573,7 +573,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(2),
-            NodeId::from("test-leader"),
+            NodeId::from_str("test-leader"),
         )
         .advertisable()
         .build();

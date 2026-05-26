@@ -142,7 +142,7 @@ async fn compute_cluster_change_events_on_added(
     client_grpc_config: ClientGrpcConfig,
 ) -> Vec<ClusterChange> {
     let is_self_node = self_chitchat_id == new_chitchat_id;
-    let new_node_id = NodeId::from(new_chitchat_id.node_id.clone());
+    let new_node_id = NodeId::from_arc_str(new_chitchat_id.node_id.clone());
     let maybe_previous_node_entry = previous_nodes.entry(new_node_id);
 
     let mut events = Vec::new();
@@ -227,7 +227,7 @@ async fn compute_cluster_change_events_on_updated(
         previous_channel,
         is_self_node,
     )?;
-    let updated_node_id: NodeId = NodeId::from(updated_node.chitchat_id().node_id.clone());
+    let updated_node_id: NodeId = updated_node.node_id.clone();
     previous_nodes.insert(updated_node_id, updated_node.clone());
 
     if !previous_node.is_ready && updated_node.is_ready {
@@ -262,7 +262,7 @@ fn compute_cluster_change_events_on_removed(
     removed_chitchat_id: &ChitchatId,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
 ) -> Option<ClusterChange> {
-    let removed_node_id: NodeId = NodeId::from(removed_chitchat_id.node_id.clone());
+    let removed_node_id: NodeId = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
 
     if let Entry::Occupied(previous_node_entry) = previous_nodes.entry(removed_node_id) {
         let previous_node_ref = previous_node_entry.get();
@@ -609,7 +609,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(false)
@@ -656,7 +656,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -704,7 +704,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -751,7 +751,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let mut previous_chitchat_id = updated_chitchat_id.clone();
             previous_chitchat_id.generation_id += 1;
             let previous_node_state = NodeStateBuilder::default()
@@ -809,7 +809,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let removed_chitchat_id = ChitchatId::for_local_test(port);
-            let removed_node_id: NodeId = removed_chitchat_id.node_id.clone().into();
+            let removed_node_id = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(false)
@@ -835,7 +835,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let removed_chitchat_id = ChitchatId::for_local_test(port);
-            let removed_node_id: NodeId = removed_chitchat_id.node_id.clone().into();
+            let removed_node_id = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
             let removed_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -872,7 +872,7 @@ pub(crate) mod tests {
 
             let mut rejoined_chitchat_id = removed_chitchat_id.clone();
             rejoined_chitchat_id.generation_id += 1;
-            let rejoined_node_id: NodeId = rejoined_chitchat_id.node_id.clone().into();
+            let rejoined_node_id = NodeId::from_arc_str(rejoined_chitchat_id.node_id.clone());
             let rejoined_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -903,7 +903,7 @@ pub(crate) mod tests {
         let cluster_id = "test-cluster".to_string();
         let self_port = 1234;
         let self_chitchat_id = ChitchatId::for_local_test(self_port);
-        let self_node_id: NodeId = self_chitchat_id.node_id.clone().into();
+        let self_node_id = NodeId::from_arc_str(self_chitchat_id.node_id.clone());
         {
             let mut previous_nodes = BTreeMap::default();
             let previous_node_states = BTreeMap::default();

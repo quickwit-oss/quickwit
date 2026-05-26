@@ -75,7 +75,7 @@ pub fn test_indexer_change_stream(
                 ClusterChange::Add(node) if node.is_service_enabled(QuickwitService::Indexer) => {
                     let node_id = node.node_id.clone();
                     let generation_id = node.chitchat_id().generation_id;
-                    let indexing_tasks = node.indexing_tasks().to_vec();
+                    let indexing_tasks = node.indexing_tasks.to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     let change = Change::Insert(

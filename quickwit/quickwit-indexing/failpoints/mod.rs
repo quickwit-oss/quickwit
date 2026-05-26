@@ -293,7 +293,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs,
     };
     let pipeline_id = MergePipelineId {
-        node_id: NodeId::from("test-node"),
+        node_id: NodeId::from_str("test-node"),
         index_uid: IndexUid::new_with_random_ulid(index_id),
         source_id: "test-source".to_string(),
     };

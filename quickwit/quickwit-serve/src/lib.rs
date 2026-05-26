@@ -1772,7 +1772,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Initializing);
 
@@ -1796,7 +1796,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
@@ -1821,7 +1821,7 @@ mod tests {
         // The node should still be in the pool with updated status.
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Decommissioning);
 

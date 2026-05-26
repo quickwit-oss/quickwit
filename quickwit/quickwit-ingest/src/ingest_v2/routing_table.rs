@@ -322,7 +322,7 @@ mod tests {
 
         // Insert first node.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
@@ -334,7 +334,7 @@ mod tests {
 
         // Update existing node.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             4,
@@ -346,7 +346,7 @@ mod tests {
 
         // Add second node.
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             6,
@@ -356,7 +356,7 @@ mod tests {
 
         // Zero shards: node stays in table but becomes ineligible for routing.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             0,
@@ -402,20 +402,20 @@ mod tests {
         assert!(!table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is in pool → true.
-        pool.insert("node-1".into(), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
         assert!(table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is unavailable → false.
-        let unavailable: HashSet<NodeId> = HashSet::from(["node-1".into()]);
+        let unavailable: HashSet<NodeId> = HashSet::from([NodeId::from_str("node-1")]);
         assert!(!table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
 
         // Second node available → true despite first being unavailable.
-        pool.insert("node-2".into(), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(None));
         assert!(table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
 
         // Node with capacity_score=0 is not eligible.
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             index_uid.clone(),
             "test-source".into(),
             0,
@@ -428,12 +428,12 @@ mod tests {
     fn test_has_open_nodes_requires_cp_seed() {
         let mut table = RoutingTable::default();
         let pool = IngesterPool::default();
-        pool.insert("node-1".into(), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
 
         // Chitchat broadcast populates the entry, but has_open_nodes still returns false
         // because the entry hasn't been seeded from the control plane yet.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
@@ -464,26 +464,26 @@ mod tests {
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
             1,
         );
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
             1,
         );
-        pool.insert("node-1".into(), mocked_ingester(Some("az-1")));
-        pool.insert("node-2".into(), mocked_ingester(Some("az-2")));
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(Some("az-1")));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(Some("az-2")));
 
         let picked = table
             .pick_node("test-index", "test-source", &pool, &HashSet::new())
             .unwrap();
-        assert_eq!(picked.node_id, NodeId::from("node-1"));
+        assert_eq!(picked.node_id, NodeId::from_str("node-1"));
     }
 
     #[test]
@@ -492,18 +492,18 @@ mod tests {
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
             1,
         );
-        pool.insert("node-2".into(), mocked_ingester(Some("az-2")));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(Some("az-2")));
 
         let picked = table
             .pick_node("test-index", "test-source", &pool, &HashSet::new())
             .unwrap();
-        assert_eq!(picked.node_id, NodeId::from("node-2"));
+        assert_eq!(picked.node_id, NodeId::from_str("node-2"));
     }
 
     #[test]
@@ -512,18 +512,18 @@ mod tests {
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
             1,
         );
-        pool.insert("node-1".into(), mocked_ingester(Some("az-1")));
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(Some("az-1")));
 
         let picked = table
             .pick_node("test-index", "test-source", &pool, &HashSet::new())
             .unwrap();
-        assert_eq!(picked.node_id, NodeId::from("node-1"));
+        assert_eq!(picked.node_id, NodeId::from_str("node-1"));
     }
 
     #[test]
@@ -544,19 +544,19 @@ mod tests {
         // wins when it does, so it should win ~67% of 1000 runs. Asserting > 550
         // is ~7.5 standard deviations from the mean — effectively impossible to flake.
         let high = IngesterNode {
-            node_id: "high".into(),
+            node_id: NodeId::from_str("high"),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 9,
             open_shard_count: 2,
         };
         let mid = IngesterNode {
-            node_id: "mid".into(),
+            node_id: NodeId::from_str("mid"),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 5,
             open_shard_count: 2,
         };
         let low = IngesterNode {
-            node_id: "low".into(),
+            node_id: NodeId::from_str("low"),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 1,
             open_shard_count: 2,
@@ -630,26 +630,26 @@ mod tests {
     fn test_classify_az_locality() {
         let table = RoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
-        pool.insert("node-local".into(), mocked_ingester(Some("az-1")));
-        pool.insert("node-remote".into(), mocked_ingester(Some("az-2")));
-        pool.insert("node-no-az".into(), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-local"), mocked_ingester(Some("az-1")));
+        pool.insert(NodeId::from_str("node-remote"), mocked_ingester(Some("az-2")));
+        pool.insert(NodeId::from_str("node-no-az"), mocked_ingester(None));
 
         assert_eq!(
-            table.classify_az_locality(&"node-local".into(), &pool),
+            table.classify_az_locality(&NodeId::from_str("node-local"), &pool),
             "same_az"
         );
         assert_eq!(
-            table.classify_az_locality(&"node-remote".into(), &pool),
+            table.classify_az_locality(&NodeId::from_str("node-remote"), &pool),
             "cross_az"
         );
         assert_eq!(
-            table.classify_az_locality(&"node-no-az".into(), &pool),
+            table.classify_az_locality(&NodeId::from_str("node-no-az"), &pool),
             "az_unaware"
         );
 
         let table_no_az = RoutingTable::default();
         assert_eq!(
-            table_no_az.classify_az_locality(&"node-local".into(), &pool),
+            table_no_az.classify_az_locality(&NodeId::from_str("node-local"), &pool),
             "az_unaware"
         );
     }
@@ -661,14 +661,14 @@ mod tests {
 
         // Populate with incarnation 0: two nodes.
         table.apply_capacity_update(
-            "node-1".into(),
+            NodeId::from_str("node-1"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
             3,
         );
         table.apply_capacity_update(
-            "node-2".into(),
+            NodeId::from_str("node-2"),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             6,
@@ -680,7 +680,7 @@ mod tests {
 
         // Capacity update with incarnation 1 clears stale nodes.
         table.apply_capacity_update(
-            "node-3".into(),
+            NodeId::from_str("node-3"),
             IndexUid::for_test("test-index", 1),
             "test-source".into(),
             5,

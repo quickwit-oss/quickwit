@@ -842,7 +842,7 @@ mod tests {
         assert_eq!(open_shards[0].shard, shard_03);
         assert_eq!(open_shards[1].shard, shard_04);
 
-        unavailable_ingesters.insert("test-leader-0".into());
+        unavailable_ingesters.insert(NodeId::from_str("test-leader-0"));
 
         let open_shards = shard_table
             .find_open_shards_sorted(&index_uid, &source_id, &unavailable_ingesters)
@@ -1235,8 +1235,8 @@ mod tests {
         let shard1 = ShardId::from("shard1");
         let shard2 = ShardId::from("shard1");
         let unlisted_shard = ShardId::from("unlisted");
-        let node1 = NodeId::new("node1".to_string());
-        let node2 = NodeId::new("node2".to_string());
+        let node1 = NodeId::from_str("node1");
+        let node2 = NodeId::from_str("node2");
         let mut shard_locations = ShardLocations::default();
         shard_locations.add_location(&shard1, &node1);
         shard_locations.add_location(&shard1, &node2);
@@ -1343,19 +1343,19 @@ mod tests {
         };
         assert_eq!(
             &get_sorted_locations_for_shard(0u64),
-            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer1"), &NodeId::from_str("indexer2")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(1u64),
-            &[&NodeId::from("indexer1")]
+            &[&NodeId::from_str("indexer1")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(2u64),
-            &[&NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer2")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(3u64),
-            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer1"), &NodeId::from_str("indexer2")]
         );
     }
 }
