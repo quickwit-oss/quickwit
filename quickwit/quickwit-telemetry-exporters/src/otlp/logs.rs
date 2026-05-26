@@ -13,23 +13,33 @@
 // limitations under the License.
 
 use anyhow::Context;
-use opentelemetry_otlp::{LogExporter, Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_otlp::{
+    LogExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 
-use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
+use crate::otlp::{OtlpExporterConfig, OtlpHeaders, OtlpProtocol};
 
 impl OtlpProtocol {
-    pub(crate) fn log_exporter(&self) -> anyhow::Result<LogExporter> {
+    pub(crate) fn log_exporter(&self, headers: &OtlpHeaders) -> anyhow::Result<LogExporter> {
         match self {
-            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
+            OtlpProtocol::Grpc => {
+                let metadata = headers.grpc_metadata()?;
+                LogExporter::builder()
+                    .with_tonic()
+                    .with_metadata(metadata)
+                    .build()
+            }
             OtlpProtocol::HttpProtobuf => LogExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpBinary)
+                .with_headers(headers.http_headers())
                 .build(),
             OtlpProtocol::HttpJson => LogExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpJson)
+                .with_headers(headers.http_headers())
                 .build(),
         }
         .context("failed to initialize OTLP logs exporter")
@@ -41,7 +51,7 @@ pub(crate) fn init_logger_provider(
     resource: Resource,
 ) -> anyhow::Result<SdkLoggerProvider> {
     let logs_protocol = otlp_config.logs_protocol()?;
-    let log_exporter = logs_protocol.log_exporter()?;
+    let log_exporter = logs_protocol.log_exporter(otlp_config.headers())?;
     Ok(SdkLoggerProvider::builder()
         .with_resource(resource)
         .with_batch_exporter(log_exporter)

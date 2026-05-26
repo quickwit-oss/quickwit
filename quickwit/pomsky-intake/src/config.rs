@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::ensure;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 const DEFAULT_DD_SITE: &str = "datadoghq.com";
@@ -39,9 +40,9 @@ pub struct IntakeConfig {
     #[serde(rename = "site", default = "default_dd_site")]
     pub dd_site: String,
 
-    /// Datadog API key. Resolved via [`Self::resolve_dd_api_key`], which
-    /// prefers `DD_API_KEY_FILE` (file contents) over `DD_API_KEY` (env)
-    /// over this config field. Shared across all Datadog-backed pollers.
+    /// Datadog API key. Resolved via [`Self::resolve_dd_api_key`], which prefers
+    /// `DD_API_KEY` (env) over `DD_API_KEY_FILE` (file contents) over this config
+    /// field. Shared across all Datadog-backed pollers.
     #[serde(rename = "api_key", default)]
     pub dd_api_key: Option<String>,
 
@@ -92,20 +93,11 @@ impl IntakeConfig {
         std::env::var("DD_SITE").unwrap_or_else(|_| self.dd_site.clone())
     }
 
-    /// Resolves the DD API key. Precedence: the file pointed to by
-    /// `DD_API_KEY_FILE`, then `DD_API_KEY`, then the config field.
-    pub fn resolve_dd_api_key(&self) -> Option<String> {
-        if let Ok(path) = std::env::var("DD_API_KEY_FILE") {
-            match std::fs::read_to_string(&path) {
-                Ok(contents) => return Some(contents.trim().to_string()),
-                Err(error) => {
-                    tracing::warn!(path, %error, "failed to read DD_API_KEY_FILE");
-                }
-            }
-        }
-        std::env::var("DD_API_KEY")
-            .ok()
-            .or_else(|| self.dd_api_key.clone())
+    /// Resolves the DD API key. Precedence: `DD_API_KEY`, then the file pointed
+    /// to by `DD_API_KEY_FILE`, then the config field.
+    pub fn resolve_dd_api_key(&self) -> Option<SecretString> {
+        quickwit_common::datadog_api_key::resolve_dd_api_key_from_env()
+            .or_else(|| self.dd_api_key.clone().map(SecretString::from))
     }
 
     /// Returns an error on the first invariant violation. Cheap presence
@@ -116,7 +108,7 @@ impl IntakeConfig {
             std::env::var_os("DD_API_KEY_FILE").is_some()
                 || std::env::var_os("DD_API_KEY").is_some()
                 || self.dd_api_key.is_some(),
-            "dd_api_key must be set via the DD_API_KEY_FILE environment variable, the DD_API_KEY \
+            "dd_api_key must be set via the DD_API_KEY environment variable, the DD_API_KEY_FILE \
              environment variable, or config",
         );
         self.host_tags.validate()?;

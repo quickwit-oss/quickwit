@@ -33,6 +33,7 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
@@ -781,13 +782,23 @@ impl Default for JaegerConfig {
 }
 
 /// Reverse connection configuration.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct WebsocketConfig {
     // The Datadog site to connect to.
     pub site: Option<String>,
     // The Datadog API key.
-    pub dd_api_key: Option<String>,
+    pub dd_api_key: Option<SecretString>,
 }
+
+impl PartialEq for WebsocketConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.site == other.site
+            && self.dd_api_key.as_ref().map(ExposeSecret::expose_secret)
+                == other.dd_api_key.as_ref().map(ExposeSecret::expose_secret)
+    }
+}
+
+impl Eq for WebsocketConfig {}
 
 impl std::fmt::Debug for WebsocketConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -808,11 +819,19 @@ impl WebsocketConfig {
         dd_api_key: Option<String>,
         _dd_application_key: Option<String>,
     ) -> Result<Self, Infallible> {
-        Ok(Self { site, dd_api_key })
+        Ok(Self {
+            site,
+            dd_api_key: dd_api_key.map(SecretString::from),
+        })
     }
 
     fn to_parts(this: Self) -> (Option<String>, Option<String>, Option<String>) {
-        (this.site, this.dd_api_key, None)
+        (
+            this.site,
+            this.dd_api_key
+                .map(|dd_api_key| dd_api_key.expose_secret().to_string()),
+            None,
+        )
     }
 
     fn resolve(&mut self) {
@@ -823,21 +842,7 @@ impl WebsocketConfig {
                 .unwrap_or("app.datadoghq.com".to_string()),
         );
 
-        // Try DD_API_KEY env var first, then DD_API_KEY_FILE (read from file path)
-        self.dd_api_key = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
-            .or_else(|| {
-                // If DD_API_KEY_FILE is set, read the API key from that file
-                quickwit_common::get_from_env_opt::<String>("DD_API_KEY_FILE", false)
-                    .and_then(|path| {
-                        std::fs::read_to_string(&path)
-                            .map_err(|e| {
-                                tracing::warn!(path = %path, error = %e, "failed to read DD_API_KEY_FILE");
-                                e
-                            })
-                            .ok()
-                    })
-                    .map(|s| s.trim().to_string())
-            })
+        self.dd_api_key = quickwit_common::datadog_api_key::resolve_dd_api_key_from_env()
             .or(self.dd_api_key.take());
     }
 
@@ -878,7 +883,7 @@ impl WebsocketConfig {
 
     fn redact(&mut self) {
         if let Some(dd_api_key) = self.dd_api_key.as_mut() {
-            *dd_api_key = "***redacted***".to_string();
+            *dd_api_key = SecretString::from("***redacted***".to_string());
         }
     }
 }

@@ -17,6 +17,7 @@ use quickwit_proto::metastore::{
     GetClusterIdentityRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::tonic::Code;
+use secrecy::{ExposeSecret, SecretString};
 use tokio::task::{AbortHandle, JoinSet};
 use tokio_tungstenite::client_async_tls;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -292,7 +293,7 @@ fn handle_single_message(
 async fn single_websocket(
     target_domain: &str,
     proxy_url: Option<&http::uri::Authority>,
-    dd_api_key: &str,
+    dd_api_key: &SecretString,
     service: CloudPremServiceClient,
     cluster_remote_uid: String,
     cluster_name: String,
@@ -303,7 +304,10 @@ async fn single_websocket(
         format!("wss://{target_domain}/api/unstable/cloudprem-connection-gateway/connect");
     let mut request = target_url.into_client_request()?;
     let headers = request.headers_mut();
-    headers.insert("DD-API-KEY", HeaderValue::from_str(dd_api_key)?);
+    headers.insert(
+        "DD-API-KEY",
+        HeaderValue::from_str(dd_api_key.expose_secret())?,
+    );
     // When set, routes the WebSocket connection to a RAPID test drive gateway.
     if let Ok(td_name) = std::env::var("CLOUDPREM_GATEWAY_TEST_DRIVE") {
         let header_name = format!("test-drive-{}", td_name);
@@ -417,7 +421,7 @@ fn format_err(err: &TungsteniteError) -> String {
 
 pub(crate) async fn maintain_websocket(
     target_domain: String,
-    dd_api_key: String,
+    dd_api_key: SecretString,
     cluster_name: String,
     service: CloudPremServiceClient,
     metastore: MetastoreServiceClient,
