@@ -88,6 +88,39 @@ impl Debug for Cluster {
     }
 }
 
+#[cfg(any(test, feature = "testsuite"))]
+impl Cluster {
+    /// Deprecated: this is going away soon.
+    pub async fn ready_members(&self) -> Vec<ClusterMember> {
+        self.inner.read().await.ready_members_rx.borrow().clone()
+    }
+
+    async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
+        WatchStream::new(self.inner.read().await.ready_members_rx.clone())
+    }
+
+    /// Waits until the predicate holds true for the set of ready members.
+    pub async fn wait_for_ready_members<F>(
+        &self,
+        mut predicate: F,
+        timeout_after: Duration,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut(&[ClusterMember]) -> bool,
+    {
+        timeout(
+            timeout_after,
+            self.ready_members_watcher()
+                .await
+                .skip_while(|members| !predicate(members))
+                .next(),
+        )
+        .await
+        .context("deadline has passed before predicate held true")?;
+        Ok(())
+    }
+}
+
 impl Cluster {
     pub fn cluster_id(&self) -> &str {
         &self.cluster_id
@@ -214,17 +247,6 @@ impl Cluster {
         Ok(cluster)
     }
 
-    /// Deprecated: this is going away soon.
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn ready_members(&self) -> Vec<ClusterMember> {
-        self.inner.read().await.ready_members_rx.borrow().clone()
-    }
-
-    #[cfg(any(test, feature = "testsuite"))]
-    async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
-        WatchStream::new(self.inner.read().await.ready_members_rx.clone())
-    }
-
     pub async fn ready_nodes(&self) -> Vec<ClusterNode> {
         self.inner
             .write()
@@ -330,28 +352,6 @@ impl Cluster {
             .lock()
             .await
             .subscribe_event(key_prefix, callback)
-    }
-
-    /// Waits until the predicate holds true for the set of ready members.
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn wait_for_ready_members<F>(
-        &self,
-        mut predicate: F,
-        timeout_after: Duration,
-    ) -> anyhow::Result<()>
-    where
-        F: FnMut(&[ClusterMember]) -> bool,
-    {
-        timeout(
-            timeout_after,
-            self.ready_members_watcher()
-                .await
-                .skip_while(|members| !predicate(members))
-                .next(),
-        )
-        .await
-        .context("deadline has passed before predicate held true")?;
-        Ok(())
     }
 
     /// Returns a snapshot of the cluster state, including the underlying Chitchat state.
