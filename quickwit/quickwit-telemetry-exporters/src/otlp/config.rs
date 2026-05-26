@@ -153,12 +153,34 @@ impl OtlpHeaders {
     fn load() -> Self {
         let dd_api_key = if get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false) {
             get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
+                .map(|api_key| (DD_API_KEY_ENV_KEY, api_key))
                 .or_else(|| {
-                    get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false)
-                        .and_then(|path| std::fs::read_to_string(&path).ok())
-                        .map(|api_key| api_key.trim().to_string())
+                    get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false).and_then(|path| {
+                        std::fs::read_to_string(&path)
+                            .map(|api_key| (DD_API_KEY_FILE_ENV_KEY, api_key))
+                            .map_err(|error| {
+                                tracing::warn!(
+                                    path = %path,
+                                    error = %error,
+                                    "failed to read DD_API_KEY_FILE"
+                                );
+                                error
+                            })
+                            .ok()
+                    })
                 })
-                .map(SecretString::from)
+                .and_then(|(env_key, api_key)| {
+                    let api_key = api_key.trim();
+                    if api_key.is_empty() {
+                        tracing::warn!(
+                            env_key = %env_key,
+                            "Datadog API key is configured but empty"
+                        );
+                        None
+                    } else {
+                        Some(SecretString::from(api_key.to_string()))
+                    }
+                })
         } else {
             None
         };
@@ -376,12 +398,26 @@ mod tests {
         let _lock = lock_env();
         let _byoc_telemetry_enabled_guard =
             EnvVarGuard::set(BYOC_TELEMETRY_ENABLED_ENV_KEY, "true");
-        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, "env-api-key");
+        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " env-api-key\n");
         let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
 
         let config = OtlpExporterConfig::load_from_env();
         assert_eq!(dd_api_key(&config.headers), Some("env-api-key"));
         assert_dd_api_key_headers(config.headers(), "env-api-key");
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_ignores_empty_dd_api_key_env() {
+        let _lock = lock_env();
+        let _byoc_telemetry_enabled_guard =
+            EnvVarGuard::set(BYOC_TELEMETRY_ENABLED_ENV_KEY, "true");
+        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " \n");
+        let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
+
+        let config = OtlpExporterConfig::load_from_env();
+        assert!(config.headers.dd_api_key.is_none());
+        assert!(config.headers().http_headers().is_empty());
+        assert!(config.headers().grpc_metadata().unwrap().is_empty());
     }
 
     #[test]
@@ -400,6 +436,27 @@ mod tests {
         let config = OtlpExporterConfig::load_from_env();
         assert_eq!(dd_api_key(&config.headers), Some("file-api-key"));
         assert_dd_api_key_headers(config.headers(), "file-api-key");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_ignores_empty_dd_api_key_file() {
+        let _lock = lock_env();
+        let path = temp_file_path("empty-dd-api-key-file");
+        std::fs::remove_file(&path).ok();
+        std::fs::write(&path, " \n").unwrap();
+
+        let _byoc_telemetry_enabled_guard =
+            EnvVarGuard::set(BYOC_TELEMETRY_ENABLED_ENV_KEY, "true");
+        let _dd_api_key_guard = EnvVarGuard::remove(DD_API_KEY_ENV_KEY);
+        let _dd_api_key_file_guard =
+            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
+
+        let config = OtlpExporterConfig::load_from_env();
+        assert!(config.headers.dd_api_key.is_none());
+        assert!(config.headers().http_headers().is_empty());
+        assert!(config.headers().grpc_metadata().unwrap().is_empty());
 
         std::fs::remove_file(&path).ok();
     }
