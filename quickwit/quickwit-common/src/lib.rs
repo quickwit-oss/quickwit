@@ -20,6 +20,7 @@ mod coolid;
 pub(crate) mod alloc_tracker;
 pub mod binary_heap;
 mod cpus;
+pub mod datadog_api_key;
 pub mod fs;
 pub mod io;
 #[cfg(feature = "jemalloc-profiled")]
