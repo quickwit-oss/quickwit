@@ -1073,7 +1073,7 @@ fn build_ingester_insert_change(
         chitchat_id.node_id,
         node.ingester_status(),
     );
-    let node_id: NodeId = node.node_id().to_owned();
+    let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
         node,
         ingester_opt,
@@ -1096,7 +1096,7 @@ fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPo
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().to_owned();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 
@@ -1290,7 +1290,7 @@ fn build_indexer_insert_change(
         chitchat_id.node_id,
         node.ingester_status()
     );
-    let node_id: NodeId = node.node_id().to_owned();
+    let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(
         node_id.clone(),
@@ -1312,7 +1312,7 @@ fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNode
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().to_owned();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 

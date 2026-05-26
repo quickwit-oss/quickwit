@@ -21,10 +21,9 @@ use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::NodeIdRef;
 use tonic::transport::Channel;
 
-use crate::member::build_cluster_member;
+use crate::member::{ClusterMember, build_cluster_member};
 
 #[derive(Clone)]
 pub struct ClusterNode {
@@ -39,23 +38,15 @@ impl ClusterNode {
         channel: Channel,
         is_self_node: bool,
     ) -> anyhow::Result<Self> {
-        let member = build_cluster_member(chitchat_id.clone(), node_state)?;
+        let member = build_cluster_member(chitchat_id, node_state)?;
         let inner = InnerNode {
-            chitchat_id,
+            member,
             channel,
-            enabled_services: member.enabled_services,
-            grpc_advertise_addr: member.grpc_advertise_addr,
-            indexing_tasks: member.indexing_tasks,
-            indexing_capacity: member.indexing_cpu_capacity,
-            ingester_status: member.ingester_status,
-            is_ready: member.is_ready,
             is_self_node,
-            availability_zone: member.availability_zone,
         };
-        let node = ClusterNode {
+        Ok(ClusterNode {
             inner: Arc::new(inner),
-        };
-        Ok(node)
+        })
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -85,58 +76,53 @@ impl ClusterNode {
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
 
-    pub fn chitchat_id(&self) -> &ChitchatId {
-        &self.inner.chitchat_id
-    }
-
-    pub fn node_id(&self) -> &NodeIdRef {
-        NodeIdRef::from_str(&self.inner.chitchat_id.node_id)
-    }
-
     pub fn channel(&self) -> Channel {
         self.inner.channel.clone()
     }
 
     pub fn enabled_services(&self) -> &HashSet<QuickwitService> {
-        &self.inner.enabled_services
+        &self.inner.member.enabled_services
     }
 
     pub fn is_indexer(&self) -> bool {
         self.inner
+            .member
             .enabled_services
             .contains(&QuickwitService::Indexer)
     }
 
     pub fn is_ingester(&self) -> bool {
         self.inner
+            .member
             .enabled_services
             .contains(&QuickwitService::Indexer)
     }
 
     pub fn is_searcher(&self) -> bool {
         self.inner
+            .member
             .enabled_services
             .contains(&QuickwitService::Searcher)
     }
 
     pub fn grpc_advertise_addr(&self) -> SocketAddr {
-        self.inner.grpc_advertise_addr
+        self.inner.member.grpc_advertise_addr
     }
 
     pub fn indexing_tasks(&self) -> &[IndexingTask] {
-        &self.inner.indexing_tasks
+        &self.inner.member.indexing_tasks
     }
 
     pub fn indexing_capacity(&self) -> CpuCapacity {
-        self.inner.indexing_capacity
+        self.inner.member.indexing_cpu_capacity
     }
 
     pub fn ingester_status(&self) -> IngesterStatus {
-        self.inner.ingester_status
+        self.inner.member.ingester_status
     }
 
     pub fn is_ready(&self) -> bool {
-        self.inner.is_ready
+        self.inner.member.is_ready
     }
 
     pub fn is_self_node(&self) -> bool {
@@ -144,16 +130,24 @@ impl ClusterNode {
     }
 
     pub fn availability_zone(&self) -> Option<&str> {
-        self.inner.availability_zone.as_deref()
+        self.inner.member.availability_zone.as_deref()
+    }
+}
+
+impl std::ops::Deref for ClusterNode {
+    type Target = ClusterMember;
+
+    fn deref(&self) -> &ClusterMember {
+        &self.inner.member
     }
 }
 
 impl Debug for ClusterNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
-            .field("node_id", &self.inner.chitchat_id.node_id)
-            .field("enabled_services", &self.inner.enabled_services)
-            .field("is_ready", &self.inner.is_ready)
+            .field("node_id", &self.inner.member.node_id)
+            .field("enabled_services", &self.inner.member.enabled_services)
+            .field("is_ready", &self.inner.member.is_ready)
             .finish()
     }
 }
@@ -161,25 +155,13 @@ impl Debug for ClusterNode {
 #[cfg(test)]
 impl PartialEq for ClusterNode {
     fn eq(&self, other: &Self) -> bool {
-        self.inner.chitchat_id == other.inner.chitchat_id
-            && self.inner.enabled_services == other.inner.enabled_services
-            && self.inner.grpc_advertise_addr == other.inner.grpc_advertise_addr
-            && self.inner.indexing_tasks == other.inner.indexing_tasks
-            && self.inner.is_ready == other.inner.is_ready
+        self.inner.member == other.inner.member
             && self.inner.is_self_node == other.inner.is_self_node
-            && self.inner.availability_zone == other.inner.availability_zone
     }
 }
 
 struct InnerNode {
-    chitchat_id: ChitchatId,
+    member: ClusterMember,
     channel: Channel,
-    enabled_services: HashSet<QuickwitService>,
-    grpc_advertise_addr: SocketAddr,
-    indexing_tasks: Vec<IndexingTask>,
-    indexing_capacity: CpuCapacity,
-    ingester_status: IngesterStatus,
-    is_ready: bool,
     is_self_node: bool,
-    availability_zone: Option<String>,
 }

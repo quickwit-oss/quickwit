@@ -184,7 +184,7 @@ async fn compute_cluster_change_events_on_added(
         "node `{}` has {verb} the cluster",
         new_chitchat_id.node_id,
     );
-    let new_node_id: NodeId = new_node.node_id().to_owned();
+    let new_node_id: NodeId = new_node.node_id.clone();
     previous_nodes.insert(new_node_id, new_node.clone());
 
     if new_node.is_ready() {
@@ -484,7 +484,7 @@ pub(crate) mod tests {
 
             let node = previous_nodes.get(&*new_chitchat_id.node_id).unwrap();
 
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(!node.is_self_node());
             assert!(!node.is_ready());
@@ -513,7 +513,7 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = &events[0] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(!node.is_self_node());
             assert!(node.is_ready());
@@ -540,12 +540,12 @@ pub(crate) mod tests {
                     events[0]
                 );
             };
-            assert_eq!(removed_node.chitchat_id(), &new_chitchat_id);
+            assert_eq!(removed_node.chitchat_id(), new_chitchat_id);
 
             let ClusterChange::Add(rejoined_node) = &events[1] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[1]);
             };
-            assert_eq!(rejoined_node.chitchat_id(), &rejoined_chitchat_id);
+            assert_eq!(rejoined_node.chitchat_id(), rejoined_chitchat_id);
             assert_eq!(
                 previous_nodes.get(&*rejoined_chitchat_id.node_id).unwrap(),
                 rejoined_node
@@ -591,7 +591,7 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = &events[0] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(node.is_self_node());
             assert!(node.is_ready());
@@ -642,7 +642,7 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = event else {
                 panic!("expected `ClusterChange::Add` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(node.chitchat_id(), updated_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(node.is_ready());
             assert!(!node.is_self_node());
@@ -690,7 +690,7 @@ pub(crate) mod tests {
             let ClusterChange::Update { updated, .. } = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(updated.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(updated.chitchat_id(), updated_chitchat_id);
             assert_eq!(updated.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(!updated.is_self_node());
             assert!(updated.is_ready());
@@ -737,7 +737,7 @@ pub(crate) mod tests {
             let ClusterChange::Remove(node) = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(node.chitchat_id(), updated_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(!node.is_self_node());
             assert!(!node.is_ready());
@@ -857,7 +857,7 @@ pub(crate) mod tests {
             let ClusterChange::Remove(node) = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &removed_chitchat_id);
+            assert_eq!(node.chitchat_id(), removed_chitchat_id);
             assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
             assert!(!node.is_self_node());
             assert!(node.is_ready());

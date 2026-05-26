@@ -73,7 +73,7 @@ pub fn test_indexer_change_stream(
                 ClusterChange::Add(node)
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
-                    let node_id = node.node_id().to_owned();
+                    let node_id = node.node_id.clone();
                     let generation_id = node.chitchat_id().generation_id;
                     let indexing_tasks = node.indexing_tasks().to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
@@ -90,7 +90,7 @@ pub fn test_indexer_change_stream(
                     );
                     Some(change)
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_owned())),
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id.clone())),
                 _ => None,
             }
         })

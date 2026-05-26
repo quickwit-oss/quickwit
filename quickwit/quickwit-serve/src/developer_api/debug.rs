@@ -104,8 +104,8 @@ async fn get_node_debug_infos(
     let mut get_debug_info_futures = FuturesUnordered::new();
 
     for ready_node in ready_nodes {
-        if node_id_patterns.matches(ready_node.node_id()) {
-            let node_id = ready_node.node_id().to_owned();
+        if node_id_patterns.matches(&ready_node.node_id) {
+            let node_id = ready_node.node_id.clone();
             let client = DeveloperServiceClient::from_channel(
                 ready_node.grpc_advertise_addr(),
                 ready_node.channel(),

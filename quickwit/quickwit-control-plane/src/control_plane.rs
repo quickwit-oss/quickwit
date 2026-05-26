@@ -1136,7 +1136,7 @@ async fn watcher_indexers(
                 info!(
                     "indexer `{}` with status `{}` joined the cluster: rebalancing shards and \
                      rebuilding indexing plan",
-                    node.node_id(),
+                    node.node_id,
                     node.ingester_status().as_json_str_name()
                 );
                 trigger_rebalance = true;
@@ -1145,7 +1145,7 @@ async fn watcher_indexers(
                 info!(
                     "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing \
                      plan",
-                    node.node_id()
+                    node.node_id
                 );
                 trigger_rebalance = true
             }
@@ -1157,7 +1157,7 @@ async fn watcher_indexers(
                     info!(
                         "indexer `{}` status changed to `{}`: rebalancing shards and rebuilding \
                          indexing plan",
-                        updated.node_id(),
+                        updated.node_id,
                         updated.ingester_status().as_json_str_name()
                     );
                     trigger_rebalance = true;
