@@ -17,6 +17,7 @@ use std::io::Write;
 
 use anyhow::Context;
 use clap::Parser;
+use secrecy::ExposeSecret;
 use tracing::info;
 use vector::app::Application;
 use vector::cli::Opts;
@@ -345,9 +346,10 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
         .context("failed to resolve DD API key")?;
     // Substitute `${DD_API_KEY}` in the template against an in-memory map
     // instead of relying on Vector's own env-substitution pass. The key is
-    // resolved upstream from `DD_API_KEY_FILE`, `DD_API_KEY`, or the intake
+    // resolved upstream from `DD_API_KEY`, `DD_API_KEY_FILE`, or the intake
     // config file (in that precedence order).
     let config_template = build_vector_config(&dd_site, &config, print);
+    let dd_api_key = dd_api_key.expose_secret().to_string();
     let vars = HashMap::from([("DD_API_KEY".to_string(), dd_api_key.clone())]);
     let config_content = interpolate(&config_template, &vars).map_err(|errors| {
         anyhow::anyhow!("failed to interpolate intake config: {}", errors.join(", "))
