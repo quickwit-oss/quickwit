@@ -151,39 +151,9 @@ impl OtlpExporterConfig {
 
 impl OtlpHeaders {
     fn load() -> Self {
-        let dd_api_key = if get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false) {
-            get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
-                .map(|api_key| (DD_API_KEY_ENV_KEY, api_key))
-                .or_else(|| {
-                    get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false).and_then(|path| {
-                        std::fs::read_to_string(&path)
-                            .map(|api_key| (DD_API_KEY_FILE_ENV_KEY, api_key))
-                            .map_err(|error| {
-                                tracing::warn!(
-                                    path = %path,
-                                    error = %error,
-                                    "failed to read DD_API_KEY_FILE"
-                                );
-                                error
-                            })
-                            .ok()
-                    })
-                })
-                .and_then(|(env_key, api_key)| {
-                    let api_key = api_key.trim();
-                    if api_key.is_empty() {
-                        tracing::warn!(
-                            env_key = %env_key,
-                            "Datadog API key is configured but empty"
-                        );
-                        None
-                    } else {
-                        Some(SecretString::from(api_key.to_string()))
-                    }
-                })
-        } else {
-            None
-        };
+        let dd_api_key = get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false)
+            .then(DdApiKeySource::load_dd_api_key)
+            .flatten();
         Self { dd_api_key }
     }
 
@@ -209,6 +179,64 @@ impl OtlpHeaders {
             metadata.insert(metadata_key, metadata_value);
         }
         Ok(metadata)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum DdApiKeySource {
+    Env,
+    File,
+}
+
+impl DdApiKeySource {
+    const LOAD_ORDER: [Self; 2] = [Self::Env, Self::File];
+
+    fn load_dd_api_key() -> Option<SecretString> {
+        Self::LOAD_ORDER.into_iter().find_map(Self::load)
+    }
+
+    fn load(self) -> Option<SecretString> {
+        match self {
+            Self::Env => get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
+                .and_then(|api_key| self.normalize_api_key(api_key)),
+            Self::File => {
+                get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false).and_then(|path| {
+                    std::fs::read_to_string(&path)
+                        .map_err(|error| {
+                            tracing::warn!(
+                                path = %path,
+                                error = %error,
+                                "failed to read DD_API_KEY_FILE"
+                            );
+                            error
+                        })
+                        .ok()
+                        .and_then(|api_key| self.normalize_api_key(api_key))
+                })
+            }
+        }
+    }
+
+    fn normalize_api_key(self, api_key: String) -> Option<SecretString> {
+        let api_key = api_key.trim();
+        if api_key.is_empty() {
+            tracing::warn!(
+                source = %self,
+                "Datadog API key is configured but empty"
+            );
+            None
+        } else {
+            Some(SecretString::from(api_key.to_string()))
+        }
+    }
+}
+
+impl std::fmt::Display for DdApiKeySource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Env => formatter.write_str("env"),
+            Self::File => formatter.write_str("file"),
+        }
     }
 }
 
@@ -420,6 +448,26 @@ mod tests {
         assert!(config.headers.dd_api_key.is_none());
         assert!(config.headers().http_headers().is_empty());
         assert!(config.headers().grpc_metadata().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_falls_back_to_file_when_dd_api_key_env_is_empty() {
+        let _lock = lock_env();
+        let path = temp_file_path("dd-api-key-empty-env-fallback");
+        std::fs::remove_file(&path).ok();
+        std::fs::write(&path, "file-api-key\n").unwrap();
+
+        let _byoc_telemetry_enabled_guard =
+            EnvVarGuard::set(BYOC_TELEMETRY_ENABLED_ENV_KEY, "true");
+        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " \n");
+        let _dd_api_key_file_guard =
+            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
+
+        let config = OtlpExporterConfig::load_from_env();
+        assert_eq!(dd_api_key(&config.headers), Some("file-api-key"));
+        assert_dd_api_key_headers(config.headers(), "file-api-key");
+
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
