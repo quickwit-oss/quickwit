@@ -151,7 +151,17 @@ impl OtlpExporterConfig {
 
 impl OtlpHeaders {
     fn load() -> Self {
-        let dd_api_key = resolve_dd_api_key();
+        let dd_api_key = if get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false) {
+            get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
+                .or_else(|| {
+                    get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false)
+                        .and_then(|path| std::fs::read_to_string(&path).ok())
+                        .map(|api_key| api_key.trim().to_string())
+                })
+                .map(SecretString::from)
+        } else {
+            None
+        };
         Self { dd_api_key }
     }
 
@@ -178,20 +188,6 @@ impl OtlpHeaders {
         }
         Ok(metadata)
     }
-}
-
-fn resolve_dd_api_key() -> Option<SecretString> {
-    if !get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false) {
-        return None;
-    }
-
-    get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
-        .or_else(|| {
-            get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false)
-                .and_then(|path| std::fs::read_to_string(&path).ok())
-                .map(|api_key| api_key.trim().to_string())
-        })
-        .map(SecretString::from)
 }
 
 struct OtlpMetricsTemporality(Temporality);
