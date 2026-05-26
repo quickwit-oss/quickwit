@@ -35,7 +35,6 @@ use tokio::sync::{Mutex, RwLock, mpsc, watch};
 #[cfg(any(test, feature = "testsuite"))]
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
-use tokio_stream::wrappers::WatchStream;
 use tracing::{info, warn};
 
 use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
@@ -43,7 +42,7 @@ use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
     NodeStateExt, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY, build_cluster_member,
+    READINESS_VALUE_READY,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -90,16 +89,19 @@ impl Debug for Cluster {
 
 #[cfg(any(test, feature = "testsuite"))]
 impl Cluster {
-    /// Deprecated: this is going away soon.
     pub async fn ready_members(&self) -> Vec<ClusterMember> {
-        self.inner.read().await.ready_members_rx.borrow().clone()
-    }
-
-    async fn ready_members_watcher(&self) -> WatchStream<Vec<ClusterMember>> {
-        WatchStream::new(self.inner.read().await.ready_members_rx.clone())
+        self.ready_nodes()
+            .await
+            .into_iter()
+            .map(|node: ClusterNode| node.member().clone())
+            .collect()
     }
 
     /// Waits until the predicate holds true for the set of ready members.
+    ///
+    /// Subscribes to `change_stream()`, which first emits `Add` events for all currently-ready
+    /// nodes (under the write lock, so no change can slip through), then future change events.
+    /// The local map is updated on each event and the predicate is checked after each update.
     pub async fn wait_for_ready_members<F>(
         &self,
         mut predicate: F,
@@ -108,13 +110,27 @@ impl Cluster {
     where
         F: FnMut(&[ClusterMember]) -> bool,
     {
-        timeout(
-            timeout_after,
-            self.ready_members_watcher()
-                .await
-                .skip_while(|members| !predicate(members))
-                .next(),
-        )
+        let mut change_stream = self.change_stream();
+        let mut ready_members: BTreeMap<NodeId, ClusterMember> = BTreeMap::new();
+        timeout(timeout_after, async move {
+            while let Some(change) = change_stream.next().await {
+                match change {
+                    ClusterChange::Add(node) => {
+                        ready_members.insert(node.node_id.clone(), (*node).clone());
+                    }
+                    ClusterChange::Update { updated, .. } => {
+                        ready_members.insert(updated.node_id.clone(), (*updated).clone());
+                    }
+                    ClusterChange::Remove(node) => {
+                        ready_members.remove(&node.node_id);
+                    }
+                }
+                let members: Vec<ClusterMember> = ready_members.values().cloned().collect();
+                if predicate(&members) {
+                    return;
+                }
+            }
+        })
         .await
         .context("deadline has passed before predicate held true")?;
         Ok(())
@@ -209,9 +225,6 @@ impl Cluster {
         let chitchat = chitchat_handle.chitchat();
         let chitchat_guard = chitchat.lock().await;
         let live_nodes_rx = chitchat_guard.live_nodes_watcher();
-        let live_nodes_stream = chitchat_guard.live_nodes_watch_stream();
-        let (ready_members_tx, ready_members_rx) = watch::channel(Vec::new());
-        spawn_ready_members_task(cluster_id.clone(), live_nodes_stream, ready_members_tx);
         drop(chitchat_guard);
 
         let weak_chitchat = Arc::downgrade(&chitchat);
@@ -233,7 +246,6 @@ impl Cluster {
             chitchat_handle,
             live_nodes: BTreeMap::new(),
             change_stream_subscribers: Vec::new(),
-            ready_members_rx,
         };
         let cluster = Cluster {
             cluster_id,
@@ -460,42 +472,6 @@ impl ClusterChangeStreamFactory for Cluster {
     }
 }
 
-/// Deprecated: this is going away soon.
-fn spawn_ready_members_task(
-    cluster_id: String,
-    mut live_nodes_stream: WatchStream<BTreeMap<ChitchatId, NodeState>>,
-    ready_members_tx: watch::Sender<Vec<ClusterMember>>,
-) {
-    let fut = async move {
-        while let Some(new_live_nodes) = live_nodes_stream.next().await {
-            let mut new_ready_members = Vec::with_capacity(new_live_nodes.len());
-
-            for (chitchat_id, node_state) in new_live_nodes {
-                let member = match build_cluster_member(chitchat_id, &node_state) {
-                    Ok(member) => member,
-                    Err(error) => {
-                        warn!(
-                            cluster_id=%cluster_id,
-                            error=?error,
-                            "Failed to build cluster member from Chitchat node state."
-                        );
-                        continue;
-                    }
-                };
-                if member.is_ready {
-                    new_ready_members.push(member);
-                }
-            }
-            if *ready_members_tx.borrow() != new_ready_members
-                && ready_members_tx.send(new_ready_members).is_err()
-            {
-                break;
-            }
-        }
-    };
-    tokio::spawn(fut);
-}
-
 /// Parses indexing tasks from the chitchat node state.
 pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
     node_state
@@ -628,7 +604,6 @@ struct InnerCluster {
     chitchat_handle: ChitchatHandle,
     live_nodes: BTreeMap<NodeId, ClusterNode>,
     change_stream_subscribers: Vec<mpsc::UnboundedSender<ClusterChange>>,
-    ready_members_rx: watch::Receiver<Vec<ClusterMember>>,
 }
 
 // Not used within the code, used for documentation.
@@ -797,10 +772,10 @@ mod tests {
             .await
             .unwrap();
 
-        let mut ready_members_watcher = node.ready_members_watcher().await;
-        let ready_members = ready_members_watcher.next().await.unwrap();
+        // Node starts not-ready: subscribe before any readiness change so we don't miss events.
+        let mut change_stream = node.change_stream();
 
-        assert!(ready_members.is_empty());
+        assert!(node.ready_nodes().await.is_empty());
         assert!(!node.is_self_node_ready().await);
 
         let cluster_snapshot = node.snapshot().await;
@@ -819,8 +794,8 @@ mod tests {
 
         node.set_self_node_readiness(true).await;
 
-        let ready_members = ready_members_watcher.next().await.unwrap();
-        assert_eq!(ready_members.len(), 1);
+        let change = change_stream.next().await.unwrap();
+        assert!(matches!(change, ClusterChange::Add(_)));
         assert!(node.is_self_node_ready().await);
 
         let cluster_snapshot = node.snapshot().await;
@@ -839,8 +814,8 @@ mod tests {
 
         node.set_self_node_readiness(false).await;
 
-        let ready_members = ready_members_watcher.next().await.unwrap();
-        assert!(ready_members.is_empty());
+        let change = change_stream.next().await.unwrap();
+        assert!(matches!(change, ClusterChange::Remove(_)));
         assert!(!node.is_self_node_ready().await);
 
         let cluster_snapshot = node.snapshot().await;
