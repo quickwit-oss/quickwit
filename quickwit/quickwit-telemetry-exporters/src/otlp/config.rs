@@ -20,6 +20,7 @@ use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::Temporality;
 use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
+use secrecy::{ExposeSecret, SecretString};
 use tonic::metadata::{MetadataKey, MetadataMap, MetadataValue};
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
@@ -73,7 +74,7 @@ pub(crate) struct OtlpExporterConfig {
 
 #[derive(Default)]
 pub(crate) struct OtlpHeaders {
-    dd_api_key: Option<String>,
+    dd_api_key: Option<SecretString>,
 }
 
 impl OtlpExporterConfig {
@@ -157,34 +158,40 @@ impl OtlpHeaders {
     pub(crate) fn http_headers(&self) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         if let Some(dd_api_key) = &self.dd_api_key {
-            headers.insert(DD_API_KEY_HTTP_HEADER_NAME.to_string(), dd_api_key.clone());
+            headers.insert(
+                DD_API_KEY_HTTP_HEADER_NAME.to_string(),
+                dd_api_key.expose_secret().to_string(),
+            );
         }
         headers
     }
 
     pub(crate) fn grpc_metadata(&self) -> anyhow::Result<MetadataMap> {
         let mut metadata = MetadataMap::new();
-        if let Some(dd_api_key) = self.dd_api_key.as_deref() {
+        if let Some(dd_api_key) = self.dd_api_key.as_ref() {
             let metadata_key = MetadataKey::from_static(DD_API_KEY_GRPC_METADATA_KEY);
-            let metadata_value = MetadataValue::from_str(dd_api_key).with_context(|| {
-                format!("failed to parse `{DD_API_KEY_GRPC_METADATA_KEY}` metadata")
-            })?;
+            let metadata_value =
+                MetadataValue::from_str(dd_api_key.expose_secret()).with_context(|| {
+                    format!("failed to parse `{DD_API_KEY_GRPC_METADATA_KEY}` metadata")
+                })?;
             metadata.insert(metadata_key, metadata_value);
         }
         Ok(metadata)
     }
 }
 
-fn resolve_dd_api_key() -> Option<String> {
+fn resolve_dd_api_key() -> Option<SecretString> {
     if !get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false) {
         return None;
     }
 
-    get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true).or_else(|| {
-        get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false)
-            .and_then(|path| std::fs::read_to_string(&path).ok())
-            .map(|api_key| api_key.trim().to_string())
-    })
+    get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
+        .or_else(|| {
+            get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false)
+                .and_then(|path| std::fs::read_to_string(&path).ok())
+                .map(|api_key| api_key.trim().to_string())
+        })
+        .map(SecretString::from)
 }
 
 struct OtlpMetricsTemporality(Temporality);
@@ -288,6 +295,10 @@ mod tests {
         );
     }
 
+    fn dd_api_key(headers: &OtlpHeaders) -> Option<&str> {
+        headers.dd_api_key.as_ref().map(ExposeSecret::expose_secret)
+    }
+
     struct EnvVarGuard {
         key: &'static str,
         previous_value: Option<OsString>,
@@ -359,7 +370,7 @@ mod tests {
         let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
 
         let config = OtlpExporterConfig::load_from_env();
-        assert_eq!(config.headers.dd_api_key, None);
+        assert!(config.headers.dd_api_key.is_none());
         assert!(config.headers().http_headers().is_empty());
         assert!(config.headers().grpc_metadata().unwrap().is_empty());
     }
@@ -373,7 +384,7 @@ mod tests {
         let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
 
         let config = OtlpExporterConfig::load_from_env();
-        assert_eq!(config.headers.dd_api_key.as_deref(), Some("env-api-key"));
+        assert_eq!(dd_api_key(&config.headers), Some("env-api-key"));
         assert_dd_api_key_headers(config.headers(), "env-api-key");
     }
 
@@ -391,7 +402,7 @@ mod tests {
             EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
 
         let config = OtlpExporterConfig::load_from_env();
-        assert_eq!(config.headers.dd_api_key.as_deref(), Some("file-api-key"));
+        assert_eq!(dd_api_key(&config.headers), Some("file-api-key"));
         assert_dd_api_key_headers(config.headers(), "file-api-key");
 
         std::fs::remove_file(&path).ok();
@@ -411,7 +422,7 @@ mod tests {
             EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
 
         let config = OtlpExporterConfig::load_from_env();
-        assert_eq!(config.headers.dd_api_key.as_deref(), Some("env-api-key"));
+        assert_eq!(dd_api_key(&config.headers), Some("env-api-key"));
         assert_dd_api_key_headers(config.headers(), "env-api-key");
 
         std::fs::remove_file(&path).ok();
@@ -430,7 +441,7 @@ mod tests {
             EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
 
         let config = OtlpExporterConfig::load_from_env();
-        assert_eq!(config.headers.dd_api_key, None);
+        assert!(config.headers.dd_api_key.is_none());
         assert!(config.headers().http_headers().is_empty());
         assert!(config.headers().grpc_metadata().unwrap().is_empty());
     }

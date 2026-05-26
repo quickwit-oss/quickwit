@@ -22,6 +22,7 @@ opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-datadog = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+secrecy = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["parsing"] }
 tonic = { workspace = true }
