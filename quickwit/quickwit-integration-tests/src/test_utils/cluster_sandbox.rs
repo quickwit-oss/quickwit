@@ -342,41 +342,50 @@ impl ClusterSandbox {
             .connect_lazy()
     }
 
-    /// Returns a client to one of the nodes that runs the specified service
-    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
-        let node_config = self.find_node_for_service(service);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
+    fn tls_parts(
+        node_config: &NodeConfig,
+    ) -> (
+        Option<reqwest::tls::Certificate>,
+        Option<reqwest::tls::Identity>,
+    ) {
+        let Some(tls_conf) = &node_config.rest_config.tls else {
+            return (None, None);
+        };
+        let ca_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
+        let ca_cert = reqwest::tls::Certificate::from_pem(&ca_bytes).unwrap();
+        let identity = if tls_conf.validate_client {
+            let mut pem = std::fs::read(&tls_conf.key_path).unwrap();
+            pem.extend(std::fs::read(&tls_conf.cert_path).unwrap());
+            Some(reqwest::tls::Identity::from_pem(&pem).unwrap())
         } else {
             None
         };
+        (Some(ca_cert), identity)
+    }
 
+    /// Returns a client to one of the nodes that runs the specified service
+    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
+        let node_config = self.find_node_for_service(service);
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .build()
     }
 
     /// A client configured to ingest documents and return detailed parse failures.
     pub fn detailed_ingest_client(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
-        } else {
-            None
-        };
-
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .detailed_response(true)
         .build()
     }
@@ -384,19 +393,13 @@ impl ClusterSandbox {
     // TODO(#5604)
     pub fn rest_client_legacy_indexer(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
-        } else {
-            None
-        };
-
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .use_legacy_ingest(true)
         .build()
     }
