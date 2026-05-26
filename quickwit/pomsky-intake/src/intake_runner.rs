@@ -17,11 +17,10 @@ use std::io::Write;
 
 use anyhow::Context;
 use clap::Parser;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use tracing::info;
 use vector::app::Application;
 use vector::cli::Opts;
-use vector::config::interpolate;
 use vector::extra_context::ExtraContext;
 
 use crate::IntakeConfig;
@@ -276,10 +275,21 @@ sinks:
     )
 }
 
+fn build_vector_config_content(
+    config_template: &str,
+    secret_vars: &HashMap<&str, &SecretString>,
+) -> String {
+    let mut config_content = config_template.to_string();
+    for (key, value) in secret_vars {
+        config_content = config_content.replace(&format!("${{{key}}}"), value.expose_secret());
+    }
+    config_content
+}
+
 /// Spawns the host-tags poller on the Vector runtime.
 fn spawn_host_tags_poller(
     dd_site: &str,
-    dd_api_key: &str,
+    dd_api_key: SecretString,
     config: &HostTagsConfig,
     handle: &tokio::runtime::Handle,
 ) {
@@ -287,7 +297,7 @@ fn spawn_host_tags_poller(
         store: HostTagsStore::global(),
         collector: UnknownHostsCollector::global(),
         metadata_service_url: config.metadata_service_url(dd_site),
-        dd_api_key: dd_api_key.to_string(),
+        dd_api_key,
         poll_interval: config.poll_interval(),
         fetch_timeout: config.fetch_timeout(),
         ttl_min: config.ttl_min(),
@@ -306,18 +316,14 @@ fn spawn_host_tags_poller(
 /// as they are merged in.
 fn spawn_dual_ship_poller(
     dd_site: &str,
-    dd_api_key: &str,
+    dd_api_key: SecretString,
     config: &DualShipConfig,
     handle: &tokio::runtime::Handle,
 ) {
     let metadata_service_url = config.metadata_service_url(dd_site);
 
-    let fetcher = DualShipFetcher::new(
-        dd_api_key.to_string(),
-        metadata_service_url,
-        config.fetch_timeout(),
-    )
-    .expect("failed to build dual-ship HTTP client");
+    let fetcher = DualShipFetcher::new(dd_api_key, metadata_service_url, config.fetch_timeout())
+        .expect("failed to build dual-ship HTTP client");
 
     let poller_config = DualShipPollerConfig {
         store: dual_ship_global_store(),
@@ -344,16 +350,12 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     let dd_api_key = config
         .resolve_dd_api_key()
         .context("failed to resolve DD API key")?;
-    // Substitute `${DD_API_KEY}` in the template against an in-memory map
-    // instead of relying on Vector's own env-substitution pass. The key is
-    // resolved upstream from `DD_API_KEY`, `DD_API_KEY_FILE`, or the intake
-    // config file (in that precedence order).
+    // Substitute `${DD_API_KEY}` from secret vars instead of relying on Vector's
+    // own env-substitution pass. The key is resolved upstream from `DD_API_KEY`,
+    // `DD_API_KEY_FILE`, or the intake config file (in that precedence order).
     let config_template = build_vector_config(&dd_site, &config, print);
-    let dd_api_key = dd_api_key.expose_secret().to_string();
-    let vars = HashMap::from([("DD_API_KEY".to_string(), dd_api_key.clone())]);
-    let config_content = interpolate(&config_template, &vars).map_err(|errors| {
-        anyhow::anyhow!("failed to interpolate intake config: {}", errors.join(", "))
-    })?;
+    let secret_vars = HashMap::from([("DD_API_KEY", &dd_api_key)]);
+    let config_content = build_vector_config_content(&config_template, &secret_vars);
     let mut config_file =
         tempfile::NamedTempFile::new().context("failed to create temporary intake config file")?;
     config_file
@@ -372,8 +374,13 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     let (runtime, app) = Application::prepare_from_opts(opts, extra_context)
         .map_err(|code| anyhow::anyhow!("failed to prepare intake service (exit code {code})"))?;
 
-    spawn_dual_ship_poller(&dd_site, &dd_api_key, &config.dual_ship, runtime.handle());
-    spawn_host_tags_poller(&dd_site, &dd_api_key, &config.host_tags, runtime.handle());
+    spawn_dual_ship_poller(
+        &dd_site,
+        dd_api_key.clone(),
+        &config.dual_ship,
+        runtime.handle(),
+    );
+    spawn_host_tags_poller(&dd_site, dd_api_key, &config.host_tags, runtime.handle());
 
     let started = app
         .start(runtime.handle())
@@ -410,8 +417,9 @@ mod tests {
             ..IntakeConfig::default()
         };
         let template = build_vector_config("datadoghq.com", &config, print);
-        let vars = HashMap::from([("DD_API_KEY".to_string(), "test-api-key".to_string())]);
-        let yaml = interpolate(&template, &vars).expect("interpolation should succeed");
+        let dd_api_key = SecretString::from("test-api-key".to_string());
+        let secret_vars = HashMap::from([("DD_API_KEY", &dd_api_key)]);
+        let yaml = build_vector_config_content(&template, &secret_vars);
         if let Err(errors) = load_from_str(&yaml, Format::Yaml) {
             panic!(
                 "vector rejected the generated config:\n--- yaml ---\n{yaml}\n--- errors ---\n{}",

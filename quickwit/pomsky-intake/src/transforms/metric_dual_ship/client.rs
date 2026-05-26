@@ -18,6 +18,7 @@
 
 use std::time::Duration;
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
@@ -66,13 +67,13 @@ pub enum FetchError {
 /// output (T-01-02 mitigation, same as `metric_metadata::FlushClient`).
 pub struct DualShipFetcher {
     client: reqwest::Client,
-    api_key: String,
+    api_key: SecretString,
     metadata_svc_url: String,
 }
 
 impl DualShipFetcher {
     pub fn new(
-        api_key: String,
+        api_key: SecretString,
         metadata_svc_url: String,
         timeout: Duration,
     ) -> Result<Self, reqwest::Error> {
@@ -93,7 +94,7 @@ impl DualShipFetcher {
         let response = self
             .client
             .post(&url)
-            .header("DD-API-KEY", &self.api_key)
+            .header("DD-API-KEY", self.api_key.expose_secret())
             .json(&FetchRequest { since_unix })
             .send()
             .await
@@ -147,8 +148,12 @@ mod tests {
     use super::*;
 
     fn make_client(uri: &str, timeout: Duration) -> DualShipFetcher {
-        DualShipFetcher::new("test-api-key".to_string(), uri.to_string(), timeout)
-            .expect("client build should succeed")
+        DualShipFetcher::new(
+            SecretString::from("test-api-key".to_string()),
+            uri.to_string(),
+            timeout,
+        )
+        .expect("client build should succeed")
     }
 
     #[tokio::test]

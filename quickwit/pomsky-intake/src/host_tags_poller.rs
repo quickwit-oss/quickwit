@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use indexmap::IndexSet;
 use rand::RngExt as _;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -216,7 +217,7 @@ pub struct HostTagsPollerConfig {
     pub store: Arc<HostTagsStore>,
     pub collector: UnknownHostsCollector,
     pub metadata_service_url: String,
-    pub dd_api_key: String,
+    pub dd_api_key: SecretString,
     pub poll_interval: Duration,
     /// HTTP request timeout. Must be strictly less than `poll_interval`.
     pub fetch_timeout: Duration,
@@ -362,12 +363,12 @@ pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
 async fn fetch_host_tags(
     client: &reqwest::Client,
     endpoint: &str,
-    api_key: &str,
+    api_key: &SecretString,
     hosts: &[String],
 ) -> anyhow::Result<HashMap<String, Arc<[HostTag]>>> {
     let response = client
         .post(endpoint)
-        .header("DD-API-KEY", api_key)
+        .header("DD-API-KEY", api_key.expose_secret())
         .json(&HostTagsRequest {
             hostnames: hosts.to_vec(),
         })
@@ -626,7 +627,8 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string(), "db-01".to_string()];
-        let result = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
+        let api_key = SecretString::from("test-api-key".to_string());
+        let result = fetch_host_tags(&test_client(), &endpoint, &api_key, &hosts)
             .await
             .expect("fetch should succeed");
 
@@ -653,7 +655,8 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string()];
-        let error = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
+        let api_key = SecretString::from("test-api-key".to_string());
+        let error = fetch_host_tags(&test_client(), &endpoint, &api_key, &hosts)
             .await
             .expect_err("fetch should fail on 503");
         let message = error.to_string();
@@ -681,7 +684,8 @@ mod tests {
             .await;
 
         let hosts = vec!["web-01".to_string()];
-        let result = fetch_host_tags(&test_client(), &endpoint, "test-api-key", &hosts)
+        let api_key = SecretString::from("test-api-key".to_string());
+        let result = fetch_host_tags(&test_client(), &endpoint, &api_key, &hosts)
             .await
             .expect("fetch should succeed");
 
