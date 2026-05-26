@@ -12,5 +12,6 @@ spec:
     domains:
       allowlist:
       - exact: "lambda.us-east-1.amazonaws.com:443"
+      - exact: "datad0g.com:443"
       - suffix: .datad0g.com:443
       - suffix: .datadoghq.com:443

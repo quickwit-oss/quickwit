@@ -5,6 +5,10 @@ image:
   tag: release
   pullPolicy: Always
 
+datadog:
+  byocTelemetry:
+    enabled: false
+
 cloudprem:
   index:
     minShards: 48 # number of indexers * number of vCPUs * 2 (6 * 4 * 2)

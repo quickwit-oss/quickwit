@@ -11,6 +11,8 @@ cloudprem:
 
 datadog:
   site: dd.datad0g.com
+  byocTelemetry:
+    enabled: true
 
 environment:
   - name: QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER
@@ -24,7 +26,7 @@ environment:
     valueFrom:
       fieldRef:
         fieldPath: status.hostIP
-  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
     value: "http://$(HOST_IP):4317"
 
 podAnnotations:
@@ -102,6 +104,27 @@ metastore:
           subPath: pgpass.tpl
         - name: pgpass
           mountPath: /quickwit
+    - &ddApiKeyInitContainer
+      name: consul-template-dd-api-key
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
   # Additional volumes for the source template and rendered pgpass file
   extraVolumes:
     - name: pgpass
@@ -113,6 +136,17 @@ metastore:
         items:
           - key: pgpass.tpl
             path: pgpass.tpl
+    - &ddApiKeyVolume
+      name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - &ddApiKeyTemplateVolume
+      name: dd-api-key-template
+      configMap:
+        name: pomsky-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
 
   # Mounts the pgpass file for connecting to OrgStore
   extraVolumeMounts:
@@ -120,11 +154,16 @@ metastore:
       mountPath: /quickwit/pgpass
       subPath: pgpass
       readOnly: true
+    - &ddApiKeyVolumeMount
+      name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
   extraEnv:
     # Points sqlx to the appropriate pgpass file location
     PGPASSFILE: /quickwit/pgpass
-    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
+    DD_API_KEY_FILE: &ddApiKeyFile /secrets/dd-api-key.env
 
 control_plane:
   resources:
@@ -134,14 +173,28 @@ control_plane:
     requests:
       cpu: 2
       memory: 4Gi
+  initContainers:
+    - *ddApiKeyInitContainer
+  extraVolumes:
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
+  extraVolumeMounts:
+    - *ddApiKeyVolumeMount
   extraEnv:
-    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
+    DD_API_KEY_FILE: *ddApiKeyFile
 
 indexer:
   replicaCount: 70
 
+  initContainers:
+    - *ddApiKeyInitContainer
+  extraVolumes:
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
+  extraVolumeMounts:
+    - *ddApiKeyVolumeMount
   extraEnv:
-    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
+    DD_API_KEY_FILE: *ddApiKeyFile
 
   resources:
     limits:
@@ -177,46 +230,17 @@ searcher:
       memory: 64Gi
 
   initContainers:
-    - name: consul-template-dd-api-key
-      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
-      args:
-        - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key
-      resources:
-        limits:
-          cpu: 200m
-          memory: 200Mi
-        requests:
-          cpu: 200m
-          memory: 200Mi
-      securityContext:
-        runAsUser: 1005
-      volumeMounts:
-        - name: dd-api-key-template
-          mountPath: /template/dd-api-key.tpl
-          subPath: dd-api-key.tpl
-        - name: dd-api-key
-          mountPath: /quickwit
+    - *ddApiKeyInitContainer
 
   extraVolumes:
-    - name: dd-api-key
-      emptyDir:
-        medium: Memory
-    - name: dd-api-key-template
-      configMap:
-        name: pomsky-cloudprem-dd-api-key-template
-        items:
-          - key: dd-api-key.tpl
-            path: dd-api-key.tpl
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
 
   extraVolumeMounts:
-    - name: dd-api-key
-      mountPath: /quickwit/dd-api-key
-      subPath: dd-api-key
-      readOnly: true
+    - *ddApiKeyVolumeMount
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key
+    DD_API_KEY_FILE: *ddApiKeyFile
 
 janitor:
   resources:
@@ -226,8 +250,15 @@ janitor:
     requests:
       cpu: 2
       memory: 4Gi
+  initContainers:
+    - *ddApiKeyInitContainer
+  extraVolumes:
+    - *ddApiKeyVolume
+    - *ddApiKeyTemplateVolume
+  extraVolumeMounts:
+    - *ddApiKeyVolumeMount
   extraEnv:
-    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
+    DD_API_KEY_FILE: *ddApiKeyFile
 
 # ConfigMap entry that is rendered by consul-template into a pgpass file used for connecting to the OrgStore metastore DB
 extraConfigMaps:
