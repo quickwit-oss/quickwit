@@ -90,7 +90,8 @@ impl IntakeConfig {
     /// Resolves the DD site. The `DD_SITE` env var takes precedence over
     /// the config field.
     pub fn resolve_dd_site(&self) -> String {
-        std::env::var("DD_SITE").unwrap_or_else(|_| self.dd_site.clone())
+        let dd_site = std::env::var("DD_SITE").unwrap_or_else(|_| self.dd_site.clone());
+        quickwit_common::datadog::normalize_site_url(&dd_site)
     }
 
     /// Resolves the DD API key. Precedence: `DD_API_KEY`, then the file pointed
