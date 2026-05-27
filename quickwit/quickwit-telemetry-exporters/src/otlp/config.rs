@@ -85,7 +85,7 @@ impl OtlpExporterConfig {
                 "grpc".to_string(),
                 false,
             ),
-            headers: OtlpHeaders::load(),
+            headers: OtlpHeaders::load_from_env(),
         }
     }
 
@@ -94,15 +94,15 @@ impl OtlpExporterConfig {
     }
 
     pub(crate) fn traces_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY)
+        self.resolve_protocol_from_env(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY)
     }
 
     pub(crate) fn logs_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY)
+        self.resolve_protocol_from_env(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY)
     }
 
     pub(crate) fn metrics_protocol(&self) -> anyhow::Result<OtlpProtocol> {
-        self.resolve_protocol(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
+        self.resolve_protocol_from_env(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
     }
 
     pub(crate) fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
@@ -132,8 +132,19 @@ impl OtlpExporterConfig {
         &self.headers
     }
 
-    fn resolve_protocol(&self, exporter_protocol_env_key: &str) -> anyhow::Result<OtlpProtocol> {
+    fn resolve_protocol_from_env(
+        &self,
+        exporter_protocol_env_key: &str,
+    ) -> anyhow::Result<OtlpProtocol> {
         let exporter_protocol = get_from_env_opt::<String>(exporter_protocol_env_key, false);
+        self.resolve_protocol(exporter_protocol_env_key, exporter_protocol)
+    }
+
+    fn resolve_protocol(
+        &self,
+        exporter_protocol_env_key: &str,
+        exporter_protocol: Option<String>,
+    ) -> anyhow::Result<OtlpProtocol> {
         let (protocol, env_key) = if let Some(protocol) = exporter_protocol {
             (protocol, exporter_protocol_env_key)
         } else {
@@ -149,10 +160,14 @@ impl OtlpExporterConfig {
 }
 
 impl OtlpHeaders {
-    fn load() -> Self {
+    fn load_from_env() -> Self {
         let dd_api_key = get_bool_from_env(BYOC_TELEMETRY_ENABLED_ENV_KEY, false)
             .then(resolve_dd_api_key_from_env)
             .flatten();
+        Self::load(dd_api_key)
+    }
+
+    fn load(dd_api_key: Option<SecretString>) -> Self {
         Self { dd_api_key }
     }
 
@@ -221,12 +236,7 @@ pub(crate) fn quickwit_resource(service_version: &str) -> Resource {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
-    use std::sync::{Mutex, MutexGuard};
-
     use super::*;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_otlp_protocol_from_str() {
@@ -241,7 +251,6 @@ mod tests {
         );
         assert!(OtlpProtocol::from_str("http/xml").is_err());
     }
-
     fn otlp_exporter_config(default_protocol: &str) -> OtlpExporterConfig {
         OtlpExporterConfig {
             enabled: true,
@@ -250,75 +259,13 @@ mod tests {
         }
     }
 
-    fn lock_env() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap()
-    }
-
-    fn assert_dd_api_key_headers(headers: &OtlpHeaders, expected_api_key: &str) {
-        let http_headers = headers.http_headers();
-        assert_eq!(
-            http_headers
-                .get(DD_API_KEY_HTTP_HEADER_NAME)
-                .map(String::as_str),
-            Some(expected_api_key)
-        );
-
-        let grpc_metadata = headers.grpc_metadata().unwrap();
-        assert_eq!(
-            grpc_metadata
-                .get(DD_API_KEY_GRPC_METADATA_KEY)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            expected_api_key
-        );
-    }
-
-    struct EnvVarGuard {
-        key: &'static str,
-        previous_value: Option<OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::set_var(key, value) };
-            guard
-        }
-
-        fn remove(key: &'static str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::remove_var(key) };
-            guard
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            if let Some(previous_value) = &self.previous_value {
-                unsafe { std::env::set_var(self.key, previous_value) };
-            } else {
-                unsafe { std::env::remove_var(self.key) };
-            }
-        }
-    }
-
     #[test]
     fn test_otlp_exporter_config_uses_signal_specific_protocol() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_SIGNAL_PROTOCOL";
 
-        let _lock = lock_env();
-        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/json");
-
         assert_eq!(
             otlp_exporter_config("grpc")
-                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+                .resolve_protocol(TEST_PROTOCOL_ENV_KEY, Some("http/json".to_string()))
                 .unwrap(),
             OtlpProtocol::HttpJson
         );
@@ -328,46 +275,29 @@ mod tests {
     fn test_otlp_exporter_config_falls_back_to_default_protocol() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_DEFAULT_PROTOCOL_FALLBACK";
 
-        let _lock = lock_env();
-        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
-
         assert_eq!(
             otlp_exporter_config("http/protobuf")
-                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+                .resolve_protocol(TEST_PROTOCOL_ENV_KEY, None)
                 .unwrap(),
             OtlpProtocol::HttpProtobuf
         );
     }
 
     #[test]
-    fn test_otlp_exporter_config_byoc_disabled_has_no_dd_api_key() {
-        let _lock = lock_env();
-        let _byoc_telemetry_enabled_guard = EnvVarGuard::remove(BYOC_TELEMETRY_ENABLED_ENV_KEY);
+    fn test_otlp_headers_without_dd_api_key_are_empty() {
+        let headers = OtlpHeaders::load(None);
 
-        let config = OtlpExporterConfig::load_from_env();
-        assert!(config.headers.dd_api_key.is_none());
-        assert!(config.headers().http_headers().is_empty());
-        assert!(config.headers().grpc_metadata().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_otlp_headers_include_dd_api_key() {
-        let headers = OtlpHeaders {
-            dd_api_key: Some(SecretString::from("api-key".to_string())),
-        };
-
-        assert_dd_api_key_headers(&headers, "api-key");
+        assert!(headers.dd_api_key.is_none());
+        assert!(headers.http_headers().is_empty());
+        assert!(headers.grpc_metadata().unwrap().is_empty());
     }
 
     #[test]
     fn test_otlp_exporter_config_signal_protocol_error_names_signal_env_var() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_SIGNAL_PROTOCOL";
 
-        let _lock = lock_env();
-        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/xml");
-
         let error = otlp_exporter_config("grpc")
-            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+            .resolve_protocol(TEST_PROTOCOL_ENV_KEY, Some("http/xml".to_string()))
             .unwrap_err();
         let error = format!("{error:#}");
         assert!(error.contains(TEST_PROTOCOL_ENV_KEY));
@@ -378,11 +308,8 @@ mod tests {
     fn test_otlp_exporter_config_default_protocol_error_names_default_env_var() {
         const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_DEFAULT_PROTOCOL";
 
-        let _lock = lock_env();
-        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
-
         let error = otlp_exporter_config("http/xml")
-            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+            .resolve_protocol(TEST_PROTOCOL_ENV_KEY, None)
             .unwrap_err();
         let error = format!("{error:#}");
         assert!(error.contains(OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY));
@@ -404,5 +331,28 @@ mod tests {
             Temporality::Cumulative
         );
         assert!(OtlpMetricsTemporality::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_otlp_headers_include_dd_api_key() {
+        let headers = OtlpHeaders::load(Some(SecretString::from("api-key".to_string())));
+
+        let http_headers = headers.http_headers();
+        assert_eq!(
+            http_headers
+                .get(DD_API_KEY_HTTP_HEADER_NAME)
+                .map(String::as_str),
+            Some("api-key")
+        );
+
+        let grpc_metadata = headers.grpc_metadata().unwrap();
+        assert_eq!(
+            grpc_metadata
+                .get(DD_API_KEY_GRPC_METADATA_KEY)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "api-key"
+        );
     }
 }

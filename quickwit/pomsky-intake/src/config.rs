@@ -44,7 +44,7 @@ pub struct IntakeConfig {
     /// `DD_API_KEY` (env) over `DD_API_KEY_FILE` (file contents) over this config
     /// field. Shared across all Datadog-backed pollers.
     #[serde(rename = "api_key", default)]
-    pub dd_api_key: Option<String>,
+    pub dd_api_key: Option<SecretString>,
 
     /// Path to the data directory for storing Vector's internal state.
     #[serde(default = "default_data_dir")]
@@ -97,7 +97,7 @@ impl IntakeConfig {
     /// to by `DD_API_KEY_FILE`, then the config field.
     pub fn resolve_dd_api_key(&self) -> Option<SecretString> {
         quickwit_common::datadog_api_key::resolve_dd_api_key_from_env()
-            .or_else(|| self.dd_api_key.clone().map(SecretString::from))
+            .or_else(|| self.dd_api_key.clone())
     }
 
     /// Returns an error on the first invariant violation. Cheap presence
