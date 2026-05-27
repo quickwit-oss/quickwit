@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 
 use secrecy::SecretString;
 
@@ -27,45 +28,6 @@ enum DdApiKeySource {
     File,
 }
 
-impl DdApiKeySource {
-    const LOAD_ORDER: [Self; 2] = [Self::Env, Self::File];
-
-    fn load(self) -> Option<SecretString> {
-        match self {
-            Self::Env => get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true)
-                .and_then(|api_key| self.normalize_api_key(api_key)),
-            Self::File => {
-                get_from_env_opt::<String>(DD_API_KEY_FILE_ENV_KEY, false).and_then(|path| {
-                    std::fs::read_to_string(&path)
-                        .map_err(|error| {
-                            tracing::warn!(
-                                path = %path,
-                                error = %error,
-                                "failed to read DD_API_KEY_FILE"
-                            );
-                            error
-                        })
-                        .ok()
-                        .and_then(|api_key| self.normalize_api_key(api_key))
-                })
-            }
-        }
-    }
-
-    fn normalize_api_key(self, api_key: String) -> Option<SecretString> {
-        let api_key = api_key.trim();
-        if api_key.is_empty() {
-            tracing::warn!(
-                source = %self,
-                "Datadog API key is configured but empty"
-            );
-            None
-        } else {
-            Some(SecretString::from(api_key.to_string()))
-        }
-    }
-}
-
 impl Display for DdApiKeySource {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -76,165 +38,129 @@ impl Display for DdApiKeySource {
 }
 
 pub fn resolve_dd_api_key_from_env() -> Option<SecretString> {
-    DdApiKeySource::LOAD_ORDER
-        .into_iter()
-        .find_map(DdApiKeySource::load)
+    resolve_dd_api_key(
+        get_from_env_opt::<String>(DD_API_KEY_ENV_KEY, true),
+        get_from_env_opt::<PathBuf>(DD_API_KEY_FILE_ENV_KEY, false),
+    )
+}
+
+fn resolve_dd_api_key(
+    api_key: Option<String>,
+    api_key_file: Option<PathBuf>,
+) -> Option<SecretString> {
+    api_key
+        .and_then(|api_key| normalize_api_key(DdApiKeySource::Env, api_key))
+        .or_else(|| {
+            api_key_file
+                .and_then(resolve_dd_api_key_file)
+                .and_then(|api_key| normalize_api_key(DdApiKeySource::File, api_key))
+        })
+}
+
+fn resolve_dd_api_key_file(path: PathBuf) -> Option<String> {
+    match std::fs::read_to_string(&path) {
+        Ok(api_key) => Some(api_key),
+        Err(_) => {
+            let path = path.display();
+            tracing::warn!(
+                %path,
+                "failed to read DD_API_KEY_FILE"
+            );
+            None
+        }
+    }
+}
+
+fn normalize_api_key(source: DdApiKeySource, api_key: String) -> Option<SecretString> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        tracing::warn!(
+            %source,
+            "Datadog API key is configured but empty"
+        );
+        None
+    } else {
+        Some(SecretString::from(api_key.to_string()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
-    use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
-
     use secrecy::ExposeSecret;
 
     use super::*;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn lock_env() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap()
-    }
-
-    fn temp_file_path(test_name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "quickwit-common-datadog-api-key-{test_name}-{}",
-            std::process::id()
-        ))
-    }
-
-    fn dd_api_key() -> Option<String> {
-        resolve_dd_api_key_from_env().map(|api_key| api_key.expose_secret().to_string())
-    }
-
-    struct EnvVarGuard {
-        key: &'static str,
-        previous_value: Option<OsString>,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::set_var(key, value) };
-            guard
-        }
-
-        fn remove(key: &'static str) -> Self {
-            let guard = Self {
-                key,
-                previous_value: std::env::var_os(key),
-            };
-            unsafe { std::env::remove_var(key) };
-            guard
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            if let Some(previous_value) = &self.previous_value {
-                unsafe { std::env::set_var(self.key, previous_value) };
-            } else {
-                unsafe { std::env::remove_var(self.key) };
-            }
-        }
+    fn expose_api_key(api_key: Option<SecretString>) -> Option<String> {
+        api_key.map(|api_key| api_key.expose_secret().to_string())
     }
 
     #[test]
     fn test_resolve_dd_api_key_uses_env() {
-        let _lock = lock_env();
-        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " env-api-key\n");
-        let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
-
-        assert_eq!(dd_api_key().as_deref(), Some("env-api-key"));
+        assert_eq!(
+            expose_api_key(resolve_dd_api_key(Some(" env-api-key\n".to_string()), None)).as_deref(),
+            Some("env-api-key")
+        );
     }
 
     #[test]
     fn test_resolve_dd_api_key_ignores_empty_env() {
-        let _lock = lock_env();
-        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " \n");
-        let _dd_api_key_file_guard = EnvVarGuard::remove(DD_API_KEY_FILE_ENV_KEY);
-
-        assert_eq!(dd_api_key(), None);
+        assert!(resolve_dd_api_key(Some(" \n".to_string()), None).is_none());
     }
 
     #[test]
     fn test_resolve_dd_api_key_falls_back_to_file_when_env_is_empty() {
-        let _lock = lock_env();
-        let path = temp_file_path("empty-env-fallback");
-        std::fs::remove_file(&path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("api-key");
         std::fs::write(&path, "file-api-key\n").unwrap();
 
-        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, " \n");
-        let _dd_api_key_file_guard =
-            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
-
-        assert_eq!(dd_api_key().as_deref(), Some("file-api-key"));
-
-        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            expose_api_key(resolve_dd_api_key(Some(" \n".to_string()), Some(path))).as_deref(),
+            Some("file-api-key")
+        );
     }
 
     #[test]
     fn test_resolve_dd_api_key_reads_file() {
-        let _lock = lock_env();
-        let path = temp_file_path("file");
-        std::fs::remove_file(&path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("api-key");
         std::fs::write(&path, " file-api-key\n").unwrap();
 
-        let _dd_api_key_guard = EnvVarGuard::remove(DD_API_KEY_ENV_KEY);
-        let _dd_api_key_file_guard =
-            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
-
-        assert_eq!(dd_api_key().as_deref(), Some("file-api-key"));
-
-        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            expose_api_key(resolve_dd_api_key(None, Some(path))).as_deref(),
+            Some("file-api-key")
+        );
     }
 
     #[test]
     fn test_resolve_dd_api_key_ignores_empty_file() {
-        let _lock = lock_env();
-        let path = temp_file_path("empty-file");
-        std::fs::remove_file(&path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("api-key");
         std::fs::write(&path, " \n").unwrap();
 
-        let _dd_api_key_guard = EnvVarGuard::remove(DD_API_KEY_ENV_KEY);
-        let _dd_api_key_file_guard =
-            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
-
-        assert_eq!(dd_api_key(), None);
-
-        std::fs::remove_file(&path).ok();
+        assert!(resolve_dd_api_key(None, Some(path)).is_none());
     }
 
     #[test]
     fn test_resolve_dd_api_key_prefers_env_over_file() {
-        let _lock = lock_env();
-        let path = temp_file_path("env-over-file");
-        std::fs::remove_file(&path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("api-key");
         std::fs::write(&path, "file-api-key\n").unwrap();
 
-        let _dd_api_key_guard = EnvVarGuard::set(DD_API_KEY_ENV_KEY, "env-api-key");
-        let _dd_api_key_file_guard =
-            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
-
-        assert_eq!(dd_api_key().as_deref(), Some("env-api-key"));
-
-        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            expose_api_key(resolve_dd_api_key(
+                Some("env-api-key".to_string()),
+                Some(path)
+            ))
+            .as_deref(),
+            Some("env-api-key")
+        );
     }
 
     #[test]
     fn test_resolve_dd_api_key_ignores_unreadable_file() {
-        let _lock = lock_env();
-        let path = temp_file_path("missing-file");
-        std::fs::remove_file(&path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("missing-api-key");
 
-        let _dd_api_key_guard = EnvVarGuard::remove(DD_API_KEY_ENV_KEY);
-        let _dd_api_key_file_guard =
-            EnvVarGuard::set(DD_API_KEY_FILE_ENV_KEY, path.to_str().unwrap());
-
-        assert_eq!(dd_api_key(), None);
+        assert!(resolve_dd_api_key(None, Some(path)).is_none());
     }
 }

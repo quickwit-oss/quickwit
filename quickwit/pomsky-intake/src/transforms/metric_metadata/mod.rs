@@ -85,10 +85,9 @@ fn default_persist_file_path() -> String {
 /// Configuration for the metric metadata transform.
 ///
 /// `api_key` and `metadata_svc_url` are sourced from `IntakeConfig` and
-/// interpolated into the Vector transform YAML (the API key via
-/// `${DD_API_KEY}` substitution against an in-memory map, not the process
-/// env). Operational parameters (flush intervals, batch size, TTLs, etc.) are
-/// declared here and deserialized by Vector.
+/// interpolated into the Vector transform YAML. Operational parameters (flush
+/// intervals, batch size, TTLs, etc.) are declared here and deserialized by
+/// Vector.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MetricMetadataConfig {

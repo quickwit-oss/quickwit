@@ -256,7 +256,7 @@ sea-query-binder = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
-secrecy = "0.10.3"
+secrecy = { version = "0.10", features = ["serde"] }
 # ^1.0.184 due to serde-rs/serde#2538
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0"

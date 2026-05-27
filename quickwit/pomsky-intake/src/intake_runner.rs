@@ -275,15 +275,20 @@ sinks:
     )
 }
 
-fn build_vector_config_content(
+fn interpolate_vector_config(
     config_template: &str,
-    secret_vars: &HashMap<&str, &SecretString>,
-) -> String {
-    let mut config_content = config_template.to_string();
-    for (key, value) in secret_vars {
-        config_content = config_content.replace(&format!("${{{key}}}"), value.expose_secret());
-    }
-    config_content
+    secrets: &HashMap<&str, &SecretString>,
+) -> anyhow::Result<String> {
+    let vars: HashMap<String, String> = secrets
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), value.expose_secret().to_string()))
+        .collect();
+    vector::config::interpolate(config_template, &vars).map_err(|errors| {
+        anyhow::anyhow!(
+            "failed to interpolate intake Vector config: {}",
+            errors.join("; ")
+        )
+    })
 }
 
 /// Spawns the host-tags poller on the Vector runtime.
@@ -350,12 +355,9 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     let dd_api_key = config
         .resolve_dd_api_key()
         .context("failed to resolve DD API key")?;
-    // Substitute `${DD_API_KEY}` from secret vars instead of relying on Vector's
-    // own env-substitution pass. The key is resolved upstream from `DD_API_KEY`,
-    // `DD_API_KEY_FILE`, or the intake config file (in that precedence order).
     let config_template = build_vector_config(&dd_site, &config, print);
-    let secret_vars = HashMap::from([("DD_API_KEY", &dd_api_key)]);
-    let config_content = build_vector_config_content(&config_template, &secret_vars);
+    let secrets = HashMap::from([("DD_API_KEY", &dd_api_key)]);
+    let config_content = interpolate_vector_config(&config_template, &secrets)?;
     let mut config_file =
         tempfile::NamedTempFile::new().context("failed to create temporary intake config file")?;
     config_file
@@ -418,8 +420,8 @@ mod tests {
         };
         let template = build_vector_config("datadoghq.com", &config, print);
         let dd_api_key = SecretString::from("test-api-key".to_string());
-        let secret_vars = HashMap::from([("DD_API_KEY", &dd_api_key)]);
-        let yaml = build_vector_config_content(&template, &secret_vars);
+        let secrets = HashMap::from([("DD_API_KEY", &dd_api_key)]);
+        let yaml = interpolate_vector_config(&template, &secrets).unwrap();
         if let Err(errors) = load_from_str(&yaml, Format::Yaml) {
             panic!(
                 "vector rejected the generated config:\n--- yaml ---\n{yaml}\n--- errors ---\n{}",
