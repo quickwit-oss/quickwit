@@ -12,69 +12,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyHistogram, label_names, lazy_counter, lazy_histogram,
 };
 
-pub struct OtlpServiceMetrics {
-    pub requests_total: IntCounterVec<4>,
-    pub request_errors_total: IntCounterVec<4>,
-    pub request_duration_seconds: HistogramVec<5>,
-    pub ingested_log_records_total: IntCounterVec<4>,
-    pub ingested_spans_total: IntCounterVec<4>,
-    pub ingested_bytes_total: IntCounterVec<4>,
-}
+pub(crate) const OTLP_GRPC_LABEL_NAMES: LabelNames<4> =
+    label_names!("service", "index", "transport", "format");
+pub(crate) const OTLP_GRPC_ERROR_LABEL_NAMES: LabelNames<5> =
+    label_names!("service", "index", "transport", "format", "error");
 
-impl Default for OtlpServiceMetrics {
-    fn default() -> Self {
-        Self {
-            requests_total: new_counter_vec(
-                "requests_total",
-                "Number of requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            request_errors_total: new_counter_vec(
-                "request_errors_total",
-                "Number of failed requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Duration of requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format", "error"],
-                exponential_buckets(0.02, 2.0, 8).unwrap(),
-            ),
-            ingested_log_records_total: new_counter_vec(
-                "ingested_log_records_total",
-                "Number of log records ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            ingested_spans_total: new_counter_vec(
-                "ingested_spans_total",
-                "Number of spans ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            ingested_bytes_total: new_counter_vec(
-                "ingested_bytes_total",
-                "Number of bytes ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-        }
-    }
-}
+pub(crate) static REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "requests_total",
+        description: "Number of requests",
+        subsystem: "otlp",
+);
 
-/// `OTLP_SERVICE_METRICS` exposes metrics for each OTLP service.
-pub static OTLP_SERVICE_METRICS: Lazy<OtlpServiceMetrics> = Lazy::new(OtlpServiceMetrics::default);
+pub(crate) static REQUEST_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+        name: "request_errors_total",
+        description: "Number of failed requests",
+        subsystem: "otlp",
+);
+
+pub(crate) static REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+        name: "request_duration_seconds",
+        description: "Duration of requests",
+        subsystem: "otlp",
+        buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
+);
+
+pub(crate) static INGESTED_LOG_RECORDS_TOTAL: LazyCounter = lazy_counter!(
+        name: "ingested_log_records_total",
+        description: "Number of log records ingested",
+        subsystem: "otlp",
+);
+
+pub(crate) static INGESTED_SPANS_TOTAL: LazyCounter = lazy_counter!(
+        name: "ingested_spans_total",
+        description: "Number of spans ingested",
+        subsystem: "otlp",
+);
+
+pub(crate) static INGESTED_DATA_POINTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "ingested_data_points_total",
+        description: "Number of metric data points ingested",
+        subsystem: "otlp",
+);
+
+pub(crate) static INGESTED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+        name: "ingested_bytes_total",
+        description: "Number of bytes ingested",
+        subsystem: "otlp",
+);

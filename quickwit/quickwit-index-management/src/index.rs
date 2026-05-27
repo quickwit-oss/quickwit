@@ -45,6 +45,7 @@ use crate::garbage_collection::{
     DeleteSplitsError, SplitRemovalInfo, delete_splits_from_storage_and_metastore,
     run_garbage_collect,
 };
+use crate::parquet_garbage_collection::{ParquetSplitRemovalInfo, run_parquet_garbage_collect};
 
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
@@ -391,6 +392,47 @@ impl IndexService {
 
         let deleted_entries = run_garbage_collect(
             [(index_uid, storage)].into_iter().collect(),
+            self.metastore.clone(),
+            grace_period,
+            // deletion_grace_period of zero, so that a cli call directly deletes splits after
+            // marking to be deleted.
+            Duration::ZERO,
+            dry_run,
+            None,
+            None,
+        )
+        .await?;
+
+        Ok(deleted_entries)
+    }
+
+    /// Detect all dangling parquet splits and associated files from a metrics index
+    /// and removes them.
+    ///
+    /// * `index_id` - The target metrics index Id.
+    /// * `grace_period` - Threshold period after which a staged split can be garbage collected.
+    /// * `dry_run` - Should this only return a list of affected files without performing deletion.
+    pub async fn garbage_collect_parquet_index(
+        &mut self,
+        index_id: &str,
+        grace_period: Duration,
+        dry_run: bool,
+    ) -> anyhow::Result<ParquetSplitRemovalInfo> {
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata = self
+            .metastore
+            .index_metadata(index_metadata_request)
+            .await?
+            .deserialize_index_metadata()?;
+        let index_uid = index_metadata.index_uid.clone();
+        let index_config = index_metadata.into_index_config();
+        let storage = self
+            .storage_resolver
+            .resolve(&index_config.index_uri)
+            .await?;
+
+        let deleted_entries = run_parquet_garbage_collect(
+            HashMap::from([(index_uid, storage)]),
             self.metastore.clone(),
             grace_period,
             // deletion_grace_period of zero, so that a cli call directly deletes splits after

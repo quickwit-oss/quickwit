@@ -16,12 +16,21 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
-use once_cell::sync::Lazy;
-use prometheus::IntGauge;
+use quickwit_metrics::{Gauge, GaugeGuard, LazyGauge, gauge, labels, lazy_gauge};
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
+static THREAD_POOL_ONGOING_TASKS: LazyGauge = lazy_gauge!(
+    name: "ongoing_tasks",
+    description: "number of tasks being currently processed by threads in the thread pool",
+    subsystem: "thread_pool",
+);
+
+static THREAD_POOL_PENDING_TASKS: LazyGauge = lazy_gauge!(
+    name: "pending_tasks",
+    description: "number of tasks waiting in the queue before being processed by the thread pool",
+    subsystem: "thread_pool",
+);
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///
@@ -30,8 +39,8 @@ use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
 #[derive(Clone)]
 pub struct ThreadPool {
     thread_pool: Arc<rayon::ThreadPool>,
-    ongoing_tasks: IntGauge,
-    pending_tasks: IntGauge,
+    ongoing_tasks: Gauge,
+    pending_tasks: Gauge,
 }
 
 impl ThreadPool {
@@ -47,8 +56,9 @@ impl ThreadPool {
         let thread_pool = rayon_pool_builder
             .build()
             .expect("failed to spawn thread pool");
-        let ongoing_tasks = THREAD_POOL_METRICS.ongoing_tasks.with_label_values([name]);
-        let pending_tasks = THREAD_POOL_METRICS.pending_tasks.with_label_values([name]);
+        let labels = labels!("pool" => name);
+        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, labels: [labels]);
+        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, labels: [labels]);
         ThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,
@@ -85,9 +95,7 @@ impl ThreadPool {
     {
         let span = tracing::Span::current();
         let ongoing_tasks = self.ongoing_tasks.clone();
-        let mut pending_tasks_guard: OwnedGaugeGuard =
-            OwnedGaugeGuard::from_gauge(self.pending_tasks.clone());
-        pending_tasks_guard.add(1i64);
+        let pending_tasks_guard = GaugeGuard::new(&self.pending_tasks, 1.0);
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
             drop(pending_tasks_guard);
@@ -95,8 +103,7 @@ impl ThreadPool {
                 return;
             }
             let _guard = span.enter();
-            let mut ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
-            ongoing_task_guard.add(1i64);
+            let _ongoing_task_guard = GaugeGuard::new(&ongoing_tasks, 1.0);
             let result = cpu_intensive_fn();
             let _ = tx.send(result);
         });
@@ -117,13 +124,11 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    static SMALL_TASK_EXECUTOR: std::sync::OnceLock<ThreadPool> = std::sync::OnceLock::new();
-    SMALL_TASK_EXECUTOR
-        .get_or_init(|| {
-            let num_threads: usize = (crate::num_cpus() / 3).max(2);
-            ThreadPool::new("small_tasks", Some(num_threads))
-        })
-        .run_cpu_intensive(cpu_intensive_fn)
+    static SMALL_TASK_EXECUTOR: std::sync::LazyLock<ThreadPool> = std::sync::LazyLock::new(|| {
+        let num_threads: usize = (crate::num_cpus() / 3).max(2);
+        ThreadPool::new("small_tasks", Some(num_threads))
+    });
+    SMALL_TASK_EXECUTOR.run_cpu_intensive(cpu_intensive_fn)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,34 +141,6 @@ impl fmt::Display for Panicked {
 }
 
 impl std::error::Error for Panicked {}
-
-struct ThreadPoolMetrics {
-    ongoing_tasks: IntGaugeVec<1>,
-    pending_tasks: IntGaugeVec<1>,
-}
-
-impl Default for ThreadPoolMetrics {
-    fn default() -> Self {
-        ThreadPoolMetrics {
-            ongoing_tasks: new_gauge_vec(
-                "ongoing_tasks",
-                "number of tasks being currently processed by threads in the thread pool",
-                "thread_pool",
-                &[],
-                ["pool"],
-            ),
-            pending_tasks: new_gauge_vec(
-                "pending_tasks",
-                "number of tasks waiting in the queue before being processed by the thread pool",
-                "thread_pool",
-                &[],
-                ["pool"],
-            ),
-        }
-    }
-}
-
-static THREAD_POOL_METRICS: Lazy<ThreadPoolMetrics> = Lazy::new(ThreadPoolMetrics::default);
 
 #[cfg(test)]
 mod tests {

@@ -12,70 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
-use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_counter_vec, new_gauge};
+use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
-pub struct IngestMetrics {
-    pub ingested_docs_bytes_valid: IntCounter,
-    pub ingested_docs_bytes_invalid: IntCounter,
-    pub ingested_docs_invalid: IntCounter,
-    pub ingested_docs_valid: IntCounter,
+pub(crate) const VALIDITY: LabelNames<1> = label_names!("validity");
 
-    pub replicated_num_bytes_total: IntCounter,
-    pub replicated_num_docs_total: IntCounter,
-    #[allow(dead_code)] // this really shouldn't be dead, it needs to be used somewhere
-    pub queue_count: IntGauge,
-}
+pub(crate) static DOCS_BYTES_TOTAL: LazyCounter = lazy_counter!(
+        name: "docs_bytes_total",
+        description: "Total size of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
+        subsystem: "ingest",
+);
 
-impl Default for IngestMetrics {
-    fn default() -> Self {
-        let ingest_docs_bytes_total = new_counter_vec(
-            "docs_bytes_total",
-            "Total size of the docs ingested, measured in ingester's leader, after validation and \
-             before persistence/replication",
-            "ingest",
-            &[],
-            ["validity"],
-        );
-        let ingested_docs_bytes_valid = ingest_docs_bytes_total.with_label_values(["valid"]);
-        let ingested_docs_bytes_invalid = ingest_docs_bytes_total.with_label_values(["invalid"]);
+pub(crate) static DOCS_TOTAL: LazyCounter = lazy_counter!(
+        name: "docs_total",
+        description: "Total number of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
+        subsystem: "ingest",
+);
 
-        let ingest_docs_total = new_counter_vec(
-            "docs_total",
-            "Total number of the docs ingested, measured in ingester's leader, after validation \
-             and before persistence/replication",
-            "ingest",
-            &[],
-            ["validity"],
-        );
-        let ingested_docs_valid = ingest_docs_total.with_label_values(["valid"]);
-        let ingested_docs_invalid = ingest_docs_total.with_label_values(["invalid"]);
+pub(crate) static REPLICATED_NUM_BYTES_TOTAL: LazyCounter = lazy_counter!(
+        name: "replicated_num_bytes_total",
+        description: "Total size in bytes of the replicated docs.",
+        subsystem: "ingest",
+);
 
-        IngestMetrics {
-            ingested_docs_bytes_valid,
-            ingested_docs_bytes_invalid,
-            ingested_docs_valid,
-            ingested_docs_invalid,
-            replicated_num_bytes_total: new_counter(
-                "replicated_num_bytes_total",
-                "Total size in bytes of the replicated docs.",
-                "ingest",
-                &[],
-            ),
-            replicated_num_docs_total: new_counter(
-                "replicated_num_docs_total",
-                "Total number of docs replicated.",
-                "ingest",
-                &[],
-            ),
-            queue_count: new_gauge(
-                "queue_count",
-                "Number of queues currently active",
-                "ingest",
-                &[],
-            ),
-        }
-    }
-}
+pub(crate) static REPLICATED_NUM_DOCS_TOTAL: LazyCounter = lazy_counter!(
+        name: "replicated_num_docs_total",
+        description: "Total number of docs replicated.",
+        subsystem: "ingest",
+);
 
-pub static INGEST_METRICS: Lazy<IngestMetrics> = Lazy::new(IngestMetrics::default);
+#[allow(dead_code)] // this really shouldn't be dead, it needs to be used somewhere
+pub(crate) static QUEUE_COUNT: LazyGauge = lazy_gauge!(
+        name: "queue_count",
+        description: "Number of queues currently active",
+        subsystem: "ingest",
+);

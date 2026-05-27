@@ -31,7 +31,7 @@ use tracing::{info, warn};
 
 use crate::grpc_service::cluster_grpc_client;
 use crate::member::NodeStateExt;
-use crate::metrics::CLUSTER_METRICS;
+use crate::metrics::GRPC_GOSSIP_ROUNDS_TOTAL;
 
 const MAX_GOSSIP_PEERS: usize = 3;
 
@@ -108,7 +108,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
             warn!("failed to fetch cluster state from node `{node_id}`");
             continue;
         };
-        CLUSTER_METRICS.grpc_gossip_rounds_total.inc();
+        GRPC_GOSSIP_ROUNDS_TOTAL.inc();
 
         let mut chitchat_guard = chitchat.lock().await;
 
@@ -193,7 +193,7 @@ fn select_gossip_candidates(
             find_gossip_candidate_grpc_addr(self_chitchat_id, node_state)
                 .map(|grpc_addr| (&node_state.chitchat_id().node_id, grpc_addr))
         })
-        .choose_multiple(&mut rand::rng(), MAX_GOSSIP_PEERS)
+        .sample(&mut rand::rng(), MAX_GOSSIP_PEERS)
         .into_iter()
         .map(|(node_id, grpc_addr)| (node_id.clone(), grpc_addr))
         .unzip()

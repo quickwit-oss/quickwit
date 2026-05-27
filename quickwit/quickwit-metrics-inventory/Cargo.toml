@@ -1,0 +1,13 @@
+[package]
+name = "quickwit-metrics-inventory"
+version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+description = "Enumerates all quickwit-metrics declarations across workspace crates"
+
+[dependencies]
+quickwit-metrics = { workspace = true }

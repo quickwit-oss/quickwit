@@ -20,6 +20,7 @@ use std::sync::Arc;
 use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeIdRef;
 use tonic::transport::Channel;
 
@@ -46,8 +47,10 @@ impl ClusterNode {
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
             indexing_capacity: member.indexing_cpu_capacity,
+            ingester_status: member.ingester_status,
             is_ready: member.is_ready,
             is_self_node,
+            availability_zone: member.availability_zone,
         };
         let node = ClusterNode {
             inner: Arc::new(inner),
@@ -62,7 +65,9 @@ impl ClusterNode {
         is_self_node: bool,
         enabled_services: &[&str],
         indexing_tasks: &[IndexingTask],
+        ingester_status: IngesterStatus,
     ) -> Self {
+        use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
         use quickwit_common::tower::{ClientGrpcConfig, make_channel};
 
         use crate::cluster::set_indexing_tasks_in_node_state;
@@ -75,6 +80,7 @@ impl ClusterNode {
         let mut node_state = NodeState::for_test();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
+        node_state.set(INGESTER_STATUS_KEY, ingester_status.as_json_str_name());
         set_indexing_tasks_in_node_state(indexing_tasks, &mut node_state);
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
@@ -125,12 +131,20 @@ impl ClusterNode {
         self.inner.indexing_capacity
     }
 
+    pub fn ingester_status(&self) -> IngesterStatus {
+        self.inner.ingester_status
+    }
+
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready
     }
 
     pub fn is_self_node(&self) -> bool {
         self.inner.is_self_node
+    }
+
+    pub fn availability_zone(&self) -> Option<&str> {
+        self.inner.availability_zone.as_deref()
     }
 }
 
@@ -153,6 +167,7 @@ impl PartialEq for ClusterNode {
             && self.inner.indexing_tasks == other.inner.indexing_tasks
             && self.inner.is_ready == other.inner.is_ready
             && self.inner.is_self_node == other.inner.is_self_node
+            && self.inner.availability_zone == other.inner.availability_zone
     }
 }
 
@@ -163,6 +178,8 @@ struct InnerNode {
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
     indexing_capacity: CpuCapacity,
+    ingester_status: IngesterStatus,
     is_ready: bool,
     is_self_node: bool,
+    availability_zone: Option<String>,
 }

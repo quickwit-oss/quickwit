@@ -18,12 +18,12 @@ mod scheduling;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
+use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
 use quickwit_proto::indexing::{
@@ -38,7 +38,7 @@ use tracing::{debug, info, warn};
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::metrics::ShardLocalityMetrics;
+use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
@@ -67,7 +67,7 @@ pub struct IndexingSchedulerState {
 ///
 /// Scheduling executes the following steps:
 /// 1. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
-///    [`build_physical_indexing_plan`] for the implementation details.
+///    `build_physical_indexing_plan` for the implementation details.
 /// 2. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
 ///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan. Any
 ///    errors (network) happening in this step are ignored. The scheduler runs a control loop that
@@ -97,7 +97,7 @@ pub struct IndexingSchedulerState {
 /// Concretely, it will send the faulty nodes of the plan they are supposed to follow.
 //
 /// Finally, in order to give the time for each indexer to run their indexing tasks, the control
-/// plane will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
+/// plane will wait at least `MIN_DURATION_BETWEEN_SCHEDULING` before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
     cluster_id: String,
@@ -121,8 +121,7 @@ impl fmt::Debug for IndexingScheduler {
 }
 
 fn enable_variable_shard_load() -> bool {
-    static IS_SHARD_LOAD_CP_ENABLED: OnceCell<bool> = OnceCell::new();
-    *IS_SHARD_LOAD_CP_ENABLED.get_or_init(|| {
+    static IS_SHARD_LOAD_CP_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         if let Some(enable_flag) =
             quickwit_common::get_bool_from_env_opt("QW_ENABLE_VARIABLE_SHARD_LOAD")
         {
@@ -147,7 +146,8 @@ fn enable_variable_shard_load() -> bool {
             DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
         );
         DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
-    })
+    });
+    *IS_SHARD_LOAD_CP_ENABLED
 }
 
 /// Computes the CPU load associated to a single shard of a given index.
@@ -182,15 +182,15 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
 }
 
 fn get_default_load_per_shard() -> NonZeroU32 {
-    static DEFAULT_LOAD_PER_SHARD: OnceLock<NonZeroU32> = OnceLock::new();
-    *DEFAULT_LOAD_PER_SHARD.get_or_init(|| {
+    static DEFAULT_LOAD_PER_SHARD: LazyLock<NonZeroU32> = LazyLock::new(|| {
         let default_load_per_shard = quickwit_common::get_from_env(
             "QW_DEFAULT_LOAD_PER_SHARD",
             PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
             false,
         );
         NonZeroU32::new(default_load_per_shard).unwrap()
-    })
+    });
+    *DEFAULT_LOAD_PER_SHARD
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
@@ -215,6 +215,11 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
 
             SourceParams::IngestApi => {
+                // Metrics indexes should use IngestV2 only, not IngestV1.
+                // The ParquetSourceLoader doesn't support IngestV1.
+                if is_parquet_pipeline_index(&source_uid.index_uid.index_id) {
+                    continue;
+                }
                 // TODO ingest v1 is scheduled differently
                 sources.push(SourceToSchedule {
                     source_uid,
@@ -290,7 +295,7 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
-        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+        SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
@@ -325,7 +330,7 @@ impl IndexingScheduler {
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
-        crate::metrics::CONTROL_PLANE_METRICS.set_shard_locality_metrics(shard_locality_metrics);
+        shard_locality_metrics.publish();
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -392,7 +397,7 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        crate::metrics::CONTROL_PLANE_METRICS.apply_plan_total.inc();
+        APPLY_PLAN_TOTAL.inc();
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation

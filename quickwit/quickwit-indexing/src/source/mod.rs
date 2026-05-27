@@ -67,12 +67,14 @@ mod pulsar_source;
 #[cfg(feature = "queue-sources")]
 mod queue_sources;
 mod source_factory;
+mod source_sink;
 mod stdin_source;
 mod vec_source;
 mod void_source;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -85,13 +87,16 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
-use once_cell::sync::{Lazy, OnceCell};
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_common::metrics::{
+    IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
+    IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
+    IN_FLIGHT_PULSAR_SOURCE,
+};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
@@ -100,6 +105,7 @@ use quickwit_config::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -109,6 +115,7 @@ use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+pub use source_sink::SourceSink;
 use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
@@ -116,7 +123,6 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
@@ -134,7 +140,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
 
-static EMIT_BATCHES_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
+static EMIT_BATCHES_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| {
     if cfg!(any(test, feature = "testsuite")) {
         let timeout = Duration::from_millis(100);
         assert!(timeout < *quickwit_actors::HEARTBEAT);
@@ -237,7 +243,7 @@ pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
-        _doc_processor_mailbox: &Mailbox<DocProcessor>,
+        _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
@@ -252,7 +258,7 @@ pub trait Source: Send + 'static {
     /// should wait before polling again.
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
@@ -261,7 +267,7 @@ pub trait Source: Send + 'static {
     async fn assign_shards(
         &mut self,
         _shard_ids: BTreeSet<ShardId>,
-        _doc_processor_mailbox: &Mailbox<DocProcessor>,
+        _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -312,8 +318,17 @@ pub trait Source: Send + 'static {
 ///
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
-    pub source: Box<dyn Source>,
-    pub doc_processor_mailbox: Mailbox<DocProcessor>,
+    source: Box<dyn Source>,
+    source_sink: SourceSink,
+}
+
+impl SourceActor {
+    pub fn new(source: Box<dyn Source>, source_sink: impl Into<SourceSink>) -> Self {
+        SourceActor {
+            source,
+            source_sink: source_sink.into(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -348,9 +363,7 @@ impl Actor for SourceActor {
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source
-            .initialize(&self.doc_processor_mailbox, ctx)
-            .await?;
+        self.source.initialize(&self.source_sink, ctx).await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }
@@ -370,10 +383,7 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let wait_for = self
-            .source
-            .emit_batches(&self.doc_processor_mailbox, ctx)
-            .await?;
+        let wait_for = self.source.emit_batches(&self.source_sink, ctx).await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());
@@ -394,7 +404,7 @@ impl Handler<AssignShards> for SourceActor {
     ) -> Result<(), ActorExitStatus> {
         let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.doc_processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.source_sink, ctx)
             .await?;
         Ok(())
     }
@@ -402,8 +412,7 @@ impl Handler<AssignShards> for SourceActor {
 
 // TODO: Use `SourceType` instead of `&str``.
 pub fn quickwit_supported_sources() -> &'static SourceLoader {
-    static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
-    SOURCE_LOADER.get_or_init(|| {
+    static SOURCE_LOADER: LazyLock<SourceLoader> = LazyLock::new(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source(SourceType::File, FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
@@ -420,7 +429,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
-    })
+    });
+    &SOURCE_LOADER
 }
 
 pub async fn check_source_connectivity(
@@ -514,7 +524,7 @@ pub(super) struct BatchBuilder {
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
-    gauge_guard: GaugeGuard<'static>,
+    gauge_guard: GaugeGuard,
 }
 
 impl BatchBuilder {
@@ -524,15 +534,15 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => MEMORY_METRICS.in_flight.file(),
-            SourceType::IngestV2 => MEMORY_METRICS.in_flight.ingest(),
-            SourceType::Kafka => MEMORY_METRICS.in_flight.kafka(),
-            SourceType::Kinesis => MEMORY_METRICS.in_flight.kinesis(),
-            SourceType::PubSub => MEMORY_METRICS.in_flight.pubsub(),
-            SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
-            _ => MEMORY_METRICS.in_flight.other(),
+            SourceType::File => &IN_FLIGHT_FILE_SOURCE,
+            SourceType::IngestV2 => &IN_FLIGHT_INGEST_SOURCE,
+            SourceType::Kafka => &IN_FLIGHT_KAFKA_SOURCE,
+            SourceType::Kinesis => &IN_FLIGHT_KINESIS_SOURCE,
+            SourceType::PubSub => &IN_FLIGHT_PUBSUB_SOURCE,
+            SourceType::Pulsar => &IN_FLIGHT_PULSAR_SOURCE,
+            _ => &IN_FLIGHT_OTHER_SOURCE,
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge);
+        let gauge_guard = GaugeGuard::new(gauge, 0.0);
 
         Self {
             docs: Vec::with_capacity(capacity),
@@ -546,8 +556,8 @@ impl BatchBuilder {
     pub fn add_doc(&mut self, doc: Bytes) {
         let num_bytes = doc.len();
         self.docs.push(doc);
-        self.gauge_guard.add(num_bytes as i64);
         self.num_bytes += num_bytes as u64;
+        self.gauge_guard.increment(num_bytes as f64);
     }
 
     pub fn force_commit(&mut self) {
@@ -562,7 +572,7 @@ impl BatchBuilder {
     pub fn clear(&mut self) {
         self.docs.clear();
         self.checkpoint_delta = SourceCheckpointDelta::default();
-        self.gauge_guard.sub(self.num_bytes as i64);
+        self.gauge_guard.decrement(self.num_bytes as f64);
         self.num_bytes = 0;
     }
 }

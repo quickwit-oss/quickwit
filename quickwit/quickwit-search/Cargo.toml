@@ -21,7 +21,6 @@ futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
-once_cell = { workspace = true }
 pin-project = { workspace = true }
 postcard = { workspace = true }
 prost = { workspace = true }
@@ -38,6 +37,7 @@ ulid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }

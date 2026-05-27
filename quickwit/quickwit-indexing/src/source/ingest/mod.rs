@@ -20,7 +20,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fnv::FnvHashMap;
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
 use quickwit_ingest::{
@@ -47,9 +47,8 @@ use ulid::Ulid;
 
 use super::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, TypedSourceFactory,
+    SourceRuntime, SourceSink, TypedSourceFactory,
 };
-use crate::actors::DocProcessor;
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
 
 pub struct IngestSourceFactory;
@@ -361,6 +360,7 @@ impl IngestSource {
                 };
                 for num_attempts in 1..=retry_params.max_attempts {
                     let Err(error) = ingester
+                        .client
                         .truncate_shards(truncate_shards_request.clone())
                         .await
                     else {
@@ -393,7 +393,7 @@ impl IngestSource {
     async fn reset_if_needed(
         &mut self,
         new_assigned_shard_ids: &BTreeSet<ShardId>,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         // No need to do anything if the list of shards before and after are empty.
@@ -440,16 +440,12 @@ impl IngestSource {
         self.publish_lock.kill().await;
         self.publish_lock = PublishLock::default();
         self.publish_token = self.client_id.new_publish_token();
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishLock(self.publish_lock.clone()),
-        )
-        .await?;
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishToken(self.publish_token.clone()),
-        )
-        .await?;
+        source_sink
+            .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
+            .await?;
+        source_sink
+            .send_publish_token(NewPublishToken(self.publish_token.clone()), ctx)
+            .await?;
         Ok(())
     }
 }
@@ -458,7 +454,7 @@ impl IngestSource {
 impl Source for IngestSource {
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
@@ -501,7 +497,7 @@ impl Source for IngestSource {
                 "Sending doc batch to indexer."
             );
             let message = batch_builder.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            source_sink.send_raw_doc_batch(message, ctx).await?;
         }
         Ok(Duration::default())
     }
@@ -509,10 +505,10 @@ impl Source for IngestSource {
     async fn assign_shards(
         &mut self,
         new_assigned_shard_ids: BTreeSet<ShardId>,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        self.reset_if_needed(&new_assigned_shard_ids, doc_processor_mailbox, ctx)
+        self.reset_if_needed(&new_assigned_shard_ids, source_sink, ctx)
             .await?;
 
         // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
@@ -669,9 +665,10 @@ mod tests {
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
-    use quickwit_common::metrics::MEMORY_METRICS;
+    use quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
         FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
@@ -684,6 +681,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
@@ -929,7 +927,8 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -953,6 +952,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -962,7 +962,7 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = once(0).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 1);
@@ -976,7 +976,7 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = (0..2).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 2);
@@ -989,7 +989,7 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = (1..3).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
 
@@ -1126,7 +1126,8 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1157,6 +1158,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1166,7 +1168,7 @@ mod tests {
             BTreeSet::from_iter([ShardId::from(1), ShardId::from(2)]);
 
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
 
@@ -1291,7 +1293,8 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1322,6 +1325,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1335,7 +1339,7 @@ mod tests {
 
         // In this scenario, the indexer will only be able to acquire shard 1.
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
 
@@ -1388,6 +1392,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1429,11 +1434,8 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         let fetch_payload = FetchPayload {
@@ -1446,11 +1448,8 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
         let fetch_eof = FetchEof {
@@ -1460,17 +1459,11 @@ mod tests {
             eof_position: Some(Position::eof(23u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            ByteSize(0),
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, ByteSize(0), &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
-        source
-            .emit_batches(&doc_processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
         let doc_batch = doc_processor_inbox
             .recv_typed_message::<RawDocBatch>()
             .await
@@ -1496,10 +1489,7 @@ mod tests {
         assert_eq!(partition_deltas[1].1.from, Position::offset(22u64));
         assert_eq!(partition_deltas[1].1.to, Position::eof(23u64));
 
-        source
-            .emit_batches(&doc_processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         assert_eq!(shard.status, IndexingStatus::ReachedEof);
 
@@ -1513,10 +1503,7 @@ mod tests {
             .await
             .unwrap();
 
-        source
-            .emit_batches(&doc_processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
 
@@ -1530,17 +1517,11 @@ mod tests {
         };
         let batch_size = fetch_payload.estimate_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
-        let in_flight_value = InFlightValue::new(
-            fetch_message,
-            batch_size,
-            &MEMORY_METRICS.in_flight.fetch_stream,
-        );
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
-        source
-            .emit_batches(&doc_processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Active);
     }
@@ -1599,7 +1580,8 @@ mod tests {
                 })
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1622,6 +1604,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1629,14 +1612,11 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([ShardId::from(1)]);
 
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
 
-        source
-            .emit_batches(&doc_processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
 
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::NotFound);
@@ -1699,7 +1679,8 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1726,7 +1707,8 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let ingester_1 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
         let mut mock_ingester_3 = MockIngesterService::new();
@@ -1746,7 +1728,8 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_3 = IngesterServiceClient::from_mock(mock_ingester_3);
+        let ingester_3 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3));
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let event_broker = EventBroker::default();
@@ -1909,6 +1892,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1923,7 +1907,7 @@ mod tests {
         });
 
         source
-            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &source_sink, &ctx)
             .await
             .unwrap();
 

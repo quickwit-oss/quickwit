@@ -21,6 +21,7 @@ use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -30,6 +31,7 @@ use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
@@ -46,9 +48,11 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::metrics::{HTTP_REQUESTS_TOTAL, REQUEST_DURATION_SECS};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
+use crate::rest_api_request_span::{make_http_request_span, set_status_code_on_request_span};
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
@@ -134,16 +138,20 @@ pub(crate) async fn start_rest_server(
 ) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|info: Info| {
         let elapsed = info.elapsed();
-        let status = info.status();
-        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
-        crate::SERVE_METRICS
-            .request_duration_secs
-            .with_label_values(label_values)
-            .observe(elapsed.as_secs_f64());
-        crate::SERVE_METRICS
-            .http_requests_total
-            .with_label_values(label_values)
-            .inc();
+        let labels = labels!(
+            "method" => info.method().as_str().to_string(),
+            "status_code" => info.status().as_str().to_string()
+        );
+        histogram!(
+            parent: REQUEST_DURATION_SECS,
+            labels: [labels],
+        )
+        .observe(elapsed.as_secs_f64());
+        counter!(
+            parent: HTTP_REQUESTS_TOTAL,
+            labels: [labels],
+        )
+        .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")
@@ -208,7 +216,15 @@ pub(crate) async fn start_rest_server(
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
+        .on_response(
+            set_status_code_on_request_span
+                as fn(&http::Response<_>, std::time::Duration, &tracing::Span),
+        );
+
     let service = ServiceBuilder::new()
+        .layer(trace_layer)
         .layer(
             CompressionLayer::new()
                 .zstd(true)
@@ -860,6 +876,8 @@ mod tests {
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
+            #[cfg(feature = "datafusion")]
+            datafusion_session_builder: None,
         };
 
         let handler = api_v1_routes(Arc::new(quickwit_services))

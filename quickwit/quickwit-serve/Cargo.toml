@@ -26,10 +26,10 @@ http = { workspace = true }
 http-body = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
-hyper-util = {workspace = true}
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
-once_cell = { workspace = true }
+opentelemetry = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }
@@ -47,11 +47,13 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tonic = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { workspace = true, features = ["limit"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 warp = { workspace = true, features = ["server"] }
 zstd = { workspace = true }
@@ -59,8 +61,10 @@ zstd = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
+quickwit-datafusion = { workspace = true, optional = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -68,13 +72,13 @@ quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-telemetry-exporters = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }
@@ -84,10 +88,14 @@ assert-json-diff = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
@@ -104,6 +112,7 @@ quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
+datafusion = ["dep:quickwit-datafusion"]
 pprof = [
   "dep:pprof"
 ]

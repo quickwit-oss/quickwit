@@ -23,7 +23,6 @@ humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }
 new_string_template = { workspace = true }
-once_cell = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
@@ -43,9 +42,10 @@ quickwit-proto = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 
-quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 
 [features]
+metrics = []
 testsuite = []
 vrl = ["dep:vrl"]

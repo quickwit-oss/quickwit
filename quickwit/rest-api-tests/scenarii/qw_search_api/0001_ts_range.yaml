@@ -40,3 +40,9 @@ params:
   query: "auto_date:>=2023-05-25T00:00:00Z AND auto_date:<2023-05-26T00:00:00Z"
 expected:
   num_hits: 2
+---
+endpoint: millisec/search
+params:
+  query: "ts:>=2022-12-16T10:00:57.000Z AND ts:<=2022-12-16T10:00:57.000Z"
+expected:
+  num_hits: 1

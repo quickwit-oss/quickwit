@@ -20,17 +20,18 @@
 //! The Lambda binary is built separately in CI and published as a GitHub release.
 
 use std::env;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
-const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/lambda-ff6fdfa5/quickwit-aws-lambda--aarch64.zip";
+const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/def4e26e9/quickwit-aws-lambda-def4e26e9-aarch64.zip";
 
 /// Expected SHA256 hash of the Lambda zip artifact.
 /// Must be updated alongside LAMBDA_ZIP_URL when a new Lambda binary is released.
-const LAMBDA_ZIP_SHA256: &str = "fa940f44178e28460c21e44bb2610b776542b9b97db66a53bc65b10cad653b90";
+const LAMBDA_ZIP_SHA256: &str = "c6c7c6cb92ef9629b27b8697eb59f6e4259822771d00a3b727ca88c048a724de";
 
 /// AWS Lambda direct upload limit is 50MB.
 /// Larger artifacts must be uploaded via S3.
@@ -38,17 +39,55 @@ const MAX_LAMBDA_ZIP_SIZE: usize = 50 * 1024 * 1024;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=LAMBDA_ZIP_PATH");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let zip_path = out_dir.join("lambda_bootstrap.zip");
+    let zip_dest = out_dir.join("lambda_bootstrap.zip");
 
-    fetch_lambda_zip(&zip_path);
+    // Treat LAMBDA_ZIP_PATH="" (set but empty, e.g. from a Dockerfile ARG with no value passed)
+    // the same as unset — fall back to downloading the zip from the remote URL.
+    let sha256 = match env::var("LAMBDA_ZIP_PATH").ok().filter(|p| !p.is_empty()) {
+        Some(local_path) => {
+            // CI mode: a pre-built zip is provided via env; skip the remote download.
+            use_local_lambda_zip(Path::new(&local_path), &zip_dest)
+        }
+        None => {
+            fetch_lambda_zip(&zip_dest);
+            LAMBDA_ZIP_SHA256.to_string()
+        }
+    };
 
     // Export first 8 hex chars of the SHA256 as environment variable.
     // This is used to create a unique qualifier for Lambda versioning.
-    let hash_short = &LAMBDA_ZIP_SHA256[..8];
+    let hash_short = &sha256[..8];
     println!("cargo:rustc-env=LAMBDA_BINARY_HASH={}", hash_short);
     println!("lambda binary hash (short): {}", hash_short);
+}
+
+/// Copy a locally-built Lambda zip into OUT_DIR and return its SHA256.
+///
+/// Used by CI to embed a freshly-built binary without downloading from a remote URL.
+fn use_local_lambda_zip(src: &Path, dest: &Path) -> String {
+    let data = std::fs::read(src)
+        .unwrap_or_else(|err| panic!("failed to read LAMBDA_ZIP_PATH {:?}: {}", src, err));
+    if data.len() > MAX_LAMBDA_ZIP_SIZE {
+        panic!(
+            "Lambda zip at {:?} is too large ({} bytes, max {} bytes)",
+            src,
+            data.len(),
+            MAX_LAMBDA_ZIP_SIZE
+        );
+    }
+    let sha256 = sha256_hex(&data);
+    std::fs::write(dest, &data)
+        .unwrap_or_else(|err| panic!("failed to write lambda zip to {:?}: {}", dest, err));
+    println!(
+        "cargo:warning=using local Lambda zip from {:?} ({} bytes, sha256: {})",
+        src,
+        data.len(),
+        sha256
+    );
+    sha256
 }
 
 /// Fetch the Lambda zip and save it to `local_cache_path`.
@@ -95,7 +134,12 @@ fn fetch_lambda_zip(local_cache_path: &Path) {
 }
 
 fn sha256_hex(data: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(data))
+    let hash = Sha256::digest(data);
+    let mut hex = String::with_capacity(64);
+    for byte in hash {
+        write!(hex, "{byte:02x}").unwrap();
+    }
+    hex
 }
 
 fn download_lambda_zip(url: &str) -> Result<Vec<u8>, String> {

@@ -12,104 +12,69 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
-};
+use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
 
-pub struct IndexerMetrics {
-    pub processed_docs_total: IntCounterVec<2>,
-    pub processed_bytes: IntCounterVec<2>,
-    pub indexing_pipelines: IntGaugeVec<1>,
-    pub backpressure_micros: IntCounterVec<1>,
-    pub available_concurrent_upload_permits: IntGaugeVec<1>,
-    pub split_builders: IntGauge,
-    pub ongoing_merge_operations: IntGauge,
-    pub pending_merge_operations: IntGauge,
-    pub pending_merge_bytes: IntGauge,
-    // We use a lazy counter, as most users do not use Kafka.
-    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
-    pub kafka_rebalance_total: Lazy<IntCounter>,
-}
+pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
+pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 
-impl Default for IndexerMetrics {
-    fn default() -> Self {
-        IndexerMetrics {
-            processed_docs_total: new_counter_vec(
-                "processed_docs_total",
-                "Number of processed docs by index, source and processed status in [valid, \
-                 schema_error, parse_error, transform_error]",
-                "indexing",
-                &[],
-                ["index", "docs_processed_status"],
-            ),
-            processed_bytes: new_counter_vec(
-                "processed_bytes",
-                "Number of bytes of processed documents by index, source and processed status in \
-                 [valid, schema_error, parse_error, transform_error]",
-                "indexing",
-                &[],
-                ["index", "docs_processed_status"],
-            ),
-            indexing_pipelines: new_gauge_vec(
-                "indexing_pipelines",
-                "Number of running indexing pipelines",
-                "indexing",
-                &[],
-                ["index"],
-            ),
-            backpressure_micros: new_counter_vec(
-                "backpressure_micros",
-                "Amount of time spent in backpressure (in micros). This time only includes the \
-                 amount of time spent waiting for a place in the queue of another actor.",
-                "indexing",
-                &[],
-                ["actor_name"],
-            ),
-            available_concurrent_upload_permits: new_gauge_vec(
-                "concurrent_upload_available_permits_num",
-                "Number of available concurrent upload permits by component in [merger, indexer]",
-                "indexing",
-                &[],
-                ["component"],
-            ),
-            split_builders: new_gauge(
-                "split_builders",
-                "Number of existing index writer instances.",
-                "indexing",
-                &[],
-            ),
-            ongoing_merge_operations: new_gauge(
-                "ongoing_merge_operations",
-                "Number of ongoing merge operations",
-                "indexing",
-                &[],
-            ),
-            pending_merge_operations: new_gauge(
-                "pending_merge_operations",
-                "Number of pending merge operations",
-                "indexing",
-                &[],
-            ),
-            pending_merge_bytes: new_gauge(
-                "pending_merge_bytes",
-                "Number of pending merge bytes",
-                "indexing",
-                &[],
-            ),
-            kafka_rebalance_total: Lazy::new(|| {
-                new_counter(
-                    "kafka_rebalance_total",
-                    "Number of kafka rebalances",
-                    "indexing",
-                    &[],
-                )
-            }),
-        }
-    }
-}
+pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
+        name: "processed_docs_total",
+        description: "Number of processed docs by index, source and processed status in [valid, schema_error, parse_error, transform_error]",
+        subsystem: "indexing",
+);
 
-/// `INDEXER_METRICS` exposes indexing related metrics through a prometheus
-/// endpoint.
-pub static INDEXER_METRICS: Lazy<IndexerMetrics> = Lazy::new(IndexerMetrics::default);
+pub(crate) static PROCESSED_BYTES: LazyCounter = lazy_counter!(
+        name: "processed_bytes",
+        description: "Number of bytes of processed documents by index, source and processed status in [valid, schema_error, parse_error, transform_error]",
+        subsystem: "indexing",
+);
+
+pub(crate) static INDEXING_PIPELINES: LazyGauge = lazy_gauge!(
+        name: "indexing_pipelines",
+        description: "Number of running indexing pipelines",
+        subsystem: "indexing",
+);
+
+pub(crate) static BACKPRESSURE_MICROS: LazyCounter = lazy_counter!(
+        name: "backpressure_micros",
+        description: "Amount of time spent in backpressure (in micros). This time only includes the amount of time spent waiting for a place in the queue of another actor.",
+        subsystem: "indexing",
+);
+
+pub(crate) static AVAILABLE_CONCURRENT_UPLOAD_PERMITS: LazyGauge = lazy_gauge!(
+        name: "concurrent_upload_available_permits_num",
+        description: "Number of available concurrent upload permits by component in [merger, indexer]",
+        subsystem: "indexing",
+);
+
+pub(crate) static SPLIT_BUILDERS: LazyGauge = lazy_gauge!(
+        name: "split_builders",
+        description: "Number of existing index writer instances.",
+        subsystem: "indexing",
+);
+
+pub(crate) static ONGOING_MERGE_OPERATIONS: LazyGauge = lazy_gauge!(
+        name: "ongoing_merge_operations",
+        description: "Number of ongoing merge operations",
+        subsystem: "indexing",
+);
+
+pub(crate) static PENDING_MERGE_OPERATIONS: LazyGauge = lazy_gauge!(
+        name: "pending_merge_operations",
+        description: "Number of pending merge operations",
+        subsystem: "indexing",
+);
+
+pub(crate) static PENDING_MERGE_BYTES: LazyGauge = lazy_gauge!(
+        name: "pending_merge_bytes",
+        description: "Number of pending merge bytes",
+        subsystem: "indexing",
+);
+
+// We use a lazy counter, as most users do not use Kafka.
+#[cfg_attr(not(feature = "kafka"), allow(dead_code))]
+pub(crate) static KAFKA_REBALANCE_TOTAL: LazyCounter = lazy_counter!(
+        name: "kafka_rebalance_total",
+        description: "Number of kafka rebalances",
+        subsystem: "indexing",
+);

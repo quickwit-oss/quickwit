@@ -13,12 +13,13 @@
 // limitations under the License.
 
 use std::io::Read;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use bytes::Bytes;
 use flate2::read::{MultiGzDecoder, ZlibDecoder};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_REST_SERVER;
 use quickwit_common::thread_pool::run_cpu_intensive;
+use quickwit_metrics::GaugeGuard;
 use thiserror::Error;
 use warp::Filter;
 use warp::reject::Reject;
@@ -26,8 +27,8 @@ use warp::reject::Reject;
 use crate::load_shield::{LoadShield, LoadShieldPermit};
 
 fn get_ingest_load_shield() -> &'static LoadShield {
-    static LOAD_SHIELD: OnceLock<LoadShield> = OnceLock::new();
-    LOAD_SHIELD.get_or_init(|| LoadShield::new("ingest"))
+    static LOAD_SHIELD: LazyLock<LoadShield> = LazyLock::new(|| LoadShield::new("ingest"));
+    &LOAD_SHIELD
 }
 
 /// There are two ways to decompress the body:
@@ -108,14 +109,13 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
 
 pub(crate) struct Body {
     pub content: Bytes,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: GaugeGuard,
     _permit: LoadShieldPermit,
 }
 
 impl Body {
     pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server);
-        gauge_guard.add(content.len() as i64);
+        let gauge_guard = GaugeGuard::new(&IN_FLIGHT_REST_SERVER, content.len() as f64);
         Body {
             content,
             _gauge_guard: gauge_guard,

@@ -36,15 +36,162 @@ use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
-    ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest, serde_utils,
+    ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
+    ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
+    PublishSplitsRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest,
+    UpdateIndexRequest, UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
+
+/// Query parameters for listing parquet splits (metrics or sketches).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListParquetSplitsQuery {
+    /// Index UID to filter by (required).
+    pub index_uid: IndexUid,
+    /// Split states to include.
+    #[serde(default)]
+    pub split_states: Vec<SplitState>,
+    /// The time range to filter by.
+    pub time_range: FilterRange<i64>,
+    /// Metric names to filter by (any match).
+    #[serde(default)]
+    pub metric_names: Vec<String>,
+    /// Service tag filter.
+    pub tag_service: Option<String>,
+    /// Environment tag filter.
+    pub tag_env: Option<String>,
+    /// Datacenter tag filter.
+    pub tag_datacenter: Option<String>,
+    /// Region tag filter.
+    pub tag_region: Option<String>,
+    /// Host tag filter.
+    pub tag_host: Option<String>,
+    /// Sort fields filter for compaction scope queries.
+    pub sort_fields: Option<String>,
+    /// A specific node ID to filter by.
+    pub node_id: Option<NodeId>,
+    /// The delete opstamp range to filter by.
+    pub delete_opstamp: FilterRange<u64>,
+    /// The update timestamp range to filter by.
+    pub update_timestamp: FilterRange<i64>,
+    /// The create timestamp range to filter by.
+    pub create_timestamp: FilterRange<i64>,
+    /// The datetime at which you include or exclude mature splits.
+    pub mature: Bound<OffsetDateTime>,
+    /// Limit number of results.
+    pub limit: Option<usize>,
+    /// Only return splits whose split_id are lexicographically after this split
+    pub after_split_id: Option<String>,
+    /// Filter splits whose `time_range_end` (exclusive upper bound) <= this
+    /// value.
+    pub max_time_range_end: Option<i64>,
+}
+
+impl Default for ListParquetSplitsQuery {
+    fn default() -> Self {
+        Self {
+            index_uid: IndexUid::default(),
+            split_states: Vec::new(),
+            time_range: Default::default(),
+            metric_names: Vec::new(),
+            tag_service: None,
+            tag_env: None,
+            tag_datacenter: None,
+            tag_region: None,
+            tag_host: None,
+            sort_fields: None,
+            node_id: None,
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
+            limit: None,
+            after_split_id: None,
+            max_time_range_end: None,
+        }
+    }
+}
+
+impl ListParquetSplitsQuery {
+    /// Creates a query for all splits in an index.
+    pub fn for_index(index_uid: impl Into<IndexUid>) -> Self {
+        Self {
+            index_uid: index_uid.into(),
+            split_states: vec![SplitState::Published],
+            ..Default::default()
+        }
+    }
+
+    /// Filter by split states.
+    pub fn with_split_states(mut self, states: impl AsRef<[SplitState]>) -> Self {
+        self.split_states = states.as_ref().to_vec();
+        self
+    }
+
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_start_gte(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_end_lte(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Included(v);
+        self
+    }
+
+    /// Filter by metric names.
+    pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
+        self.metric_names = names;
+        self
+    }
+
+    /// Filter splits updated at or before the given timestamp (epoch seconds).
+    pub fn with_update_timestamp_lte(mut self, timestamp: i64) -> Self {
+        self.update_timestamp.end = Bound::Included(timestamp);
+        self
+    }
+
+    /// Limit number of results returned.
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set the pagination cursor: return only splits with split_id > `split_id`.
+    pub fn with_after_split_id(mut self, split_id: impl Into<String>) -> Self {
+        self.after_split_id = Some(split_id.into());
+        self
+    }
+
+    /// Filter splits whose `time_range_end` (exclusive) <= the given timestamp.
+    pub fn with_max_time_range_end(mut self, timestamp: i64) -> Self {
+        self.max_time_range_end = Some(timestamp);
+        self
+    }
+
+    /// Filter by compaction scope: splits whose window intersects
+    /// `[window_start, window_start + window_duration_secs)` and whose
+    /// sort_fields match exactly.
+    pub fn with_compaction_scope(
+        mut self,
+        window_start: i64,
+        window_duration_secs: u32,
+        sort_fields: impl Into<String>,
+    ) -> Self {
+        self.time_range.start = Bound::Included(window_start);
+        self.time_range.end = Bound::Excluded(window_start + window_duration_secs as i64);
+        self.sort_fields = Some(sort_fields.into());
+        self
+    }
+}
 
 /// Splits batch size returned by the stream splits API
 pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
@@ -629,6 +776,175 @@ impl ListSplitsResponseExt for ListSplitsResponse {
         Ok(split_ids)
     }
 }
+
+// =====================================================
+// Parquet Splits Extension Traits (unified via macros)
+// =====================================================
+
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
+
+/// A complete parquet split record from the database.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ParquetSplitRecord {
+    /// The split's state.
+    pub state: SplitState,
+    /// Timestamp when the split was last updated.
+    pub update_timestamp: i64,
+    /// The split's immutable metadata.
+    pub metadata: ParquetSplitMetadata,
+}
+
+/// Helper trait to build stage requests for parquet splits.
+pub trait StageParquetSplitsRequestExt: Sized {
+    /// Creates a new stage request from an index UID and split metadata.
+    fn try_from_splits_metadata(
+        index_uid: impl Into<IndexUid>,
+        splits_metadata: &[ParquetSplitMetadata],
+    ) -> MetastoreResult<Self>;
+
+    /// Deserializes the splits metadata.
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<ParquetSplitMetadata>>;
+}
+
+macro_rules! impl_stage_parquet_splits_ext {
+    ($request_type:ty) => {
+        impl StageParquetSplitsRequestExt for $request_type {
+            fn try_from_splits_metadata(
+                index_uid: impl Into<IndexUid>,
+                splits_metadata: &[ParquetSplitMetadata],
+            ) -> MetastoreResult<Self> {
+                let splits_metadata_json = splits_metadata
+                    .iter()
+                    .map(serde_utils::to_json_str)
+                    .collect::<MetastoreResult<Vec<String>>>()?;
+                Ok(Self {
+                    index_uid: Some(index_uid.into()),
+                    splits_metadata_json,
+                })
+            }
+
+            fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<ParquetSplitMetadata>> {
+                self.splits_metadata_json
+                    .iter()
+                    .map(|s| serde_utils::from_json_str(s))
+                    .collect()
+            }
+        }
+    };
+}
+impl_stage_parquet_splits_ext!(StageMetricsSplitsRequest);
+impl_stage_parquet_splits_ext!(StageSketchSplitsRequest);
+
+/// Helper trait to deserialize publish requests for parquet splits.
+pub trait PublishParquetSplitsRequestExt {
+    /// Deserializes the `index_checkpoint_delta_json_opt` field into an
+    /// [`Option<IndexCheckpointDelta>`].
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
+}
+
+macro_rules! impl_publish_parquet_splits_ext {
+    ($request_type:ty) => {
+        impl PublishParquetSplitsRequestExt for $request_type {
+            fn deserialize_index_checkpoint(
+                &self,
+            ) -> MetastoreResult<Option<IndexCheckpointDelta>> {
+                self.index_checkpoint_delta_json_opt
+                    .as_ref()
+                    .map(|value| serde_utils::from_json_str(value))
+                    .transpose()
+            }
+        }
+    };
+}
+impl_publish_parquet_splits_ext!(PublishMetricsSplitsRequest);
+impl_publish_parquet_splits_ext!(PublishSketchSplitsRequest);
+
+/// Helper trait to build list requests for parquet splits.
+pub trait ListParquetSplitsRequestExt: Sized {
+    /// Creates a new list request from an index UID.
+    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<Self>;
+
+    /// Creates a new list request from an index UID and query.
+    fn try_from_query(
+        index_uid: impl Into<IndexUid>,
+        query: &ListParquetSplitsQuery,
+    ) -> MetastoreResult<Self>;
+
+    /// Deserializes the `query_json` field.
+    fn deserialize_query(&self) -> MetastoreResult<ListParquetSplitsQuery>;
+}
+
+macro_rules! impl_list_parquet_splits_request_ext {
+    ($request_type:ty) => {
+        impl ListParquetSplitsRequestExt for $request_type {
+            fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<Self> {
+                let index_uid = index_uid.into();
+                let query = ListParquetSplitsQuery::for_index(index_uid.clone());
+                Self::try_from_query(index_uid, &query)
+            }
+
+            fn try_from_query(
+                index_uid: impl Into<IndexUid>,
+                query: &ListParquetSplitsQuery,
+            ) -> MetastoreResult<Self> {
+                let query_json = serde_utils::to_json_str(query)?;
+                Ok(Self {
+                    index_uid: Some(index_uid.into()),
+                    query_json,
+                })
+            }
+
+            fn deserialize_query(&self) -> MetastoreResult<ListParquetSplitsQuery> {
+                serde_utils::from_json_str(&self.query_json)
+            }
+        }
+    };
+}
+impl_list_parquet_splits_request_ext!(ListMetricsSplitsRequest);
+impl_list_parquet_splits_request_ext!(ListSketchSplitsRequest);
+
+/// Helper trait to build and deserialize list responses for parquet splits.
+pub trait ListParquetSplitsResponseExt: Sized {
+    /// Creates an empty response.
+    fn empty() -> Self;
+
+    /// Creates a response from a list of splits.
+    fn try_from_splits(splits: &[ParquetSplitRecord]) -> MetastoreResult<Self>;
+
+    /// Deserializes the splits in the response.
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<ParquetSplitRecord>>;
+}
+
+macro_rules! impl_list_parquet_splits_response_ext {
+    ($response_type:ty) => {
+        impl ListParquetSplitsResponseExt for $response_type {
+            fn empty() -> Self {
+                Self {
+                    splits_serialized_json: Vec::new(),
+                }
+            }
+
+            fn try_from_splits(splits: &[ParquetSplitRecord]) -> MetastoreResult<Self> {
+                let splits_serialized_json = splits
+                    .iter()
+                    .map(serde_utils::to_json_str)
+                    .collect::<MetastoreResult<Vec<String>>>()?;
+                Ok(Self {
+                    splits_serialized_json,
+                })
+            }
+
+            fn deserialize_splits(&self) -> MetastoreResult<Vec<ParquetSplitRecord>> {
+                self.splits_serialized_json
+                    .iter()
+                    .map(|s| serde_utils::from_json_str(s))
+                    .collect()
+            }
+        }
+    };
+}
+impl_list_parquet_splits_response_ext!(ListMetricsSplitsResponse);
+impl_list_parquet_splits_response_ext!(ListSketchSplitsResponse);
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.

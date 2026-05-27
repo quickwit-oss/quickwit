@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::bail;
 use async_trait::async_trait;
-use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_ingest::{
     CreateQueueIfNotExistsRequest, DocCommand, FetchRequest, FetchResponse, GetPartitionId,
     IngestApiService, SuggestTruncateRequest, get_ingest_api_service,
@@ -29,8 +29,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{error, info};
 
-use super::{BatchBuilder, Source, SourceActor, SourceContext, TypedSourceFactory};
-use crate::actors::DocProcessor;
+use super::{BatchBuilder, Source, SourceContext, SourceSink, TypedSourceFactory};
 use crate::source::SourceRuntime;
 
 /// Wait time for SourceActor before pooling for new documents.
@@ -117,7 +116,7 @@ impl IngestApiSource {
     async fn send_suggest_truncate_to_ingest_service(
         &self,
         up_to_position_included: u64,
-        ctx: &ActorContext<SourceActor>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         let suggest_truncate_req = SuggestTruncateRequest {
             index_id: self.source_runtime.index_id().to_string(),
@@ -139,7 +138,7 @@ impl IngestApiSource {
 impl Source for IngestApiSource {
     async fn initialize(
         &mut self,
-        _: &Mailbox<DocProcessor>,
+        _: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         if let Some(position) = self.counters.previous_offset {
@@ -151,7 +150,7 @@ impl Source for IngestApiSource {
 
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<DocProcessor>,
+        batch_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
@@ -202,14 +201,16 @@ impl Source for IngestApiSource {
             .map_err(anyhow::Error::from)?;
 
         self.update_counters(current_offset, batch_builder.docs.len() as u64);
-        ctx.send_message(batch_sink, batch_builder.build()).await?;
+        batch_sink
+            .send_raw_doc_batch(batch_builder.build(), ctx)
+            .await?;
         Ok(Duration::default())
     }
 
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        ctx: &ActorContext<SourceActor>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         if let Some(Position::Offset(offset)) =
             checkpoint.position_for_partition(&self.partition_id)
@@ -261,6 +262,7 @@ mod tests {
     use quickwit_proto::types::{IndexId, IndexUid};
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
     use crate::source::tests::SourceRuntimeBuilder;
@@ -311,16 +313,15 @@ mod tests {
 
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let source_config = make_source_config();
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
             .with_queues_dir(queues_dir_path)
             .build();
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -410,7 +411,8 @@ mod tests {
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id.clone(),
@@ -426,10 +428,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -471,17 +471,16 @@ mod tests {
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
 
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let source_config = make_source_config();
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
             .with_queues_dir(queues_dir_path)
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -522,17 +521,16 @@ mod tests {
 
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let source_config = make_source_config();
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
             .with_queues_dir(queues_dir_path)
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -586,17 +584,16 @@ mod tests {
 
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let source_config = make_source_config();
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
             .with_queues_dir(queues_dir_path)
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
         let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000, CommitType::WaitFor);
@@ -646,7 +643,8 @@ mod tests {
 
         let ingest_api_service =
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
-        let (doc_processor_mailbox, _doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let source_config = make_source_config();
         let _source_runtime = SourceRuntimeBuilder::new(index_uid.clone(), source_config.clone())
             .with_queues_dir(queues_dir_path)
@@ -689,10 +687,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            doc_processor_mailbox,
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use base64::Engine;
@@ -26,7 +28,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
-use crate::{SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
+use crate::{SearchJobPlacer, SearchServiceClient, merge_leaf_stats_it};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -77,12 +79,17 @@ impl ClusterClient {
     }
 
     /// Leaf search with retry on another node client.
+    ///
+    /// Returns the response and increases `leaf_search_call_count`
+    /// with the number of leaf search calls done (including retries).
     pub async fn leaf_search(
         &self,
         request: LeafSearchRequest,
         mut client: SearchServiceClient,
+        leaf_search_call_count: Arc<AtomicU64>,
     ) -> crate::Result<LeafSearchResponse> {
-        let mut response_res = client.leaf_search(request.clone()).await;
+        leaf_search_call_count.fetch_add(1u64, std::sync::atomic::Ordering::Relaxed);
+        let response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
         // We retry only once.
         let Some(retry_request) = retry_policy.retry_request(request, &response_res) else {
@@ -112,9 +119,9 @@ impl ClusterClient {
             "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
             response_res, retry_request, client
         );
+        leaf_search_call_count.fetch_add(1u64, std::sync::atomic::Ordering::Relaxed);
         let retry_result = client.leaf_search(retry_request).await;
-        response_res = merge_original_with_retry_leaf_search_results(response_res, retry_result);
-        response_res
+        merge_original_with_retry_leaf_search_results(response_res, retry_result)
     }
 
     /// Leaf search with retry on another node client.
@@ -138,7 +145,7 @@ impl ClusterClient {
 
     /// Attempts to store a given key value pair within the cluster.
     ///
-    /// Tries to replicate the pair to [`TARGET_NUM_REPLICATION`] nodes, but this function may fail
+    /// Tries to replicate the pair to `TARGET_NUM_REPLICATION` nodes, but this function may fail
     /// silently (e.g if no client was available). Even in case of success, this storage is not
     /// persistent. For instance during a rolling upgrade, all replicas will be lost as there is no
     /// mechanism to maintain the replication count.
@@ -260,7 +267,7 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
-    let resource_stats = merge_resource_stats_it([
+    let resource_stats = merge_leaf_stats_it([
         &original_response.resource_stats,
         &retry_response.resource_stats,
     ]);
@@ -296,6 +303,7 @@ fn merge_original_with_retry_leaf_search_results(
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use quickwit_proto::search::{
         LeafRequestRef, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
@@ -462,11 +470,13 @@ mod tests {
             .await
             .unwrap();
         let cluster_client = ClusterClient::new(search_job_placer);
+        let call_count: Arc<AtomicU64> = Default::default();
         let leaf_search_response = cluster_client
-            .leaf_search(request, first_client)
+            .leaf_search(request, first_client, call_count.clone())
             .await
             .unwrap();
         assert_eq!(leaf_search_response.num_attempted_splits, 1);
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -510,10 +520,14 @@ mod tests {
             .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
             .await
             .unwrap();
+        let call_count: Arc<AtomicU64> = Default::default();
         let cluster_client = ClusterClient::new(search_job_placer);
-        let result = cluster_client.leaf_search(request, first_client).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().num_hits, 2);
+        let response = cluster_client
+            .leaf_search(request, first_client, call_count.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.num_hits, 2);
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
     }
 
     #[test]

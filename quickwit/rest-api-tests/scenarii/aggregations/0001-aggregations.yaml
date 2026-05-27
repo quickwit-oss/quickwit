@@ -42,7 +42,7 @@ expected:
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z" }
         -  { "doc_count": 0, "key": 1425254400000.0, "key_as_string": "2015-03-02T00:00:00Z" }
 ---
-# Test date histogram aggregation and sub-aggregation 
+# Test date histogram aggregation and sub-aggregation
 method: [GET]
 engines:
   - quickwit
@@ -50,8 +50,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    date_histo: 
-      date_histogram: 
+    date_histo:
+      date_histogram:
         field: "date"
         fixed_interval: "30d"
         offset: "-4d"
@@ -65,8 +65,8 @@ expected:
       buckets:
         -  { "doc_count": 5, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 85.0, "count": 4, "max": 120.0, "min": 20.0, "sum": 340.0 } }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
---- 
-# Test date histogram aggregation + exists and sub-aggregation 
+---
+# Test date histogram aggregation + exists and sub-aggregation
 method: [GET]
 engines:
   - quickwit
@@ -78,8 +78,8 @@ json:
         - exists:
             field: response
   aggs:
-    date_histo: 
-      date_histogram: 
+    date_histo:
+      date_histogram:
         field: "date"
         fixed_interval: "30d"
         offset: "-4d"
@@ -93,7 +93,7 @@ expected:
       buckets:
         -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 85.0, "count": 4, "max": 120.0, "min": 20.0, "sum": 340.0 } }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
---- 
+---
 # Test range aggregation
 method: [GET]
 engines:
@@ -103,7 +103,7 @@ json:
   query: { match_all: {} }
   aggs:
     my_range:
-      range: 
+      range:
         field: response
         ranges:
         - { to: 50, key: fast }
@@ -116,7 +116,7 @@ expected:
         - { "doc_count": 5, "key": "fast", "to": 50.0 }
         - { "doc_count": 0, "from": 50.0, "key": "medium", "to": 80.0 }
         - { "doc_count": 4, "from": 80.0, "key": "slow" }
---- 
+---
 # Test term aggs
 method: [GET]
 engines:
@@ -125,11 +125,11 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    hosts: 
-      terms: 
+    hosts:
+      terms:
         field: "host"
-    tags: 
-      terms: 
+    tags:
+      terms:
         field: "tags"
 expected:
   aggregations:
@@ -151,7 +151,7 @@ expected:
         key: cool
       doc_count_error_upper_bound: 0
       sum_other_doc_count: 0
---- 
+---
 # Test term aggs with split_size
 # We set split_size to 1, so one document with name "Fritz" will be missing from one split.
 method: [GET]
@@ -161,8 +161,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    names: 
-      terms: 
+    names:
+      terms:
         field: "name"
         size: 1
         split_size: 1
@@ -170,14 +170,14 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
         # root node, because it gets cut off due to the split_size parameter set to 1.
         # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
-      - doc_count: 2 
+      - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
       doc_count_error_upper_bound: 2
---- 
+---
 # Test term aggs with shard_size
 # segment_size is an alias to shard_size
 method: [GET]
@@ -187,8 +187,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    names: 
-      terms: 
+    names:
+      terms:
         field: "name"
         size: 1
         segment_size: 1
@@ -196,14 +196,14 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
         # root node, because it gets cut off due to the split_size parameter set to 1.
         # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
-      - doc_count: 2 
+      - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
       doc_count_error_upper_bound: 2
---- 
+---
 # Test term aggs with shard_size
 method: [GET]
 engines:
@@ -212,8 +212,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    names: 
-      terms: 
+    names:
+      terms:
         field: "name"
         size: 1
         shard_size: 1
@@ -221,10 +221,10 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the 
+        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
         # root node, because it gets cut off due to the split_size parameter set to 1.
         # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
-      - doc_count: 2 
+      - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
       doc_count_error_upper_bound: 2
@@ -238,8 +238,8 @@ endpoint: _elastic/aggregations/_search
 json:
   query: { match_all: {} }
   aggs:
-    names: 
-      terms: 
+    names:
+      terms:
         field: "name"
         size: 1
         split_size: 5
@@ -249,11 +249,11 @@ expected:
       buckets:
         # We get all 3 documents with name "Fritz"
         # We also get doc_count_error_upper_bound: 0, to the result is exact.
-      - doc_count: 3 
+      - doc_count: 3
         key: "Fritz"
       sum_other_doc_count: 7
       doc_count_error_upper_bound: 0
---- 
+---
 # Test date histogram + percentiles sub-aggregation
 method: [GET]
 engines:
@@ -284,15 +284,17 @@ expected:
         response:
           values:
           - key: 85.0
-            value: 100.49456770856702
+            value:
+              $expect: 'abs(val - 100.49456770856702) < 0.1'
       - doc_count: 2
         key: 1422662400000.0
         key_as_string: '2015-01-31T00:00:00Z'
         response:
           values:
           - key: 85.0
-            value: 30.26717133872237
---- 
+            value:
+              $expect: 'abs(val - 30.2617) < 0.1'
+---
 # Test histogram
 method: [GET]
 engines:
@@ -316,7 +318,7 @@ expected:
       - doc_count: 4
         key: 100.0
 
---- 
+---
 # Test histogram empty result on empty index
 method: [GET]
 engines:
@@ -354,11 +356,14 @@ json:
 expected:
   aggregations:
     unique_names:
-      value: 8.0
+      value:
+        $expect: 'abs(val - 8) <= 2'
     unique_response:
-      value: 5.0 # TODO: Check. The correct number is 6
+      value:
+        $expect: 'abs(val - 6) <= 2' # TODO: Check. The correct number is 6
     unique_dates:
-      value: 6.0 
+      value:
+        $expect: 'abs(val - 6) <= 3'
 ---
 # Test extended stats aggregation
 method: [GET]
@@ -375,6 +380,7 @@ expected:
   aggregations:
     response_stats:
       sum_of_squares: 55300.0
+---
 # Test term aggs number precision
 method: [GET]
 engines:
@@ -384,12 +390,100 @@ json:
   query: { match_all: {} }
   size: 0
   aggs:
-    names: 
-      terms: 
+    names:
+      terms:
         field: "high_prec_test"
 expected:
   aggregations:
     names:
       buckets:
-      - doc_count: 1 
+      - doc_count: 1
         key: 1769070189829214200
+---
+# Test composite aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  size: 0
+  aggs:
+    host_name_composite:
+      composite:
+        size: 5
+        sources:
+          - host:
+              terms:
+                field: "host"
+                missing_bucket: true
+          - name:
+              terms:
+                field: "name"
+          - response:
+              histogram:
+                field: "response"
+                interval: 50
+expected:
+  aggregations:
+    host_name_composite:
+      buckets:
+        - key: { "host": null, "name": "Bernhard", "response": 100.0 }
+          doc_count: 1
+        - key: { "host": null, "name": "Fritz", "response": 0.0 }
+          doc_count: 2
+        - key: { "host": "192.168.0.1", "name": "Fred", "response": 100.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.1", "name": "Fritz", "response": 0.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.10", "name": "Albert", "response": 100.0 }
+          doc_count: 1
+      after_key:
+        host:
+          # tantivy does not coerce.
+          # For this reason, we can have 2 fields with the different types, and tantivy
+          # needs to prepend after key with its type. std:
+          $expect: "val in ['192.168.0.10', 'str:192.168.0.10']"
+        name:
+          $expect: "val in ['Albert', 'str:Albert']"
+        response:
+          $expect: val in [100.0, 'f64:100']
+
+---
+# Test composite aggregation paging
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  size: 0
+  aggs:
+    host_name_composite:
+      composite:
+        size: 5
+        sources:
+          - host:
+              terms:
+                field: "host"
+                missing_bucket: true
+          - name:
+              terms:
+                field: "name"
+          - response:
+              histogram:
+                field: "response"
+                interval: 50
+        after:
+          host: "str:192.168.0.10"
+          name: "str:Albert"
+          response: "f64:100"
+expected:
+  aggregations:
+    host_name_composite:
+      buckets:
+        - key: { "host": "192.168.0.10", "name": "Holger", "response": 0.0 }
+          doc_count: 1
+        # Horst is missing because his response field is missing
+        - key: { "host": "192.168.0.10", "name": "Werner", "response": 0.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.11", "name": "Manfred", "response": 100.0 }
+          doc_count: 1

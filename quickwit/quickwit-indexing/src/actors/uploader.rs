@@ -15,20 +15,20 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::{IndexUid, PublishToken};
@@ -41,7 +41,7 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::merge_policy::{MergePolicy, MergeTask};
-use crate::metrics::INDEXER_METRICS;
+use crate::metrics::{AVAILABLE_CONCURRENT_UPLOAD_PERMITS, COMPONENT};
 use crate::models::{
     EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
 };
@@ -53,8 +53,8 @@ use crate::split_store::IndexingSplitStore;
 /// This "budget" is actually split into two semaphores: one for the indexing pipeline and the merge
 /// pipeline. The idea is that the merge pipeline is by nature a bit irregular, and we don't want it
 /// to stall the indexing pipeline, decreasing its throughput.
-static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceCell<Semaphore> = OnceCell::new();
-static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceLock<Semaphore> = OnceLock::new();
+static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceLock<Semaphore> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug)]
 pub enum UploaderType {
@@ -63,19 +63,21 @@ pub enum UploaderType {
     DeleteUploader,
 }
 
-/// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
+/// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer<Publisher>>`] or
+/// [`Mailbox<Publisher>`].
 ///
-/// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
-/// to [`Publisher`]. It is used in combination with `SplitsUpdateSender` that will do the send.
+/// It makes it possible to send a splits update either to the [`Sequencer`] or directly
+/// to the [`Publisher`]. It is used in combination with `SplitsUpdateSender` that
+/// will do the send.
 ///
 /// This is useful as we have different requirements between the indexing pipeline and
 /// the merge/delete task pipelines.
 /// 1. In the indexing pipeline, we want to publish splits in the same order as they are produced by
 ///    the indexer/packager to ensure we are publishing splits without "holes" in checkpoints. We
-///    thus send [`SplitsUpdate`] to the [`Sequencer`] to keep the right ordering.
-/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in in this
-///    case, publishing order does not matter. In this case, we can just send [`SplitsUpdate`]
-///    directly to the [`Publisher`].
+///    thus send the update to the [`Sequencer`] to keep the right ordering.
+/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in this case,
+///    publishing order does not matter. In this case, we can just send the update directly to the
+///    publisher.
 #[derive(Clone, Debug)]
 pub enum SplitsUpdateMailbox {
     Sequencer(Mailbox<Sequencer<Publisher>>),
@@ -89,8 +91,8 @@ impl From<Mailbox<Publisher>> for SplitsUpdateMailbox {
 }
 
 impl From<Mailbox<Sequencer<Publisher>>> for SplitsUpdateMailbox {
-    fn from(publisher_sequencer_mailbox: Mailbox<Sequencer<Publisher>>) -> Self {
-        SplitsUpdateMailbox::Sequencer(publisher_sequencer_mailbox)
+    fn from(sequencer_mailbox: Mailbox<Sequencer<Publisher>>) -> Self {
+        SplitsUpdateMailbox::Sequencer(sequencer_mailbox)
     }
 }
 
@@ -111,7 +113,6 @@ impl SplitsUpdateMailbox {
                 Ok(SplitsUpdateSender::Sequencer(split_uploaded_tx))
             }
             SplitsUpdateMailbox::Publisher(publisher_mailbox) => {
-                // We just need the publisher mailbox to send the split in this case.
                 Ok(SplitsUpdateSender::Publisher(publisher_mailbox.clone()))
             }
         }
@@ -199,30 +200,25 @@ impl Uploader {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<SemaphorePermit<'static>> {
         let _guard = ctx.protect_zone();
-        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) =
-            match self.uploader_type {
-                UploaderType::IndexUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_INDEX,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["indexer"]),
-                ),
-                UploaderType::MergeUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
-                ),
-                UploaderType::DeleteUploader => (
-                    &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
-                ),
-            };
+        let (concurrent_upload_permits_once_cell, concurrent_upload_permits_gauge) = match self
+            .uploader_type
+        {
+            UploaderType::IndexUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_INDEX,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "indexer")]),
+            ),
+            UploaderType::MergeUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "merger")]),
+            ),
+            UploaderType::DeleteUploader => (
+                &CONCURRENT_UPLOAD_PERMITS_MERGE,
+                gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "merger")]),
+            ),
+        };
         let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
-        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
             .acquire()
             .await

@@ -36,6 +36,7 @@ pub mod rate_limited_tracing;
 pub mod rate_limiter;
 pub mod rendezvous_hasher;
 pub mod retry;
+pub mod ring_buffer;
 pub mod runtimes;
 pub mod shared_consts;
 pub mod sorted_iter;
@@ -45,8 +46,12 @@ pub mod temp_dir;
 pub mod test_utils;
 pub mod thread_pool;
 pub mod tower;
+pub mod tracing_utils;
 pub mod type_map;
 pub mod uri;
+
+mod metrics_specific;
+pub use metrics_specific::*;
 
 mod socket_addr_legacy_hash;
 
@@ -75,6 +80,17 @@ pub const fn true_fn() -> bool {
 /// serializing boolean fields with `skip_serializing_if = "is_true"` when the value is true.
 pub fn is_true(value: &bool) -> bool {
     *value
+}
+
+/// `true` when the current process is running inside an AWS Lambda runtime.
+///
+/// Detected via the presence of the `AWS_LAMBDA_FUNCTION_NAME` environment
+/// variable, which the Lambda runtime sets automatically. The result is cached
+/// on first access since environment variables are read once at process start.
+pub fn is_running_in_lambda() -> bool {
+    static IS_LAMBDA: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var_os("AWS_LAMBDA_FUNCTION_NAME").is_some());
+    *IS_LAMBDA
 }
 
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {

@@ -22,7 +22,7 @@ use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
-use quickwit_common::metrics::MEMORY_METRICS;
+use quickwit_common::metrics::{IN_FLIGHT_FETCH_STREAM, IN_FLIGHT_MULTI_FETCH_STREAM};
 use quickwit_common::retry::RetryParams;
 use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
 use quickwit_common::{ServiceStream, spawn_named_task};
@@ -36,8 +36,9 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 use super::models::ShardStatus;
+use super::state::{track_acquire_lock, warn_on_long_lock_hold};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{ClientId, IngesterPool, with_lock_metrics};
+use crate::{ClientId, IngesterPool};
 
 /// A fetch stream task is responsible for waiting and pushing new records written to a shard's
 /// record log into a channel named `fetch_message_tx`.
@@ -82,7 +83,7 @@ impl FetchStreamTask {
             .map(|offset| offset + 1)
             .unwrap_or_default();
         let (fetch_message_tx, fetch_stream) =
-            ServiceStream::new_bounded_with_gauge(3, &MEMORY_METRICS.in_flight.fetch_stream);
+            ServiceStream::new_bounded_with_gauge(3, &IN_FLIGHT_FETCH_STREAM);
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
@@ -128,8 +129,8 @@ impl FetchStreamTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
-            let mrecordlog_guard =
-                with_lock_metrics!(self.mrecordlog.read().await, "fetch", "read");
+            let (mrecordlog_guard, acquired_at) =
+                track_acquire_lock("fetch_stream", "partial", self.mrecordlog.read()).await;
 
             let Ok(mrecords) = mrecordlog_guard
                 .as_ref()
@@ -152,6 +153,8 @@ impl FetchStreamTask {
             }
             // Drop the lock while we send the message.
             drop(mrecordlog_guard);
+
+            warn_on_long_lock_hold("fetch_stream", "partial", acquired_at);
 
             if !mrecord_lengths.is_empty() {
                 let from_position_exclusive = if self.from_position_inclusive == 0 {
@@ -495,7 +498,11 @@ async fn fault_tolerant_fetch_stream(
             shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(from_position_exclusive.clone()),
         };
-        let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
+        let mut fetch_stream = match ingester
+            .client
+            .open_fetch_stream(open_fetch_stream_request)
+            .await
+        {
             Ok(fetch_stream) => fetch_stream,
             Err(not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
                 error!(
@@ -555,7 +562,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             batch_size,
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
                             // The consumer was dropped.
@@ -568,7 +575,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             ByteSize(0),
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.
@@ -628,7 +635,7 @@ pub(super) mod tests {
     use tokio::time::timeout;
 
     use super::*;
-    use crate::MRecord;
+    use crate::{IngesterPoolEntry, MRecord};
 
     pub fn into_fetch_payload(fetch_message: FetchMessage) -> FetchPayload {
         match fetch_message.message.unwrap() {
@@ -1325,8 +1332,8 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-
+        let ingester_1 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_payload = FetchPayload {
@@ -1425,7 +1432,8 @@ pub(super) mod tests {
                     "open fetch stream error".to_string(),
                 ))
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
 
         let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
@@ -1440,7 +1448,8 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let ingester_1 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
 
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
@@ -1540,7 +1549,8 @@ pub(super) mod tests {
 
                 Ok(service_stream_0)
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
 
         let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
@@ -1555,7 +1565,8 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let ingester_1 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
 
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
@@ -1658,7 +1669,8 @@ pub(super) mod tests {
                     shard_id: ShardId::from(1),
                 })
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         fault_tolerant_fetch_stream(
@@ -1746,7 +1758,8 @@ pub(super) mod tests {
 
                 Ok(service_stream_2)
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
 
         ingester_pool.insert("test-ingester".into(), ingester);
 

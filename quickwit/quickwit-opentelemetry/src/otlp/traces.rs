@@ -22,6 +22,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
@@ -44,7 +45,10 @@ use super::{
     OtelSignal, TryFromSpanIdError, TryFromTraceIdError, extract_otel_index_id_from_metadata,
     ingest_doc_batch_v2, is_zero,
 };
-use crate::otlp::metrics::OTLP_SERVICE_METRICS;
+use crate::otlp::metrics::{
+    INGESTED_BYTES_TOTAL, INGESTED_SPANS_TOTAL, OTLP_GRPC_ERROR_LABEL_NAMES, OTLP_GRPC_LABEL_NAMES,
+    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+};
 use crate::otlp::{SpanId, TraceId, extract_attributes};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_9";
@@ -677,7 +681,6 @@ impl OtlpGrpcTracesService {
         &mut self,
         request: ExportTraceServiceRequest,
         index_id: IndexId,
-        labels: [&str; 4],
     ) -> Result<ExportTraceServiceResponse, Status> {
         let ParsedSpans {
             doc_batch,
@@ -700,16 +703,11 @@ impl OtlpGrpcTracesService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_spans(index_id, doc_batch).await?;
+        self.store_spans(index_id.clone(), doc_batch).await?;
 
-        OTLP_SERVICE_METRICS
-            .ingested_spans_total
-            .with_label_values(labels)
-            .inc_by(num_spans);
-        OTLP_SERVICE_METRICS
-            .ingested_bytes_total
-            .with_label_values(labels)
-            .inc_by(num_bytes);
+        let labels = label_values!(OTLP_GRPC_LABEL_NAMES => "trace", index_id, "grpc", "protobuf");
+        counter!(parent: INGESTED_SPANS_TOTAL, labels: [labels]).inc_by(num_spans);
+        counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).inc_by(num_bytes);
 
         let response = ExportTraceServiceResponse {
             // `rejected_spans=0` and `error_message=""` is considered a "full" success.
@@ -780,29 +778,19 @@ impl OtlpGrpcTracesService {
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["trace", &index_id, "grpc", "protobuf"];
-
-        OTLP_SERVICE_METRICS
-            .requests_total
-            .with_label_values(labels)
-            .inc();
-        let (export_res, is_error) =
-            match self.export_inner(request, index_id.clone(), labels).await {
-                ok @ Ok(_) => (ok, "false"),
-                err @ Err(_) => {
-                    OTLP_SERVICE_METRICS
-                        .request_errors_total
-                        .with_label_values(labels)
-                        .inc();
-                    (err, "true")
-                }
-            };
+        let labels =
+            label_values!(OTLP_GRPC_LABEL_NAMES => "trace", index_id.clone(), "grpc", "protobuf");
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).inc();
+        let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
+            ok @ Ok(_) => (ok, "false"),
+            err @ Err(_) => {
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).inc();
+                (err, "true")
+            }
+        };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["trace", &index_id, "grpc", "protobuf", is_error];
-        OTLP_SERVICE_METRICS
-            .request_duration_seconds
-            .with_label_values(labels)
-            .observe(elapsed);
+        let error_labels = label_values!(OTLP_GRPC_ERROR_LABEL_NAMES => "trace", index_id, "grpc", "protobuf", is_error);
+        histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).observe(elapsed);
 
         export_res
     }

@@ -72,20 +72,42 @@ impl IngesterStatus {
             Self::Unspecified => "unspecified",
             Self::Initializing => "initializing",
             Self::Ready => "ready",
+            Self::Retiring => "retiring",
             Self::Decommissioning => "decommissioning",
             Self::Decommissioned => "decommissioned",
             Self::Failed => "failed",
         }
     }
-}
 
-impl OpenFetchStreamRequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(self.index_uid(), &self.source_id, self.shard_id())
+    pub fn from_json_str_name(value: &str) -> Option<Self> {
+        match value {
+            "unspecified" => Some(Self::Unspecified),
+            "initializing" => Some(Self::Initializing),
+            "ready" => Some(Self::Ready),
+            "retiring" => Some(Self::Retiring),
+            "decommissioning" => Some(Self::Decommissioning),
+            "decommissioned" => Some(Self::Decommissioned),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready)
+    }
+
+    pub fn accepts_write_requests(&self) -> bool {
+        matches!(self, Self::Ready | Self::Retiring)
     }
 }
 
-impl PersistSubrequest {
+impl std::fmt::Display for IngesterStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_json_str_name())
+    }
+}
+
+impl OpenFetchStreamRequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }

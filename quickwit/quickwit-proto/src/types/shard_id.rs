@@ -104,6 +104,7 @@ impl prost::Message for ShardId {
                         error
                     },
                 )?;
+                #[allow(deprecated)]
                 let byte_string = ByteString::try_from(value)
                     .map_err(|_| DecodeError::new("shard_id is not valid UTF-8"))?;
                 *self = Self(byte_string);

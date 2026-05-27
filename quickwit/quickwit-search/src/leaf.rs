@@ -19,6 +19,7 @@ use std::num::NonZeroUsize;
 use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -29,18 +30,19 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
-    CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats, SplitSearchError,
 };
 use quickwit_query::query_ast::{
     BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
-    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SplitCache,
+    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -54,7 +56,10 @@ use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::leaf_cache::LeafSearchCache;
-use crate::metrics::SplitSearchOutcomeCounters;
+use crate::metrics::{
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
+    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
     SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
@@ -494,7 +499,6 @@ fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
 }
 
 /// Apply a leaf search on a single split.
-#[allow(clippy::too_many_arguments)]
 async fn leaf_search_single_split(
     search_request: SearchRequest,
     ctx: Arc<LeafSearchContext>,
@@ -529,7 +533,12 @@ async fn leaf_search_single_split(
 
     let split_id = split.split_id.to_string();
     let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
+    // Wrap storage at request scope so we observe per-split download volume.
+    // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
+    // ABOVE this wrapper, so reads served from cache do not contribute to the
+    // counters — that is the desired "downloaded from object storage" semantics.
+    let (storage, download_counters) = CountingStorage::instrument_storage(storage);
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
@@ -591,20 +600,19 @@ async fn leaf_search_single_split(
             "current leaf search is consuming more memory than the initial allocation"
         );
     }
-    crate::SEARCH_METRICS
-        .leaf_search_single_split_warmup_num_bytes
-        .observe(warmup_size.as_u64() as f64);
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
     let split_num_docs = split.num_docs;
-
     let span = info_span!("tantivy_search");
 
     let split_clone = split.clone();
 
     let ctx_clone = ctx.clone();
+    let download_counters_clone = download_counters.clone();
     leaf_search_state_guard.set_state(SplitSearchState::CpuQueue);
+    let wait_for_search_permit: Duration = search_permit.wait_for_acquisition();
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
@@ -630,14 +638,52 @@ async fn leaf_search_single_split(
                     } else {
                         searcher.search(&query, &collector)?
                     };
-                leaf_search_response.resource_stats = Some(ResourceStats {
-                    cpu_microsecs: cpu_start.elapsed().as_micros() as u64,
-                    short_lived_cache_num_bytes: warmup_size.as_u64(),
+                let (download_num_bytes, download_num_requests) =
+                    download_counters_clone.snapshot();
+                let split_stats = SplitResourceStats {
                     split_num_docs,
+                    matched_num_docs: leaf_search_response.num_hits,
+                    input_memory_bytes: warmup_size.as_u64(),
+                    download_num_bytes,
+                    download_num_requests,
+                    wait_for_search_permit_microsecs: wait_for_search_permit.as_micros() as u64,
                     warmup_microsecs: warmup_duration.as_micros() as u64,
-                    cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
-                        as u64,
-                });
+                    wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
+                    cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
+                };
+                let resource_stats = if quickwit_common::is_running_in_lambda() {
+                    // Running inside an AWS Lambda runtime: this split was
+                    // dispatched here via lambda offload. Per the proto
+                    // contract, lambda-executed splits do not contribute
+                    // to `split_resources_worst` / `split_resources_sum` — those
+                    // aggregates are reserved for locally-executed splits.
+                    //
+                    // Only the success counters are set here. The
+                    // `lambda_num_*` totals (success + failure) are
+                    // injected once by the caller in
+                    // `run_offloaded_search_tasks` so they reflect every
+                    // dispatched split, not just the ones that came back.
+                    LeafResourceStats {
+                        lambda_success_num_splits: 1,
+                        lambda_success_num_docs: split_num_docs,
+                        ..Default::default()
+                    }
+                } else {
+                    LeafResourceStats {
+                        localexec_num_splits: 1,
+                        localexec_num_docs: split_num_docs,
+                        split_resources_sum: Some(split_stats),
+                        split_resources_worst: Some(split_stats),
+                        min_wait_for_search_permit_microsecs: Some(
+                            split_stats.wait_for_search_permit_microsecs,
+                        ),
+                        min_wait_for_cpu_pool_microsecs: Some(
+                            split_stats.wait_for_cpu_pool_microsecs,
+                        ),
+                        ..Default::default()
+                    }
+                };
+                leaf_search_response.resource_stats = Some(resource_stats);
                 leaf_search_state_guard.set_state(SplitSearchState::Success);
                 Result::<_, TantivyError>::Ok(Some((
                     simplified_search_request,
@@ -844,28 +890,24 @@ fn remove_redundant_timestamp_range(
             }
         }
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
-        (timestamp, None) => timestamp,
+        (query_bound, None) => query_bound,
     };
-    let final_end_timestamp = match (
-        visitor.end_timestamp,
-        split.timestamp_end.map(DateTime::from_timestamp_secs),
-    ) {
-        (Bound::Included(query_ts), Some(split_ts)) => {
-            if query_ts < split_ts {
-                Bound::Included(query_ts)
-            } else {
-                Bound::Unbounded
-            }
-        }
-        (Bound::Excluded(query_ts), Some(split_ts)) => {
-            if query_ts <= split_ts {
-                Bound::Excluded(query_ts)
+    let final_end_timestamp = match (visitor.end_timestamp, split.timestamp_end) {
+        (
+            query_bound @ (Bound::Included(query_ts) | Bound::Excluded(query_ts)),
+            Some(split_end),
+        ) => {
+            // split.timestamp_end is the truncation of the highest timestamp in the split,
+            // so the actual known bound for the split is split.timestamp_end+1 (exclusive)
+            let split_end_exclusive = DateTime::from_timestamp_secs(split_end + 1);
+            if query_ts < split_end_exclusive {
+                query_bound
             } else {
                 Bound::Unbounded
             }
         }
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
-        (timestamp, None) => timestamp,
+        (query_bound, None) => query_bound,
     };
     if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
         let range = RangeQuery {
@@ -1252,6 +1294,7 @@ pub async fn multi_index_leaf_search(
     leaf_search_request: LeafSearchRequest,
     storage_resolver: StorageResolver,
 ) -> Result<LeafSearchResponse, SearchError> {
+    let leaf_start = Instant::now();
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
         .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
@@ -1335,11 +1378,21 @@ pub async fn multi_index_leaf_search(
         }
     }
 
-    crate::search_thread_pool()
-        .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+    let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
+        .run_cpu_intensive(|| {
+            incremental_merge_collector
+                .finalize()
+                .map_err(SearchError::from)
+        })
         .instrument(info_span!("incremental_merge_finalize"))
         .await
-        .context("failed to merge split search responses")?
+        .context("failed to merge split search responses")??;
+    let wall_time_microsecs = leaf_start.elapsed().as_micros() as u64;
+    leaf_search_response
+        .resource_stats
+        .get_or_insert_with(LeafResourceStats::default)
+        .wall_time_microsecs = wall_time_microsecs;
+    Ok(leaf_search_response)
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter
@@ -1432,6 +1485,14 @@ async fn run_offloaded_search_tasks(
         })
         .collect();
 
+    // Totals across every split dispatched to lambda (success + failure).
+    // These land authoritatively in the merged `LeafResourceStats` via a
+    // single synthetic injection at the end of this function. Per-split
+    // success contributions are added inline through each lambda response's
+    // own `resource_stats`.
+    let lambda_num_splits: u64 = splits.len() as u64;
+    let lambda_num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+
     let batches: Vec<Vec<SplitIdAndFooterOffsets>> = greedy_batch_split(
         splits,
         |split| split.num_docs,
@@ -1474,6 +1535,7 @@ async fn run_offloaded_search_tasks(
                 for split_result in split_results {
                     match split_result.outcome {
                         Some(Outcome::Response(response)) => {
+                            let response = *response;
                             if let Some((split_info, single_split_search_req)) =
                                 split_lookup.remove(&split_result.split_id)
                             {
@@ -1524,6 +1586,15 @@ async fn run_offloaded_search_tasks(
             }
         }
     }
+
+    // Record the dispatch totals (every split offloaded, regardless of
+    // outcome). The per-split lambda responses only contribute to
+    // `lambda_success_*`; this call is the authoritative source for
+    // `lambda_num_*`.
+    incremental_merge_collector
+        .lock()
+        .unwrap()
+        .add_lambda_totals(lambda_num_splits, lambda_num_docs);
 
     Ok(())
 }
@@ -1630,7 +1701,7 @@ pub async fn single_doc_mapping_leaf_search(
         make_merge_collector(&request, searcher_context.get_aggregation_limits())?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
-    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::new_unregistered());
+    let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::default());
 
     // Sort out the splits that are already in the partial result cache.
     let uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
@@ -1648,6 +1719,8 @@ pub async fn single_doc_mapping_leaf_search(
         local_search_tasks,
         offloaded_search_tasks,
     } = schedule_search_tasks(uncached_splits, &searcher_context).await;
+
+    let has_offloaded_tasks = !offloaded_search_tasks.is_empty();
 
     // Offload splits to Lambda.
     let run_offloaded_search_tasks_fut = run_offloaded_search_tasks(
@@ -1674,9 +1747,29 @@ pub async fn single_doc_mapping_leaf_search(
         leaf_search_context,
     );
 
-    let (offloaded_res, _) =
-        tokio::join!(run_offloaded_search_tasks_fut, run_local_search_tasks_fut);
+    // Each path stores its own outcome on completion (offloaded → true,
+    // local → false). The load after `tokio::join!` therefore observes the
+    // value written by whichever future finished last: lambda was the
+    // bottleneck iff the offloaded path is the last one to write.
+    let offloaded_is_bottleneck = AtomicBool::new(false);
+    let timed_local_fut = async {
+        run_local_search_tasks_fut.await;
+        offloaded_is_bottleneck.store(false, Ordering::Relaxed);
+    };
+    let timed_offloaded_fut = async {
+        let result = run_offloaded_search_tasks_fut.await;
+        offloaded_is_bottleneck.store(true, Ordering::Relaxed);
+        result
+    };
+    let (offloaded_res, ()) = tokio::join!(timed_offloaded_fut, timed_local_fut);
     offloaded_res?;
+
+    // We defensively ensure that lambda bottleneck is set to 0 if there were no lambdas.
+    let lambda_bottleneck: u64 = if has_offloaded_tasks {
+        u64::from(offloaded_is_bottleneck.load(Ordering::Relaxed))
+    } else {
+        0u64
+    };
 
     // we can't use unwrap_or_clone because mutexes aren't Clone
     let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector_arc) {
@@ -1691,7 +1784,12 @@ pub async fn single_doc_mapping_leaf_search(
             .await
             .context("failed to merge split search responses: thread panicked")?;
 
-    Ok(leaf_search_response_result?)
+    let mut leaf_search_response = leaf_search_response_result?;
+    leaf_search_response
+        .resource_stats
+        .get_or_insert_default()
+        .lambda_bottleneck = lambda_bottleneck;
+    Ok(leaf_search_response)
 }
 
 async fn run_local_search_tasks(
@@ -1786,6 +1884,9 @@ fn process_partial_result_cache(
             // TODO remove the clone here.
             .get(split.clone(), search_request.clone())
         {
+            // The cached response already carries cache-hit `resource_stats`
+            // (set at write time by `LeafSearchCache::put`), so no per-read
+            // rewrite is needed here.
             let mut split_search_guard = SplitSearchStateGuard::new(split_outcome_counters.clone());
             split_search_guard.set_state(SplitSearchState::CacheHit);
             incremental_merge_collector.add_result(cached_response)?;
@@ -1809,7 +1910,7 @@ enum SplitSearchState {
 }
 
 impl SplitSearchState {
-    pub fn inc(self, counters: &SplitSearchOutcomeCounters) {
+    fn increment(self, counters: &SplitSearchOutcomeCounters) {
         match self {
             SplitSearchState::Start => counters.cancel_before_warmup.inc(),
             SplitSearchState::CacheHit => counters.cache_hit.inc(),
@@ -1825,9 +1926,9 @@ impl SplitSearchState {
 
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
+        self.state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
         self.state
-            .inc(&crate::metrics::SEARCH_METRICS.split_search_outcome_total);
-        self.state.inc(&self.local_split_search_outcome_counters);
+            .increment(&self.local_split_search_outcome_counters);
     }
 }
 
@@ -1840,7 +1941,7 @@ impl SplitSearchStateGuard {
     pub fn new(local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>) -> Self {
         SplitSearchStateGuard {
             state: SplitSearchState::Start,
-            local_split_search_outcome_counters: local_split_search_outcome_counters.clone(),
+            local_split_search_outcome_counters,
         }
     }
 
@@ -1857,7 +1958,6 @@ struct LeafSearchContext {
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
 }
 
-#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
@@ -1866,9 +1966,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
-    let timer = crate::SEARCH_METRICS
-        .leaf_search_split_duration_secs
-        .start_timer();
+    let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
             request,
@@ -1924,7 +2022,7 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_directories::write_hotcache;
     use quickwit_proto::search::LambdaSingleSplitResult;
-    use rand::Rng;
+    use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
@@ -1998,6 +2096,11 @@ mod tests {
         };
         remove_timestamp_test_case(&search_request, &split, None);
 
+        let expected_upper_inclusive = RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+        };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
@@ -2007,7 +2110,7 @@ mod tests {
             .unwrap(),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, None);
+        remove_timestamp_test_case(&search_request, &split, Some(expected_upper_inclusive));
 
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
@@ -2050,10 +2153,10 @@ mod tests {
             Some(expected_upper_exclusive.clone()),
         );
 
-        let expected_lower_exclusive = RangeQuery {
+        let expected_lower_excl_upper_incl = RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
-            upper_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
@@ -2067,10 +2170,22 @@ mod tests {
         remove_timestamp_test_case(
             &search_request,
             &split,
-            Some(expected_lower_exclusive.clone()),
+            Some(expected_lower_excl_upper_incl.clone()),
         );
+    }
 
-        // we take the most restrictive bounds
+    #[test]
+    fn test_remove_timestamp_range_multiple_bounds() {
+        // When bounds are defined both in the AST and in the search request,
+        // make sure we take the most restrictive ones.
+        const S_TO_NS: i64 = 1_000_000_000;
+        let time1 = 1700001000;
+        let time2 = 1700002000;
+        let time3 = 1700003000;
+        let time4 = 1700004000;
+
+        let timestamp_field = "timestamp".to_string();
+
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time1),
             timestamp_end: Some(time4),
@@ -2113,10 +2228,10 @@ mod tests {
         };
         remove_timestamp_test_case(&search_request, &split, Some(expected_upper_2_inc));
 
-        let expected_lower_3 = RangeQuery {
+        let expected_lower_3_upper_4 = RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Included((time3 * S_TO_NS).into()),
-            upper_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time4 * S_TO_NS).into()),
         };
 
         let search_request = SearchRequest {
@@ -2130,7 +2245,11 @@ mod tests {
             end_timestamp: Some(time4 + 1),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3.clone()));
+        remove_timestamp_test_case(
+            &search_request,
+            &split,
+            Some(expected_lower_3_upper_4.clone()),
+        );
 
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
@@ -2143,7 +2262,7 @@ mod tests {
             end_timestamp: Some(time4 + 1),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3));
+        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3_upper_4));
 
         let mut search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),

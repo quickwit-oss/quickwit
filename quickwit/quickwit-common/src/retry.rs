@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
-use rand::Rng;
+use rand::RngExt;
 use tracing::{debug, warn};
 
 pub trait Retryable {

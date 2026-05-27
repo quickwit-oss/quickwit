@@ -15,8 +15,10 @@
 mod chinese_compatible;
 mod code_tokenizer;
 mod tokenizer_manager;
+mod unicode_segmenter_tokenizer;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use tantivy::tokenizer::{
     AsciiFoldingFilter, LowerCaser, RawTokenizer, RemoveLongFilter, SimpleTokenizer, TextAnalyzer,
     WhitespaceTokenizer,
@@ -25,6 +27,7 @@ use tantivy::tokenizer::{
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
 pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
+pub use self::unicode_segmenter_tokenizer::UnicodeSegmenterTokenizer;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -79,6 +82,16 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
         true,
     );
+    let unicode_segmenter_tokenizer = TextAnalyzer::builder(UnicodeSegmenterTokenizer)
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
+    tokenizer_manager.register(
+        "unicode_segmenter",
+        unicode_segmenter_tokenizer.clone(),
+        true,
+    );
+    tokenizer_manager.register("datadog", unicode_segmenter_tokenizer, true);
     tokenizer_manager
 }
 
@@ -97,8 +110,8 @@ fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
 }
 
 pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
-    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
-        Lazy::new(create_quickwit_fastfield_normalizer_manager);
+    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: LazyLock<TokenizerManager> =
+        LazyLock::new(create_quickwit_fastfield_normalizer_manager);
     &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
 }
 

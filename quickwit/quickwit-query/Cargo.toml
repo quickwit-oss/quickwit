@@ -15,12 +15,12 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 bitpacking = { workspace = true }
 hex = { workspace = true }
-once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
+unicode-segmentation = { workspace = true }
 tantivy-fst = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
