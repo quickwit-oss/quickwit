@@ -386,7 +386,7 @@ pub async fn setup_local_shards_update_listener(
                 warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
-            let leader_id: NodeId = event.node.node_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&event.node.node_id);
 
             let local_shards_update = LocalShardsUpdate {
                 leader_id,
@@ -573,7 +573,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(2),
-            NodeId::from("test-leader"),
+            NodeId::from_str("test-leader"),
         )
         .advertisable()
         .build();

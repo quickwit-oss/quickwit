@@ -345,8 +345,8 @@ impl ReplicationClient {
         commit_type: CommitTypeV2,
     ) -> impl Future<Output = Result<ReplicateResponse, ReplicationError>> + Send + 'static {
         let replicate_request = ReplicateRequest {
-            leader_id: leader_id.into(),
-            follower_id: follower_id.into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             subrequests,
             commit_type: commit_type as i32,
             replication_seqno: 0, // replication number are generated further down
@@ -469,7 +469,7 @@ impl ReplicationTask {
         let index_uid = replica_shard.index_uid().clone();
         let shard_id = replica_shard.shard_id().clone();
         let source_id = replica_shard.source_id;
-        let leader_id = NodeId::from(replica_shard.leader_id);
+        let leader_id = NodeId::from_str(&replica_shard.leader_id);
 
         let replica_shard =
             IngesterShard::new_replica(index_uid, source_id, shard_id, leader_id).build();
@@ -703,7 +703,7 @@ impl ReplicationTask {
 
         report_wal_usage(wal_usage);
 
-        let follower_id = self.follower_id.clone().into();
+        let follower_id = self.follower_id.to_string();
 
         let replicate_response = ReplicateResponse {
             follower_id,
@@ -822,8 +822,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_task_init() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
         let (ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -869,8 +869,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_task_replicate() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
         let (ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -995,8 +995,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_replicate_errors() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, _syn_replication_stream_rx) = mpsc::channel(5);
         let (_ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -1033,8 +1033,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_happy_path() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1304,8 +1304,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_shard_closed() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1389,8 +1389,8 @@ mod tests {
     #[cfg(not(feature = "failpoints"))]
     #[tokio::test]
     async fn test_replication_task_deletes_dangling_shard() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1485,8 +1485,8 @@ mod tests {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ingester:append_records", "return").unwrap();
 
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1582,8 +1582,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_resource_exhausted() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],

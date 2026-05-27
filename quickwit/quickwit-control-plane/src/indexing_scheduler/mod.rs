@@ -406,7 +406,7 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| indexer.node_id == *node_id)
+                    .find(|indexer| indexer.node_id == node_id.as_str())
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();

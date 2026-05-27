@@ -587,7 +587,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = "test-source".to_string();
         let pipeline_id = MergePipelineId {
