@@ -29,7 +29,7 @@ use chitchat::{
 use itertools::Itertools;
 use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::{NodeId, NodeIdRef, PipelineUid, ShardId};
+use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
 #[cfg(any(test, feature = "testsuite"))]
@@ -99,9 +99,9 @@ impl Cluster {
 
     /// Waits until the predicate holds true for the set of ready members.
     ///
-    /// Subscribes to `change_stream()`, which first emits `Add` events for all currently-ready
-    /// nodes (under the write lock, so no change can slip through), then future change events.
-    /// The local map is updated on each event and the predicate is checked after each update.
+    /// Uses `change_stream_with_initial()` to obtain the current ready set atomically alongside
+    /// the subscription, so the predicate is evaluated on the full initial set before any future
+    /// change event arrives.
     pub async fn wait_for_ready_members<F>(
         &self,
         mut predicate: F,
@@ -110,8 +110,15 @@ impl Cluster {
     where
         F: FnMut(&[ClusterMember]) -> bool,
     {
-        let mut change_stream = self.change_stream();
-        let mut ready_members: BTreeMap<NodeId, ClusterMember> = BTreeMap::new();
+        let (initial_nodes, mut change_stream) = self.change_stream_with_initial().await;
+        let mut ready_members: BTreeMap<NodeId, ClusterMember> = initial_nodes
+            .into_iter()
+            .map(|node| (node.node_id.clone(), node.member().clone()))
+            .collect();
+        let members: Vec<ClusterMember> = ready_members.values().cloned().collect();
+        if predicate(&members) {
+            return Ok(());
+        }
         timeout(timeout_after, async move {
             while let Some(change) = change_stream.next().await {
                 match change {
@@ -146,8 +153,8 @@ impl Cluster {
         &self.self_chitchat_id
     }
 
-    pub fn self_node_id(&self) -> &NodeIdRef {
-        NodeIdRef::from_str(&self.self_chitchat_id.node_id)
+    pub fn self_node_id(&self) -> NodeId {
+        NodeId::from_arc_str(self.self_chitchat_id.node_id.clone())
     }
 
     pub fn gossip_listen_addr(&self) -> SocketAddr {
@@ -271,6 +278,9 @@ impl Cluster {
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
+    ///
+    /// Replays currently-ready nodes as `Add` events before future changes, under the write lock,
+    /// so no change can slip through unobserved.
     pub fn change_stream(&self) -> ClusterChangeStream {
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let inner = self.inner.clone();
@@ -288,6 +298,25 @@ impl Cluster {
         };
         tokio::spawn(future);
         change_stream
+    }
+
+    /// Returns the current snapshot of ready nodes and a stream of future changes.
+    ///
+    /// Unlike `change_stream()`, the initial ready set is returned as a `Vec` rather than replayed
+    /// as individual `Add` events. The write lock is held for the duration of the snapshot so the
+    /// returned pair is consistent: no change event can arrive between the snapshot and the first
+    /// stream item.
+    pub async fn change_stream_with_initial(&self) -> (Vec<ClusterNode>, ClusterChangeStream) {
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+        let mut inner = self.inner.write().await;
+        let initial_nodes: Vec<ClusterNode> = inner
+            .live_nodes
+            .values()
+            .filter(|node| node.is_ready)
+            .cloned()
+            .collect();
+        inner.change_stream_subscribers.push(change_stream_tx);
+        (initial_nodes, change_stream)
     }
 
     /// Returns whether the self node is ready.

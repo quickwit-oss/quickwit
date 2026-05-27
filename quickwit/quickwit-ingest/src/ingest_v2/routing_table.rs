@@ -630,8 +630,14 @@ mod tests {
     fn test_classify_az_locality() {
         let table = RoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
-        pool.insert(NodeId::from_str("node-local"), mocked_ingester(Some("az-1")));
-        pool.insert(NodeId::from_str("node-remote"), mocked_ingester(Some("az-2")));
+        pool.insert(
+            NodeId::from_str("node-local"),
+            mocked_ingester(Some("az-1")),
+        );
+        pool.insert(
+            NodeId::from_str("node-remote"),
+            mocked_ingester(Some("az-2")),
+        );
         pool.insert(NodeId::from_str("node-no-az"), mocked_ingester(None));
 
         assert_eq!(

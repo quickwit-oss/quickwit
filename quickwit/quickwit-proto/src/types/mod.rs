@@ -96,6 +96,7 @@ impl Display for SourceUid {
 pub struct NodeId(Arc<str>);
 
 impl NodeId {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(node_id: &str) -> Self {
         Self(Arc::from(node_id))
     }

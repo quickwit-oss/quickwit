@@ -1283,8 +1283,11 @@ pub(super) mod tests {
     fn test_select_preferred_and_failover_ingesters() {
         let self_node_id = NodeId::from_str("test-ingester-0");
 
-        let (preferred, failover) =
-            select_preferred_and_failover_ingesters(&self_node_id, NodeId::from_str("test-ingester-0"), None);
+        let (preferred, failover) = select_preferred_and_failover_ingesters(
+            &self_node_id,
+            NodeId::from_str("test-ingester-0"),
+            None,
+        );
         assert_eq!(preferred, "test-ingester-0");
         assert!(failover.is_none());
 
@@ -1313,7 +1316,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec![NodeId::from_str("test-ingester-0"), NodeId::from_str("test-ingester-1")];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1411,7 +1417,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec![NodeId::from_str("test-ingester-0"), NodeId::from_str("test-ingester-1")];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1529,7 +1538,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec![NodeId::from_str("test-ingester-0"), NodeId::from_str("test-ingester-1")];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1649,7 +1661,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec![NodeId::from_str("test-ingester-0"), NodeId::from_str("test-ingester-1")];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);

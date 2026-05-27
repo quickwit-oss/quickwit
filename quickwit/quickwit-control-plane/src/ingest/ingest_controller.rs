@@ -3619,7 +3619,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
             };
-            ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
+            ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
 
         let unavailable_ids: Vec<String> = (0..unavailable_ingester_shards.len())
@@ -3636,7 +3636,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
             };
-            ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
+            ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
 
         let mut shards: Vec<Shard> = Vec::new();
@@ -3777,7 +3777,7 @@ mod tests {
                     status: IngesterStatus::Decommissioned,
                     availability_zone: None,
                 };
-                ingester_pool.insert(NodeId::from_str(&ingester_id), ingester);
+                ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
             }
             model.insert_shards(&index_uid, &source_id, opened_shards);
 

@@ -117,7 +117,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                 .chitchat_id
                 .expect("`chitchat_id` should be a required field");
             let chitchat_id = ChitchatId {
-                node_id: Arc::from(proto_chitchat_id.node_id.as_str()),
+                node_id: Arc::<str>::from(proto_chitchat_id.node_id),
                 generation_id: proto_chitchat_id.generation_id,
                 gossip_advertise_addr: proto_chitchat_id
                     .gossip_advertise_addr

@@ -129,7 +129,7 @@ impl Ingester {
         replication_factor: usize,
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().to_owned();
+        let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
             cluster.clone(),
             wal_dir_path,
@@ -221,7 +221,7 @@ impl Ingester {
 
         let primary_shard = if let Some(follower_id) = &shard.follower_id {
             let leader_id: NodeId = NodeId::from_str(&shard.leader_id);
-            let follower_id: NodeId = NodeId::from_str(&follower_id);
+            let follower_id: NodeId = NodeId::from_str(follower_id);
 
             let replication_client = self
                 .init_replication_stream(
