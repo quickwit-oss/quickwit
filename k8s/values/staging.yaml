@@ -185,6 +185,7 @@ control_plane:
 
 indexer:
   replicaCount: 70
+  podManagementPolicy: Parallel
 
   initContainers:
     - *ddApiKeyInitContainer
