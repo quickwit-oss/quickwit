@@ -62,6 +62,8 @@ enum FieldMapping {
 }
 
 impl ElasticsearchMappingsResponse {
+    /// Builds a response from declared doc-mapping field mappings, optionally
+    /// merged with dynamic fields from a `ListFields` response.
     pub fn from_doc_mapping(
         indexes_metadata: Vec<IndexMetadata>,
         list_fields_response: Option<&ListFieldsResponse>,
@@ -272,10 +274,10 @@ mod tests {
         assert_eq!(meta["properties"]["source"]["type"], "keyword");
     }
 
+    use quickwit_proto::search::ListFieldsEntry;
+
     #[test]
     fn test_merge_dynamic_fields_skips_existing_and_internal() {
-        use quickwit_proto::search::ListFieldsEntry;
-
         let mut properties = HashMap::new();
         properties.insert("title".to_string(), FieldMapping::Leaf { typ: "text" });
 
