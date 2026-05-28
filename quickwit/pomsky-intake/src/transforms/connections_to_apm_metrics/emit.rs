@@ -230,11 +230,9 @@ fn apply_connection_tags(tags: &mut MetricTags, ct: &super::types::ConnectionTag
 /// with seed=0. We replicate that exactly so resource IDs emitted by BYOC
 /// match the SaaS UI's expected format (lowercase hex, no leading zeros).
 fn hash_resource(resource: &str) -> String {
-    let mut cursor = std::io::Cursor::new(resource.as_bytes());
-    let h128 = murmur3::murmur3_x64_128(&mut cursor, 0)
-        .expect("murmur3 over an in-memory cursor cannot fail");
-    let h64 = (h128 & 0xFFFF_FFFF_FFFF_FFFF) as u64;
-    format!("{h64:x}")
+    let h128 = murmur3::murmur3_x64_128(&mut resource.as_bytes(), 0)
+        .expect("murmur3 over an in-memory slice cannot fail");
+    format!("{:x}", h128 as u64)
 }
 
 #[cfg(test)]

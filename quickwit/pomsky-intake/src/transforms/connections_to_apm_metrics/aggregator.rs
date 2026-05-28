@@ -52,31 +52,15 @@ fn status_class_sort_value(status: i32) -> u8 {
 }
 
 /// Compare stats by the fine-grained `BucketKey` fields without allocating
-/// temporary operation strings.
+/// temporary operation strings. `Option<String>` fields compare directly via
+/// the derived `Ord`: `None < Some(_)` (and `None != Some("")`), matching the
+/// `BucketKey`'s `Hash`/`Eq` so the sort and the bucket identity agree.
 fn cmp_by_bucket_key(left: &UsmStat, right: &UsmStat) -> Ordering {
     left.service
         .cmp(&right.service)
-        .then_with(|| {
-            left.tags
-                .env
-                .as_deref()
-                .unwrap_or("")
-                .cmp(right.tags.env.as_deref().unwrap_or(""))
-        })
-        .then_with(|| {
-            left.tags
-                .version
-                .as_deref()
-                .unwrap_or("")
-                .cmp(right.tags.version.as_deref().unwrap_or(""))
-        })
-        .then_with(|| {
-            left.tags
-                .tls_library
-                .as_deref()
-                .unwrap_or("")
-                .cmp(right.tags.tls_library.as_deref().unwrap_or(""))
-        })
+        .then_with(|| left.tags.env.cmp(&right.tags.env))
+        .then_with(|| left.tags.version.cmp(&right.tags.version))
+        .then_with(|| left.tags.tls_library.cmp(&right.tags.tls_library))
         .then_with(|| left.tags.iis_tags.cmp(&right.tags.iis_tags))
         .then_with(|| left.operation.as_str().cmp(right.operation.as_str()))
         .then_with(|| left.direction.as_str().cmp(right.direction.as_str()))
