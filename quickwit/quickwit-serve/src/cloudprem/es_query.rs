@@ -26,6 +26,7 @@ use serde_json::Value;
 use tracing::warn;
 
 use crate::BuildInfo;
+use crate::cloudprem::es_mapping::cloudprem_index_mapping;
 use crate::elasticsearch_api::model::{
     CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     IndexMappingQueryParams, MultiSearchQueryParams, ScrollQueryParams, SearchBody,
@@ -34,9 +35,9 @@ use crate::elasticsearch_api::model::{
 use crate::elasticsearch_api::rest_handler::{
     es_compat_aliases, es_compat_cat_indices, es_compat_cluster_health_check,
     es_compat_cluster_info, es_compat_delete_scroll, es_compat_index_cat_indices,
-    es_compat_index_count, es_compat_index_field_capabilities, es_compat_index_mapping,
-    es_compat_index_multi_search, es_compat_index_search, es_compat_index_stats,
-    es_compat_nodes_info, es_compat_resolve_index, es_compat_search_shards, es_scroll,
+    es_compat_index_count, es_compat_index_field_capabilities, es_compat_index_multi_search,
+    es_compat_index_search, es_compat_index_stats, es_compat_nodes_info, es_compat_resolve_index,
+    es_compat_search_shards, es_scroll,
 };
 
 /// Dispatches an async ES handler call, converting `Ok` to a JSON response
@@ -143,7 +144,7 @@ pub(crate) async fn handle_es_query(
         // --- Index-scoped endpoints ---
         [index, "_mapping" | "_mappings"] => {
             let params = parse_query_params::<IndexMappingQueryParams>(query_string)?;
-            dispatch_es!(es_compat_index_mapping(
+            dispatch_es!(cloudprem_index_mapping(
                 index.to_string(),
                 params,
                 metastore,
