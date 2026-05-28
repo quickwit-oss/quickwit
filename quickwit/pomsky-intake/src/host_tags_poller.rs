@@ -95,6 +95,9 @@ struct HostTagEntry {
     // (not `[]`) when no tags are known; `Vec<String>` would reject null.
     #[serde(default)]
     tags: Option<Vec<String>>,
+    // Numeric HMS host ID — absent on older API versions, hence `Option`.
+    #[serde(default)]
+    host_id: Option<i64>,
     // Go server marshals this with `omitempty` — field is absent on
     // success. `default` lets serde accept the missing field.
     #[serde(default)]
@@ -111,6 +114,10 @@ struct CacheEntry {
     hostname: String,
     /// Tags in `"key:value"` format (same as the metadata service response).
     tags: Vec<String>,
+    /// Numeric HMS host ID; absent in cache files written before this field
+    /// was added (older entries deserialise cleanly with `None`).
+    #[serde(default)]
+    host_id: Option<i64>,
     /// Unix timestamp (seconds) at which this entry expires.
     expires_at_unix: UnixTimestamp,
 }
@@ -174,6 +181,7 @@ pub fn load_cache(path: &Path) -> anyhow::Result<HostTagsMap> {
             .collect();
         let host_tags_entry = HostTagsEntry {
             tags,
+            host_id: cache_entry.host_id,
             expires_at: cache_entry.expires_at_unix,
         };
         map.insert(cache_entry.hostname, host_tags_entry);
@@ -196,6 +204,7 @@ fn save_cache(path: &Path, store: &HostTagsStore) -> anyhow::Result<()> {
         let cache_entry = CacheEntry {
             hostname: host.clone(),
             tags: encoded_tags,
+            host_id: entry.host_id,
             expires_at_unix: entry.expires_at,
         };
         serde_json::to_writer(&mut tmp, &cache_entry)?;
@@ -329,10 +338,17 @@ pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
                 let now_after_fetch = UnixTimestamp::now();
                 let fresh_entries: HostTagsMap = raw_tags
                     .into_iter()
-                    .map(|(host, tags)| {
+                    .map(|(host, (tags, host_id))| {
                         let ttl = random_ttl(ttl_min, ttl_max);
                         let expires_at = now_after_fetch + ttl;
-                        (host, HostTagsEntry { tags, expires_at })
+                        (
+                            host,
+                            HostTagsEntry {
+                                tags,
+                                host_id,
+                                expires_at,
+                            },
+                        )
                     })
                     .collect();
                 let fetched_count = fresh_entries.len();
@@ -365,7 +381,7 @@ async fn fetch_host_tags(
     endpoint: &str,
     api_key: &SecretString,
     hosts: &[String],
-) -> anyhow::Result<HashMap<String, Arc<[HostTag]>>> {
+) -> anyhow::Result<HashMap<String, (Arc<[HostTag]>, Option<i64>)>> {
     let response = client
         .post(endpoint)
         .header("DD-API-KEY", api_key.expose_secret())
@@ -393,7 +409,7 @@ async fn fetch_host_tags(
             .iter()
             .filter_map(|tag| parse_tag(tag))
             .collect();
-        result.insert(entry.hostname, tags);
+        result.insert(entry.hostname, (tags, entry.host_id));
     }
 
     Ok(result)

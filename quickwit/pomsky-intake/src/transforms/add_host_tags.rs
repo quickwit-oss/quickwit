@@ -146,16 +146,16 @@ fn add_metric_tags(store: &HostTagsStore, collector: &UnknownHostsCollector, met
     }
 }
 
-/// Traces (post-explode): hostname lives in `meta.host`.
-/// Host tags are added under the `meta` object.
+/// Traces (post-preprocess): hostname lives in the top-level `host` field,
+/// promoted there by `span_to_schema`'s `promote_host_and_env` step before
+/// `meta` is folded into `custom`. Host tags and `host_id` are inserted as
+/// top-level fields so they are available to downstream sinks.
 fn add_trace_tags(
     store: &HostTagsStore,
     collector: &UnknownHostsCollector,
     trace: &mut TraceEvent,
 ) {
-    let hostname_opt = trace
-        .get("meta.host")
-        .and_then(|hostname| hostname.as_str());
+    let hostname_opt = trace.get("host").and_then(|hostname| hostname.as_str());
     let Some(hostname) = hostname_opt else {
         return;
     };
@@ -166,12 +166,26 @@ fn add_trace_tags(
     if tags.is_expired(UnixTimestamp::now()) {
         collector.record(hostname.to_string());
     }
+    // After span_to_schema, meta has been folded into custom. Insert host
+    // tags directly into custom.{key} so they land in the catch-all JSON
+    // field that downstream consumers (trace-query) read.
     for (key, value) in tags.iter() {
-        let path = format!("meta.{key}");
+        let path = format!("custom.{key}");
 
         if trace.get(path.as_str()).is_none() {
             trace.insert(path.as_str(), value);
         }
+    }
+    // Populate the host_id fast field if the metadata service returned one
+    // and the span doesn't already carry a non-zero value.
+    if let Some(host_id) = tags.host_id
+        && trace
+            .get("host_id")
+            .and_then(|v| v.as_integer())
+            .map(|v| v == 0)
+            .unwrap_or(true)
+    {
+        trace.insert("host_id", host_id);
     }
 }
 
