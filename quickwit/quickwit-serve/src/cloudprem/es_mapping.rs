@@ -61,15 +61,23 @@ fn all_flat_field_names(names: &[String]) -> bool {
         .all(|name| !name.contains('*') && !name.contains('?') && !name.contains('.'))
 }
 
+/// Every resolved index must declare every requested name. A union across
+/// indexes is unsafe for multi-index requests: if a name is declared in one
+/// index but only dynamic in another, the fast path would silently drop the
+/// dynamic occurrence that the slow path's `list_fields` would have surfaced.
 fn all_requested_declared(requested: &[String], indexes_metadata: &[IndexMetadata]) -> bool {
-    let declared: HashSet<&str> = indexes_metadata
-        .iter()
-        .flat_map(|m| m.index_config.doc_mapping.field_mappings.iter())
-        .map(|entry| entry.name.as_str())
-        .collect();
-    requested
-        .iter()
-        .all(|name| declared.contains(name.as_str()))
+    indexes_metadata.iter().all(|metadata| {
+        let declared: HashSet<&str> = metadata
+            .index_config
+            .doc_mapping
+            .field_mappings
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        requested
+            .iter()
+            .all(|name| declared.contains(name.as_str()))
+    })
 }
 
 #[cfg(test)]
@@ -124,10 +132,30 @@ mod tests {
     }
 
     #[test]
-    fn all_requested_declared_unions_across_indexes() {
-        let m1 = make_index_metadata("a", json!([{ "name": "host", "type": "text" }]));
-        let m2 = make_index_metadata("b", json!([{ "name": "message", "type": "text" }]));
+    fn all_requested_declared_true_when_every_index_declares_all() {
+        let fields = json!([
+            { "name": "host", "type": "text" },
+            { "name": "message", "type": "text" },
+        ]);
+        let m1 = make_index_metadata("a", fields.clone());
+        let m2 = make_index_metadata("b", fields);
         let requested = vec!["host".to_string(), "message".to_string()];
         assert!(all_requested_declared(&requested, &[m1, m2]));
+    }
+
+    #[test]
+    fn all_requested_declared_false_when_field_missing_in_one_index() {
+        let m1 = make_index_metadata(
+            "a",
+            json!([
+                { "name": "host", "type": "text" },
+                { "name": "message", "type": "text" },
+            ]),
+        );
+        // `message` is not declared in `b` — it might exist there as a dynamic
+        // field, which only the slow path would surface.
+        let m2 = make_index_metadata("b", json!([{ "name": "host", "type": "text" }]));
+        let requested = vec!["host".to_string(), "message".to_string()];
+        assert!(!all_requested_declared(&requested, &[m1, m2]));
     }
 }
