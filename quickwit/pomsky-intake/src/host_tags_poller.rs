@@ -341,7 +341,14 @@ pub async fn run_host_tags_poller(config: HostTagsPollerConfig) {
                     .map(|(host, (tags, host_id))| {
                         let ttl = random_ttl(ttl_min, ttl_max);
                         let expires_at = now_after_fetch + ttl;
-                        (host, HostTagsEntry { tags, host_id, expires_at })
+                        (
+                            host,
+                            HostTagsEntry {
+                                tags,
+                                host_id,
+                                expires_at,
+                            },
+                        )
                     })
                     .collect();
                 let fetched_count = fresh_entries.len();

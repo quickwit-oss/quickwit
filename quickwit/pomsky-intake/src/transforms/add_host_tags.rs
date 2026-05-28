@@ -155,9 +155,7 @@ fn add_trace_tags(
     collector: &UnknownHostsCollector,
     trace: &mut TraceEvent,
 ) {
-    let hostname_opt = trace
-        .get("host")
-        .and_then(|hostname| hostname.as_str());
+    let hostname_opt = trace.get("host").and_then(|hostname| hostname.as_str());
     let Some(hostname) = hostname_opt else {
         return;
     };
