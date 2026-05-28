@@ -19,9 +19,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt};
-use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_search::{SearchError, SearchService, resolve_index_patterns};
+use quickwit_metastore::IndexMetadata;
+use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_search::{SearchService, resolve_index_patterns};
 
 use crate::elasticsearch_api::model::{
     ElasticsearchError, ElasticsearchMappingsResponse, IndexMappingQueryParams,
@@ -41,7 +41,8 @@ pub(crate) async fn cloudprem_index_mapping(
         return es_compat_index_mapping(index_id, params, metastore, search_service).await;
     }
 
-    let indexes_metadata = resolve_indexes_for_mapping(&index_id, &mut metastore).await?;
+    let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
+    let indexes_metadata = resolve_index_patterns(&patterns, &mut metastore).await?;
     if all_requested_declared(&requested_fields, &indexes_metadata) {
         return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
             indexes_metadata,
@@ -52,25 +53,6 @@ pub(crate) async fn cloudprem_index_mapping(
     // Some names aren't declared — they may exist dynamically, so defer to the
     // leaf fan-out.
     es_compat_index_mapping(index_id, params, metastore, search_service).await
-}
-
-/// Mirrors `es_compat_index_mapping`'s id/comma/pattern resolution so both
-/// paths see the same set of indexes.
-async fn resolve_indexes_for_mapping(
-    index_id: &str,
-    metastore: &mut MetastoreServiceClient,
-) -> Result<Vec<IndexMetadata>, SearchError> {
-    if index_id.contains('*') || index_id.contains(',') {
-        let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
-        resolve_index_patterns(&patterns, metastore).await
-    } else {
-        let request = IndexMetadataRequest::for_index_id(index_id.to_string());
-        let metadata = metastore
-            .index_metadata(request)
-            .await?
-            .deserialize_index_metadata()?;
-        Ok(vec![metadata])
-    }
 }
 
 fn all_flat_field_names(names: &[String]) -> bool {
