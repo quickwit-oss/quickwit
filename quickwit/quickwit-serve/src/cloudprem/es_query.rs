@@ -28,8 +28,8 @@ use tracing::warn;
 use crate::BuildInfo;
 use crate::elasticsearch_api::model::{
     CatIndexQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
-    MultiSearchQueryParams, ScrollQueryParams, SearchBody, SearchQueryParams,
-    SearchQueryParamsCount,
+    IndexMappingQueryParams, MultiSearchQueryParams, ScrollQueryParams, SearchBody,
+    SearchQueryParams, SearchQueryParamsCount,
 };
 use crate::elasticsearch_api::rest_handler::{
     es_compat_aliases, es_compat_cat_indices, es_compat_cluster_health_check,
@@ -142,10 +142,12 @@ pub(crate) async fn handle_es_query(
 
         // --- Index-scoped endpoints ---
         [index, "_mapping" | "_mappings"] => {
+            let params = parse_query_params::<IndexMappingQueryParams>(query_string)?;
             dispatch_es!(es_compat_index_mapping(
                 index.to_string(),
+                params,
                 metastore,
-                search_service
+                search_service,
             ))
         }
 

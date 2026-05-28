@@ -30,7 +30,7 @@ use quickwit_proto::metastore::{
     IndexRoutingRule, MetastoreError, MetastoreService, MetastoreServiceClient,
     SetIndexRoutingTableRequest,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_storage::RamStorage;
 
 use crate::IndexerPool;
@@ -95,7 +95,7 @@ async fn setup_test(
     let (control_plane_mailbox, _handle, mut readiness_rx) = ControlPlane::spawn(
         &universe,
         cluster_config,
-        "test-node".into(),
+        NodeId::from_str("test-node"),
         mock_cluster,
         IndexerPool::default(),
         IngesterPool::default(),

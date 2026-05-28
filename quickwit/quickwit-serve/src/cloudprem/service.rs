@@ -1043,9 +1043,9 @@ impl CloudPremService for CloudPremServiceImpl {
         let mut get_node_diagnostics_futures = FuturesUnordered::new();
 
         for ready_node in ready_nodes {
-            let node_id = ready_node.node_id().to_owned();
+            let node_id = ready_node.node_id.clone();
             let client = DeveloperServiceClient::from_channel(
-                ready_node.grpc_advertise_addr(),
+                ready_node.grpc_advertise_addr,
                 ready_node.channel(),
                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
                 Some(CompressionEncoding::Zstd),
@@ -1134,7 +1134,7 @@ fn node_labels(ready_node: &ClusterNode) -> Vec<Label> {
     // I suspect they might lead to wrong/confusing metrics so I prefer
     // emitting the set as a comma-separated string.
     let service_label_value: String = ready_node
-        .enabled_services()
+        .enabled_services
         .iter()
         .map(QuickwitService::as_str)
         .sorted()
@@ -1147,10 +1147,10 @@ fn node_labels(ready_node: &ClusterNode) -> Vec<Label> {
 }
 
 async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
-    let node_id = ready_node.node_id().to_owned();
+    let node_id = ready_node.node_id.clone();
     let node_labels = node_labels(&ready_node);
     let client = DeveloperServiceClient::from_channel(
-        ready_node.grpc_advertise_addr(),
+        ready_node.grpc_advertise_addr,
         ready_node.channel(),
         DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
         Some(CompressionEncoding::Zstd),

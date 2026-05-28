@@ -45,6 +45,16 @@ pub struct ReportSplitsRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReportSplitsResponse {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLoadRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLoadResponse {
+    /// Current load expressed as the sum of job costs (same arbitrary unit as
+    /// Job::cost() in the search job placer) across all queued and active tasks
+    /// in the SearchPermitProvider.
+    #[prost(uint64, tag = "1")]
+    pub load_job_cost: u64,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListFieldsRequest {
     /// Index ID patterns
@@ -901,6 +911,11 @@ impl RpcName for SearchRequest {
         "search_plan"
     }
 }
+impl RpcName for GetLoadRequest {
+    fn rpc_name() -> &'static str {
+        "get_load"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait SearchService: std::fmt::Debug + Send + Sync + 'static {
@@ -985,6 +1000,11 @@ pub trait SearchService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse>;
+    ///Returns the current load of this searcher node.
+    async fn get_load(
+        &self,
+        request: GetLoadRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetLoadResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct SearchServiceClient {
@@ -1177,6 +1197,13 @@ impl SearchService for SearchServiceClient {
     ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
         self.inner.0.search_plan(request).await
     }
+    #[tracing::instrument(skip_all, name = "search.get_load")]
+    async fn get_load(
+        &self,
+        request: GetLoadRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetLoadResponse> {
+        self.inner.0.get_load(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_search_service {
@@ -1258,6 +1285,12 @@ pub mod mock_search_service {
             request: super::SearchRequest,
         ) -> crate::cloudprem::CloudPremResult<super::SearchPlanResponse> {
             self.inner.lock().await.search_plan(request).await
+        }
+        async fn get_load(
+            &self,
+            request: super::GetLoadRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::GetLoadResponse> {
+            self.inner.lock().await.get_load(request).await
         }
     }
 }
@@ -1456,6 +1489,22 @@ impl tower::Service<SearchRequest> for InnerSearchServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<GetLoadRequest> for InnerSearchServiceClient {
+    type Response = GetLoadResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetLoadRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_load(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct SearchServiceTowerServiceStack {
@@ -1519,6 +1568,11 @@ struct SearchServiceTowerServiceStack {
     search_plan_svc: quickwit_common::tower::BoxService<
         SearchRequest,
         SearchPlanResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    get_load_svc: quickwit_common::tower::BoxService<
+        GetLoadRequest,
+        GetLoadResponse,
         crate::cloudprem::CloudPremError,
     >,
 }
@@ -1595,6 +1649,12 @@ impl SearchService for SearchServiceTowerServiceStack {
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
         self.search_plan_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_load(
+        &self,
+        request: GetLoadRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetLoadResponse> {
+        self.get_load_svc.clone().ready().await?.call(request).await
     }
 }
 type RootSearchLayer = quickwit_common::tower::BoxLayer<
@@ -1717,6 +1777,16 @@ type SearchPlanLayer = quickwit_common::tower::BoxLayer<
     SearchPlanResponse,
     crate::cloudprem::CloudPremError,
 >;
+type GetLoadLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetLoadRequest,
+        GetLoadResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    GetLoadRequest,
+    GetLoadResponse,
+    crate::cloudprem::CloudPremError,
+>;
 #[derive(Debug, Default)]
 pub struct SearchServiceTowerLayerStack {
     root_search_layers: Vec<RootSearchLayer>,
@@ -1731,6 +1801,7 @@ pub struct SearchServiceTowerLayerStack {
     list_fields_layers: Vec<ListFieldsLayer>,
     leaf_list_fields_layers: Vec<LeafListFieldsLayer>,
     search_plan_layers: Vec<SearchPlanLayer>,
+    get_load_layers: Vec<GetLoadLayer>,
 }
 impl SearchServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -2035,6 +2106,31 @@ impl SearchServiceTowerLayerStack {
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service as tower::Service<SearchRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetLoadRequest,
+                    GetLoadResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetLoadRequest,
+                GetLoadResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                GetLoadRequest,
+                Response = GetLoadResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetLoadRequest,
+                GetLoadResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<GetLoadRequest>>::Future: Send + 'static,
     {
         self.root_search_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -2057,6 +2153,7 @@ impl SearchServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.search_plan_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_load_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_root_search_layer<L>(mut self, layer: L) -> Self
@@ -2287,6 +2384,25 @@ impl SearchServiceTowerLayerStack {
         self.search_plan_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_get_load_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetLoadRequest,
+                    GetLoadResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetLoadRequest,
+                Response = GetLoadResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<GetLoadRequest>>::Future: Send + 'static,
+    {
+        self.get_load_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> SearchServiceClient
     where
         T: SearchService,
@@ -2443,6 +2559,14 @@ impl SearchServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let get_load_svc = self
+            .get_load_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = SearchServiceTowerServiceStack {
             inner: inner_client,
             root_search_svc,
@@ -2457,6 +2581,7 @@ impl SearchServiceTowerLayerStack {
             list_fields_svc,
             leaf_list_fields_svc,
             search_plan_svc,
+            get_load_svc,
         };
         SearchServiceClient::new(tower_svc_stack)
     }
@@ -2604,6 +2729,12 @@ where
             Response = SearchPlanResponse,
             Error = crate::cloudprem::CloudPremError,
             Future = BoxFuture<SearchPlanResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            GetLoadRequest,
+            Response = GetLoadResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<GetLoadResponse, crate::cloudprem::CloudPremError>,
         >,
 {
     async fn root_search(
@@ -2676,6 +2807,12 @@ where
         &self,
         request: SearchRequest,
     ) -> crate::cloudprem::CloudPremResult<SearchPlanResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_load(
+        &self,
+        request: GetLoadRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetLoadResponse> {
         self.clone().call(request).await
     }
 }
@@ -2927,6 +3064,24 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 SearchRequest::rpc_name(),
+            ))
+    }
+    async fn get_load(
+        &self,
+        request: GetLoadRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetLoadResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .get_load(tonic_request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetLoadRequest::rpc_name(),
             ))
     }
 }
@@ -3216,6 +3371,29 @@ impl search_service_grpc_server::SearchServiceGrpc for SearchServiceGrpcServerAd
             self.inner
                 .0
                 .search_plan(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    async fn get_load(
+        &self,
+        tonic_request: tonic::Request<GetLoadRequest>,
+    ) -> Result<tonic::Response<GetLoadResponse>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("search.get_load");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_load(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -3631,6 +3809,31 @@ pub mod search_service_grpc_client {
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "SearchPlan"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the current load of this searcher node.
+        pub async fn get_load(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetLoadRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetLoadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/GetLoad",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "GetLoad"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -3751,6 +3954,11 @@ pub mod search_service_grpc_server {
             tonic::Response<super::SearchPlanResponse>,
             tonic::Status,
         >;
+        /// Returns the current load of this searcher node.
+        async fn get_load(
+            &self,
+            request: tonic::Request<super::GetLoadRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetLoadResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceGrpcServer<T> {
@@ -4355,6 +4563,51 @@ pub mod search_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SearchPlanSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/GetLoad" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetLoadSvc<T: SearchServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: SearchServiceGrpc,
+                    > tonic::server::UnaryService<super::GetLoadRequest>
+                    for GetLoadSvc<T> {
+                        type Response = super::GetLoadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetLoadRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SearchServiceGrpc>::get_load(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetLoadSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
