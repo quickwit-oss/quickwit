@@ -25,11 +25,12 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
+use quickwit_metrics::{GaugeGuard, counter, label_values};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
@@ -51,7 +52,6 @@ use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsT
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
-use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
@@ -63,8 +63,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::report_wal_usage;
+use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
 use crate::ingest_v2::models::IngesterShardType;
+use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, estimate_size};
 
@@ -128,7 +129,7 @@ impl Ingester {
         replication_factor: usize,
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
             cluster.clone(),
             wal_dir_path,
@@ -219,8 +220,8 @@ impl Ingester {
         let rate_meter = RateMeter::default();
 
         let primary_shard = if let Some(follower_id) = &shard.follower_id {
-            let leader_id: NodeId = shard.leader_id.clone().into();
-            let follower_id: NodeId = follower_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&shard.leader_id);
+            let follower_id: NodeId = NodeId::from_str(follower_id);
 
             let replication_client = self
                 .init_replication_stream(
@@ -338,10 +339,11 @@ impl Ingester {
                     advise_reset_shards_response.shards_to_truncate.len(),
                     now.elapsed().pretty_display()
                 );
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["success"])
-                    .inc();
+                counter!(
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
+                    labels: [label_values!(STATUS => "success")],
+                )
+                .inc();
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
                 report_wal_usage(wal_usage);
@@ -349,18 +351,20 @@ impl Ingester {
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
 
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["error"])
-                    .inc();
+                counter!(
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
+                    labels: [label_values!(STATUS => "error")],
+                )
+                .inc();
             }
             Err(_) => {
                 warn!("advise reset shards request timed out");
 
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["timeout"])
-                    .inc();
+                counter!(
+                    parent: RESET_SHARDS_OPERATIONS_TOTAL,
+                    labels: [label_values!(STATUS => "timeout")],
+                )
+                .inc();
             }
         };
         // We still hold the permit while sleeping so we effectively rate limit the reset shards
@@ -384,8 +388,8 @@ impl Ingester {
             Entry::Vacant(entry) => entry,
         };
         let open_request = OpenReplicationStreamRequest {
-            leader_id: leader_id.clone().into(),
-            follower_id: follower_id.clone().into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             replication_seqno: 0,
         };
         let open_message = SynReplicationMessage::new_open_request(open_request);
@@ -572,12 +576,16 @@ impl Ingester {
                 };
 
                 if valid_doc_batch.is_empty() {
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_invalid
-                        .inc_by(parse_failures.len() as u64);
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_bytes_invalid
-                        .inc_by(original_batch_num_bytes);
+                    counter!(
+                        parent: DOCS_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(parse_failures.len() as u64);
+                    counter!(
+                        parent: DOCS_BYTES_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
@@ -591,19 +599,27 @@ impl Ingester {
                     continue;
                 };
 
-                crate::metrics::INGEST_METRICS
-                    .ingested_docs_valid
-                    .inc_by(valid_doc_batch.num_docs() as u64);
-                crate::metrics::INGEST_METRICS
-                    .ingested_docs_bytes_valid
-                    .inc_by(valid_doc_batch.num_bytes() as u64);
+                counter!(
+                    parent: DOCS_TOTAL,
+                    labels: [label_values!(VALIDITY => "valid")],
+                )
+                .inc_by(valid_doc_batch.num_docs() as u64);
+                counter!(
+                    parent: DOCS_BYTES_TOTAL,
+                    labels: [label_values!(VALIDITY => "valid")],
+                )
+                .inc_by(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_invalid
-                        .inc_by(parse_failures.len() as u64);
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_bytes_invalid
-                        .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
+                    counter!(
+                        parent: DOCS_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(parse_failures.len() as u64);
+                    counter!(
+                        parent: DOCS_BYTES_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }
                 let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
                 shard.rate_meter.update(valid_batch_num_bytes);
@@ -852,8 +868,8 @@ impl Ingester {
         if open_replication_stream_request.follower_id != self.self_node_id {
             return Err(IngestV2Error::Internal("routing error".to_string()));
         }
-        let leader_id: NodeId = open_replication_stream_request.leader_id.into();
-        let follower_id: NodeId = open_replication_stream_request.follower_id.into();
+        let leader_id: NodeId = NodeId::from_str(&open_replication_stream_request.leader_id);
+        let follower_id: NodeId = NodeId::from_str(&open_replication_stream_request.follower_id);
 
         let mut state_guard = self.state.lock_partially("open_replication_stream").await?;
         let status = state_guard.status();
@@ -931,7 +947,7 @@ impl Ingester {
         let self_node_id = self.self_node_id.clone();
         let observation_stream = status_stream.map(move |status| {
             let observation_message = ObservationMessage {
-                node_id: self_node_id.clone().into(),
+                node_id: self_node_id.to_string(),
                 status: status as i32,
             };
             Ok(observation_message)
@@ -1113,8 +1129,7 @@ impl IngesterService for Ingester {
                 _ => None,
             })
             .sum::<usize>();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard = GaugeGuard::new(&IN_FLIGHT_INGESTER_PERSIST, request_size_bytes as f64);
 
         self.persist_inner(persist_request).await
     }
@@ -1344,7 +1359,7 @@ mod tests {
             let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
             Self {
-                node_id: "test-ingester".into(),
+                node_id: NodeId::from_str("test-ingester"),
                 control_plane,
                 ingester_pool: IngesterPool::default(),
                 disk_capacity: ByteSize::mb(256),
@@ -1358,7 +1373,7 @@ mod tests {
 
     impl IngesterForTest {
         pub fn with_node_id(mut self, node_id: &str) -> Self {
-            self.node_id = node_id.into();
+            self.node_id = NodeId::from_str(node_id);
             self
         }
 

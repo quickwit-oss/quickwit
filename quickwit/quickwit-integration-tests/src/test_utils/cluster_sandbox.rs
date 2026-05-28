@@ -78,7 +78,7 @@ impl TestNodeConfig {
         config.enabled_services.clone_from(&self.services);
         config.jaeger_config.enable_endpoint = true;
         config.cluster_id.clone_from(&cluster_id);
-        config.node_id = NodeId::new(format!("test-node-{node_idx}"));
+        config.node_id = NodeId::from_str(&format!("test-node-{node_idx}"));
         let root_data_dir = temp_dir.path().to_path_buf();
         config.data_dir_path = root_data_dir.join(config.node_id.as_str());
         config.metastore_uri =

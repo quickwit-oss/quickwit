@@ -23,12 +23,12 @@ use quickwit_actors::{
     QueueCapacity, Supervisable,
 };
 use quickwit_common::KillSwitch;
-use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
+use quickwit_metrics::{GaugeGuard, counter, gauge, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
@@ -45,6 +45,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
+use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::IndexingStatistics;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
@@ -88,7 +89,7 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
-    _indexing_pipelines_gauge_guard: OwnedGaugeGuard,
+    _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
 #[async_trait]
@@ -123,10 +124,8 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
-            .indexing_pipelines
-            .with_label_values([&params.pipeline_id.index_uid.index_id]);
-        let indexing_pipelines_gauge_guard = OwnedGaugeGuard::from_gauge(indexing_pipelines_gauge);
+        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => params.pipeline_id.index_uid.index_id.clone());
+        let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
@@ -311,21 +310,13 @@ impl IndexingPipeline {
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["publisher"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["sequencer"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
 
@@ -342,11 +333,7 @@ impl IndexingPipeline {
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["uploader"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "uploader")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
 
@@ -377,11 +364,7 @@ impl IndexingPipeline {
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["indexer"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
 
@@ -395,11 +378,7 @@ impl IndexingPipeline {
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["doc_processor"]),
-            )
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "doc_processor")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
         let source_runtime = SourceRuntime {
@@ -602,7 +581,7 @@ mod tests {
         mut num_fails: usize,
         test_file: &str,
     ) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -733,7 +712,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -840,7 +819,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let pipeline_id = IndexingPipelineId {
             node_id,
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -945,7 +924,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,

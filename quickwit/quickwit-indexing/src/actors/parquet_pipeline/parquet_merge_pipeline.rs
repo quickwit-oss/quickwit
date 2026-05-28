@@ -55,6 +55,7 @@ use super::{METRICS_PUBLISHER_NAME, ParquetUploader};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
+use crate::metrics::ONGOING_MERGE_OPERATIONS;
 use crate::models::MergeStatistics;
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
@@ -308,8 +309,12 @@ impl ParquetMergePipeline {
             .spawn(merge_uploader);
 
         // 4. Merge executor
-        let merge_executor =
-            ParquetMergeExecutor::new(merge_uploader_mailbox, self.params.writer_config.clone());
+        let merge_executor = ParquetMergeExecutor::new(
+            merge_uploader_mailbox,
+            self.params.writer_config.clone(),
+            self.params.use_streaming_engine,
+            self.params.target_split_size_bytes,
+        );
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -379,9 +384,7 @@ impl ParquetMergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
-        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .get();
+        let num_ongoing_merges = ONGOING_MERGE_OPERATIONS.get();
         self.statistics = self
             .previous_generations_statistics
             .clone()
@@ -391,7 +394,7 @@ impl ParquetMergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
+            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize);
     }
 
     async fn perform_health_check(
@@ -602,6 +605,20 @@ pub struct ParquetMergePipelineParams {
     /// Should match the ingest pipeline's writer config so merged files have
     /// consistent compression.
     pub writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig,
+    /// When true, regular merges run through the streaming engine
+    /// (`execute_merge_operation`); when false, they run through the
+    /// in-memory `merge_sorted_parquet_files` fallback. Promotion
+    /// merges always use the streaming engine. Sourced from
+    /// `IndexerConfig::parquet_merge_use_streaming_engine`.
+    pub use_streaming_engine: bool,
+    /// Target output split size in bytes, sourced from the merge
+    /// policy. The executor uses this to compute `num_outputs` from
+    /// total input size, so a merge that ingests more than one
+    /// target's worth of data is allowed to spread across multiple
+    /// output files. Smaller values increase output split count
+    /// (subject to the number of `sorted_series` boundaries actually
+    /// available in the input).
+    pub target_split_size_bytes: u64,
 }
 
 #[cfg(test)]
@@ -647,6 +664,8 @@ mod tests {
             max_concurrent_split_uploads: 4,
             event_broker: EventBroker::default(),
             writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
+            use_streaming_engine: false,
+            target_split_size_bytes: 256 * 1024 * 1024,
         }
     }
 

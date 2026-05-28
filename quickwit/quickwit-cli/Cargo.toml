@@ -35,10 +35,6 @@ indicatif = { workspace = true }
 itertools = { workspace = true }
 numfmt = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
-opentelemetry = { workspace = true }
-opentelemetry-appender-tracing = { workspace = true }
-opentelemetry_sdk = { workspace = true }
-opentelemetry-otlp = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }
@@ -52,23 +48,26 @@ time = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-telemetry-exporters = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = { workspace = true }
 
 [dev-dependencies]
 predicates = { workspace = true }
@@ -85,7 +84,9 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 datafusion = ["quickwit-serve/datafusion"]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 jemalloc-profiled = [
+  "jemalloc",
   "dep:backtrace",
+  "dep:tracing-subscriber",
   "quickwit-common/jemalloc-profiled",
   "quickwit-serve/jemalloc-profiled"
 ]
@@ -94,9 +95,12 @@ pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
 # metrics here refers to adding support for metrics ingestion within Quickwit.
 # (this is not about quickwit's metrics themselves)
-metrics = [ "quickwit-indexing/metrics" ]
+metrics = [ "quickwit-indexing/metrics", "datafusion" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
-tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
+tokio-console = [
+  "dep:console-subscriber",
+  "quickwit-common/named_tasks",
+]
 release-feature-set = [
   "jemalloc",
   "openssl-support",

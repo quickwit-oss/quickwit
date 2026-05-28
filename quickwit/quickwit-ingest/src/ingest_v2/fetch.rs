@@ -22,7 +22,7 @@ use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
-use quickwit_common::metrics::MEMORY_METRICS;
+use quickwit_common::metrics::{IN_FLIGHT_FETCH_STREAM, IN_FLIGHT_MULTI_FETCH_STREAM};
 use quickwit_common::retry::RetryParams;
 use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
 use quickwit_common::{ServiceStream, spawn_named_task};
@@ -83,7 +83,7 @@ impl FetchStreamTask {
             .map(|offset| offset + 1)
             .unwrap_or_default();
         let (fetch_message_tx, fetch_stream) =
-            ServiceStream::new_bounded_with_gauge(3, &MEMORY_METRICS.in_flight.fetch_stream);
+            ServiceStream::new_bounded_with_gauge(3, &IN_FLIGHT_FETCH_STREAM);
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
@@ -562,7 +562,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             batch_size,
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
                             // The consumer was dropped.
@@ -575,7 +575,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             ByteSize(0),
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.
@@ -1281,25 +1281,28 @@ pub(super) mod tests {
 
     #[test]
     fn test_select_preferred_and_failover_ingesters() {
-        let self_node_id: NodeId = "test-ingester-0".into();
+        let self_node_id = NodeId::from_str("test-ingester-0");
 
-        let (preferred, failover) =
-            select_preferred_and_failover_ingesters(&self_node_id, "test-ingester-0".into(), None);
+        let (preferred, failover) = select_preferred_and_failover_ingesters(
+            &self_node_id,
+            NodeId::from_str("test-ingester-0"),
+            None,
+        );
         assert_eq!(preferred, "test-ingester-0");
         assert!(failover.is_none());
 
         let (preferred, failover) = select_preferred_and_failover_ingesters(
             &self_node_id,
-            "test-ingester-0".into(),
-            Some("test-ingester-1".into()),
+            NodeId::from_str("test-ingester-0"),
+            Some(NodeId::from_str("test-ingester-1")),
         );
         assert_eq!(preferred, "test-ingester-0");
         assert_eq!(failover.unwrap(), "test-ingester-1");
 
         let (preferred, failover) = select_preferred_and_failover_ingesters(
             &self_node_id,
-            "test-ingester-1".into(),
-            Some("test-ingester-0".into()),
+            NodeId::from_str("test-ingester-1"),
+            Some(NodeId::from_str("test-ingester-0")),
         );
         assert_eq!(preferred, "test-ingester-0");
         assert_eq!(failover.unwrap(), "test-ingester-1");
@@ -1313,7 +1316,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1334,7 +1340,7 @@ pub(super) mod tests {
             });
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
+        ingester_pool.insert(NodeId::from_str("test-ingester-1"), ingester_1);
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
@@ -1411,7 +1417,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1451,8 +1460,8 @@ pub(super) mod tests {
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
 
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0);
+        ingester_pool.insert(NodeId::from_str("test-ingester-1"), ingester_1);
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
@@ -1529,7 +1538,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1568,8 +1580,8 @@ pub(super) mod tests {
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
 
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0);
+        ingester_pool.insert(NodeId::from_str("test-ingester-1"), ingester_1);
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
@@ -1649,7 +1661,10 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_ids: Vec<NodeId> = vec![
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1671,7 +1686,7 @@ pub(super) mod tests {
             });
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0);
 
         fault_tolerant_fetch_stream(
             client_id,
@@ -1706,7 +1721,7 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester".into()];
+        let ingester_ids: Vec<NodeId> = vec![NodeId::from_str("test-ingester")];
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1761,7 +1776,7 @@ pub(super) mod tests {
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
 
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
@@ -1876,7 +1891,7 @@ pub(super) mod tests {
 
     #[tokio::test]
     async fn test_multi_fetch_stream() {
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id = NodeId::from_str("test-node");
         let client_id = "test-client".to_string();
         let ingester_pool = IngesterPool::default();
         let retry_params = RetryParams::for_test();

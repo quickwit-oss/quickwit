@@ -113,6 +113,12 @@ pub struct IndexingService {
     counters: IndexingServiceCounters,
     local_split_store: Arc<IndexingSplitCache>,
     pub(crate) max_concurrent_split_uploads: usize,
+    /// Cached from `IndexerConfig`. Selects whether new Parquet merge
+    /// pipelines route regular merges through the streaming engine or
+    /// the in-memory fallback. Promotion merges always use the
+    /// streaming engine regardless of this flag.
+    #[cfg(feature = "metrics")]
+    pub(crate) parquet_merge_use_streaming_engine: bool,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     #[cfg(feature = "metrics")]
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
@@ -178,6 +184,8 @@ impl IndexingService {
             indexing_pipelines: Default::default(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
+            #[cfg(feature = "metrics")]
+            parquet_merge_use_streaming_engine: indexer_config.parquet_merge_use_streaming_engine,
             merge_pipeline_handles: HashMap::new(),
             #[cfg(feature = "metrics")]
             parquet_merge_pipeline_handles: HashMap::new(),
@@ -723,6 +731,8 @@ impl IndexingService {
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
             writer_config,
+            use_streaming_engine: self.parquet_merge_use_streaming_engine,
+            target_split_size_bytes: cfg.target_split_size_bytes,
         };
 
         let pipeline = super::parquet_pipeline::ParquetMergePipeline::new(
@@ -1192,7 +1202,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path.to_path_buf(),
             indexer_config,
             num_blocking_threads,
@@ -1709,7 +1719,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_service = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -1910,7 +1920,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let mut indexing_server = IndexingService::new(
-            NodeId::from("test-ingest-api-gc-node"),
+            NodeId::from_str("test-ingest-api-gc-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,

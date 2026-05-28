@@ -182,7 +182,7 @@ pub async fn setup_ingester_capacity_update_listener(
                 warn!("failed to parse ingester capacity `{}`", event.value);
                 return;
             };
-            let node_id: NodeId = event.node.node_id.clone().into();
+            let node_id: NodeId = NodeId::from_str(&event.node.node_id);
             event_broker.publish(IngesterCapacityScoreUpdate {
                 node_id,
                 source_uid,

@@ -61,6 +61,7 @@ zstd = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
 quickwit-datafusion = { workspace = true, optional = true }
@@ -71,13 +72,13 @@ quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-telemetry-exporters = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
 
 [build-dependencies]
 time = { workspace = true }

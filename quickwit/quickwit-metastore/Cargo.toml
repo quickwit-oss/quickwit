@@ -40,6 +40,7 @@ uuid = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-parquet-engine = { workspace = true }

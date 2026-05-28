@@ -33,11 +33,11 @@ use quickwit_actors::{
     QueueCapacity, Supervisable,
 };
 use quickwit_common::KillSwitch;
-use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_ingest::IngesterPool;
+use quickwit_metrics::{GaugeGuard, gauge};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
@@ -50,6 +50,7 @@ use crate::actors::pipeline_shared::{
 };
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
+use crate::metrics::INDEXING_PIPELINES;
 use crate::models::IndexingStatistics;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
@@ -111,7 +112,7 @@ pub struct MetricsPipeline {
     handles_opt: Option<MetricsPipelineHandles>,
     kill_switch: KillSwitch,
     shard_ids: BTreeSet<ShardId>,
-    _indexing_pipelines_gauge_guard: OwnedGaugeGuard,
+    _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
 #[async_trait]
@@ -144,10 +145,11 @@ impl Actor for MetricsPipeline {
 
 impl MetricsPipeline {
     pub fn new(params: MetricsPipelineParams) -> Self {
-        let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
-            .indexing_pipelines
-            .with_label_values([&params.pipeline_id.index_uid.index_id]);
-        let indexing_pipelines_gauge_guard = OwnedGaugeGuard::from_gauge(indexing_pipelines_gauge);
+        let indexing_pipelines_gauge = gauge!(
+            parent: INDEXING_PIPELINES,
+            "index" => params.pipeline_id.index_uid.index_id.clone(),
+        );
+        let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         MetricsPipeline {
             params,

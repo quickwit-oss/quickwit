@@ -66,7 +66,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 /// no business pulling in). Callers in `quickwit-indexing` provide a
 /// thin adapter that delegates to `quickwit_storage::Storage`.
 #[async_trait]
-pub(crate) trait RemoteByteSource: Send + Sync {
+pub trait RemoteByteSource: Send + Sync {
     /// Total file length in bytes.
     async fn file_size(&self, path: &Path) -> io::Result<u64>;
 
@@ -85,7 +85,7 @@ pub(crate) trait RemoteByteSource: Send + Sync {
 
 /// Configuration for [`StreamingParquetReader`].
 #[derive(Debug, Clone)]
-pub(crate) struct StreamingReaderConfig {
+pub struct StreamingReaderConfig {
     /// Bytes prefetched from the file tail to capture the footer.
     /// Default 256 KiB — sized for a 50 MB metrics split with the
     /// writer config we ship in production.
@@ -107,7 +107,7 @@ impl Default for StreamingReaderConfig {
 
 /// Errors from the streaming reader.
 #[derive(Error, Debug)]
-pub(crate) enum ParquetReadError {
+pub enum ParquetReadError {
     /// I/O error from the underlying [`RemoteByteSource`].
     #[error("io error: {0}")]
     Io(#[from] io::Error),
@@ -155,14 +155,20 @@ pub(crate) enum ParquetReadError {
 
 /// One Parquet page yielded by [`StreamingParquetReader::next_page`].
 ///
-/// Carries the Thrift-decoded `PageHeader` plus the raw compressed
-/// bytes (`bytes.len() == header.compressed_page_size`). Caller can
-/// inspect the page type (`Dictionary` / `DataPage` / `DataPageV2` /
-/// `Index`) via `header.type_`, and either copy `bytes` straight to
-/// an output writer (PR-6's direct page copy) or decompress + decode
-/// for sort-column inspection.
+/// Carries the Thrift-decoded `PageHeader`, the original Thrift-compact
+/// bytes for that header (`header_bytes`), and the raw compressed page
+/// bytes (`bytes.len() == header.compressed_page_size`). Caller can:
+///
+/// - Inspect the page type (`Dictionary` / `DataPage` / `DataPageV2` / `Index`) via `header.type_`.
+/// - Copy `bytes` straight to an output writer (PR-6's direct page copy).
+/// - Reconstruct the original column-chunk byte stream by concatenating `header_bytes ++ bytes` for
+///   every page in storage order — what PR-6a's page decoder uses to feed pages back into the
+///   standard parquet record-batch reader without re-encoding (re-encoding is deterministic for
+///   Thrift compact, but byte-exact passthrough avoids any encoder-version drift inside the
+///   compactor).
+/// - Decompress + decode `bytes` for sort-column inspection.
 #[derive(Debug)]
-pub(crate) struct Page {
+pub struct Page {
     /// Row group this page belongs to.
     pub rg_idx: usize,
     /// Column chunk this page belongs to (within the row group).
@@ -172,9 +178,54 @@ pub(crate) struct Page {
     pub page_idx_in_col: usize,
     /// Thrift-decoded page header.
     pub header: PageHeader,
+    /// Original Thrift-compact bytes for `header`, exactly as they
+    /// appeared on the wire. `header_bytes.len()` equals the number of
+    /// bytes the parser consumed to decode `header`.
+    pub header_bytes: Bytes,
     /// Raw compressed page bytes; length equals
     /// `header.compressed_page_size`. Cheap to clone (ref-counted).
     pub bytes: Bytes,
+}
+
+/// Object-safe page stream — the contract that PR-6's merge engine
+/// consumes for every input file.
+///
+/// Two implementations:
+/// - [`StreamingParquetReader`]: streams pages directly from a remote byte source (the new-format
+///   fast path).
+/// - The legacy adapter (PR-5): buffers a whole file into a `RecordBatch`, re-encodes it as a
+///   single-row-group parquet stream in memory, and presents it through this trait — used when an
+///   input's row-group boundaries do not align with the sort prefix (`qh.rg_partition_prefix_len ==
+///   0` AND `num_row_groups > 1`).
+///
+/// # Contract
+/// - [`Self::metadata`] returns the file's parsed metadata. Callable any time after construction;
+///   does not consume the stream.
+/// - [`Self::next_page`] yields pages in storage order: row-group-major,
+///   column-major-within-row-group, page-major-within-column. Returns `Ok(None)` once the file is
+///   fully drained, and stays `Ok(None)` on subsequent calls (idempotent EOF).
+/// - I/O failures surface as [`ParquetReadError::Io`]; they are not masked as decode errors.
+#[async_trait]
+pub trait ColumnPageStream: Send {
+    /// Parsed file metadata. Schema and row-group layout come from
+    /// here; the caller does not need to issue any further I/O to
+    /// inspect them.
+    fn metadata(&self) -> &Arc<ParquetMetaData>;
+
+    /// Read the next page in storage order. Returns `Ok(None)` after
+    /// the last page; further calls continue to return `Ok(None)`.
+    async fn next_page(&mut self) -> Result<Option<Page>, ParquetReadError>;
+}
+
+#[async_trait]
+impl ColumnPageStream for StreamingParquetReader {
+    fn metadata(&self) -> &Arc<ParquetMetaData> {
+        StreamingParquetReader::metadata(self)
+    }
+
+    async fn next_page(&mut self) -> Result<Option<Page>, ParquetReadError> {
+        StreamingParquetReader::next_page(self).await
+    }
 }
 
 /// Page-level streaming Parquet reader.
@@ -182,7 +233,7 @@ pub(crate) struct Page {
 /// See module docs for the contract. Caller must consume pages in
 /// storage order via [`Self::next_page`]; the body stream is forward-
 /// only.
-pub(crate) struct StreamingParquetReader {
+pub struct StreamingParquetReader {
     source: Arc<dyn RemoteByteSource>,
     path: PathBuf,
     file_size: u64,
@@ -385,7 +436,7 @@ async fn read_one_page(
     // protocol. Header is variable-length; iterate until we have
     // enough buffered to parse, capped at `max_page_header_bytes`.
     let header_offset = state.cursor;
-    let (header, header_len) =
+    let (header, header_len, header_bytes) =
         parse_page_header_streaming(state, config.max_page_header_bytes, header_offset).await?;
 
     // Header was consumed from `pending`; `cursor` and `bytes_consumed_in_col`
@@ -423,6 +474,7 @@ async fn read_one_page(
         col_idx,
         page_idx_in_col,
         header,
+        header_bytes,
         bytes: Bytes::from(body_bytes),
     })
 }
@@ -430,12 +482,15 @@ async fn read_one_page(
 /// Read the next Thrift `PageHeader` by trying to decode from
 /// progressively-larger buffer sizes. Drains the consumed bytes from
 /// `state.pending` and advances `state.cursor` and
-/// `state.bytes_consumed_in_col`.
+/// `state.bytes_consumed_in_col`. Returns the parsed header plus the
+/// raw Thrift-compact bytes that backed it, so callers (e.g. the
+/// page-stream → record-batch decoder) can reconstruct the original
+/// column-chunk byte layout without re-encoding.
 async fn parse_page_header_streaming(
     state: &mut ReadingState,
     max_header_bytes: usize,
     file_offset_for_error: u64,
-) -> Result<(PageHeader, usize), ParquetReadError> {
+) -> Result<(PageHeader, usize, Bytes), ParquetReadError> {
     // Start small; grow geometrically up to the configured cap.
     let mut target = 256.min(max_header_bytes);
     loop {
@@ -449,10 +504,10 @@ async fn parse_page_header_streaming(
         fill_pending_best_effort(state, target).await?;
         match try_parse_page_header(&state.pending) {
             Ok((header, consumed)) => {
-                state.pending.drain(..consumed);
+                let header_bytes: Vec<u8> = state.pending.drain(..consumed).collect();
                 state.cursor += consumed as u64;
                 state.bytes_consumed_in_col += consumed as u64;
-                return Ok((header, consumed));
+                return Ok((header, consumed, Bytes::from(header_bytes)));
             }
             Err(thrift_err) => {
                 // Some thrift errors are recoverable by reading more
@@ -1396,6 +1451,72 @@ mod tests {
                     "rg={rg_idx}, col={col_idx} data-page num_values sum",
                 );
             }
+        }
+    }
+
+    // -------- ColumnPageStream trait dispatch --------
+
+    /// Drain a stream behind `&mut dyn ColumnPageStream`. Same contract
+    /// as the concrete-typed `drain_pages`, just exercising the trait
+    /// surface PR-5 and PR-6 will consume.
+    async fn drain_pages_via_trait(stream: &mut dyn ColumnPageStream) -> Vec<Page> {
+        let mut pages = Vec::new();
+        while let Some(p) = stream.next_page().await.unwrap() {
+            pages.push(p);
+        }
+        pages
+    }
+
+    /// `StreamingParquetReader` must satisfy the `ColumnPageStream`
+    /// contract when reached through `&mut dyn ColumnPageStream`.
+    /// Same row count, same storage order, same idempotent EOF as the
+    /// concrete-typed path.
+    #[tokio::test]
+    async fn test_streaming_reader_satisfies_column_page_stream_trait() {
+        let batch = make_metrics_batch(2048);
+        let bytes = write_test_file_multi_page(std::slice::from_ref(&batch), 256);
+
+        // Concrete-typed reference run.
+        let source_concrete = InMemorySource::new(bytes.clone());
+        let mut reader_concrete = StreamingParquetReader::try_open(source_concrete, dummy_path())
+            .await
+            .unwrap();
+        let pages_concrete = drain_pages(&mut reader_concrete).await;
+
+        // Trait-object run.
+        let source_trait = InMemorySource::new(bytes);
+        let reader_trait = StreamingParquetReader::try_open(source_trait, dummy_path())
+            .await
+            .unwrap();
+        // Also exercise `metadata()` through the trait surface and
+        // confirm it agrees with the concrete impl before draining.
+        let trait_metadata_num_rgs = {
+            let stream: &dyn ColumnPageStream = &reader_trait;
+            stream.metadata().num_row_groups()
+        };
+        assert_eq!(
+            trait_metadata_num_rgs,
+            reader_concrete.metadata().num_row_groups(),
+        );
+
+        let mut reader_trait = reader_trait;
+        let pages_trait = drain_pages_via_trait(&mut reader_trait).await;
+
+        // Idempotent EOF through the trait surface — second call after
+        // drain still returns Ok(None).
+        {
+            let stream: &mut dyn ColumnPageStream = &mut reader_trait;
+            assert!(stream.next_page().await.unwrap().is_none());
+        }
+
+        // Same number of pages, same (rg, col, page_idx_in_col) tuple
+        // sequence — i.e., trait dispatch preserves storage order.
+        assert_eq!(pages_concrete.len(), pages_trait.len());
+        for (a, b) in pages_concrete.iter().zip(pages_trait.iter()) {
+            assert_eq!(a.rg_idx, b.rg_idx);
+            assert_eq!(a.col_idx, b.col_idx);
+            assert_eq!(a.page_idx_in_col, b.page_idx_in_col);
+            assert_eq!(a.header.compressed_page_size, b.header.compressed_page_size);
         }
     }
 }

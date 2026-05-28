@@ -31,7 +31,7 @@ use tracing::{info, warn};
 
 use crate::grpc_service::cluster_grpc_client;
 use crate::member::NodeStateExt;
-use crate::metrics::CLUSTER_METRICS;
+use crate::metrics::GRPC_GOSSIP_ROUNDS_TOTAL;
 
 const MAX_GOSSIP_PEERS: usize = 3;
 
@@ -108,7 +108,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
             warn!("failed to fetch cluster state from node `{node_id}`");
             continue;
         };
-        CLUSTER_METRICS.grpc_gossip_rounds_total.inc();
+        GRPC_GOSSIP_ROUNDS_TOTAL.inc();
 
         let mut chitchat_guard = chitchat.lock().await;
 
@@ -117,7 +117,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                 .chitchat_id
                 .expect("`chitchat_id` should be a required field");
             let chitchat_id = ChitchatId {
-                node_id: proto_chitchat_id.node_id.clone(),
+                node_id: Arc::<str>::from(proto_chitchat_id.node_id),
                 generation_id: proto_chitchat_id.generation_id,
                 gossip_advertise_addr: proto_chitchat_id
                     .gossip_advertise_addr
@@ -195,7 +195,7 @@ fn select_gossip_candidates(
         })
         .sample(&mut rand::rng(), MAX_GOSSIP_PEERS)
         .into_iter()
-        .map(|(node_id, grpc_addr)| (node_id.clone(), grpc_addr))
+        .map(|(node_id, grpc_addr)| (node_id.to_string(), grpc_addr))
         .unzip()
 }
 
@@ -338,7 +338,7 @@ mod tests {
 
         let chitchat_mutex_guard = chitchat.lock().await;
         let chitchat_id = ChitchatId {
-            node_id: "node-4".to_string(),
+            node_id: Arc::from("node-4"),
             generation_id: 0,
             gossip_advertise_addr: "127.0.0.1:14000".parse().unwrap(),
         };

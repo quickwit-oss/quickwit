@@ -193,7 +193,7 @@ fn make_elastic_bulk_response_v2(
         .inspect_err(|_| {
             rate_limited_error!(limit_per_min=6, index_id=%index_id, "could not find subrequest id");
         })?;
-        doc_handles.sort_unstable_by(|left, right| left.doc_uid.cmp(&right.doc_uid));
+        doc_handles.sort_unstable_by_key(|doc_handle| doc_handle.doc_uid);
 
         // Populate the response items with one error per parse failure.
         for parse_failure in success.parse_failures {

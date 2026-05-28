@@ -191,10 +191,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     // Search service.
+    //
+    // Unlike the other services above, search goes through `tonic_prost_build` directly
+    // (not through `quickwit_codegen::Codegen`, which emits `cargo:rerun-if-changed` for
+    // every proto it compiles). `prost_build` 0.14 has a TODO acknowledging it does not
+    // emit those directives itself, and `tonic_prost_build` 0.14.5 exposes an
+    // `emit_rerun_if_changed` setter but never forwards it to the underlying `Config`.
+    // Without the explicit hint below, edits to `search.proto` do not retrigger build.rs
+    // (because the other `Codegen` calls have already narrowed cargo's watch list).
+    println!("cargo:rerun-if-changed=protos/quickwit/search.proto");
+
     let mut prost_config = prost_build::Config::default();
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
-        .protoc_arg("--experimental_allow_proto3_optional");
+        .protoc_arg("--experimental_allow_proto3_optional")
+        // Box the large `LeafSearchResponse` variant so the oneof stays small
+        // (the `Error` variant only carries a `String`).
+        .boxed("LambdaSingleSplitResult.outcome.response");
 
     tonic_prost_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
