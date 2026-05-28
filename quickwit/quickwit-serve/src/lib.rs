@@ -1268,7 +1268,7 @@ fn setup_indexer_pool(
                 }
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
-                        && previous.ingester_status() != updated.ingester_status() =>
+                        && previous.ingester_status != updated.ingester_status =>
                 {
                     let change = build_indexer_insert_change(
                         &updated,
@@ -1311,7 +1311,7 @@ fn build_indexer_insert_change(
             client,
             indexing_tasks: node.indexing_tasks.to_vec(),
             indexing_capacity: node.indexing_cpu_capacity,
-            ingester_status: node.ingester_status(),
+            ingester_status: node.ingester_status,
         },
     )
 }
@@ -1687,7 +1687,7 @@ mod tests {
         assert_eq!(indexer_pool.len(), 1);
         assert_eq!(
             indexer_pool
-                .get(&NodeId::from("test-indexer-node"))
+                .get(&NodeId::from_str("test-indexer-node"))
                 .expect("indexer node should be in the pool")
                 .ingester_status,
             IngesterStatus::Retiring

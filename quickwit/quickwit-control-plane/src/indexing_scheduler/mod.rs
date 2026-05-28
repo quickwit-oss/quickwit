@@ -1113,7 +1113,7 @@ mod tests {
         let mock_indexer = MockIndexingService::new();
         let client = IndexingServiceClient::from_mock(mock_indexer);
         IndexerNodeInfo {
-            node_id: NodeId::from(node_id.to_string()),
+            node_id: NodeId::from_str(node_id),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -1134,7 +1134,7 @@ mod tests {
 
         let scheduler = IndexingScheduler::new(
             "test-cluster".to_string(),
-            NodeId::from("control-plane".to_string()),
+            NodeId::from_str("control-plane"),
             indexer_pool,
         );
         let selected = scheduler.select_available_indexers_for_scheduling();
@@ -1157,7 +1157,7 @@ mod tests {
 
         let scheduler = IndexingScheduler::new(
             "test-cluster".to_string(),
-            NodeId::from("control-plane".to_string()),
+            NodeId::from_str("control-plane"),
             indexer_pool,
         );
         let selected = scheduler.select_available_indexers_for_scheduling();
@@ -1175,7 +1175,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let scheduler = IndexingScheduler::new(
             "test-cluster".to_string(),
-            NodeId::from("control-plane".to_string()),
+            NodeId::from_str("control-plane"),
             indexer_pool,
         );
         let selected = scheduler.select_available_indexers_for_scheduling();
