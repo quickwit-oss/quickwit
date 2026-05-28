@@ -424,7 +424,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 mod tests {
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::TestSandbox;
-    use quickwit_indexing::merge_policy::MergeTask;
+    use quickwit_indexing::merge_policy::MergeSource;
     use quickwit_metastore::{
         IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
         SplitMetadata,
@@ -554,11 +554,11 @@ mod tests {
             .spawn_builder()
             .spawn(delete_planner);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs: Vec<MergeTask> = merge_split_downloader_inbox.drain_for_test_typed();
+        let downloader_msgs: Vec<MergeSource> = merge_split_downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
-            downloader_msgs[0].splits[0].split_id(),
+            downloader_msgs[0].as_operation().splits[0].split_id(),
             split_metas[2].split_id()
         );
         // Check planner state is inline.
@@ -590,10 +590,10 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        let downloader_last_msgs = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let downloader_last_msgs = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert_eq!(downloader_last_msgs.len(), 1);
         assert_eq!(
-            downloader_last_msgs[0].splits[0].split_id(),
+            downloader_last_msgs[0].as_operation().splits[0].split_id(),
             split_metas[2].split_id()
         );
         // The other splits has just their delete opstamps updated to the last opstamps which is 2

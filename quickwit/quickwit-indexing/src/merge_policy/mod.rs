@@ -525,13 +525,13 @@ pub mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
-                let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-                if merge_tasks.is_empty() {
+                let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+                if merge_sources.is_empty() {
                     break;
                 }
-                let new_splits: Vec<SplitMetadata> = merge_tasks
+                let new_splits: Vec<SplitMetadata> = merge_sources
                     .into_iter()
-                    .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
+                    .map(|source| apply_merge(&merge_policy, &mut split_index, source.as_operation()))
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })
@@ -549,9 +549,9 @@ pub mod tests {
         let obs = merge_planner_handler.process_pending_and_observe().await;
         assert_eq!(obs.obs_type, quickwit_actors::ObservationType::PostMortem);
 
-        let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-        for merge_task in merge_tasks {
-            apply_merge(&merge_policy, &mut split_index, &merge_task);
+        let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+        for source in merge_sources {
+            apply_merge(&merge_policy, &mut split_index, source.as_operation());
         }
 
         let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
