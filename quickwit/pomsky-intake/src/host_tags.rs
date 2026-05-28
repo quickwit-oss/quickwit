@@ -23,10 +23,13 @@ use crate::unix_timestamp::UnixTimestamp;
 /// A single host-tag entry: key-value pair like `("env", "prod")`.
 pub type HostTag = (String, String);
 
-/// A host's tags and expiry timestamp, stored together.
+/// A host's tags, optional numeric host ID, and expiry timestamp.
 #[derive(Clone)]
 pub struct HostTagsEntry {
     pub tags: Arc<[HostTag]>,
+    /// Numeric host ID from HMS, populated when the metadata service returns
+    /// one. Used to set the `host_id` fast field on span documents.
+    pub host_id: Option<i64>,
     pub expires_at: UnixTimestamp,
 }
 

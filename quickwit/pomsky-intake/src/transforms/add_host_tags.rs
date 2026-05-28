@@ -173,6 +173,18 @@ fn add_trace_tags(
             trace.insert(path.as_str(), value);
         }
     }
+    // Populate the host_id fast field if the metadata service returned one
+    // and the span doesn't already carry a non-zero value.
+    if let Some(host_id) = tags.host_id {
+        if trace
+            .get("host_id")
+            .and_then(|v| v.as_integer())
+            .map(|v| v == 0)
+            .unwrap_or(true)
+        {
+            trace.insert("host_id", host_id);
+        }
+    }
 }
 
 #[cfg(test)]
