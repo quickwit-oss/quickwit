@@ -33,14 +33,14 @@ pub(super) fn extract_usm_stats(cc: &mut CollectorConnections) -> Vec<UsmStat> {
     for conn in &cc.connections {
         let direction = Direction::from_agent(conn.direction);
         let service = resolver::resolve_service(cc, conn);
-        let env = resolver::resolve_env(cc, conn);
+        let tags = resolver::resolve_tags(cc, conn);
 
         if !conn.http_aggregations.is_empty() {
             for ps in http::parse_http_aggregations(&conn.http_aggregations) {
                 out.push(UsmStat::from_proto_stat(
                     ps,
                     service.clone(),
-                    env.clone(),
+                    tags.clone(),
                     direction,
                 ));
             }
@@ -50,7 +50,7 @@ pub(super) fn extract_usm_stats(cc: &mut CollectorConnections) -> Vec<UsmStat> {
                 out.push(UsmStat::from_proto_stat(
                     ps,
                     service.clone(),
-                    env.clone(),
+                    tags.clone(),
                     direction,
                 ));
             }
@@ -60,7 +60,7 @@ pub(super) fn extract_usm_stats(cc: &mut CollectorConnections) -> Vec<UsmStat> {
                 out.push(UsmStat::from_proto_stat(
                     ps,
                     service.clone(),
-                    env.clone(),
+                    tags.clone(),
                     direction,
                 ));
             }
@@ -70,7 +70,7 @@ pub(super) fn extract_usm_stats(cc: &mut CollectorConnections) -> Vec<UsmStat> {
                 out.push(UsmStat::from_proto_stat(
                     ps,
                     service.clone(),
-                    env.clone(),
+                    tags.clone(),
                     direction,
                 ));
             }
@@ -150,12 +150,43 @@ mod tests {
         assert_eq!(stats.len(), 1);
         let stat = &stats[0];
         assert_eq!(stat.service, "web");
-        assert_eq!(stat.env.as_deref(), Some("prod"));
+        assert_eq!(stat.tags.env.as_deref(), Some("prod"));
+        // No version tag in the buffer; expect None so the emitter omits the
+        // tag (rather than emitting `version:` or N/A).
+        assert_eq!(stat.tags.version, None);
+        // No tls.library / IIS tags on a Linux-style host-tag buffer.
+        assert_eq!(stat.tags.tls_library, None);
+        assert!(stat.tags.iis_tags.is_empty());
         assert_eq!(stat.direction, Direction::Server);
         assert_eq!(stat.operation, Operation::Http);
         assert_eq!(stat.resource, "GET /hello");
         assert_eq!(stat.status, 200);
         assert_eq!(stat.hits, 3);
         assert_eq!(stat.errors, 0);
+    }
+
+    #[test]
+    fn orchestrator_resolves_version_when_present_in_tag_buffer() {
+        // Mirrors NSX behavior: `version:X` from any of the three tag sources
+        // is picked up and propagated onto every emitted UsmStat.
+        let mut cc = CollectorConnections {
+            host_name: "host-1".into(),
+            encoded_tags: v1_buffer(&["service:web", "env:prod", "version:2.0.1"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        cc.connections.push(Connection {
+            r#type: ConnectionType::Tcp as i32,
+            direction: ConnectionDirection::Incoming as i32,
+            laddr: Some(Addr {
+                port: 8080,
+                ..Default::default()
+            }),
+            http_aggregations: Bytes::from(http_bytes()).to_vec(),
+            ..Default::default()
+        });
+        let stats = extract_usm_stats(&mut cc);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].tags.version.as_deref(), Some("2.0.1"));
     }
 }
