@@ -293,7 +293,7 @@ async fn get_compaction_planner_client_if_needed(
     Option<CompactionPlannerServiceClient>,
     Option<ActorHandle<CompactionPlanner>>,
 )> {
-    if !node_config.indexer_config.enable_standalone_compactors {
+    if !node_config.enable_standalone_compactors {
         return Ok((None, None));
     }
     let is_janitor = node_config.is_service_enabled(QuickwitService::Janitor);
@@ -649,12 +649,11 @@ pub async fn serve_quickwit(
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.
         // if standalone compactors is disabled, indexing pipelines perform all merges as before.
-        let merge_scheduler_mailbox_opt =
-            if !node_config.indexer_config.enable_standalone_compactors {
-                Some(spawn_merge_scheduler_service(&universe, &node_config))
-            } else {
-                None
-            };
+        let merge_scheduler_mailbox_opt = if !node_config.enable_standalone_compactors {
+            Some(spawn_merge_scheduler_service(&universe, &node_config))
+        } else {
+            None
+        };
 
         let split_cache = indexing_split_cache.clone();
         let indexing_service = start_indexing_service(
@@ -852,7 +851,7 @@ pub async fn serve_quickwit(
     };
 
     let compactor_supervisor_opt = if node_config.is_service_enabled(QuickwitService::Compactor)
-        && node_config.indexer_config.enable_standalone_compactors
+        && node_config.enable_standalone_compactors
     {
         let compaction_dir = node_config.data_dir_path.join("compaction");
         fs::create_dir_all(&compaction_dir)?;
@@ -1993,8 +1992,7 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
 
         // Janitor + indexer with standalone compactors enabled: planner client is returned.
-        let mut node_config = NodeConfig::for_test();
-        node_config.indexer_config.enable_standalone_compactors = true;
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
         let (client_opt, handle_opt) =
@@ -2028,7 +2026,7 @@ mod tests {
 
         // Standalone compactors disabled: short-circuit returns (None, None) regardless of
         // which services are enabled.
-        node_config.indexer_config.enable_standalone_compactors = false;
+        node_config.enable_standalone_compactors = false;
         node_config.enabled_services =
             HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
         let (client_opt, handle_opt) =
@@ -2050,8 +2048,7 @@ mod tests {
         let universe = Universe::new();
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
 
-        let mut node_config = NodeConfig::for_test();
-        node_config.indexer_config.enable_standalone_compactors = true;
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Indexer, QuickwitService::Compactor]);
         let result =

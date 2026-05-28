@@ -234,8 +234,7 @@ impl NodeConfigBuilder {
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
-        self.indexer_config.enable_standalone_compactors =
-            self.enable_standalone_compactors.resolve(env_vars)?;
+        let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
 
         let enabled_services: HashSet<QuickwitService> = self
             .enabled_services
@@ -343,6 +342,7 @@ impl NodeConfigBuilder {
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
+            enable_standalone_compactors,
         };
 
         validate(&node_config)?;
@@ -361,7 +361,7 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
         warn!("peer seeds are empty");
     }
     if node_config.is_service_enabled(QuickwitService::Compactor)
-        && !node_config.indexer_config.enable_standalone_compactors
+        && !node_config.enable_standalone_compactors
     {
         bail!(
             "the `compactor` service can only be enabled when `enable_standalone_compactors` is \
@@ -552,6 +552,7 @@ pub fn node_config_for_tests_from_ports(
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
+        enable_standalone_compactors: false,
     }
 }
 
@@ -681,7 +682,6 @@ mod tests {
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
-                enable_standalone_compactors: false,
                 parquet_merge_use_streaming_engine: true,
             }
         );
@@ -975,6 +975,49 @@ mod tests {
         load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_requires_standalone_flag() {
+        // Compactor service enabled while `enable_standalone_compactors` is off is an
+        // invalid combination: the default indexer-local merge pipeline is in use, so a
+        // dedicated compactor must not run.
+        let error = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "indexer".to_string(),
+                "compactor".to_string(),
+            ])),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("enable_standalone_compactors"),
+            "expected error to mention `enable_standalone_compactors`, got: {error}",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_with_standalone_flag_validates() {
+        // All services enabled, including the compactor, with the standalone flag on
+        // is a valid configuration.
+        let node_config = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "control_plane".to_string(),
+                "indexer".to_string(),
+                "searcher".to_string(),
+                "janitor".to_string(),
+                "metastore".to_string(),
+                "compactor".to_string(),
+            ])),
+            enable_standalone_compactors: ConfigValue::for_test(true),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap();
+        assert!(node_config.is_service_enabled(QuickwitService::Compactor));
     }
 
     #[tokio::test]

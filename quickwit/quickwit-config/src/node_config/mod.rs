@@ -163,11 +163,6 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
-    /// When true, the compactor service is not implicitly started on indexer
-    /// nodes. Dedicated compactor nodes must be deployed separately.
-    /// When false (default), every indexer node also runs the compactor.
-    #[serde(default = "IndexerConfig::default_enable_standalone_compactors")]
-    pub enable_standalone_compactors: bool,
     /// If true, run Parquet merges through the streaming column-major engine
     /// (`execute_merge_operation`). If false (default), use the in-memory
     /// `merge_sorted_parquet_files` engine. The legacy in-memory engine is
@@ -216,10 +211,6 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
-    fn default_enable_standalone_compactors() -> bool {
-        false
-    }
-
     fn default_parquet_merge_use_streaming_engine() -> bool {
         false
     }
@@ -236,7 +227,6 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
-            enable_standalone_compactors: false,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         };
         Ok(indexer_config)
@@ -254,7 +244,6 @@ impl Default for IndexerConfig {
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
-            enable_standalone_compactors: Self::default_enable_standalone_compactors(),
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         }
     }
@@ -861,6 +850,11 @@ pub struct NodeConfig {
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
     pub compactor_config: CompactorConfig,
+    /// Standalone compactors means that indexer nodes don't run merges.
+    /// This flag affects the behavior of the compactor service, the indexer service,
+    /// and the janitor service (the planner lives there). If this flag is enabled and the
+    /// compactor service is enabled on this node, it'll error. The janitor and indexer will
+    pub enable_standalone_compactors: bool,
 }
 
 impl NodeConfig {
@@ -924,6 +918,14 @@ impl NodeConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
         serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
+    }
+
+    /// Test config with `enable_standalone_compactors = true`.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_with_standalone_compactors() -> Self {
+        let mut node_config = Self::for_test();
+        node_config.enable_standalone_compactors = true;
+        node_config
     }
 }
 
