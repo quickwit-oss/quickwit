@@ -529,7 +529,7 @@ mod tests {
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 
@@ -645,7 +645,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 
@@ -799,7 +799,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader_without_sequencer() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         let source_id = "test-source".to_string();
@@ -982,7 +982,7 @@ mod tests {
         // we need to keep the handle alive.
         let _subscribe_handle = event_broker.subscribe(report_splits_listener);
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 

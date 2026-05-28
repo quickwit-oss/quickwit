@@ -191,7 +191,7 @@ impl DeleteTaskPipeline {
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let pipeline_id = MergePipelineId {
-            node_id: NodeId::from("unknown"),
+            node_id: NodeId::from_str("unknown"),
             index_uid: self.index_uid.clone(),
             source_id: "unknown".to_string(),
         };

@@ -581,7 +581,7 @@ mod tests {
         mut num_fails: usize,
         test_file: &str,
     ) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -712,7 +712,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let pipeline_id = IndexingPipelineId {
             node_id,
@@ -819,7 +819,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let pipeline_id = IndexingPipelineId {
             node_id,
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -924,7 +924,7 @@ mod tests {
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid: IndexUid = IndexUid::for_test("test-index", 2);
         let pipeline_id = IndexingPipelineId {
             node_id,

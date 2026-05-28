@@ -232,7 +232,10 @@ impl NodeConfigBuilder {
         mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
-        let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
+        let node_id = self
+            .node_id
+            .resolve(env_vars)
+            .map(|node_id_str| NodeId::from_str(&node_id_str))?;
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enabled_services = self
@@ -501,7 +504,7 @@ pub fn node_config_for_tests_from_ports(
     grpc_listen_port: u16,
     cloudprem_listen_port: u16,
 ) -> NodeConfig {
-    let node_id = NodeId::new(default_node_id().unwrap());
+    let node_id = NodeId::from_str(&default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
     let availability_zone = Some(String::from("az-1"));
     let listen_address = Host::default();
@@ -796,7 +799,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(config.node_id.as_str(), get_short_hostname().unwrap());
         assert_eq!(config.availability_zone, None);
         assert_eq!(
             config.enabled_services,

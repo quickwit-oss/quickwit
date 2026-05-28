@@ -365,7 +365,7 @@ mod tests {
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
-            NodeId::from("test-follower"),
+            NodeId::from_str("test-follower"),
         )
         .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))
@@ -396,7 +396,7 @@ mod tests {
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
-            NodeId::from("test-leader"),
+            NodeId::from_str("test-leader"),
         )
         .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))

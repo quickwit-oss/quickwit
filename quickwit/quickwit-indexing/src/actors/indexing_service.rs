@@ -1202,7 +1202,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path.to_path_buf(),
             indexer_config,
             num_blocking_threads,
@@ -1719,7 +1719,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_service = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -1920,7 +1920,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let mut indexing_server = IndexingService::new(
-            NodeId::from("test-ingest-api-gc-node"),
+            NodeId::from_str("test-ingest-api-gc-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
