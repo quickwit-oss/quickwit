@@ -118,7 +118,7 @@ bitpacking = "0.9.3"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.3.1", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.10.1"
+chitchat = "0.11.0"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -338,7 +338,7 @@ username = "0.2"
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
 utoipa = { version = "4.2", features = ["time", "ulid"] }
-unicode-segmentation = "1.12"
+unicode-segmentation = "1.13"
 uuid = { version = "1.23", features = ["v4", "serde"] }
 vrl = { version = "0.32", default-features = false, features = [
   "compiler",

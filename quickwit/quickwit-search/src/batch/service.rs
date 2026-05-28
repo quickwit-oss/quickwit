@@ -135,4 +135,7 @@ impl SearchService for BatchingSearchService {
     async fn search_plan(&self, request: SearchRequest) -> crate::Result<SearchPlanResponse> {
         self.inner.search_plan(request).await
     }
+    async fn get_load(&self) -> usize {
+        self.inner.get_load().await
+    }
 }

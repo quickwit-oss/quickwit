@@ -71,6 +71,9 @@ service SearchService {
 
   // Describe how a search would be processed.
   rpc SearchPlan(SearchRequest) returns (SearchPlanResponse);
+
+  // Returns the current load of this searcher node.
+  rpc GetLoad(GetLoadRequest) returns (GetLoadResponse);
 }
 
 /// Scroll Request
@@ -109,6 +112,15 @@ message ReportSplitsRequest {
 }
 
 message ReportSplitsResponse {}
+
+message GetLoadRequest {}
+
+message GetLoadResponse {
+  // Current load expressed as the sum of job costs (same arbitrary unit as
+  // Job::cost() in the search job placer) across all queued and active tasks
+  // in the SearchPermitProvider.
+  uint64 load_job_cost = 1;
+}
 
 // -- ListFields -------------------
 

@@ -214,6 +214,7 @@ mod tests {
                     ("region".to_string(), "us-east-1".to_string()),
                 ]
                 .into(),
+                host_id: None,
                 expires_at,
             },
         );
@@ -221,6 +222,7 @@ mod tests {
             "db-01".to_string(),
             HostTagsEntry {
                 tags: vec![("env".to_string(), "staging".to_string())].into(),
+                host_id: None,
                 expires_at,
             },
         );

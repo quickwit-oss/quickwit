@@ -272,7 +272,7 @@ mod tests {
         let (control_plane_mailbox, _handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
             cluster_config,
-            control_plane_cluster.self_node_id().into(),
+            control_plane_cluster.self_node_id(),
             control_plane_cluster.clone(),
             IndexerPool::default(),
             IngesterPool::default(),

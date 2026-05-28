@@ -174,4 +174,7 @@ impl SearchService for CloudPremRootSearchService {
     ) -> quickwit_search::Result<SearchPlanResponse> {
         unimplemented(request)
     }
+    async fn get_load(&self) -> usize {
+        0
+    }
 }

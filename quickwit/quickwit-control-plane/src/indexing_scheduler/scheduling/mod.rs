@@ -856,7 +856,7 @@ mod tests {
         let num_indexers = 10;
         let num_shards: usize = 1000;
         let indexers: Vec<NodeId> = (0..num_indexers)
-            .map(|indexer_id| NodeId::new(format!("indexer{indexer_id}")))
+            .map(|indexer_id| NodeId::from_str(&format!("indexer{indexer_id}")))
             .collect();
         let source_uids: Vec<SourceUid> = std::iter::repeat_with(source_id).take(1_000).collect();
         let shard_ids: Vec<ShardId> = (0..num_shards as u64).map(ShardId::from).collect();
@@ -1160,11 +1160,11 @@ mod tests {
             shard2.clone(),
             shard3.clone(),
         ];
-        let node1 = NodeId::new("node1".to_string());
-        let node2 = NodeId::new("node2".to_string());
+        let node1 = NodeId::from_str("node1");
+        let node2 = NodeId::from_str("node2");
         // This node is missing from the capacity map.
         // It should not be assigned any task despite being present in shard locations.
-        let node_missing = NodeId::new("node_missing".to_string());
+        let node_missing = NodeId::from_str("node_missing");
         let mut remaining_num_shards_per_node = HashMap::default();
         remaining_num_shards_per_node
             .insert(node1.as_str().to_string(), NonZeroU32::new(3).unwrap());
