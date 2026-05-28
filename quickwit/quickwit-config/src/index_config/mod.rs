@@ -272,6 +272,12 @@ pub struct IngestSettings {
     #[schema(default = 1, value_type = usize)]
     #[serde(default = "IngestSettings::default_min_shards")]
     pub min_shards: NonZeroUsize,
+    /// Configures the maximum number of shards the control plane may open for ingestion.
+    /// When absent, the number of shards is unbounded.
+    /// Must be >= `min_shards` when set.
+    #[schema(value_type = Option<usize>)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_shards: Option<NonZeroUsize>,
     /// Whether to validate documents against the current doc mapping during ingestion.
     /// Defaults to true. When false, documents will be written directly to the WAL without
     /// validation, but might still be rejected during indexing when applying the doc mapping
@@ -294,6 +300,7 @@ impl Default for IngestSettings {
     fn default() -> Self {
         Self {
             min_shards: Self::default_min_shards(),
+            max_shards: None,
             validate_docs: true,
         }
     }
@@ -594,6 +601,7 @@ impl crate::TestableForRegression for IndexConfig {
         };
         let ingest_settings = IngestSettings {
             min_shards: NonZeroUsize::new(12).unwrap(),
+            max_shards: None,
             validate_docs: true,
         };
         let search_settings = SearchSettings {
@@ -1114,6 +1122,7 @@ mod tests {
     fn test_ingest_settings_serde() {
         let settings = IngestSettings {
             min_shards: NonZeroUsize::MIN,
+            max_shards: None,
             validate_docs: false,
         };
         let settings_yaml = serde_yaml::to_string(&settings).unwrap();
@@ -1124,6 +1133,7 @@ mod tests {
 
         let settings = IngestSettings {
             min_shards: NonZeroUsize::MIN,
+            max_shards: None,
             validate_docs: true,
         };
         let settings_yaml = serde_yaml::to_string(&settings).unwrap();
