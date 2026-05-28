@@ -531,7 +531,9 @@ pub mod tests {
                 }
                 let new_splits: Vec<SplitMetadata> = merge_sources
                     .into_iter()
-                    .map(|source| apply_merge(&merge_policy, &mut split_index, source.as_operation()))
+                    .map(|source| {
+                        apply_merge(&merge_policy, &mut split_index, source.as_operation())
+                    })
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })

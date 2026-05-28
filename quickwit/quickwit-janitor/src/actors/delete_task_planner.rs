@@ -590,7 +590,8 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        let downloader_last_msgs = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
+        let downloader_last_msgs =
+            merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert_eq!(downloader_last_msgs.len(), 1);
         assert_eq!(
             downloader_last_msgs[0].as_operation().splits[0].split_id(),
