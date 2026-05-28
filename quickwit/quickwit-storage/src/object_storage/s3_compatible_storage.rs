@@ -42,6 +42,7 @@ use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
+use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
@@ -96,7 +97,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
-    checksum_strategy: quickwit_config::ChecksumAlgorithm,
+    checksum_algorithm: quickwit_config::ChecksumAlgorithm,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -157,10 +158,7 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
-    if matches!(
-        s3_storage_config.checksum_algorithm,
-        quickwit_config::ChecksumAlgorithm::Disabled
-    ) {
+    if s3_storage_config.checksum_algorithm.is_disabled() {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
         s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
@@ -204,7 +202,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
-            checksum_strategy: s3_storage_config.checksum_algorithm,
+            checksum_algorithm: s3_storage_config.checksum_algorithm,
         })
     }
 
@@ -222,7 +220,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
-            checksum_strategy: self.checksum_strategy,
+            checksum_algorithm: self.checksum_algorithm,
         }
     }
 
@@ -273,10 +271,15 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
     let mut buf = vec![0; MD5_CHUNK_SIZE];
     loop {
         let read_len = read.read(&mut buf).await?;
-        checksum.consume(&buf[..read_len]);
         if read_len == 0 {
             return Ok(checksum.finalize());
         }
+        (checksum, buf) = run_cpu_intensive(move || {
+            checksum.consume(&buf[..read_len]);
+            (checksum, buf)
+        })
+        .await
+        .map_err(io::Error::other)?;
     }
 }
 
@@ -334,7 +337,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
-            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
             .send()
             .await
             .map_err(|sdk_error| {
@@ -369,7 +372,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
-                .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
+                .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
                 .key(key)
                 .send()
                 .await
@@ -390,10 +393,7 @@ impl S3CompatibleObjectStorage {
         payload: &dyn crate::PutPayload,
         range: Range<u64>,
     ) -> io::Result<Option<md5::Digest>> {
-        if !matches!(
-            self.checksum_strategy,
-            quickwit_config::ChecksumAlgorithm::Md5
-        ) {
+        if !self.checksum_algorithm.is_md5() {
             return Ok(None);
         }
         let read = payload.range_byte_stream(range).await?.into_async_read();
@@ -479,7 +479,7 @@ impl S3CompatibleObjectStorage {
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
-            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_strategy))
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
             // None if checksum isnt md5.
             .set_content_md5(content_md5)
             .key(key)
@@ -1037,7 +1037,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: quickwit_config::ChecksumAlgorithm::Crc32c,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1085,7 +1085,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
-            checksum_strategy: quickwit_config::ChecksumAlgorithm::Crc32c,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1123,7 +1123,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: quickwit_config::ChecksumAlgorithm::Crc32c,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1206,7 +1206,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: quickwit_config::ChecksumAlgorithm::Crc32c,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1298,7 +1298,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
-            checksum_strategy: quickwit_config::ChecksumAlgorithm::Crc32c,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))

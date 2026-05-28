@@ -52,6 +52,16 @@ pub enum ChecksumAlgorithm {
     Disabled,
 }
 
+impl ChecksumAlgorithm {
+    pub fn is_md5(&self) -> bool {
+        matches!(self, Self::Md5)
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        matches!(self, Self::Disabled)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageBackendFlavor {
