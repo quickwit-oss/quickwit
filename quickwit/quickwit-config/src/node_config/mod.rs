@@ -850,10 +850,6 @@ pub struct NodeConfig {
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
     pub compactor_config: CompactorConfig,
-    /// Standalone compactors means that indexer nodes don't run merges.
-    /// This flag affects the behavior of the compactor service, the indexer service,
-    /// and the janitor service (the planner lives there). If this flag is enabled and the
-    /// compactor service is enabled on this node, it'll error. The janitor and indexer will
     pub enable_standalone_compactors: bool,
 }
 
