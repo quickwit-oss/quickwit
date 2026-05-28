@@ -49,16 +49,39 @@ pub(crate) async fn cloudprem_index_mapping(
 
     let indexes_metadata = resolve_indexes_for_mapping(&index_id, &mut metastore).await?;
     if all_requested_declared(&requested_fields, &indexes_metadata) {
-        return Ok(ElasticsearchMappingsResponse::from_doc_mapping_filtered(
-            indexes_metadata,
-            None,
-            &requested_fields,
+        // Trim each index's `field_mappings` to the requested set before
+        // handing the metadata to `from_doc_mapping`. The shared builder
+        // iterates that vector verbatim, so trimming upstream yields a
+        // response containing only the requested top-level fields (with
+        // their full object subtrees intact). Keeps the filter logic
+        // CloudPrem-local without touching the OSS response builder.
+        let filtered = filter_indexes_to_requested(indexes_metadata, &requested_fields);
+        return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
+            filtered, None,
         ));
     }
 
     // Fast-path syntax matched but one or more names aren't declared — they
     // might be dynamic, so defer to the slow path that consults the leaves.
     es_compat_index_mapping(index_id, params, metastore, search_service).await
+}
+
+/// Trims each index's `field_mappings` to entries whose top-level name is in
+/// `requested`. Caller must ensure `requested` is non-empty — an empty slice
+/// would erase every field.
+fn filter_indexes_to_requested(
+    mut indexes_metadata: Vec<IndexMetadata>,
+    requested: &[String],
+) -> Vec<IndexMetadata> {
+    let filter: HashSet<&str> = requested.iter().map(String::as_str).collect();
+    for metadata in &mut indexes_metadata {
+        metadata
+            .index_config
+            .doc_mapping
+            .field_mappings
+            .retain(|entry| filter.contains(entry.name.as_str()));
+    }
+    indexes_metadata
 }
 
 /// Resolves a single id, comma list, or pattern to `IndexMetadata` records.
@@ -167,5 +190,61 @@ mod tests {
         let m2 = make_index_metadata("b", json!([{ "name": "message", "type": "text" }]));
         let requested = vec!["host".to_string(), "message".to_string()];
         assert!(all_requested_declared(&requested, &[m1, m2]));
+    }
+
+    #[test]
+    fn filter_keeps_only_requested_field_mappings() {
+        let metadata = make_index_metadata(
+            "test",
+            json!([
+                { "name": "host", "type": "text" },
+                { "name": "message", "type": "text" },
+                { "name": "status", "type": "i64" },
+                { "name": "service", "type": "text" },
+                { "name": "trace_id", "type": "text" },
+            ]),
+        );
+        let requested = vec!["host".to_string(), "message".to_string()];
+        let filtered = filter_indexes_to_requested(vec![metadata], &requested);
+        let names: Vec<&str> = filtered[0]
+            .index_config
+            .doc_mapping
+            .field_mappings
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"host"));
+        assert!(names.contains(&"message"));
+    }
+
+    #[test]
+    fn filtered_response_preserves_object_subtree() {
+        let metadata = make_index_metadata(
+            "test",
+            json!([
+                {
+                    "name": "host",
+                    "type": "object",
+                    "field_mappings": [
+                        { "name": "region", "type": "text" },
+                        { "name": "name", "type": "text" }
+                    ]
+                },
+                { "name": "message", "type": "text" }
+            ]),
+        );
+        let requested = vec!["host".to_string()];
+        let filtered = filter_indexes_to_requested(vec![metadata], &requested);
+        let response = ElasticsearchMappingsResponse::from_doc_mapping(filtered, None);
+        let serialized = serde_json::to_value(&response).unwrap();
+        let host_props = &serialized["test"]["mappings"]["properties"]["host"]["properties"];
+        assert_eq!(host_props["region"]["type"], "keyword");
+        assert_eq!(host_props["name"]["type"], "keyword");
+        assert!(
+            serialized["test"]["mappings"]["properties"]
+                .get("message")
+                .is_none()
+        );
     }
 }
