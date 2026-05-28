@@ -6,6 +6,7 @@ image:
   pullPolicy: Always
 
 datadog:
+  site: dd.datad0g.com
   byocTelemetry:
     enabled: false
 
@@ -16,10 +17,19 @@ cloudprem:
     enabled: false
 
 environment:
-  QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
+  - name: QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER
+    value: "true"
   # disable mtls verification: we don't have a reverse-proxy doing decapsulation
   # and putting the certificate into a header in staging
-  CP_DISABLE_CERTIFICATE_VERIFICATION: true
+  - name: CP_DISABLE_CERTIFICATE_VERIFICATION
+    value: "true"
+  # Send traces to the Datadog Agent on the host node, which forwards to Datadog
+  - name: HOST_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+    value: "http://$(HOST_IP):4317"
 
 podAnnotations:
   # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
