@@ -34,6 +34,7 @@ use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
@@ -382,6 +383,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        // The Azure SDK has no batch delete, so bulk_delete also funnels through
+        // here one blob at a time.
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
             .container_client
