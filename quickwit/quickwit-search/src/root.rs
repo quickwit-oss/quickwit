@@ -1587,19 +1587,16 @@ impl ExtractTimestampRange<'_> {
     fn update_start_timestamp(
         &mut self,
         lower_bound: &quickwit_query::JsonLiteral,
-        included: bool,
+        _included: bool,
     ) {
         use quickwit_query::InterpretUserInput;
-        let Some(lower_bound) = tantivy::DateTime::interpret_json(lower_bound) else {
+        let Some(lower_bound_timestamp) = tantivy::DateTime::interpret_json(lower_bound) else {
             return;
         };
-        let mut lower_bound = lower_bound.into_timestamp_secs();
-        if !included {
-            // TODO saturating isn't exactly right, we should replace the RangeQuery with
-            // a match_none, but the visitor doesn't allow mutation.
-            lower_bound = lower_bound.saturating_add(1);
-        }
+        let lower_bound = lower_bound_timestamp.into_timestamp_secs();
 
+        // lower_bound_timestamp has arbitrary precision, so even if it is
+        // excluded its truncated value must be used a start_timestamp.
         self.start_timestamp = self.start_timestamp.max(Some(lower_bound));
     }
 
@@ -4463,7 +4460,8 @@ mod tests {
         timestamp_range_extractor.start_timestamp = None;
         timestamp_range_extractor.end_timestamp = None;
         timestamp_range_extractor.visit(&unusual_bounds).unwrap();
-        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353942));
+        // > 2021-04-13T22:45:41Z must include any 2021-04-13T22:45:41.xxxZ
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
         assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
 
         let wrong_field = quickwit_query::query_ast::RangeQuery {
@@ -4498,6 +4496,32 @@ mod tests {
         timestamp_range_extractor.visit(&high_precision).unwrap();
         assert_eq!(timestamp_range_extractor.start_timestamp, Some(1618353941));
         assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
+
+        // create bounds from fractional seconds
+        let narrow_fractional_range = quickwit_query::query_ast::RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Excluded(JsonLiteral::String(
+                "2022-12-16T10:00:57.148999Z".to_owned(),
+            )),
+            upper_bound: Bound::Included(JsonLiteral::String(
+                "2022-12-16T10:00:57.149001Z".to_owned(),
+            )),
+        }
+        .into();
+
+        let mut timestamp_range_extractor = ExtractTimestampRange {
+            timestamp_field,
+            start_timestamp: None,
+            end_timestamp: None,
+        };
+        timestamp_range_extractor
+            .visit(&narrow_fractional_range)
+            .unwrap();
+        // When we have > 1671184857.148999, we should get >= 1671184857, not >= 1671184858
+        // because the second 1671184857 contains values > 1671184857.148999
+        assert_eq!(timestamp_range_extractor.start_timestamp, Some(1671184857));
+        // When we have <= 1671184857.149001, we should get < 1671184858
+        assert_eq!(timestamp_range_extractor.end_timestamp, Some(1671184858));
     }
 
     fn create_search_resp(
