@@ -815,6 +815,8 @@ mod tests {
             event_broker: EventBroker::default(),
             skip_initial_seed: true,
             writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
+            use_streaming_engine: false,
+            target_split_size_bytes: 256 * 1024 * 1024,
         };
 
         let pipeline = ParquetMergePipeline::new(params, None, universe.spawn_ctx());
