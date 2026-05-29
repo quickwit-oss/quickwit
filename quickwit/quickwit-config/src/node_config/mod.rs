@@ -838,7 +838,7 @@ impl WebsocketConfig {
         self.site = Some(
             quickwit_common::get_from_env_opt::<String>("DD_SITE", false)
                 .or(self.site.take())
-                .map(Self::normalize_site_url)
+                .map(|site| quickwit_common::datadog::normalize_site_url(&site))
                 .unwrap_or("app.datadoghq.com".to_string()),
         );
 
@@ -864,21 +864,6 @@ impl WebsocketConfig {
             warn!("reverse connection is disabled, but API key is set");
         }
         Ok(())
-    }
-
-    fn normalize_site_url(site: String) -> String {
-        let site_no_scheme = site.strip_prefix("https://").unwrap_or(&site);
-        let site_no_scheme_no_slash = site_no_scheme.strip_suffix("/").unwrap_or(site_no_scheme);
-        // for some sites the agent supports aliases, we try to reproduce that
-        // https://docs.datadoghq.com/agent/troubleshooting/site/?site=us
-        let site = match site_no_scheme_no_slash {
-            "datadoghq.com" => "app.datadoghq.com",
-            "datadoghq.eu" => "app.datadoghq.eu",
-            // we hardly care about fed, but let's have it for completeness
-            "ddog-gov.com" => "app.ddog-gov.com",
-            site => site,
-        };
-        site.to_string()
     }
 
     fn redact(&mut self) {
@@ -1305,15 +1290,6 @@ mod tests {
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());
-    }
-
-    #[test]
-    fn test_normalize_site_url() {
-        let site = WebsocketConfig::normalize_site_url("https://datadoghq.com/".to_string());
-        assert_eq!(site, "app.datadoghq.com");
-
-        let site = WebsocketConfig::normalize_site_url("us5.datadoghq.com".to_string());
-        assert_eq!(site, "us5.datadoghq.com");
     }
 
     #[test]
