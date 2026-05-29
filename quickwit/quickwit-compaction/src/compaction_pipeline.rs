@@ -25,7 +25,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
-use quickwit_indexing::merge_policy::MergeOperation;
+use quickwit_indexing::merge_policy::{MergeOperation, MergeSource};
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_metrics::{counter, gauge, histogram, label_values};
 use quickwit_proto::indexing::MergePipelineId;
@@ -351,7 +351,7 @@ impl CompactionPipeline {
         self.pipeline_start = Some(now);
         // Kick off the pipeline.
         merge_split_downloader_mailbox
-            .try_send_message(self.merge_operation.clone())
+            .try_send_message(MergeSource::Operation(self.merge_operation.clone()))
             .map_err(|err| {
                 anyhow::anyhow!("failed to send merge operation to downloader: {err:?}")
             })?;

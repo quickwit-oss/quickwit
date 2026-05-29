@@ -40,7 +40,7 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::split_file;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::actors::MergeExecutor;
-use quickwit_indexing::merge_policy::{MergeOperation, MergeTask};
+use quickwit_indexing::merge_policy::{MergeOperation, MergeSource, MergeTask};
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{TestSandbox, get_tantivy_directory_from_split_bundle};
 use quickwit_metastore::{
@@ -285,10 +285,9 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
     let merge_operation = MergeOperation::new_merge_operation(split_metadatas);
-    let merge_task = MergeTask::from_merge_operation_for_test(merge_operation.clone());
+    let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
     let merge_scratch = MergeScratch {
-        merge_operation,
-        merge_task: Some(merge_task),
+        merge_source: MergeSource::Task(merge_task),
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,

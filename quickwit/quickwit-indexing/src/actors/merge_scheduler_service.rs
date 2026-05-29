@@ -29,7 +29,7 @@ use tracing::error;
 use super::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
 use super::parquet_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
-use crate::merge_policy::{MergeOperation, MergeTask, compute_merge_score};
+use crate::merge_policy::{MergeOperation, MergeSource, MergeTask, compute_merge_score};
 use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 
 pub struct MergePermit {
@@ -229,7 +229,7 @@ impl MergeSchedulerService {
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
             PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
             PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
-            match split_downloader_mailbox.try_send_message(merge_task) {
+            match split_downloader_mailbox.try_send_message(MergeSource::Task(merge_task)) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
                     // The split downloader mailbox has an unbounded queue capacity,
@@ -452,7 +452,7 @@ mod tests {
     use tokio::time::timeout;
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeTask};
+    use crate::merge_policy::{MergeOperation, MergeSource};
 
     fn build_merge_operation(num_splits: usize, num_bytes_per_split: u64) -> MergeOperation {
         let splits: Vec<SplitMetadata> = std::iter::repeat_with(|| SplitMetadata {
@@ -530,58 +530,58 @@ mod tests {
             .unwrap();
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 4_000_000
             );
-            let merge_task2: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source2 = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task2.merge_operation.splits[0].footer_offsets.end,
+                merge_source2.as_operation().splits[0].footer_offsets.end,
                 3_000_000
             );
             assert!(
                 timeout(
                     Duration::from_millis(200),
-                    merge_split_downloader_inbox.recv_typed_message::<MergeTask>()
+                    merge_split_downloader_inbox.recv_typed_message::<MergeSource>()
                 )
                 .await
                 .is_err()
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 1_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 2_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 5_000_000
             );
         }

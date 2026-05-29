@@ -47,7 +47,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperationType;
+use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
 #[derive(Clone)]
@@ -85,7 +85,7 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_operation.merge_parent_span.id(), skip_all)]
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_source.as_operation().merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
@@ -93,12 +93,12 @@ impl Handler<MergeScratch> for MergeExecutor {
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
         let MergeScratch {
-            merge_operation,
-            merge_task,
+            merge_source,
             tantivy_dirs,
             merge_scratch_directory,
             ..
         } = merge_scratch;
+        let merge_operation = merge_source.as_operation();
         // On nodes running the split compaction architecture, merge pipelines are ephemeral, and we
         // need to make sure there aren't too many CPU-bound operations occurring concurrently.
         let _cpu_permit = match &self.merge_execution_semaphore {
@@ -164,6 +164,11 @@ impl Handler<MergeScratch> for MergeExecutor {
                 operation_type = %merge_operation.operation_type,
                 "merge-operation-success"
             );
+            let batch_parent_span = merge_operation.merge_parent_span.clone();
+            let merge_task_opt = match merge_source {
+                MergeSource::Task(task) => Some(task),
+                MergeSource::Operation(_) => None,
+            };
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
@@ -171,8 +176,8 @@ impl Handler<MergeScratch> for MergeExecutor {
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
                     publish_token_opt: None,
-                    batch_parent_span: merge_operation.merge_parent_span.clone(),
-                    merge_task_opt: merge_task,
+                    batch_parent_span,
+                    merge_task_opt,
                 },
             )
             .await?;
@@ -615,7 +620,7 @@ mod tests {
     use tantivy::{Document, ReloadPolicy, TantivyDocument};
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeTask};
+    use crate::merge_policy::{MergeOperation, MergeSource, MergeTask};
     use crate::{TestSandbox, get_tantivy_directory_from_split_bundle, new_split_id};
 
     #[tokio::test]
@@ -664,10 +669,9 @@ mod tests {
             tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_operation = MergeOperation::new_merge_operation(split_metas);
-        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation.clone());
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_operation,
-            merge_task: Some(merge_task),
+            merge_source: MergeSource::Task(merge_task),
             tantivy_dirs,
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -810,10 +814,9 @@ mod tests {
             .await?;
         let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
         let merge_operation = MergeOperation::new_delete_and_merge_operation(new_split_metadata);
-        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation.clone());
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_operation,
-            merge_task: Some(merge_task),
+            merge_source: MergeSource::Task(merge_task),
             tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,
