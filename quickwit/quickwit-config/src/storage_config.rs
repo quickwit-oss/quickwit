@@ -357,7 +357,7 @@ pub struct S3StorageConfig {
     pub checksum_algorithm: ChecksumAlgorithm,
     /// Deprecated: applies into `checksum_algorithm: disabled`.
     #[serde(default, skip_serializing)]
-    pub disable_checksums: Option<bool>,
+    pub disable_checksums: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_upload: bool,
     #[serde(default)]
@@ -388,7 +388,7 @@ impl S3StorageConfig {
             _ => {}
         }
         // Legacy: honor `disable_checksums: true` from older configs.
-        if matches!(self.disable_checksums, Some(true)) {
+        if self.disable_checksums {
             self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
     }
