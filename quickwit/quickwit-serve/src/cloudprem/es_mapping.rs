@@ -41,8 +41,9 @@ pub(crate) async fn cloudprem_index_mapping(
         return es_compat_index_mapping(index_id, params, metastore, search_service).await;
     }
 
-    let index_id_patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
-    let indexes_metadata = resolve_index_patterns(&patterns, &mut metastore).await?;
+    let index_id_patterns: Vec<String> =
+        index_id.split(',').map(|s| s.trim().to_string()).collect();
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
     if all_requested_declared(&requested_fields, &indexes_metadata) {
         return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
             indexes_metadata,
