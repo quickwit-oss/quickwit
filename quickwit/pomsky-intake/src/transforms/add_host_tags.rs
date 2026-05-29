@@ -404,7 +404,7 @@ mod tests {
         trace.insert("service", "my-svc");
         trace.insert("name", "http.request");
         if let Some(host) = hostname {
-            trace.insert("meta.host", host);
+            trace.insert("host", host);
         }
         Event::Trace(trace)
     }
@@ -415,20 +415,20 @@ mod tests {
         let event = make_trace(Some("web-01"));
         let events = run_transform(store, event);
         let trace = events[0].as_trace();
-        assert_eq!(trace.get("meta.env"), Some(&Value::from("prod")));
-        assert_eq!(trace.get("meta.region"), Some(&Value::from("us-east-1")));
+        assert_eq!(trace.get("custom.env"), Some(&Value::from("prod")));
+        assert_eq!(trace.get("custom.region"), Some(&Value::from("us-east-1")));
     }
 
     #[test]
     fn test_trace_existing_meta_not_overwritten() {
         let store = make_store(Duration::from_secs(3600));
         let mut trace = TraceEvent::default();
-        trace.insert("meta.host", "web-01");
-        trace.insert("meta.env", "canary");
+        trace.insert("host", "web-01");
+        trace.insert("custom.env", "canary");
         let events = run_transform(store, Event::Trace(trace));
         let trace = events[0].as_trace();
-        assert_eq!(trace.get("meta.env"), Some(&Value::from("canary")));
-        assert_eq!(trace.get("meta.region"), Some(&Value::from("us-east-1")));
+        assert_eq!(trace.get("custom.env"), Some(&Value::from("canary")));
+        assert_eq!(trace.get("custom.region"), Some(&Value::from("us-east-1")));
     }
 
     #[test]
@@ -462,7 +462,7 @@ mod tests {
         let events: Vec<_> = output.into_events().collect();
         let trace = events[0].as_trace();
         // Stale tags are still applied.
-        assert_eq!(trace.get("meta.env"), Some(&Value::from("prod")));
+        assert_eq!(trace.get("custom.env"), Some(&Value::from("prod")));
         // Host is also re-queued for refresh.
         let drained = collector.drain(10);
         assert_eq!(drained, vec!["web-01".to_string()]);
