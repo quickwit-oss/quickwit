@@ -72,7 +72,7 @@ impl ClusterService for Cluster {
 
         for (chitchat_id, node_state) in chitchat_guard.node_states() {
             let proto_chitchat_id = ProtoChitchatId {
-                node_id: chitchat_id.node_id.clone(),
+                node_id: chitchat_id.node_id.to_string(),
                 generation_id: chitchat_id.generation_id,
                 gossip_advertise_addr: chitchat_id.gossip_advertise_addr.to_string(),
             };

@@ -81,6 +81,28 @@ pub enum InvariantId {
     MP2,
     /// MP-3: all splits in a merge operation share the same compaction scope
     MP3,
+    /// MP-4: total rows in published splits equals cumulative rows ever ingested
+    /// (the strong "no data loss, no duplication" invariant — survives crash/restart)
+    MP4,
+    /// MP-5: every published split has merge_ops <= MaxMergeOps (bounded write amp)
+    MP5,
+    /// MP-6: every input of an in-flight merge is still in published_splits
+    /// (inputs durable in metastore until publish step completes)
+    MP6,
+    /// MP-7: no split appears in two concurrent in-flight merges
+    MP7,
+    /// MP-8: no split is simultaneously visible to the planner AND locked in an
+    /// in-flight merge (planner can't re-merge a locked split)
+    MP8,
+    /// MP-9: while planner is alive AND connected, every immature published split
+    /// is reachable from cold_windows or in_flight_merges
+    MP9,
+    /// MP-10: orphan_outputs (uploaded but never published) and published_splits
+    /// are disjoint — orphan blobs are object-store leaks, not durable data loss
+    MP10,
+    /// MP-11: post-Restart action property — every immature published split is
+    /// in cold_windows after fetch_immature_splits re-seeds the planner
+    MP11,
 }
 
 impl InvariantId {
@@ -117,6 +139,14 @@ impl InvariantId {
             Self::MP1 => "MP-1",
             Self::MP2 => "MP-2",
             Self::MP3 => "MP-3",
+            Self::MP4 => "MP-4",
+            Self::MP5 => "MP-5",
+            Self::MP6 => "MP-6",
+            Self::MP7 => "MP-7",
+            Self::MP8 => "MP-8",
+            Self::MP9 => "MP-9",
+            Self::MP10 => "MP-10",
+            Self::MP11 => "MP-11",
         }
     }
 
@@ -151,6 +181,14 @@ impl InvariantId {
             Self::MP1 => "merge op splits share num_merge_ops level",
             Self::MP2 => "merge op has at least 2 splits",
             Self::MP3 => "merge op splits share compaction scope",
+            Self::MP4 => "total ingested rows preserved in published splits",
+            Self::MP5 => "every published split has merge_ops <= MaxMergeOps",
+            Self::MP6 => "in-flight merge inputs remain in published_splits",
+            Self::MP7 => "no split in multiple concurrent in-flight merges",
+            Self::MP8 => "planner and in-flight sets are disjoint",
+            Self::MP9 => "every immature published split tracked when planner connected",
+            Self::MP10 => "orphan_outputs disjoint from published_splits",
+            Self::MP11 => "Restart re-seeds planner with all immature splits",
         }
     }
 }
@@ -201,6 +239,14 @@ mod tests {
             InvariantId::MP1,
             InvariantId::MP2,
             InvariantId::MP3,
+            InvariantId::MP4,
+            InvariantId::MP5,
+            InvariantId::MP6,
+            InvariantId::MP7,
+            InvariantId::MP8,
+            InvariantId::MP9,
+            InvariantId::MP10,
+            InvariantId::MP11,
         ];
         for id in all {
             assert!(!id.description().is_empty(), "{} has empty description", id);

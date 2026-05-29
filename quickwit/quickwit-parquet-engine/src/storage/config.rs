@@ -64,8 +64,24 @@ pub struct ParquetWriterConfig {
     pub row_group_size: usize,
     /// Target size in bytes for data pages.
     pub data_page_size: usize,
+    /// Maximum rows per data page (`0` = unbounded — let `data_page_size`
+    /// drive the rollover). Useful for tests that need to force the
+    /// metric_name column into multiple pages even when it compresses
+    /// to a handful of bytes.
+    pub data_page_row_count_limit: usize,
     /// Number of rows per write batch.
     pub write_batch_size: usize,
+    /// Whether to emit page-level statistics (Parquet Column Index +
+    /// Offset Index) in the footer. Default `true`.
+    ///
+    /// When `false`, only chunk-level (row-group) statistics are emitted,
+    /// which gives one min/max per (RG, column) and no per-page metadata.
+    /// This loses page-level pruning in queries — fine for multi-RG files
+    /// where RG-level pruning is already useful, but **strongly
+    /// discouraged for single-RG files**, where it collapses pruning to
+    /// one min/max per file. Reduces footer size by tens of KB on small
+    /// files (a few hundred KB on very wide schemas).
+    pub page_statistics_enabled: bool,
 }
 
 impl Default for ParquetWriterConfig {
@@ -75,7 +91,9 @@ impl Default for ParquetWriterConfig {
             compression_level: Some(DEFAULT_ZSTD_LEVEL),
             row_group_size: DEFAULT_ROW_GROUP_SIZE,
             data_page_size: DEFAULT_DATA_PAGE_SIZE,
+            data_page_row_count_limit: 0,
             write_batch_size: DEFAULT_WRITE_BATCH_SIZE,
+            page_statistics_enabled: true,
         }
     }
 }
@@ -110,9 +128,25 @@ impl ParquetWriterConfig {
         self
     }
 
+    /// Set the per-page row count limit. `0` means unbounded (rely on
+    /// `data_page_size` for rollover). See
+    /// [`ParquetWriterConfig::data_page_row_count_limit`].
+    pub fn with_data_page_row_count_limit(mut self, limit: usize) -> Self {
+        self.data_page_row_count_limit = limit;
+        self
+    }
+
     /// Set the write batch size.
     pub fn with_write_batch_size(mut self, size: usize) -> Self {
         self.write_batch_size = size;
+        self
+    }
+
+    /// Enable or disable page-level statistics (column index + offset
+    /// index). Default `true`. See
+    /// [`ParquetWriterConfig::page_statistics_enabled`] for the trade-off.
+    pub fn with_page_statistics(mut self, enabled: bool) -> Self {
+        self.page_statistics_enabled = enabled;
         self
     }
 
@@ -140,13 +174,33 @@ impl ParquetWriterConfig {
         kv_metadata: Option<Vec<KeyValue>>,
         sort_field_names: &[String],
     ) -> WriterProperties {
+        // Page-level statistics let queries prune individual data pages via
+        // Parquet's Column Index + Offset Index in the footer. This is the
+        // prerequisite for the streaming column-major merge engine, where
+        // outputs may be a single large row group: without per-page stats,
+        // pruning would collapse to one min/max per file. Truncation length
+        // (64 bytes) bounds the per-page metadata footprint for high-
+        // cardinality string columns.
+        //
+        // The choice is controlled by `page_statistics_enabled`. Disabling
+        // it falls back to `Chunk`-level stats only — saves a few percent
+        // of footer space at the cost of page-level pruning.
+        let stats_level = if self.page_statistics_enabled {
+            EnabledStatistics::Page
+        } else {
+            EnabledStatistics::Chunk
+        };
         let mut builder = WriterProperties::builder()
             .set_max_row_group_row_count(Some(self.row_group_size))
             .set_data_page_size_limit(self.data_page_size)
             .set_write_batch_size(self.write_batch_size)
             .set_column_index_truncate_length(Some(64))
             .set_sorting_columns(Some(sorting_cols))
-            .set_statistics_enabled(EnabledStatistics::Chunk);
+            .set_statistics_enabled(stats_level);
+
+        if self.data_page_row_count_limit > 0 {
+            builder = builder.set_data_page_row_count_limit(self.data_page_row_count_limit);
+        }
 
         if let Some(kvs) = kv_metadata
             && !kvs.is_empty()
@@ -346,21 +400,110 @@ mod tests {
         let schema = create_test_schema();
         let props = config.to_writer_properties(&schema);
 
-        // Verify statistics are enabled at Chunk (row group) level
+        // Page-level stats are required for column index / offset index to
+        // land in the footer; downstream pruning relies on that data.
+        let metric_name_path = ColumnPath::new(vec!["metric_name".to_string()]);
+        assert_eq!(
+            props.statistics_enabled(&metric_name_path),
+            EnabledStatistics::Page,
+            "statistics should be enabled at Page level"
+        );
+
+        let timestamp_path = ColumnPath::new(vec!["timestamp_secs".to_string()]);
+        assert_eq!(
+            props.statistics_enabled(&timestamp_path),
+            EnabledStatistics::Page,
+            "statistics should be enabled at Page level for timestamp"
+        );
+    }
+
+    #[test]
+    fn test_page_statistics_default_enabled() {
+        let config = ParquetWriterConfig::default();
+        assert!(config.page_statistics_enabled);
+    }
+
+    #[test]
+    fn test_page_statistics_disable_falls_back_to_chunk() {
+        let config = ParquetWriterConfig::new().with_page_statistics(false);
+        assert!(!config.page_statistics_enabled);
+
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
         let metric_name_path = ColumnPath::new(vec!["metric_name".to_string()]);
         assert_eq!(
             props.statistics_enabled(&metric_name_path),
             EnabledStatistics::Chunk,
-            "statistics should be enabled at Chunk level"
+            "disabling page stats should fall back to chunk-level stats"
         );
+    }
 
-        // Verify for timestamp column as well (important for time range pruning)
-        let timestamp_path = ColumnPath::new(vec!["timestamp_secs".to_string()]);
-        assert_eq!(
-            props.statistics_enabled(&timestamp_path),
-            EnabledStatistics::Chunk,
-            "statistics should be enabled at Chunk level for timestamp"
-        );
+    #[test]
+    fn test_page_statistics_disabled_writer_omits_indexes() {
+        // With the knob off, written files have no Column Index / Offset
+        // Index in the footer. The inspector should report
+        // `has_column_index = false` for every column.
+        use std::sync::Arc;
+
+        use arrow::array::{
+            DictionaryArray, Float64Array, Int64Array, RecordBatch, UInt8Array, UInt64Array,
+        };
+        use arrow::datatypes::{Field, Int32Type};
+        use parquet::arrow::ArrowWriter;
+        use tempfile::TempDir;
+
+        use super::*;
+        use crate::storage::inspect_parquet_page_stats;
+
+        let dir = TempDir::new().unwrap();
+        let metric_name_array: DictionaryArray<Int32Type> = (0..16)
+            .map(|i| Some(if i < 8 { "cpu" } else { "mem" }))
+            .collect();
+        let timestamp_array = UInt64Array::from((0..16u64).collect::<Vec<_>>());
+        let value_array = Float64Array::from((0..16).map(|i| i as f64).collect::<Vec<_>>());
+        let tsid_array = Int64Array::from(vec![42i64; 16]);
+        let metric_type_array = UInt8Array::from(vec![0u8; 16]);
+
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new(
+                "metric_name",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(metric_name_array),
+                Arc::new(metric_type_array),
+                Arc::new(timestamp_array),
+                Arc::new(value_array),
+                Arc::new(tsid_array),
+            ],
+        )
+        .unwrap();
+
+        let path = dir.path().join("no_page_index.parquet");
+        let config = ParquetWriterConfig::new().with_page_statistics(false);
+        let props = config.to_writer_properties(&schema);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let report = inspect_parquet_page_stats(&path, 100).unwrap();
+        for col in &report.row_groups[0].columns {
+            assert!(
+                !col.has_column_index,
+                "column '{}' must NOT have a column index when page stats are disabled",
+                col.column_path
+            );
+        }
     }
 
     #[test]

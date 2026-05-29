@@ -143,7 +143,7 @@ impl Queue for SqsQueue {
             .await;
             match res {
                 Ok(res) => {
-                    message_errors.extend(res.failed.into_iter());
+                    message_errors.extend(res.failed);
                 }
                 Err(err) => {
                     batch_errors.push(err);

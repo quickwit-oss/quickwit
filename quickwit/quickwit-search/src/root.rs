@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -31,9 +31,10 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest, SearchResponse,
-    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafResourceStats,
+    LeafSearchRequest, LeafSearchResponse, PartialHit, RootResourceStats, SearchPlanResponse,
+    SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
+    SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -112,7 +113,7 @@ impl<'a> From<&'a SplitMetadata> for SearchJob {
     fn from(split_metadata: &'a SplitMetadata) -> Self {
         SearchJob {
             index_uid: split_metadata.index_uid.clone(),
-            cost: compute_split_cost(split_metadata),
+            cost: compute_split_cost(split_metadata.num_docs as u64),
             offsets: extract_split_and_footer_offsets(split_metadata),
         }
     }
@@ -569,7 +570,11 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<(LeafSearchResponse, Option<ScrollKeyAndStartOffset>)> {
+) -> crate::Result<(
+    LeafSearchResponse,
+    Option<ScrollKeyAndStartOffset>,
+    Option<RootResourceStats>,
+)> {
     let scroll_ttl_opt = get_scroll_ttl_duration(&search_request)?;
 
     if let Some(scroll_ttl) = scroll_ttl_opt {
@@ -581,7 +586,7 @@ async fn search_partial_hits_phase_with_scroll(
             .max_hits
             .max(shared_consts::SCROLL_BATCH_LEN as u64);
         search_request.scroll_ttl_secs = None;
-        let mut leaf_search_resp = search_partial_hits_phase(
+        let (mut leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -624,9 +629,13 @@ async fn search_partial_hits_phase_with_scroll(
         cluster_client
             .put_kv(&scroll_key, &payload, scroll_ttl)
             .await;
-        Ok((leaf_search_resp, Some(scroll_key_and_start_offset)))
+        Ok((
+            leaf_search_resp,
+            Some(scroll_key_and_start_offset),
+            root_resource_stats,
+        ))
     } else {
-        let leaf_search_resp = search_partial_hits_phase(
+        let (leaf_search_resp, root_resource_stats) = search_partial_hits_phase(
             searcher_context,
             indexes_metas_for_leaf_search,
             &search_request,
@@ -634,7 +643,7 @@ async fn search_partial_hits_phase_with_scroll(
             cluster_client,
         )
         .await?;
-        Ok((leaf_search_resp, None))
+        Ok((leaf_search_resp, None, root_resource_stats))
     }
 }
 
@@ -727,6 +736,52 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     is_memory_intensive
 }
 
+/// Build a `RootResourceStats` from the per-leaf responses captured before
+/// they are merged.
+///
+/// `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
+/// `leaf_resources_sum` is a field-wise sum of every leaf's stats.
+fn compute_root_resource_stats(
+    leaf_responses: &[LeafSearchResponse],
+    leaf_num_calls: u64,
+    leaf_num_calls_including_retries: u64,
+    num_failed_splits: u64,
+) -> Option<RootResourceStats> {
+    let leaf_stats: Vec<&LeafResourceStats> = leaf_responses
+        .iter()
+        .filter_map(|resp| resp.resource_stats.as_ref())
+        .collect();
+    if leaf_stats.is_empty() {
+        return None;
+    }
+
+    let leaf_resources_worst = leaf_stats
+        .iter()
+        .copied()
+        .max_by_key(|stats| stats.wall_time_microsecs)
+        .cloned();
+
+    let mut leaf_wall_times_microsecs: Vec<u64> = leaf_stats
+        .iter()
+        .map(|stats| stats.wall_time_microsecs)
+        .collect();
+    leaf_wall_times_microsecs.sort_by_key(|time| std::cmp::Reverse(*time));
+
+    let mut leaf_resources_sum = LeafResourceStats::default();
+    for stats in &leaf_stats {
+        crate::add_leaf_stats(&mut leaf_resources_sum, stats);
+    }
+
+    Some(RootResourceStats {
+        leaf_resources_worst,
+        leaf_resources_sum: Some(leaf_resources_sum),
+        leaf_num_calls,
+        leaf_num_calls_including_retries,
+        num_failed_splits,
+        leaf_wall_times_microsecs,
+    })
+}
+
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
 #[instrument(level = "debug", skip_all)]
@@ -736,7 +791,11 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-) -> crate::Result<LeafSearchResponse> {
+) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
+    // Each entry is (leaf response, number of leaf attempts made to obtain it).
+    // Metadata-count responses are synthesised locally and contribute 0 attempts.
+    let mut leaf_num_calls = 0u64;
+    let leaf_num_calls_including_retries_arc: Arc<AtomicU64> = Default::default();
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
@@ -753,10 +812,26 @@ pub(crate) async fn search_partial_hits_phase(
                     indexes_metas_for_leaf_search,
                     client_jobs,
                 )?;
-                leaf_request_tasks.push(cluster_client.leaf_search(leaf_request, client.clone()));
+                leaf_request_tasks.push(cluster_client.leaf_search(
+                    leaf_request,
+                    client.clone(),
+                    leaf_num_calls_including_retries_arc.clone(),
+                ));
             }
+            leaf_num_calls = leaf_request_tasks.len() as u64;
             try_join_all(leaf_request_tasks).await?
         };
+
+    let num_failed_splits: u64 = leaf_search_responses
+        .iter()
+        .map(|resp| resp.failed_splits.len() as u64)
+        .sum();
+    let root_resource_stats = compute_root_resource_stats(
+        &leaf_search_responses,
+        leaf_num_calls,
+        leaf_num_calls_including_retries_arc.load(Ordering::Relaxed),
+        num_failed_splits,
+    );
 
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
@@ -786,16 +861,17 @@ pub(crate) async fn search_partial_hits_phase(
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats
+        && let Some(split_resources_sum) = &resource_stats.split_resources_sum
         && is_top_5pct_memory_intensive(
-            resource_stats.short_lived_cache_num_bytes,
-            resource_stats.split_num_docs,
+            split_resources_sum.input_memory_bytes,
+            split_resources_sum.split_num_docs,
         )
     {
         // We log at most 5 times per minute.
         quickwit_common::rate_limited_info!(
             limit_per_min = 5,
-            split_num_docs = resource_stats.split_num_docs,
-            short_lived_cached_num_bytes = resource_stats.short_lived_cache_num_bytes,
+            split_num_docs = split_resources_sum.split_num_docs,
+            input_memory_bytes = split_resources_sum.input_memory_bytes,
             "memory intensive query"
         );
     }
@@ -804,7 +880,7 @@ pub(crate) async fn search_partial_hits_phase(
         quickwit_common::rate_limited_error!(limit_per_min=6, num_failed_splits = leaf_search_response.failed_splits.len(), failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5), "leaf search response contains failed splits");
     }
 
-    Ok(leaf_search_response)
+    Ok((leaf_search_response, root_resource_stats))
 }
 
 pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<SnippetRequest> {
@@ -979,9 +1055,10 @@ async fn root_search_aux(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
-    let (first_phase_result, scroll_key_and_start_offset_opt): (
+    let (first_phase_result, scroll_key_and_start_offset_opt, root_resource_stats): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
+        Option<RootResourceStats>,
     ) = search_partial_hits_phase_with_scroll(
         searcher_context,
         indexes_metas_for_leaf_search,
@@ -1021,6 +1098,7 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
+        resource_stats: root_resource_stats,
     })
 }
 
@@ -1674,18 +1752,21 @@ async fn assign_client_fetch_docs_jobs(
         fetch_docs_req_jobs.push(fetch_docs_job);
     }
 
+    // don't do a second call to GetLoad to place fetch_docs jobs
     let assigned_jobs = client_pool
-        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
+        .assign_jobs_ignoring_load(fetch_docs_req_jobs, &HashSet::new())
         .await?;
 
     Ok(assigned_jobs)
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(split_metadata: &SplitMetadata) -> usize {
+pub(crate) fn compute_split_cost(num_docs: u64) -> usize {
     // TODO this formula could be tuned a lot more. The general idea is that there is a fixed
     // cost to searching a split, plus a somewhat-linear cost depending on the size of the split
-    5 + split_metadata.num_docs / 100_000
+    // This should also factor the query shape (is it an expensive filter, is it an expensive
+    // aggregation...)
+    5 + (num_docs / 100_000) as usize
 }
 
 /// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].
@@ -2831,6 +2912,335 @@ mod tests {
         .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_returns_none_for_empty_input() {
+        assert!(compute_root_resource_stats(&[], 0, 0, 0).is_none());
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_returns_none_when_no_leaf_carries_stats() {
+        // A leaf without `resource_stats` should be ignored: with every leaf
+        // missing stats, `compute_root_resource_stats` returns `None`. The
+        // scalar counter arguments are still preserved if we ever decide to
+        // emit a stats payload anyway, but per the current contract they are
+        // dropped together with the rest.
+        let responses = vec![
+            LeafSearchResponse {
+                resource_stats: None,
+                ..Default::default()
+            },
+            LeafSearchResponse {
+                resource_stats: None,
+                ..Default::default()
+            },
+        ];
+        assert!(compute_root_resource_stats(&responses, 2, 2, 0).is_none());
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_aggregates_per_leaf_stats() {
+        use quickwit_proto::search::SplitResourceStats;
+
+        let split_a = SplitResourceStats {
+            split_num_docs: 10,
+            download_num_bytes: 4_096,
+            download_num_requests: 2,
+            warmup_microsecs: 100,
+            cpu_search_microsecs: 200,
+            ..Default::default()
+        };
+        let split_b = SplitResourceStats {
+            split_num_docs: 20,
+            download_num_bytes: 8_192,
+            download_num_requests: 3,
+            warmup_microsecs: 150,
+            cpu_search_microsecs: 350,
+            ..Default::default()
+        };
+        let leaf_a = LeafSearchResponse {
+            resource_stats: Some(LeafResourceStats {
+                localexec_num_splits: 1,
+                localexec_num_docs: 10,
+                lambda_bottleneck: 0,
+                split_resources_sum: Some(split_a),
+                split_resources_worst: Some(split_a),
+                wall_time_microsecs: 1_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let leaf_b = LeafSearchResponse {
+            resource_stats: Some(LeafResourceStats {
+                localexec_num_splits: 1,
+                localexec_num_docs: 20,
+                lambda_bottleneck: 1,
+                split_resources_sum: Some(split_b),
+                split_resources_worst: Some(split_b),
+                wall_time_microsecs: 2_500,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let root_stats = compute_root_resource_stats(
+            &[leaf_a, leaf_b],
+            /* leaf_num_calls */ 2,
+            /* including_retries */ 3,
+            /* num_failed_splits */ 1,
+        )
+        .expect("expected `RootResourceStats` to be produced");
+
+        // Scalar fields are passed through verbatim.
+        assert_eq!(root_stats.leaf_num_calls, 2);
+        assert_eq!(root_stats.leaf_num_calls_including_retries, 3);
+        assert_eq!(root_stats.num_failed_splits, 1);
+
+        // `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
+        let worst = root_stats
+            .leaf_resources_worst
+            .expect("worst leaf should be set");
+        assert_eq!(worst.wall_time_microsecs, 2_500);
+        assert_eq!(worst.localexec_num_docs, 20);
+
+        // `leaf_wall_times_microsecs` lists every leaf's wall time, largest first.
+        assert_eq!(&root_stats.leaf_wall_times_microsecs, &[2_500, 1_000]);
+
+        // `leaf_resources_sum` field-wise sums every numeric counter, including
+        // `wall_time_microsecs` and `lambda_bottleneck` (post-`add_leaf_stats`
+        // refactor: everything is extensive).
+        let sum = root_stats.leaf_resources_sum.expect("sum should be set");
+        assert_eq!(sum.localexec_num_splits, 2);
+        assert_eq!(sum.localexec_num_docs, 30);
+        assert_eq!(sum.lambda_bottleneck, 1);
+        assert_eq!(sum.wall_time_microsecs, 3_500);
+
+        // `split_resources_sum` rolls up every contributing split.
+        let split_sum = sum
+            .split_resources_sum
+            .expect("split_resources_sum should be set");
+        assert_eq!(split_sum.split_num_docs, 30);
+        assert_eq!(split_sum.download_num_bytes, 12_288);
+        assert_eq!(split_sum.download_num_requests, 5);
+        assert_eq!(split_sum.warmup_microsecs, 250);
+        assert_eq!(split_sum.cpu_search_microsecs, 550);
+    }
+
+    #[test]
+    fn test_compute_root_resource_stats_skips_leaves_without_stats() {
+        // A mix of stats-bearing and stats-less leaves: the latter are
+        // silently dropped (we cannot synthesize stats we never received).
+        use quickwit_proto::search::SplitResourceStats;
+        let split = SplitResourceStats {
+            split_num_docs: 7,
+            ..Default::default()
+        };
+        let responses = vec![
+            LeafSearchResponse {
+                resource_stats: None,
+                ..Default::default()
+            },
+            LeafSearchResponse {
+                resource_stats: Some(LeafResourceStats {
+                    localexec_num_splits: 1,
+                    localexec_num_docs: 7,
+                    split_resources_sum: Some(split),
+                    split_resources_worst: Some(split),
+                    wall_time_microsecs: 500,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        ];
+        let root_stats = compute_root_resource_stats(&responses, 2, 2, 0)
+            .expect("at least one leaf carried stats");
+        let sum = root_stats.leaf_resources_sum.unwrap();
+        assert_eq!(sum.localexec_num_splits, 1);
+        assert_eq!(sum.wall_time_microsecs, 500);
+        // `leaf_num_calls` reflects the call count (passed in by the caller),
+        // not the number of leaves that returned stats.
+        assert_eq!(root_stats.leaf_num_calls, 2);
+    }
+
+    /// End-to-end check that `SearchResponse.resource_stats` is populated by
+    /// `root_search` when the leaf responses carry `LeafResourceStats`. This
+    /// is the same function the gRPC `RootSearch` handler invokes (see
+    /// `service::SearchServiceImpl::root_search`, which is a thin wrapper
+    /// over the free function called here), so it covers the gRPC root code
+    /// path end-to-end with mocked metastore + leaf services.
+    #[tokio::test]
+    async fn test_root_search_populates_resource_stats() -> anyhow::Result<()> {
+        use quickwit_proto::search::{LeafResourceStats, SplitResourceStats};
+
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: qast_json_helper("test", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_index_ids_query| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(move |_filter| {
+                let splits = vec![
+                    MockSplitBuilder::new("split1")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                    MockSplitBuilder::new("split2")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                ];
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+
+        // The two leaves report distinct stats so we can verify that root
+        // aggregation produces a meaningful `leaf_resources_sum` and selects
+        // the longer-running leaf as `leaf_resources_worst`.
+        let split1_stats = SplitResourceStats {
+            split_num_docs: 10,
+            input_memory_bytes: 1_024,
+            download_num_bytes: 4_096,
+            download_num_requests: 2,
+            matched_num_docs: 5,
+            warmup_microsecs: 100,
+            cpu_search_microsecs: 200,
+            ..Default::default()
+        };
+        let split2_stats = SplitResourceStats {
+            split_num_docs: 20,
+            input_memory_bytes: 2_048,
+            download_num_bytes: 8_192,
+            download_num_requests: 3,
+            matched_num_docs: 7,
+            warmup_microsecs: 150,
+            cpu_search_microsecs: 350,
+            ..Default::default()
+        };
+        let leaf_stats_1 = LeafResourceStats {
+            localexec_num_splits: 1,
+            localexec_num_docs: 10,
+            split_resources_sum: Some(split1_stats),
+            split_resources_worst: Some(split1_stats),
+            wall_time_microsecs: 1_000,
+            ..Default::default()
+        };
+        let leaf_stats_2 = LeafResourceStats {
+            localexec_num_splits: 1,
+            localexec_num_docs: 20,
+            split_resources_sum: Some(split2_stats),
+            split_resources_worst: Some(split2_stats),
+            wall_time_microsecs: 2_500,
+            ..Default::default()
+        };
+
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1.expect_leaf_search().returning(
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 2,
+                    partial_hits: vec![
+                        mock_partial_hit("split1", 3, 1),
+                        mock_partial_hit("split1", 1, 3),
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    num_successful_splits: 1,
+                    resource_stats: Some(leaf_stats_1),
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2.expect_leaf_search().returning(
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 1,
+                    partial_hits: vec![mock_partial_hit("split2", 2, 2)],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    num_successful_splits: 1,
+                    resource_stats: Some(leaf_stats_2),
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service_2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+
+        let search_response = root_search(
+            &SearcherContext::for_test(),
+            search_request,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            &cluster_client,
+        )
+        .await?;
+
+        assert_eq!(search_response.num_hits, 3);
+
+        let root_stats = search_response
+            .resource_stats
+            .expect("root resource_stats should be populated");
+        assert_eq!(root_stats.leaf_num_calls, 2);
+        assert_eq!(root_stats.leaf_num_calls_including_retries, 2);
+        assert_eq!(root_stats.num_failed_splits, 0);
+
+        // `leaf_resources_worst` is the leaf with the largest wall_time.
+        let worst = root_stats
+            .leaf_resources_worst
+            .expect("leaf_resources_worst should be set");
+        assert_eq!(worst.wall_time_microsecs, 2_500);
+        assert_eq!(worst.localexec_num_splits, 1);
+
+        // `leaf_resources_sum` field-wise sums every numeric counter across
+        // leaves; `wall_time_microsecs` is summed too after the recent
+        // `add_leaf_stats` refactor.
+        let sum = root_stats
+            .leaf_resources_sum
+            .expect("leaf_resources_sum should be set");
+        assert_eq!(sum.localexec_num_splits, 2);
+        assert_eq!(sum.localexec_num_docs, 30);
+        assert_eq!(sum.wall_time_microsecs, 3_500);
+
+        // `split_resources_sum` aggregates per-split contributions across all
+        // local splits in every leaf.
+        let split_sum = sum
+            .split_resources_sum
+            .expect("split_resources_sum should be set");
+        assert_eq!(split_sum.split_num_docs, 30);
+        assert_eq!(split_sum.download_num_bytes, 12_288);
+        assert_eq!(split_sum.download_num_requests, 5);
+        assert_eq!(split_sum.matched_num_docs, 12);
+
         Ok(())
     }
 

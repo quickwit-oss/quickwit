@@ -290,8 +290,8 @@ impl QuickwitSubstraitConsumerExt for MetricsDataSource {
     /// table-reference scheme requires (single name, catalog/schema/table,
     /// etc.) — only the leaf segment is interpreted here. Mapping a
     /// caller-side logical table to a concrete Quickwit index is a
-    /// producer concern (e.g. a Pomsky-style bridge that rewrites
-    /// `datadog.metrics.points` to a concrete index name before emitting
+    /// producer concern (e.g. an upstream bridge that rewrites
+    /// `metrics.points` to a concrete index name before emitting
     /// the Substrait plan).
     ///
     /// ## Extension path — custom protos (downstream callers)

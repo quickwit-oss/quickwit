@@ -14,19 +14,22 @@
 
 #![recursion_limit = "256"]
 
-use std::collections::BTreeMap;
-
 use anyhow::Context;
 use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_cli::metrics::register_build_info_metric;
+#[cfg(target_os = "linux")]
+use quickwit_cli::proc_io::start_proc_io_metrics_loop;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
-use quickwit_serve::BuildInfo;
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
+
+#[cfg(feature = "tokio-console")]
+const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
 /// QW_RUNTIME_NUM_THREADS environment variable.
@@ -44,7 +47,7 @@ fn main() -> anyhow::Result<()> {
     unsafe {
         // SAFETY: this is done before spawning any thread, it trivially isn't done concurrently
         // with any other enviromnent read/write operations
-        openssl_probe::init_openssl_env_vars()
+        openssl_probe::try_init_openssl_env_vars();
     };
 
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
@@ -57,30 +60,12 @@ fn main() -> anyhow::Result<()> {
         .build()
         .context("failed to start main Tokio runtime")?;
 
-    scrape_tokio_runtime_metrics(rt.handle(), "main");
-
     rt.block_on(main_impl())
 }
 
-fn register_build_info_metric() {
-    use itertools::Itertools;
-    let build_info = BuildInfo::get();
-    let mut build_kvs = BTreeMap::default();
-    build_kvs.insert("build_date", build_info.build_date.to_string());
-    build_kvs.insert("commit_hash", build_info.commit_short_hash.to_string());
-    build_kvs.insert("version", build_info.version.to_string());
-    if !build_info.commit_tags.is_empty() {
-        let tags_str = build_info.commit_tags.iter().join(",");
-        build_kvs.insert("commit_tags", tags_str);
-    }
-    build_kvs.insert("target", build_info.build_target.to_string());
-    quickwit_common::metrics::register_info("build_info", "Quickwit's build info", build_kvs);
-}
-
-async fn main_impl() -> anyhow::Result<()> {
-    register_build_info_metric();
-
-    let about_text = about_text();
+fn parse_cli_command() -> (CliCommand, bool) {
+    let about_text = "Sub-second search & analytics engine on cloud storage.\n  Find more \
+                      information at https://quickwit.io/docs\n\n";
     let version_text = BuildInfo::get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
@@ -94,18 +79,62 @@ async fn main_impl() -> anyhow::Result<()> {
             std::process::exit(1);
         }
     };
+    (command, ansi_colors)
+}
+
+fn init_telemetry(
+    service_version: &str,
+    level: tracing::Level,
+    ansi_colors: bool,
+) -> anyhow::Result<(
+    quickwit_telemetry_exporters::TelemetryHandle,
+    EnvFilterReloadFn,
+)> {
+    #[cfg(feature = "tokio-console")]
+    {
+        if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
+            let telemetry_handle =
+                quickwit_telemetry_exporters::init_meter_provider_only(service_version)?;
+            console_subscriber::init();
+            return Ok((
+                telemetry_handle,
+                quickwit_telemetry_exporters::do_nothing_env_filter_reload_fn(),
+            ));
+        }
+    }
+    #[cfg(feature = "jemalloc-profiled")]
+    let (registry, env_filter_reload_fn) =
+        quickwit_cli::jemalloc::tracing_registry(level, ansi_colors)?;
+
+    #[cfg(not(feature = "jemalloc-profiled"))]
+    let (registry, env_filter_reload_fn) =
+        quickwit_telemetry_exporters::default_tracing_registry(level, ansi_colors)?;
+
+    let telemetry_handle = quickwit_telemetry_exporters::init_telemetry(service_version, registry)?;
+    Ok((telemetry_handle, env_filter_reload_fn))
+}
+
+async fn main_impl() -> anyhow::Result<()> {
+    let (command, ansi_colors) = parse_cli_command();
 
     install_default_crypto_ring_provider();
+
+    let build_info = BuildInfo::get();
+    let (telemetry_handle, env_filter_reload_fn) = init_telemetry(
+        &build_info.version,
+        command.default_log_level(),
+        ansi_colors,
+    )?;
+    register_build_info_metric(build_info);
+
+    let runtime_handle = tokio::runtime::Handle::current();
+    scrape_tokio_runtime_metrics(&runtime_handle, "main");
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    let build_info = BuildInfo::get();
-    let (env_filter_reload_fn, tracer_provider_opt) =
-        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
-
-    #[cfg(not(test))]
-    quickwit_cli::logger::setup_metrics(build_info)?;
+    #[cfg(target_os = "linux")]
+    start_proc_io_metrics_loop();
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
@@ -119,27 +148,9 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    if let Some((trace_provider, logs_provider)) = tracer_provider_opt {
-        trace_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry tracer provider")?;
-        logs_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry logs provider")?;
-    }
+    telemetry_handle.shutdown()?;
 
     std::process::exit(return_code)
-}
-
-/// Return the about text with telemetry info.
-fn about_text() -> String {
-    let mut about_text = String::from(
-        "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
-    );
-    if !quickwit_telemetry::is_telemetry_disabled() {
-        about_text += "Telemetry: enabled";
-    }
-    about_text
 }
 
 #[cfg(test)]

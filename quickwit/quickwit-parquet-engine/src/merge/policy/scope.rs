@@ -49,6 +49,12 @@ pub struct CompactionScope {
     /// agree on both start and duration, so a config change that alters the
     /// window size must not cause old and new splits to be merged.
     pub window_duration_secs: i64,
+    /// Number of leading sort schema columns whose transitions align with
+    /// row group boundaries. Splits with different alignment claims live
+    /// in different compaction buckets so the merge engine can rely on a
+    /// uniform input format. See
+    /// [`crate::split::ParquetSplitMetadata::rg_partition_prefix_len`].
+    pub rg_partition_prefix_len: u32,
 }
 
 impl CompactionScope {
@@ -64,6 +70,7 @@ impl CompactionScope {
             sort_fields: split.sort_fields.clone(),
             window_start_secs: window.start,
             window_duration_secs: window.end - window.start,
+            rg_partition_prefix_len: split.rg_partition_prefix_len,
         })
     }
 }
@@ -108,12 +115,31 @@ mod tests {
         window_start: Option<i64>,
         window_duration: u32,
     ) -> ParquetSplitMetadata {
+        test_split_full(
+            index_uid,
+            partition_id,
+            sort_fields,
+            window_start,
+            window_duration,
+            0,
+        )
+    }
+
+    fn test_split_full(
+        index_uid: &str,
+        partition_id: u64,
+        sort_fields: &str,
+        window_start: Option<i64>,
+        window_duration: u32,
+        rg_partition_prefix_len: u32,
+    ) -> ParquetSplitMetadata {
         let mut builder = ParquetSplitMetadata::metrics_builder()
             .split_id(ParquetSplitId::generate(ParquetSplitKind::Metrics))
             .index_uid(index_uid)
             .partition_id(partition_id)
             .time_range(TimeRange::new(1000, 2000))
-            .sort_fields(sort_fields);
+            .sort_fields(sort_fields)
+            .rg_partition_prefix_len(rg_partition_prefix_len);
 
         if let Some(start) = window_start {
             builder = builder
@@ -251,6 +277,7 @@ mod tests {
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 1000,
             window_duration_secs: 3600,
+            rg_partition_prefix_len: 0,
         };
         let scope_b = CompactionScope {
             index_uid: "idx:001".to_string(),
@@ -258,6 +285,7 @@ mod tests {
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 4600,
             window_duration_secs: 3600,
+            rg_partition_prefix_len: 0,
         };
 
         assert_eq!(result[&scope_a].len(), 3);
@@ -312,5 +340,60 @@ mod tests {
         assert_eq!(scope.sort_fields, "metric_name|host|timestamp/V2");
         assert_eq!(scope.window_start_secs, 7200);
         assert_eq!(scope.window_duration_secs, 3600);
+        assert_eq!(scope.rg_partition_prefix_len, 0);
+    }
+
+    #[test]
+    fn test_different_rg_partition_prefix_len_separated() {
+        // A legacy split (prefix=0) and a single-RG-aligned split (prefix=3)
+        // share every other scope dimension but must NOT be merged together,
+        // because the merge engine requires uniform input format.
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 0),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 3),
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert!(
+            result.is_empty(),
+            "splits with different rg_partition_prefix_len must end up in separate groups"
+        );
+    }
+
+    #[test]
+    fn test_same_rg_partition_prefix_len_grouped() {
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 1),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 1),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 1),
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert_eq!(result.len(), 1, "matching prefix splits group together");
+        let group = result.values().next().unwrap();
+        assert_eq!(group.len(), 3);
+
+        let scope = result.keys().next().unwrap();
+        assert_eq!(scope.rg_partition_prefix_len, 1);
+    }
+
+    #[test]
+    fn test_three_distinct_prefix_buckets() {
+        // Each prefix value forms its own bucket. Even with 6 splits sharing
+        // every other dimension, 3 different prefixes → 3 buckets of 2 each.
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 0),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 0),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 1),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 1),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 3),
+            test_split_full("idx:001", 0, sort, Some(1000), 3600, 3),
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert_eq!(result.len(), 3, "three prefix values → three buckets");
+        for group in result.values() {
+            assert_eq!(group.len(), 2);
+        }
     }
 }

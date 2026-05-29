@@ -38,7 +38,7 @@ use tracing::{debug, info, warn};
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::metrics::ShardLocalityMetrics;
+use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
@@ -295,7 +295,7 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
-        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+        SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
@@ -330,7 +330,7 @@ impl IndexingScheduler {
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
-        crate::metrics::CONTROL_PLANE_METRICS.set_shard_locality_metrics(shard_locality_metrics);
+        shard_locality_metrics.publish();
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -397,7 +397,7 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        crate::metrics::CONTROL_PLANE_METRICS.apply_plan_total.inc();
+        APPLY_PLAN_TOTAL.inc();
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
@@ -406,7 +406,7 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| indexer.node_id == *node_id)
+                    .find(|indexer| indexer.node_id == node_id.as_str())
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();

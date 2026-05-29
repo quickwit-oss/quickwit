@@ -21,6 +21,7 @@
 //! No external dependencies — only `std`.
 
 mod check;
+pub mod merge_pipeline;
 pub mod merge_policy;
 pub mod recorder;
 pub mod registry;

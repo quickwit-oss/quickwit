@@ -26,15 +26,15 @@
 //!
 //! The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
+mod counting_storage;
 mod debouncer;
 mod file_descriptor_cache;
-mod metrics;
+pub mod metrics;
 mod storage;
 mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
-pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 
@@ -66,6 +66,7 @@ pub use self::cache::MockStorageCache;
 pub use self::cache::{
     ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
 };
+pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};

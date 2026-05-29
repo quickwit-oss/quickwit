@@ -22,9 +22,12 @@ use quickwit_common::metrics::index_label;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use tracing::{error, info, warn};
+
+use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABEL_NAMES, OPEN_SHARDS};
 
 /// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
@@ -443,7 +446,8 @@ impl ShardTable {
             .shard_entries
             .values()
             .filter(|shard_entry| {
-                shard_entry.shard.is_open() && !unavailable_leaders.contains(&shard_entry.leader_id)
+                shard_entry.shard.is_open()
+                    && !unavailable_leaders.contains(shard_entry.leader_id.as_str())
             })
             .cloned()
             .collect();
@@ -461,14 +465,10 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            crate::metrics::CONTROL_PLANE_METRICS
-                .open_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_open_shards as i64);
-            crate::metrics::CONTROL_PLANE_METRICS
-                .closed_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_closed_shards as i64);
+            let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
+            gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_stats.num_open_shards as f64);
+            gauge!(parent: CLOSED_SHARDS, labels: [labels])
+                .set(shard_stats.num_closed_shards as f64);
             return;
         }
         // Per-index metrics are disabled, so we update the metrics for all sources.
@@ -482,14 +482,9 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        crate::metrics::CONTROL_PLANE_METRICS
-            .open_shards
-            .with_label_values([index_label])
-            .set(num_open_shards as i64);
-        crate::metrics::CONTROL_PLANE_METRICS
-            .closed_shards
-            .with_label_values([index_label])
-            .set(num_closed_shards as i64);
+        let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
+        gauge!(parent: OPEN_SHARDS, labels: [labels]).set(num_open_shards as f64);
+        gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
     }
 
     pub fn update_shards(
@@ -847,7 +842,7 @@ mod tests {
         assert_eq!(open_shards[0].shard, shard_03);
         assert_eq!(open_shards[1].shard, shard_04);
 
-        unavailable_ingesters.insert("test-leader-0".into());
+        unavailable_ingesters.insert(NodeId::from_str("test-leader-0"));
 
         let open_shards = shard_table
             .find_open_shards_sorted(&index_uid, &source_id, &unavailable_ingesters)
@@ -1240,8 +1235,8 @@ mod tests {
         let shard1 = ShardId::from("shard1");
         let shard2 = ShardId::from("shard1");
         let unlisted_shard = ShardId::from("unlisted");
-        let node1 = NodeId::new("node1".to_string());
-        let node2 = NodeId::new("node2".to_string());
+        let node1 = NodeId::from_str("node1");
+        let node2 = NodeId::from_str("node2");
         let mut shard_locations = ShardLocations::default();
         shard_locations.add_location(&shard1, &node1);
         shard_locations.add_location(&shard1, &node2);
@@ -1348,19 +1343,19 @@ mod tests {
         };
         assert_eq!(
             &get_sorted_locations_for_shard(0u64),
-            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer1"), &NodeId::from_str("indexer2")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(1u64),
-            &[&NodeId::from("indexer1")]
+            &[&NodeId::from_str("indexer1")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(2u64),
-            &[&NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer2")]
         );
         assert_eq!(
             &get_sorted_locations_for_shard(3u64),
-            &[&NodeId::from("indexer1"), &NodeId::from("indexer2")]
+            &[&NodeId::from_str("indexer1"), &NodeId::from_str("indexer2")]
         );
     }
 }

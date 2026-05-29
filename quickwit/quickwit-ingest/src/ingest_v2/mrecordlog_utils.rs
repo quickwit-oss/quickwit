@@ -22,6 +22,7 @@ use fail::fail_point;
 use mrecordlog::error::{AppendError, DeleteQueueError};
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
+use tracing::instrument;
 
 use crate::MRecord;
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -39,6 +40,16 @@ pub(super) enum AppendDocBatchError {
 /// # Panics
 ///
 /// Panics if `doc_batch` is empty.
+#[instrument(
+    name = "ingester.append_doc_batch",
+    skip_all,
+    fields(
+        queue_id,
+        num_docs = doc_batch.num_docs(),
+        num_bytes = doc_batch.num_bytes(),
+        force_commit,
+    )
+)]
 pub(super) async fn append_non_empty_doc_batch(
     mrecordlog: &mut MultiRecordLogAsync,
     queue_id: &QueueId,

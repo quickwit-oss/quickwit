@@ -12,70 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
-use quickwit_common::metrics::{
-    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyHistogram, label_names, lazy_counter, lazy_histogram,
 };
 
-pub struct JaegerServiceMetrics {
-    pub requests_total: IntCounterVec<2>,
-    pub request_errors_total: IntCounterVec<2>,
-    pub request_duration_seconds: HistogramVec<3>,
-    pub fetched_traces_total: IntCounterVec<2>,
-    pub fetched_spans_total: IntCounterVec<2>,
-    pub transferred_bytes_total: IntCounterVec<2>,
-}
+pub(crate) const OPERATION_INDEX_LABEL_NAMES: LabelNames<2> = label_names!("operation", "index");
+pub(crate) const OPERATION_INDEX_ERROR_LABEL_NAMES: LabelNames<3> =
+    label_names!("operation", "index", "error");
 
-impl Default for JaegerServiceMetrics {
-    fn default() -> Self {
-        Self {
-            requests_total: new_counter_vec(
-                "requests_total",
-                "Number of requests",
-                "jaeger",
-                &[],
-                ["operation", "index"],
-            ),
-            request_errors_total: new_counter_vec(
-                "request_errors_total",
-                "Number of failed requests",
-                "jaeger",
-                &[],
-                ["operation", "index"],
-            ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Duration of requests",
-                "jaeger",
-                &[],
-                ["operation", "index", "error"],
-                exponential_buckets(0.02, 2.0, 8).unwrap(),
-            ),
-            fetched_traces_total: new_counter_vec(
-                "fetched_traces_total",
-                "Number of traces retrieved from storage",
-                "jaeger",
-                &[],
-                ["operation", "index"],
-            ),
-            fetched_spans_total: new_counter_vec(
-                "fetched_spans_total",
-                "Number of spans retrieved from storage",
-                "jaeger",
-                &[],
-                ["operation", "index"],
-            ),
-            transferred_bytes_total: new_counter_vec(
-                "transferred_bytes_total",
-                "Number of bytes transferred",
-                "jaeger",
-                &[],
-                ["operation", "index"],
-            ),
-        }
-    }
-}
+pub(crate) static REQUESTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "requests_total",
+        description: "Number of requests",
+        subsystem: "jaeger",
+);
 
-pub static JAEGER_SERVICE_METRICS: LazyLock<JaegerServiceMetrics> =
-    LazyLock::new(JaegerServiceMetrics::default);
+pub(crate) static REQUEST_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+        name: "request_errors_total",
+        description: "Number of failed requests",
+        subsystem: "jaeger",
+);
+
+pub(crate) static REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
+        name: "request_duration_seconds",
+        description: "Duration of requests",
+        subsystem: "jaeger",
+        buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
+);
+
+pub(crate) static FETCHED_TRACES_TOTAL: LazyCounter = lazy_counter!(
+        name: "fetched_traces_total",
+        description: "Number of traces retrieved from storage",
+        subsystem: "jaeger",
+);
+
+pub(crate) static FETCHED_SPANS_TOTAL: LazyCounter = lazy_counter!(
+        name: "fetched_spans_total",
+        description: "Number of spans retrieved from storage",
+        subsystem: "jaeger",
+);
+
+pub(crate) static TRANSFERRED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+        name: "transferred_bytes_total",
+        description: "Number of bytes transferred",
+        subsystem: "jaeger",
+);

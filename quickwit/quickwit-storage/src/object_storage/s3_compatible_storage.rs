@@ -43,6 +43,7 @@ use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
+use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -53,8 +54,8 @@ use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -300,10 +301,8 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(|io_error| Retry::Permanent(StorageError::from(io_error)))?;
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(len);
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
 
         self.s3_client
             .put_object()
@@ -435,10 +434,8 @@ impl S3CompatibleObjectStorage {
             .map_err(Retry::Permanent)?;
         let md5 = BASE64_STANDARD.encode(part.md5.0);
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(part.len());
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
 
         let upload_part_output = self
             .s3_client
@@ -558,7 +555,7 @@ impl S3CompatibleObjectStorage {
         let key = self.key(path);
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
-        crate::STORAGE_METRICS.object_storage_get_total.inc();
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
 
         let get_object_output = self
             .s3_client
@@ -651,12 +648,10 @@ impl S3CompatibleObjectStorage {
         for (path_chunk, delete) in &mut delete_requests_it {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
                 aws_retry(&self.retry_params, || async {
-                    crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_requests_total
-                        .inc();
-                    let _timer = crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_request_duration
-                        .start_timer();
+                    crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
+                    let _timer = HistogramTimer::new(
+                        &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
+                    );
                     self.s3_client
                         .delete_objects()
                         .bucket(self.bucket.clone())
@@ -732,9 +727,7 @@ async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
     // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the body
     // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
     let bytes = aggregated.into_bytes();
-    STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .inc_by(bytes.len() as u64);
+    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
     Ok(bytes)
 }
 
@@ -769,12 +762,13 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
@@ -788,30 +782,27 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let get_object_output =
             aws_retry(&self.retry_params, || self.get_object(path, None)).await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
         let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
-        STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
 
+    #[instrument(name = "storage.s3.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
         let delete_res = aws_retry(&self.retry_params, || async {
-            crate::STORAGE_METRICS
-                .object_storage_delete_requests_total
-                .inc();
-            let _timer = crate::STORAGE_METRICS
-                .object_storage_delete_request_duration
-                .start_timer();
+            crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+            let _timer =
+                HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)
@@ -828,6 +819,7 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
+    #[instrument(name = "storage.s3.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         if self.disable_multi_object_delete {
             self.bulk_delete_single(paths).await
@@ -836,7 +828,7 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         self.get_to_bytes(path, Some(range.clone()))
@@ -852,7 +844,7 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -869,7 +861,12 @@ impl Storage for S3CompatibleObjectStorage {
         }))
     }
 
-    #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
+    #[instrument(
+        name = "storage.s3.get_all",
+        level = "debug",
+        skip(self),
+        fields(num_bytes_fetched)
+    )]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bytes = self
@@ -887,6 +884,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(bytes)
     }
 
+    #[instrument(name = "storage.s3.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();

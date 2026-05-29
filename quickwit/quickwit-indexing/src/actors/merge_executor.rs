@@ -458,7 +458,7 @@ impl MergeExecutor {
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
-                node_id: NodeId::new(split.node_id),
+                node_id: NodeId::from_str(&split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
                 doc_mapping_uid: split.doc_mapping_uid,
@@ -504,7 +504,7 @@ impl MergeExecutor {
             output_directory.box_clone(),
             Box::new(shadowing_meta_json_directory),
         ];
-        directory_stack.extend(split_directories.into_iter());
+        directory_stack.extend(split_directories);
         let union_directory = UnionDirectory::union_of(directory_stack);
         let union_index = open_index(
             union_directory,

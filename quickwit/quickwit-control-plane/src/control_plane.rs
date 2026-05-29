@@ -61,6 +61,7 @@ use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -219,7 +220,7 @@ impl Actor for ControlPlane {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        crate::metrics::CONTROL_PLANE_METRICS.restart_total.inc();
+        RESTART_TOTAL.inc();
 
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
@@ -360,7 +361,7 @@ impl ControlPlane {
             ingesters.insert(ingester_id.clone(), ingester_json);
         }
         for shard in self.model.all_shards() {
-            let ingester_id = NodeId::from(shard.leader_id.clone());
+            let ingester_id = NodeId::from_str(&shard.leader_id);
 
             if let Entry::Vacant(entry) = ingesters.entry(ingester_id.clone()) {
                 let ingester_json = json!({
@@ -568,17 +569,13 @@ fn convert_metastore_error<T>(
             // It will be up to the client to decide what to do there.
             error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         }
-        crate::metrics::CONTROL_PLANE_METRICS
-            .metastore_error_aborted
-            .inc();
+        METASTORE_ERROR_ABORTED.inc();
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
         error!(error=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
-        crate::metrics::CONTROL_PLANE_METRICS
-            .metastore_error_maybe_executed
-            .inc();
+        METASTORE_ERROR_MAYBE_EXECUTED.inc();
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }
@@ -1135,35 +1132,33 @@ async fn watcher_indexers(
         // We rebalance shards when either readiness level changes.
         let mut trigger_rebalance = false;
         match cluster_change {
-            ClusterChange::Add(node) if node.is_indexer() => {
-                if node.ingester_status().is_ready() {
-                    info!(
-                        "indexer `{}` with status `{}` joined the cluster: rebalancing shards and \
-                         rebuilding indexing plan",
-                        node.node_id(),
-                        node.ingester_status().as_json_str_name()
-                    );
-                    trigger_rebalance = true;
-                }
+            ClusterChange::Add(node) if node.is_indexer() && node.ingester_status.is_ready() => {
+                info!(
+                    "indexer `{}` with status `{}` joined the cluster: rebalancing shards and \
+                     rebuilding indexing plan",
+                    node.node_id,
+                    node.ingester_status.as_json_str_name()
+                );
+                trigger_rebalance = true;
             }
             ClusterChange::Remove(node) if node.is_indexer() => {
                 info!(
                     "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing \
                      plan",
-                    node.node_id()
+                    node.node_id
                 );
                 trigger_rebalance = true
             }
             ClusterChange::Update { previous, updated } if updated.is_indexer() => {
-                let was_ready = previous.ingester_status().is_ready();
-                let is_ready = updated.ingester_status().is_ready();
+                let was_ready = previous.ingester_status.is_ready();
+                let is_ready = updated.ingester_status.is_ready();
 
                 if was_ready ^ is_ready {
                     info!(
                         "indexer `{}` status changed to `{}`: rebalancing shards and rebuilding \
                          indexing plan",
-                        updated.node_id(),
-                        updated.ingester_status().as_json_str_name()
+                        updated.node_id,
+                        updated.ingester_status.as_json_str_name()
                     );
                     trigger_rebalance = true;
                 }
@@ -1219,7 +1214,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_create_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1275,7 +1270,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1317,7 +1312,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_add_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1380,7 +1375,7 @@ mod tests {
     async fn test_control_plane_update_source() {
         let universe = Universe::with_accelerated_time();
         let pipelines_after_update = 3;
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let mut mock_indexer = MockIndexingService::new();
         // call when starting the cp
@@ -1478,7 +1473,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1556,7 +1551,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1603,7 +1598,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_get_or_create_open_shards() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -1683,7 +1678,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_supervision_reload_from_metastore() {
         let universe = Universe::default();
-        let node_id = NodeId::new("test_node".to_string());
+        let node_id = NodeId::from_str("test_node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -1819,12 +1814,12 @@ mod tests {
     #[tokio::test]
     async fn test_delete_shard_on_eof() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -1968,12 +1963,12 @@ mod tests {
     #[tokio::test]
     async fn test_fill_shard_table_position_from_metastore_on_startup() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -2046,12 +2041,12 @@ mod tests {
     async fn test_delete_non_existing_shard() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("test-indexer".to_string()),
+            node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -2139,7 +2134,7 @@ mod tests {
     async fn test_delete_index() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2225,7 +2220,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -2254,7 +2249,7 @@ mod tests {
     async fn test_delete_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2272,7 +2267,7 @@ mod tests {
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let index_uid_clone = index_0.index_uid.clone();
@@ -2355,7 +2350,7 @@ mod tests {
         let mut cluster_config = ClusterConfig::for_test();
         cluster_config.auto_create_indexes = true;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
@@ -2557,7 +2552,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
@@ -2625,12 +2620,12 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
             .expect_retain_shards()
@@ -2764,11 +2759,11 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
 
         let mut mock_indexer = MockIndexingService::new();
         mock_indexer

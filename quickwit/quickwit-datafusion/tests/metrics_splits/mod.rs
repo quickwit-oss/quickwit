@@ -38,8 +38,92 @@ pub async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let (parquet_bytes, _) =
-        ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
+    publish_split_with_options(
+        metastore,
+        index_uid,
+        data_dir,
+        split_name,
+        batch,
+        ParquetWriterConfig::default(),
+        true,
+    )
+    .await;
+}
+
+/// Same as [`publish_split`] but lets the caller suppress the
+/// low-cardinality tag metadata (`service`, `env`, `datacenter`,
+/// `region`, `host`). Tests use `false` to verify pruning paths that
+/// rely on writer-generated `zonemap_regexes` rather than exact tag
+/// sets.
+///
+/// Only referenced by `metrics.rs`; dead-code from the perspective of
+/// `null_columns.rs` / `distributed.rs`, both of which include this
+/// module via `mod metrics_splits;`.
+#[allow(dead_code)]
+pub(crate) async fn publish_split_with_tag_metadata(
+    metastore: &MetastoreServiceClient,
+    index_uid: &IndexUid,
+    data_dir: &std::path::Path,
+    split_name: &str,
+    batch: &RecordBatch,
+    include_low_cardinality_tags: bool,
+) {
+    publish_split_with_options(
+        metastore,
+        index_uid,
+        data_dir,
+        split_name,
+        batch,
+        ParquetWriterConfig::default(),
+        include_low_cardinality_tags,
+    )
+    .await;
+}
+
+/// Same as [`publish_split`] but with a caller-supplied
+/// `ParquetWriterConfig`. Used by tests that need a specific on-disk
+/// layout — e.g., a small `data_page_row_count_limit` to force the
+/// metric_name column into multiple pages so page-level pruning has
+/// something to prune.
+///
+/// Only referenced by `metrics.rs`; dead-code from the perspective of
+/// `null_columns.rs` / `distributed.rs`.
+#[allow(dead_code)]
+pub async fn publish_split_with_writer_config(
+    metastore: &MetastoreServiceClient,
+    index_uid: &IndexUid,
+    data_dir: &std::path::Path,
+    split_name: &str,
+    batch: &RecordBatch,
+    writer_config: ParquetWriterConfig,
+) {
+    publish_split_with_options(
+        metastore,
+        index_uid,
+        data_dir,
+        split_name,
+        batch,
+        writer_config,
+        true,
+    )
+    .await;
+}
+
+/// Inner helper combining both knobs. Kept private; the named
+/// entry points above (`publish_split`, `publish_split_with_tag_metadata`,
+/// `publish_split_with_writer_config`) cover the call patterns
+/// tests need.
+async fn publish_split_with_options(
+    metastore: &MetastoreServiceClient,
+    index_uid: &IndexUid,
+    data_dir: &std::path::Path,
+    split_name: &str,
+    batch: &RecordBatch,
+    writer_config: ParquetWriterConfig,
+    include_low_cardinality_tags: bool,
+) {
+    let (parquet_bytes, (row_keys_proto, zonemap_regexes)) =
+        ParquetWriter::new(writer_config, &TableConfig::default())
             .unwrap()
             .write_to_bytes(batch, None)
             .expect("parquet encode");
@@ -92,33 +176,41 @@ pub async fn publish_split(
     for name in &metric_names {
         builder = builder.add_metric_name(name.clone());
     }
+    if let Some(row_keys_proto) = row_keys_proto {
+        builder = builder.row_keys_proto(row_keys_proto);
+    }
+    for (column, regex) in zonemap_regexes {
+        builder = builder.add_zonemap_regex(column, regex);
+    }
 
-    for tag_col in &["service", "env", "datacenter", "region", "host"] {
-        if let Ok(col_idx) = batch_schema.index_of(tag_col) {
-            let col = batch.column(col_idx);
-            let values: HashSet<String> = if let Some(dict) =
-                col.as_any()
-                    .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
-            {
-                let keys = dict
-                    .keys()
-                    .as_any()
-                    .downcast_ref::<arrow::array::Int32Array>()
-                    .unwrap();
-                let vals = dict
-                    .values()
-                    .as_any()
-                    .downcast_ref::<arrow::array::StringArray>()
-                    .unwrap();
-                (0..batch.num_rows())
-                    .filter(|i| !keys.is_null(*i))
-                    .map(|i| vals.value(keys.value(i) as usize).to_string())
-                    .collect()
-            } else {
-                HashSet::new()
-            };
-            for v in values {
-                builder = builder.add_low_cardinality_tag(tag_col.to_string(), v);
+    if include_low_cardinality_tags {
+        for tag_col in &["service", "env", "datacenter", "region", "host"] {
+            if let Ok(col_idx) = batch_schema.index_of(tag_col) {
+                let col = batch.column(col_idx);
+                let values: HashSet<String> = if let Some(dict) =
+                    col.as_any()
+                        .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
+                {
+                    let keys = dict
+                        .keys()
+                        .as_any()
+                        .downcast_ref::<arrow::array::Int32Array>()
+                        .unwrap();
+                    let vals = dict
+                        .values()
+                        .as_any()
+                        .downcast_ref::<arrow::array::StringArray>()
+                        .unwrap();
+                    (0..batch.num_rows())
+                        .filter(|i| !keys.is_null(*i))
+                        .map(|i| vals.value(keys.value(i) as usize).to_string())
+                        .collect()
+                } else {
+                    HashSet::new()
+                };
+                for v in values {
+                    builder = builder.add_low_cardinality_tag(tag_col.to_string(), v);
+                }
             }
         }
     }

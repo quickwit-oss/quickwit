@@ -59,45 +59,74 @@ pub fn align_inputs_to_union_schema(
         bail!("no inputs to align");
     }
 
-    // Collect all fields across all inputs, checking for type conflicts.
-    // String-like types are normalized to Utf8 for internal alignment.
-    let mut field_map: BTreeMap<String, Arc<Field>> = BTreeMap::new();
+    // Track each field's normalized type, whether any input declared
+    // it nullable, and how many of the input batches contain it. The
+    // union field is nullable iff some input observed it as nullable
+    // OR some input is missing the field entirely (a row from a
+    // missing-the-field input will be null in the merged output).
+    // The previous version always defaulted new fields to nullable on
+    // first sight, which broke columns whose nullability must be
+    // preserved (e.g. `List<Float64>` — the writer's non-nullable-
+    // list contract requires the union field to stay non-nullable).
+    struct FieldInfo {
+        normalized_type: DataType,
+        any_nullable: bool,
+        appears_in: usize,
+    }
+    let mut field_map: BTreeMap<String, FieldInfo> = BTreeMap::new();
 
     for (input_idx, batch) in inputs.iter().enumerate() {
         for field in batch.schema().fields() {
             let normalized_type = normalize_type(field.data_type());
 
-            match field_map.get(field.name().as_str()) {
+            match field_map.get_mut(field.name().as_str()) {
                 Some(existing) => {
-                    if *existing.data_type() != normalized_type {
+                    if existing.normalized_type != normalized_type {
                         bail!(
                             "type conflict for column '{}': input 0 has {:?}, input {} has {:?} \
                              (normalized: {:?} vs {:?})",
                             field.name(),
-                            existing.data_type(),
+                            existing.normalized_type,
                             input_idx,
                             field.data_type(),
-                            existing.data_type(),
+                            existing.normalized_type,
                             normalized_type,
                         );
                     }
-                    // If either side is nullable, the union must be too.
-                    if field.is_nullable() && !existing.is_nullable() {
-                        let nullable_field =
-                            Arc::new(Field::new(field.name(), normalized_type, true));
-                        field_map.insert(field.name().clone(), nullable_field);
+                    if field.is_nullable() {
+                        existing.any_nullable = true;
                     }
+                    existing.appears_in += 1;
                 }
                 None => {
-                    // Columns that don't appear in every input must be nullable.
-                    let nullable_field = Arc::new(Field::new(field.name(), normalized_type, true));
-                    field_map.insert(field.name().clone(), nullable_field);
+                    field_map.insert(
+                        field.name().clone(),
+                        FieldInfo {
+                            normalized_type,
+                            any_nullable: field.is_nullable(),
+                            appears_in: 1,
+                        },
+                    );
                 }
             }
         }
     }
 
-    // Build the union schema in Husky column order.
+    // Materialise `Arc<Field>` per the rule above. Keep
+    // `BTreeMap<String, Arc<Field>>` so `build_husky_ordered_schema`
+    // is unchanged.
+    let total_inputs = inputs.len();
+    let field_map: BTreeMap<String, Arc<Field>> = field_map
+        .into_iter()
+        .map(|(name, info)| {
+            let nullable = info.any_nullable || info.appears_in < total_inputs;
+            let field = Arc::new(Field::new(&name, info.normalized_type, nullable));
+            (name, field)
+        })
+        .collect();
+
+    // Build the union schema in storage column order (sort cols first,
+    // then body cols lexicographic).
     let union_schema = build_husky_ordered_schema(&field_map, sort_fields_str)?;
     let union_schema_ref = Arc::new(union_schema);
 
@@ -271,13 +300,22 @@ fn align_batch_to_schema(batch: &RecordBatch, target_schema: &SchemaRef) -> Resu
 /// Normalize an Arrow data type for the internal union schema.
 ///
 /// All string-like types (Utf8, LargeUtf8, Dictionary(*, Utf8/LargeUtf8))
-/// are normalized to Utf8. This ensures `take` works uniformly across
-/// concatenated inputs regardless of their original encoding.
+/// are normalized to Utf8. All byte-array-like types (Binary,
+/// LargeBinary, Dictionary(*, Binary/LargeBinary)) are normalized to
+/// Binary. Parquet stores both string flavours under the same `BYTE_ARRAY`
+/// physical type and both binary flavours likewise, so two inputs whose
+/// schemas differ only by string/binary flavour represent the same
+/// logical data; the union must accept them as one column.
 ///
-/// Non-string types are returned as-is.
+/// This ensures `take` works uniformly across concatenated inputs
+/// regardless of their original encoding. Non-string/non-binary types
+/// are returned as-is.
 fn normalize_type(dt: &DataType) -> DataType {
     if is_string_type(dt) {
         return DataType::Utf8;
+    }
+    if is_byte_array_type(dt) {
+        return DataType::Binary;
     }
     dt.clone()
 }
@@ -287,6 +325,20 @@ fn is_string_type(dt: &DataType) -> bool {
     match dt {
         DataType::Utf8 | DataType::LargeUtf8 => true,
         DataType::Dictionary(_, value_type) => is_string_type(value_type),
+        _ => false,
+    }
+}
+
+/// Returns true if the data type represents raw byte arrays.
+///
+/// Parquet has a single `BYTE_ARRAY` physical type; Binary and
+/// LargeBinary (and dict-encoded variants) all map to it on the
+/// wire. Schema evolution that changes one to the other across
+/// ingester versions must merge cleanly.
+fn is_byte_array_type(dt: &DataType) -> bool {
+    match dt {
+        DataType::Binary | DataType::LargeBinary => true,
+        DataType::Dictionary(_, value_type) => is_byte_array_type(value_type),
         _ => false,
     }
 }

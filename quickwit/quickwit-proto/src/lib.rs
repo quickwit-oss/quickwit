@@ -20,13 +20,6 @@
 
 use std::cmp::Ordering;
 
-use ::opentelemetry::global;
-use ::opentelemetry::propagation::{Extractor, Injector};
-use tonic::Status;
-use tonic::service::Interceptor;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-
 pub mod cluster;
 pub mod control_plane;
 pub use bytes;
@@ -124,87 +117,6 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
             ..Default::default()
         })
     }
-}
-
-/// `MutMetadataMap` used to extract [`tonic::metadata::MetadataMap`] from a request.
-pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
-
-impl Injector for MutMetadataMap<'_> {
-    /// Sets a key-value pair in the [`tonic::metadata::MetadataMap`]. No-op if the key or value
-    /// is invalid.
-    fn set(&mut self, key: &str, value: String) {
-        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
-            && let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value)
-        {
-            self.0.insert(metadata_key, metadata_value);
-        }
-    }
-}
-
-impl Extractor for MutMetadataMap<'_> {
-    /// Gets a value for a key from the `MetadataMap`. If the value can't be converted to &str,
-    /// returns None.
-    fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|metadata| metadata.to_str().ok())
-    }
-
-    /// Collect all the keys from the `MetadataMap`.
-    fn keys(&self) -> Vec<&str> {
-        self.0
-            .keys()
-            .map(|key| match key {
-                tonic::metadata::KeyRef::Ascii(v) => v.as_str(),
-                tonic::metadata::KeyRef::Binary(v) => v.as_str(),
-            })
-            .collect::<Vec<_>>()
-    }
-}
-
-/// [`tonic::service::interceptor::Interceptor`] which injects the span context into
-/// [`tonic::metadata::MetadataMap`].
-#[derive(Clone, Debug)]
-pub struct SpanContextInterceptor;
-
-impl Interceptor for SpanContextInterceptor {
-    fn call(&mut self, mut request: tonic::Request<()>) -> Result<tonic::Request<()>, Status> {
-        global::get_text_map_propagator(|propagator| {
-            propagator.inject_context(
-                &tracing::Span::current().context(),
-                &mut MutMetadataMap(request.metadata_mut()),
-            )
-        });
-        Ok(request)
-    }
-}
-
-/// `MetadataMap` extracts OpenTelemetry
-/// tracing keys from request's headers.
-struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
-
-impl Extractor for MetadataMap<'_> {
-    /// Gets a value for a key from the `MetadataMap`. If the value can't be converted to &str,
-    /// returns None.
-    fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|metadata| metadata.to_str().ok())
-    }
-
-    /// Collect all the keys from the `MetadataMap`.
-    fn keys(&self) -> Vec<&str> {
-        self.0
-            .keys()
-            .map(|key| match key {
-                tonic::metadata::KeyRef::Ascii(v) => v.as_str(),
-                tonic::metadata::KeyRef::Binary(v) => v.as_str(),
-            })
-            .collect::<Vec<_>>()
-    }
-}
-
-/// Sets parent span context derived from [`tonic::metadata::MetadataMap`].
-pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata::MetadataMap) {
-    let parent_cx =
-        global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
-    let _ = Span::current().set_parent(parent_cx);
 }
 
 impl search::SortOrder {

@@ -1,0 +1,44 @@
+[package]
+name = "quickwit-metrics"
+version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+description = "Type-safe, zero-allocation metric declarations built on the metrics crate"
+categories = ["development-tools::profiling"]
+
+[dependencies]
+metrics = { workspace = true }
+metrics-util = { workspace = true }
+inventory = { workspace = true }
+const_format = { workspace = true }
+atomic_float = { workspace = true }
+dashmap = { workspace = true }
+quanta = { workspace = true }
+rustc-hash = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+metrics-exporter-prometheus = { workspace = true, features = ["http-listener"] }
+metrics-util = { workspace = true }
+papaya = "0.2"
+proptest = { workspace = true }
+
+[[bench]]
+name = "baseline"
+harness = false
+
+[[bench]]
+name = "quickwit_metrics"
+harness = false
+
+[[bench]]
+name = "cache"
+harness = false
+
+[[example]]
+name = "http_service"
+path = "examples/http_service.rs"

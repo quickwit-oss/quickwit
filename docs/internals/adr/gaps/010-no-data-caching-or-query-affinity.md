@@ -2,7 +2,7 @@
 
 **Status**: Open
 **Discovered**: 2026-02-19
-**Context**: Cloud-native storage characteristics analysis ([ADR-004](../004-cloud-native-storage-characteristics.md), characteristics C4, C6). Split from [GAP-007](./007-no-multi-level-caching.md), which now focuses on metadata caching only.
+**Context**: Cloud-native storage characteristics analysis (data caching, query affinity). Split from [GAP-007](./007-no-multi-level-caching.md), which now focuses on metadata caching only.
 
 ## Problem
 
@@ -59,6 +59,5 @@ All signals equally affected. Columnar data caching benefits metrics (Parquet) a
 
 ## References
 
-- [ADR-004: Cloud-Native Storage Characteristics](../004-cloud-native-storage-characteristics.md)
 - [GAP-007: No Parquet Metadata Caching](./007-no-multi-level-caching.md)
 - [GAP-005: No Per-Point Deduplication](./005-no-per-point-deduplication.md)
