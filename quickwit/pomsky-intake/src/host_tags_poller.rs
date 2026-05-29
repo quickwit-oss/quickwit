@@ -649,11 +649,11 @@ mod tests {
             .expect("fetch should succeed");
 
         assert_eq!(result.len(), 2);
-        let web = &result["web-01"];
+        let web = &result["web-01"].0;
         assert!(web.contains(&("env".to_string(), "prod".to_string())));
         assert!(web.contains(&("region".to_string(), "us-east-1".to_string())));
         assert_eq!(
-            &*result["db-01"],
+            &*result["db-01"].0,
             [("env".to_string(), "staging".to_string())]
         );
     }
@@ -705,7 +705,7 @@ mod tests {
             .await
             .expect("fetch should succeed");
 
-        let web = &result["web-01"];
+        let web = &result["web-01"].0;
         assert_eq!(web.len(), 2);
         assert!(web.contains(&("env".to_string(), "prod".to_string())));
         assert!(web.contains(&("region".to_string(), "us-east-1".to_string())));

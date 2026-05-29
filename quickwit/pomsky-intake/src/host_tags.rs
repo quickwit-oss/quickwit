@@ -154,6 +154,7 @@ mod tests {
     fn entry(tags: Vec<HostTag>, expires_at: UnixTimestamp) -> HostTagsEntry {
         HostTagsEntry {
             tags: tags.into(),
+            host_id: None,
             expires_at,
         }
     }
