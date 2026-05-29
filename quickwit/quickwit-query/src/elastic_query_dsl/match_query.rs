@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 use super::LeniencyBool;
 use crate::elastic_query_dsl::{
-    ConvertibleToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
+    ConvertibleToQueryAst, ElasticQueryDslInner, LiteralOrStructForSerialization,
 };
 use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 use crate::{BooleanOperand, MatchAllOrNone, OneFieldMap};
@@ -24,7 +24,7 @@ use crate::{BooleanOperand, MatchAllOrNone, OneFieldMap};
 /// `MatchQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html>
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>")]
 pub struct MatchQuery {
     pub(crate) field: String,
     pub(crate) params: MatchQueryParams,
@@ -64,9 +64,9 @@ impl From<MatchQuery> for ElasticQueryDslInner {
     }
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>> for MatchQuery {
+impl From<OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>> for MatchQuery {
     fn from(
-        match_query_params: OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>,
+        match_query_params: OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>,
     ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         MatchQuery {

@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, de};
 
-/// The point of `StringOrStructForSerialization` is to support
+/// The point of `LiteralOrStructForSerialization` is to support
 /// the two following formats for various queries.
 ///
 /// `{"field": {"query": "my query", "default_operator": "OR"}}`
@@ -26,37 +26,37 @@ use serde::{Deserialize, Deserializer, de};
 /// and the shorter.
 /// `{"field": "my query"}`
 ///
-/// If a integer is passed, we cast it to string. Floats are not supported.
+/// If a number or bool is passed, we cast it to string
 ///
 /// We don't use untagged enum to support this, in order to keep good errors.
 ///
 /// The code below is adapted from solution described here: <https://serde.rs/string-or-struct.html>
 #[derive(Deserialize)]
 #[serde(transparent)]
-pub(crate) struct StringOrStructForSerialization<T>
+pub(crate) struct LiteralOrStructForSerialization<T>
 where
     T: From<String>,
     for<'de2> T: Deserialize<'de2>,
 {
-    #[serde(deserialize_with = "string_or_struct")]
+    #[serde(deserialize_with = "literal_or_struct")]
     pub inner: T,
 }
 
-struct StringOrStructVisitor<T> {
+struct LiteralOrStructVisitor<T> {
     phantom_data: PhantomData<T>,
 }
 
-fn string_or_struct<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+fn literal_or_struct<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: From<String> + Deserialize<'de>,
 {
-    deserializer.deserialize_any(StringOrStructVisitor {
+    deserializer.deserialize_any(LiteralOrStructVisitor {
         phantom_data: Default::default(),
     })
 }
 
-impl<'de, T> Visitor<'de> for StringOrStructVisitor<T>
+impl<'de, T> Visitor<'de> for LiteralOrStructVisitor<T>
 where
     T: From<String>,
     T: Deserialize<'de>,
@@ -68,12 +68,22 @@ where
         formatter.write_str(&format!("string or map to deserialize {type_str}."))
     }
 
+    fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+    where E: de::Error {
+        self.visit_str(&v.to_string())
+    }
+
     fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
     where E: de::Error {
         self.visit_str(&v.to_string())
     }
 
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where E: de::Error {
+        self.visit_str(&v.to_string())
+    }
+
+    fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
     where E: de::Error {
         self.visit_str(&v.to_string())
     }

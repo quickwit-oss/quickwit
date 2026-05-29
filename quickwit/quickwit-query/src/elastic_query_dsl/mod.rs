@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 mod bool_query;
 mod exists_query;
+mod literal_or_struct;
 mod match_bool_prefix;
 mod match_phrase_query;
 mod match_query;
@@ -26,18 +27,17 @@ mod prefix_query;
 mod query_string_query;
 mod range_query;
 mod regex_query;
-mod string_or_struct;
 mod term_query;
 mod terms_query;
 mod wildcard_query;
 
 use bool_query::BoolQuery;
+pub(crate) use literal_or_struct::LiteralOrStructForSerialization;
 pub use one_field_map::OneFieldMap;
 use phrase_prefix_query::MatchPhrasePrefixQuery;
 use prefix_query::PrefixQuery;
 pub(crate) use query_string_query::QueryStringQuery;
 use range_query::RangeQuery;
-pub(crate) use string_or_struct::StringOrStructForSerialization;
 use term_query::TermQuery;
 
 use crate::elastic_query_dsl::exists_query::ExistsQuery;

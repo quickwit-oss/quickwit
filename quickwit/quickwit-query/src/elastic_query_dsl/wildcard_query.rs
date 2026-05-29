@@ -16,11 +16,11 @@ use serde::Deserialize;
 
 use crate::NotNaNf32;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::{ConvertibleToQueryAst, StringOrStructForSerialization};
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, LiteralOrStructForSerialization};
 use crate::query_ast::{QueryAst, WildcardQuery as AstWildcardQuery};
 
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<WildcardQueryParams>>")]
 pub(crate) struct WildcardQuery {
     pub(crate) field: String,
     pub(crate) params: WildcardQueryParams,
@@ -49,9 +49,9 @@ impl ConvertibleToQueryAst for WildcardQuery {
     }
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>> for WildcardQuery {
+impl From<OneFieldMap<LiteralOrStructForSerialization<WildcardQueryParams>>> for WildcardQuery {
     fn from(
-        match_query_params: OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>,
+        match_query_params: OneFieldMap<LiteralOrStructForSerialization<WildcardQueryParams>>,
     ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         WildcardQuery {

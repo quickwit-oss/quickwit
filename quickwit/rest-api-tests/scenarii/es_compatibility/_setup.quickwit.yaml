@@ -135,5 +135,5 @@ endpoint: simple_es_compat/ingest
 params:
   commit: force
 ndjson:
-  - {"keyword_text": "red"}
-  - {"keyword_text": "gold$"}
+  - {"keyword_text": "red", "float_field": 1.1}
+  - {"keyword_text": "gold$", "float_field": 2.2}

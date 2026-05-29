@@ -154,6 +154,6 @@ params:
 headers: {"Content-Type": "application/json"}
 ndjson:
   - {"index":{"_index":"simple_es_compat"}}
-  - {"keyword_text": "red"}
+  - {"keyword_text": "red", "float_field": 1.1}
   - {"index":{"_index":"simple_es_compat"}}
-  - {"keyword_text": "gold$"}
+  - {"keyword_text": "gold$", "float_field": 2.2}

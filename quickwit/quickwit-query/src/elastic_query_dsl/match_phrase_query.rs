@@ -15,7 +15,7 @@
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::{
-    ConvertibleToQueryAst, ElasticQueryDslInner, StringOrStructForSerialization,
+    ConvertibleToQueryAst, ElasticQueryDslInner, LiteralOrStructForSerialization,
 };
 use crate::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use crate::{MatchAllOrNone, OneFieldMap};
@@ -23,7 +23,7 @@ use crate::{MatchAllOrNone, OneFieldMap};
 /// `MatchPhraseQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase.html>
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<MatchPhraseQueryParams>>")]
 pub(crate) struct MatchPhraseQuery {
     pub(crate) field: String,
     pub(crate) params: MatchPhraseQueryParams,
@@ -65,11 +65,11 @@ impl From<MatchPhraseQuery> for ElasticQueryDslInner {
     }
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>>
+impl From<OneFieldMap<LiteralOrStructForSerialization<MatchPhraseQueryParams>>>
     for MatchPhraseQuery
 {
     fn from(
-        match_query_params: OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>,
+        match_query_params: OneFieldMap<LiteralOrStructForSerialization<MatchPhraseQueryParams>>,
     ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         MatchPhraseQuery {

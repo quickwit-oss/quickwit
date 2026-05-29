@@ -14,21 +14,21 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::StringOrStructForSerialization;
+use super::LiteralOrStructForSerialization;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<TermQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<TermQueryParams>>")]
 pub struct TermQuery {
     pub field: String,
     pub value: TermQueryParams,
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<TermQueryParams>>> for TermQuery {
-    fn from(one_field_map: OneFieldMap<StringOrStructForSerialization<TermQueryParams>>) -> Self {
+impl From<OneFieldMap<LiteralOrStructForSerialization<TermQueryParams>>> for TermQuery {
+    fn from(one_field_map: OneFieldMap<LiteralOrStructForSerialization<TermQueryParams>>) -> Self {
         TermQuery {
             field: one_field_map.field,
             value: one_field_map.value.inner,
@@ -52,6 +52,8 @@ enum TermValue {
     I64(i64),
     U64(u64),
     Str(String),
+    Bool(bool),
+    F64(f64),
 }
 
 fn deserialize_term_value<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -61,6 +63,8 @@ where D: Deserializer<'de> {
         TermValue::I64(i64) => Ok(i64.to_string()),
         TermValue::U64(u64) => Ok(u64.to_string()),
         TermValue::Str(str) => Ok(str),
+        TermValue::Bool(b) => Ok(b.to_string()),
+        TermValue::F64(f) => Ok(f.to_string()),
     }
 }
 
@@ -123,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_term_query_simple() {
+    fn test_term_query_string() {
         let term_query_json = r#"{ "product_id": { "value": "61809" } }"#;
         let term_query: TermQuery = serde_json::from_str(term_query_json).unwrap();
         assert_eq!(
@@ -133,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn test_term_query_deserialization_in_short_format() {
+    fn test_term_query_string_short_form() {
         let term_query: TermQuery = serde_json::from_str(
             r#"{
             "product_id": "61809"
@@ -144,5 +148,39 @@ mod tests {
             &term_query,
             &term_query_from_field_value("product_id", "61809")
         );
+    }
+
+    #[test]
+    fn test_term_query_bool() {
+        let term_query_json = r#"{ "is_product_pretty": { "value": true } }"#;
+        let term_query: TermQuery = serde_json::from_str(term_query_json).unwrap();
+        assert_eq!(
+            &term_query,
+            &term_query_from_field_value("is_product_pretty", "true")
+        );
+    }
+
+    #[test]
+    fn test_term_query_bool_short_form() {
+        let term_query_json = r#"{ "is_product_pretty": true }"#;
+        let term_query: TermQuery = serde_json::from_str(term_query_json).unwrap();
+        assert_eq!(
+            &term_query,
+            &term_query_from_field_value("is_product_pretty", "true")
+        );
+    }
+
+    #[test]
+    fn test_term_query_float() {
+        let term_query_json = r#"{ "price": { "value": 1.1 } }"#;
+        let term_query: TermQuery = serde_json::from_str(term_query_json).unwrap();
+        assert_eq!(&term_query, &term_query_from_field_value("price", "1.1"));
+    }
+
+    #[test]
+    fn test_term_query_float_short_form() {
+        let term_query_json = r#"{ "price": 1.1 }"#;
+        let term_query: TermQuery = serde_json::from_str(term_query_json).unwrap();
+        assert_eq!(&term_query, &term_query_from_field_value("price", "1.1"));
     }
 }

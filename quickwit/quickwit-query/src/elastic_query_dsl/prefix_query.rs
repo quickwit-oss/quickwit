@@ -15,11 +15,11 @@
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::{ConvertibleToQueryAst, StringOrStructForSerialization};
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, LiteralOrStructForSerialization};
 use crate::query_ast::{QueryAst, WildcardQuery as AstWildcardQuery};
 
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<PrefixQueryParams>>")]
 pub(crate) struct PrefixQuery {
     pub(crate) field: String,
     pub(crate) params: PrefixQueryParams,
@@ -53,9 +53,9 @@ impl ConvertibleToQueryAst for PrefixQuery {
     }
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>> for PrefixQuery {
+impl From<OneFieldMap<LiteralOrStructForSerialization<PrefixQueryParams>>> for PrefixQuery {
     fn from(
-        match_query_params: OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>,
+        match_query_params: OneFieldMap<LiteralOrStructForSerialization<PrefixQueryParams>>,
     ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         PrefixQuery {

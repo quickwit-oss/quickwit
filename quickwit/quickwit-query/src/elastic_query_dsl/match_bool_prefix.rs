@@ -14,7 +14,7 @@
 
 use serde::Deserialize;
 
-use super::{ElasticQueryDslInner, StringOrStructForSerialization};
+use super::{ElasticQueryDslInner, LiteralOrStructForSerialization};
 use crate::OneFieldMap;
 use crate::elastic_query_dsl::match_query::MatchQueryParams;
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, default_max_expansions};
@@ -23,7 +23,7 @@ use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 /// `MatchBoolPrefixQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-bool-prefix-query.html>
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(from = "OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>")]
+#[serde(from = "OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>")]
 pub(crate) struct MatchBoolPrefixQuery {
     pub(crate) field: String,
     pub(crate) params: MatchQueryParams,
@@ -54,9 +54,9 @@ impl From<MatchBoolPrefixQuery> for ElasticQueryDslInner {
     }
 }
 
-impl From<OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>> for MatchBoolPrefixQuery {
+impl From<OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>> for MatchBoolPrefixQuery {
     fn from(
-        match_query_params: OneFieldMap<StringOrStructForSerialization<MatchQueryParams>>,
+        match_query_params: OneFieldMap<LiteralOrStructForSerialization<MatchQueryParams>>,
     ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         MatchBoolPrefixQuery {
