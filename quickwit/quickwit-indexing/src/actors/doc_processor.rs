@@ -92,6 +92,12 @@ pub enum DocProcessorError {
     #[cfg(feature = "vrl")]
     #[error("VRL transform error: {0}")]
     Transform(VrlTerminate),
+    /// A VRL `abort` expression terminated the script while `drop_on_abort` was enabled
+    /// on the transform. This is an intentional drop, not an error — the document is
+    /// silently filtered out and routed to a separate counter.
+    #[cfg(feature = "vrl")]
+    #[error("VRL transform aborted (drop_on_abort): {0}")]
+    TransformAbort(VrlTerminate),
 }
 
 impl From<OtlpLogsError> for DocProcessorError {
@@ -314,17 +320,18 @@ pub struct DocProcessorCounters {
     index_id: IndexId,
     source_id: SourceId,
 
-    /// Overall number of documents received, partitioned
-    /// into 5 categories:
+    /// Overall number of documents received, partitioned into categories:
     /// - valid documents
-    /// - number of docs that could not be parsed.
+    /// - number of docs that the doc mapper rejected.
     /// - number of docs that were not valid json.
-    /// - number of docs that could not be transformed.
-    /// - number of docs for which the doc mapper returned an error.
-    /// - number of valid docs.
+    /// - number of docs that failed to parse as OTLP logs/traces.
+    /// - number of docs that the VRL transform errored on.
+    /// - number of docs that were intentionally dropped via VRL `abort` (with `drop_on_abort`
+    ///   enabled).
     pub valid: DocProcessorCounter,
     pub doc_mapper_errors: DocProcessorCounter,
     pub transform_errors: DocProcessorCounter,
+    pub transform_aborts: DocProcessorCounter,
     pub json_parse_errors: DocProcessorCounter,
     pub otlp_parse_errors: DocProcessorCounter,
 
@@ -343,6 +350,8 @@ impl DocProcessorCounters {
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "doc_mapper_error");
         let transform_errors =
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "transform_error");
+        let transform_aborts =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "transform_abort");
         let json_parse_errors =
             DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "json_parse_error");
         let otlp_parse_errors =
@@ -354,29 +363,40 @@ impl DocProcessorCounters {
             valid: valid_docs,
             doc_mapper_errors,
             transform_errors,
+            transform_aborts,
             json_parse_errors,
             otlp_parse_errors,
             num_bytes_total: Default::default(),
         }
     }
 
-    /// Returns the overall number of docs that went through the indexer (valid or not).
+    /// Returns the overall number of docs that went through the indexer (valid or not,
+    /// including docs intentionally dropped by VRL `abort`).
     pub fn num_processed_docs(&self) -> u64 {
         self.valid.get_num_docs()
             + self.doc_mapper_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
+            + self.transform_aborts.get_num_docs()
     }
 
-    /// Returns the overall number of docs that were sent to the indexer but were invalid.
-    /// (For instance, because they were missing a required field or because their because
-    /// their format was invalid)
+    /// Returns the overall number of docs that were sent to the indexer but were invalid
+    /// (for instance, missing a required field or malformed payload).
+    ///
+    /// Documents dropped by an intentional VRL `abort` are NOT counted here — they are
+    /// surfaced via [`Self::num_dropped_docs`] instead.
     pub fn num_invalid_docs(&self) -> u64 {
         self.doc_mapper_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
+    }
+
+    /// Returns the number of docs intentionally dropped by a VRL `abort` expression
+    /// while `drop_on_abort` was enabled.
+    pub fn num_dropped_docs(&self) -> u64 {
+        self.transform_aborts.get_num_docs()
     }
 
     pub fn record_valid(&self, num_bytes: u64) {
@@ -399,6 +419,10 @@ impl DocProcessorCounters {
             #[cfg(feature = "vrl")]
             DocProcessorError::Transform(_) => {
                 self.transform_errors.record_doc(num_bytes);
+            }
+            #[cfg(feature = "vrl")]
+            DocProcessorError::TransformAbort(_) => {
+                self.transform_aborts.record_doc(num_bytes);
             }
         };
     }
@@ -1340,5 +1364,308 @@ mod tests_vrl {
             })
         );
         universe.assert_quit().await;
+    }
+
+    /// Build a `DocProcessor` configured with the given VRL `script` and `drop_on_abort`
+    /// setting. Returns the running mailbox/handle plus the indexer inbox so tests can
+    /// inspect both the counters and the downstream batches.
+    async fn build_vrl_doc_processor(
+        universe: &Universe,
+        script: &str,
+        drop_on_abort: bool,
+    ) -> (
+        quickwit_actors::Mailbox<DocProcessor>,
+        quickwit_actors::ActorHandle<DocProcessor>,
+        quickwit_actors::Inbox<Indexer>,
+    ) {
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox::<Indexer>();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let transform_config = TransformConfig::for_test(script).with_drop_on_abort(drop_on_abort);
+        let doc_processor = DocProcessor::try_new(
+            "my-index".to_string(),
+            "my-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            Some(transform_config),
+            SourceInputFormat::Json,
+        )
+        .unwrap();
+        let (mailbox, handle) = universe.spawn_builder().spawn(doc_processor);
+        (mailbox, handle, indexer_inbox)
+    }
+
+    /// A doc unconditionally `abort`ed with `drop_on_abort=true` must:
+    /// - increment `transform_aborts`, NOT `transform_errors`
+    /// - NOT show up in `num_invalid_docs()` (intentional drop, not invalid)
+    /// - still show up in `num_processed_docs()` and `num_bytes_total`
+    /// - not be forwarded to the indexer
+    #[tokio::test]
+    async fn test_doc_processor_vrl_abort_with_drop_on_abort_true() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, handle, indexer_inbox) =
+            build_vrl_doc_processor(&universe, "abort", true).await;
+        let payload =
+            br#"{"body": "drop me", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
+        let num_bytes_doc = payload.len() as u64;
+        mailbox
+            .send_message(RawDocBatch::for_test(&[payload], 0..1))
+            .await?;
+        let counters = handle.process_pending_and_observe().await.state;
+
+        assert_eq!(counters.transform_aborts.get_num_docs(), 1);
+        assert_eq!(counters.transform_errors.get_num_docs(), 0);
+        assert_eq!(counters.valid.get_num_docs(), 0);
+        assert_eq!(counters.doc_mapper_errors.get_num_docs(), 0);
+        assert_eq!(counters.json_parse_errors.get_num_docs(), 0);
+
+        assert_eq!(counters.num_invalid_docs(), 0);
+        assert_eq!(counters.num_dropped_docs(), 1);
+        assert_eq!(counters.num_processed_docs(), 1);
+        assert_eq!(
+            counters.num_bytes_total.load(Ordering::Relaxed),
+            num_bytes_doc
+        );
+
+        // Nothing is forwarded to the indexer.
+        let downstream = indexer_inbox.drain_for_test();
+        let total_downstream_docs: usize = downstream
+            .into_iter()
+            .filter_map(|msg| msg.downcast::<ProcessedDocBatch>().ok())
+            .map(|batch| batch.docs.len())
+            .sum();
+        assert_eq!(total_downstream_docs, 0);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    /// Same script but with `drop_on_abort=false`: the abort is now treated as a transform
+    /// error — counted in `transform_errors`, included in `num_invalid_docs()`.
+    #[tokio::test]
+    async fn test_doc_processor_vrl_abort_with_drop_on_abort_false() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, handle, _indexer_inbox) =
+            build_vrl_doc_processor(&universe, "abort", false).await;
+        let payload =
+            br#"{"body": "fail me", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
+        mailbox
+            .send_message(RawDocBatch::for_test(&[payload], 0..1))
+            .await?;
+        let counters = handle.process_pending_and_observe().await.state;
+
+        assert_eq!(counters.transform_errors.get_num_docs(), 1);
+        assert_eq!(counters.transform_aborts.get_num_docs(), 0);
+        assert_eq!(counters.valid.get_num_docs(), 0);
+        assert_eq!(counters.num_invalid_docs(), 1);
+        assert_eq!(counters.num_dropped_docs(), 0);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    /// A VRL runtime error (not an explicit `abort`) must always count as a transform
+    /// error, regardless of `drop_on_abort`.
+    #[tokio::test]
+    async fn test_doc_processor_vrl_runtime_error_always_counts_as_transform_error()
+    -> anyhow::Result<()> {
+        // `string!(.body)` raises a runtime error when `.body` is not a string.
+        let script = ".body = upcase(string!(.body))";
+        for drop_on_abort in [true, false] {
+            let universe = Universe::with_accelerated_time();
+            let (mailbox, handle, _indexer_inbox) =
+                build_vrl_doc_processor(&universe, script, drop_on_abort).await;
+            let payload = br#"{"body": 42, "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
+            mailbox
+                .send_message(RawDocBatch::for_test(&[payload], 0..1))
+                .await?;
+            let counters = handle.process_pending_and_observe().await.state;
+            assert_eq!(
+                counters.transform_errors.get_num_docs(),
+                1,
+                "runtime error must count as transform error (drop_on_abort={drop_on_abort})"
+            );
+            assert_eq!(
+                counters.transform_aborts.get_num_docs(),
+                0,
+                "runtime error must NOT count as transform abort (drop_on_abort={drop_on_abort})"
+            );
+            universe.assert_quit().await;
+        }
+        Ok(())
+    }
+
+    /// Mixed batch with `drop_on_abort=true`: a conditional `abort` filters some docs,
+    /// the rest pass through. Counters split cleanly.
+    #[tokio::test]
+    async fn test_doc_processor_vrl_conditional_abort_filters_subset() -> anyhow::Result<()> {
+        let script = r#"
+            if .body == "drop" {
+                abort
+            }
+        "#;
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, handle, indexer_inbox) =
+            build_vrl_doc_processor(&universe, script, true).await;
+        mailbox
+            .send_message(RawDocBatch::for_test(
+                &[
+                    br#"{"body": "keep", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                    br#"{"body": "drop", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                    br#"{"body": "keep2", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                ],
+                0..3,
+            ))
+            .await?;
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.valid.get_num_docs(), 2);
+        assert_eq!(counters.transform_aborts.get_num_docs(), 1);
+        assert_eq!(counters.transform_errors.get_num_docs(), 0);
+        assert_eq!(counters.num_invalid_docs(), 0);
+        assert_eq!(counters.num_dropped_docs(), 1);
+        assert_eq!(counters.num_processed_docs(), 3);
+
+        // Only the two "keep" docs are forwarded.
+        let output_messages = indexer_inbox.drain_for_test();
+        let total_downstream_docs: usize = output_messages
+            .into_iter()
+            .filter_map(|msg| msg.downcast::<ProcessedDocBatch>().ok())
+            .map(|batch| batch.docs.len())
+            .sum();
+        assert_eq!(total_downstream_docs, 2);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    /// `record_error` must route each variant to the right counter — exercised directly
+    /// without going through the actor harness so the routing logic is locked in.
+    #[test]
+    fn test_doc_processor_counters_record_error_routes_correctly() {
+        let counters = DocProcessorCounters::new("idx".to_string(), "src".to_string());
+        counters.record_error(DocProcessorError::JsonParsing("bad json".to_string()), 10);
+        counters.record_error(
+            DocProcessorError::DocMapperParsing(DocParsingError::RequiredField(
+                "missing field".to_string(),
+            )),
+            20,
+        );
+
+        // Build a Terminate via a minimal VRL script that aborts.
+        let abort_program = TransformConfig::for_test("abort")
+            .compile_vrl_script()
+            .unwrap()
+            .0;
+        let mut runtime =
+            vrl::compiler::runtime::Runtime::new(vrl::compiler::state::RuntimeState::default());
+        let mut value = VrlValue::Object(Default::default());
+        let mut metadata = VrlValue::Object(Default::default());
+        let mut secrets = VrlSecrets::default();
+        let mut target = vrl::compiler::TargetValueRef {
+            value: &mut value,
+            metadata: &mut metadata,
+            secrets: &mut secrets,
+        };
+        let abort_terminate = runtime
+            .resolve(
+                &mut target,
+                &abort_program,
+                &vrl::compiler::TimeZone::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(abort_terminate, VrlTerminate::Abort(_)));
+
+        // Same Terminate routed through both variants exercises both counter paths.
+        counters.record_error(
+            DocProcessorError::TransformAbort(abort_terminate.clone()),
+            30,
+        );
+        counters.record_error(DocProcessorError::Transform(abort_terminate), 40);
+
+        assert_eq!(counters.json_parse_errors.get_num_docs(), 1);
+        assert_eq!(counters.doc_mapper_errors.get_num_docs(), 1);
+        assert_eq!(counters.transform_aborts.get_num_docs(), 1);
+        assert_eq!(counters.transform_errors.get_num_docs(), 1);
+        assert_eq!(counters.valid.get_num_docs(), 0);
+        assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 100);
+        assert_eq!(counters.num_invalid_docs(), 3);
+        assert_eq!(counters.num_dropped_docs(), 1);
+        assert_eq!(counters.num_processed_docs(), 4);
+    }
+
+    /// Mixed-category batch: exercises all four DocProcessor outcomes simultaneously
+    /// to lock in that counters and the indexer-forwarding behavior remain independent
+    /// — a VRL abort must not influence a sibling doc's json-parse or doc-mapper outcome.
+    ///
+    /// Batch composition:
+    /// - 1 valid doc (kept)
+    /// - 1 doc that triggers `abort` via `drop_on_abort=true` (transform_abort)
+    /// - 1 doc with malformed JSON (json_parse_error)
+    /// - 1 doc missing the required `timestamp` field (doc_mapper_error)
+    #[tokio::test]
+    async fn test_doc_processor_mixed_category_batch() -> anyhow::Result<()> {
+        let script = r#"
+            if .drop == true { abort }
+        "#;
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, handle, indexer_inbox) =
+            build_vrl_doc_processor(&universe, script, true).await;
+        mailbox
+            .send_message(RawDocBatch::for_test(
+                &[
+                    // valid
+                    br#"{"body": "ok", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                    // aborts via VRL
+                    br#"{"body": "drop", "drop": true, "timestamp": 1628837063, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                    // malformed JSON
+                    b"{not-json",
+                    // missing required `timestamp`
+                    br#"{"body": "no-ts", "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#,
+                ],
+                0..4,
+            ))
+            .await?;
+        let counters = handle.process_pending_and_observe().await.state;
+
+        assert_eq!(counters.valid.get_num_docs(), 1, "exactly 1 valid doc");
+        assert_eq!(
+            counters.transform_aborts.get_num_docs(),
+            1,
+            "exactly 1 VRL abort"
+        );
+        assert_eq!(
+            counters.transform_errors.get_num_docs(),
+            0,
+            "no transform_errors when drop_on_abort=true"
+        );
+        assert_eq!(
+            counters.json_parse_errors.get_num_docs(),
+            1,
+            "exactly 1 json parse error"
+        );
+        assert_eq!(
+            counters.doc_mapper_errors.get_num_docs(),
+            1,
+            "exactly 1 doc_mapper error (missing timestamp)"
+        );
+
+        assert_eq!(
+            counters.num_invalid_docs(),
+            2,
+            "json + doc_mapper, not abort"
+        );
+        assert_eq!(counters.num_dropped_docs(), 1, "the abort only");
+        assert_eq!(
+            counters.num_processed_docs(),
+            4,
+            "every input doc accounted for exactly once"
+        );
+
+        // Only the single valid doc reaches the indexer.
+        let output_messages = indexer_inbox.drain_for_test();
+        let total_downstream_docs: usize = output_messages
+            .into_iter()
+            .filter_map(|msg| msg.downcast::<ProcessedDocBatch>().ok())
+            .map(|batch| batch.docs.len())
+            .sum();
+        assert_eq!(total_downstream_docs, 1);
+        universe.assert_quit().await;
+        Ok(())
     }
 }
