@@ -214,6 +214,7 @@ mod tests {
 
         fn call(&mut self, (dividend, divisor): (usize, usize)) -> Self::Future {
             let fut = async move {
+                #[allow(clippy::manual_checked_ops)]
                 if divisor == 0 {
                     Err(MyServiceError::ZeroDivision)
                 } else {

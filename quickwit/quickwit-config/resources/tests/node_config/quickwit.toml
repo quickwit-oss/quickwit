@@ -45,6 +45,7 @@ split_store_max_num_splits = 10_000
 max_concurrent_split_uploads = 8
 max_merge_write_throughput = "100mb"
 merge_concurrency = 2
+parquet_merge_use_streaming_engine = true
 
 [ingest_api]
 replication_factor = 2

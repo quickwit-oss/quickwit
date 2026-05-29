@@ -27,12 +27,13 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
+use quickwit_metrics::{gauge, histogram, labels};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
@@ -310,6 +311,7 @@ impl IngesterState {
             .expect("channel should be open");
     }
 
+    #[instrument(name = "ingester.lock_partially", skip_all, fields(operation))]
     pub async fn lock_partially(
         &self,
         operation: &'static str,
@@ -335,6 +337,7 @@ impl IngesterState {
         Ok(partially_locked_state)
     }
 
+    #[instrument(name = "ingester.lock_fully", skip_all, fields(operation))]
     pub async fn lock_fully(
         &self,
         operation: &'static str,
@@ -460,10 +463,12 @@ pub(super) fn warn_on_long_lock_hold(
 ) {
     let elapsed = acquired_at.elapsed();
 
-    crate::ingest_v2::metrics::INGEST_V2_METRICS
-        .wal_lock_hold_duration_secs
-        .with_label_values([operation, lock_type])
-        .observe(elapsed.as_secs_f64());
+    let labels = labels!("operation" => operation, "type" => lock_type);
+    histogram!(
+        parent: crate::ingest_v2::metrics::WAL_LOCK_HOLD_DURATION_SECS,
+        labels: [labels],
+    )
+    .observe(elapsed.as_secs_f64());
 
     if elapsed > Duration::from_secs(1) {
         quickwit_common::rate_limited_warn!(
@@ -488,12 +493,13 @@ pub(super) async fn track_acquire_lock<F, R>(
 where
     F: std::future::Future<Output = R>,
 {
-    let metrics = &crate::ingest_v2::metrics::INGEST_V2_METRICS;
+    let labels = labels!("operation" => operation, "type" => lock_type);
 
-    metrics
-        .wal_acquire_lock_requests_in_flight
-        .with_label_values([operation, lock_type])
-        .inc();
+    gauge!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
+        labels: [labels],
+    )
+    .inc();
 
     let now = Instant::now();
     let guard = acquire_future.await;
@@ -510,14 +516,16 @@ where
             elapsed.pretty_display()
         );
     }
-    metrics
-        .wal_acquire_lock_requests_in_flight
-        .with_label_values([operation, lock_type])
-        .dec();
-    metrics
-        .wal_acquire_lock_request_duration_secs
-        .with_label_values([operation, lock_type])
-        .observe(elapsed.as_secs_f64());
+    gauge!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
+        labels: [labels],
+    )
+    .dec();
+    histogram!(
+        parent: crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
+        labels: [labels],
+    )
+    .observe(elapsed.as_secs_f64());
 
     (guard, acquired_at)
 }
@@ -525,6 +533,7 @@ where
 impl FullyLockedIngesterState<'_> {
     /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
     /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
+    #[instrument(name = "ingester.delete_shard", skip_all, fields(queue_id, initiator))]
     pub async fn delete_shard(&mut self, queue_id: &QueueId, initiator: &'static str) {
         match self.mrecordlog.delete_queue(queue_id).await {
             Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
@@ -554,6 +563,11 @@ impl FullyLockedIngesterState<'_> {
 
     /// Truncates the shard identified by `queue_id` up to `truncate_up_to_position_inclusive` only
     /// if the current truncation position of the shard is smaller.
+    #[instrument(
+        name = "ingester.truncate_shard",
+        skip_all,
+        fields(queue_id, truncate_up_to_position_inclusive, initiator)
+    )]
     pub async fn truncate_shard(
         &mut self,
         queue_id: &QueueId,
@@ -887,7 +901,12 @@ mod tests {
         is_replica: bool,
     ) -> IngesterShard {
         let builder = if is_replica {
-            IngesterShard::new_replica(index_uid, source_id, shard_id, NodeId::from("test-leader"))
+            IngesterShard::new_replica(
+                index_uid,
+                source_id,
+                shard_id,
+                NodeId::from_str("test-leader"),
+            )
         } else {
             IngesterShard::new_solo(index_uid, source_id, shard_id)
         };

@@ -23,7 +23,7 @@ use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use ulid::Ulid;
 
-use crate::metrics::SingleCacheMetrics;
+use crate::metrics::{FD_CACHE_METRICS, SingleCacheMetrics};
 
 pub struct FileDescriptorCache {
     fd_cache: Mutex<lru::LruCache<Ulid, SplitFile>>,
@@ -88,10 +88,7 @@ impl FileDescriptorCache {
         Self::new(
             NonZeroU32::new(max_fd_limit).unwrap(),
             fd_cache_capacity,
-            crate::STORAGE_METRICS
-                .fd_cache_metrics
-                .cache_metrics
-                .clone(),
+            FD_CACHE_METRICS.cache_metrics.clone(),
         )
     }
 
@@ -104,7 +101,7 @@ impl FileDescriptorCache {
         fd_cache_lock.push(split_id, split_file);
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
     }
 
     /// Evicts the given list of split ids from the file descriptor cache.
@@ -116,7 +113,7 @@ impl FileDescriptorCache {
         }
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
         self.fd_cache_metrics
             .evict_num_items
             .inc_by(split_ids.len() as u64);
@@ -220,7 +217,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 20);
         assert_eq!(cache_metrics.misses_num_items.get(), 10);
     }
@@ -252,7 +249,7 @@ mod tests {
                     .unwrap();
             }
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 100 * 9);
         assert_eq!(cache_metrics.misses_num_items.get(), 100);
     }

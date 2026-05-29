@@ -17,7 +17,7 @@ use std::ops::{Bound, RangeBounds};
 use prost::Message;
 use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
-    CountHits, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
+    CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
@@ -48,7 +48,7 @@ impl LeafSearchCache {
         LeafSearchCache {
             content: MemorySizedCache::from_config(
                 config,
-                &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+                &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
             ),
         }
     }
@@ -67,8 +67,15 @@ impl LeafSearchCache {
         &self,
         split_info: SplitIdAndFooterOffsets,
         search_request: SearchRequest,
-        result: LeafSearchResponse,
+        mut result: LeafSearchResponse,
     ) {
+        // We overwrite the original stats so that
+        // we get the right counter on cache hits.
+        result.resource_stats = Some(LeafResourceStats {
+            partial_result_cache_num_splits: 1,
+            partial_result_cache_num_docs: split_info.num_docs,
+            ..Default::default()
+        });
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
         let encoded_result = result.encode_to_vec();
         self.content.put(key, OwnedBytes::new(encoded_result));
@@ -197,7 +204,7 @@ impl PredicateCacheImpl {
         PredicateCacheImpl {
             content: MemorySizedCache::from_config(
                 config,
-                &quickwit_storage::STORAGE_METRICS.predicate_cache,
+                &quickwit_storage::metrics::PREDICATE_CACHE,
             ),
         }
     }
@@ -237,7 +244,7 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
 mod tests {
     use bytesize::ByteSize;
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortValue,
+        LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
 
@@ -303,8 +310,21 @@ mod tests {
 
         assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
 
-        cache.put(split_1.clone(), query_1.clone(), result.clone());
-        assert_eq!(cache.get(split_1.clone(), query_1.clone()).unwrap(), result);
+        // `LeafSearchCache::put` overwrites `resource_stats` with the
+        // cache-hit counters; reads always see those, not the original stats.
+        let expected = LeafSearchResponse {
+            resource_stats: Some(LeafResourceStats {
+                partial_result_cache_num_splits: 1,
+                partial_result_cache_num_docs: split_1.num_docs,
+                ..Default::default()
+            }),
+            ..result.clone()
+        };
+        cache.put(split_1.clone(), query_1.clone(), result);
+        assert_eq!(
+            cache.get(split_1.clone(), query_1.clone()).unwrap(),
+            expected
+        );
         assert!(cache.get(split_2, query_1).is_none());
         assert!(cache.get(split_1, query_2).is_none());
     }
@@ -389,7 +409,7 @@ mod tests {
                 sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
-            resource_stats: Some(ResourceStats::default()),
+            resource_stats: Some(LeafResourceStats::default()),
         };
 
         // for split_1, 1 and 1bis cover different timestamp ranges

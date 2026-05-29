@@ -19,6 +19,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use prost_types::Timestamp as WellKnownTimestamp;
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_opentelemetry::otlp::{
     OTEL_TRACES_INDEX_ID, Span as QwSpan, TraceId,
     extract_otel_traces_index_id_patterns_from_metadata,
@@ -50,29 +51,35 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument};
 
-use crate::metrics::JAEGER_SERVICE_METRICS;
+use crate::metrics::{
+    FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABEL_NAMES, OPERATION_INDEX_LABEL_NAMES,
+    REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL, REQUESTS_TOTAL,
+};
 use crate::{
     JaegerService, TimeIntervalSecs, TracesDataStream, get_operations_impl, get_services_impl,
     json_deserialize, record_error, record_send, to_duration_millis,
 };
 
 macro_rules! metrics {
-    ($expr:expr, [$operation:ident, $($label:expr),*]) => {
+    ($expr:expr, [$operation:ident, $index:expr]) => {
         let start = std::time::Instant::now();
-        let labels = [stringify!($operation), $($label,)*];
-        JAEGER_SERVICE_METRICS.requests_total.with_label_values(labels).inc();
+        let operation = stringify!($operation);
+        let index = $index;
+        let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation, index);
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).inc();
         let (res, is_error) = match $expr {
-            ok @ Ok(_) => {
-                (ok, "false")
-            },
+            ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
-                JAEGER_SERVICE_METRICS.request_errors_total.with_label_values(labels).inc();
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).inc();
                 (err, "true")
             },
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = [stringify!($operation), $($label,)* is_error];
-        JAEGER_SERVICE_METRICS.request_duration_seconds.with_label_values(labels).observe(elapsed);
+        let err_labels = label_values!(
+            OPERATION_INDEX_ERROR_LABEL_NAMES => operation, index, is_error
+        );
+        histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
+            .observe(elapsed);
 
         return res.map(Response::new);
     };
@@ -412,7 +419,7 @@ async fn stream_otel_spans_impl(
     }
 
     if trace_ids.len() > 1 {
-        qw_spans.sort_unstable_by(|left, right| left.trace_id.cmp(&right.trace_id));
+        qw_spans.sort_unstable_by_key(|span| span.trace_id);
     }
 
     let num_spans = qw_spans.len();
@@ -426,16 +433,14 @@ async fn stream_otel_spans_impl(
 
     record_send(operation_name, num_spans, num_bytes);
 
-    JAEGER_SERVICE_METRICS
-        .fetched_traces_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc_by(trace_ids.len() as u64);
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
+    counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).inc_by(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    JAEGER_SERVICE_METRICS
-        .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
-        .observe(elapsed);
+    let err_labels = label_values!(
+        OPERATION_INDEX_ERROR_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID, "false"
+    );
+    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).observe(elapsed);
 
     Ok(qw_spans)
 }

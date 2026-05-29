@@ -40,6 +40,7 @@ use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
+use crate::metrics::KAFKA_REBALANCE_TOTAL;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
@@ -127,7 +128,7 @@ macro_rules! return_if_err {
 /// <https://docs.confluent.io/2.0.0/clients/librdkafka/classRdKafka_1_1RebalanceCb.html>
 impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, _consumer: &BaseConsumer<Self>, rebalance: &Rebalance) {
-        crate::metrics::INDEXER_METRICS.kafka_rebalance_total.inc();
+        KAFKA_REBALANCE_TOTAL.inc();
         quickwit_common::rate_limited_info!(limit_per_min = 3, topic = self.topic, "rebalance");
         if let Rebalance::Revoke(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);

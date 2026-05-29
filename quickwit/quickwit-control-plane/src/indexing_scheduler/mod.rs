@@ -30,6 +30,7 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
 };
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
@@ -38,7 +39,7 @@ use tracing::{debug, info, warn};
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::metrics::ShardLocalityMetrics;
+use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
@@ -295,13 +296,13 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
-        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+        SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
         let sources = get_sources_to_schedule(model);
 
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
@@ -330,7 +331,7 @@ impl IndexingScheduler {
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
-        crate::metrics::CONTROL_PLANE_METRICS.set_shard_locality_metrics(shard_locality_metrics);
+        shard_locality_metrics.publish();
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -366,7 +367,7 @@ impl IndexingScheduler {
         {
             return;
         }
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
             .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
@@ -386,8 +387,23 @@ impl IndexingScheduler {
         }
     }
 
-    fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
-        self.indexer_pool.values()
+    fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
+        let (ready, not_ready): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
+            .indexer_pool
+            .values()
+            .into_iter()
+            .partition(|indexer| indexer.ingester_status == IngesterStatus::Ready);
+
+        if ready.is_empty() {
+            // Allow scheduling on retiring indexers to drain shards
+            // and avoid decommission timeouts (e.g. single-node cluster).
+            warn!(
+                "no ready indexer available, falling back to retiring indexers for shard draining"
+            );
+            not_ready
+        } else {
+            ready
+        }
     }
 
     fn apply_physical_indexing_plan(
@@ -397,7 +413,7 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        crate::metrics::CONTROL_PLANE_METRICS.apply_plan_total.inc();
+        APPLY_PLAN_TOTAL.inc();
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
@@ -406,7 +422,7 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| indexer.node_id == *node_id)
+                    .find(|indexer| indexer.node_id == node_id.as_str())
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();
@@ -1090,8 +1106,81 @@ mod tests {
     }
 
     use quickwit_config::SourceInputFormat;
-    use quickwit_proto::indexing::mcpu;
+    use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, MockIndexingService, mcpu};
     use quickwit_proto::ingest::{Shard, ShardState};
+
+    fn mock_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+        let mock_indexer = MockIndexingService::new();
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_only_ready_when_available() {
+        let indexer_pool = IndexerPool::default();
+        let ready_indexer = mock_indexer_node_info("indexer-ready-1", IngesterStatus::Ready);
+        let ready_indexer_2 = mock_indexer_node_info("indexer-ready-2", IngesterStatus::Ready);
+        let retiring_indexer = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
+        indexer_pool.insert(ready_indexer.node_id.clone(), ready_indexer);
+        indexer_pool.insert(ready_indexer_2.node_id.clone(), ready_indexer_2);
+        indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Ready)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_falls_back_to_retiring_when_no_ready() {
+        let indexer_pool = IndexerPool::default();
+        let retiring_1 = mock_indexer_node_info("indexer-retiring-1", IngesterStatus::Retiring);
+        let retiring_2 = mock_indexer_node_info("indexer-retiring-2", IngesterStatus::Retiring);
+        indexer_pool.insert(retiring_1.node_id.clone(), retiring_1);
+        indexer_pool.insert(retiring_2.node_id.clone(), retiring_2);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Retiring)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_empty_when_pool_is_empty() {
+        let indexer_pool = IndexerPool::default();
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+        assert!(selected.is_empty());
+    }
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {

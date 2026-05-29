@@ -43,6 +43,7 @@ See `quickwit/CLAUDE.md` for architecture overview, crate descriptions, and buil
 | Recreates futures in `select!` loops | Use `&mut fut` to resume, not recreate — dropping loses data | GAP-002 |
 | Holds locks across await points | Invariant violations on cancel. Use message passing or synchronous critical sections | GAP-002 |
 | Silently swallows unexpected state | If a condition "shouldn't happen," return an error or assert — don't silently return Ok. Skipping optional/missing data is fine; pretending a bug didn't occur is not | Code quality |
+| Replies to PR review comments as standalone inline comments | Use `gh api repos/.../pulls/{pr}/comments/{codex_comment_id}/replies` (or `in_reply_to_id` in the POST body) so the reply is **threaded under** the original review comment. Standalone inline comments at the same line are NOT replies; they show as separate threads. Verify with the GitHub API that `in_reply_to_id` is set on your reply. | Review hygiene |
 
 ## Engineering Priority
 

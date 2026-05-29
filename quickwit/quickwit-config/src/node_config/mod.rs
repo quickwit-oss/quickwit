@@ -163,6 +163,16 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
+    /// If true, run Parquet merges through the streaming column-major engine
+    /// (`execute_merge_operation`). If false (default), use the in-memory
+    /// `merge_sorted_parquet_files` engine. The legacy in-memory engine is
+    /// kept as the runtime fallback so production can flip back to it
+    /// without redeploying if the streaming engine hits a bug. Promotion
+    /// merges (those with `target_prefix_len_override`) always go through
+    /// the streaming engine regardless of this flag — the in-memory path
+    /// can't handle mixed prefix lengths.
+    #[serde(default = "IndexerConfig::default_parquet_merge_use_streaming_engine")]
+    pub parquet_merge_use_streaming_engine: bool,
 }
 
 impl IndexerConfig {
@@ -201,6 +211,10 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
+    fn default_parquet_merge_use_streaming_engine() -> bool {
+        false
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
@@ -213,6 +227,7 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
+            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         };
         Ok(indexer_config)
     }
@@ -229,6 +244,7 @@ impl Default for IndexerConfig {
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
+            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         }
     }
 }

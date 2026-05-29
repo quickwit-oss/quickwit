@@ -18,8 +18,9 @@ use std::time::{Duration, Instant};
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use mrecordlog::error::CreateQueueError;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_INGESTER_REPLICATE;
 use quickwit_common::{ServiceStream, rate_limited_warn};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, IngesterStatus, InitReplicaRequest, InitReplicaResponse,
     ReplicateFailure, ReplicateFailureReason, ReplicateRequest, ReplicateResponse,
@@ -31,7 +32,7 @@ use quickwit_proto::types::{NodeId, QueueId};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{error, warn};
+use tracing::{error, instrument, warn};
 
 use super::metrics::report_wal_usage;
 use super::models::IngesterShard;
@@ -39,7 +40,7 @@ use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::estimate_size;
 use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
-use crate::metrics::INGEST_METRICS;
+use crate::metrics::{REPLICATED_NUM_BYTES_TOTAL, REPLICATED_NUM_DOCS_TOTAL};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -344,8 +345,8 @@ impl ReplicationClient {
         commit_type: CommitTypeV2,
     ) -> impl Future<Output = Result<ReplicateResponse, ReplicationError>> + Send + 'static {
         let replicate_request = ReplicateRequest {
-            leader_id: leader_id.into(),
-            follower_id: follower_id.into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             subrequests,
             commit_type: commit_type as i32,
             replication_seqno: 0, // replication number are generated further down
@@ -413,7 +414,7 @@ impl ReplicationTask {
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
     ) -> ReplicationTaskHandle {
-        let mut replication_task = Self {
+        let replication_task = Self {
             leader_id,
             follower_id,
             state,
@@ -423,10 +424,11 @@ impl ReplicationTask {
             disk_capacity,
             memory_capacity,
         };
-        let join_handle = tokio::spawn(async move { replication_task.run().await });
+        let join_handle = tokio::spawn(replication_task.run());
         ReplicationTaskHandle { join_handle }
     }
 
+    #[instrument(name = "replication.init_replica", skip_all)]
     async fn init_replica(
         &mut self,
         init_replica_request: InitReplicaRequest,
@@ -467,7 +469,7 @@ impl ReplicationTask {
         let index_uid = replica_shard.index_uid().clone();
         let shard_id = replica_shard.shard_id().clone();
         let source_id = replica_shard.source_id;
-        let leader_id = NodeId::from(replica_shard.leader_id);
+        let leader_id = NodeId::from_str(&replica_shard.leader_id);
 
         let replica_shard =
             IngesterShard::new_replica(index_uid, source_id, shard_id, leader_id).build();
@@ -479,6 +481,7 @@ impl ReplicationTask {
         Ok(init_replica_response)
     }
 
+    #[instrument(name = "replication.replicate", skip_all)]
     async fn replicate(
         &mut self,
         replicate_request: ReplicateRequest,
@@ -503,8 +506,8 @@ impl ReplicationTask {
             )));
         }
         let request_size_bytes = replicate_request.num_bytes();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_replicate);
-        gauge_guard.add(request_size_bytes as i64);
+        let _gauge_guard =
+            GaugeGuard::new(&IN_FLIGHT_INGESTER_REPLICATE, request_size_bytes as f64);
 
         self.current_replication_seqno += 1;
 
@@ -665,12 +668,8 @@ impl ReplicationTask {
                 .expect("replica shard should be initialized")
                 .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-            INGEST_METRICS
-                .replicated_num_bytes_total
-                .inc_by(batch_num_bytes);
-            INGEST_METRICS
-                .replicated_num_docs_total
-                .inc_by(batch_num_docs);
+            REPLICATED_NUM_BYTES_TOTAL.inc_by(batch_num_bytes);
+            REPLICATED_NUM_DOCS_TOTAL.inc_by(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,
@@ -704,7 +703,7 @@ impl ReplicationTask {
 
         report_wal_usage(wal_usage);
 
-        let follower_id = self.follower_id.clone().into();
+        let follower_id = self.follower_id.to_string();
 
         let replicate_response = ReplicateResponse {
             follower_id,
@@ -715,7 +714,7 @@ impl ReplicationTask {
         Ok(replicate_response)
     }
 
-    async fn run(&mut self) -> IngestV2Result<()> {
+    async fn run(mut self) -> IngestV2Result<()> {
         while let Some(syn_replication_message) = self.syn_replication_stream.next().await {
             let ack_replication_message = match syn_replication_message.message {
                 Some(syn_replication_message::Message::OpenRequest(_)) => {
@@ -823,8 +822,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_task_init() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
         let (ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -870,8 +869,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_task_replicate() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, mut syn_replication_stream_rx) = mpsc::channel(5);
         let (ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -996,8 +995,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_stream_replicate_errors() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let (syn_replication_stream_tx, _syn_replication_stream_rx) = mpsc::channel(5);
         let (_ack_replication_stream_tx, ack_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -1034,8 +1033,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_happy_path() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1305,8 +1304,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_shard_closed() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1390,8 +1389,8 @@ mod tests {
     #[cfg(not(feature = "failpoints"))]
     #[tokio::test]
     async fn test_replication_task_deletes_dangling_shard() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1486,8 +1485,8 @@ mod tests {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ingester:append_records", "return").unwrap();
 
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
@@ -1583,8 +1582,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_replication_task_resource_exhausted() {
-        let leader_id: NodeId = "test-leader".into();
-        let follower_id: NodeId = "test-follower".into();
+        let leader_id = NodeId::from_str("test-leader");
+        let follower_id = NodeId::from_str("test-follower");
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
