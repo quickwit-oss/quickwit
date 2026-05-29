@@ -28,8 +28,8 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::spawn_named_task;
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_metastore::StageParquetSplitsRequestExt;
-use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_metrics::{gauge, label_values};
+use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_storage::Storage;
