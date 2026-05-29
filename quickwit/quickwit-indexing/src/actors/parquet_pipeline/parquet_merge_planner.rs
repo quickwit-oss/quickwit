@@ -688,6 +688,9 @@ mod tests {
             .num_rows(100)
             .size_bytes(size_bytes)
             .sort_fields("metric_name|host|timestamp_secs/V2")
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            })
             .num_merge_ops(num_merge_ops)
             .build();
 

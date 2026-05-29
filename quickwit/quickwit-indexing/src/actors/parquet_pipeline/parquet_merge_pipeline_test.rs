@@ -191,6 +191,9 @@ pub(super) fn make_test_sketch_split_metadata(
         .sort_fields(table_config.effective_sort_fields())
         .window_start_secs(0)
         .window_duration_secs(900)
+        .maturity(ParquetSplitMaturity::Immature {
+            maturation_period: Duration::from_secs(3600),
+        })
         .add_metric_name(metric_name)
         .build()
 }
