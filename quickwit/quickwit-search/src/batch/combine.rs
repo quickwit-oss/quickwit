@@ -213,23 +213,23 @@ pub(super) fn unbatch_response(
                     }
                 });
 
-            let mut response = SearchResponse {
+            Ok(SearchResponse {
                 num_hits: combined_response.num_hits,
+                hits: if req.max_hits > 0 {
+                    let mut hits = combined_response.hits.clone();
+                    hits.truncate(req.max_hits as usize);
+                    hits
+                } else {
+                    Vec::new()
+                },
                 elapsed_time_micros: combined_response.elapsed_time_micros,
                 errors: combined_response.errors.clone(),
-                num_successful_splits: combined_response.num_successful_splits,
-                failed_splits: combined_response.failed_splits.clone(),
                 aggregation_postcard: agg_postcard,
-                ..Default::default()
-            };
-
-            if req.max_hits > 0 {
-                let mut hits = combined_response.hits.clone();
-                hits.truncate(req.max_hits as usize);
-                response.hits = hits;
-            }
-
-            Ok(response)
+                scroll_id: None,
+                failed_splits: combined_response.failed_splits.clone(),
+                num_successful_splits: combined_response.num_successful_splits,
+                resource_stats: combined_response.resource_stats.clone(),
+            })
         })
         .collect()
 }
