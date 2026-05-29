@@ -100,6 +100,19 @@ pub enum DocProcessorError {
     TransformAbort(VrlTerminate),
 }
 
+impl DocProcessorError {
+    /// Whether this failure should produce a warn log. Returns `false` for intentional
+    /// drops (`TransformAbort`, triggered when VRL `abort` fires while `drop_on_abort`
+    /// is enabled) so they remain silent end-to-end.
+    fn should_warn(&self) -> bool {
+        match self {
+            #[cfg(feature = "vrl")]
+            DocProcessorError::TransformAbort(_) => false,
+            _ => true,
+        }
+    }
+}
+
 impl From<OtlpLogsError> for DocProcessorError {
     fn from(error: OtlpLogsError) -> Self {
         Self::OltpLogsParsing(error)
@@ -370,15 +383,20 @@ impl DocProcessorCounters {
         }
     }
 
-    /// Returns the overall number of docs that went through the indexer (valid or not,
-    /// including docs intentionally dropped by VRL `abort`).
+    /// Returns the overall number of docs that contributed to indexing throughput
+    /// (valid or invalid).
+    ///
+    /// Docs intentionally dropped via VRL `abort` (with `drop_on_abort` enabled) are NOT
+    /// included here — they are tracked separately via [`Self::num_dropped_docs`]. This
+    /// preserves the downstream invariant that
+    /// `num_processed_docs() - num_invalid_docs() == number_of_docs_actually_indexed`,
+    /// which the CLI/API uses for throughput reporting.
     pub fn num_processed_docs(&self) -> u64 {
         self.valid.get_num_docs()
             + self.doc_mapper_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
-            + self.transform_aborts.get_num_docs()
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid
@@ -504,12 +522,14 @@ impl DocProcessor {
                     processed_docs.push(processed_doc);
                 }
                 Err(error) => {
-                    rate_limited_warn!(
-                        limit_per_min = 10,
-                        index_id = self.counters.index_id,
-                        source_id = self.counters.source_id,
-                        "{error}",
-                    );
+                    if error.should_warn() {
+                        rate_limited_warn!(
+                            limit_per_min = 10,
+                            index_id = self.counters.index_id,
+                            source_id = self.counters.source_id,
+                            "{error}",
+                        );
+                    }
                     self.counters.record_error(error, num_bytes as u64);
                 }
             }
@@ -1397,7 +1417,9 @@ mod tests_vrl {
     /// A doc unconditionally `abort`ed with `drop_on_abort=true` must:
     /// - increment `transform_aborts`, NOT `transform_errors`
     /// - NOT show up in `num_invalid_docs()` (intentional drop, not invalid)
-    /// - still show up in `num_processed_docs()` and `num_bytes_total`
+    /// - NOT show up in `num_processed_docs()` either, so the downstream invariant `indexed =
+    ///   num_processed_docs - num_invalid_docs` doesn't inflate (Codex #6472)
+    /// - still increment `num_bytes_total` (bytes did flow through the processor)
     /// - not be forwarded to the indexer
     #[tokio::test]
     async fn test_doc_processor_vrl_abort_with_drop_on_abort_true() -> anyhow::Result<()> {
@@ -1420,7 +1442,12 @@ mod tests_vrl {
 
         assert_eq!(counters.num_invalid_docs(), 0);
         assert_eq!(counters.num_dropped_docs(), 1);
-        assert_eq!(counters.num_processed_docs(), 1);
+        assert_eq!(
+            counters.num_processed_docs(),
+            0,
+            "aborts must NOT count toward num_processed_docs — they would inflate the CLI's \
+             indexed-doc total"
+        );
         assert_eq!(
             counters.num_bytes_total.load(Ordering::Relaxed),
             num_bytes_doc
@@ -1520,7 +1547,8 @@ mod tests_vrl {
         assert_eq!(counters.transform_errors.get_num_docs(), 0);
         assert_eq!(counters.num_invalid_docs(), 0);
         assert_eq!(counters.num_dropped_docs(), 1);
-        assert_eq!(counters.num_processed_docs(), 3);
+        // 2 valid; the aborted doc is NOT counted in num_processed_docs.
+        assert_eq!(counters.num_processed_docs(), 2);
 
         // Only the two "keep" docs are forwarded.
         let output_messages = indexer_inbox.drain_for_test();
@@ -1586,7 +1614,60 @@ mod tests_vrl {
         assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 100);
         assert_eq!(counters.num_invalid_docs(), 3);
         assert_eq!(counters.num_dropped_docs(), 1);
-        assert_eq!(counters.num_processed_docs(), 4);
+        // 1 json_parse + 1 doc_mapper + 1 transform_error = 3; the abort is NOT included.
+        assert_eq!(counters.num_processed_docs(), 3);
+        // CLI/API math `indexed = processed - invalid` gives 0 (no valid docs in this
+        // synthetic test), proving aborts don't slip in.
+        assert_eq!(
+            counters.num_processed_docs() - counters.num_invalid_docs(),
+            0,
+        );
+    }
+
+    /// Codex review finding (PR #6472): make sure aborts are silent end-to-end —
+    /// `should_warn()` must return false for `TransformAbort` (and true for every other
+    /// variant) so the `rate_limited_warn!` in `process_raw_doc` skips it.
+    #[test]
+    fn test_doc_processor_error_should_warn_excludes_transform_abort() {
+        // Aborts are silent.
+        let abort_program = TransformConfig::for_test("abort")
+            .compile_vrl_script()
+            .unwrap()
+            .0;
+        let mut runtime =
+            vrl::compiler::runtime::Runtime::new(vrl::compiler::state::RuntimeState::default());
+        let mut value = VrlValue::Object(Default::default());
+        let mut metadata = VrlValue::Object(Default::default());
+        let mut secrets = VrlSecrets::default();
+        let mut target = vrl::compiler::TargetValueRef {
+            value: &mut value,
+            metadata: &mut metadata,
+            secrets: &mut secrets,
+        };
+        let abort_terminate = runtime
+            .resolve(
+                &mut target,
+                &abort_program,
+                &vrl::compiler::TimeZone::default(),
+            )
+            .unwrap_err();
+        let abort_err = DocProcessorError::TransformAbort(abort_terminate.clone());
+        assert!(
+            !abort_err.should_warn(),
+            "TransformAbort must not produce a warn log"
+        );
+
+        // Every other variant warns. Exhaustive list mirrors `DocProcessorError`.
+        let warning_variants = [
+            DocProcessorError::JsonParsing("bad".to_string()),
+            DocProcessorError::DocMapperParsing(DocParsingError::RequiredField(
+                "missing".to_string(),
+            )),
+            DocProcessorError::Transform(abort_terminate),
+        ];
+        for err in warning_variants {
+            assert!(err.should_warn(), "non-abort variant must warn: {err}");
+        }
     }
 
     /// Mixed-category batch: exercises all four DocProcessor outcomes simultaneously
@@ -1651,10 +1732,18 @@ mod tests_vrl {
             "json + doc_mapper, not abort"
         );
         assert_eq!(counters.num_dropped_docs(), 1, "the abort only");
+        // 1 valid + 1 json + 1 doc_mapper = 3; the abort is excluded.
         assert_eq!(
             counters.num_processed_docs(),
-            4,
-            "every input doc accounted for exactly once"
+            3,
+            "aborts excluded so CLI `indexed = processed - invalid` stays correct"
+        );
+        // CLI/API math: indexed docs == num_processed_docs - num_invalid_docs.
+        // Exactly 1 doc was actually indexed (the "ok" doc).
+        assert_eq!(
+            counters.num_processed_docs() - counters.num_invalid_docs(),
+            1,
+            "exactly 1 doc was indexed — aborts must not inflate this"
         );
 
         // Only the single valid doc reaches the indexer.
@@ -1665,6 +1754,29 @@ mod tests_vrl {
             .map(|batch| batch.docs.len())
             .sum();
         assert_eq!(total_downstream_docs, 1);
+
+        // Pipe through IndexingStatistics to verify the aggregation surface matches what
+        // the CLI/API observes. Aborts must land in num_dropped_docs, NOT num_docs —
+        // otherwise downstream "indexed = num_docs - num_invalid_docs" math counts
+        // filtered docs as indexed (Codex review on PR #6472).
+        let stats = crate::models::IndexingStatistics::default().add_actor_counters(
+            &counters,
+            &crate::actors::IndexerCounters::default(),
+            &crate::actors::UploaderCounters {
+                num_staged_splits: Arc::new(AtomicU64::new(0)),
+                num_uploaded_splits: Arc::new(AtomicU64::new(0)),
+            },
+            &crate::actors::PublisherCounters::default(),
+        );
+        assert_eq!(stats.num_docs, 3, "num_docs excludes the abort");
+        assert_eq!(stats.num_invalid_docs, 2, "json + doc_mapper");
+        assert_eq!(stats.num_dropped_docs, 1, "the abort surfaces here");
+        assert_eq!(
+            stats.num_docs - stats.num_invalid_docs,
+            1,
+            "CLI: indexed == num_docs - num_invalid_docs; exactly 1 doc was indexed"
+        );
+
         universe.assert_quit().await;
         Ok(())
     }
