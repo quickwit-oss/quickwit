@@ -1395,6 +1395,7 @@ mod tests {
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
+            ingester_status: IngesterStatus::Ready,
         };
         indexer_pool.insert(self_node_id.clone(), indexer_info);
 
@@ -1824,6 +1825,7 @@ mod tests {
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: IngesterStatus::Ready,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -1973,6 +1975,7 @@ mod tests {
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: IngesterStatus::Ready,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2051,6 +2054,7 @@ mod tests {
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: IngesterStatus::Ready,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2777,6 +2781,7 @@ mod tests {
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
+            ingester_status: IngesterStatus::Ready,
         };
         indexer_pool.insert(ingester_id.clone(), indexer_info);
 
