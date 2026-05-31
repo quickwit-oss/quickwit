@@ -850,6 +850,7 @@ pub struct NodeConfig {
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
     pub compactor_config: CompactorConfig,
+    #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
 }
 
