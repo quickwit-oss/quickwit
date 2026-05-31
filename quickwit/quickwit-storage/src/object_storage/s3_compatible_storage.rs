@@ -33,13 +33,16 @@ use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
+use aws_sdk_s3::types::{
+    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier,
+};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
 use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
+use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
@@ -94,6 +97,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
+    checksum_algorithm: quickwit_config::ChecksumAlgorithm,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -154,7 +158,7 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
-    if s3_storage_config.disable_checksums {
+    if s3_storage_config.checksum_algorithm.is_disabled() {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
         s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
@@ -198,6 +202,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
+            checksum_algorithm: s3_storage_config.checksum_algorithm,
         })
     }
 
@@ -215,6 +220,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
+            checksum_algorithm: self.checksum_algorithm,
         }
     }
 
@@ -244,19 +250,17 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((bucket, prefix))
 }
 
-#[derive(Clone, Debug)]
-struct MultipartUploadId(pub String);
-
-#[derive(Clone, Debug)]
-struct Part {
-    pub part_number: usize,
-    pub range: Range<u64>,
-    pub md5: md5::Digest,
-}
-
-impl Part {
-    fn len(&self) -> u64 {
-        self.range.end - self.range.start
+/// Maps a [`ChecksumAlgorithm`] onto the AWS SDK's flexible-checksum algorithm.
+/// `Md5` returns `None` because the S3 SDK silently no-ops `ChecksumAlgorithm::Md5`;
+/// MD5 is instead sent via the legacy `Content-MD5` header, computed client-side.
+fn aws_checksum_algorithm(
+    strategy: quickwit_config::ChecksumAlgorithm,
+) -> Option<ChecksumAlgorithm> {
+    match strategy {
+        quickwit_config::ChecksumAlgorithm::Crc32c => Some(ChecksumAlgorithm::Crc32C),
+        quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
+            None
+        }
     }
 }
 
@@ -267,10 +271,33 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
     let mut buf = vec![0; MD5_CHUNK_SIZE];
     loop {
         let read_len = read.read(&mut buf).await?;
-        checksum.consume(&buf[..read_len]);
         if read_len == 0 {
             return Ok(checksum.finalize());
         }
+        (checksum, buf) = run_cpu_intensive(move || {
+            checksum.consume(&buf[..read_len]);
+            (checksum, buf)
+        })
+        .await
+        .map_err(io::Error::other)?;
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MultipartUploadId(pub String);
+
+#[derive(Clone, Debug)]
+struct Part {
+    pub part_number: usize,
+    pub range: Range<u64>,
+    /// Pre-computed MD5 of the part bytes; only populated when
+    /// [`ChecksumAlgorithm::Md5`] is in use.
+    pub md5: Option<md5::Digest>,
+}
+
+impl Part {
+    fn len(&self) -> u64 {
+        self.range.end - self.range.start
     }
 }
 
@@ -310,6 +337,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
             .send()
             .await
             .map_err(|sdk_error| {
@@ -322,6 +350,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn put_single_part<'a>(
         &'a self,
         key: &'a str,
@@ -343,6 +372,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
+                .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
                 .key(key)
                 .send()
                 .await
@@ -356,32 +386,39 @@ impl S3CompatibleObjectStorage {
         Ok(MultipartUploadId(upload_id))
     }
 
+    /// Returns the MD5 of the byte range when the configured strategy is
+    /// [`ChecksumAlgorithm::Md5`], otherwise `None` (no I/O performed).
+    async fn maybe_compute_part_md5(
+        &self,
+        payload: &dyn crate::PutPayload,
+        range: Range<u64>,
+    ) -> io::Result<Option<md5::Digest>> {
+        if !self.checksum_algorithm.is_md5() {
+            return Ok(None);
+        }
+        let read = payload.range_byte_stream(range).await?.into_async_read();
+        Ok(Some(compute_md5(read).await?))
+    }
+
     async fn create_multipart_requests(
         &self,
-        payload: Box<dyn crate::PutPayload>,
+        payload: &dyn crate::PutPayload,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+        let multipart_ranges: Vec<Range<u64>> = chunk_range(0..len as usize, part_len as usize)
             .map(into_u64_range)
-            .collect::<Vec<_>>();
-
+            .collect();
         let mut parts = Vec::with_capacity(multipart_ranges.len());
-
         for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
-            let read = payload
-                .range_byte_stream(multipart_range.clone())
-                .await?
-                .into_async_read();
-            let md5 = compute_md5(read).await?;
-
-            let part = Part {
+            parts.push(Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
+                md5: self
+                    .maybe_compute_part_md5(payload, multipart_range.clone())
+                    .await?,
                 range: multipart_range,
-                md5,
-            };
-            parts.push(part);
+            });
         }
         Ok(parts)
     }
@@ -420,6 +457,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,
@@ -432,33 +470,39 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(StorageError::from)
             .map_err(Retry::Permanent)?;
-        let md5 = BASE64_STANDARD.encode(part.md5.0);
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
 
+        let content_md5 = part.md5.map(|digest| BASE64_STANDARD.encode(digest.0));
         let upload_part_output = self
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
+            // None if checksum isnt md5.
+            .set_content_md5(content_md5)
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
-            .content_md5(md5)
             .part_number(part.part_number as i32)
             .upload_id(upload_id.0)
             .send()
             .await
-            .map_err(|sdk_error| {
-                if sdk_error.is_retryable() {
-                    Retry::Transient(StorageError::from(sdk_error))
+            .map_err(|s3_err| {
+                if s3_err.is_retryable() {
+                    Retry::Transient(StorageError::from(s3_err))
                 } else {
-                    Retry::Permanent(StorageError::from(sdk_error))
+                    Retry::Permanent(StorageError::from(s3_err))
                 }
             })?;
 
+        // Only one checksum field is populated by the SDK, matching the algorithm we
+        // advertised on the upload; the rest stay `None`.
         let completed_part = CompletedPart::builder()
             .set_e_tag(upload_part_output.e_tag)
+            .set_checksum_crc32_c(upload_part_output.checksum_crc32_c)
+            .set_checksum_md5(upload_part_output.checksum_md5)
             .part_number(part.part_number as i32)
             .build();
         Ok(completed_part)
@@ -473,7 +517,7 @@ impl S3CompatibleObjectStorage {
     ) -> StorageResult<()> {
         let upload_id = self.create_multipart_upload(key).await?;
         let parts = self
-            .create_multipart_requests(payload.clone(), total_len, part_len)
+            .create_multipart_requests(payload.as_ref(), total_len, part_len)
             .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
@@ -488,7 +532,7 @@ impl S3CompatibleObjectStorage {
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .map(|res| res.map_err(|error| error.into_inner()))
+            .map(|res| res.map_err(|e| e.into_inner()))
             .collect();
         match completed_parts_res {
             Ok(completed_parts) => {
@@ -928,7 +972,6 @@ mod tests {
         let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
         let md5 = compute_md5(data.as_slice()).await?;
         assert_eq!(md5, md5::compute(data));
-
         Ok(())
     }
 
@@ -994,6 +1037,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1041,6 +1085,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1078,6 +1123,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1160,6 +1206,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1251,6 +1298,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
