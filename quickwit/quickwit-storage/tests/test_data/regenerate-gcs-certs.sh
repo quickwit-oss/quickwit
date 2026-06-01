@@ -8,30 +8,47 @@ set -euo pipefail
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-cat > "$tmp_dir/ca.conf" <<'EOF'
+cert_not_before=20200101000000Z
+cert_not_after=30200101000000Z
+
+mkdir "$tmp_dir/certs"
+: > "$tmp_dir/index.txt"
+export OPENSSL_TEST_DIR="$tmp_dir"
+
+run_quietly() {
+  local stderr_file="$tmp_dir/openssl-stderr.log"
+  if ! "$@" >/dev/null 2>"$stderr_file"; then
+    cat "$stderr_file" >&2
+    return 1
+  fi
+}
+
+cat > "$tmp_dir/openssl.conf" <<'EOF'
+[ca]
+default_ca=test_ca
+
+[test_ca]
+dir=$ENV::OPENSSL_TEST_DIR
+database=$dir/index.txt
+new_certs_dir=$dir/certs
+serial=$dir/serial
+default_md=sha256
+policy=test_policy
+
+[test_policy]
+commonName=supplied
+
 [req]
 distinguished_name=dn
+
 [dn]
+
 [v3_ca]
 basicConstraints=critical,CA:true
 keyUsage=critical,keyCertSign,cRLSign
 subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid:always
-EOF
 
-openssl req -x509 -newkey ec \
-  -pkeyopt ec_paramgen_curve:prime256v1 \
-  -nodes -subj "/CN=Quickwit Test CA" \
-  -set_serial 0x1001 \
-  -not_before 20200101000000Z \
-  -not_after 30200101000000Z \
-  -extensions v3_ca -config "$tmp_dir/ca.conf" \
-  -keyout "$tmp_dir/ca.key" -out "$tmp_dir/ca.crt" 2>/dev/null
-
-cat > "$tmp_dir/server.conf" <<'EOF'
-[req]
-distinguished_name=dn
-[dn]
 [v3_server]
 basicConstraints=critical,CA:false
 keyUsage=critical,digitalSignature
@@ -41,15 +58,29 @@ subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid,issuer
 EOF
 
-openssl req -x509 -newkey ec \
-  -pkeyopt ec_paramgen_curve:prime256v1 \
-  -nodes -subj "/CN=localhost" \
-  -CA "$tmp_dir/ca.crt" -CAkey "$tmp_dir/ca.key" \
-  -set_serial 0x1002 \
-  -not_before 20200101000000Z \
-  -not_after 30200101000000Z \
-  -extensions v3_server -config "$tmp_dir/server.conf" \
-  -keyout "$tmp_dir/server.key" -out "$tmp_dir/server.crt" 2>/dev/null
+openssl ecparam -name prime256v1 -genkey -noout -out "$tmp_dir/ca.key"
+openssl req -new -key "$tmp_dir/ca.key" -subj "/CN=Quickwit Test CA" \
+  -out "$tmp_dir/ca.csr" -config "$tmp_dir/openssl.conf"
+
+printf "1001\n" > "$tmp_dir/serial"
+run_quietly openssl ca -batch -selfsign -config "$tmp_dir/openssl.conf" \
+  -in "$tmp_dir/ca.csr" -keyfile "$tmp_dir/ca.key" \
+  -out "$tmp_dir/ca.crt" \
+  -extensions v3_ca \
+  -startdate "$cert_not_before" -enddate "$cert_not_after" \
+  -notext
+
+openssl ecparam -name prime256v1 -genkey -noout -out "$tmp_dir/server.key"
+openssl req -new -key "$tmp_dir/server.key" -subj "/CN=localhost" \
+  -out "$tmp_dir/server.csr" -config "$tmp_dir/openssl.conf"
+
+printf "1002\n" > "$tmp_dir/serial"
+run_quietly openssl ca -batch -config "$tmp_dir/openssl.conf" \
+  -cert "$tmp_dir/ca.crt" -keyfile "$tmp_dir/ca.key" \
+  -in "$tmp_dir/server.csr" -out "$tmp_dir/server.crt" \
+  -extensions v3_server \
+  -startdate "$cert_not_before" -enddate "$cert_not_after" \
+  -notext
 
 printf "CA_DER="
 openssl x509 -in "$tmp_dir/ca.crt" -outform der | base64 | tr -d "\n"
