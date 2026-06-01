@@ -378,7 +378,20 @@ fn build_metric(
             let percentiles = metric::PercentilesAggregationReq {
                 field,
                 percents: Some(vec![50.0]),
-                keyed: true,
+                keyed: false,
+                missing: None,
+            };
+            AggregationVariants::Percentiles(percentiles)
+        }
+        other
+            if let Some(percentile) = other
+                .strip_prefix("PC")
+                .and_then(|percentage| percentage.parse().ok()) =>
+        {
+            let percentiles = metric::PercentilesAggregationReq {
+                field,
+                percents: Some(vec![percentile]),
+                keyed: false,
                 missing: None,
             };
             AggregationVariants::Percentiles(percentiles)
@@ -745,7 +758,7 @@ impl ResultMapper {
             | ("MAX", MetricResult::Max(metric_res)) => {
                 state
                     .value
-                    .push(u64_to_agg_value(metric_res.value.unwrap_or_default() as u64));
+                    .push(f64_to_agg_value(metric_res.value.unwrap_or_default()));
             }
             ("AVG", MetricResult::Average(avg)) => {
                 state
@@ -1062,16 +1075,6 @@ impl IntermediateResultMapper {
                     ),
                 });
             }
-            // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
-            // for proper merging in event-query via Sketch.fromByteArray().
-            ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
-                let sketch_bytes = percentiles_collector.to_sketch_bytes();
-                state.value.push(EvpAggValue {
-                    value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
-                        sketch_bytes,
-                    )),
-                });
-            }
             ("SUM", IntermediateMetricResult::Sum(m)) => {
                 state
                     .value
@@ -1086,6 +1089,39 @@ impl IntermediateResultMapper {
                 state
                     .value
                     .push(u64_to_agg_value(m.finalize().unwrap_or_default() as u64));
+            }
+            // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
+            // for proper merging in event-query via Sketch.fromByteArray().
+            ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
+                let sketch_bytes = percentiles_collector.to_sketch_bytes();
+                state.value.push(EvpAggValue {
+                    value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
+                        sketch_bytes,
+                    )),
+                });
+            }
+            (agg_name, IntermediateMetricResult::Percentiles(percentiles_res))
+                if let Some(percentile) = agg_name
+                    .strip_prefix("PC")
+                    .and_then(|percentage| percentage.parse().ok()) =>
+            {
+                let percentiles_req = metric::PercentilesAggregationReq {
+                    field: String::new(),
+                    percents: Some(vec![percentile]),
+                    keyed: false,
+                    missing: None,
+                };
+                let metric::PercentileValues::Vec(results) =
+                    percentiles_res.into_final_result(&percentiles_req).values
+                else {
+                    return Err(internal_error("percentile incorrectly keyed").into());
+                };
+                state.value.push(f64_to_agg_value(
+                    results
+                        .first()
+                        .ok_or_else(|| internal_error("percentile empty"))?
+                        .value,
+                ));
             }
             (agg_name, _) => {
                 return Err(InvalidQuery::Other(anyhow::anyhow!(
@@ -1158,6 +1194,14 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
 fn u64_to_agg_value(val: u64) -> EvpAggValue {
     EvpAggValue {
         value: Some(quickwit_proto::cloudprem::agg_value::Value::Uint64Value(
+            val,
+        )),
+    }
+}
+
+fn f64_to_agg_value(val: f64) -> EvpAggValue {
+    EvpAggValue {
+        value: Some(quickwit_proto::cloudprem::agg_value::Value::Float64Value(
             val,
         )),
     }
@@ -1310,6 +1354,14 @@ mod test_helpers {
             expression: Some(field_expr("value")),
             id: "percentile:value".to_string(),
             r#type: "QUANTILE_SKETCH".to_string(),
+        })
+    }
+
+    pub fn pc50_value_metric() -> quickwit_proto::cloudprem::aggregation::Aggregation {
+        quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(MetricCompute {
+            expression: Some(field_expr("value")),
+            id: "pc50:value".to_string(),
+            r#type: "PC50.0".to_string(),
         })
     }
 }
@@ -2450,6 +2502,130 @@ mod tests {
                 count: 78
             })
         );
+    }
+
+    // --- Percentile direct-value (PC{n}) tests ---
+
+    #[test]
+    fn test_pc_aggregation_request() {
+        let evp_agg = Aggregation {
+            aggregation: Some(AggregationEnum::Computes(Computes {
+                aggregation: vec![Aggregation {
+                    aggregation: Some(pc50_value_metric()),
+                }],
+                time_grouping: vec![],
+            })),
+        };
+
+        let tantivy_agg = to_tantivy_aggregation(evp_agg, 0).unwrap();
+        let percentiles_agg = match &tantivy_agg["pc50:value"].agg {
+            AggregationVariants::Percentiles(p) => p,
+            other => panic!("expected Percentiles, got {other:?}"),
+        };
+        assert_eq!(percentiles_agg.field, "value");
+        assert_eq!(percentiles_agg.percents, Some(vec![50.0f64]));
+    }
+
+    #[test]
+    fn test_intermediate_pc_compute() {
+        let agg = Aggregation {
+            aggregation: Some(AggregationEnum::Computes(Computes {
+                aggregation: vec![Aggregation {
+                    aggregation: Some(pc50_value_metric()),
+                }],
+                time_grouping: vec![],
+            })),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
+                .unwrap();
+
+        assert_eq!(evp_agg_results.len(), 1);
+        assert_eq!(evp_agg_results[0].key, Vec::<String>::new());
+        let val = evp_agg_results[0].value[0].value.as_ref().unwrap();
+        match val {
+            agg_value::Value::Float64Value(v) => {
+                // PC50 of this distribution is exactly 9.0. Allow ±0.5 for DDSketch approximation
+                // error
+                assert!((*v - 9.0).abs() < 0.5, "PC50 should be near 9.0, got {v}");
+            }
+            other => panic!("expected Float64Value for PC50, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_intermediate_pc_compute_with_group_by() {
+        let child = AggregationEnum::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(count_metric()),
+                },
+                Aggregation {
+                    aggregation: Some(pc50_value_metric()),
+                },
+            ],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 100,
+            sort: None,
+            missing: None,
+            total: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg = Aggregation {
+            aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
+                attribute_group_by,
+            ))),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
+                .unwrap();
+
+        assert_eq!(evp_agg_results.len(), 12);
+
+        // host_5 has 5 docs all with value=5, so PC50 should be 5.0
+        let host_5 = find_result_by_key(&evp_agg_results, "host_5");
+        assert_eq!(host_5.value.len(), 2);
+        let count = host_5.value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(5));
+        let pc50 = host_5.value[1].value.as_ref().unwrap();
+        match pc50 {
+            agg_value::Value::Float64Value(v) => {
+                // DDSketch is approximate; allow 1% relative error
+                assert!(
+                    (*v - 5.0).abs() < 0.1,
+                    "PC50 of uniform distribution should be near 5.0, got {v}"
+                );
+            }
+            other => panic!("expected Float64Value for PC50, got {other:?}"),
+        }
     }
 
     // --- Percentile (QUANTILE_SKETCH) tests ---
