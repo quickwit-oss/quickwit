@@ -63,7 +63,7 @@ doc_mapping:
       type: text
       tokenizer: datadog # +lowercase case insensitive search on message
       record: position
-      fast: true
+      fast: false
       fieldnorms: false
     # Seems to be used only internally, e.g. for paging and fetch_one
     - name: id
