@@ -16,7 +16,6 @@ base64 = { workspace = true }
 bitpacking = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-either = { workspace = true }
 hex = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
