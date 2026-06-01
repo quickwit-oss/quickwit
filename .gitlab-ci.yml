@@ -23,6 +23,11 @@ stages:
 build_image:
   image: $DOCKER_CI_IMAGE
   stage: build
+  timeout: 60m
+  retry:
+    max: 2
+    when:
+      - job_execution_timeout
   tags:
     - arch:arm64
   rules:
@@ -38,15 +43,25 @@ build_image:
       aud: dd-octo-sts
     DDSIGN_ID_TOKEN:
       aud: image-integrity
+  variables:
+    CLOUDPREM_IMAGE: registry.ddbuild.io/cloudprem:$CI_COMMIT_SHA
+    POMSKY_IMAGE: registry.ddbuild.io/pomsky:edge
   script:
-    # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
+    # build once for both platforms and push the unsigned public image, identified by SHA to prevent race conditions between pipelines
     - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
-    # and a signed image to pomsky for internal deployments
-    - scripts/image-tool.sh --push --sign --repo pomsky
+    # retag the same digest to pomsky:edge (registry-side, no rebuild) and sign it by digest for internal deployments
+    - docker buildx imagetools create -t "$POMSKY_IMAGE" "$CLOUDPREM_IMAGE"
+    - POMSKY_DIGEST="$(docker buildx imagetools inspect "$POMSKY_IMAGE" --format '{{.Manifest.Digest}}')"
+    - ddsign sign "$POMSKY_IMAGE@$POMSKY_DIGEST"
 
 build_image_staging:
   image: $DOCKER_CI_IMAGE
   stage: build
+  timeout: 60m
+  retry:
+    max: 2
+    when:
+      - job_execution_timeout
   tags:
     - arch:arm64
   rules:
