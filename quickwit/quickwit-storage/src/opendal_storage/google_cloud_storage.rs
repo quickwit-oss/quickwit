@@ -185,6 +185,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_gcs_storage_get_slice_over_https_with_verified_tls() -> anyhow::Result<()> {
+        // Nextest runs tests in separate processes, so this test must not rely
+        // on another rustls user having already selected a process-wide provider.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
         let (endpoint, server_task) = start_local_https_gcs_server().await?;
         let ca_cert_der = decode_test_der(TEST_CA_CERT_DER_BASE64)?;
         let ca_cert = reqwest_013::Certificate::from_der(&ca_cert_der)?;
