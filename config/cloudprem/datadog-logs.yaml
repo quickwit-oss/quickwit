@@ -45,7 +45,7 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KNHN22NJ9NJ4H8RMFD3A3490"
+  doc_mapping_uid: "01KT2G9T763BR579HFG9YH1GDG"
   mode: dynamic
   field_mappings:
     # TODO: Add RFC3164
