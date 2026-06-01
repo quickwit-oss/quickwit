@@ -287,7 +287,30 @@ fn wildcard_tokens_to_query(field: String, tokens: Vec<(String, bool)>) -> Query
     intersection(queries)
 }
 
+/// Returns true if the pattern represents an unconstrained match (equivalent to `*`).
+/// In that case we can emit a cheaper exist query instead.
+fn is_match_all_pattern(pattern: &WildcardPattern) -> bool {
+    matches!(
+        pattern.tokens.as_slice(),
+        [WildcardToken {
+            prefix_min_n_wild: 0,
+            prefix_unbounded_n_wild: true,
+            literal,
+        }] if literal.is_empty()
+    )
+}
+
 fn build_wildcard_query(wildcard_query: AttributeWildcardQueryNode) -> QueryAst {
+    // A wildcard that matches everything is better expressed as an exist query.
+    #[allow(deprecated)]
+    let is_match_all = match &wildcard_query.pattern {
+        Some(pattern) => is_match_all_pattern(pattern),
+        None => wildcard_query.wildcard == "*",
+    };
+    if is_match_all {
+        return build_exists_query(wildcard_query.attribute);
+    }
+
     let asts: Vec<QueryAst> = expand_virtual_fields(wildcard_query.attribute)
         .into_iter()
         .map(|field| {
@@ -1150,5 +1173,61 @@ mod tests {
         assert!(!super::is_datadog_tokenized("custom"));
         assert!(!super::is_datadog_tokenized("service"));
         assert!(!super::is_datadog_tokenized("tag"));
+    }
+
+    #[test]
+    fn test_wildcard_match_all_remaps_to_exist() {
+        // `*` with structured pattern → exist query
+        let wildcard_node = AttributeWildcardQueryNode {
+            attribute: "custom.myfield".to_string(),
+            pattern: Some(WildcardPattern {
+                tokens: vec![WildcardToken {
+                    prefix_min_n_wild: 0,
+                    prefix_unbounded_n_wild: true,
+                    literal: String::new(),
+                }],
+            }),
+            ..Default::default()
+        };
+        let ast = build_wildcard_query(wildcard_node);
+        let expected = QueryAst::FieldPresence(FieldPresenceQuery {
+            field: "custom.myfield".to_string(),
+        });
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_wildcard_match_all_deprecated_remaps_to_exist() {
+        // deprecated `wildcard = "*"` with no pattern → exist query
+        #[allow(deprecated)]
+        let wildcard_node = AttributeWildcardQueryNode {
+            attribute: "custom.myfield".to_string(),
+            wildcard: "*".to_string(),
+            pattern: None,
+            ..Default::default()
+        };
+        let ast = build_wildcard_query(wildcard_node);
+        let expected = QueryAst::FieldPresence(FieldPresenceQuery {
+            field: "custom.myfield".to_string(),
+        });
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_wildcard_non_match_all_stays_wildcard() {
+        // `?*` (at least one char) should NOT remap to exist
+        let wildcard_node = AttributeWildcardQueryNode {
+            attribute: "custom.myfield".to_string(),
+            pattern: Some(WildcardPattern {
+                tokens: vec![WildcardToken {
+                    prefix_min_n_wild: 1,
+                    prefix_unbounded_n_wild: true,
+                    literal: String::new(),
+                }],
+            }),
+            ..Default::default()
+        };
+        let ast = build_wildcard_query(wildcard_node);
+        assert!(!matches!(ast, QueryAst::FieldPresence(_)));
     }
 }
