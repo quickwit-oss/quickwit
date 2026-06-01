@@ -132,7 +132,23 @@ mod tests {
     // 2020 to 3020. The client trusts only this CA, so the test never depends
     // on the host root store.
     // Regenerate with:
-    // `bash -c 'set -euo pipefail; d=$(mktemp -d); trap "rm -rf $d" EXIT; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=Quickwit Test CA" -set_serial 0x1001 -not_before 20200101000000Z -not_after 30200101000000Z -extensions v3_ca -config <(printf "%s\n" "[req]" "distinguished_name=dn" "[dn]" "[v3_ca]" "basicConstraints=critical,CA:true" "keyUsage=critical,keyCertSign,cRLSign" "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid:always") -keyout "$d/ca.key" -out "$d/ca.crt" 2>/dev/null; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=localhost" -CA "$d/ca.crt" -CAkey "$d/ca.key" -set_serial 0x1002 -not_before 20200101000000Z -not_after 30200101000000Z -extensions v3_server -config <(printf "%s\n" "[req]" "distinguished_name=dn" "[dn]" "[v3_server]" "basicConstraints=critical,CA:false" "keyUsage=critical,digitalSignature" "extendedKeyUsage=serverAuth" "subjectAltName=DNS:localhost,IP:127.0.0.1" "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid,issuer") -keyout "$d/server.key" -out "$d/server.crt" 2>/dev/null; printf "CA_DER="; openssl x509 -in "$d/ca.crt" -outform der | base64 | tr -d "\n"; printf "\nSERVER_DER="; openssl x509 -in "$d/server.crt" -outform der | base64 | tr -d "\n"; printf "\nSERVER_KEY_DER="; openssl ec -in "$d/server.key" -outform der 2>/dev/null | base64 | tr -d "\n"; printf "\n"'`
+    // `bash -c 'set -euo pipefail; d=$(mktemp -d); trap "rm -rf $d" EXIT; openssl req -x509 -newkey
+    // ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=Quickwit Test CA" -set_serial
+    // 0x1001 -not_before 20200101000000Z -not_after 30200101000000Z -extensions v3_ca -config
+    // <(printf "%s\n" "[req]" "distinguished_name=dn" "[dn]" "[v3_ca]"
+    // "basicConstraints=critical,CA:true" "keyUsage=critical,keyCertSign,cRLSign"
+    // "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid:always") -keyout "$d/ca.key" -out
+    // "$d/ca.crt" 2>/dev/null; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1
+    // -nodes -subj "/CN=localhost" -CA "$d/ca.crt" -CAkey "$d/ca.key" -set_serial 0x1002
+    // -not_before 20200101000000Z -not_after 30200101000000Z -extensions v3_server -config <(printf
+    // "%s\n" "[req]" "distinguished_name=dn" "[dn]" "[v3_server]"
+    // "basicConstraints=critical,CA:false" "keyUsage=critical,digitalSignature"
+    // "extendedKeyUsage=serverAuth" "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    // "subjectKeyIdentifier=hash" "authorityKeyIdentifier=keyid,issuer") -keyout "$d/server.key"
+    // -out "$d/server.crt" 2>/dev/null; printf "CA_DER="; openssl x509 -in "$d/ca.crt" -outform der
+    // | base64 | tr -d "\n"; printf "\nSERVER_DER="; openssl x509 -in "$d/server.crt" -outform der
+    // | base64 | tr -d "\n"; printf "\nSERVER_KEY_DER="; openssl ec -in "$d/server.key" -outform
+    // der 2>/dev/null | base64 | tr -d "\n"; printf "\n"'`
     const TEST_CA_CERT_DER_BASE64: &str = concat!(
         "MIIBizCCATGgAwIBAgICEAEwCgYIKoZIzj0EAwIwGzEZMBcGA1UEAwwQUXVpY2t3",
         "aXQgVGVzdCBDQTAgFw0yMDAxMDEwMDAwMDBaGA8zMDIwMDEwMTAwMDAwMFowGzEZ",
@@ -262,7 +278,7 @@ mod tests {
                 "unexpected GCS request target: {request_line}"
             );
             assert!(
-                version.is_some_and(|version| version.starts_with("HTTP/")),
+                matches!(version, Some(version) if version.starts_with("HTTP/")),
                 "unexpected HTTP version in request line: {request_line}"
             );
             assert_eq!(
