@@ -1364,6 +1364,39 @@ mod test_helpers {
             r#type: "PC50.0".to_string(),
         })
     }
+
+    // Schema: host (text, FAST) + timestamp (date, FAST).
+    // 3 docs at epoch → bucket "1970-01-01T00:00:00Z", 2 docs at epoch+1h → "1970-01-01T01:00:00Z".
+    pub fn test_searcher_with_timestamp() -> Searcher {
+        use tantivy::schema::*;
+        let mut schema_builder = Schema::builder();
+        let host_field = schema_builder.add_text_field("host", FAST);
+        let timestamp_field = schema_builder.add_date_field("timestamp", FAST);
+        let schema = schema_builder.build();
+        let index = tantivy::IndexBuilder::new()
+            .schema(schema)
+            .create_in_ram()
+            .unwrap();
+
+        let mut index_writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        for _ in 0..3 {
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(host_field, "host_a");
+            doc.add_date(timestamp_field, tantivy::DateTime::from_timestamp_secs(0));
+            index_writer.add_document(doc).unwrap();
+        }
+        for _ in 0..2 {
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(host_field, "host_a");
+            doc.add_date(
+                timestamp_field,
+                tantivy::DateTime::from_timestamp_secs(3600),
+            );
+            index_writer.add_document(doc).unwrap();
+        }
+        index_writer.commit().unwrap();
+        index.reader().unwrap().searcher()
+    }
 }
 
 #[cfg(test)]
@@ -2778,5 +2811,164 @@ mod tests {
             }
             other => panic!("expected SketchValue, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_intermediate_time_group_by() {
+        let child = AggregationEnum::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(count_metric()),
+            }],
+            time_grouping: vec![],
+        });
+        let time_grouping = quickwit_proto::cloudprem::TimeGrouping {
+            output: "time:3600000".to_string(),
+            path: "timestamp".to_string(),
+            time_zone: "Z".to_string(),
+            interval_ns: Some(3_600_000_000_000),
+            rollup: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+        let agg = Aggregation {
+            aggregation: Some(AggregationEnum::TimeGroupBy(Box::new(time_grouping))),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher_with_timestamp();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 5).unwrap();
+
+        assert_eq!(evp_agg_results.len(), 2);
+
+        let bucket_0 = find_result_by_key(&evp_agg_results, "1970-01-01T00:00:00Z");
+        let count_0 = bucket_0.value[0].value.as_ref().unwrap();
+        assert_eq!(count_0, &agg_value::Value::Uint64Value(3));
+
+        let bucket_1 = find_result_by_key(&evp_agg_results, "1970-01-01T01:00:00Z");
+        let count_1 = bucket_1.value[0].value.as_ref().unwrap();
+        assert_eq!(count_1, &agg_value::Value::Uint64Value(2));
+    }
+
+    #[test]
+    fn test_intermediate_sort_by_missing_metric() {
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(count_metric()),
+            }],
+            time_grouping: vec![],
+        });
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: true,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(field_expr("tag.source")),
+                    agg_function: "cardinality".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+            total: None,
+        };
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let mut agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+        sanitize_metric_id_aggregations(&mut agg);
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
+                .unwrap();
+
+        // The sort-by-key aggregation must not appear in the output values.
+        assert_eq!(evp_agg_results[0].value.len(), 1);
+    }
+
+    #[test]
+    fn test_intermediate_sort_by_present_metric() {
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(count_metric()),
+                },
+                Aggregation {
+                    aggregation: Some(distinct_source_metric()),
+                },
+            ],
+            time_grouping: vec![],
+        });
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: true,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(field_expr("tag.source")),
+                    agg_function: "cardinality".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+            total: None,
+        };
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let mut agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+        super::sanitize_metric_id_aggregations(&mut agg);
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
+                .unwrap();
+
+        // Count + cardinality — both must appear exactly once per bucket.
+        assert_eq!(evp_agg_results[0].value.len(), 2);
+
+        // Intermediate CARDINALITY_SKETCH returns an HLL sketch, not a scalar.
+        let cardinality_val = evp_agg_results[0].value[1].value.as_ref().unwrap();
+        assert!(
+            matches!(cardinality_val, agg_value::Value::HllDataSketchValue(_)),
+            "expected HllDataSketchValue for CARDINALITY_SKETCH, got {cardinality_val:?}",
+        );
     }
 }
