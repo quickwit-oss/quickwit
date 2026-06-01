@@ -378,7 +378,20 @@ fn build_metric(
             let percentiles = metric::PercentilesAggregationReq {
                 field,
                 percents: Some(vec![50.0]),
-                keyed: true,
+                keyed: false,
+                missing: None,
+            };
+            AggregationVariants::Percentiles(percentiles)
+        }
+        other
+            if let Some(percentile) = other
+                .strip_prefix("PC")
+                .and_then(|percentage| percentage.parse().ok()) =>
+        {
+            let percentiles = metric::PercentilesAggregationReq {
+                field,
+                percents: Some(vec![percentile]),
+                keyed: false,
                 missing: None,
             };
             AggregationVariants::Percentiles(percentiles)
@@ -745,7 +758,7 @@ impl ResultMapper {
             | ("MAX", MetricResult::Max(metric_res)) => {
                 state
                     .value
-                    .push(u64_to_agg_value(metric_res.value.unwrap_or_default() as u64));
+                    .push(f64_to_agg_value(metric_res.value.unwrap_or_default()));
             }
             ("AVG", MetricResult::Average(avg)) => {
                 state
@@ -1062,16 +1075,6 @@ impl IntermediateResultMapper {
                     ),
                 });
             }
-            // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
-            // for proper merging in event-query via Sketch.fromByteArray().
-            ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
-                let sketch_bytes = percentiles_collector.to_sketch_bytes();
-                state.value.push(EvpAggValue {
-                    value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
-                        sketch_bytes,
-                    )),
-                });
-            }
             ("SUM", IntermediateMetricResult::Sum(m)) => {
                 state
                     .value
@@ -1086,6 +1089,39 @@ impl IntermediateResultMapper {
                 state
                     .value
                     .push(u64_to_agg_value(m.finalize().unwrap_or_default() as u64));
+            }
+            // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
+            // for proper merging in event-query via Sketch.fromByteArray().
+            ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
+                let sketch_bytes = percentiles_collector.to_sketch_bytes();
+                state.value.push(EvpAggValue {
+                    value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
+                        sketch_bytes,
+                    )),
+                });
+            }
+            (agg_name, IntermediateMetricResult::Percentiles(percentiles_res))
+                if let Some(percentile) = agg_name
+                    .strip_prefix("PC")
+                    .and_then(|percentage| percentage.parse().ok()) =>
+            {
+                let percentiles_req = metric::PercentilesAggregationReq {
+                    field: String::new(),
+                    percents: Some(vec![percentile]),
+                    keyed: false,
+                    missing: None,
+                };
+                let metric::PercentileValues::Vec(results) =
+                    percentiles_res.into_final_result(&percentiles_req).values
+                else {
+                    return Err(internal_error("percentile incorrectly keyed").into());
+                };
+                state.value.push(f64_to_agg_value(
+                    results
+                        .first()
+                        .ok_or_else(|| internal_error("percentile empty"))?
+                        .value,
+                ));
             }
             (agg_name, _) => {
                 return Err(InvalidQuery::Other(anyhow::anyhow!(
@@ -1158,6 +1194,14 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
 fn u64_to_agg_value(val: u64) -> EvpAggValue {
     EvpAggValue {
         value: Some(quickwit_proto::cloudprem::agg_value::Value::Uint64Value(
+            val,
+        )),
+    }
+}
+
+fn f64_to_agg_value(val: f64) -> EvpAggValue {
+    EvpAggValue {
+        value: Some(quickwit_proto::cloudprem::agg_value::Value::Float64Value(
             val,
         )),
     }
