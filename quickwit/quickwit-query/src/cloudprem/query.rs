@@ -1204,7 +1204,6 @@ mod tests {
             attribute: "custom.myfield".to_string(),
             wildcard: "*".to_string(),
             pattern: None,
-            ..Default::default()
         };
         let ast = build_wildcard_query(wildcard_node);
         let expected = QueryAst::FieldPresence(FieldPresenceQuery {
