@@ -38,6 +38,30 @@ pub enum StorageBackend {
     S3,
 }
 
+/// Strategy used to checksum object-storage uploads.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksumAlgorithm {
+    /// CRC32C, computed and validated by the AWS SDK. Native S3 default.
+    #[default]
+    Crc32c,
+    /// MD5 (Content-MD5 header), computed client-side. Used by S3-compatible
+    /// implementations that predate the SDK's `x-amz-checksum-*` headers.
+    Md5,
+    /// No upload checksum is sent and no response checksum is validated.
+    Disabled,
+}
+
+impl ChecksumAlgorithm {
+    pub fn is_md5(&self) -> bool {
+        matches!(self, Self::Md5)
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        matches!(self, Self::Disabled)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageBackendFlavor {
@@ -330,6 +354,9 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
+    pub checksum_algorithm: ChecksumAlgorithm,
+    /// Deprecated: applies into `checksum_algorithm: disabled`.
+    #[serde(default, skip_serializing)]
     pub disable_checksums: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_upload: bool,
@@ -343,24 +370,26 @@ impl S3StorageConfig {
             Some(StorageBackendFlavor::DigitalOcean) => {
                 self.force_path_style_access = true;
                 self.disable_multi_object_delete = true;
-                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
-                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Gcs) => {
                 self.disable_multi_object_delete = true;
                 self.disable_multipart_upload = true;
-                self.disable_checksums = true;
+                // doesnt support CRC32C via the S3 SDK
+                self.checksum_algorithm = ChecksumAlgorithm::Disabled;
             }
             Some(StorageBackendFlavor::MinIO) => {
                 self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
-                self.disable_checksums = true;
             }
             _ => {}
+        }
+        // Legacy: honor `disable_checksums: true` from older configs.
+        if self.disable_checksums {
+            self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
     }
 
@@ -404,7 +433,7 @@ impl fmt::Debug for S3StorageConfig {
                 &self.disable_multi_object_delete,
             )
             .field("disable_multipart_upload", &self.disable_multipart_upload)
-            .field("disable_checksums", &self.disable_checksums)
+            .field("checksum_algorithm", &self.checksum_algorithm)
             .field(
                 "disable_stalled_stream_protection_upload",
                 &self.disable_stalled_stream_protection_upload,
@@ -647,7 +676,7 @@ mod tests {
                 force_path_style_access: true
                 disable_multi_object_delete_requests: true
                 disable_multipart_upload: true
-                disable_checksums: true
+                checksum_algorithm: disabled
                 disable_stalled_stream_protection_upload: true
                 disable_stalled_stream_protection_download: true
             "#;
@@ -660,7 +689,7 @@ mod tests {
                 force_path_style_access: true,
                 disable_multi_object_delete: true,
                 disable_multipart_upload: true,
-                disable_checksums: true,
+                checksum_algorithm: ChecksumAlgorithm::Disabled,
                 disable_stalled_stream_protection_upload: true,
                 disable_stalled_stream_protection_download: true,
                 ..Default::default()
