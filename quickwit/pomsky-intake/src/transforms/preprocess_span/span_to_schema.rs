@@ -343,7 +343,9 @@ fn stringify_id(trace: &mut TraceEvent, key: &str) {
 /// format for `_dd.p.tid` (the upper 64 bits of a 128-bit trace ID).
 /// Mirrors apm-processing's `getValidatedHigher64BitsTraceId` validation.
 fn is_valid_trace_id_high(s: &str) -> bool {
-    s.len() == 16 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 16
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Computes the resource hash exactly as logs-backend's
@@ -464,7 +466,12 @@ mod tests {
         // When _dd.p.tid fails validation (wrong length, uppercase, or non-hex),
         // stringify_ids falls back to the unsigned-decimal form of the lower 64
         // bits — same as if _dd.p.tid were absent.
-        for invalid in ["69D64A1900000000", "69d64a190000000", "69d64a19000000000", ""] {
+        for invalid in [
+            "69D64A1900000000",
+            "69d64a190000000",
+            "69d64a19000000000",
+            "",
+        ] {
             let mut meta = ObjectMap::new();
             meta.insert("_dd.p.tid".into(), Value::from(invalid));
             let trace = run(|t| {
