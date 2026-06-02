@@ -206,7 +206,7 @@ fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
         }
         .into()
     };
-    let should = if value.len() == 32 {
+    let should = if value.len() == 32 && value.is_ascii() {
         let upper_valid = u64::from_str_radix(&value[..16], 16).is_ok();
         let lower = u64::from_str_radix(&value[16..], 16);
         if let (true, Ok(lower_bits)) = (upper_valid, lower) {
