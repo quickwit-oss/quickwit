@@ -1320,8 +1320,7 @@ mod tests {
         client: StaticReplayClient,
         checksum_algorithm: quickwit_config::ChecksumAlgorithm,
     ) -> S3CompatibleObjectStorage {
-        let credentials =
-            Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
         let config = aws_sdk_s3::Config::builder()
             .behavior_version(aws_behavior_version())
             .region(Some(Region::new("us-east-1")))
@@ -1354,10 +1353,8 @@ mod tests {
     #[tokio::test]
     async fn test_single_part_upload_sets_content_md5_for_md5_algorithm() {
         let client = StaticReplayClient::new(vec![ok_put_response()]);
-        let s3_storage = make_s3_storage_with_replay(
-            client.clone(),
-            quickwit_config::ChecksumAlgorithm::Md5,
-        );
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Md5);
         let payload: Vec<u8> = b"hello world".to_vec();
         s3_storage
             .put(Path::new("test-key"), Box::new(payload.clone()))
@@ -1377,10 +1374,8 @@ mod tests {
     #[tokio::test]
     async fn test_single_part_upload_no_content_md5_for_crc32c_algorithm() {
         let client = StaticReplayClient::new(vec![ok_put_response()]);
-        let s3_storage = make_s3_storage_with_replay(
-            client.clone(),
-            quickwit_config::ChecksumAlgorithm::Crc32c,
-        );
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
         s3_storage
             .put(Path::new("test-key"), Box::new(b"hello world".to_vec()))
             .await
