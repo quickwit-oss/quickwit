@@ -102,7 +102,7 @@ fn is_valid_tag(key: &str) -> bool {
 /// Remaps a canonical Datadog span event to the schema's field shape:
 /// - stringify `span_id`/`parent_id` as unsigned decimals and derive `trace_id_low` as the unsigned
 ///   decimal of the canonical `trace_id`; format `trace_id` as 32-char hex when `meta._dd.p.tid` is
-///   present (consumed on use), else as the same decimal as `trace_id_low`
+///   present and valid (exactly 16 lowercase hex chars), else as the same decimal as `trace_id_low`
 /// - derive `start_time` (i64 unix ns) from canonical `start`, `timestamp` (rfc3339 ms) from `start
 ///   + duration`, and `discovery_timestamp` (i64 unix ms) from ingest now
 /// - rename `name` → `operation_name`, `resource` → `resource_name`
@@ -120,15 +120,6 @@ fn is_valid_tag(key: &str) -> bool {
 ///   are stripped unless allowlisted. Schema's `custom` declares `expand_dots: true`, so dotted
 ///   keys like `_dd.agent_version` get nested at indexing time.
 pub(super) fn span_to_schema(trace: &mut TraceEvent) {
-    // Workaround: the UI can't handle 32-char hex `trace_id` yet, so we
-    // strip `_dd.p.tid` before assembling the ID. With the upper-64 hint
-    // gone, `stringify_ids` falls back to the unsigned-decimal form of the
-    // lower 64 bits and the doc stays UI-compatible. Remove this once the
-    // UI supports 128-bit hex trace IDs end-to-end.
-    if let Some(Value::Object(meta)) = trace.get_mut("meta") {
-        meta.remove("_dd.p.tid");
-    }
-
     derive_timestamps(trace);
     stringify_ids(trace);
     promote_host_and_env(trace);
@@ -308,10 +299,9 @@ fn derive_timestamps(trace: &mut TraceEvent) {
 /// the form the SaaS spans index uses:
 /// - `span_id`, `parent_id` are always unsigned decimal strings
 /// - `trace_id_low` is the unsigned decimal of the canonical `trace_id` (the lower 64 bits)
-/// - `trace_id` is the 32-char hex `{upper_64_hex}{lower_64_hex}` when `meta._dd.p.tid` (the hex of
-///   the upper 64 bits) is present, otherwise the same decimal as `trace_id_low`. Today
-///   `span_to_schema` strips `_dd.p.tid` up front as a UI-compatibility workaround, so this
-///   function's hex branch is effectively dormant — re-enable it by dropping that strip.
+/// - `trace_id` is the 32-char hex `{upper_64_hex}{lower_64_hex}` when `meta._dd.p.tid` is present
+///   and valid (exactly 16 lowercase hex chars, matching apm-processing's validation); falls back to
+///   the same decimal as `trace_id_low` when absent or invalid
 fn stringify_ids(trace: &mut TraceEvent) {
     let lower_opt = match trace.get("trace_id") {
         Some(Value::Integer(raw)) => Some(*raw as u64),
@@ -322,6 +312,7 @@ fn stringify_ids(trace: &mut TraceEvent) {
         .and_then(|v| v.as_object())
         .and_then(|m| m.get("_dd.p.tid"))
         .and_then(|v| v.as_str())
+        .filter(|s| is_valid_trace_id_high(s))
         .map(|s| s.to_string());
 
     if let Some(lower) = lower_opt {
@@ -346,6 +337,13 @@ fn stringify_id(trace: &mut TraceEvent, key: &str) {
     };
     let decimal = (*raw as u64).to_string();
     trace.insert(key, decimal);
+}
+
+/// Returns `true` if `s` is exactly 16 lowercase hex characters — the valid
+/// format for `_dd.p.tid` (the upper 64 bits of a 128-bit trace ID).
+/// Mirrors apm-processing's `getValidatedHigher64BitsTraceId` validation.
+fn is_valid_trace_id_high(s: &str) -> bool {
+    s.len() == 16 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Computes the resource hash exactly as logs-backend's
@@ -436,12 +434,11 @@ mod tests {
     }
 
     #[test]
-    fn test_drops_meta_tid_workaround_keeps_decimal_trace_id() {
-        // Workaround for the UI not handling 32-char hex `trace_id`: even
-        // when `meta._dd.p.tid` is present, span_to_schema strips it up
-        // front and emits the unsigned-decimal lower 64. Once the UI
-        // supports 128-bit hex, the workaround goes away and this test
-        // should assert the 32-char hex form instead.
+    fn test_128bit_trace_id_assembles_hex_string() {
+        // When meta._dd.p.tid is a valid 16-char lowercase hex string (the
+        // upper 64 bits of a 128-bit trace ID), trace_id is the 32-char hex
+        // {upper}{lower:016x} and trace_id_low stays as the decimal of the lower
+        // 64 bits for backward compatibility with 64-bit consumers.
         let mut meta = ObjectMap::new();
         meta.insert("_dd.p.tid".into(), Value::from("69d64a1900000000"));
         let trace = run(|t| {
@@ -450,15 +447,40 @@ mod tests {
         });
         assert_eq!(
             trace.get("trace_id"),
-            Some(&Value::from("3203823329815610070")),
+            Some(&Value::from("69d64a19000000002c76445808c4c2d6")),
         );
         assert_eq!(
             trace.get("trace_id_low"),
             Some(&Value::from("3203823329815610070")),
         );
-        // The tag is gone before the fold, so it can't appear under custom.
+        // _dd.p.tid is not in KEEP_ATTRIBUTES, so is_valid_tag strips it from custom.
         if let Some(Value::Object(custom)) = trace.get("custom") {
             assert!(custom.get("_dd.p.tid").is_none());
+        }
+    }
+
+    #[test]
+    fn test_128bit_trace_id_invalid_high_falls_back_to_decimal() {
+        // When _dd.p.tid fails validation (wrong length, uppercase, or non-hex),
+        // stringify_ids falls back to the unsigned-decimal form of the lower 64
+        // bits — same as if _dd.p.tid were absent.
+        for invalid in ["69D64A1900000000", "69d64a190000000", "69d64a19000000000", ""] {
+            let mut meta = ObjectMap::new();
+            meta.insert("_dd.p.tid".into(), Value::from(invalid));
+            let trace = run(|t| {
+                t.insert("trace_id", 0x2c76445808c4c2d6i64);
+                t.insert("meta", Value::Object(meta));
+            });
+            assert_eq!(
+                trace.get("trace_id"),
+                Some(&Value::from("3203823329815610070")),
+                "expected decimal fallback for invalid _dd.p.tid={invalid:?}",
+            );
+            assert_eq!(
+                trace.get("trace_id_low"),
+                Some(&Value::from("3203823329815610070")),
+                "trace_id_low should always be the decimal lower-64",
+            );
         }
     }
 

@@ -157,6 +157,86 @@ fn try_remap_field(field: String) -> String {
     }
     // TODO: maybe add support for *:value -> all: value
 }
+
+struct TraceIdQueryRewriter;
+
+impl QueryAstTransformer for TraceIdQueryRewriter {
+    type Err = Infallible;
+
+    fn transform_term(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {
+        if term_query.field != "trace_id" {
+            return Ok(Some(term_query.into()));
+        }
+        Ok(Some(
+            rewrite_trace_id_value(&term_query.value).unwrap_or_else(|| term_query.into()),
+        ))
+    }
+
+    fn transform_full_text(
+        &mut self,
+        full_text: FullTextQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        if full_text.field != "trace_id" {
+            return Ok(Some(full_text.into()));
+        }
+        Ok(Some(
+            rewrite_trace_id_value(&full_text.text).unwrap_or_else(|| full_text.into()),
+        ))
+    }
+}
+
+/// Rewrites a `trace_id` equality value into a BoolQuery covering all stored
+/// formats, or returns `None` to pass through unchanged.
+///
+/// Mirrors logs-backend's `TraceIDRewriter.tryTruncateTraceID` logic:
+/// - 32-char valid lowercase hex → 3-way OR: `trace_id = hex`,
+///   `trace_id_low = decimal(lower_64)`, `trace_id = decimal(lower_64)`.
+///   Covers both 128-bit hex storage and 64-bit decimal fallback storage.
+/// - < 32 chars (decimal or short hex) → 2-way OR: `trace_id = v`,
+///   `trace_id_low = v`. Covers both stored forms for 64-bit-only traces.
+/// - > 32 chars or invalid 32-char hex → None (pass through).
+fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
+    if value.len() > 32 {
+        return None;
+    }
+    let make_term = |field: &str, val: &str| -> QueryAst {
+        TermQuery {
+            field: field.to_string(),
+            value: val.to_string(),
+        }
+        .into()
+    };
+    let should = if value.len() == 32 {
+        let upper_valid = u64::from_str_radix(&value[..16], 16).is_ok();
+        let lower = u64::from_str_radix(&value[16..], 16);
+        if let (true, Ok(lower_bits)) = (upper_valid, lower) {
+            let decimal = lower_bits.to_string();
+            vec![
+                make_term("trace_id", value),
+                make_term("trace_id_low", &decimal),
+                make_term("trace_id", &decimal),
+            ]
+        } else {
+            return None;
+        }
+    } else {
+        vec![
+            make_term("trace_id", value),
+            make_term("trace_id_low", value),
+        ]
+    };
+    Some(
+        BoolQuery {
+            should,
+            minimum_should_match: Some(1),
+            must: Vec::new(),
+            must_not: Vec::new(),
+            filter: Vec::new(),
+        }
+        .into(),
+    )
+}
+
 fn try_into_query_ast(
     query: &str,
     from_timestamp_inclusive_millis: Option<i64>,
@@ -174,6 +254,9 @@ fn try_into_query_ast(
     };
 
     let Ok(Some(query_ast)) = FieldRemapper.transform(query_ast) else {
+        unreachable!()
+    };
+    let Ok(Some(query_ast)) = TraceIdQueryRewriter.transform(query_ast) else {
         unreachable!()
     };
 
@@ -266,6 +349,113 @@ mod tests {
             query_ast_json,
             r#"{"type":"bool","must":[{"type":"full_text","field":"tag.filename","text":"foo","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1759325269270},"upper_bound":{"Excluded":1759326169270}}]}"#
         );
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_rewrite_32char_hex() {
+        // 32-char hex: 3-way OR covering full hex, lower-64 decimal on
+        // trace_id_low, and lower-64 decimal on trace_id.
+        // Lower 64 of "69668a9f0000000024952c60529c35bb" = "24952c60529c35bb" = 2636061949109745083
+        let query_ast = try_into_query_ast(
+            "trace_id:69668a9f0000000024952c60529c35bb",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        let should = &json["must"][0]["should"];
+        assert_eq!(
+            should[0],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "69668a9f0000000024952c60529c35bb"})
+        );
+        assert_eq!(
+            should[1],
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "2636061949109745083"})
+        );
+        assert_eq!(
+            should[2],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "2636061949109745083"})
+        );
+        assert_eq!(json["must"][0]["minimum_should_match"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_rewrite_short_decimal() {
+        // Short decimal (< 32 chars): 2-way OR on trace_id and trace_id_low.
+        let query_ast = try_into_query_ast(
+            "trace_id:2636061949109745083",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        let should = &json["must"][0]["should"];
+        assert_eq!(
+            should[0],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "2636061949109745083"})
+        );
+        assert_eq!(
+            should[1],
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "2636061949109745083"})
+        );
+        assert_eq!(json["must"][0]["minimum_should_match"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_rewrite_short_hex() {
+        // Short hex (16-char lower-64): 2-way OR.
+        let query_ast = try_into_query_ast(
+            "trace_id:24952c60529c35bb",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        let should = &json["must"][0]["should"];
+        assert_eq!(
+            should[0],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "24952c60529c35bb"})
+        );
+        assert_eq!(
+            should[1],
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "24952c60529c35bb"})
+        );
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_no_rewrite_too_long() {
+        // > 32 chars: pass through unchanged (no expansion).
+        let query_ast = try_into_query_ast(
+            "trace_id:69668a9f0000000024952c60529c35bb00",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        // No should clauses — the trace_id query was not expanded.
+        assert!(json["must"][0]["should"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_no_rewrite_invalid_hex() {
+        // 32 chars but not valid hex: pass through unchanged.
+        let query_ast = try_into_query_ast(
+            "trace_id:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        assert!(json["must"][0]["should"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_rewrite_does_not_affect_other_fields() {
+        // Non-trace_id fields are not expanded.
+        let query_ast =
+            try_into_query_ast("service:mysvc", Some(1759325269270), Some(1759326169270)).unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        assert!(json["must"][0]["should"].is_null());
     }
 
     #[tokio::test]
