@@ -323,6 +323,15 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> Result<(), Retry<StorageError>> {
+        // For MD5 uploads, compute Content-MD5 before streaming the body.
+        // The AWS SDK no-ops ChecksumAlgorithm::Md5, so MD5 must be sent via
+        // the legacy Content-MD5 header (same as the multipart path does per part).
+        let content_md5: Option<String> = self
+            .maybe_compute_part_md5(payload.as_ref(), 0..len)
+            .await
+            .map_err(|err| Retry::Permanent(StorageError::from(err)))?
+            .map(|digest| BASE64_STANDARD.encode(digest.0));
+
         let body = payload
             .byte_stream()
             .await
@@ -338,6 +347,7 @@ impl S3CompatibleObjectStorage {
             .body(body)
             .content_length(len as i64)
             .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
+            .set_content_md5(content_md5)
             .send()
             .await
             .map_err(|sdk_error| {
