@@ -189,11 +189,11 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
 /// formats, or returns `None` to pass through unchanged.
 ///
 /// Mirrors logs-backend's `TraceIDRewriter.tryTruncateTraceID` logic:
-/// - 32-char valid lowercase hex → 3-way OR: `trace_id = hex`,
-///   `trace_id_low = decimal(lower_64)`, `trace_id = decimal(lower_64)`.
-///   Covers both 128-bit hex storage and 64-bit decimal fallback storage.
-/// - < 32 chars (decimal or short hex) → 2-way OR: `trace_id = v`,
-///   `trace_id_low = v`. Covers both stored forms for 64-bit-only traces.
+/// - 32-char valid lowercase hex → 3-way OR: `trace_id = hex`, `trace_id_low = decimal(lower_64)`,
+///   `trace_id = decimal(lower_64)`. Covers both 128-bit hex storage and 64-bit decimal fallback
+///   storage.
+/// - < 32 chars (decimal or short hex) → 2-way OR: `trace_id = v`, `trace_id_low = v`. Covers both
+///   stored forms for 64-bit-only traces.
 /// - > 32 chars or invalid 32-char hex → None (pass through).
 fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
     if value.len() > 32 {
