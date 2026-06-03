@@ -50,10 +50,10 @@ pub mod rest;
 mod rest_api_request_span;
 mod rest_api_response;
 mod search_api;
-mod trace_id_rewriter;
 pub(crate) mod simple_list;
 pub mod tcp_listener;
 mod template_api;
+mod trace_id_rewriter;
 pub mod ui_handler;
 
 use std::collections::{HashMap, HashSet};

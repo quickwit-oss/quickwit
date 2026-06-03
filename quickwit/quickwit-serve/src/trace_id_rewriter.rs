@@ -23,7 +23,9 @@
 
 use std::convert::Infallible;
 
-use quickwit_query::query_ast::{BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery};
+use quickwit_query::query_ast::{
+    BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery,
+};
 
 /// Applies `TraceIdQueryRewriter` to `query_ast` and returns the rewritten AST.
 pub(crate) fn apply_trace_id_rewrite(query_ast: QueryAst) -> QueryAst {
@@ -131,7 +133,9 @@ pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
     }
 
     // ≤ 16-char hex: convert to lower-64 decimal for the trace_id_low match.
-    if value.len() <= 16 && let Ok(n) = u64::from_str_radix(value, 16) {
+    if value.len() <= 16
+        && let Ok(n) = u64::from_str_radix(value, 16)
+    {
         return Some(make_or(value, &n.to_string()));
     }
 
