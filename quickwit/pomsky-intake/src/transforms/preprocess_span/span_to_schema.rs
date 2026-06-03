@@ -300,8 +300,8 @@ fn derive_timestamps(trace: &mut TraceEvent) {
 /// - `span_id`, `parent_id` are always unsigned decimal strings
 /// - `trace_id_low` is the unsigned decimal of the canonical `trace_id` (the lower 64 bits)
 /// - `trace_id` is the 32-char hex `{upper_64_hex}{lower_64_hex}` when `meta._dd.p.tid` is present
-///   and valid (exactly 16 lowercase hex chars, matching apm-processing's validation); falls back to
-///   the same decimal as `trace_id_low` when absent or invalid
+///   and valid (exactly 16 lowercase hex chars, matching apm-processing's validation); falls back
+///   to the same decimal as `trace_id_low` when absent or invalid; `trace_id` is kept for schema
 fn stringify_ids(trace: &mut TraceEvent) {
     let lower_opt = match trace.get("trace_id") {
         Some(Value::Integer(raw)) => Some(*raw as u64),

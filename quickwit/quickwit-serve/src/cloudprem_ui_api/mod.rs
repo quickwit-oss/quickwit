@@ -25,13 +25,12 @@ use quickwit_query::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstTransformer,
     RangeQuery, RegexQuery, TermQuery, WildcardQuery, query_ast_from_user_text,
 };
-
-use crate::trace_id_rewriter::TraceIdQueryRewriter;
 use quickwit_search::{SearchError, SearchService};
 use warp::reject::Rejection;
 use warp::{Filter, Reply};
 
 use crate::rest::recover_fn;
+use crate::trace_id_rewriter::apply_trace_id_rewrite;
 
 mod aggregate;
 mod facet_info;
