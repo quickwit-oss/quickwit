@@ -62,6 +62,7 @@ use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 
 use crate::developer_api::DeveloperApiServer;
+use crate::trace_id_rewriter::apply_trace_id_rewrite;
 
 pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
 
@@ -321,6 +322,7 @@ impl CloudPremService for CloudPremServiceImpl {
 
         debug!("received ast: {query_evp_ast:?}");
         let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+        let query_ast = apply_trace_id_rewrite(query_ast);
         debug!("converted ast: {query_ast:?}");
 
         let count_hits = if request.should_compute_count {
