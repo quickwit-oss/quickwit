@@ -299,8 +299,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_trace_id_rewrite_short_decimal() {
-        // Short decimal: direct match + suffix wildcard for 128-bit traces.
-        // 2636061949109745083 decimal = "24952c60529c35bb" hex (16 chars, zero-padded = "24952c60529c35bb")
+        // Short decimal: direct match + trace_id_low exact match.
+        // 2636061949109745083 decimal is the lower-64 decimal for hex "24952c60529c35bb".
         let query_ast = try_into_query_ast(
             "trace_id:2636061949109745083",
             Some(1759325269270),
@@ -315,14 +315,15 @@ mod tests {
         );
         assert_eq!(
             should[1],
-            serde_json::json!({"type": "wildcard", "field": "trace_id", "value": "*24952c60529c35bb", "lenient": false, "case_insensitive": false})
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "2636061949109745083"})
         );
         assert_eq!(json["must"][0]["minimum_should_match"], 1);
     }
 
     #[tokio::test]
     async fn test_trace_id_rewrite_short_hex() {
-        // 16-char hex: direct match + suffix wildcard for 128-bit traces.
+        // 16-char hex: direct match + trace_id_low with the decimal equivalent.
+        // "24952c60529c35bb" hex = 2636061949109745083 decimal.
         let query_ast = try_into_query_ast(
             "trace_id:24952c60529c35bb",
             Some(1759325269270),
@@ -337,7 +338,7 @@ mod tests {
         );
         assert_eq!(
             should[1],
-            serde_json::json!({"type": "wildcard", "field": "trace_id", "value": "*24952c60529c35bb", "lenient": false, "case_insensitive": false})
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "2636061949109745083"})
         );
     }
 

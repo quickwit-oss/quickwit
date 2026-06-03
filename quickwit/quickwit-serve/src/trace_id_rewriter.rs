@@ -24,9 +24,7 @@
 use std::collections::HashSet;
 use std::convert::Infallible;
 
-use quickwit_query::query_ast::{
-    BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery, WildcardQuery,
-};
+use quickwit_query::query_ast::{BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery};
 
 /// Applies `TraceIdQueryRewriter` to `query_ast` and returns the rewritten AST.
 pub(crate) fn apply_trace_id_rewrite(query_ast: QueryAst) -> QueryAst {
@@ -69,9 +67,9 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
 ///
 /// - 32-char valid lowercase hex → 2-way OR: `trace_id = hex` (128-bit stored)
 ///   and `trace_id = decimal(lower_64)` (64-bit decimal fallback stored).
-/// - Decimal or short hex (< 32 chars) → `trace_id = value` (direct) plus a
-///   suffix-wildcard `trace_id:*{lower_64_hex}` so any 128-bit trace whose lower
-///   64 bits match is found. Both decimal and hex interpretations are tried.
+/// - Decimal or short hex (< 32 chars) → `trace_id = value` (direct) plus
+///   `trace_id_low = decimal(value)` which covers both 128-bit hex-stored and
+///   64-bit decimal-stored traces. Both decimal and hex interpretations are tried.
 /// - 128-bit decimal (33–39 all-digit chars) → converted to 32-char hex, then
 ///   treated identically to the 32-char hex case (2-way OR).
 /// - > 39 chars, > 32 non-decimal chars, or invalid 32-char hex → None (pass through).
@@ -83,12 +81,10 @@ pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
         }
         .into()
     };
-    let make_wildcard = |lower_hex: &str| -> QueryAst {
-        WildcardQuery {
-            field: "trace_id".to_string(),
-            value: format!("*{lower_hex}"),
-            lenient: false,
-            case_insensitive: false,
+    let make_trace_id_low = |decimal: &str| -> QueryAst {
+        TermQuery {
+            field: "trace_id_low".to_string(),
+            value: decimal.to_string(),
         }
         .into()
     };
@@ -114,21 +110,23 @@ pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
             return None;
         }
     } else {
-        // Direct match covers decimal-stored 64-bit traces.
+        // Direct match covers the case where trace_id itself stores this exact value.
+        // trace_id_low always holds the lower-64 decimal, covering both 128-bit hex-stored
+        // and 64-bit decimal-stored spans. Try both hex and decimal interpretations.
         let mut should = vec![make_term(value)];
         let mut seen = HashSet::new();
         // Try hex interpretation (at most 16 hex chars).
         if value.len() <= 16 && let Ok(n) = u64::from_str_radix(value, 16) {
-            let hex16 = format!("{n:016x}");
-            if seen.insert(hex16.clone()) {
-                should.push(make_wildcard(&hex16));
+            let decimal = n.to_string();
+            if seen.insert(decimal.clone()) {
+                should.push(make_trace_id_low(&decimal));
             }
         }
         // Try decimal interpretation.
         if let Ok(n) = value.parse::<u64>() {
-            let hex16 = format!("{n:016x}");
-            if seen.insert(hex16.clone()) {
-                should.push(make_wildcard(&hex16));
+            let decimal = n.to_string();
+            if seen.insert(decimal.clone()) {
+                should.push(make_trace_id_low(&decimal));
             }
         }
         should
