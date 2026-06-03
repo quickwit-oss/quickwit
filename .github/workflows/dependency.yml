@@ -16,7 +16,7 @@ jobs:
       - name: "Checkout Repository"
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: "Dependency Review"
-        uses: actions/dependency-review-action@f5b971718edcbb31275a1db40004592335c0e031 # v4.8.1
+        uses: actions/dependency-review-action@dcd589ca9f7a6ded22e224ca2e288beb6bf9846b # v4.8.1
         with:
           # GHSA-c38w-74pg-36hr, GHSA-4grx-2x9w-596c: minor vuln on the rsa crate, used for google storage.
           # GHSA-cq8v-f236-94qc: rand 0.8.6 unsound with custom logger + rand::rng(), not affected (log feature disabled, transitive dep from fail/sqlx).
