@@ -1,0 +1,39 @@
+# Pins the current field-type validation behavior. KQL is not schema-aware
+# at parse time; type-aware validation runs at leaf-search via
+# `build_tantivy_ast_impl(ctx)`, the same seam every Quickwit query
+# language uses. These cases document the contract — if any of them
+# stops returning HTTP 400, that's an unintentional behavior change in
+# the shared validation layer.
+
+# Range operator on a text field — RangeQuery::build_tantivy_ast_impl
+# rejects ranges on non-numeric/datetime field types.
+endpoint: kql_demo/search
+params:
+  kql: "service:>=5"
+status_code: 400
+---
+# Wildcard value on a u64 field — WildcardQuery::build_tantivy_ast_impl
+# rejects wildcards on non-text field types.
+endpoint: kql_demo/search
+params:
+  kql: "status:err*"
+status_code: 400
+---
+# Reference to a field that does not exist in the docmapper. The test
+# index uses dynamic mode (Quickwit's default), so unknown fields are
+# tolerated — the query succeeds with 0 hits rather than 400. This is
+# documented in the README's `Validation` section; pinned here so a
+# future refactor toward strict-mode behavior is a noticed change.
+endpoint: kql_demo/search
+params:
+  kql: "no_such_field:anything"
+expected:
+  num_hits: 0
+---
+# Non-numeric literal in a range bound against a numeric field. The
+# lowering emits JsonLiteral::String for "abc"; RangeQuery's bound
+# coercion to u64 fails and surfaces as InvalidQuery.
+endpoint: kql_demo/search
+params:
+  kql: "status:>=abc"
+status_code: 400

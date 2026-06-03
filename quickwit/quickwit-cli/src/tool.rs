@@ -542,6 +542,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
     let sort_by: SortBy = args.sort_by_field.map(SortBy::from).unwrap_or_default();
     let search_request_query_string = SearchRequestQueryString {
         query: args.query,
+        kql: None,
         start_offset: args.start_offset as u64,
         max_hits: args.max_hits as u64,
         search_fields: args.search_fields,

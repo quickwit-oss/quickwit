@@ -1,0 +1,152 @@
+# Multi-node Quickwit cluster for KQL end-to-end testing.
+#
+# Exercises the same code paths a production deployment uses:
+#   - Distributed root → leaf search across two searcher nodes
+#   - PostgreSQL metastore (the production-grade backend)
+#   - LocalStack S3 for split storage (production-grade object-storage path)
+#
+# This compose file is intentionally self-contained — it does NOT extend
+# the workspace-root `docker-compose.yml`. Bring it up alongside (not
+# instead of) that file when you want to test KQL through the real
+# distributed search topology.
+#
+# Usage (from this directory):
+#
+#     # 0. Build a Quickwit image from the workspace.
+#     #    From repo root:
+#     docker build -t quickwit/quickwit:kql-test ../../../..
+#
+#     # 1. Start the cluster.
+#     docker compose -f docker-compose.cluster.yml up -d --wait
+#
+#     # 2. Run the KQL scenarios against the root node (port 7290).
+#     QW_TEST_BASE_URL=http://127.0.0.1:7290 \
+#       python3 ../../run_tests.py --engine quickwit --test scenarii/kql_search
+#
+#     # 3. Tear down.
+#     docker compose -f docker-compose.cluster.yml down -v
+#
+# Notes:
+#   - Listens on host ports 7290-7292 to avoid colliding with a developer's
+#     single-node Quickwit on 7280.
+#   - Each searcher has its own ports so you can poke at individual nodes.
+#   - The `quickwit-1` node runs the control plane and metastore; both
+#     searchers ingest and serve queries.
+
+x-quickwit-common: &quickwit-common
+  image: quickwit/quickwit:kql-test
+  depends_on:
+    postgres-kql:
+      condition: service_healthy
+    localstack-kql:
+      condition: service_healthy
+  environment: &qw-env
+    QW_METASTORE_URI: "postgres://quickwit:quickwit@postgres-kql:5432/quickwit"
+    QW_DEFAULT_INDEX_ROOT_URI: "s3://quickwit/indexes"
+    AWS_ACCESS_KEY_ID: dummy
+    AWS_SECRET_ACCESS_KEY: dummy
+    AWS_ENDPOINT_URL: "http://localstack-kql:4566"
+    AWS_REGION: us-east-1
+    QW_S3_FORCE_PATH_STYLE_ACCESS: "1"
+    QW_PEER_SEEDS: "quickwit-1:7280,quickwit-2:7280"
+    QW_LISTEN_ADDRESS: "0.0.0.0"
+    RUST_LOG: "quickwit=info"
+  networks:
+    - kql-cluster
+  command: ["run"]
+
+services:
+  # ---------- infrastructure ----------------------------------------
+  postgres-kql:
+    image: postgres:15-alpine
+    container_name: kql-postgres
+    environment:
+      POSTGRES_USER: quickwit
+      POSTGRES_PASSWORD: quickwit
+      POSTGRES_DB: quickwit
+    networks:
+      - kql-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickwit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  localstack-kql:
+    image: localstack/localstack:3.5.0
+    container_name: kql-localstack
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+    networks:
+      - kql-cluster
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Create the `quickwit` S3 bucket before the searchers come online.
+  bucket-init-kql:
+    image: amazon/aws-cli:2.17.7
+    container_name: kql-bucket-init
+    depends_on:
+      localstack-kql:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: dummy
+      AWS_SECRET_ACCESS_KEY: dummy
+      AWS_REGION: us-east-1
+    entrypoint: >
+      sh -c "
+        aws --endpoint-url http://localstack-kql:4566 s3 mb s3://quickwit ||
+        aws --endpoint-url http://localstack-kql:4566 s3 ls s3://quickwit
+      "
+    networks:
+      - kql-cluster
+
+  # ---------- quickwit cluster --------------------------------------
+  quickwit-1:
+    <<: *quickwit-common
+    container_name: kql-quickwit-1
+    depends_on:
+      postgres-kql:
+        condition: service_healthy
+      localstack-kql:
+        condition: service_healthy
+      bucket-init-kql:
+        condition: service_completed_successfully
+    environment:
+      <<: *qw-env
+      QW_NODE_ID: kql-quickwit-1
+      QW_ENABLED_SERVICES: "control_plane,indexer,searcher,metastore,janitor"
+    ports:
+      - "127.0.0.1:7290:7280" # REST
+      - "127.0.0.1:7291:7281" # gRPC
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7280/health/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  quickwit-2:
+    <<: *quickwit-common
+    container_name: kql-quickwit-2
+    depends_on:
+      quickwit-1:
+        condition: service_healthy
+    environment:
+      <<: *qw-env
+      QW_NODE_ID: kql-quickwit-2
+      QW_ENABLED_SERVICES: "indexer,searcher,metastore"
+    ports:
+      - "127.0.0.1:7292:7280"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7280/health/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+networks:
+  kql-cluster:
+    driver: bridge
