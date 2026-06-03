@@ -276,7 +276,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_trace_id_rewrite_32char_hex() {
-        // 32-char hex: 2-way OR — full hex and lower-64 decimal, both on trace_id only.
+        // 32-char hex: trace_id = hex, trace_id_low = lower-64 decimal.
         // Lower 64 of "69668a9f0000000024952c60529c35bb" = "24952c60529c35bb" = 2636061949109745083
         let query_ast = try_into_query_ast(
             "trace_id:69668a9f0000000024952c60529c35bb",
@@ -292,7 +292,32 @@ mod tests {
         );
         assert_eq!(
             should[1],
-            serde_json::json!({"type": "term", "field": "trace_id", "value": "2636061949109745083"})
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "2636061949109745083"})
+        );
+        assert_eq!(json["must"][0]["minimum_should_match"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_trace_id_rewrite_128bit_small_decimal() {
+        // 128-bit decimal with ≤ 32 digits: 18446744073709551616 = 2^64 =
+        // 0x00000000000000010000000000000000. Lower 64 bits = 0.
+        // Previously this fell through to the short-value branch where parse::<u64>()
+        // fails (> u64::MAX), leaving only the direct trace_id match.
+        let query_ast = try_into_query_ast(
+            "trace_id:18446744073709551616",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        let should = &json["must"][0]["should"];
+        assert_eq!(
+            should[0],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "00000000000000010000000000000000"})
+        );
+        assert_eq!(
+            should[1],
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "0"})
         );
         assert_eq!(json["must"][0]["minimum_should_match"], 1);
     }
@@ -371,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_trace_id_rewrite_128bit_decimal() {
-        // 128-bit decimal: convert to 32-char hex then 2-way OR.
+        // 128-bit decimal (39 digits): convert to 32-char hex + trace_id_low.
         // 184635789406270697830463680821029800615 == 0x8ae78f3f79c2d0540c39b8f0d87c8aa7
         // lower 64 decimal = 880938546691345063
         let query_ast = try_into_query_ast(
@@ -388,7 +413,7 @@ mod tests {
         );
         assert_eq!(
             should[1],
-            serde_json::json!({"type": "term", "field": "trace_id", "value": "880938546691345063"})
+            serde_json::json!({"type": "term", "field": "trace_id_low", "value": "880938546691345063"})
         );
         assert_eq!(json["must"][0]["minimum_should_match"], 1);
     }

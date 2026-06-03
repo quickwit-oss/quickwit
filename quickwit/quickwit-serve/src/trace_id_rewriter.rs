@@ -21,7 +21,6 @@
 //!
 //! Mirrors logs-backend's `TraceIDRewriter`.
 
-use std::collections::HashSet;
 use std::convert::Infallible;
 
 use quickwit_query::query_ast::{BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery};
@@ -61,84 +60,80 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
     }
 }
 
-/// Rewrites a `trace_id` equality value into a BoolQuery covering all stored
-/// formats, or returns `None` to pass through unchanged. All clauses are on
-/// `trace_id` only — `trace_id_low` is never referenced in the query.
+/// Rewrites a `trace_id` equality value into a `BoolQuery` covering all stored
+/// formats, or returns `None` to pass through unchanged.
 ///
-/// - 32-char valid lowercase hex → 2-way OR: `trace_id = hex` (128-bit stored)
-///   and `trace_id = decimal(lower_64)` (64-bit decimal fallback stored).
-/// - Decimal or short hex (< 32 chars) → `trace_id = value` (direct) plus
-///   `trace_id_low = decimal(value)` which covers both 128-bit hex-stored and
-///   64-bit decimal-stored traces. Both decimal and hex interpretations are tried.
-/// - 128-bit decimal (33–39 all-digit chars) → converted to 32-char hex, then
-///   treated identically to the 32-char hex case (2-way OR).
-/// - > 39 chars, > 32 non-decimal chars, or invalid 32-char hex → None (pass through).
+/// All cases produce a 2-way OR: a direct `trace_id` match plus a
+/// `trace_id_low` exact match (the lower-64 decimal, always populated at
+/// ingest regardless of how `trace_id` itself is stored).
+///
+/// | Input | `trace_id` clause | `trace_id_low` clause |
+/// |---|---|---|
+/// | 32-char lowercase hex | hex as-is | decimal of lower 64 |
+/// | 128-bit decimal (> u64::MAX, ≤ 39 digits) | converted to 32-char hex | decimal of lower 64 |
+/// | 64-bit decimal (fits u64) | decimal as-is | same decimal |
+/// | ≤ 16-char hex | hex as-is | decimal equivalent |
+/// | > 32 chars non-decimal, invalid hex | pass through (returns `None`) | — |
 pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
-    let make_term = |val: &str| -> QueryAst {
-        TermQuery {
-            field: "trace_id".to_string(),
-            value: val.to_string(),
-        }
-        .into()
-    };
-    let make_trace_id_low = |decimal: &str| -> QueryAst {
-        TermQuery {
-            field: "trace_id_low".to_string(),
-            value: decimal.to_string(),
-        }
-        .into()
-    };
-    let should = if value.len() > 32 {
-        // 128-bit decimal: all ASCII digits, at most 39 chars (u128::MAX has 39 digits).
-        if value.len() <= 39 && value.bytes().all(|b| b.is_ascii_digit()) {
-            if let Ok(n) = value.parse::<u128>() {
-                let hex32 = format!("{n:032x}");
-                let lower_decimal = (n as u64).to_string();
-                vec![make_term(&hex32), make_term(&lower_decimal)]
-            } else {
-                return None;
-            }
-        } else {
-            return None;
-        }
-    } else if value.len() == 32 && value.is_ascii() {
-        let upper_valid = u64::from_str_radix(&value[..16], 16).is_ok();
-        let lower = u64::from_str_radix(&value[16..], 16);
-        if let (true, Ok(lower_bits)) = (upper_valid, lower) {
-            vec![make_term(value), make_term(&lower_bits.to_string())]
-        } else {
-            return None;
-        }
-    } else {
-        // Direct match covers the case where trace_id itself stores this exact value.
-        // trace_id_low always holds the lower-64 decimal, covering both 128-bit hex-stored
-        // and 64-bit decimal-stored spans. Try both hex and decimal interpretations.
-        let mut should = vec![make_term(value)];
-        let mut seen = HashSet::new();
-        // Try hex interpretation (at most 16 hex chars).
-        if value.len() <= 16 && let Ok(n) = u64::from_str_radix(value, 16) {
-            let decimal = n.to_string();
-            if seen.insert(decimal.clone()) {
-                should.push(make_trace_id_low(&decimal));
-            }
-        }
-        // Try decimal interpretation.
-        if let Ok(n) = value.parse::<u64>() {
-            let decimal = n.to_string();
-            if seen.insert(decimal.clone()) {
-                should.push(make_trace_id_low(&decimal));
-            }
-        }
-        should
-    };
-    Some(
+    let make_or = |trace_id_val: &str, trace_id_low_val: &str| -> QueryAst {
         BoolQuery {
-            should,
+            should: vec![
+                TermQuery {
+                    field: "trace_id".to_string(),
+                    value: trace_id_val.to_string(),
+                }
+                .into(),
+                TermQuery {
+                    field: "trace_id_low".to_string(),
+                    value: trace_id_low_val.to_string(),
+                }
+                .into(),
+            ],
             minimum_should_match: Some(1),
             must: Vec::new(),
             must_not: Vec::new(),
             filter: Vec::new(),
         }
-        .into(),
-    )
+        .into()
+    };
+
+    // Dispatch all-digit values by numeric range so that 128-bit decimals with
+    // ≤ 32 digits (e.g. 18446744073709551616 = 2^64) are handled correctly
+    // regardless of their string length.
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        if value.len() > 39 {
+            return None; // Too large for u128.
+        }
+        if let Ok(n) = value.parse::<u64>() {
+            // 64-bit decimal: decimal is both the trace_id value (fallback storage)
+            // and the trace_id_low value.
+            let decimal = n.to_string();
+            return Some(make_or(&decimal, &decimal));
+        }
+        if let Ok(n) = value.parse::<u128>() {
+            // 128-bit decimal: convert to the 32-char hex form stored by ingest.
+            let hex32 = format!("{n:032x}");
+            let lower_decimal = (n as u64).to_string();
+            return Some(make_or(&hex32, &lower_decimal));
+        }
+        return None; // Overflows u128.
+    }
+
+    // 32-char lowercase hex: the canonical 128-bit storage format.
+    if value.len() == 32 && value.is_ascii() {
+        if let (Ok(_), Ok(lower)) = (
+            u64::from_str_radix(&value[..16], 16),
+            u64::from_str_radix(&value[16..], 16),
+        ) {
+            return Some(make_or(value, &lower.to_string()));
+        }
+        return None; // Invalid hex.
+    }
+
+    // ≤ 16-char hex: convert to lower-64 decimal for the trace_id_low match.
+    if value.len() <= 16 && let Ok(n) = u64::from_str_radix(value, 16) {
+        return Some(make_or(value, &n.to_string()));
+    }
+
+    None // Unrecognised format; pass through.
 }
