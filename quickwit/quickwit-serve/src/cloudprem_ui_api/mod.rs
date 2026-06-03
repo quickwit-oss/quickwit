@@ -30,7 +30,7 @@ use warp::reject::Rejection;
 use warp::{Filter, Reply};
 
 use crate::rest::recover_fn;
-use crate::trace_id_rewriter::apply_trace_id_rewrite;
+use crate::trace_id_rewriter::TraceIdQueryRewriter;
 
 mod aggregate;
 mod facet_info;
