@@ -27,6 +27,7 @@ use warp::{Filter, Rejection};
 
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
+use crate::trace_id_rewriter::apply_trace_id_rewrite;
 use crate::{BodyFormat, with_arg};
 
 #[derive(utoipa::OpenApi)]
@@ -248,6 +249,14 @@ pub fn search_request_from_api_request(
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    let query_ast = if index_id_patterns.iter().any(|p| p == "datadog-spans") {
+        match query_ast.clone().parse_user_query(&[]) {
+            Ok(parsed) => apply_trace_id_rewrite(parsed),
+            Err(_) => query_ast,
+        }
+    } else {
+        query_ast
+    };
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::search::SearchRequest {
         index_id_patterns,
