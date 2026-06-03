@@ -369,6 +369,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_trace_id_rewrite_128bit_decimal() {
+        // 128-bit decimal: convert to 32-char hex then 2-way OR.
+        // 184635789406270697830463680821029800615 == 0x8ae78f3f79c2d0540c39b8f0d87c8aa7
+        // lower 64 decimal = 880938546691345063
+        let query_ast = try_into_query_ast(
+            "trace_id:184635789406270697830463680821029800615",
+            Some(1759325269270),
+            Some(1759326169270),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&query_ast).unwrap();
+        let should = &json["must"][0]["should"];
+        assert_eq!(
+            should[0],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "8ae78f3f79c2d0540c39b8f0d87c8aa7"})
+        );
+        assert_eq!(
+            should[1],
+            serde_json::json!({"type": "term", "field": "trace_id", "value": "880938546691345063"})
+        );
+        assert_eq!(json["must"][0]["minimum_should_match"], 1);
+    }
+
+    #[tokio::test]
     async fn test_trace_id_rewrite_does_not_affect_other_fields() {
         // Non-trace_id fields are not expanded.
         let query_ast =

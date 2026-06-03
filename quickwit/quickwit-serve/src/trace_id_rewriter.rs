@@ -72,11 +72,10 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
 /// - Decimal or short hex (< 32 chars) → `trace_id = value` (direct) plus a
 ///   suffix-wildcard `trace_id:*{lower_64_hex}` so any 128-bit trace whose lower
 ///   64 bits match is found. Both decimal and hex interpretations are tried.
-/// - > 32 chars or invalid 32-char hex → None (pass through).
+/// - 128-bit decimal (33–39 all-digit chars) → converted to 32-char hex, then
+///   treated identically to the 32-char hex case (2-way OR).
+/// - > 39 chars, > 32 non-decimal chars, or invalid 32-char hex → None (pass through).
 pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
-    if value.len() > 32 {
-        return None;
-    }
     let make_term = |val: &str| -> QueryAst {
         TermQuery {
             field: "trace_id".to_string(),
@@ -93,7 +92,20 @@ pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
         }
         .into()
     };
-    let should = if value.len() == 32 && value.is_ascii() {
+    let should = if value.len() > 32 {
+        // 128-bit decimal: all ASCII digits, at most 39 chars (u128::MAX has 39 digits).
+        if value.len() <= 39 && value.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(n) = value.parse::<u128>() {
+                let hex32 = format!("{n:032x}");
+                let lower_decimal = (n as u64).to_string();
+                vec![make_term(&hex32), make_term(&lower_decimal)]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    } else if value.len() == 32 && value.is_ascii() {
         let upper_valid = u64::from_str_radix(&value[..16], 16).is_ok();
         let lower = u64::from_str_radix(&value[16..], 16);
         if let (true, Ok(lower_bits)) = (upper_valid, lower) {
