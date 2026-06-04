@@ -22,7 +22,7 @@ use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipe
 use quickwit_proto::metastore::{
     MetastoreService, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
 };
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument, warn};
 
 use super::ParquetSplitsUpdate;
 use crate::actors::publisher::{Publisher, serialize_checkpoint_delta, suggest_truncate};
