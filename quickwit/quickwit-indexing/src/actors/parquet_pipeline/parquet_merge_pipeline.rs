@@ -39,10 +39,10 @@ use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
-use quickwit_metastore::{ListParquetSplitsRequestExt, ListParquetSplitsResponseExt};
+use quickwit_metastore::{ListParquetSplitsQuery, list_parquet_splits_paginated};
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
 use tokio::sync::Semaphore;
@@ -62,7 +62,27 @@ use crate::models::MergeStatistics;
 /// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
+pub const PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY: &str = "QW_PARQUET_MERGE_SKIP_INITIAL_SEED";
+
 pub const SUPERVISE_LOOP_INTERVAL: Duration = Duration::from_secs(1);
+
+async fn fetch_published_parquet_splits_paginated(
+    metastore: MetastoreServiceClient,
+    index_uid: IndexUid,
+) -> anyhow::Result<Vec<ParquetSplitMetadata>> {
+    let kind = if quickwit_common::is_sketches_index(&index_uid.index_id) {
+        ParquetSplitKind::Sketches
+    } else {
+        ParquetSplitKind::Metrics
+    };
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone());
+    let records = list_parquet_splits_paginated(metastore, kind, query).await?;
+    debug!(
+        num_splits = records.len(),
+        "fetched published parquet splits for merge planning"
+    );
+    Ok(records.into_iter().map(|record| record.metadata).collect())
+}
 
 /// Holds actor handles for health-checking and lifecycle management.
 /// When `None` in the parent pipeline, no actors are running (pre-spawn or
@@ -251,6 +271,7 @@ impl ParquetMergePipeline {
         info!(
             generation = self.generation(),
             root_dir = %self.params.indexing_directory.path().display(),
+            merge_policy = ?self.params.merge_policy,
             "spawning parquet merge pipeline"
         );
 
@@ -437,32 +458,24 @@ impl ParquetMergePipeline {
         if let Some(immature_splits) = self.initial_immature_splits_opt.take() {
             return Ok(immature_splits);
         }
+        if self.params.skip_initial_seed {
+            info!(
+                index_uid=%self.params.index_uid,
+                env_var=PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY,
+                "skipping initial published parquet split seed for merge planning"
+            );
+            return Ok(Vec::new());
+        }
         // On subsequent spawns, query the metastore for published splits.
-        // Dispatch to the correct RPC based on whether this is a metrics or
-        // sketches index — they use separate Postgres tables.
+        // Fetch in pages so a large number of split metadata records does not
+        // exceed the gRPC max message size.
         let index_uid = self.params.index_uid.clone();
-        let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
-        let is_sketch = quickwit_common::is_sketches_index(&index_uid.index_id);
-        let records = if is_sketch {
-            let list_request = quickwit_proto::metastore::ListSketchSplitsRequest::try_from_query(
+        let splits = ctx
+            .protect_future(fetch_published_parquet_splits_paginated(
+                self.params.metastore.clone(),
                 index_uid.clone(),
-                &query,
-            )?;
-            let response = ctx
-                .protect_future(self.params.metastore.list_sketch_splits(list_request))
-                .await?;
-            response.deserialize_splits()?
-        } else {
-            let list_request = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
-                index_uid.clone(),
-                &query,
-            )?;
-            let response = ctx
-                .protect_future(self.params.metastore.list_metrics_splits(list_request))
-                .await?;
-            response.deserialize_splits()?
-        };
-        let splits: Vec<ParquetSplitMetadata> = records.into_iter().map(|r| r.metadata).collect();
+            ))
+            .await?;
         info!(
             num_splits = splits.len(),
             "fetched published parquet splits for merge planning on respawn"
@@ -601,6 +614,9 @@ pub struct ParquetMergePipelineParams {
     pub merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub max_concurrent_split_uploads: usize,
     pub event_broker: EventBroker,
+    /// If true, the merge planner starts empty and only receives newly
+    /// published splits from the indexing pipeline feedback loop.
+    pub skip_initial_seed: bool,
     /// Parquet writer config for merge output (compression, page size, etc.).
     /// Should match the ingest pipeline's writer config so merged files have
     /// consistent compression.
@@ -623,10 +639,15 @@ pub struct ParquetMergePipelineParams {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_metastore::{
+        ListParquetSplitsRequestExt, ListParquetSplitsResponseExt, PARQUET_SPLITS_PAGE_SIZE,
+        ParquetSplitRecord, SplitState,
+    };
     use quickwit_parquet_engine::merge::policy::{
         ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
     };
@@ -663,6 +684,7 @@ mod tests {
             merge_scheduler_service: universe.get_or_spawn_one(),
             max_concurrent_split_uploads: 4,
             event_broker: EventBroker::default(),
+            skip_initial_seed: false,
             writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
             use_streaming_engine: false,
             target_split_size_bytes: 256 * 1024 * 1024,
@@ -681,6 +703,14 @@ mod tests {
             .window_start_secs(0)
             .window_duration_secs(3600)
             .build()
+    }
+
+    fn make_split_record(split_id: &str) -> ParquetSplitRecord {
+        ParquetSplitRecord {
+            state: SplitState::Published,
+            update_timestamp: 0,
+            metadata: make_split(split_id),
+        }
     }
 
     #[tokio::test]
@@ -756,5 +786,104 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::Success));
 
         universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_skip_initial_seed_does_not_list_published_splits() {
+        let universe = Universe::with_accelerated_time();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_list_metrics_splits().times(0);
+
+        let merge_policy = Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
+            ParquetMergePolicyConfig {
+                merge_factor: 2,
+                max_merge_factor: 2,
+                max_merge_ops: 5,
+                target_split_size_bytes: 256 * 1024 * 1024,
+                maturation_period: Duration::from_secs(3600),
+                max_finalize_merge_operations: 3,
+            },
+        ));
+        let params = ParquetMergePipelineParams {
+            index_uid: quickwit_proto::types::IndexUid::for_test("test-merge-index", 0),
+            indexing_directory: TempDirectory::for_test(),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            storage: Arc::new(quickwit_storage::RamStorage::default()),
+            merge_policy,
+            merge_scheduler_service: universe.get_or_spawn_one(),
+            max_concurrent_split_uploads: 4,
+            event_broker: EventBroker::default(),
+            skip_initial_seed: true,
+            writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
+            use_streaming_engine: false,
+            target_split_size_bytes: 256 * 1024 * 1024,
+        };
+
+        let pipeline = ParquetMergePipeline::new(params, None, universe.spawn_ctx());
+        let (pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+
+        universe.sleep(Duration::from_secs(2)).await;
+
+        pipeline_mailbox
+            .send_message(FinishPendingMergesAndShutdownPipeline)
+            .await
+            .unwrap();
+        let (exit_status, _) = pipeline_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_published_parquet_splits_paginates_metastore_requests() {
+        let mut mock_metastore = MockMetastoreService::new();
+        let pages = Arc::new(Mutex::new(vec![
+            (0..PARQUET_SPLITS_PAGE_SIZE)
+                .map(|split_idx| make_split_record(&format!("split-{split_idx:04}")))
+                .collect::<Vec<_>>(),
+            (PARQUET_SPLITS_PAGE_SIZE..PARQUET_SPLITS_PAGE_SIZE * 2)
+                .map(|split_idx| make_split_record(&format!("split-{split_idx:04}")))
+                .collect::<Vec<_>>(),
+            vec![make_split_record(&format!(
+                "split-{:04}",
+                PARQUET_SPLITS_PAGE_SIZE * 2
+            ))],
+        ]));
+        let after_split_ids = Arc::new(Mutex::new(Vec::new()));
+        let pages_for_mock = pages.clone();
+        let after_split_ids_for_mock = after_split_ids.clone();
+
+        mock_metastore
+            .expect_list_metrics_splits()
+            .times(3)
+            .returning(move |request| {
+                let query = request.deserialize_query().unwrap();
+                assert_eq!(query.limit, Some(PARQUET_SPLITS_PAGE_SIZE));
+                after_split_ids_for_mock
+                    .lock()
+                    .unwrap()
+                    .push(query.after_split_id);
+
+                let page = pages_for_mock.lock().unwrap().remove(0);
+                quickwit_proto::metastore::ListMetricsSplitsResponse::try_from_splits(&page)
+            });
+
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let splits = fetch_published_parquet_splits_paginated(
+            metastore,
+            quickwit_proto::types::IndexUid::for_test("test-merge-index", 0),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(splits.len(), PARQUET_SPLITS_PAGE_SIZE * 2 + 1);
+        assert_eq!(
+            *after_split_ids.lock().unwrap(),
+            vec![
+                None,
+                Some(format!("split-{:04}", PARQUET_SPLITS_PAGE_SIZE - 1)),
+                Some(format!("split-{:04}", PARQUET_SPLITS_PAGE_SIZE * 2 - 1)),
+            ]
+        );
     }
 }
