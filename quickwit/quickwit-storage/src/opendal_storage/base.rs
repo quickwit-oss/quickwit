@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::ops::Range;
 use std::path::Path;
+use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use quickwit_metrics::HistogramTimer;
-use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use tracing::instrument;
 
@@ -92,6 +92,37 @@ impl OpendalStorage {
     }
 }
 
+/// We spotted a ever growing usage of RAM in the opendal GCS implementation.
+/// We are using the same fix as
+/// https://github.com/apache/opendal/pull/7217/
+async fn copy_read_write_loop<R, W>(input: &mut R, output: &mut W) -> io::Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    // Only flush to `output` once we have accumulated at least `WRITE_THRESHOLD`
+    // bytes, to avoid issuing many tiny writes when `read` returns small chunks.
+    // The final (possibly smaller) chunk is flushed on EOF.
+    const WRITE_THRESHOLD: usize = 8 * 1024;
+    let mut buf = [0u8; 2 * WRITE_THRESHOLD];
+    let mut filled = 0;
+    loop {
+        debug_assert!(buf[filled..].len() > WRITE_THRESHOLD);
+        let n = input.read(&mut buf[filled..]).await?;
+        if n == 0 {
+            if filled > 0 {
+                output.write_all(&buf[..filled]).await?;
+            }
+            return Ok(());
+        }
+        filled += n;
+        if filled >= WRITE_THRESHOLD {
+            output.write_all(&buf[..filled]).await?;
+            filled = 0;
+        }
+    }
+}
+
 #[async_trait]
 impl Storage for OpendalStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -112,7 +143,8 @@ impl Storage for OpendalStorage {
             .await?
             .into_futures_async_write()
             .compat_write();
-        tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
+        // Avoid `tokio::io::copy`'s pending-read flush path and keep buffering policy explicit.
+        copy_read_write_loop(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         Ok(())
@@ -268,5 +300,171 @@ impl From<opendal::Error> for StorageError {
 impl From<opendal::Error> for StorageResolverError {
     fn from(err: opendal::Error) -> Self {
         StorageResolverError::InvalidConfig(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    use super::*;
+
+    /// `AsyncRead` that returns a predefined sequence of chunks, one chunk per
+    /// `poll_read` call. This lets us simulate a source that returns small
+    /// payloads at each read.
+    struct ChunkedReader {
+        chunks: VecDeque<Vec<u8>>,
+    }
+
+    impl ChunkedReader {
+        fn new(chunks: Vec<Vec<u8>>) -> Self {
+            Self {
+                chunks: chunks.into(),
+            }
+        }
+    }
+
+    impl AsyncRead for ChunkedReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let Some(mut chunk) = self.chunks.pop_front() else {
+                return Poll::Ready(Ok(()));
+            };
+            let to_copy = chunk.len().min(buf.remaining());
+            buf.put_slice(&chunk[..to_copy]);
+            if to_copy < chunk.len() {
+                let rest = chunk.split_off(to_copy);
+                self.chunks.push_front(rest);
+            }
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// `AsyncWrite` that records the size of each `poll_write` invocation and
+    /// accumulates all bytes written, so tests can assert on both content and
+    /// batching granularity.
+    #[derive(Default)]
+    struct RecordingWriter {
+        writes: Vec<usize>,
+        data: Vec<u8>,
+    }
+
+    impl AsyncWrite for RecordingWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.writes.push(buf.len());
+            self.data.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    const WRITE_THRESHOLD: usize = 8 * 1024;
+
+    #[tokio::test]
+    async fn test_copy_read_write_loop_batches_small_reads() {
+        // 100 chunks of 100 bytes = 10_000 bytes total. Each `read` returns at
+        // most 100 bytes, so without batching we'd issue 100 `write_all` calls.
+        let chunks: Vec<Vec<u8>> = (0..100u8).map(|i| vec![i; 100]).collect();
+        let expected: Vec<u8> = chunks.iter().flatten().copied().collect();
+
+        let mut reader = ChunkedReader::new(chunks);
+        let mut writer = RecordingWriter::default();
+
+        copy_read_write_loop(&mut reader, &mut writer)
+            .await
+            .unwrap();
+
+        assert_eq!(writer.data, expected);
+        assert!(!writer.writes.is_empty());
+        // Every write except possibly the last (EOF flush) must meet the
+        // batching threshold.
+        let last_idx = writer.writes.len() - 1;
+        for (i, &n) in writer.writes.iter().enumerate() {
+            if i < last_idx {
+                assert!(
+                    n >= WRITE_THRESHOLD,
+                    "intermediate write #{i} was only {n} bytes (expected >= {WRITE_THRESHOLD})"
+                );
+            }
+        }
+        assert_eq!(writer.writes.iter().sum::<usize>(), expected.len());
+        // Sanity check: we are batching, not writing one chunk at a time.
+        assert!(
+            writer.writes.len() < 10,
+            "expected a small number of batched writes, got {writes:?}",
+            writes = writer.writes
+        );
+    }
+
+    #[tokio::test]
+    async fn test_copy_read_write_loop_empty_input() {
+        let mut reader = ChunkedReader::new(vec![]);
+        let mut writer = RecordingWriter::default();
+        copy_read_write_loop(&mut reader, &mut writer)
+            .await
+            .unwrap();
+        assert!(writer.data.is_empty());
+        assert!(writer.writes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_copy_read_write_loop_below_threshold_produces_single_write() {
+        // 5 chunks of 100 bytes = 500 bytes, well below the 8 KB threshold.
+        // The single flush should happen on EOF.
+        let chunks = vec![vec![42u8; 100]; 5];
+        let mut reader = ChunkedReader::new(chunks);
+        let mut writer = RecordingWriter::default();
+        copy_read_write_loop(&mut reader, &mut writer)
+            .await
+            .unwrap();
+        assert_eq!(writer.data, [42u8; 500]);
+        assert_eq!(writer.writes, vec![500]);
+    }
+
+    #[tokio::test]
+    async fn test_copy_read_write_loop_exact_threshold_does_not_emit_empty_tail() {
+        // Total input is an exact multiple of the threshold: ensure we don't
+        // emit a spurious empty final write when EOF aligns with a flush.
+        let chunk = vec![7u8; WRITE_THRESHOLD];
+        let mut reader = ChunkedReader::new(vec![chunk.clone(), chunk.clone()]);
+        let mut writer = RecordingWriter::default();
+        copy_read_write_loop(&mut reader, &mut writer)
+            .await
+            .unwrap();
+        assert_eq!(writer.data.len(), 2 * WRITE_THRESHOLD);
+        for &n in &writer.writes {
+            assert!(n >= WRITE_THRESHOLD, "unexpected small write of {n} bytes");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_copy_read_write_loop_large_single_read() {
+        // A single `read` returning ~16 KB should flow through as one write.
+        let chunk = vec![3u8; 2 * WRITE_THRESHOLD];
+        let mut reader = ChunkedReader::new(vec![chunk.clone()]);
+        let mut writer = RecordingWriter::default();
+        copy_read_write_loop(&mut reader, &mut writer)
+            .await
+            .unwrap();
+        assert_eq!(writer.data, chunk);
+        assert_eq!(writer.writes, vec![2 * WRITE_THRESHOLD]);
     }
 }
