@@ -1171,7 +1171,15 @@ async fn refine_and_list_matches(
         );
     }
 
-    let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
+    // We might miss some pruning opportunities by restricting the tag filter
+    // AST to the tag fields of the current doc mappings, but sending all
+    // possible filters to the metastore is too expensive for large queries (e.g
+    // TermSet queries with thousands of terms).
+    let tag_field_names: std::collections::BTreeSet<String> = indexes_metadata
+        .iter()
+        .flat_map(|meta| meta.index_config.doc_mapping.tag_fields.iter().cloned())
+        .collect();
+    let tag_filter_ast = extract_tags_from_query(query_ast_resolved, Some(&tag_field_names));
 
     // TODO if search after is set, we sort by timestamp and we don't want to count all results,
     // we can refine more here. Same if we sort by _shard_doc

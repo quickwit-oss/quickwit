@@ -1036,16 +1036,26 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     }
 
     let query_ast: QueryAst = qast_helper("owner:francois", &[]);
+    let tag_fields: BTreeSet<String> = [String::from("owner")].into_iter().collect();
 
     let selected_splits = list_relevant_splits(
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_from_query(query_ast.clone(), Some(&tag_fields)),
         &mut test_sandbox.metastore(),
     )
     .await?;
     assert!(selected_splits.is_empty());
+    let selected_splits = list_relevant_splits(
+        vec![index_uid.clone()],
+        None,
+        None,
+        extract_tags_from_query(query_ast, Some(&BTreeSet::new())),
+        &mut test_sandbox.metastore(),
+    )
+    .await?;
+    assert_eq!(selected_splits.len(), 2);
 
     let query_ast: QueryAst = qast_helper("", &[]);
 
@@ -1053,7 +1063,17 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_from_query(query_ast.clone(), Some(&tag_fields)),
+        &mut test_sandbox.metastore(),
+    )
+    .await?;
+    assert_eq!(selected_splits.len(), 2);
+
+    let selected_splits = list_relevant_splits(
+        vec![index_uid.clone()],
+        None,
+        None,
+        extract_tags_from_query(query_ast, Some(&BTreeSet::new())),
         &mut test_sandbox.metastore(),
     )
     .await?;
@@ -1065,7 +1085,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         vec![index_uid.clone()],
         None,
         None,
-        extract_tags_from_query(query_ast),
+        extract_tags_from_query(query_ast, Some(&tag_fields)),
         &mut test_sandbox.metastore(),
     )
     .await?;

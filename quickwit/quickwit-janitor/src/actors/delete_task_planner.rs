@@ -251,7 +251,7 @@ impl DeleteTaskPlanner {
                     // TODO: validate the query at the beginning and return an appropriate error.
                     let delete_query_ast = serde_json::from_str(&delete_query.query_ast)
                         .expect("Failed to deserialize query_ast json");
-                    let tags_filter = extract_tags_from_query(delete_query_ast);
+                    let tags_filter = extract_tags_from_query(delete_query_ast, None);
                     split_time_range_filter(&stale_split.split_metadata, time_range.as_ref())
                         && split_tag_filter(&stale_split.split_metadata, tags_filter.as_ref())
                 })
