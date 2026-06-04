@@ -275,6 +275,16 @@ mod tests {
         buf
     }
 
+    fn agent_key_for_value(value: f64) -> i16 {
+        let mut sketch = AgentDDSketch::with_agent_defaults();
+        sketch.insert_n(value, 1);
+        sketch.bin_map().keys[0]
+    }
+
+    fn agent_key_for_sketches_go_key(mapping: &IndexMapping, key: i32) -> i16 {
+        agent_key_for_value(value_from_key(mapping.gamma, mapping.index_offset, key))
+    }
+
     #[test]
     fn empty_bytes_decode_to_default_with_no_mapping_returns_none() {
         assert!(decode_proto(&[]).is_none());
@@ -303,12 +313,17 @@ mod tests {
     }
 
     #[test]
-    fn sparse_only_store_roundtrips_bins() {
+    fn sparse_only_store_remaps_bins_to_agent_key_space() {
+        let mapping = default_mapping();
+        let expected_keys = vec![
+            agent_key_for_sketches_go_key(&mapping, 5),
+            agent_key_for_sketches_go_key(&mapping, 7),
+        ];
         let mut bin_counts = HashMap::new();
         bin_counts.insert(5_i32, 3.0);
         bin_counts.insert(7_i32, 2.0);
         let sk = DdSketch {
-            mapping: Some(default_mapping()),
+            mapping: Some(mapping),
             positive_values: Some(Store {
                 bin_counts,
                 contiguous_bin_counts: Vec::new(),
@@ -321,15 +336,20 @@ mod tests {
         let bins = decoded.bins();
         assert_eq!(bins.len(), 2);
         let map = decoded.bin_map();
-        assert_eq!(map.keys, vec![5, 7]);
+        assert_eq!(map.keys, expected_keys);
         assert_eq!(map.counts, vec![3, 2]);
         assert_eq!(decoded.count(), 5);
     }
 
     #[test]
-    fn contiguous_only_store_reconstructs_keys() {
+    fn contiguous_only_store_remaps_reconstructed_keys() {
+        let mapping = default_mapping();
+        let expected_keys = vec![
+            agent_key_for_sketches_go_key(&mapping, 10),
+            agent_key_for_sketches_go_key(&mapping, 12),
+        ];
         let sk = DdSketch {
-            mapping: Some(default_mapping()),
+            mapping: Some(mapping),
             positive_values: Some(Store {
                 bin_counts: HashMap::new(),
                 contiguous_bin_counts: vec![1.0, 0.0, 4.0],
@@ -340,17 +360,19 @@ mod tests {
         };
         let decoded = decode_proto(&encode_sketch(&sk)).expect("decode");
         let map = decoded.bin_map();
-        assert_eq!(map.keys, vec![10, 12]);
+        assert_eq!(map.keys, expected_keys);
         assert_eq!(map.counts, vec![1, 4]);
         assert_eq!(decoded.count(), 5);
     }
 
     #[test]
     fn both_encodings_sum_counts_per_key() {
+        let mapping = default_mapping();
+        let expected_key = agent_key_for_sketches_go_key(&mapping, 5);
         let mut bin_counts = HashMap::new();
         bin_counts.insert(5_i32, 3.0);
         let sk = DdSketch {
-            mapping: Some(default_mapping()),
+            mapping: Some(mapping),
             positive_values: Some(Store {
                 bin_counts,
                 contiguous_bin_counts: vec![2.0],
@@ -361,12 +383,34 @@ mod tests {
         };
         let decoded = decode_proto(&encode_sketch(&sk)).expect("decode");
         let map = decoded.bin_map();
-        assert_eq!(map.keys, vec![5]);
+        assert_eq!(map.keys, vec![expected_key]);
         assert_eq!(map.counts, vec![5]);
     }
 
     #[test]
-    fn zero_count_contributes_to_count_not_bins() {
+    fn negative_store_remaps_magnitude_to_negative_agent_key_space() {
+        let mapping = default_mapping();
+        let expected_key = -agent_key_for_sketches_go_key(&mapping, 5);
+        let mut bin_counts = HashMap::new();
+        bin_counts.insert(5_i32, 3.0);
+        let sk = DdSketch {
+            mapping: Some(mapping),
+            positive_values: None,
+            negative_values: Some(Store {
+                bin_counts,
+                contiguous_bin_counts: Vec::new(),
+                contiguous_bin_index_offset: 0,
+            }),
+            zero_count: 0.0,
+        };
+        let decoded = decode_proto(&encode_sketch(&sk)).expect("decode");
+        let map = decoded.bin_map();
+        assert_eq!(map.keys, vec![expected_key]);
+        assert_eq!(map.counts, vec![3]);
+    }
+
+    #[test]
+    fn zero_count_contributes_to_count_and_zero_bin() {
         let mut bin_counts = HashMap::new();
         bin_counts.insert(3_i32, 1.0);
         let sk = DdSketch {
@@ -381,7 +425,10 @@ mod tests {
         };
         let decoded = decode_proto(&encode_sketch(&sk)).expect("decode");
         assert_eq!(decoded.count(), 8);
-        assert_eq!(decoded.bins().len(), 1);
+        let map = decoded.bin_map();
+        assert_eq!(map.keys[0], 0);
+        assert_eq!(map.counts[0], 7);
+        assert_eq!(decoded.bins().len(), 2);
     }
 
     #[test]
@@ -459,8 +506,9 @@ mod tests {
     }
 
     #[test]
-    fn from_single_sample_matches_go_key_space() {
-        // Expected key: sketches-go's LogarithmicMapping(0.01).Index(0.1)
+    fn from_single_sample_remaps_to_agent_key_space() {
+        // The single-sample path still uses sketches-go's representative
+        // midpoint, but the emitted bin key is Vector's AgentDDSketch key.
         //   gamma = 1.01 / 0.99
         //   multiplier = 1 / ln(gamma)
         //   index = floor(ln(0.1) * multiplier)
@@ -468,11 +516,13 @@ mod tests {
         let gamma = (1.0 + ra) / (1.0 - ra);
         let multiplier = 1.0 / gamma.ln();
         let index_f = 0.1_f64.ln() * multiplier;
-        let expected_key = if index_f >= 0.0 {
+        let key_i32 = if index_f >= 0.0 {
             index_f as i32
         } else {
             index_f as i32 - 1
-        } as i16;
+        };
+        let midpoint = value_from_key(gamma, 0.0, key_i32);
+        let expected_key = agent_key_for_value(midpoint);
         let sk = from_single_sample(0.1).expect("sketch");
         assert_eq!(sk.bin_map().keys, vec![expected_key]);
     }
