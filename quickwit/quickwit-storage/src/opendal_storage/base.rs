@@ -435,7 +435,7 @@ mod tests {
         copy_read_write_loop(&mut reader, &mut writer)
             .await
             .unwrap();
-        assert_eq!(writer.data, vec![42u8; 500]);
+        assert_eq!(writer.data, [42u8; 500]);
         assert_eq!(writer.writes, vec![500]);
     }
 
