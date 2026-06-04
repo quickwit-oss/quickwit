@@ -78,6 +78,7 @@ jobs:
               - quickwit/**/*.rs
               - quickwit/**/*.toml
               - quickwit/**/*.proto
+              - quickwit/Cargo.lock
               - quickwit/rest-api-tests/**
               - .github/workflows/ci.yml
       - name: Setup stable Rust Toolchain
@@ -131,6 +132,7 @@ jobs:
               - quickwit/**/*.rs
               - quickwit/**/*.toml
               - quickwit/**/*.proto
+              - quickwit/Cargo.lock
               - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
