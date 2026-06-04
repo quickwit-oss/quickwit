@@ -17,13 +17,12 @@ use quickwit_common::is_sketches_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
-    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, ParquetSplitRecord,
-    SplitMetadata, SplitState,
+    ListParquetSplitsQuery, ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
+    ParquetSplitRecord, SplitMetadata, SplitState, list_parquet_splits_paginated,
 };
+use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{
-    ListMetricsSplitsRequest, ListSketchSplitsRequest, ListSplitsRequest,
-    MarkMetricsSplitsForDeletionRequest, MarkSketchSplitsForDeletionRequest,
+    ListSplitsRequest, MarkMetricsSplitsForDeletionRequest, MarkSketchSplitsForDeletionRequest,
     MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
@@ -112,17 +111,18 @@ pub async fn run_execute_parquet_retention_policy(
         .with_split_states(vec![SplitState::Published])
         .with_max_time_range_end(max_retention_timestamp);
 
-    let expired_splits: Vec<ParquetSplitRecord> = if is_sketches_index(&index_uid.index_id) {
-        let request = ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query)?;
-        ctx.protect_future(metastore.list_sketch_splits(request))
-            .await?
-            .deserialize_splits()?
+    let kind = if is_sketches_index(&index_uid.index_id) {
+        ParquetSplitKind::Sketches
     } else {
-        let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)?;
-        ctx.protect_future(metastore.list_metrics_splits(request))
-            .await?
-            .deserialize_splits()?
+        ParquetSplitKind::Metrics
     };
+    let expired_splits: Vec<ParquetSplitRecord> = ctx
+        .protect_future(list_parquet_splits_paginated(
+            metastore.clone(),
+            kind,
+            query,
+        ))
+        .await?;
 
     if expired_splits.is_empty() {
         return Ok(0);

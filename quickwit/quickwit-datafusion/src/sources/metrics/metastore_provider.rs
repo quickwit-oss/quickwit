@@ -18,24 +18,14 @@ use std::ops::Bound;
 
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
-use quickwit_metastore::{
-    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
-};
+use quickwit_metastore::{ListParquetSplitsQuery, list_parquet_splits_paginated};
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
-use quickwit_proto::metastore::{
-    ListMetricsSplitsRequest, ListSketchSplitsRequest, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::IndexUid;
 use tracing::{debug, instrument};
 
 use super::predicate::MetricsSplitQuery;
 use super::table_provider::MetricsSplitProvider;
-
-/// Per-page split count for metastore split pagination.
-///
-/// The list split RPCs are unary, so we need to page client side.
-/// TODO: Use streaming RPCs for listing Parquet splits.
-const SPLIT_PAGE_SIZE: usize = 200;
 
 /// `MetricsSplitProvider` backed by the Quickwit metastore RPC.
 #[derive(Debug, Clone)]
@@ -73,74 +63,16 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
         )
     )]
     async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
-        let mut metastore_query = to_metastore_query(&self.index_uid, query);
-        metastore_query.limit = Some(SPLIT_PAGE_SIZE);
-
-        let mut splits: Vec<ParquetSplitMetadata> = Vec::new();
-        let mut num_pages: usize = 0;
-
-        loop {
-            let records = match self.split_kind {
-                ParquetSplitKind::Metrics => {
-                    let request = ListMetricsSplitsRequest::try_from_query(
-                        self.index_uid.clone(),
-                        &metastore_query,
-                    )
-                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
-
-                    self.metastore
-                        .clone()
-                        .list_metrics_splits(request)
-                        .await
-                        .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
-                        .deserialize_splits()
-                        .map_err(|err| {
-                            datafusion::error::DataFusionError::External(Box::new(err))
-                        })?
-                }
-                ParquetSplitKind::Sketches => {
-                    let request = ListSketchSplitsRequest::try_from_query(
-                        self.index_uid.clone(),
-                        &metastore_query,
-                    )
-                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
-
-                    self.metastore
-                        .clone()
-                        .list_sketch_splits(request)
-                        .await
-                        .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
-                        .deserialize_splits()
-                        .map_err(|err| {
-                            datafusion::error::DataFusionError::External(Box::new(err))
-                        })?
-                }
-            };
-
-            num_pages += 1;
-            let page_len = records.len();
-
-            // The metastore guarantees only Published splits are returned because
-            // `to_metastore_query` sets `split_states = vec![Published]`. No
-            // client-side re-filter is needed here.
-            splits.extend(records.into_iter().map(|record| record.metadata));
-
-            // A short page (fewer rows than we asked for) means we've drained
-            // the result set. The Postgres backend orders by `split_id ASC`
-            // and applies `split_id > $after_split_id` for the cursor, so the
-            // last metadata's split_id is the correct next cursor.
-            if page_len < SPLIT_PAGE_SIZE {
-                break;
-            }
-            let Some(last) = splits.last() else { break };
-            metastore_query.after_split_id = Some(last.split_id.as_str().to_string());
-        }
+        let metastore_query = to_metastore_query(&self.index_uid, query);
+        let records =
+            list_parquet_splits_paginated(self.metastore.clone(), self.split_kind, metastore_query)
+                .await
+                .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+        let splits: Vec<ParquetSplitMetadata> =
+            records.into_iter().map(|record| record.metadata).collect();
 
         tracing::Span::current().record("num_splits", splits.len());
-        debug!(
-            num_splits = splits.len(),
-            num_pages, "metastore returned splits"
-        );
+        debug!(num_splits = splits.len(), "metastore returned splits");
 
         Ok(splits)
     }

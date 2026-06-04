@@ -781,7 +781,7 @@ impl ListSplitsResponseExt for ListSplitsResponse {
 // Parquet Splits Extension Traits (unified via macros)
 // =====================================================
 
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 
 /// A complete parquet split record from the database.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -945,6 +945,77 @@ macro_rules! impl_list_parquet_splits_response_ext {
 }
 impl_list_parquet_splits_response_ext!(ListMetricsSplitsResponse);
 impl_list_parquet_splits_response_ext!(ListSketchSplitsResponse);
+
+/// Default number of parquet splits to request per paginated metastore call.
+pub const PARQUET_SPLITS_PAGE_SIZE: usize = 500;
+
+/// One page of parquet splits plus pagination state.
+#[derive(Debug)]
+pub struct ParquetSplitsPage {
+    /// Splits in this page.
+    pub splits: Vec<ParquetSplitRecord>,
+    /// Whether another page may exist.
+    pub has_next_page: bool,
+}
+
+/// Lists one parquet splits page and advances `query.after_split_id`.
+pub async fn list_parquet_splits_page(
+    metastore: &MetastoreServiceClient,
+    kind: ParquetSplitKind,
+    query: &mut ListParquetSplitsQuery,
+) -> MetastoreResult<ParquetSplitsPage> {
+    query.limit = Some(PARQUET_SPLITS_PAGE_SIZE);
+    let splits = match kind {
+        ParquetSplitKind::Metrics => {
+            let request = ListMetricsSplitsRequest::try_from_query(query.index_uid.clone(), query)?;
+            let response = metastore.list_metrics_splits(request).await?;
+            response.deserialize_splits()?
+        }
+        ParquetSplitKind::Sketches => {
+            let request = ListSketchSplitsRequest::try_from_query(query.index_uid.clone(), query)?;
+            let response = metastore.list_sketch_splits(request).await?;
+            response.deserialize_splits()?
+        }
+    };
+    let has_full_page = splits.len() == PARQUET_SPLITS_PAGE_SIZE;
+    let last_split_id_opt = splits
+        .last()
+        .map(|split| split.metadata.split_id.to_string());
+    let has_next_page = has_full_page && last_split_id_opt.is_some();
+
+    if let Some(last_split_id) = last_split_id_opt {
+        query.after_split_id = Some(last_split_id);
+    }
+
+    Ok(ParquetSplitsPage {
+        splits,
+        has_next_page,
+    })
+}
+
+/// Lists parquet splits across all pages using `split_id` cursor pagination.
+///
+/// The query's existing filters are preserved. `limit` is overwritten with
+/// `page_size`; `after_split_id` is used as the starting cursor when already
+/// set and is advanced internally after each full page.
+pub async fn list_parquet_splits_paginated(
+    metastore: MetastoreServiceClient,
+    kind: ParquetSplitKind,
+    mut query: ListParquetSplitsQuery,
+) -> MetastoreResult<Vec<ParquetSplitRecord>> {
+    query.limit = Some(PARQUET_SPLITS_PAGE_SIZE);
+    let mut splits = Vec::new();
+
+    loop {
+        let mut page = list_parquet_splits_page(&metastore, kind, &mut query).await?;
+        splits.append(&mut page.splits);
+        if !page.has_next_page {
+            break;
+        }
+    }
+
+    Ok(splits)
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.
