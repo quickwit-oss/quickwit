@@ -402,7 +402,7 @@ quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "46b3fb9", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "6270552", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

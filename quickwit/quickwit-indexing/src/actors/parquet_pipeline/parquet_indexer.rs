@@ -584,7 +584,7 @@ impl Actor for ParquetIndexer {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(10)
+        QueueCapacity::Bounded(5)
     }
 
     fn name(&self) -> String {
@@ -823,6 +823,9 @@ mod tests {
             ram_storage,
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
         universe.spawn_builder().spawn(uploader)
     }
@@ -849,6 +852,9 @@ mod tests {
             ram_storage,
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
         universe.spawn_builder().spawn(uploader)
     }
@@ -1614,6 +1620,9 @@ mod tests {
             ram_storage,
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
 

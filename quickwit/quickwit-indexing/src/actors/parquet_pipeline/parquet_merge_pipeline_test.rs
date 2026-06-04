@@ -43,7 +43,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::merge::policy::{
-    ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+    ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
 };
 use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
@@ -165,6 +165,9 @@ pub(super) fn make_test_split_metadata(
         .sort_fields(table_config.effective_sort_fields())
         .window_start_secs(0)
         .window_duration_secs(900)
+        .maturity(ParquetSplitMaturity::Immature {
+            maturation_period: Duration::from_secs(3600),
+        })
         .add_metric_name(metric_name)
         .build()
 }
@@ -188,6 +191,9 @@ pub(super) fn make_test_sketch_split_metadata(
         .sort_fields(table_config.effective_sort_fields())
         .window_start_secs(0)
         .window_duration_secs(900)
+        .maturity(ParquetSplitMaturity::Immature {
+            maturation_period: Duration::from_secs(3600),
+        })
         .add_metric_name(metric_name)
         .build()
 }
@@ -404,6 +410,7 @@ async fn test_merge_pipeline_end_to_end() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
         target_split_size_bytes: 256 * 1024 * 1024,
@@ -830,6 +837,7 @@ async fn test_merge_pipeline_end_to_end_with_streaming_engine_flag() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         // This is the bit under test: regular merges must route through
         // `execute_merge_operation`, not the in-memory fallback.
