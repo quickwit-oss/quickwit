@@ -39,7 +39,7 @@ use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
-use quickwit_metastore::{ListParquetSplitsQuery, list_parquet_splits_paginated};
+use quickwit_metastore::list_parquet_splits_paginated;
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::MetastoreServiceClient;
