@@ -141,7 +141,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         {
             // Dropping is "safe", but not efficient: the planner re-seeds its split set from the metastore
             // only on respawn, so we may have uncompacted files
-            debug!(%error, "dropping new-splits feedback to merge planner (best-effort)");
+            warn!(%error, "dropping new-splits feedback to merge planner (best-effort)");
         }
 
         if split_ids.is_empty() {
