@@ -139,8 +139,8 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             && let Err(error) =
                 planner_mailbox.try_send_message(super::ParquetNewSplits { new_splits })
         {
-            // Dropping is "safe", but not efficient: the planner re-seeds its split set from the metastore
-            // only on respawn, so we may have uncompacted files
+            // Dropping is "safe", but not efficient: the planner re-seeds its split set from the
+            // metastore only on respawn, so we may have uncompacted files
             warn!(%error, "dropping new-splits feedback to merge planner (best-effort)");
         }
 
