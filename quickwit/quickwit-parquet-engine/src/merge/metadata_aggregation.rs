@@ -27,6 +27,7 @@ use std::time::SystemTime;
 use anyhow::{Result, bail};
 
 use super::MergeOutputFile;
+use crate::merge::policy::ParquetSplitMaturity;
 use crate::split::{ParquetSplitId, ParquetSplitMetadata};
 
 /// Builds complete [`ParquetSplitMetadata`] for a merge output file.
@@ -154,6 +155,7 @@ pub fn merge_parquet_split_metadata(
         low_cardinality_tags: output.low_cardinality_tags.clone(),
         high_cardinality_tag_keys: HashSet::new(),
         created_at: SystemTime::now(),
+        maturity: ParquetSplitMaturity::Mature,
         parquet_file,
         window: first.window.clone(),
         sort_fields: first.sort_fields.clone(),

@@ -66,6 +66,9 @@ impl IndexingService {
         let partition_key = RoutingExpr::new(partition_key_str).map_err(|error| {
             IndexingError::Internal(format!("failed to parse partition_key: {error}"))
         })?;
+        let parquet_merge_policy = crate::merge_policy::parquet_merge_policy_from_settings(
+            &index_config.indexing_settings,
+        );
 
         // Spawn the Parquet merge pipeline (or reuse an existing one for this
         // index). The planner mailbox is wired into the MetricsPipeline's
@@ -97,6 +100,7 @@ impl IndexingService {
             use_sketch_processors,
             partition_key,
             max_num_partitions: index_config.doc_mapping.max_num_partitions,
+            parquet_merge_policy,
             parquet_merge_planner_mailbox_opt: Some(merge_planner_mailbox),
         };
         let pipeline = MetricsPipeline::new(pipeline_params);

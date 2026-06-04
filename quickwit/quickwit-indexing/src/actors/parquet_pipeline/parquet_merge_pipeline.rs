@@ -39,12 +39,13 @@ use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
-use quickwit_metastore::{ListParquetSplitsQuery, list_parquet_splits_paginated};
+use quickwit_metastore::list_parquet_splits_paginated;
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
+use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
@@ -75,7 +76,8 @@ async fn fetch_published_parquet_splits_paginated(
     } else {
         ParquetSplitKind::Metrics
     };
-    let query = ListParquetSplitsQuery::for_index(index_uid.clone());
+    let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone())
+        .retain_immature(OffsetDateTime::now_utc());
     let records = list_parquet_splits_paginated(metastore, kind, query).await?;
     debug!(
         num_splits = records.len(),
@@ -323,6 +325,7 @@ impl ParquetMergePipeline {
             self.params.storage.clone(),
             sequencer_mailbox,
             self.params.max_concurrent_split_uploads,
+            self.params.merge_policy.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handle) = ctx
             .spawn_actor()
@@ -441,15 +444,16 @@ impl ParquetMergePipeline {
         Ok(())
     }
 
-    /// Fetch published Parquet splits from the metastore for merge planning.
+    /// Fetch immature published Parquet splits from the metastore for merge planning.
     ///
     /// On first spawn, uses the initial splits provided by the IndexingService
     /// (avoids per-pipeline metastore queries when many pipelines start).
     /// On subsequent spawns (after crash/respawn), queries the metastore
     /// directly to recover splits that were in-flight during the crash.
     ///
-    /// The planner's `record_splits_if_necessary` filters out mature splits,
-    /// so we don't need to filter here.
+    /// The planner re-checks maturity before recording splits, so this DB-side
+    /// filter is an optimization and crash-recovery guard, not the only line of
+    /// defense.
     async fn fetch_immature_splits(
         &mut self,
         ctx: &ActorContext<Self>,
@@ -649,7 +653,7 @@ mod tests {
         ParquetSplitRecord, SplitState,
     };
     use quickwit_parquet_engine::merge::policy::{
-        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
     };
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
@@ -702,6 +706,9 @@ mod tests {
             .sort_fields("metric_name|host|timestamp_secs/V2")
             .window_start_secs(0)
             .window_duration_secs(3600)
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            })
             .build()
     }
 

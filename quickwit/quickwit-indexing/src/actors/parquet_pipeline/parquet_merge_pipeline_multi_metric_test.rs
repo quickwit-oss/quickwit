@@ -57,7 +57,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::merge::policy::{
-    ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+    ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
 };
 use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
@@ -126,6 +126,9 @@ fn make_multi_metric_split_metadata(
         .sort_fields(table_config.effective_sort_fields())
         .window_start_secs(0)
         .window_duration_secs(900)
+        .maturity(ParquetSplitMaturity::Immature {
+            maturation_period: Duration::from_secs(3600),
+        })
         .rg_partition_prefix_len(prefix_len);
     for metric in metric_names {
         builder = builder.add_metric_name(*metric);

@@ -177,6 +177,9 @@ async fn test_metrics_pipeline_e2e() {
         ram_storage,
         sequencer_mailbox,
         4,
+        crate::merge_policy::parquet_merge_policy_from_settings(
+            &quickwit_config::IndexingSettings::default(),
+        ),
     );
     let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);
 
@@ -525,6 +528,9 @@ async fn test_sketch_pipeline_e2e() {
         ram_storage.clone(),
         sequencer_mailbox,
         4,
+        crate::merge_policy::parquet_merge_policy_from_settings(
+            &quickwit_config::IndexingSettings::default(),
+        ),
     );
     let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);
 
