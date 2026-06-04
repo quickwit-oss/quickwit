@@ -470,6 +470,7 @@ fn make_pipeline_params(
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config,
         use_streaming_engine,
         target_split_size_bytes,
