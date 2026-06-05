@@ -18,6 +18,7 @@ use std::sync::Arc;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_query::cloudprem::apply_trace_id_rewrite;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -248,6 +249,14 @@ pub fn search_request_from_api_request(
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    let query_ast = if index_id_patterns.iter().any(|p| p == "datadog-spans") {
+        match query_ast.clone().parse_user_query(&[]) {
+            Ok(parsed) => apply_trace_id_rewrite(parsed),
+            Err(_) => query_ast,
+        }
+    } else {
+        query_ast
+    };
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::search::SearchRequest {
         index_id_patterns,

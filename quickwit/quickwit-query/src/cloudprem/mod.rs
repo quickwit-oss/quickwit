@@ -1,11 +1,13 @@
 mod aggregation;
 mod query;
+mod trace_id_rewriter;
 
 pub use aggregation::{
     intermediate_aggregation_result_to_proto, sanitize_metric_id_aggregations,
     to_tantivy_aggregation,
 };
 pub use query::{parse_query, to_quickwit_query};
+pub use trace_id_rewriter::{TraceIdQueryRewriter, apply_trace_id_rewrite, rewrite_trace_id_value};
 
 use crate::InvalidQuery;
 

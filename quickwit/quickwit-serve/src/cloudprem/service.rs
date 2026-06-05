@@ -51,7 +51,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
-use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
+use quickwit_query::cloudprem::{apply_trace_id_rewrite, sanitize_metric_id_aggregations};
 use quickwit_query::query_ast::{
     BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
 };
@@ -321,6 +321,7 @@ impl CloudPremService for CloudPremServiceImpl {
 
         debug!("received ast: {query_evp_ast:?}");
         let query_ast = quickwit_query::cloudprem::to_quickwit_query(query_evp_ast)?;
+        let query_ast = apply_trace_id_rewrite(query_ast);
         debug!("converted ast: {query_ast:?}");
 
         let count_hits = if request.should_compute_count {
