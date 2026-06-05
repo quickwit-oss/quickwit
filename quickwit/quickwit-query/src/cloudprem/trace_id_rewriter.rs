@@ -23,19 +23,17 @@
 
 use std::convert::Infallible;
 
-use quickwit_query::query_ast::{
-    BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery,
-};
+use crate::query_ast::{BoolQuery, FullTextQuery, QueryAst, QueryAstTransformer, TermQuery};
 
 /// Applies `TraceIdQueryRewriter` to `query_ast` and returns the rewritten AST.
-pub(crate) fn apply_trace_id_rewrite(query_ast: QueryAst) -> QueryAst {
+pub fn apply_trace_id_rewrite(query_ast: QueryAst) -> QueryAst {
     let Ok(Some(rewritten)) = TraceIdQueryRewriter.transform(query_ast) else {
         unreachable!("TraceIdQueryRewriter never returns None or Err at the top level")
     };
     rewritten
 }
 
-pub(crate) struct TraceIdQueryRewriter;
+pub struct TraceIdQueryRewriter;
 
 impl QueryAstTransformer for TraceIdQueryRewriter {
     type Err = Infallible;
@@ -76,7 +74,7 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
 /// | 64-bit decimal (fits u64) | decimal as-is | same decimal |
 /// | ≤ 16-char hex | hex as-is | decimal equivalent |
 /// | > 32 chars non-decimal, invalid hex | pass through (returns `None`) | — |
-pub(crate) fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
+pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
     let make_or = |trace_id_val: &str, trace_id_low_val: &str| -> QueryAst {
         BoolQuery {
             should: vec![

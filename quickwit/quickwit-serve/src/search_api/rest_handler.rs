@@ -27,7 +27,7 @@ use warp::{Filter, Rejection};
 
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
-use crate::trace_id_rewriter::apply_trace_id_rewrite;
+use quickwit_query::cloudprem::apply_trace_id_rewrite;
 use crate::{BodyFormat, with_arg};
 
 #[derive(utoipa::OpenApi)]

@@ -62,7 +62,7 @@ use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 
 use crate::developer_api::DeveloperApiServer;
-use crate::trace_id_rewriter::apply_trace_id_rewrite;
+use quickwit_query::cloudprem::apply_trace_id_rewrite;
 
 pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
 
