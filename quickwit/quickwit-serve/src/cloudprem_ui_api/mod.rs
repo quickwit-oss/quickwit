@@ -21,6 +21,7 @@ use std::sync::Arc;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_query::JsonLiteral;
 use quickwit_query::aggregations::AggregationResults;
+use quickwit_query::cloudprem::TraceIdQueryRewriter;
 use quickwit_query::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstTransformer,
     RangeQuery, RegexQuery, TermQuery, WildcardQuery, query_ast_from_user_text,
@@ -30,7 +31,6 @@ use warp::reject::Rejection;
 use warp::{Filter, Reply};
 
 use crate::rest::recover_fn;
-use quickwit_query::cloudprem::TraceIdQueryRewriter;
 
 mod aggregate;
 mod facet_info;

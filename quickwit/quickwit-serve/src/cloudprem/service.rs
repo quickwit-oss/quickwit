@@ -51,7 +51,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
-use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
+use quickwit_query::cloudprem::{apply_trace_id_rewrite, sanitize_metric_id_aggregations};
 use quickwit_query::query_ast::{
     BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
 };
@@ -62,7 +62,6 @@ use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 
 use crate::developer_api::DeveloperApiServer;
-use quickwit_query::cloudprem::apply_trace_id_rewrite;
 
 pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
 

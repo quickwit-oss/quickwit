@@ -18,6 +18,7 @@ use std::sync::Arc;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_query::cloudprem::apply_trace_id_rewrite;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -28,7 +29,6 @@ use warp::{Filter, Rejection};
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{BodyFormat, with_arg};
-use quickwit_query::cloudprem::apply_trace_id_rewrite;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -120,18 +120,14 @@ impl From<String> for SortBy {
 }
 
 pub fn sort_by_mini_dsl<'de, D>(deserializer: D) -> Result<SortBy, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let sort_by_mini_dsl = String::deserialize(deserializer)?;
     Ok(SortBy::from(sort_by_mini_dsl))
 }
 
 impl Serialize for SortBy {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         let mut sort_by_mini_dsl = String::new();
 
         for sort_field in &self.sort_fields {
@@ -222,9 +218,7 @@ mod count_hits_from_bool {
     use serde::{self, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(count_hits: &CountHits, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         if count_hits == &CountHits::Underestimate {
             serializer.serialize_bool(false)
         } else {
@@ -233,9 +227,7 @@ mod count_hits_from_bool {
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<CountHits, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let count_all = Option::<bool>::deserialize(deserializer)?.unwrap_or(true);
         Ok(if count_all {
             CountHits::CountAll
