@@ -63,32 +63,29 @@ impl QueryAstTransformer for TraceIdQueryRewriter {
 /// Rewrites a `trace_id` equality value into a `BoolQuery` covering all stored
 /// formats, or returns `None` to pass through unchanged.
 ///
-/// All cases produce a 2-way OR: a direct `trace_id` match plus a
-/// `trace_id_low` exact match (the lower-64 decimal, always populated at
-/// ingest regardless of how `trace_id` itself is stored).
+/// Logs now store 128-bit trace IDs as 32-char hex (matching spans), so the
+/// primary clause is always `trace_id = hex`. Backward-compat clauses cover
+/// logs ingested before that change (stored as raw decimal strings) and spans
+/// (via `trace_id_low`).
 ///
-/// | Input | `trace_id` clause | `trace_id_low` clause |
-/// |---|---|---|
-/// | 32-char lowercase hex | hex as-is | decimal of lower 64 |
-/// | 128-bit decimal (> u64::MAX, ≤ 39 digits) | converted to 32-char hex | decimal of lower 64 |
-/// | 64-bit decimal (fits u64) | decimal as-is | same decimal |
-/// | ≤ 16-char hex | hex as-is | decimal equivalent |
-/// | > 32 chars non-decimal, invalid hex | pass through (returns `None`) | — |
+/// | Input | Clauses produced |
+/// |---|---|
+/// | 32-char hex | `trace_id=hex`, `trace_id=decimal(lower_64)` (old logs), `trace_id_low=decimal` (spans) |
+/// | 128-bit decimal | `trace_id=hex32`, `trace_id=original_decimal` (old logs), `trace_id_low=lower_decimal` (spans) |
+/// | 64-bit decimal | `trace_id=decimal`, `trace_id_low=decimal` |
+/// | ≤ 16-char hex | `trace_id=hex`, `trace_id=decimal(n)` (old logs), `trace_id_low=decimal(n)` (spans) |
+/// | > 32 non-decimal, invalid hex | pass through (`None`) |
 pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
-    let make_or = |trace_id_val: &str, trace_id_low_val: &str| -> QueryAst {
+    let term = |field: &str, val: &str| -> QueryAst {
+        TermQuery {
+            field: field.to_string(),
+            value: val.to_string(),
+        }
+        .into()
+    };
+    let bool_should = |should: Vec<QueryAst>| -> QueryAst {
         BoolQuery {
-            should: vec![
-                TermQuery {
-                    field: "trace_id".to_string(),
-                    value: trace_id_val.to_string(),
-                }
-                .into(),
-                TermQuery {
-                    field: "trace_id_low".to_string(),
-                    value: trace_id_low_val.to_string(),
-                }
-                .into(),
-            ],
+            should,
             minimum_should_match: Some(1),
             must: Vec::new(),
             must_not: Vec::new(),
@@ -105,16 +102,24 @@ pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
             return None; // Too large for u128.
         }
         if let Ok(n) = value.parse::<u64>() {
-            // 64-bit decimal: decimal is both the trace_id value (fallback storage)
-            // and the trace_id_low value.
+            // 64-bit decimal: no conversion needed; covers both decimal-stored
+            // logs and 64-bit fallback spans.
             let decimal = n.to_string();
-            return Some(make_or(&decimal, &decimal));
+            return Some(bool_should(vec![
+                term("trace_id", &decimal),
+                term("trace_id_low", &decimal),
+            ]));
         }
         if let Ok(n) = value.parse::<u128>() {
-            // 128-bit decimal: convert to the 32-char hex form stored by ingest.
+            // 128-bit decimal: ingest now normalises these to 32-char hex, but
+            // old logs stored the raw decimal string — include both forms.
             let hex32 = format!("{n:032x}");
             let lower_decimal = (n as u64).to_string();
-            return Some(make_or(&hex32, &lower_decimal));
+            return Some(bool_should(vec![
+                term("trace_id", &hex32),    // new logs (hex) + spans
+                term("trace_id", value),     // old logs (raw 128-bit decimal)
+                term("trace_id_low", &lower_decimal), // spans
+            ]));
         }
         return None; // Overflows u128.
     }
@@ -125,16 +130,26 @@ pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
             u64::from_str_radix(&value[..16], 16),
             u64::from_str_radix(&value[16..], 16),
         ) {
-            return Some(make_or(value, &lower.to_string()));
+            let lower_decimal = lower.to_string();
+            return Some(bool_should(vec![
+                term("trace_id", value),             // new logs (hex) + spans
+                term("trace_id", &lower_decimal),    // old logs (64-bit decimal)
+                term("trace_id_low", &lower_decimal), // spans
+            ]));
         }
         return None; // Invalid hex.
     }
 
-    // ≤ 16-char hex: convert to lower-64 decimal for the trace_id_low match.
+    // ≤ 16-char hex: convert to decimal for trace_id_low (spans) and old logs.
     if value.len() <= 16
         && let Ok(n) = u64::from_str_radix(value, 16)
     {
-        return Some(make_or(value, &n.to_string()));
+        let decimal = n.to_string();
+        return Some(bool_should(vec![
+            term("trace_id", value),       // direct hex match (future-proof)
+            term("trace_id", &decimal),    // old logs (64-bit decimal)
+            term("trace_id_low", &decimal), // spans
+        ]));
     }
 
     None // Unrecognised format; pass through.

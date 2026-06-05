@@ -36,6 +36,22 @@ pub enum CoreStringAttr {
     Host,
 }
 
+/// Normalises a `trace_id` string for index storage.
+///
+/// A 128-bit trace ID supplied as a decimal (all ASCII digits, value > u64::MAX)
+/// is converted to 32-char lowercase hex, matching the format spans use. 64-bit
+/// decimals and any non-digit strings are stored as-is.
+fn normalize_trace_id(s: &str) -> String {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(n) = s.parse::<u128>() {
+            if n > u64::MAX as u128 {
+                return format!("{n:032x}");
+            }
+        }
+    }
+    s.to_string()
+}
+
 impl PipelineStep for CoreStringAttrRemapStep {
     fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
         for from_path in &self.sources {
@@ -52,7 +68,7 @@ impl PipelineStep for CoreStringAttrRemapStep {
                             value.service = from_val.to_string().into();
                         }
                         CoreStringAttr::TraceId => {
-                            value.trace_id = Some(from_val.to_string());
+                            value.trace_id = Some(normalize_trace_id(from_val));
                         }
                         CoreStringAttr::SpanId => {
                             value.span_id = Some(from_val.to_string());
@@ -176,6 +192,68 @@ mod tests {
         );
         assert_eq!(log.message, "bar_value");
     }
+    #[test]
+    fn test_normalize_trace_id_128bit_decimal_to_hex() {
+        // 128-bit decimal (> u64::MAX) is normalised to 32-char lowercase hex.
+        // 184635789406270697830463680821029800615 == 0x8ae78f3f79c2d0540c39b8f0d87c8aa7
+        assert_eq!(
+            normalize_trace_id("184635789406270697830463680821029800615"),
+            "8ae78f3f79c2d0540c39b8f0d87c8aa7",
+        );
+    }
+
+    #[test]
+    fn test_normalize_trace_id_64bit_decimal_unchanged() {
+        // 64-bit decimal stays as-is (matches span fallback storage).
+        assert_eq!(normalize_trace_id("880938546691345063"), "880938546691345063");
+    }
+
+    #[test]
+    fn test_normalize_trace_id_hex_unchanged() {
+        // Already-hex strings pass through unchanged.
+        assert_eq!(
+            normalize_trace_id("8ae78f3f79c2d0540c39b8f0d87c8aa7"),
+            "8ae78f3f79c2d0540c39b8f0d87c8aa7",
+        );
+    }
+
+    #[test]
+    fn test_normalize_trace_id_non_digit_unchanged() {
+        // Non-digit strings pass through unchanged.
+        assert_eq!(normalize_trace_id("not-a-number"), "not-a-number");
+    }
+
+    #[test]
+    fn test_core_string_attr_remap_step_trace_id_128bit_normalised() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        log.custom.insert(
+            "dd.trace_id".to_string(),
+            serde_json::json!("184635789406270697830463680821029800615"),
+        );
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["dd.trace_id".into()],
+            core_attr: CoreStringAttr::TraceId,
+        };
+        step.apply(&mut log).unwrap();
+        assert_eq!(
+            log.trace_id.as_deref(),
+            Some("8ae78f3f79c2d0540c39b8f0d87c8aa7"),
+        );
+    }
+
+    #[test]
+    fn test_core_string_attr_remap_step_trace_id_64bit_unchanged() {
+        let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
+        log.custom
+            .insert("trace_id".to_string(), serde_json::json!("880938546691345063"));
+        let step = CoreStringAttrRemapStep {
+            sources: vec!["trace_id".into()],
+            core_attr: CoreStringAttr::TraceId,
+        };
+        step.apply(&mut log).unwrap();
+        assert_eq!(log.trace_id.as_deref(), Some("880938546691345063"));
+    }
+
     #[test]
     fn test_core_string_attr_remap_step_message_no_deletion_json() {
         let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
