@@ -409,10 +409,10 @@ async fn actor_loop<A: Actor>(
         | ActorExitStatus::Quit
         | ActorExitStatus::DownstreamClosed
         | ActorExitStatus::Killed => {
-            info!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
+            info!(actor_id, phase = ?exit_phase, exit_status = %after_process_exit_status, "actor-exit");
         }
         ActorExitStatus::Failure(_) | ActorExitStatus::Panicked => {
-            error!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
+            error!(actor_id, phase = ?exit_phase, exit_status = %after_process_exit_status, "actor-exit");
         }
     };
 

@@ -65,7 +65,7 @@ pub enum ActorExitStatus {
     Killed,
 
     /// An unexpected error happened while processing a message.
-    #[error("failure(cause={0:?})")]
+    #[error("failure(cause={0:#})")]
     Failure(Arc<anyhow::Error>),
 
     /// The thread or the task executing the actor loop panicked.
