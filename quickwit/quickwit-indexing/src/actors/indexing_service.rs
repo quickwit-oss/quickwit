@@ -403,7 +403,10 @@ impl IndexingService {
         let index_metadata_response = self
             .metastore
             .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(%error, index_id, "failed to fetch index metadata from the metastore");
+            })?;
         let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         Ok(index_metadata)
     }
@@ -430,7 +433,10 @@ impl IndexingService {
         let indexes_metadata_response = self
             .metastore
             .indexes_metadata(indexes_metadata_request)
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(%error, "failed to fetch indexes metadata from the metastore");
+            })?;
         let indexes_metadata = indexes_metadata_response
             .deserialize_indexes_metadata()
             .await?;
@@ -469,7 +475,10 @@ impl IndexingService {
 
         let mut immature_splits_stream = ctx
             .protect_future(self.metastore.list_splits(list_splits_request))
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(%error, "failed to list immature splits from the metastore");
+            })?;
 
         let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
             indexing_pipeline_ids
@@ -479,7 +488,14 @@ impl IndexingService {
 
         let mut num_immature_splits = 0usize;
 
-        while let Some(list_splits_response) = immature_splits_stream.try_next().await? {
+        while let Some(list_splits_response) =
+            immature_splits_stream
+                .try_next()
+                .await
+                .inspect_err(|error| {
+                    error!(%error, "failed to fetch a batch of immature splits from the metastore");
+                })?
+        {
             for split_metadata in list_splits_response.deserialize_splits_metadata().await? {
                 num_immature_splits += 1;
 
@@ -848,7 +864,10 @@ impl IndexingService {
         let indexes_metadata = self
             .metastore
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
-            .await?
+            .await
+            .inspect_err(|error| {
+                error!(%error, "failed to list indexes metadata from the metastore");
+            })?
             .deserialize_indexes_metadata()
             .await?;
         let index_ids: HashSet<String> = indexes_metadata

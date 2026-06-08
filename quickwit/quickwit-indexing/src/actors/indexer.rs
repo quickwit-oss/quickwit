@@ -47,7 +47,7 @@ use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
-use tracing::{Span, info, info_span, warn};
+use tracing::{Span, error, info, info_span, warn};
 use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
@@ -212,7 +212,14 @@ impl IndexerState {
                     .clone()
                     .last_delete_opstamp(last_delete_opstamp_request),
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_uid=%self.pipeline_id.index_uid,
+                    "failed to fetch last delete opstamp from the metastore"
+                );
+            })?;
         let last_delete_opstamp = last_delete_opstamp_response.last_delete_opstamp;
 
         let checkpoint_delta = IndexCheckpointDelta {

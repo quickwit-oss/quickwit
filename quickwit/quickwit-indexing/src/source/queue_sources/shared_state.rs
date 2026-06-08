@@ -135,7 +135,15 @@ impl QueueSharedState {
             .open_shards(OpenShardsRequest {
                 subrequests: open_shard_subrequests,
             })
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_uid=%self.source_uid.index_uid,
+                    source_id=%self.source_uid.source_id,
+                    "failed to open shards on the metastore"
+                );
+            })?;
 
         let mut shards = Vec::new();
         let mut re_acquired_shards = Vec::new();
@@ -172,7 +180,15 @@ impl QueueSharedState {
                 shard_ids: re_acquired_shards,
                 publish_token: publish_token.to_string(),
             })
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_uid=%self.source_uid.index_uid,
+                    source_id=%self.source_uid.source_id,
+                    "failed to re-acquire shards on the metastore"
+                );
+            })?;
         for shard in acquire_shard_resp.acquired_shards {
             let partition_id = PartitionId::from(shard.shard_id().as_str());
             let position = shard.publish_position_inclusive.unwrap_or_default();

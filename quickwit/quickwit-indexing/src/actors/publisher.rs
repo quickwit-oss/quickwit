@@ -174,6 +174,9 @@ impl Handler<SplitsUpdate> for Publisher {
             };
             ctx.protect_future(self.metastore.publish_splits(publish_splits_request))
                 .await
+                .inspect_err(|error| {
+                    error!(%error, staged_split_ids=?split_ids, "failed to publish splits to the metastore");
+                })
                 .context("failed to publish splits")?;
         } else {
             // TODO: Remove the junk right away?

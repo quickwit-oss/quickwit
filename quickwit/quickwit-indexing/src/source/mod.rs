@@ -186,7 +186,19 @@ impl SourceRuntime {
     pub async fn fetch_checkpoint(&self) -> MetastoreResult<SourceCheckpoint> {
         let index_uid = self.index_uid().clone();
         let request = IndexMetadataRequest::for_index_uid(index_uid);
-        let response = self.metastore.clone().index_metadata(request).await?;
+        let response = self
+            .metastore
+            .clone()
+            .index_metadata(request)
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_uid=%self.index_uid(),
+                    source_id=%self.source_id(),
+                    "failed to fetch index metadata from the metastore"
+                );
+            })?;
         let index_metadata = response.deserialize_index_metadata()?;
 
         if let Some(checkpoint) = index_metadata

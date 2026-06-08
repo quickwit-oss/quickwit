@@ -33,7 +33,7 @@ use quickwit_storage::StorageResolver;
 use tantivy::Inventory;
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::actors::{
     MergeExecutor, MergePermit, MergeSplitDownloader, Packager, Publisher, PublisherType, Uploader,
@@ -112,8 +112,18 @@ async fn fetch_splits_and_plan(
         .with_split_state(SplitState::Published)
         .retain_mature(now - MATURITY_BUFFER);
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
-    let splits_stream = metastore.list_splits(list_splits_request).await?;
-    let splits = splits_stream.collect_splits_metadata().await?;
+    let splits_stream = metastore
+        .list_splits(list_splits_request)
+        .await
+        .inspect_err(|error| {
+            error!(%error, index_uid=%index_metadata.index_uid, "failed to list splits from the metastore");
+        })?;
+    let splits = splits_stream
+        .collect_splits_metadata()
+        .await
+        .inspect_err(|error| {
+            error!(%error, index_uid=%index_metadata.index_uid, "failed to collect splits metadata from the metastore");
+        })?;
 
     if splits.iter().any(|s| !s.tags.is_empty()) {
         // with tags and doc mapping evolutions, we might have weird edge cases
@@ -487,6 +497,9 @@ pub async fn merge_mature_all_indexes(
             index_id_patterns: config.index_id_patterns.clone(),
         })
         .await
+        .inspect_err(|error| {
+            error!(%error, "failed to list indexes metadata from the metastore");
+        })
         .context("failed to list indexes")?
         .deserialize_indexes_metadata()
         .await
