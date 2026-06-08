@@ -116,8 +116,8 @@ pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
             let hex32 = format!("{n:032x}");
             let lower_decimal = (n as u64).to_string();
             return Some(bool_should(vec![
-                term("trace_id", &hex32),    // new logs (hex) + spans
-                term("trace_id", value),     // old logs (raw 128-bit decimal)
+                term("trace_id", &hex32),             // new logs (hex) + spans
+                term("trace_id", value),              // old logs (raw 128-bit decimal)
                 term("trace_id_low", &lower_decimal), // spans
             ]));
         }
@@ -132,8 +132,8 @@ pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
         ) {
             let lower_decimal = lower.to_string();
             return Some(bool_should(vec![
-                term("trace_id", value),             // new logs (hex) + spans
-                term("trace_id", &lower_decimal),    // old logs (64-bit decimal)
+                term("trace_id", value),              // new logs (hex) + spans
+                term("trace_id", &lower_decimal),     // old logs (64-bit decimal)
                 term("trace_id_low", &lower_decimal), // spans
             ]));
         }
@@ -146,8 +146,8 @@ pub fn rewrite_trace_id_value(value: &str) -> Option<QueryAst> {
     {
         let decimal = n.to_string();
         return Some(bool_should(vec![
-            term("trace_id", value),       // direct hex match (future-proof)
-            term("trace_id", &decimal),    // old logs (64-bit decimal)
+            term("trace_id", value),        // direct hex match (future-proof)
+            term("trace_id", &decimal),     // old logs (64-bit decimal)
             term("trace_id_low", &decimal), // spans
         ]));
     }

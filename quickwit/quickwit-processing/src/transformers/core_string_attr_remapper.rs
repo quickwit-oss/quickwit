@@ -42,12 +42,12 @@ pub enum CoreStringAttr {
 /// is converted to 32-char lowercase hex, matching the format spans use. 64-bit
 /// decimals and any non-digit strings are stored as-is.
 fn normalize_trace_id(s: &str) -> String {
-    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
-        if let Ok(n) = s.parse::<u128>() {
-            if n > u64::MAX as u128 {
-                return format!("{n:032x}");
-            }
-        }
+    if !s.is_empty()
+        && s.bytes().all(|b| b.is_ascii_digit())
+        && let Ok(n) = s.parse::<u128>()
+        && n > u64::MAX as u128
+    {
+        return format!("{n:032x}");
     }
     s.to_string()
 }
@@ -205,7 +205,10 @@ mod tests {
     #[test]
     fn test_normalize_trace_id_64bit_decimal_unchanged() {
         // 64-bit decimal stays as-is (matches span fallback storage).
-        assert_eq!(normalize_trace_id("880938546691345063"), "880938546691345063");
+        assert_eq!(
+            normalize_trace_id("880938546691345063"),
+            "880938546691345063"
+        );
     }
 
     #[test]
@@ -244,8 +247,10 @@ mod tests {
     #[test]
     fn test_core_string_attr_remap_step_trace_id_64bit_unchanged() {
         let mut log = ProcessedLog::from_datadog_log_msg(make_datadog_log_msg());
-        log.custom
-            .insert("trace_id".to_string(), serde_json::json!("880938546691345063"));
+        log.custom.insert(
+            "trace_id".to_string(),
+            serde_json::json!("880938546691345063"),
+        );
         let step = CoreStringAttrRemapStep {
             sources: vec!["trace_id".into()],
             core_attr: CoreStringAttr::TraceId,

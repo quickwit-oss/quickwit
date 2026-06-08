@@ -276,7 +276,8 @@ mod tests {
     #[tokio::test]
     async fn test_trace_id_rewrite_32char_hex() {
         // 32-char hex: 3-way OR — hex (new logs/spans), lower-64 decimal (old logs),
-        // trace_id_low (spans). Lower 64 of "69668a9f0000000024952c60529c35bb" = 2636061949109745083
+        // trace_id_low (spans). Lower 64 of "69668a9f0000000024952c60529c35bb" =
+        // 2636061949109745083
         let query_ast = try_into_query_ast(
             "trace_id:69668a9f0000000024952c60529c35bb",
             Some(1759325269270),
