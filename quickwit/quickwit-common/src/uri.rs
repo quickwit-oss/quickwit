@@ -89,6 +89,9 @@ impl FromStr for Protocol {
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
             "gs" => Ok(Protocol::Google),
+            // `s3+<name>://...` for a named S3-compatible backend configured under
+            // `storage.s3.named.<name>`. Routes to the same factory as `s3://`.
+            s if s.starts_with("s3+") && s.len() > 3 => Ok(Protocol::S3),
             _ => bail!("unknown URI protocol `{protocol}`"),
         }
     }
@@ -262,9 +265,13 @@ impl Uri {
         if uri_str.is_empty() {
             bail!("failed to parse empty URI");
         }
-        let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
-            None => (Protocol::File, uri_str.to_string()),
-            Some((protocol, path)) => (Protocol::from_str(protocol)?, path.to_string()),
+        let (scheme_opt, protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
+            None => (None, Protocol::File, uri_str.to_string()),
+            Some((scheme, path)) => (
+                Some(scheme.to_string()),
+                Protocol::from_str(scheme)?,
+                path.to_string(),
+            ),
         };
         if protocol == Protocol::File {
             if path.starts_with('~') {
@@ -292,8 +299,14 @@ impl Uri {
                 .to_string_lossy()
                 .to_string();
         }
+        // Preserve `s3+<name>` qualifier so the storage resolver can route to
+        // the named backend; other schemes normalize to canonical form.
+        let display_scheme: &str = match scheme_opt.as_deref() {
+            Some(s) if s.starts_with("s3+") => s,
+            _ => protocol.as_str(),
+        };
         Ok(Self {
-            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{path}"),
+            uri: format!("{display_scheme}{PROTOCOL_SEPARATOR}{path}"),
             protocol,
         })
     }
@@ -811,5 +824,25 @@ mod tests {
             serde_json::to_value(uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())
         );
+    }
+
+    #[test]
+    fn test_uri_s3_named_preserved() {
+        // The `s3+<name>` qualifier is the routing token for named S3-compatible
+        // backends (`storage.s3.named.<name>`). It must survive parse + serialize
+        // so the storage resolver can recover the backend name on deserialization;
+        // before this guarantee, the qualifier was stripped by URI normalization
+        // and every `s3+<name>://` URI silently resolved to the primary endpoint.
+        let uri = Uri::from_str("s3+alt://bucket/key").unwrap();
+        assert_eq!(uri.protocol(), Protocol::S3);
+        assert_eq!(uri.as_str(), "s3+alt://bucket/key");
+        let json = serde_json::to_value(&uri).unwrap();
+        assert_eq!(
+            json,
+            serde_json::Value::String("s3+alt://bucket/key".to_string())
+        );
+        let round_trip: Uri = serde_json::from_value(json).unwrap();
+        assert_eq!(round_trip.as_str(), "s3+alt://bucket/key");
+        assert_eq!(round_trip.protocol(), Protocol::S3);
     }
 }

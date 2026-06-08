@@ -15,6 +15,7 @@ Quickwit currently supports four types of storage providers:
 
 Storage URIs refer to different storage providers identified by a URI "protocol" or "scheme". Quickwit supports the following storage URI protocols:
 - `s3://` for Amazon S3 and S3-compatible
+- `s3+<name>://` for additional S3-compatible backends configured under `storage.s3.named.<name>` (see [Named S3 backends](#named-s3-backends))
 - `azure://` for Azure Blob Storage
 - `file://` for local file systems
 - `gs://` for Google Cloud Storage
@@ -102,6 +103,40 @@ storage:
     flavor: gcs
     region: us-east1
     endpoint: https://storage.googleapis.com
+```
+
+#### Named S3 backends
+
+In addition to the primary `s3:` block, you can declare any number of additional S3-compatible backends under `storage.s3.named.<name>`. Each entry is an independent endpoint with its own credentials, region, and flags. Indexes route to a named backend via the URI scheme `s3+<name>://bucket/path` (plain `s3://` continues to use the primary endpoint).
+
+Each named entry accepts the same fields as the primary `s3:` block, *except* `named` itself (no recursion). If `access_key_id` / `secret_access_key` are omitted on a named entry, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
+
+```yaml
+storage:
+  s3:
+    # Primary backend — addressed by plain `s3://...` URIs.
+    endpoint: https://s3.us-east-1.amazonaws.com
+    region: us-east-1
+    named:
+      # Addressed by `s3+secondary://bucket/path` URIs.
+      secondary:
+        endpoint: https://s3.eu-west-3.amazonaws.com
+        region: eu-west-3
+        access_key_id: ${SECONDARY_S3_ACCESS_KEY_ID}
+        secret_access_key: ${SECONDARY_S3_SECRET_ACCESS_KEY}
+      # Addressed by `s3+seaweed://bucket/path` URIs. Falls back to the
+      # global AWS SDK credentials when keys are omitted.
+      seaweed:
+        endpoint: http://seaweedfs-s3:8333
+        region: us-east-1
+        force_path_style_access: true
+```
+
+An index pointed at a named backend declares its URI accordingly:
+
+```yaml
+index_id: logs-eu
+index_uri: s3+secondary://logs-bucket/logs-eu
 ```
 
 ### Azure storage configuration

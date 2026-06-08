@@ -12,18 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell};
 
 use super::s3_compatible_storage::create_s3_client;
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
 };
+
+/// Extracts the named-backend key out of an `s3+<name>://...` URI, if any.
+/// Returns `None` for plain `s3://...`.
+fn parse_named_key(uri: &Uri) -> Option<&str> {
+    let scheme_end = uri.as_str().find("://")?;
+    let scheme = &uri.as_str()[..scheme_end];
+    scheme.strip_prefix("s3+")
+}
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
@@ -34,6 +43,8 @@ pub struct S3CompatibleObjectStorageFactory {
     // end up being used, or if something like azure, gcs, or even local files, will be used
     // instead.
     s3_client: OnceCell<S3Client>,
+    // One cached S3Client per named backend. Built lazily on first use.
+    named_s3_clients: Mutex<HashMap<String, S3Client>>,
 }
 
 impl S3CompatibleObjectStorageFactory {
@@ -42,6 +53,7 @@ impl S3CompatibleObjectStorageFactory {
         Self {
             storage_config,
             s3_client: OnceCell::new(),
+            named_s3_clients: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -53,6 +65,30 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        if let Some(name) = parse_named_key(uri) {
+            let named_config = self
+                .storage_config
+                .named
+                .get(name)
+                .ok_or_else(|| {
+                    StorageResolverError::InvalidUri(format!(
+                        "no `storage.s3.named.{name}` entry configured for URI `{uri}`"
+                    ))
+                })?
+                .as_s3_config();
+            let mut clients = self.named_s3_clients.lock().await;
+            let client = if let Some(client) = clients.get(name) {
+                client.clone()
+            } else {
+                let client = create_s3_client(&named_config).await;
+                clients.insert(name.to_string(), client.clone());
+                client
+            };
+            drop(clients);
+            let storage =
+                S3CompatibleObjectStorage::from_uri_and_client(&named_config, uri, client).await?;
+            return Ok(Arc::new(DebouncedStorage::new(storage)));
+        }
         let s3_client = self
             .s3_client
             .get_or_init(|| create_s3_client(&self.storage_config))
@@ -62,5 +98,25 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_named_key() {
+        // Plain s3:// URIs route through the primary backend.
+        assert_eq!(parse_named_key(&Uri::for_test("s3://bucket/key")), None);
+        // `s3+<name>` URIs return the named-backend key.
+        assert_eq!(
+            parse_named_key(&Uri::for_test("s3+alt://bucket/key")),
+            Some("alt")
+        );
+        assert_eq!(
+            parse_named_key(&Uri::for_test("s3+with-dash://bucket/key")),
+            Some("with-dash")
+        );
     }
 }
