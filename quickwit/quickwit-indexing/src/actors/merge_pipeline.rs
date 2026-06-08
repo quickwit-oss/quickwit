@@ -458,10 +458,26 @@ impl MergePipeline {
             ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
         let immature_splits_stream = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_id=%self.params.pipeline_id.index_uid.index_id,
+                    source_id=%self.params.pipeline_id.source_id,
+                    "failed to list immature splits from the metastore"
+                );
+            })?;
         let immature_splits = ctx
             .protect_future(immature_splits_stream.collect_splits_metadata())
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_id=%self.params.pipeline_id.index_uid.index_id,
+                    source_id=%self.params.pipeline_id.source_id,
+                    "failed to collect immature splits metadata from the metastore"
+                );
+            })?;
         info!(
             index_uid=%self.params.pipeline_id.index_uid,
             source_id=%self.params.pipeline_id.source_id,

@@ -546,6 +546,14 @@ impl Source for IngestSource {
         let acquire_shards_response: AcquireShardsResponse = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
+            .inspect_err(|error| {
+                error!(
+                    %error,
+                    index_uid=%self.client_id.source_uid.index_uid,
+                    source_id=%self.client_id.source_uid.source_id,
+                    "failed to acquire shards from the metastore"
+                );
+            })
             .context("failed to acquire shards")?;
 
         if acquire_shards_response.acquired_shards.len() != added_shard_ids.len() {

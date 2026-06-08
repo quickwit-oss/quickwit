@@ -165,6 +165,7 @@ impl Handler<SplitsUpdate> for Publisher {
                 )
                 .await;
             }
+            let index_id = index_uid.index_id.clone();
             let publish_splits_request = PublishSplitsRequest {
                 index_uid: Some(index_uid),
                 staged_split_ids: split_ids.clone(),
@@ -174,6 +175,9 @@ impl Handler<SplitsUpdate> for Publisher {
             };
             ctx.protect_future(self.metastore.publish_splits(publish_splits_request))
                 .await
+                .inspect_err(|error| {
+                    error!(%error, index_id=%index_id, staged_split_ids=?split_ids, "failed to publish splits to the metastore");
+                })
                 .context("failed to publish splits")?;
         } else {
             // TODO: Remove the junk right away?
