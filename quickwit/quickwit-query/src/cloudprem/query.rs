@@ -190,11 +190,11 @@ fn map_bound_randomdraw_to_tiebreaker(bound: Bound<JsonLiteral>) -> Option<Bound
         let JsonLiteral::Number(num) = literal else {
             return None;
         };
-        // this maps [0, 1) to [i32::MIN, i32::MAX)
+        // this maps [0, 1) to [i16::MIN, i16::MAX)
         // we ceil so that low enough probability still allow for a non-empty range
         let int = num
             .as_f64()?
-            .mul_add(2.0f64.powi(32) - 1.0, -2.0f64.powi(31))
+            .mul_add(u16::MAX as f64, i16::MIN as f64)
             .ceil() as i64;
 
         Some(JsonLiteral::Number(int.into()))
@@ -890,7 +890,7 @@ mod tests {
         let expected_ast = QueryAst::Range(RangeQuery {
             field: "tiebreaker".to_string(),
             lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-1610612736))),
+            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-24576_i32))),
         });
         assert_eq!(ast, expected_ast);
 
@@ -900,7 +900,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN as i32)))
         );
 
         let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
@@ -909,7 +909,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             everything_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MAX)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MAX as i32)))
         );
 
         // anything more than zero, we want to return at least some result
@@ -919,7 +919,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             non_zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN + 1)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN as i32 + 1)))
         );
     }
 
