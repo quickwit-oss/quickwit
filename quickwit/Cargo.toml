@@ -353,7 +353,7 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
 
-tantivy = { version = "0.26.1", default-features = false, features = [
+tantivy = { git = "https://github.com/SekoiaLab/tantivy.git", tag = "v0.26.1_percentile_offset", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
