@@ -35,7 +35,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
-    TransformConfig, VecSourceParams,
+    TransformConfig, VecSourceParams, is_delete_task_service_disabled,
 };
 use quickwit_directories::BundleDirectory;
 use quickwit_index_management::{IndexService, clear_cache_directory};
@@ -632,6 +632,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        is_delete_task_service_disabled(),
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -770,6 +771,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        is_delete_task_service_disabled(),
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =

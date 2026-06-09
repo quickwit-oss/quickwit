@@ -116,6 +116,7 @@ pub struct IndexingService {
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     merge_io_throughput_limiter_opt: Option<Limiter>,
     event_broker: EventBroker,
+    is_delete_task_service_disabled: bool,
 }
 
 impl Debug for IndexingService {
@@ -143,6 +144,7 @@ impl IndexingService {
         ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
+        is_delete_task_service_disabled: bool,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::try_new(
             indexer_config.split_store_max_num_splits,
@@ -179,6 +181,7 @@ impl IndexingService {
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
+            is_delete_task_service_disabled,
         })
     }
 
@@ -380,6 +383,7 @@ impl IndexingService {
             params_fingerprint,
 
             event_broker: self.event_broker.clone(),
+            is_delete_task_service_disabled: self.is_delete_task_service_disabled,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
@@ -1102,6 +1106,7 @@ mod tests {
         universe: &Universe,
         metastore: MetastoreServiceClient,
         cluster: Cluster,
+        is_delete_task_service_disabled: bool,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
@@ -1124,6 +1129,7 @@ mod tests {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            is_delete_task_service_disabled,
         )
         .await
         .unwrap();
@@ -1161,7 +1167,8 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster, false)
+                .await;
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
@@ -1267,7 +1274,8 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster, false)
+                .await;
 
         indexing_service
             .ask_for_res(SpawnPipeline {
@@ -1327,6 +1335,7 @@ mod tests {
             &universe,
             metastore.clone(),
             cluster.clone(),
+            false,
         )
         .await;
         let metadata = metastore
@@ -1637,6 +1646,7 @@ mod tests {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            false,
         )
         .await
         .unwrap();
@@ -1754,6 +1764,7 @@ mod tests {
             &universe,
             MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
+            false,
         )
         .await;
         let _pipeline_id = indexing_service
@@ -1839,6 +1850,7 @@ mod tests {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            false,
         )
         .await
         .unwrap();
@@ -1937,6 +1949,7 @@ mod tests {
             &universe,
             MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
+            false,
         )
         .await;
 

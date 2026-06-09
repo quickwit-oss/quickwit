@@ -98,6 +98,12 @@ pub fn disable_ingest_v1() -> bool {
     *DISABLE_INGEST_V1
 }
 
+pub fn is_delete_task_service_disabled() -> bool {
+    static DISABLE_DELETE_TASK_SERVICE_ENV: Lazy<bool> =
+        Lazy::new(|| get_bool_from_env("QW_DISABLE_DELETE_TASK_SERVICE", false));
+    *DISABLE_DELETE_TASK_SERVICE_ENV
+}
+
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     ConstWriteAmplificationMergePolicyConfig,

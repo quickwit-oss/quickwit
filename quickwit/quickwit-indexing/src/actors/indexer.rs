@@ -101,6 +101,7 @@ struct IndexerState {
     index_settings: IndexSettings,
     cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
     indexation_time_field_opt: Option<Field>,
+    is_delete_task_service_disabled: bool,
 }
 
 impl IndexerState {
@@ -206,8 +207,13 @@ impl IndexerState {
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
             index_uid: Some(self.pipeline_id.index_uid.clone()),
         };
-        let last_delete_opstamp_response = ctx
-            .protect_future(
+        let last_delete_opstamp = if self.is_delete_task_service_disabled {
+            // If the delete task service is disabled, the opstamp is supposed
+            // to be 0 anyway. If we were to re-enable it, that should be done
+            // on the indexers first, then the janitor.
+            0
+        } else {
+            ctx.protect_future(
                 self.metastore
                     .clone()
                     .last_delete_opstamp(last_delete_opstamp_request),
@@ -220,8 +226,9 @@ impl IndexerState {
                     source_id=%self.pipeline_id.source_id,
                     "failed to fetch last delete opstamp from the metastore"
                 );
-            })?;
-        let last_delete_opstamp = last_delete_opstamp_response.last_delete_opstamp;
+            })?
+            .last_delete_opstamp
+        };
 
         let checkpoint_delta = IndexCheckpointDelta {
             source_id: self.pipeline_id.source_id.clone(),
@@ -580,6 +587,7 @@ impl Handler<NewPublishToken> for Indexer {
 }
 
 impl Indexer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<DocMapper>,
@@ -588,6 +596,7 @@ impl Indexer {
         indexing_settings: IndexingSettings,
         cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
+        is_delete_task_service_disabled: bool,
     ) -> Self {
         let schema = doc_mapper.schema();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
@@ -634,6 +643,7 @@ impl Indexer {
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_opt,
                 indexation_time_field_opt,
+                is_delete_task_service_disabled,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -844,6 +854,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -944,6 +955,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_indexer_delete_task_service_disabled() -> anyhow::Result<()> {
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let indexing_directory = TempDirectory::for_test();
+        let indexing_settings = IndexingSettings::for_test();
+        let universe = Universe::with_accelerated_time();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        // last_delete_opstamp must never be called when delete task service is disabled.
+        mock_metastore.expect_last_delete_opstamp().never();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            indexing_directory,
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+            true, // is_delete_task_service_disabled
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
+                    doc: doc!(
+                        body_field=>"this is a test document",
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                    ),
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                    partition: 1,
+                    num_bytes: 30,
+                }],
+                SourceCheckpointDelta::from_range(0..1),
+                false,
+            ))
+            .await?;
+        universe.send_exit_with_success(&indexer_mailbox).await?;
+        let (exit_status, _indexer_counters) = indexer_handle.join().await;
+        assert!(exit_status.is_success());
+        let output_messages: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(output_messages[0].splits[0].split_attrs.num_docs, 1);
+        // delete_opstamp must be 0 when delete task service is disabled.
+        assert_eq!(output_messages[0].splits[0].split_attrs.delete_opstamp, 0);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_indexer_triggers_commit_on_memory_limit() -> anyhow::Result<()> {
         let universe = Universe::new();
         let index_uid = IndexUid::new_with_random_ulid("test-index");
@@ -979,6 +1048,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, _indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1055,6 +1125,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         tokio::task::spawn({
@@ -1137,6 +1208,7 @@ mod tests {
             indexing_settings,
             Some(Arc::new(Semaphore::new(1))),
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1224,6 +1296,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1307,6 +1380,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1403,6 +1477,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1474,6 +1549,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1546,6 +1622,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
@@ -1610,6 +1687,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1678,6 +1756,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1798,6 +1877,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
@@ -1951,6 +2031,7 @@ mod tests {
             indexing_settings,
             None,
             index_serializer_mailbox,
+            false,
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 

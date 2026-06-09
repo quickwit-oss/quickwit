@@ -67,15 +67,17 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
     ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
     RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
-use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
+use quickwit_config::{
+    ClusterConfig, IngestApiConfig, NodeConfig, is_delete_task_service_disabled,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -138,7 +140,6 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
-const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
 
 pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
 
@@ -548,6 +549,7 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            is_delete_task_service_disabled(),
         )
         .await
         .context("failed to start indexing service")?;
@@ -678,7 +680,7 @@ pub async fn serve_quickwit(
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
-            !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
+            !is_delete_task_service_disabled(),
         )
         .await
         .context("failed to start janitor service")?;

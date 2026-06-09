@@ -127,6 +127,7 @@ impl TestSandbox {
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            false,
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =
