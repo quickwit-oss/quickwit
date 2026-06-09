@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::{Duration, SystemTime};
+
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::IndexConfig;
+use quickwit_parquet_engine::merge::policy::ParquetSplitMaturity;
 use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteMetricsSplitsRequest, EntityKind, ListMetricsSplitsRequest,
@@ -21,6 +24,7 @@ use quickwit_proto::metastore::{
     StageMetricsSplitsRequest,
 };
 use quickwit_proto::types::IndexUid;
+use time::OffsetDateTime;
 
 use super::DefaultForTest;
 use crate::tests::cleanup_index;
@@ -400,6 +404,66 @@ pub async fn test_metastore_list_metrics_splits_by_compaction_scope<
         splits[0].metadata.split_id.as_str(),
         format!("{index_id}--split-1")
     );
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_list_metrics_splits_by_maturity<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+    let index_id = append_random_suffix("test-list-metrics-by-maturity");
+    let index_uid = create_test_index(&mut metastore, &index_id).await;
+
+    let mature_split_id = format!("{index_id}--mature");
+    let immature_split_id = format!("{index_id}--immature");
+
+    let mut mature_split =
+        build_test_split(&mature_split_id, &index_uid, TimeRange::new(1000, 2000));
+    mature_split.created_at = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    mature_split.maturity = ParquetSplitMaturity::Mature;
+
+    let mut immature_split =
+        build_test_split(&immature_split_id, &index_uid, TimeRange::new(2000, 3000));
+    immature_split.created_at = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    immature_split.maturity = ParquetSplitMaturity::Immature {
+        maturation_period: Duration::from_secs(10),
+    };
+
+    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
+        index_uid.clone(),
+        &[mature_split, immature_split],
+    )
+    .unwrap();
+    metastore.stage_metrics_splits(request).await.unwrap();
+
+    let before_maturation = OffsetDateTime::from_unix_timestamp(109).unwrap();
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone())
+        .with_split_states([SplitState::Staged])
+        .retain_immature(before_maturation);
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let response = metastore.list_metrics_splits(list_request).await.unwrap();
+    let splits = response.deserialize_splits().unwrap();
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].metadata.split_id.as_str(), immature_split_id);
+
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone())
+        .with_split_states([SplitState::Staged])
+        .retain_mature(before_maturation);
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let response = metastore.list_metrics_splits(list_request).await.unwrap();
+    let splits = response.deserialize_splits().unwrap();
+    assert_eq!(splits.len(), 1);
+    assert_eq!(splits[0].metadata.split_id.as_str(), mature_split_id);
+
+    let after_maturation = OffsetDateTime::from_unix_timestamp(110).unwrap();
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone())
+        .with_split_states([SplitState::Staged])
+        .retain_mature(after_maturation);
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let response = metastore.list_metrics_splits(list_request).await.unwrap();
+    let splits = response.deserialize_splits().unwrap();
+    assert_eq!(splits.len(), 2);
 
     cleanup_index(&mut metastore, index_uid).await;
 }

@@ -97,6 +97,8 @@ pub struct MetricsPipelineParams {
     pub partition_key: quickwit_doc_mapper::RoutingExpr,
     /// Maximum number of index partitions allowed in a workbench.
     pub max_num_partitions: NonZeroU32,
+    /// Parquet merge policy used to assign maturity to newly produced splits.
+    pub parquet_merge_policy: Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy>,
     /// Parquet merge planner mailbox for the publisher feedback loop.
     /// When set, the publisher sends ParquetNewSplits to the planner
     /// after publishing ingest splits so they can be considered for merging.
@@ -353,6 +355,7 @@ impl MetricsPipeline {
             self.params.storage.clone(),
             sequencer_mailbox,
             self.params.max_concurrent_split_uploads,
+            self.params.parquet_merge_policy.clone(),
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()

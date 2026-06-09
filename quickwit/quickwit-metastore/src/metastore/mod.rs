@@ -191,6 +191,18 @@ impl ListParquetSplitsQuery {
         self.sort_fields = Some(sort_fields.into());
         self
     }
+
+    /// Retains splits that are mature at the given datetime.
+    pub fn retain_mature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Included(now);
+        self
+    }
+
+    /// Retains splits that are immature at the given datetime.
+    pub fn retain_immature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Excluded(now);
+        self
+    }
 }
 
 /// Splits batch size returned by the stream splits API

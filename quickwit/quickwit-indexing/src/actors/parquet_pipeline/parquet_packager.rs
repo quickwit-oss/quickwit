@@ -284,6 +284,9 @@ mod tests {
             ram_storage,
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
         universe.spawn_builder().spawn(uploader)
     }
