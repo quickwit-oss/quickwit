@@ -170,7 +170,7 @@ lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
-metrics-exporter-otel = "0.3"
+metrics-exporter-otel = "0.3.2"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
@@ -183,10 +183,10 @@ numfmt = "1.2"
 oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
-opentelemetry = "0.31"
-opentelemetry-appender-tracing = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
+opentelemetry = "0.32"
+opentelemetry-appender-tracing = "0.32"
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
 parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
@@ -308,7 +308,7 @@ tower-http = { version = "0.6", features = [
   "trace",
 ] }
 tracing = "0.1"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
   "json",
@@ -417,6 +417,13 @@ encoding_rs = "=0.8.35"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
+metrics-exporter-otel = { git = "https://github.com/shuheiktgw/metrics-exporter-otel", rev = "b4032665307007ac03ac132fd60850d8c8b7af19" }
+opentelemetry = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
+opentelemetry-appender-tracing = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
+opentelemetry-http = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
+opentelemetry-otlp = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
+opentelemetry-proto = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
+opentelemetry_sdk = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
