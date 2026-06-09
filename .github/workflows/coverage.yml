@@ -36,7 +36,7 @@ jobs:
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
-        image: localstack/localstack:4.14.0
+        image: localstack/localstack:4.12.0
         ports:
           - "4566:4566"
           - "4571:4571"
