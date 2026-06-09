@@ -737,6 +737,133 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     is_memory_intensive
 }
 
+/// Emits a single structured `info!` event capturing the full
+/// `RootResourceStats` returned by `root_search`. No-op when leaves did not
+/// return any resource stats (e.g. all-cache-hit response).
+///
+/// Field name prefixes:
+/// - `wleaf_`       — worst leaf (highest wall time)
+/// - `sleaf_`       — sum across all leaves
+/// - `wleaf_wsplit_` — worst split within the worst leaf
+/// - `wleaf_ssplit_` — sum of splits within the worst leaf
+/// - `sleaf_wsplit_` — worst split within the summed-leaf view
+/// - `sleaf_ssplit_` — sum of splits within the summed-leaf view
+///
+/// `leaf_wall_times_microsecs_second_slowest` is the second entry of the
+/// descending-sorted wall-time vector; the slowest is already captured by
+/// `wleaf_wall_time_microsecs`.
+fn log_root_resource_stats(resource_stats: Option<&RootResourceStats>) {
+    let Some(stats) = resource_stats else {
+        return;
+    };
+    let leaf_worst = stats.leaf_resources_worst.as_ref();
+    let leaf_sum = stats.leaf_resources_sum.as_ref();
+    let leaf_times = &stats.leaf_wall_times_microsecs;
+    let leaf_wall_times_microsecs_len = leaf_times.len() as u64;
+    let leaf_wall_times_microsecs_avg = if leaf_times.is_empty() {
+        None
+    } else {
+        Some(leaf_times.iter().sum::<u64>() / leaf_wall_times_microsecs_len)
+    };
+    let leaf_wall_times_microsecs_second_slowest = leaf_times.get(1).copied();
+    let leaf_worst_split_worst = leaf_worst.and_then(|lw| lw.split_resources_worst.as_ref());
+    let leaf_worst_split_sum = leaf_worst.and_then(|lw| lw.split_resources_sum.as_ref());
+    let leaf_sum_split_worst = leaf_sum.and_then(|ls| ls.split_resources_worst.as_ref());
+    let leaf_sum_split_sum = leaf_sum.and_then(|ls| ls.split_resources_sum.as_ref());
+    info!(
+        leaf_num_calls = stats.leaf_num_calls,
+        leaf_num_calls_including_retries = stats.leaf_num_calls_including_retries,
+        num_failed_splits = stats.num_failed_splits,
+        leaf_wall_times_microsecs_avg,
+        leaf_wall_times_microsecs_second_slowest,
+        wleaf_wall_time_microsecs = leaf_worst.map(|lw| lw.wall_time_microsecs),
+        wleaf_partial_result_cache_num_splits =
+            leaf_worst.map(|lw| lw.partial_result_cache_num_splits),
+        wleaf_partial_result_cache_num_docs = leaf_worst.map(|lw| lw.partial_result_cache_num_docs),
+        wleaf_localexec_num_splits = leaf_worst.map(|lw| lw.localexec_num_splits),
+        wleaf_localexec_num_docs = leaf_worst.map(|lw| lw.localexec_num_docs),
+        wleaf_min_wait_for_search_permit_microsecs =
+            leaf_worst.and_then(|lw| lw.min_wait_for_search_permit_microsecs),
+        wleaf_min_wait_for_cpu_pool_microsecs =
+            leaf_worst.and_then(|lw| lw.min_wait_for_cpu_pool_microsecs),
+        wleaf_lambda_num_splits = leaf_worst.map(|lw| lw.lambda_num_splits),
+        wleaf_lambda_num_docs = leaf_worst.map(|lw| lw.lambda_num_docs),
+        wleaf_lambda_success_num_splits = leaf_worst.map(|lw| lw.lambda_success_num_splits),
+        wleaf_lambda_success_num_docs = leaf_worst.map(|lw| lw.lambda_success_num_docs),
+        wleaf_lambda_bottleneck = leaf_worst.map(|lw| lw.lambda_bottleneck),
+        wleaf_wsplit_split_num_docs = leaf_worst_split_worst.map(|lwsw| lwsw.split_num_docs),
+        wleaf_wsplit_input_memory_bytes =
+            leaf_worst_split_worst.map(|lwsw| lwsw.input_memory_bytes),
+        wleaf_wsplit_download_num_bytes =
+            leaf_worst_split_worst.map(|lwsw| lwsw.download_num_bytes),
+        wleaf_wsplit_download_num_requests =
+            leaf_worst_split_worst.map(|lwsw| lwsw.download_num_requests),
+        wleaf_wsplit_matched_num_docs = leaf_worst_split_worst.map(|lwsw| lwsw.matched_num_docs),
+        wleaf_wsplit_wait_for_search_permit_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.wait_for_search_permit_microsecs),
+        wleaf_wsplit_warmup_microsecs = leaf_worst_split_worst.map(|lwsw| lwsw.warmup_microsecs),
+        wleaf_wsplit_wait_for_cpu_pool_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.wait_for_cpu_pool_microsecs),
+        wleaf_wsplit_cpu_search_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.cpu_search_microsecs),
+        wleaf_ssplit_split_num_docs = leaf_worst_split_sum.map(|lwss| lwss.split_num_docs),
+        wleaf_ssplit_input_memory_bytes = leaf_worst_split_sum.map(|lwss| lwss.input_memory_bytes),
+        wleaf_ssplit_download_num_bytes = leaf_worst_split_sum.map(|lwss| lwss.download_num_bytes),
+        wleaf_ssplit_download_num_requests =
+            leaf_worst_split_sum.map(|lwss| lwss.download_num_requests),
+        wleaf_ssplit_matched_num_docs = leaf_worst_split_sum.map(|lwss| lwss.matched_num_docs),
+        wleaf_ssplit_wait_for_search_permit_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.wait_for_search_permit_microsecs),
+        wleaf_ssplit_warmup_microsecs = leaf_worst_split_sum.map(|lwss| lwss.warmup_microsecs),
+        wleaf_ssplit_wait_for_cpu_pool_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.wait_for_cpu_pool_microsecs),
+        wleaf_ssplit_cpu_search_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.cpu_search_microsecs),
+        sleaf_wall_time_microsecs = leaf_sum.map(|ls| ls.wall_time_microsecs),
+        sleaf_partial_result_cache_num_splits =
+            leaf_sum.map(|ls| ls.partial_result_cache_num_splits),
+        sleaf_partial_result_cache_num_docs = leaf_sum.map(|ls| ls.partial_result_cache_num_docs),
+        sleaf_localexec_num_splits = leaf_sum.map(|ls| ls.localexec_num_splits),
+        sleaf_localexec_num_docs = leaf_sum.map(|ls| ls.localexec_num_docs),
+        sleaf_min_wait_for_search_permit_microsecs =
+            leaf_sum.and_then(|ls| ls.min_wait_for_search_permit_microsecs),
+        sleaf_min_wait_for_cpu_pool_microsecs =
+            leaf_sum.and_then(|ls| ls.min_wait_for_cpu_pool_microsecs),
+        sleaf_lambda_num_splits = leaf_sum.map(|ls| ls.lambda_num_splits),
+        sleaf_lambda_num_docs = leaf_sum.map(|ls| ls.lambda_num_docs),
+        sleaf_lambda_success_num_splits = leaf_sum.map(|ls| ls.lambda_success_num_splits),
+        sleaf_lambda_success_num_docs = leaf_sum.map(|ls| ls.lambda_success_num_docs),
+        sleaf_lambda_bottleneck = leaf_sum.map(|ls| ls.lambda_bottleneck),
+        sleaf_wsplit_split_num_docs = leaf_sum_split_worst.map(|lssw| lssw.split_num_docs),
+        sleaf_wsplit_input_memory_bytes = leaf_sum_split_worst.map(|lssw| lssw.input_memory_bytes),
+        sleaf_wsplit_download_num_bytes = leaf_sum_split_worst.map(|lssw| lssw.download_num_bytes),
+        sleaf_wsplit_download_num_requests =
+            leaf_sum_split_worst.map(|lssw| lssw.download_num_requests),
+        sleaf_wsplit_matched_num_docs = leaf_sum_split_worst.map(|lssw| lssw.matched_num_docs),
+        sleaf_wsplit_wait_for_search_permit_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.wait_for_search_permit_microsecs),
+        sleaf_wsplit_warmup_microsecs = leaf_sum_split_worst.map(|lssw| lssw.warmup_microsecs),
+        sleaf_wsplit_wait_for_cpu_pool_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.wait_for_cpu_pool_microsecs),
+        sleaf_wsplit_cpu_search_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.cpu_search_microsecs),
+        sleaf_ssplit_split_num_docs = leaf_sum_split_sum.map(|lsss| lsss.split_num_docs),
+        sleaf_ssplit_input_memory_bytes = leaf_sum_split_sum.map(|lsss| lsss.input_memory_bytes),
+        sleaf_ssplit_download_num_bytes = leaf_sum_split_sum.map(|lsss| lsss.download_num_bytes),
+        sleaf_ssplit_download_num_requests =
+            leaf_sum_split_sum.map(|lsss| lsss.download_num_requests),
+        sleaf_ssplit_matched_num_docs = leaf_sum_split_sum.map(|lsss| lsss.matched_num_docs),
+        sleaf_ssplit_wait_for_search_permit_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.wait_for_search_permit_microsecs),
+        sleaf_ssplit_warmup_microsecs = leaf_sum_split_sum.map(|lsss| lsss.warmup_microsecs),
+        sleaf_ssplit_wait_for_cpu_pool_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.wait_for_cpu_pool_microsecs),
+        sleaf_ssplit_cpu_search_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.cpu_search_microsecs),
+        "root_resource_stats"
+    );
+}
+
 /// Build a `RootResourceStats` from the per-leaf responses captured before
 /// they are merged.
 ///
@@ -1342,6 +1469,7 @@ pub async fn root_search(
 
     if let Ok(search_response) = &mut search_response_result {
         search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        log_root_resource_stats(search_response.resource_stats.as_ref());
     }
 
     search_response_result
