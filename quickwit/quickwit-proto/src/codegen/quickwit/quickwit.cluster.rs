@@ -278,7 +278,7 @@ type FetchClusterStateLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct ClusterServiceTowerLayerStack {
-    fetch_cluster_state_layers: Vec<FetchClusterStateLayer>,
+    pub fetch_cluster_state_layers: Vec<FetchClusterStateLayer>,
 }
 impl ClusterServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

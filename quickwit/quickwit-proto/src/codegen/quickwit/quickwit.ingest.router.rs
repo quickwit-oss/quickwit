@@ -321,7 +321,7 @@ type IngestLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct IngestRouterServiceTowerLayerStack {
-    ingest_layers: Vec<IngestLayer>,
+    pub ingest_layers: Vec<IngestLayer>,
 }
 impl IngestRouterServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

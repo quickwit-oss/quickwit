@@ -1199,15 +1199,15 @@ type DecommissionLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct IngesterServiceTowerLayerStack {
-    persist_layers: Vec<PersistLayer>,
-    open_replication_stream_layers: Vec<OpenReplicationStreamLayer>,
-    open_fetch_stream_layers: Vec<OpenFetchStreamLayer>,
-    open_observation_stream_layers: Vec<OpenObservationStreamLayer>,
-    init_shards_layers: Vec<InitShardsLayer>,
-    retain_shards_layers: Vec<RetainShardsLayer>,
-    truncate_shards_layers: Vec<TruncateShardsLayer>,
-    close_shards_layers: Vec<CloseShardsLayer>,
-    decommission_layers: Vec<DecommissionLayer>,
+    pub persist_layers: Vec<PersistLayer>,
+    pub open_replication_stream_layers: Vec<OpenReplicationStreamLayer>,
+    pub open_fetch_stream_layers: Vec<OpenFetchStreamLayer>,
+    pub open_observation_stream_layers: Vec<OpenObservationStreamLayer>,
+    pub init_shards_layers: Vec<InitShardsLayer>,
+    pub retain_shards_layers: Vec<RetainShardsLayer>,
+    pub truncate_shards_layers: Vec<TruncateShardsLayer>,
+    pub close_shards_layers: Vec<CloseShardsLayer>,
+    pub decommission_layers: Vec<DecommissionLayer>,
 }
 impl IngesterServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

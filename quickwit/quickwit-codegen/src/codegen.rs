@@ -832,7 +832,7 @@ fn generate_layer_stack_types_and_attributes(
             type #type_alias_name = quickwit_common::tower::BoxLayer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>, #request_type, #response_type, #error_type>;
         };
         let attribute = quote! {
-            #attribute_name: Vec<#type_alias_name>,
+            pub #attribute_name: Vec<#type_alias_name>,
         };
         type_aliases.extend(type_alias);
         attributes.extend(attribute);

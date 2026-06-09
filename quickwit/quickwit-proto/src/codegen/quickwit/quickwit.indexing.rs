@@ -223,7 +223,7 @@ type ApplyIndexingPlanLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct IndexingServiceTowerLayerStack {
-    apply_indexing_plan_layers: Vec<ApplyIndexingPlanLayer>,
+    pub apply_indexing_plan_layers: Vec<ApplyIndexingPlanLayer>,
 }
 impl IndexingServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

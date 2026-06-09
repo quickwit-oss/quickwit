@@ -459,9 +459,9 @@ type TailLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct IngestServiceTowerLayerStack {
-    ingest_layers: Vec<IngestLayer>,
-    fetch_layers: Vec<FetchLayer>,
-    tail_layers: Vec<TailLayer>,
+    pub ingest_layers: Vec<IngestLayer>,
+    pub fetch_layers: Vec<FetchLayer>,
+    pub tail_layers: Vec<TailLayer>,
 }
 impl IngestServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

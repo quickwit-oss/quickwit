@@ -1140,20 +1140,20 @@ type GetMaintenanceModeLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
-    create_index_layers: Vec<CreateIndexLayer>,
-    update_index_layers: Vec<UpdateIndexLayer>,
-    delete_index_layers: Vec<DeleteIndexLayer>,
-    add_source_layers: Vec<AddSourceLayer>,
-    update_source_layers: Vec<UpdateSourceLayer>,
-    toggle_source_layers: Vec<ToggleSourceLayer>,
-    delete_source_layers: Vec<DeleteSourceLayer>,
-    get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
-    advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
-    prune_shards_layers: Vec<PruneShardsLayer>,
-    swap_indexing_pipelines_layers: Vec<SwapIndexingPipelinesLayer>,
-    enable_maintenance_mode_layers: Vec<EnableMaintenanceModeLayer>,
-    disable_maintenance_mode_layers: Vec<DisableMaintenanceModeLayer>,
-    get_maintenance_mode_layers: Vec<GetMaintenanceModeLayer>,
+    pub create_index_layers: Vec<CreateIndexLayer>,
+    pub update_index_layers: Vec<UpdateIndexLayer>,
+    pub delete_index_layers: Vec<DeleteIndexLayer>,
+    pub add_source_layers: Vec<AddSourceLayer>,
+    pub update_source_layers: Vec<UpdateSourceLayer>,
+    pub toggle_source_layers: Vec<ToggleSourceLayer>,
+    pub delete_source_layers: Vec<DeleteSourceLayer>,
+    pub get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
+    pub advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
+    pub prune_shards_layers: Vec<PruneShardsLayer>,
+    pub swap_indexing_pipelines_layers: Vec<SwapIndexingPipelinesLayer>,
+    pub enable_maintenance_mode_layers: Vec<EnableMaintenanceModeLayer>,
+    pub disable_maintenance_mode_layers: Vec<DisableMaintenanceModeLayer>,
+    pub get_maintenance_mode_layers: Vec<GetMaintenanceModeLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

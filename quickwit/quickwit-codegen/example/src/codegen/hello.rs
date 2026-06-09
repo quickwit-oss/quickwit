@@ -352,9 +352,9 @@ type PingLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct HelloTowerLayerStack {
-    hello_layers: Vec<HelloLayer>,
-    goodbye_layers: Vec<GoodbyeLayer>,
-    ping_layers: Vec<PingLayer>,
+    pub hello_layers: Vec<HelloLayer>,
+    pub goodbye_layers: Vec<GoodbyeLayer>,
+    pub ping_layers: Vec<PingLayer>,
 }
 impl HelloTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self

@@ -212,7 +212,7 @@ type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
 >;
 #[derive(Debug, Default)]
 pub struct DeveloperServiceTowerLayerStack {
-    get_debug_info_layers: Vec<GetDebugInfoLayer>,
+    pub get_debug_info_layers: Vec<GetDebugInfoLayer>,
 }
 impl DeveloperServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
