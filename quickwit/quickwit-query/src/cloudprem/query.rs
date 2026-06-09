@@ -900,7 +900,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN as i32)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN)))
         );
 
         let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
@@ -909,7 +909,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             everything_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MAX as i32)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MAX)))
         );
 
         // anything more than zero, we want to return at least some result
@@ -919,7 +919,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             non_zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN as i32 + 1)))
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN + 1)))
         );
     }
 
