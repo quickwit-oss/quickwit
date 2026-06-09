@@ -1024,13 +1024,17 @@ impl Ingester {
             let queue_id = subrequest.queue_id();
             let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
 
-            if truncate_up_to_position_inclusive.is_eof() {
-                state_guard.delete_shard(&queue_id, "indexer RPC").await;
-            } else {
-                state_guard
-                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer RPC")
-                    .await;
-            }
+            // We deliberately do NOT delete the shard when the indexer truncates up to EOF over
+            // this gRPC path. Shard deletion is driven solely by the `ShardPositionsUpdate` gossip
+            // event (see the `EventSubscriber<ShardPositionsUpdate>` impl below), which is the same
+            // signal the control plane uses to delete the shard from the metastore and its model.
+            //
+            // Handling shard deletion through that single, shared signal keeps the ingester and
+            // control plane views consistent: the ingester never removes a shard the
+            // control plane does not also remove.
+            state_guard
+                .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer RPC")
+                .await;
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
         report_wal_usage(wal_usage);
@@ -1545,7 +1549,14 @@ mod tests {
             .await;
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
-        assert_eq!(state_guard.shards.len(), 1);
+        assert_eq!(state_guard.shards.len(), 3);
+
+        let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        solo_shard_01.assert_is_solo();
+        solo_shard_01.assert_is_closed();
+        solo_shard_01.assert_replication_position(Position::Beginning);
+        solo_shard_01.assert_truncation_position(Position::Beginning);
+        assert!(solo_shard_01.is_advertisable);
 
         let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         solo_shard_02.assert_is_solo();
@@ -1553,6 +1564,13 @@ mod tests {
         solo_shard_02.assert_replication_position(Position::offset(1u64));
         solo_shard_02.assert_truncation_position(Position::offset(0u64));
         assert!(solo_shard_02.is_advertisable);
+
+        let solo_shard_03 = state_guard.shards.get(&queue_id_03).unwrap();
+        solo_shard_03.assert_is_solo();
+        solo_shard_03.assert_is_closed();
+        solo_shard_03.assert_replication_position(Position::Beginning);
+        solo_shard_03.assert_truncation_position(Position::Beginning);
+        assert!(solo_shard_03.is_advertisable);
 
         state_guard
             .mrecordlog
@@ -3260,16 +3278,24 @@ mod tests {
             .unwrap();
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
-
-        assert_eq!(state_guard.shards.len(), 1);
-        assert_eq!(state_guard.doc_mappers.len(), 1);
+        assert_eq!(state_guard.shards.len(), 2);
+        assert_eq!(state_guard.doc_mappers.len(), 2);
 
         assert!(state_guard.shards.contains_key(&queue_id_01));
+        assert!(state_guard.shards.contains_key(&queue_id_02));
         assert!(state_guard.doc_mappers.contains_key(&doc_mapping_uid_01));
+        assert!(state_guard.doc_mappers.contains_key(&doc_mapping_uid_02));
+
+        let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
+        solo_shard_02.assert_truncation_position(Position::eof(0u64));
 
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[(1, [0, 0], "test-doc-bar")]);
+
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_02, .., &[]);
     }
 
     #[tokio::test]

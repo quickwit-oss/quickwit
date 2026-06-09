@@ -39,7 +39,7 @@ use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use super::wal_capacity_tracker::WalCapacityTracker;
-use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
+use crate::ingest_v2::mrecordlog_utils::queue_position_range;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, LeaderId, OpenShardCounts};
 
@@ -209,8 +209,7 @@ impl IngesterState {
     }
 
     /// Initializes the internal state of the ingester. It loads the local WAL, then lists all its
-    /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
-    /// corresponding shards are closed and become read-only.
+    /// queues. Every queue is recovered as a closed shard, including empty ones.
     pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
         // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
         // prevent ABBA deadlocks with the broadcast capacity task.
@@ -230,7 +229,7 @@ impl IngesterState {
         )
         .await;
 
-        let mut mrecordlog = match open_result {
+        let mrecordlog = match open_result {
             Ok(mrecordlog) => {
                 info!(
                     "opened WAL successfully in {}",
@@ -254,51 +253,59 @@ impl IngesterState {
         }
         let now = Instant::now();
         let mut num_closed_shards = 0;
-        let mut num_deleted_shards = 0;
 
         for queue_id in queue_ids {
-            if let Some(position_range) = queue_position_range(&mrecordlog, &queue_id) {
-                let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
-                    // `split_queue_id` already logs an error.
-                    continue;
+            let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
+                // `split_queue_id` already logs an error.
+                continue;
+            };
+            // We recover every shard found in the WAL as a closed shard, including empty ones.
+            //
+            // We used to delete empty shards here, but that silently diverged from the control
+            // plane, which kept advertising the shard as available even though it no longer
+            // existed on the ingester (resulting in "no shards available" errors). Instead, we
+            // recover an empty shard as a closed shard positioned at the beginning. An indexer
+            // will drain it, immediately reach EOF (there is nothing to read), and the resulting
+            // EOF gossip will delete the shard from the ingester, the control plane, and the
+            // metastore.
+            let (replication_position_inclusive, truncation_position_inclusive) =
+                match queue_position_range(&mrecordlog, &queue_id) {
+                    // The queue is not empty.
+                    Some(position_range) => {
+                        let replication_position_inclusive =
+                            Position::offset(*position_range.end());
+                        let truncation_position_inclusive = if *position_range.start() == 0 {
+                            Position::Beginning
+                        } else {
+                            Position::offset(*position_range.start() - 1)
+                        };
+                        (
+                            replication_position_inclusive,
+                            truncation_position_inclusive,
+                        )
+                    }
+                    // The queue is empty.
+                    None => (Position::Beginning, Position::Beginning),
                 };
-                // The queue is not empty: recover it.
-                let replication_position_inclusive = Position::offset(*position_range.end());
-                let truncation_position_inclusive = if *position_range.start() == 0 {
-                    Position::Beginning
-                } else {
-                    Position::offset(*position_range.start() - 1)
-                };
-                let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
-                let rate_meter = RateMeter::default();
-                // We want to advertise the shard as read-only right away.
-                let solo_shard =
-                    IngesterShard::new_solo(index_uid.clone(), source_id.clone(), shard_id.clone())
-                        .with_state(ShardState::Closed)
-                        .with_replication_position_inclusive(replication_position_inclusive)
-                        .with_truncation_position_inclusive(truncation_position_inclusive)
-                        .with_rate_limiter(rate_limiter)
-                        .with_rate_meter(rate_meter)
-                        .with_last_write(now)
-                        .advertisable() // We want to advertise the shard as read-only right away.
-                        .build();
-                inner_guard.shards.insert(queue_id.clone(), solo_shard);
+            let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
+            let rate_meter = RateMeter::default();
 
-                num_closed_shards += 1;
-            } else {
-                // The queue is empty: delete it.
-                if let Err(io_error) = force_delete_queue(&mut mrecordlog, &queue_id).await {
-                    error!("failed to delete shard `{queue_id}`: {io_error}");
-                    continue;
-                }
-                num_deleted_shards += 1;
-            }
+            let solo_shard =
+                IngesterShard::new_solo(index_uid.clone(), source_id.clone(), shard_id.clone())
+                    .with_state(ShardState::Closed)
+                    .with_replication_position_inclusive(replication_position_inclusive)
+                    .with_truncation_position_inclusive(truncation_position_inclusive)
+                    .with_rate_limiter(rate_limiter)
+                    .with_rate_meter(rate_meter)
+                    .with_last_write(now)
+                    .advertisable() // We want to advertise the shard as read-only right away.
+                    .build();
+            inner_guard.shards.insert(queue_id.clone(), solo_shard);
+
+            num_closed_shards += 1;
         }
         if num_closed_shards > 0 {
             info!("recovered and closed {num_closed_shards} shard(s)");
-        }
-        if num_deleted_shards > 0 {
-            info!("deleted {num_deleted_shards} empty shard(s)");
         }
         mrecordlog_guard.replace(mrecordlog);
         inner_guard.set_status(IngesterStatus::Ready).await;

@@ -19,7 +19,7 @@ use std::ops::RangeInclusive;
 use bytesize::ByteSize;
 #[cfg(feature = "failpoints")]
 use fail::fail_point;
-use mrecordlog::error::{AppendError, DeleteQueueError};
+use mrecordlog::error::AppendError;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
 use tracing::instrument;
@@ -148,17 +148,6 @@ pub(super) fn check_enough_capacity(
         });
     }
     Ok(())
-}
-
-/// Deletes a queue from the WAL. Returns without error if the queue does not exist.
-pub async fn force_delete_queue(
-    mrecordlog: &mut MultiRecordLogAsync,
-    queue_id: &QueueId,
-) -> io::Result<()> {
-    match mrecordlog.delete_queue(queue_id).await {
-        Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => Ok(()),
-        Err(DeleteQueueError::IoError(error)) => Err(error),
-    }
 }
 
 /// Returns the first and last position of the records currently stored in the queue. Returns `None`
