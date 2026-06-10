@@ -137,13 +137,13 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
-        let mut storage_writer = self
-            .op
-            .writer_with(&path)
-            .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)
-            .await?
-            .into_futures_async_write()
-            .compat_write();
+        let mut storage_writer = FuturesAsyncWriteCompatExt::compat_write(
+            self.op
+                .writer_with(&path)
+                .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)
+                .await?
+                .into_futures_async_write(),
+        );
         // Avoid `tokio::io::copy`'s pending-read flush path and keep buffering policy explicit.
         copy_read_write_loop(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
