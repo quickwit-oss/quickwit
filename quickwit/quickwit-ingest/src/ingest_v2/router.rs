@@ -163,12 +163,15 @@ impl IngestRouter {
         ingester_pool: &IngesterPool,
     ) -> DebouncedGetOrCreateOpenShardsRequest {
         let mut debounced_request = DebouncedGetOrCreateOpenShardsRequest::default();
-        let unavailable_leaders: &HashSet<NodeId> = &workbench.unavailable_leaders;
+        // `unavailable_leaders` is populated by the calls to `has_any_routing_candidate` below as
+        // we look for nodes with open shards to route the subrequests to. They are then
+        // reported to the control plane so it can create shards on other nodes.
+        let unavailable_leaders: &mut HashSet<NodeId> = &mut workbench.unavailable_leaders;
 
         let mut state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            if !state_guard.routing_table.has_open_nodes(
+            if !state_guard.routing_table.has_any_routing_candidate(
                 &subrequest.index_id,
                 &subrequest.source_id,
                 ingester_pool,
@@ -708,12 +711,18 @@ mod tests {
         assert_eq!(subrequest.index_id, "test-index-1");
         assert_eq!(subrequest.source_id, "test-source");
 
-        assert!(
-            get_or_create_open_shard_request
-                .unavailable_leaders
-                .is_empty()
+        // `test-ingester-0` holds the only open shard for `test-index-0` but is missing from the
+        // pool, so it is recorded as unavailable while scanning and reported to the control plane.
+        assert_eq!(
+            get_or_create_open_shard_request.unavailable_leaders,
+            ["test-ingester-0"]
         );
-        assert!(workbench.unavailable_leaders.is_empty());
+        assert_eq!(
+            workbench.unavailable_leaders,
+            HashSet::from([NodeId::from_str("test-ingester-0")])
+        );
+
+        workbench.unavailable_leaders.clear();
 
         let (get_or_create_open_shard_request_opt, rendezvous_2) = router
             .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
@@ -734,7 +743,7 @@ mod tests {
         );
         {
             // Ingester-0 is in pool and in table, but marked unavailable on the workbench
-            // (simulating a prior transport error). has_open_nodes returns false → both
+            // (simulating a prior transport error). has_any_routing_candidate returns false → both
             // subrequests trigger CP request.
             workbench
                 .unavailable_leaders
@@ -752,7 +761,7 @@ mod tests {
         }
         {
             // Fresh workbench: ingester-0 is in pool, in table, and NOT unavailable.
-            // has_open_nodes returns true for index-0 → only index-1 triggers request.
+            // has_any_routing_candidate returns true for index-0 → only index-1 triggers request.
             let mut workbench = IngestWorkbench::new(ingest_subrequests, 3);
             let (get_or_create_open_shard_request_opt, _rendezvous) = router
                 .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
