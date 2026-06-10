@@ -16,6 +16,7 @@
 
 use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
 use aws_sdk_s3::error::SdkError;
+use aws_smithy_types::retry::ErrorKind;
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
 use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError;
@@ -35,7 +36,11 @@ where E: AwsRetryable
         match self {
             SdkError::ConstructionFailure(_) => false,
             SdkError::TimeoutError(_) => true,
-            SdkError::DispatchFailure(failure) => failure.is_io() || failure.is_timeout(),
+            SdkError::DispatchFailure(failure) => {
+                failure.is_io()
+                    || failure.is_timeout()
+                    || matches!(failure.as_other(), Some(ErrorKind::TransientError))
+            }
             SdkError::ResponseError(_) => true,
             SdkError::ServiceError(error) => error.err().is_retryable(),
             _ => false,
