@@ -362,6 +362,87 @@ pub struct S3StorageConfig {
     pub disable_stalled_stream_protection_upload: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_download: bool,
+    /// Additional named S3-compatible backends, addressed via `s3+<name>://bucket/path`
+    /// URIs. Each entry is an independent endpoint with its own credentials, region,
+    /// etc. The map key (`<name>`) is the routing token used in the URI scheme.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub named: std::collections::BTreeMap<String, NamedS3StorageConfig>,
+}
+
+/// Configuration for a named S3-compatible backend nested under
+/// `storage.s3.named.<name>`. Mirrors `S3StorageConfig` but cannot itself
+/// have a `named` field (no recursion).
+#[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NamedS3StorageConfig {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flavor: Option<StorageBackendFlavor>,
+    #[serde(default)]
+    pub access_key_id: Option<String>,
+    #[serde(default)]
+    pub secret_access_key: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub force_path_style_access: bool,
+    #[serde(default)]
+    pub disable_multi_object_delete: bool,
+    #[serde(default)]
+    pub disable_multipart_upload: bool,
+    #[serde(default)]
+    pub checksum_algorithm: ChecksumAlgorithm,
+}
+
+impl NamedS3StorageConfig {
+    /// Project this named config back into a full `S3StorageConfig`
+    /// (with an empty `named` map) so it can flow through the existing
+    /// S3 client construction code unchanged.
+    pub fn as_s3_config(&self) -> S3StorageConfig {
+        S3StorageConfig {
+            flavor: self.flavor,
+            access_key_id: self.access_key_id.clone(),
+            secret_access_key: self.secret_access_key.clone(),
+            region: self.region.clone(),
+            endpoint: self.endpoint.clone(),
+            force_path_style_access: self.force_path_style_access,
+            disable_multi_object_delete: self.disable_multi_object_delete,
+            disable_multipart_upload: self.disable_multipart_upload,
+            checksum_algorithm: self.checksum_algorithm,
+            disable_checksums: false,
+            disable_stalled_stream_protection_upload: false,
+            disable_stalled_stream_protection_download: false,
+            named: Default::default(),
+        }
+    }
+
+    pub fn redact(&mut self) {
+        if let Some(secret_access_key) = self.secret_access_key.as_mut() {
+            *secret_access_key = "***redacted***".to_string();
+        }
+    }
+}
+
+impl fmt::Debug for NamedS3StorageConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NamedS3StorageConfig")
+            .field("flavor", &self.flavor)
+            .field("access_key_id", &self.access_key_id)
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "***redacted***"),
+            )
+            .field("region", &self.region)
+            .field("endpoint", &self.endpoint)
+            .field("force_path_style_access", &self.force_path_style_access)
+            .field("disable_multi_object_delete", &self.disable_multi_object_delete)
+            .field("disable_multipart_upload", &self.disable_multipart_upload)
+            .field("checksum_algorithm", &self.checksum_algorithm)
+            .finish()
+    }
 }
 
 impl S3StorageConfig {
@@ -396,6 +477,9 @@ impl S3StorageConfig {
     pub fn redact(&mut self) {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
+        }
+        for named_config in self.named.values_mut() {
+            named_config.redact();
         }
     }
 
@@ -442,6 +526,7 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_stalled_stream_protection_download",
                 &self.disable_stalled_stream_protection_download,
             )
+            .field("named", &self.named)
             .finish()
     }
 }
@@ -739,5 +824,53 @@ mod tests {
 
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::MinIO));
         }
+    }
+
+    #[test]
+    fn test_storage_s3_named_backends_serde() {
+        let s3_storage_config_yaml = r#"
+            endpoint: https://primary.example.com
+            region: us-east-1
+            named:
+              alt:
+                endpoint: https://alt.example.com
+                region: eu-west-3
+                force_path_style_access: true
+                access_key_id: alt-key
+                secret_access_key: alt-secret
+              secondary:
+                endpoint: http://secondary.example.com:8333
+                region: us-east-1
+                force_path_style_access: true
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        assert_eq!(s3_storage_config.named.len(), 2);
+
+        let alt = s3_storage_config.named.get("alt").unwrap();
+        assert_eq!(alt.region.as_deref(), Some("eu-west-3"));
+        assert_eq!(alt.access_key_id.as_deref(), Some("alt-key"));
+        assert!(alt.force_path_style_access);
+
+        // `as_s3_config` projects a named entry back into a full S3StorageConfig
+        // (with an empty `named` map) so it can drive the S3 client builder
+        // unchanged.
+        let projected = alt.as_s3_config();
+        assert_eq!(projected.region.as_deref(), Some("eu-west-3"));
+        assert_eq!(projected.access_key_id.as_deref(), Some("alt-key"));
+        assert!(projected.force_path_style_access);
+        assert!(projected.named.is_empty());
+    }
+
+    #[test]
+    fn test_storage_s3_named_backends_redact() {
+        let mut named = NamedS3StorageConfig {
+            access_key_id: Some("public-key".to_string()),
+            secret_access_key: Some("super-secret".to_string()),
+            ..Default::default()
+        };
+        named.redact();
+        assert_eq!(named.access_key_id.as_deref(), Some("public-key"));
+        assert_eq!(named.secret_access_key.as_deref(), Some("***redacted***"));
     }
 }
