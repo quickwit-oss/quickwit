@@ -22,7 +22,7 @@ use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use quickwit_metrics::HistogramTimer;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as TokioAsyncWriteExt};
-use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 use tracing::instrument;
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
@@ -137,7 +137,7 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
-        let mut storage_writer = tokio_util::compat::FuturesAsyncWriteCompatExt::compat_write(
+        let mut storage_writer = FuturesAsyncWriteCompatExt::compat_write(
             self.op
                 .writer_with(&path)
                 .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)

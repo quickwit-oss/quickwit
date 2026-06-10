@@ -913,6 +913,7 @@ fn stage_parquet_splits(
     let now = OffsetDateTime::now_utc().unix_timestamp();
     for metadata in splits_metadata {
         let split_id = metadata.split_id.as_str().to_string();
+        let maturity_timestamp = metadata.maturity_timestamp_secs();
 
         if let Some(existing) = splits_map.get(&split_id)
             && existing.state != SplitState::Staged
@@ -931,7 +932,7 @@ fn stage_parquet_splits(
             create_timestamp: now,
             node_id: String::new(),
             delete_opstamp: 0,
-            maturity_timestamp: 0,
+            maturity_timestamp,
         };
         splits_map.insert(split_id, stored);
     }

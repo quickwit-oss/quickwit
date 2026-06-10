@@ -89,7 +89,7 @@ fn invoke_error_to_lambda_error(error: SdkError<InvokeError>) -> LambdaInvokeErr
 
     let is_timeout = match &error {
         SdkError::TimeoutError(_) => true,
-        SdkError::DispatchFailure(failure) => failure.is_timeout(),
+        SdkError::DispatchFailure(failure) => failure.is_io() || failure.is_timeout(),
         SdkError::ServiceError(service_error) => matches!(
             service_error.err(),
             InvokeError::EfsMountTimeoutException(_) | InvokeError::SnapStartTimeoutException(_)
