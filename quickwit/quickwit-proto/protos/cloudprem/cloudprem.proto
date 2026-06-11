@@ -58,6 +58,9 @@ service CloudPremService {
   // Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
   rpc SubstraitSearch(CloudpremSubstraitRequest) returns (CloudpremSubstraitResponse);
 
+  // Dynamically sets the log level.
+  rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
+
   // Response are sent to the bridge by the front, which initialised the connection
   rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
 }
@@ -88,6 +91,7 @@ message AnyRequest {
         CloudpremSubstraitRequest substrait_search = 29;
         EsHttpRequest es_query = 30;
         GetClusterDiagnosticsRequest get_cluster_diagnostics = 31;
+        SetLogLevelRequest set_log_level = 32;
 
         CancelRequest cancel = 99;
     }
@@ -125,6 +129,7 @@ message AnyResponse {
         CloudpremSubstraitResponse substrait_search = 29;
         EsHttpResponse es_query = 30;
         GetClusterDiagnosticsResponse get_cluster_diagnostics = 31;
+        SetLogLevelResponse set_log_level = 32;
 
     }
 }
@@ -279,6 +284,19 @@ message GetClusterDiagnosticsRequest {
 
 message GetClusterDiagnosticsResponse {
   map<string, NodeDiagnostics> cluster_diagnostics = 1;
+}
+
+message SetLogLevelRequest {
+  // tracing_subscriber EnvFilter directive, e.g. "quickwit=debug,tantivy=warn"
+  string filter = 1;
+  // org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+  int64 org_id = 998;
+  string cluster_id = 999;
+}
+
+message SetLogLevelResponse {
+  // node IDs that failed to update; empty means all nodes succeeded
+  repeated string failed_nodes = 1;
 }
 
 message ListRequest {

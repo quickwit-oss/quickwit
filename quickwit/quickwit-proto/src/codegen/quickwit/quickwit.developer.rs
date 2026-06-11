@@ -40,6 +40,16 @@ pub struct GetNodeDiagnosticsResponse {
     #[prost(string, tag = "5")]
     pub deployment_info_json: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetNodeLogLevelRequest {
+    /// tracing_subscriber EnvFilter directive, e.g. "quickwit=debug,tantivy=warn"
+    #[prost(string, tag = "1")]
+    pub filter: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetNodeLogLevelResponse {}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -60,6 +70,11 @@ impl RpcName for GetNodeDiagnosticsRequest {
         "get_node_diagnostics"
     }
 }
+impl RpcName for SetNodeLogLevelRequest {
+    fn rpc_name() -> &'static str {
+        "set_node_log_level"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait DeveloperService: std::fmt::Debug + Send + Sync + 'static {
@@ -75,6 +90,10 @@ pub trait DeveloperService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: GetNodeDiagnosticsRequest,
     ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse>;
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> crate::developer::DeveloperResult<SetNodeLogLevelResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct DeveloperServiceClient {
@@ -204,6 +223,13 @@ impl DeveloperService for DeveloperServiceClient {
     ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
         self.inner.0.get_node_diagnostics(request).await
     }
+    #[tracing::instrument(skip_all, name = "developer.set_node_log_level")]
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> crate::developer::DeveloperResult<SetNodeLogLevelResponse> {
+        self.inner.0.set_node_log_level(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_developer_service {
@@ -231,6 +257,12 @@ pub mod mock_developer_service {
             request: super::GetNodeDiagnosticsRequest,
         ) -> crate::developer::DeveloperResult<super::GetNodeDiagnosticsResponse> {
             self.inner.lock().await.get_node_diagnostics(request).await
+        }
+        async fn set_node_log_level(
+            &self,
+            request: super::SetNodeLogLevelRequest,
+        ) -> crate::developer::DeveloperResult<super::SetNodeLogLevelResponse> {
+            self.inner.lock().await.set_node_log_level(request).await
         }
     }
 }
@@ -285,6 +317,22 @@ impl tower::Service<GetNodeDiagnosticsRequest> for InnerDeveloperServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<SetNodeLogLevelRequest> for InnerDeveloperServiceClient {
+    type Response = SetNodeLogLevelResponse;
+    type Error = crate::developer::DeveloperError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SetNodeLogLevelRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.set_node_log_level(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct DeveloperServiceTowerServiceStack {
@@ -303,6 +351,11 @@ struct DeveloperServiceTowerServiceStack {
     get_node_diagnostics_svc: quickwit_common::tower::BoxService<
         GetNodeDiagnosticsRequest,
         GetNodeDiagnosticsResponse,
+        crate::developer::DeveloperError,
+    >,
+    set_node_log_level_svc: quickwit_common::tower::BoxService<
+        SetNodeLogLevelRequest,
+        SetNodeLogLevelResponse,
         crate::developer::DeveloperError,
     >,
 }
@@ -325,6 +378,12 @@ impl DeveloperService for DeveloperServiceTowerServiceStack {
         request: GetNodeDiagnosticsRequest,
     ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
         self.get_node_diagnostics_svc.clone().ready().await?.call(request).await
+    }
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> crate::developer::DeveloperResult<SetNodeLogLevelResponse> {
+        self.set_node_log_level_svc.clone().ready().await?.call(request).await
     }
 }
 type GetDebugInfoLayer = quickwit_common::tower::BoxLayer<
@@ -357,11 +416,22 @@ type GetNodeDiagnosticsLayer = quickwit_common::tower::BoxLayer<
     GetNodeDiagnosticsResponse,
     crate::developer::DeveloperError,
 >;
+type SetNodeLogLevelLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SetNodeLogLevelRequest,
+        SetNodeLogLevelResponse,
+        crate::developer::DeveloperError,
+    >,
+    SetNodeLogLevelRequest,
+    SetNodeLogLevelResponse,
+    crate::developer::DeveloperError,
+>;
 #[derive(Debug, Default)]
 pub struct DeveloperServiceTowerLayerStack {
     get_debug_info_layers: Vec<GetDebugInfoLayer>,
     pull_metrics_layers: Vec<PullMetricsLayer>,
     get_node_diagnostics_layers: Vec<GetNodeDiagnosticsLayer>,
+    set_node_log_level_layers: Vec<SetNodeLogLevelLayer>,
 }
 impl DeveloperServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -443,12 +513,39 @@ impl DeveloperServiceTowerLayerStack {
         >>::Service as tower::Service<
             GetNodeDiagnosticsRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SetNodeLogLevelRequest,
+                    SetNodeLogLevelResponse,
+                    crate::developer::DeveloperError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SetNodeLogLevelRequest,
+                SetNodeLogLevelResponse,
+                crate::developer::DeveloperError,
+            >,
+        >>::Service: tower::Service<
+                SetNodeLogLevelRequest,
+                Response = SetNodeLogLevelResponse,
+                Error = crate::developer::DeveloperError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SetNodeLogLevelRequest,
+                SetNodeLogLevelResponse,
+                crate::developer::DeveloperError,
+            >,
+        >>::Service as tower::Service<SetNodeLogLevelRequest>>::Future: Send + 'static,
     {
         self.get_debug_info_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.pull_metrics_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_node_diagnostics_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.set_node_log_level_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -509,6 +606,26 @@ impl DeveloperServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.get_node_diagnostics_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_set_node_log_level_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SetNodeLogLevelRequest,
+                    SetNodeLogLevelResponse,
+                    crate::developer::DeveloperError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SetNodeLogLevelRequest,
+                Response = SetNodeLogLevelResponse,
+                Error = crate::developer::DeveloperError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<SetNodeLogLevelRequest>>::Future: Send + 'static,
+    {
+        self.set_node_log_level_layers
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
@@ -596,11 +713,20 @@ impl DeveloperServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let set_node_log_level_svc = self
+            .set_node_log_level_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = DeveloperServiceTowerServiceStack {
             inner: inner_client,
             get_debug_info_svc,
             pull_metrics_svc,
             get_node_diagnostics_svc,
+            set_node_log_level_svc,
         };
         DeveloperServiceClient::new(tower_svc_stack)
     }
@@ -697,6 +823,12 @@ where
                 GetNodeDiagnosticsResponse,
                 crate::developer::DeveloperError,
             >,
+        >
+        + tower::Service<
+            SetNodeLogLevelRequest,
+            Response = SetNodeLogLevelResponse,
+            Error = crate::developer::DeveloperError,
+            Future = BoxFuture<SetNodeLogLevelResponse, crate::developer::DeveloperError>,
         >,
 {
     async fn get_debug_info(
@@ -715,6 +847,12 @@ where
         &self,
         request: GetNodeDiagnosticsRequest,
     ) -> crate::developer::DeveloperResult<GetNodeDiagnosticsResponse> {
+        self.clone().call(request).await
+    }
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> crate::developer::DeveloperResult<SetNodeLogLevelResponse> {
         self.clone().call(request).await
     }
 }
@@ -806,6 +944,24 @@ where
                 GetNodeDiagnosticsRequest::rpc_name(),
             ))
     }
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> crate::developer::DeveloperResult<SetNodeLogLevelResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .set_node_log_level(tonic_request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SetNodeLogLevelRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct DeveloperServiceGrpcServerAdapter {
@@ -887,6 +1043,29 @@ for DeveloperServiceGrpcServerAdapter {
             self.inner
                 .0
                 .get_node_diagnostics(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    async fn set_node_log_level(
+        &self,
+        tonic_request: tonic::Request<SetNodeLogLevelRequest>,
+    ) -> Result<tonic::Response<SetNodeLogLevelResponse>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("developer.set_node_log_level");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .set_node_log_level(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -1069,6 +1248,35 @@ pub mod developer_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn set_node_log_level(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetNodeLogLevelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetNodeLogLevelResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.developer.DeveloperService/SetNodeLogLevel",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.developer.DeveloperService",
+                        "SetNodeLogLevel",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1103,6 +1311,13 @@ pub mod developer_service_grpc_server {
             request: tonic::Request<super::GetNodeDiagnosticsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetNodeDiagnosticsResponse>,
+            tonic::Status,
+        >;
+        async fn set_node_log_level(
+            &self,
+            request: tonic::Request<super::SetNodeLogLevelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetNodeLogLevelResponse>,
             tonic::Status,
         >;
     }
@@ -1309,6 +1524,55 @@ pub mod developer_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNodeDiagnosticsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.developer.DeveloperService/SetNodeLogLevel" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetNodeLogLevelSvc<T: DeveloperServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: DeveloperServiceGrpc,
+                    > tonic::server::UnaryService<super::SetNodeLogLevelRequest>
+                    for SetNodeLogLevelSvc<T> {
+                        type Response = super::SetNodeLogLevelResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetNodeLogLevelRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as DeveloperServiceGrpc>::set_node_log_level(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetNodeLogLevelSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

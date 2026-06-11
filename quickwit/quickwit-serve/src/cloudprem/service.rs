@@ -33,11 +33,12 @@ use quickwit_proto::cloudprem::{
     GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexesRequest,
     GetIndexesResponse, ListRequest, ListResponse, NodeDiagnostics, NodeMetrics, PingRequest,
     PingResponse, PullClusterMetricsResponse, SetIndexRoutingTableRequest,
-    SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest, UpdateIndexResponse,
+    SetIndexRoutingTableResponse, SetLogLevelRequest, SetLogLevelResponse, Statistics,
+    UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
-    PullMetricsResponse,
+    PullMetricsResponse, SetNodeLogLevelRequest,
 };
 use quickwit_proto::metastore::{
     CreateIndexRequest as MetastoreCreateIndexRequest,
@@ -76,6 +77,7 @@ fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
 
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
+const SET_NODE_LOG_LEVEL_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[cfg(feature = "datafusion")]
 fn encode_record_batches_as_arrow_ipc(
@@ -972,6 +974,53 @@ impl CloudPremService for CloudPremServiceImpl {
             self.node_config.clone(),
         )
         .await
+    }
+
+    async fn set_log_level(
+        &self,
+        request: SetLogLevelRequest,
+    ) -> CloudPremResult<SetLogLevelResponse> {
+        info!(filter = request.filter, "received SetLogLevel request");
+
+        let ready_nodes = self.cluster.ready_nodes().await;
+        let mut set_log_level_futures = FuturesUnordered::new();
+
+        for ready_node in ready_nodes {
+            let node_id = ready_node.node_id.clone();
+            let client = DeveloperServiceClient::from_channel(
+                ready_node.grpc_advertise_addr,
+                ready_node.channel(),
+                DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+                Some(CompressionEncoding::Zstd),
+            );
+            let filter = request.filter.clone();
+            let set_log_level_future = async move {
+                let res = timeout(
+                    SET_NODE_LOG_LEVEL_TIMEOUT,
+                    client.set_node_log_level(SetNodeLogLevelRequest { filter }),
+                )
+                .await;
+                (node_id, res)
+            };
+            set_log_level_futures.push(set_log_level_future);
+        }
+
+        let mut failed_nodes: Vec<String> = Vec::with_capacity(set_log_level_futures.len());
+        while let Some((node_id, res)) = set_log_level_futures.next().await {
+            match res {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => {
+                    error!(%node_id, %err, "failed to set log level on node");
+                    failed_nodes.push(node_id.to_string());
+                }
+                Err(_elapsed) => {
+                    error!(%node_id, "set node log level request timed out");
+                    failed_nodes.push(node_id.to_string());
+                }
+            }
+        }
+
+        Ok(SetLogLevelResponse { failed_nodes })
     }
 }
 

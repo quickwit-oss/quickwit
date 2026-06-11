@@ -22,6 +22,7 @@ service DeveloperService {
   rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse);
   rpc PullMetrics(PullMetricsRequest) returns (PullMetricsResponse);
   rpc GetNodeDiagnostics(GetNodeDiagnosticsRequest) returns (GetNodeDiagnosticsResponse);
+  rpc SetNodeLogLevel(SetNodeLogLevelRequest) returns (SetNodeLogLevelResponse);
 }
 
 message GetDebugInfoRequest {
@@ -48,3 +49,10 @@ message GetNodeDiagnosticsResponse {
     string env_info_json = 4;
     string deployment_info_json = 5;
 }
+
+message SetNodeLogLevelRequest {
+    // tracing_subscriber EnvFilter directive, e.g. "quickwit=debug,tantivy=warn"
+    string filter = 1;
+}
+
+message SetNodeLogLevelResponse {}

@@ -250,6 +250,9 @@ async fn handle_request_inner(
         Request::SubstraitSearch(substrait_search) => {
             Response::SubstraitSearch(handle_err!(server.substrait_search(substrait_search).await))
         }
+        Request::SetLogLevel(set_log_level) => {
+            Response::SetLogLevel(handle_err!(server.set_log_level(set_log_level).await))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };

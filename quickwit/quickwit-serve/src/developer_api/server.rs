@@ -31,8 +31,10 @@ use quickwit_proto::cloudprem::metrics::*;
 use quickwit_proto::developer::{
     DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
     GetNodeDiagnosticsRequest, GetNodeDiagnosticsResponse, PullMetricsResponse,
+    SetNodeLogLevelRequest, SetNodeLogLevelResponse,
 };
 use serde_json::json;
+use tracing::{error, info};
 
 use crate::{BuildInfo, DeploymentInfo, EnvInfo, QuickwitServices, RuntimeInfo};
 
@@ -40,6 +42,7 @@ use crate::{BuildInfo, DeploymentInfo, EnvInfo, QuickwitServices, RuntimeInfo};
 pub(crate) struct DeveloperApiServer {
     node_config: Arc<NodeConfig>,
     cluster: Cluster,
+    env_filter_reload_fn: crate::EnvFilterReloadFn,
     control_plane_mailbox_opt: Option<Mailbox<ControlPlane>>,
     ingest_router_opt: Option<IngestRouter>,
     ingester_opt: Option<Ingester>,
@@ -58,6 +61,7 @@ impl DeveloperApiServer {
         Self {
             node_config: services.node_config.clone(),
             cluster: services.cluster.clone(),
+            env_filter_reload_fn: services.env_filter_reload_fn.clone(),
             control_plane_mailbox_opt: services.control_plane_server_opt.clone(),
             ingest_router_opt: services.ingest_router_opt.clone(),
             ingester_opt: services.ingester_opt.clone(),
@@ -170,6 +174,21 @@ impl DeveloperService for DeveloperApiServer {
             env_info_json,
             deployment_info_json,
         })
+    }
+
+    async fn set_node_log_level(
+        &self,
+        request: SetNodeLogLevelRequest,
+    ) -> DeveloperResult<SetNodeLogLevelResponse> {
+        if let Err(err) = (self.env_filter_reload_fn)(&request.filter) {
+            error!(filter = request.filter, %err, "failed to set log level");
+            return Err(DeveloperError::InvalidArgument(format!(
+                "invalid log level filter `{}`: {err}",
+                request.filter
+            )));
+        }
+        info!(filter = request.filter, "log level updated");
+        Ok(SetNodeLogLevelResponse {})
     }
 }
 
@@ -286,9 +305,12 @@ mod tests {
             quickwit_common::uri::Uri::for_test("postgresql://username:password@db");
         let node_config = Arc::new(node_config);
 
+        let env_filter_reload_fn = crate::do_nothing_env_filter_reload_fn();
+
         let developer_api_server = DeveloperApiServer {
             node_config,
             cluster,
+            env_filter_reload_fn,
             control_plane_mailbox_opt: None,
             ingest_router_opt: None,
             ingester_opt: None,
