@@ -14,7 +14,6 @@
 
 use std::io;
 use std::iter::once;
-use std::ops::RangeInclusive;
 
 use bytesize::ByteSize;
 #[cfg(feature = "failpoints")]
@@ -150,26 +149,6 @@ pub(super) fn check_enough_capacity(
     Ok(())
 }
 
-/// Returns the first and last position of the records currently stored in the queue. Returns `None`
-/// if the queue does not exist or is empty.
-pub(super) fn queue_position_range(
-    mrecordlog: &MultiRecordLogAsync,
-    queue_id: &QueueId,
-) -> Option<RangeInclusive<u64>> {
-    let first_position = mrecordlog
-        .range(queue_id, ..)
-        .ok()?
-        .next()
-        .map(|record| record.position)?;
-
-    let last_position = mrecordlog
-        .last_record(queue_id)
-        .ok()?
-        .map(|record| record.position)?;
-
-    Some(first_position..=last_position)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,34 +234,5 @@ mod tests {
         ));
 
         check_enough_capacity(&mrecordlog, ByteSize::mb(256), ByteSize(12), ByteSize(12)).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_append_queue_position_range() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
-
-        assert!(queue_position_range(&mrecordlog, &"queue-not-found".to_string()).is_none());
-
-        mrecordlog.create_queue("test-queue").await.unwrap();
-        assert!(queue_position_range(&mrecordlog, &"test-queue".to_string()).is_none());
-
-        mrecordlog
-            .append_records("test-queue", None, std::iter::once(&b"test-doc-foo"[..]))
-            .await
-            .unwrap();
-        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
-        assert_eq!(position_range, 0..=0);
-
-        mrecordlog
-            .append_records("test-queue", None, std::iter::once(&b"test-doc-bar"[..]))
-            .await
-            .unwrap();
-        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
-        assert_eq!(position_range, 0..=1);
-
-        mrecordlog.truncate("test-queue", 0).await.unwrap();
-        let position_range = queue_position_range(&mrecordlog, &"test-queue".to_string()).unwrap();
-        assert_eq!(position_range, 1..=1);
     }
 }

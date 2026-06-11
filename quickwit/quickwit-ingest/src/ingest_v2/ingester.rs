@@ -1554,8 +1554,8 @@ mod tests {
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_closed();
-        solo_shard_01.assert_replication_position(Position::Beginning);
-        solo_shard_01.assert_truncation_position(Position::Beginning);
+        solo_shard_01.assert_replication_position(Position::offset(0u64));
+        solo_shard_01.assert_truncation_position(Position::offset(0u64));
         assert!(solo_shard_01.is_advertisable);
 
         let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
