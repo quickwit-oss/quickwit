@@ -25,6 +25,7 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
+use aws_smithy_types::retry::ErrorKind;
 
 use crate::retry::AwsRetryable;
 
@@ -35,7 +36,18 @@ where E: AwsRetryable
         match self {
             SdkError::ConstructionFailure(_) => false,
             SdkError::TimeoutError(_) => true,
-            SdkError::DispatchFailure(failure) => failure.is_io() || failure.is_timeout(),
+            SdkError::DispatchFailure(failure) => {
+                failure.is_io()
+                    || failure.is_timeout()
+                    || matches!(
+                        failure.as_other(),
+                        Some(
+                            ErrorKind::TransientError
+                                | ErrorKind::ThrottlingError
+                                | ErrorKind::ServerError
+                        )
+                    )
+            }
             SdkError::ResponseError(_) => true,
             SdkError::ServiceError(error) => error.err().is_retryable(),
             _ => false,
