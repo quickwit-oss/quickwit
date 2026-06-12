@@ -26,7 +26,7 @@ use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
-use reqwest::tls::Certificate;
+use reqwest::tls::{Certificate, Identity};
 use reqwest::{ClientBuilder as ReqwestClientBuilder, Method, StatusCode, Url};
 use reqwest_middleware::{ClientBuilder as ReqwestMiddlewareClientBuilder, ClientWithMiddleware};
 use reqwest_retry::RetryTransientMiddleware;
@@ -58,6 +58,7 @@ impl Transport {
         endpoint: Url,
         connect_timeout: Timeout,
         ca_cert: Option<Certificate>,
+        client_identity: Option<Identity>,
         num_retries: u32,
     ) -> Self {
         let base_url = endpoint;
@@ -72,6 +73,9 @@ impl Transport {
             reqwest_client_builder = reqwest_client_builder
                 .tls_built_in_root_certs(false)
                 .add_root_certificate(ca_cert);
+        }
+        if let Some(identity) = client_identity {
+            reqwest_client_builder = reqwest_client_builder.identity(identity);
         }
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_secs(1), Duration::from_secs(60))
@@ -147,6 +151,8 @@ pub struct QuickwitClientBuilder {
     detailed_response: bool,
     /// Validate against a custom TLS certificate authority
     ca_cert: Option<Certificate>,
+    /// Client certificate + key for mTLS
+    client_identity: Option<Identity>,
     /// Maximum number of retries for transient errors.
     num_retries: u32,
 }
@@ -163,6 +169,7 @@ impl QuickwitClientBuilder {
             use_legacy_ingest: false,
             detailed_response: false,
             ca_cert: None,
+            client_identity: None,
             num_retries: 0,
         }
     }
@@ -208,6 +215,11 @@ impl QuickwitClientBuilder {
         self
     }
 
+    pub fn set_tls_identity(mut self, identity: Option<Identity>) -> Self {
+        self.client_identity = identity;
+        self
+    }
+
     pub fn num_retries(mut self, num_retries: u32) -> Self {
         self.num_retries = num_retries;
         self
@@ -218,6 +230,7 @@ impl QuickwitClientBuilder {
             self.base_url,
             self.connect_timeout,
             self.ca_cert,
+            self.client_identity,
             self.num_retries,
         );
         QuickwitClient {
