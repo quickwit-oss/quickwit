@@ -27,9 +27,9 @@ use chitchat::{
     FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState, spawn_chitchat,
 };
 use itertools::Itertools;
-use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
+use quickwit_transport::ChannelFactory;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
 #[cfg(any(test, feature = "testsuite"))]
@@ -63,10 +63,8 @@ pub struct Cluster {
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
-    // TODO this object contains a tls config. We might want to change it to a
-    // ArcSwap<ClientGrpcConfig> or something so that some task can watch for new certificates
-    // and update this (hot reloading)
-    client_grpc_config: ClientGrpcConfig,
+    // Builds gRPC channels to peers.
+    channel_factory: ChannelFactory,
     gossip_interval: Duration,
     inner: Arc<RwLock<InnerCluster>>,
 }
@@ -174,7 +172,7 @@ impl Cluster {
         gossip_interval: Duration,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
-        client_grpc_config: ClientGrpcConfig,
+        channel_factory: ChannelFactory,
     ) -> anyhow::Result<Self> {
         info!(
             cluster_id=%cluster_id,
@@ -243,7 +241,7 @@ impl Cluster {
             weak_chitchat,
             live_nodes_rx,
             catchup_callback_rx.clone(),
-            client_grpc_config.clone(),
+            channel_factory.clone(),
         )
         .await;
 
@@ -260,7 +258,7 @@ impl Cluster {
             gossip_listen_addr,
             gossip_interval,
             inner: Arc::new(RwLock::new(inner)),
-            client_grpc_config,
+            channel_factory,
         };
         spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
@@ -585,7 +583,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
 async fn spawn_change_stream_task(cluster: Cluster) {
     let cluster_guard = cluster.inner.read().await;
     let cluster_id = cluster_guard.cluster_id.clone();
-    let client_grpc_config = cluster.client_grpc_config.clone();
+    let channel_factory = cluster.channel_factory.clone();
     let self_chitchat_id = cluster_guard.self_chitchat_id.clone();
     let chitchat = cluster_guard.chitchat_handle.chitchat();
     let weak_cluster = Arc::downgrade(&cluster.inner);
@@ -609,7 +607,7 @@ async fn spawn_change_stream_task(cluster: Cluster) {
                 previous_live_nodes,
                 &previous_live_node_states,
                 &new_live_node_states,
-                &client_grpc_config,
+                &channel_factory,
             )
             .await;
             if !events.is_empty() {
@@ -784,7 +782,6 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::Duration;
 
-    use chitchat::transport::ChannelTransport;
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::service::QuickwitService;
@@ -793,10 +790,11 @@ mod tests {
     use rand::RngExt;
 
     use super::*;
+    use crate::ChitchatTransport;
 
     #[tokio::test]
     async fn test_single_node_cluster_readiness() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let node = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
@@ -865,7 +863,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let node_1 = create_cluster_for_test(Vec::new(), &[], &transport, true).await?;
         let node_1_change_stream = node_1.change_stream();
 
@@ -925,7 +923,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_node_cluster_readiness() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let node_1 =
             create_cluster_for_test(Vec::new(), &["searcher", "indexer"], &transport, true)
                 .await
@@ -966,7 +964,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_members_built_from_chitchat_state() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1034,7 +1032,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_chitchat_state_set_high_number_of_tasks() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster1 = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1170,7 +1168,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_chitchat_state_with_malformatted_indexing_task_key() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let node = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1196,7 +1194,7 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_id_isolation() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
 
         let cluster1a = create_cluster_for_test_with_id(
             NodeId::from_str("node-11"),

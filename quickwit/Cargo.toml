@@ -41,6 +41,7 @@ members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 # The following list excludes `quickwit-metastore-utils`
@@ -82,6 +83,7 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 [workspace.package]
@@ -401,6 +403,7 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-transport = { path = "quickwit-transport" }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "6270552", default-features = false, features = [
   "lz4-compression",

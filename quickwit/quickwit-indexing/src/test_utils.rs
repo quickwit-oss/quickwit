@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -75,7 +75,7 @@ impl TestSandbox {
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
         let node_id = NodeId::from_str(&append_random_suffix("test-node"));
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

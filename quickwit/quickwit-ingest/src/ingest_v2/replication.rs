@@ -758,7 +758,7 @@ impl Drop for ReplicationTaskHandle {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
@@ -1038,7 +1038,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -1309,7 +1309,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -1394,7 +1394,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -1490,7 +1490,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -1587,7 +1587,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await

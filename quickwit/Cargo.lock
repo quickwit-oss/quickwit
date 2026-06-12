@@ -8478,6 +8478,7 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry-exporters",
+ "quickwit-transport",
  "reqwest 0.12.28",
  "rustls 0.23.40",
  "serde_json",
@@ -8509,6 +8510,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-metrics",
  "quickwit-proto",
+ "quickwit-transport",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -8963,12 +8965,15 @@ dependencies = [
  "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",
+ "quickwit-transport",
  "rand 0.10.1",
  "reqwest 0.12.28",
  "rustls 0.23.40",
+ "rustls-pemfile",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-rustls 0.26.4",
  "tonic 0.14.6",
  "tracing",
  "tracing-subscriber",
@@ -9411,10 +9416,9 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry-exporters",
+ "quickwit-transport",
  "regex",
  "rust-embed",
- "rustls 0.23.40",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_qs 0.15.0",
@@ -9514,6 +9518,26 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "quickwit-transport"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "futures-util",
+ "hyper-util",
+ "quickwit-config",
+ "quickwit-metrics",
+ "rustls 0.23.40",
+ "rustls-pemfile",
+ "tempfile",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tonic 0.14.6",
+ "tower 0.5.3",
+ "tracing",
 ]
 
 [[package]]

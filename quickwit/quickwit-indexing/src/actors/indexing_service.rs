@@ -1168,7 +1168,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{HEARTBEAT, Health, ObservationType, Universe};
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{
@@ -1226,7 +1226,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_spawn_observe_detach() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1328,7 +1328,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_supervise_pipelines() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1393,7 +1393,7 @@ mod tests {
         const PARAMS_FINGERPRINT_SOURCE_2: u64 = 16199199787360162635;
 
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1679,7 +1679,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_shutdown_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1810,7 +1810,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_does_not_shutdown_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1887,7 +1887,7 @@ mod tests {
         let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -2024,7 +2024,7 @@ mod tests {
                 Ok(response)
             });
 
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

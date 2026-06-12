@@ -24,7 +24,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
-use quickwit_serve::{BuildInfo, EnvFilterReloadFn, serve_quickwit};
+use quickwit_serve::{BuildInfo, EnvFilterReloadFn, reload_tls_cert, serve_quickwit};
 use tokio::signal;
 use tracing::{debug, info};
 
@@ -81,6 +81,16 @@ async fn listen_sigterm() {
     info!("SIGTERM received");
 }
 
+async fn listen_sighup() {
+    let mut sighup = signal::unix::signal(signal::unix::SignalKind::hangup())
+        .expect("registering a signal handler for SIGHUP should not fail");
+
+    while sighup.recv().await.is_some() {
+        info!("SIGHUP received");
+        reload_tls_cert();
+    }
+}
+
 impl RunCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
@@ -122,6 +132,8 @@ impl RunCliCommand {
         let shutdown_signal = Box::pin(async {
             select(pin!(listen_interrupt()), pin!(listen_sigterm())).await;
         });
+        // Reload TLS certificates on SIGHUP for the lifetime of the process.
+        tokio::spawn(listen_sighup());
         serve_quickwit(
             node_config,
             runtimes_config,

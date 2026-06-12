@@ -348,12 +348,12 @@ impl ClusterSandbox {
         Option<reqwest::tls::Certificate>,
         Option<reqwest::tls::Identity>,
     ) {
-        let Some(tls_conf) = &node_config.rest_config.tls else {
+        let Some(tls_conf) = &node_config.rest_config.tls_config else {
             return (None, None);
         };
         let ca_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
         let ca_cert = reqwest::tls::Certificate::from_pem(&ca_bytes).unwrap();
-        let identity = if tls_conf.validate_client {
+        let identity = if tls_conf.verify_client_cert {
             let mut pem = std::fs::read(&tls_conf.key_path).unwrap();
             pem.extend(std::fs::read(&tls_conf.cert_path).unwrap());
             Some(reqwest::tls::Identity::from_pem(&pem).unwrap())
