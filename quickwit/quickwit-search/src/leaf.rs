@@ -392,6 +392,7 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         num_successful_splits: 1,
         intermediate_aggregation_result: None,
         resource_stats: None,
+        splits_by_outcome: None,
     }
 }
 
@@ -441,7 +442,7 @@ async fn leaf_search_single_split(
     // split can't have better results.
     //
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
-        leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
+        leaf_search_state_guard.set_state(SplitSearchState::ProcessedFromMetadata);
         let effective_num_docs = split
             .num_docs
             .saturating_sub(split.soft_deleted_doc_ids.len() as u64);
@@ -571,7 +572,10 @@ async fn leaf_search_single_split(
                     cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
                         as u64,
                 });
-                leaf_search_state_guard.set_state(SplitSearchState::Success);
+                // splits by outcome are estimated at the (doc mapping) leaf
+                // response level to account for all early returns, so it is
+                // left None here
+                leaf_search_state_guard.set_state(SplitSearchState::Processed);
                 Result::<_, TantivyError>::Ok(Some((
                     simplified_search_request,
                     leaf_search_response,
@@ -1435,8 +1439,6 @@ pub async fn single_doc_mapping_leaf_search(
         }
     }
 
-    info!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
-
     // we can't use unwrap_or_clone because mutexes aren't Clone
     let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
         Ok(filter_merger) => filter_merger.into_inner().unwrap(),
@@ -1458,19 +1460,26 @@ pub async fn single_doc_mapping_leaf_search(
             .await
             .context("failed to merge split search responses");
 
-    Ok(leaf_search_response_reresult??)
+    let mut leaf_response = leaf_search_response_reresult??;
+    leaf_response.splits_by_outcome = Some(
+        leaf_search_context
+            .split_outcome_counters
+            .split_by_outcome(),
+    );
+    Ok(leaf_response)
 }
 
 #[derive(Copy, Clone)]
 enum SplitSearchState {
     Start,
     CacheHit,
+    ProcessedFromMetadata,
     PrunedBeforeWarmup,
     WarmUp,
     PrunedAfterWarmup,
     CpuQueue,
     Cpu,
-    Success,
+    Processed,
 }
 
 impl SplitSearchState {
@@ -1478,12 +1487,13 @@ impl SplitSearchState {
         match self {
             SplitSearchState::Start => counters.cancel_before_warmup.inc(),
             SplitSearchState::CacheHit => counters.cache_hit.inc(),
+            SplitSearchState::ProcessedFromMetadata => counters.processed_from_metadata.inc(),
             SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.inc(),
             SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
             SplitSearchState::Cpu => counters.cancel_cpu.inc(),
-            SplitSearchState::Success => counters.success.inc(),
+            SplitSearchState::Processed => counters.processed.inc(),
         }
     }
 }

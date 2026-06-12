@@ -23,6 +23,7 @@ use quickwit_common::metrics::{
     linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
     new_histogram_vec,
 };
+use quickwit_proto::search::SplitsByOutcome;
 
 fn print_if_not_null(
     field_name: &'static str,
@@ -36,27 +37,32 @@ fn print_if_not_null(
     Ok(())
 }
 
+/// Counters to track the outcome of leaf search splits.
+///
+/// Cancellation counters cover two scenarios: errors in splits and timeouts.
 pub struct SplitSearchOutcomeCounters {
     pub cancel_before_warmup: IntCounter,
     pub cache_hit: IntCounter,
+    pub processed_from_metadata: IntCounter,
     pub pruned_before_warmup: IntCounter,
     pub cancel_warmup: IntCounter,
     pub pruned_after_warmup: IntCounter,
     pub cancel_cpu_queue: IntCounter,
     pub cancel_cpu: IntCounter,
-    pub success: IntCounter,
+    pub processed: IntCounter,
 }
 
 impl fmt::Display for SplitSearchOutcomeCounters {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         print_if_not_null("cancel_before_warmup", &self.cancel_before_warmup, f)?;
         print_if_not_null("cache_hit", &self.cache_hit, f)?;
+        print_if_not_null("processed_from_metadata", &self.processed_from_metadata, f)?;
         print_if_not_null("pruned_before_warmup", &self.pruned_before_warmup, f)?;
         print_if_not_null("cancel_warmup", &self.cancel_warmup, f)?;
         print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
         print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
         print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
-        print_if_not_null("success", &self.success, f)?;
+        print_if_not_null("processed", &self.processed, f)?;
         Ok(())
     }
 }
@@ -92,6 +98,8 @@ impl SplitSearchOutcomeCounters {
             cancel_before_warmup: search_split_outcome_vec
                 .with_label_values(["cancel_before_warmup"]),
             cache_hit: search_split_outcome_vec.with_label_values(["cache_hit"]),
+            processed_from_metadata: search_split_outcome_vec
+                .with_label_values(["processed_from_metadata"]),
             pruned_before_warmup: search_split_outcome_vec
                 .with_label_values(["pruned_before_warmup"]),
             cancel_warmup: search_split_outcome_vec.with_label_values(["cancel_warmup"]),
@@ -99,7 +107,34 @@ impl SplitSearchOutcomeCounters {
                 .with_label_values(["pruned_after_warmup"]),
             cancel_cpu_queue: search_split_outcome_vec.with_label_values(["cancel_cpu_queue"]),
             cancel_cpu: search_split_outcome_vec.with_label_values(["cancel_cpu"]),
-            success: search_split_outcome_vec.with_label_values(["success"]),
+            processed: search_split_outcome_vec.with_label_values(["processed"]),
+        }
+    }
+
+    pub fn split_by_outcome(&self) -> SplitsByOutcome {
+        // Destructure to make sure we don't forget to update this if we add a
+        // new state.
+        let Self {
+            pruned_before_warmup,
+            pruned_after_warmup,
+            cancel_before_warmup,
+            cancel_warmup,
+            cancel_cpu_queue,
+            cancel_cpu,
+            processed,
+            processed_from_metadata,
+            cache_hit,
+        } = &self;
+        SplitsByOutcome {
+            pruned_before_warmup: pruned_before_warmup.get(),
+            pruned_after_warmup: pruned_after_warmup.get(),
+            cancel_before_warmup: cancel_before_warmup.get(),
+            cancel_warmup: cancel_warmup.get(),
+            cancel_cpu_queue: cancel_cpu_queue.get(),
+            cancel_cpu: cancel_cpu.get(),
+            processed: processed.get(),
+            processed_from_metadata: processed_from_metadata.get(),
+            cache_hit: cache_hit.get(),
         }
     }
 }

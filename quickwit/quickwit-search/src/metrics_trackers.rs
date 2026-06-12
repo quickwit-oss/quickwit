@@ -19,7 +19,7 @@ use std::task::{Context, Poll, ready};
 use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
-use quickwit_proto::search::{LeafSearchResponse, SearchResponse};
+use quickwit_proto::search::{LeafSearchResponse, SearchResponse, SplitsByOutcome};
 use tracing::{Span, record_all};
 
 use crate::SearchError;
@@ -125,6 +125,48 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
     }
 }
 
+struct SplitsByOutcomeDisp(SplitsByOutcome);
+
+impl std::fmt::Display for SplitsByOutcomeDisp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Destructure to make sure we update this if a state is added
+        let SplitsByOutcome {
+            pruned_before_warmup,
+            pruned_after_warmup,
+            cancel_before_warmup,
+            cancel_warmup,
+            cancel_cpu_queue,
+            cancel_cpu,
+            processed,
+            processed_from_metadata,
+            cache_hit,
+        } = self.0;
+        let mut sep = "{";
+        for (name, val) in [
+            ("pruned_before_warmup", pruned_before_warmup),
+            ("pruned_after_warmup", pruned_after_warmup),
+            ("cancel_before_warmup", cancel_before_warmup),
+            ("cancel_warmup", cancel_warmup),
+            ("cancel_cpu_queue", cancel_cpu_queue),
+            ("cancel_cpu", cancel_cpu),
+            ("processed", processed),
+            ("processed_from_metadata", processed_from_metadata),
+            ("cache_hit", cache_hit),
+        ] {
+            if val > 0 {
+                write!(f, "{sep}{name}={val}")?;
+                sep = ",";
+            }
+        }
+        if sep == "{" {
+            write!(f, "{{}}")?;
+        } else {
+            write!(f, "}}")?;
+        }
+        Ok(())
+    }
+}
+
 impl<F> Future for RootSearchMetricsFuture<F>
 where F: Future<Output = crate::Result<SearchResponse>>
 {
@@ -139,14 +181,16 @@ where F: Future<Output = crate::Result<SearchResponse>>
             tracing::error!(?err, "root search failed");
             *this.status = Some("error");
         } else if let Ok(resp) = &response {
+            let s = resp.splits_by_outcome.unwrap_or_default();
             if resp.failed_splits.is_empty() {
                 *this.status = Some("success");
-                tracing::info!("root search success");
+                tracing::info!(splits_by_outcome = %SplitsByOutcomeDisp(s), "root search success");
             } else {
                 *this.status = Some("partial-success");
                 tracing::error!(
                     failed_splits = resp.failed_splits.len(),
                     first_failed_split = ?resp.failed_splits.first().unwrap(),
+                    splits_by_outcome = %SplitsByOutcomeDisp(s),
                     "root search partial success"
                 );
             }
@@ -241,4 +285,62 @@ pub fn normalize_user_agent(user_agent: &str) -> &str {
 
     // Keep short service names verbatim; truncate anything exotic.
     if ua.len() <= 64 { ua } else { "other" }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::search::SplitsByOutcome;
+
+    use super::SplitsByOutcomeDisp;
+
+    fn disp(s: SplitsByOutcome) -> String {
+        format!("{}", SplitsByOutcomeDisp(s))
+    }
+
+    #[test]
+    fn test_splits_by_outcome_disp_all_zero() {
+        assert_eq!(disp(SplitsByOutcome::default()), "{}");
+    }
+
+    #[test]
+    fn test_splits_by_outcome_disp_single_field() {
+        assert_eq!(
+            disp(SplitsByOutcome {
+                processed: 3,
+                ..Default::default()
+            }),
+            "{processed=3}"
+        );
+    }
+
+    #[test]
+    fn test_splits_by_outcome_disp_multiple_fields() {
+        assert_eq!(
+            disp(SplitsByOutcome {
+                pruned_before_warmup: 2,
+                processed: 1,
+                ..Default::default()
+            }),
+            "{pruned_before_warmup=2,processed=1}"
+        );
+    }
+
+    #[test]
+    fn test_splits_by_outcome_disp_all_fields() {
+        assert_eq!(
+            disp(SplitsByOutcome {
+                pruned_before_warmup: 1,
+                pruned_after_warmup: 2,
+                cancel_before_warmup: 3,
+                cancel_warmup: 4,
+                cancel_cpu_queue: 5,
+                cancel_cpu: 6,
+                processed: 7,
+                processed_from_metadata: 8,
+                cache_hit: 9,
+            }),
+            "{pruned_before_warmup=1,pruned_after_warmup=2,cancel_before_warmup=3,cancel_warmup=4,\
+             cancel_cpu_queue=5,cancel_cpu=6,processed=7,processed_from_metadata=8,cache_hit=9}"
+        );
+    }
 }

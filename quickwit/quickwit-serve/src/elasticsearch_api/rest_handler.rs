@@ -31,7 +31,7 @@ use quickwit_metastore::*;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
-    SortDatetimeFormat,
+    SortDatetimeFormat, SplitsByOutcome,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_query::BooleanOperand;
@@ -365,10 +365,14 @@ fn build_request_for_es_api(
         .track_total_hits
         .or(search_body.track_total_hits)
     {
-        None => CountHits::Underestimate,
         Some(TrackTotalHits::Track(false)) => CountHits::Underestimate,
         Some(TrackTotalHits::Count(count)) if count <= max_hits as i64 => CountHits::Underestimate,
         Some(TrackTotalHits::Track(true) | TrackTotalHits::Count(_)) => CountHits::CountAll,
+        // A query without aggregation and a size set to 0 cannot be used for
+        // anything else than counting. We avoid setting `Underestimate` in that
+        // case as it would always return 0.
+        None if max_hits == 0 && aggregation_request.is_none() => CountHits::CountAll,
+        None => CountHits::Underestimate,
     }
     .into();
 
@@ -1008,6 +1012,34 @@ fn convert_to_es_stats_response(
     ElasticsearchStatsResponse { _all, indices }
 }
 
+fn get_relation_from_split_outcome(
+    splits_by_outcome: &Option<SplitsByOutcome>,
+    num_failed_splits: usize,
+) -> TotalHitsRelation {
+    let Some(splits_by_outcome) = splits_by_outcome else {
+        return TotalHitsRelation::GreaterThanOrEqualTo;
+    };
+    // Destructure to make sure we update this if a state is added.
+    let SplitsByOutcome {
+        cancel_before_warmup: _,
+        cancel_warmup: _,
+        cancel_cpu_queue: _,
+        cancel_cpu: _,
+        pruned_before_warmup,
+        pruned_after_warmup,
+        cache_hit: _,
+        processed: _,
+        processed_from_metadata: _,
+    } = *splits_by_outcome;
+    // A cancelled split may be retried and eventually succeed, so cancel
+    // counters alone don't imply an underestimated count. Use reported failed
+    // splits instead.
+    if num_failed_splits == 0 && pruned_before_warmup == 0 && pruned_after_warmup == 0 {
+        return TotalHitsRelation::Equal;
+    }
+    TotalHitsRelation::GreaterThanOrEqualTo
+}
+
 #[allow(clippy::result_large_err)]
 fn convert_to_es_search_response(
     resp: SearchResponse,
@@ -1043,12 +1075,16 @@ fn convert_to_es_search_response(
     let num_failed_splits = resp.failed_splits.len() as u32;
     let num_successful_splits = resp.num_successful_splits as u32;
     let num_total_splits = num_successful_splits + num_failed_splits;
+
+    let relation =
+        get_relation_from_split_outcome(&resp.splits_by_outcome, resp.failed_splits.len());
+
     Ok(ElasticsearchResponse {
         timed_out: false,
         hits: HitsMetadata {
             total: Some(TotalHits {
                 value: resp.num_hits,
-                relation: TotalHitsRelation::Equal,
+                relation,
             }),
             max_score: None,
             hits,

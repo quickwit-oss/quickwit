@@ -234,6 +234,9 @@ pub struct SearchResponse {
     /// Total number of successful splits searched.
     #[prost(uint64, tag = "8")]
     pub num_successful_splits: u64,
+    /// Statistics on the split outcomes
+    #[prost(message, optional, tag = "10")]
+    pub splits_by_outcome: ::core::option::Option<SplitsByOutcome>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -275,6 +278,34 @@ pub struct LeafSearchRequest {
     /// split files.
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Split outcome counters
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitsByOutcome {
+    #[prost(uint64, tag = "1")]
+    pub pruned_before_warmup: u64,
+    #[prost(uint64, tag = "2")]
+    pub pruned_after_warmup: u64,
+    /// Cancelled before warmup started (error or timeout)
+    #[prost(uint64, tag = "3")]
+    pub cancel_before_warmup: u64,
+    #[prost(uint64, tag = "4")]
+    pub processed: u64,
+    #[prost(uint64, tag = "5")]
+    pub processed_from_metadata: u64,
+    /// Resolved by the partial request cache
+    #[prost(uint64, tag = "6")]
+    pub cache_hit: u64,
+    /// Cancelled during warmup (error or timeout)
+    #[prost(uint64, tag = "7")]
+    pub cancel_warmup: u64,
+    /// Cancelled while waiting in the CPU thread pool queue
+    #[prost(uint64, tag = "8")]
+    pub cancel_cpu_queue: u64,
+    /// Cancelled during CPU processing (error or timeout)
+    #[prost(uint64, tag = "9")]
+    pub cancel_cpu: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -464,6 +495,9 @@ pub struct LeafSearchResponse {
     >,
     #[prost(message, optional, tag = "8")]
     pub resource_stats: ::core::option::Option<ResourceStats>,
+    /// Split outcome counters for all splits targeted by this leaf request.
+    #[prost(message, optional, tag = "9")]
+    pub splits_by_outcome: ::core::option::Option<SplitsByOutcome>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

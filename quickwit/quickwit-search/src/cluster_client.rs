@@ -26,7 +26,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
-use crate::{SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
+use crate::{
+    SearchJobPlacer, SearchServiceClient, merge_resource_stats_it, merge_splits_by_outcome_it,
+};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -260,9 +262,16 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
+
     let resource_stats = merge_resource_stats_it([
         &original_response.resource_stats,
         &retry_response.resource_stats,
+    ]);
+    // Splits with "cancel_" outcome will be retried, so they will typically be
+    // counted twice in the outcome breakdown.
+    let splits_by_outcome = merge_splits_by_outcome_it([
+        original_response.splits_by_outcome,
+        retry_response.splits_by_outcome,
     ]);
     Ok(LeafSearchResponse {
         intermediate_aggregation_result,
@@ -274,6 +283,7 @@ fn merge_original_with_retry_leaf_search_response(
         num_successful_splits: original_response.num_successful_splits
             + retry_response.num_successful_splits,
         resource_stats,
+        splits_by_outcome,
     })
 }
 

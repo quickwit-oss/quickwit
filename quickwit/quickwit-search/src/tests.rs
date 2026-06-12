@@ -23,7 +23,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::search::{
-    LeafListTermsResponse, ListTermsRequest, PartialHit, SearchRequest, SortByValue,
+    CountHits, LeafListTermsResponse, ListTermsRequest, PartialHit, SearchRequest, SortByValue,
     SortDatetimeFormat, SortField, SortOrder, SortValue,
 };
 use quickwit_query::query_ast::{
@@ -2605,6 +2605,137 @@ async fn test_sort_by_two_fields_with_null() -> anyhow::Result<()> {
             doc_id: 5,
         },]
     );
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_splits_by_outcome() -> anyhow::Result<()> {
+    let index_id = "test-splits-by-outcome";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                    - "rfc3339"
+                    - "unix_timestamp"
+                fast: true
+            timestamp_field: ts
+            mode: lenient
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+    // Three splits with non-overlapping timestamp ranges
+    let base_ts = OffsetDateTime::now_utc().unix_timestamp();
+    test_sandbox
+        .add_documents(vec![
+            json!({"body": "old doc 1", "ts": base_ts - 2_000_000}),
+            json!({"body": "old doc 2", "ts": base_ts - 1_999_999}),
+        ])
+        .await?;
+    test_sandbox
+        .add_documents(vec![
+            json!({"body": "mid doc 1", "ts": base_ts - 1_000_000}),
+            json!({"body": "mid doc 2", "ts": base_ts - 999_999}),
+        ])
+        .await?;
+    test_sandbox
+        .add_documents(vec![
+            json!({"body": "new doc 1", "ts": base_ts}),
+            json!({"body": "new doc 2", "ts": base_ts + 1}),
+        ])
+        .await?;
+
+    // All 3 splits should be processed for an unrestricted search.
+    let response = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("doc", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(response.num_hits, 6);
+    let outcomes = response.splits_by_outcome.unwrap();
+    assert_eq!(outcomes.processed, 3, "all 3 splits should be processed");
+    assert_eq!(outcomes.pruned_before_warmup, 0);
+    assert_eq!(outcomes.cancel_before_warmup, 0);
+    assert_eq!(outcomes.cancel_warmup, 0);
+    assert_eq!(outcomes.cancel_cpu_queue, 0);
+    assert_eq!(outcomes.cancel_cpu, 0);
+
+    // With MatchAll, we expect an early optimization that prevents the
+    // processing of older splits.
+    let response = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 1,
+            count_hits: CountHits::Underestimate as i32,
+            sort_fields: vec![SortField {
+                field_name: "ts".to_string(),
+                sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
+            }],
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(response.num_hits, 2);
+    let outcomes = response.splits_by_outcome.unwrap();
+    assert_eq!(outcomes.processed, 1);
+    assert_eq!(outcomes.pruned_before_warmup, 2);
+
+    // MatchAll + max_hits=0 + CountAll triggers the metadata-count fast path: the split's
+    // stored num_docs is used directly without opening the tantivy index.
+    let response = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 0,
+            count_hits: CountHits::CountAll as i32,
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(response.num_hits, 6);
+    let outcomes = response.splits_by_outcome.unwrap();
+    assert_eq!(outcomes.processed_from_metadata, 3);
+    assert_eq!(outcomes.processed, 0);
+    assert_eq!(outcomes.pruned_before_warmup, 0);
+
+    // MatchAll with a time range that fully covers 1 split but only partially
+    // overlaps the 2 others
+    let response = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 0,
+            count_hits: CountHits::CountAll as i32,
+            start_timestamp: Some(base_ts - 1_999_999),
+            end_timestamp: Some(base_ts + 1),
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    // split 1: 1 doc (base_ts-1_999_999), split 2: 2 docs, split 3: 1 doc (base_ts)
+    assert_eq!(response.num_hits, 4);
+    let outcomes = response.splits_by_outcome.unwrap();
+    assert_eq!(outcomes.processed_from_metadata, 1);
+    assert_eq!(outcomes.processed, 2);
+    assert_eq!(outcomes.pruned_before_warmup, 0);
 
     test_sandbox.assert_quit().await;
     Ok(())

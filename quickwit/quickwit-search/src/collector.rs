@@ -24,7 +24,7 @@ use quickwit_common::numeric_types::num_proj::{
 use quickwit_doc_mapper::{FastFieldWarmupInfo, WarmupInfo};
 use quickwit_proto::search::{
     LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortOrder,
-    SortValue, SplitSearchError, TypeSortKey,
+    SortValue, SplitSearchError, SplitsByOutcome, TypeSortKey,
 };
 use quickwit_proto::types::SplitId;
 use serde::Deserialize;
@@ -44,7 +44,10 @@ use tantivy::{
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::sort_repr::{ElidableU64, InternalSortValueRepr, InternalValueRepr};
 use crate::top_k_collector::QuickwitSegmentTopKCollector;
-use crate::{GlobalDocAddress, merge_resource_stats, merge_resource_stats_it};
+use crate::{
+    GlobalDocAddress, merge_resource_stats, merge_resource_stats_it, merge_splits_by_outcome,
+    merge_splits_by_outcome_it,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
@@ -824,6 +827,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             num_attempted_splits: 1,
             num_successful_splits: 1,
             resource_stats: None,
+            splits_by_outcome: None,
         })
     }
 }
@@ -1210,6 +1214,9 @@ fn merge_leaf_responses(
         .map(|leaf_response| &leaf_response.resource_stats);
     let merged_resource_stats = merge_resource_stats_it(resource_stats_it);
 
+    let merged_splits_by_outcome =
+        merge_splits_by_outcome_it(leaf_responses.iter().map(|r| r.splits_by_outcome));
+
     let merged_intermediate_aggregation_result: Option<Vec<u8>> =
         merge_intermediate_aggregation_result(
             aggregations_opt,
@@ -1252,6 +1259,7 @@ fn merge_leaf_responses(
         num_attempted_splits,
         num_successful_splits,
         resource_stats: merged_resource_stats,
+        splits_by_outcome: merged_splits_by_outcome,
     })
 }
 
@@ -1438,6 +1446,7 @@ pub(crate) struct IncrementalCollector {
     num_successful_splits: u64,
     start_offset: usize,
     resource_stats: Option<ResourceStats>,
+    splits_by_outcome: Option<SplitsByOutcome>,
 }
 
 impl IncrementalCollector {
@@ -1459,6 +1468,7 @@ impl IncrementalCollector {
             num_attempted_splits: 0,
             num_successful_splits: 0,
             resource_stats: None,
+            splits_by_outcome: None,
         }
     }
 
@@ -1472,9 +1482,11 @@ impl IncrementalCollector {
             intermediate_aggregation_result,
             num_successful_splits,
             resource_stats,
+            splits_by_outcome,
         } = leaf_response;
 
         merge_resource_stats(&resource_stats, &mut self.resource_stats);
+        merge_splits_by_outcome(splits_by_outcome, &mut self.splits_by_outcome);
 
         self.num_hits += num_hits;
         self.top_k_hits.add_entries(partial_hits.into_iter());
@@ -1526,6 +1538,7 @@ impl IncrementalCollector {
             num_successful_splits: self.num_successful_splits,
             intermediate_aggregation_result,
             resource_stats: self.resource_stats,
+            splits_by_outcome: self.splits_by_outcome,
         })
     }
 }
@@ -1536,7 +1549,7 @@ mod tests {
 
     use quickwit_proto::search::{
         LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortField,
-        SortOrder, SortValue, SplitSearchError,
+        SortOrder, SortValue, SplitSearchError, SplitsByOutcome,
     };
     use tantivy::TantivyDocument;
     use tantivy::aggregation::agg_req::Aggregations;
@@ -2306,6 +2319,7 @@ mod tests {
                 num_successful_splits: 3,
                 intermediate_aggregation_result: None,
                 resource_stats: None,
+                splits_by_outcome: None,
             }],
         );
 
@@ -2325,6 +2339,7 @@ mod tests {
                 num_successful_splits: 3,
                 intermediate_aggregation_result: None,
                 resource_stats: None,
+                splits_by_outcome: None,
             }
         );
 
@@ -2364,6 +2379,7 @@ mod tests {
                     num_successful_splits: 3,
                     intermediate_aggregation_result: None,
                     resource_stats: None,
+                    splits_by_outcome: None,
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -2383,6 +2399,7 @@ mod tests {
                     num_successful_splits: 1,
                     intermediate_aggregation_result: None,
                     resource_stats: None,
+                    splits_by_outcome: None,
                 },
             ],
         );
@@ -2416,6 +2433,7 @@ mod tests {
                 num_successful_splits: 4,
                 intermediate_aggregation_result: None,
                 resource_stats: None,
+                splits_by_outcome: None,
             }
         );
 
@@ -2459,6 +2477,11 @@ mod tests {
                         cpu_microsecs: 100,
                         ..Default::default()
                     }),
+                    splits_by_outcome: Some(SplitsByOutcome {
+                        processed: 3,
+                        cache_hit: 1,
+                        ..Default::default()
+                    }),
                 },
                 LeafSearchResponse {
                     num_hits: 10,
@@ -2479,6 +2502,11 @@ mod tests {
                     intermediate_aggregation_result: None,
                     resource_stats: Some(ResourceStats {
                         cpu_microsecs: 50,
+                        ..Default::default()
+                    }),
+                    splits_by_outcome: Some(SplitsByOutcome {
+                        processed: 1,
+                        pruned_before_warmup: 1,
                         ..Default::default()
                     }),
                 },
@@ -2515,6 +2543,12 @@ mod tests {
                 intermediate_aggregation_result: None,
                 resource_stats: Some(ResourceStats {
                     cpu_microsecs: 150,
+                    ..Default::default()
+                }),
+                splits_by_outcome: Some(SplitsByOutcome {
+                    processed: 4,
+                    cache_hit: 1,
+                    pruned_before_warmup: 1,
                     ..Default::default()
                 }),
             }

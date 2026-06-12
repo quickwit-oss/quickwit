@@ -304,6 +304,7 @@ mod tests {
                 split_id: "split_1".to_string(),
             }],
             resource_stats: None,
+            splits_by_outcome: None,
         };
 
         assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
@@ -398,6 +399,7 @@ mod tests {
                 split_id: "split_1".to_string(),
             }],
             resource_stats: Some(ResourceStats::default()),
+            splits_by_outcome: None,
         };
 
         // for split_1, 1 and 1bis cover different timestamp ranges

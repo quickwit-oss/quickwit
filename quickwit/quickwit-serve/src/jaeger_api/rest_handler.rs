@@ -480,6 +480,7 @@ mod tests {
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
+                    splits_by_outcome: None,
                 })
             });
         let mock_search_service = Arc::new(mock_search_service);
@@ -512,6 +513,7 @@ mod tests {
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
+                    splits_by_outcome: None,
                 })
             });
         let mock_search_service = Arc::new(mock_search_service);

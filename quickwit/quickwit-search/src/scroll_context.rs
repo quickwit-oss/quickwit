@@ -25,7 +25,9 @@ use base64::prelude::BASE64_STANDARD;
 use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
+use quickwit_proto::search::{
+    LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError, SplitsByOutcome,
+};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -55,6 +57,7 @@ pub(crate) struct ScrollContext {
     pub cached_partial_hits: Vec<PartialHit>,
     pub failed_splits: Vec<SplitSearchError>,
     pub num_successful_splits: u64,
+    pub splits_by_outcome: Option<SplitsByOutcome>,
 }
 
 impl ScrollContext {
@@ -117,6 +120,7 @@ impl ScrollContext {
         .await?;
         self.cached_partial_hits_start_offset = start_offset;
         self.cached_partial_hits = leaf_search_response.partial_hits;
+        self.splits_by_outcome = leaf_search_response.splits_by_outcome;
         Ok(true)
     }
 }

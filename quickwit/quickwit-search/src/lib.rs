@@ -71,6 +71,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::search::{
     PartialHit, ResourceStats, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    SplitsByOutcome,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::StorageResolver;
@@ -398,6 +399,16 @@ pub(crate) fn merge_resource_stats_it<'a>(
     acc_stats
 }
 
+pub(crate) fn merge_splits_by_outcome_it(
+    outcomes_it: impl IntoIterator<Item = Option<SplitsByOutcome>>,
+) -> Option<SplitsByOutcome> {
+    let mut acc: Option<SplitsByOutcome> = None;
+    for new in outcomes_it {
+        merge_splits_by_outcome(new, &mut acc);
+    }
+    acc
+}
+
 fn merge_resource_stats(
     new_stats_opt: &Option<ResourceStats>,
     stat_accs_opt: &mut Option<ResourceStats>,
@@ -411,6 +422,27 @@ fn merge_resource_stats(
             stat_accs.cpu_microsecs += new_stats.cpu_microsecs;
         } else {
             *stat_accs_opt = Some(*new_stats);
+        }
+    }
+}
+
+pub(crate) fn merge_splits_by_outcome(
+    new_opt: Option<SplitsByOutcome>,
+    acc_opt: &mut Option<SplitsByOutcome>,
+) {
+    if let Some(new) = new_opt {
+        if let Some(acc) = acc_opt {
+            acc.pruned_before_warmup += new.pruned_before_warmup;
+            acc.pruned_after_warmup += new.pruned_after_warmup;
+            acc.cancel_before_warmup += new.cancel_before_warmup;
+            acc.cancel_warmup += new.cancel_warmup;
+            acc.cancel_cpu_queue += new.cancel_cpu_queue;
+            acc.cancel_cpu += new.cancel_cpu;
+            acc.processed += new.processed;
+            acc.processed_from_metadata += new.processed_from_metadata;
+            acc.cache_hit += new.cache_hit;
+        } else {
+            *acc_opt = Some(new);
         }
     }
 }
@@ -506,6 +538,62 @@ mod stats_merge_tests {
                 warmup_microsecs: 525,
                 cpu_thread_pool_wait_microsecs: 700,
                 cpu_microsecs: 875,
+            })
+        );
+    }
+
+    #[test]
+    fn test_merge_splits_by_outcome() {
+        let mut acc = None;
+
+        // merging None into None stays None
+        merge_splits_by_outcome(None, &mut acc);
+        assert_eq!(acc, None);
+
+        let outcome = Some(SplitsByOutcome {
+            processed: 3,
+            cache_hit: 1,
+            cancel_warmup: 1,
+            ..Default::default()
+        });
+        merge_splits_by_outcome(outcome, &mut acc);
+        assert_eq!(
+            acc,
+            Some(SplitsByOutcome {
+                processed: 3,
+                cache_hit: 1,
+                cancel_warmup: 1,
+                ..Default::default()
+            })
+        );
+
+        // merging None keeps the accumulator unchanged
+        merge_splits_by_outcome(None, &mut acc);
+        assert_eq!(
+            acc,
+            Some(SplitsByOutcome {
+                processed: 3,
+                cache_hit: 1,
+                cancel_warmup: 1,
+                ..Default::default()
+            })
+        );
+
+        // retry outcome: the failed split succeeded on retry
+        let retry_outcome = Some(SplitsByOutcome {
+            processed: 1,
+            pruned_before_warmup: 2,
+            ..Default::default()
+        });
+        merge_splits_by_outcome(retry_outcome, &mut acc);
+        assert_eq!(
+            acc,
+            Some(SplitsByOutcome {
+                processed: 4,
+                cache_hit: 1,
+                cancel_warmup: 1,
+                pruned_before_warmup: 2,
+                ..Default::default()
             })
         );
     }

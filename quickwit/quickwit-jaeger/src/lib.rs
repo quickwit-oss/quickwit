@@ -2722,6 +2722,7 @@ mod tests {
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
+                    splits_by_outcome: None,
                 })
             });
 

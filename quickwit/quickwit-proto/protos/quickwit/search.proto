@@ -322,6 +322,9 @@ message SearchResponse {
 
   // Total number of successful splits searched.
   uint64 num_successful_splits = 8;
+
+  // Statistics on the split outcomes
+  SplitsByOutcome splits_by_outcome = 10;
 }
 
 message SearchPlanResponse {
@@ -357,6 +360,24 @@ message LeafSearchRequest {
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
   repeated string index_uris = 9;
+}
+
+// Split outcome counters
+message SplitsByOutcome {
+    uint64 pruned_before_warmup = 1;
+    uint64 pruned_after_warmup = 2;
+    // Cancelled before warmup started (error or timeout)
+    uint64 cancel_before_warmup = 3;
+    uint64 processed = 4;
+    uint64 processed_from_metadata = 5;
+    // Resolved by the partial request cache
+    uint64 cache_hit = 6;
+    // Cancelled during warmup (error or timeout)
+    uint64 cancel_warmup = 7;
+    // Cancelled while waiting in the CPU thread pool queue
+    uint64 cancel_cpu_queue = 8;
+    // Cancelled during CPU processing (error or timeout)
+    uint64 cancel_cpu = 9;
 }
 
 message ResourceStats {
@@ -505,6 +526,9 @@ message LeafSearchResponse {
   optional bytes intermediate_aggregation_result = 6;
 
   ResourceStats resource_stats = 8;
+
+  // Split outcome counters for all splits targeted by this leaf request.
+  optional SplitsByOutcome splits_by_outcome = 9;
 }
 
 message SnippetRequest {
