@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::LazyLock;
 
+use anyhow::bail;
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
@@ -85,8 +87,26 @@ impl TryFrom<TermsQueryForSerialization> for TermsQuery {
     }
 }
 
+const TERMS_QUERY_WARN_THRESHOLD: usize = 10_000;
+static TERMS_QUERY_REJECT_THRESHOLD: LazyLock<usize> =
+    LazyLock::new(|| quickwit_common::get_from_env("QW_MAX_TERMS_QUERY_SIZE", 100_000, false));
+
 impl ConvertibleToQueryAst for TermsQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
+        if self.values.len() > TERMS_QUERY_WARN_THRESHOLD {
+            tracing::warn!(
+                num_terms = self.values.len(),
+                field = %self.field,
+                "terms query contains more than {TERMS_QUERY_WARN_THRESHOLD} terms"
+            );
+        }
+        if self.values.len() > *TERMS_QUERY_REJECT_THRESHOLD {
+            bail!(
+                "too many terms ({}>{})",
+                self.values.len(),
+                *TERMS_QUERY_REJECT_THRESHOLD
+            )
+        }
         let mut terms_per_field = HashMap::new();
         let values_set: BTreeSet<String> = self.values.into_iter().collect();
         terms_per_field.insert(self.field, values_set);
