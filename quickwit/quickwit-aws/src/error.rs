@@ -39,7 +39,14 @@ where E: AwsRetryable
             SdkError::DispatchFailure(failure) => {
                 failure.is_io()
                     || failure.is_timeout()
-                    || matches!(failure.as_other(), Some(ErrorKind::TransientError))
+                    || matches!(
+                        failure.as_other(),
+                        Some(
+                            ErrorKind::TransientError
+                                | ErrorKind::ThrottlingError
+                                | ErrorKind::ServerError
+                        )
+                    )
             }
             SdkError::ResponseError(_) => true,
             SdkError::ServiceError(error) => error.err().is_retryable(),
