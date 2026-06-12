@@ -669,6 +669,13 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_maturity() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_maturity::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
             async fn test_metastore_publish_metrics_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::metrics::test_metastore_publish_metrics_splits::<$metastore_type>().await;
