@@ -1041,7 +1041,7 @@ pub async fn test_metastore_list_splits_by_node_id<
     metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let list_splits_query =
-        ListSplitsQuery::for_index(index_uid.clone()).with_node_id(NodeId::from("test-node-1"));
+        ListSplitsQuery::for_index(index_uid.clone()).with_node_id(NodeId::from_str("test-node-1"));
     let list_splits_request =
         ListSplitsRequest::try_from_list_splits_query(&list_splits_query).unwrap();
 

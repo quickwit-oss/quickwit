@@ -126,7 +126,7 @@ impl ClusterSandboxBuilder {
             config.enabled_services.clone_from(&node_builder.services);
             config.jaeger_config.enable_endpoint = true;
             config.cluster_id.clone_from(&cluster_id);
-            config.node_id = NodeId::new(format!("test-node-{node_idx}"));
+            config.node_id = NodeId::from_str(&format!("test-node-{node_idx}"));
             config.data_dir_path = root_data_dir.join(config.node_id.as_str());
             config.metastore_uri =
                 QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();

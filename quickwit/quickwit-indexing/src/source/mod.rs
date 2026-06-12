@@ -621,7 +621,7 @@ mod tests {
 
             SourceRuntime {
                 pipeline_id: IndexingPipelineId {
-                    node_id: NodeId::from("test-node"),
+                    node_id: NodeId::from_str("test-node"),
                     index_uid: self.index_uid,
                     source_id: self.source_config.source_id.clone(),
                     pipeline_uid: PipelineUid::for_test(0u128),

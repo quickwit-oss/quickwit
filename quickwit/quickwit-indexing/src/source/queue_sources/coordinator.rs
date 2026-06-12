@@ -338,7 +338,7 @@ mod tests {
         shared_state: QueueSharedState,
     ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from_str("test-node").unwrap(),
+            node_id: NodeId::from_str("test-node"),
             index_uid: shared_state.source_uid.index_uid.clone(),
             source_id: shared_state.source_uid.source_id.clone(),
             pipeline_uid: PipelineUid::random(),

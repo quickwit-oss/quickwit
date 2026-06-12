@@ -447,7 +447,7 @@ impl IndexingScheduler {
             tokio::spawn({
                 let indexer = indexers
                     .iter()
-                    .find(|indexer| indexer.node_id == *node_id)
+                    .find(|indexer| indexer.node_id.as_str() == node_id.as_str())
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
                 let indexing_tasks = indexing_tasks.clone();
@@ -1217,7 +1217,7 @@ mod tests {
                 .expect_apply_indexing_plan()
                 .returning(|_| Ok(ApplyIndexingPlanResponse {}));
             let indexer_info = IndexerNodeInfo {
-                node_id: NodeId::from(node_id.as_str()),
+                node_id: NodeId::from_str(node_id.as_str()),
                 generation_id: 0,
                 client: IndexingServiceClient::from_mock(mock_indexer),
                 indexing_tasks: Vec::new(),
@@ -1225,8 +1225,11 @@ mod tests {
             };
             indexer_pool.insert(indexer_info.node_id.clone(), indexer_info);
         }
-        let mut scheduler =
-            IndexingScheduler::new("test-cluster".to_string(), "test-node".into(), indexer_pool);
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("test-node"),
+            indexer_pool,
+        );
         scheduler.state.current_targeted_physical_plan = Some(plan);
         scheduler
     }
@@ -1407,8 +1410,11 @@ mod tests {
     #[tokio::test]
     async fn test_swap_pipelines_no_plan() {
         let indexer_pool = IndexerPool::default();
-        let mut scheduler =
-            IndexingScheduler::new("test-cluster".to_string(), "test-node".into(), indexer_pool);
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("test-node"),
+            indexer_pool,
+        );
 
         let request = SwapIndexingPipelinesRequest {
             swaps: vec![make_swap_entry(

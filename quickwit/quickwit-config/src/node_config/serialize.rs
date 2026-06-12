@@ -217,7 +217,10 @@ impl NodeConfigBuilder {
         mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
-        let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
+        let node_id = self
+            .node_id
+            .resolve(env_vars)
+            .map(|s| NodeId::from_str(&s))?;
 
         let enabled_services = self
             .enabled_services
@@ -467,7 +470,7 @@ pub fn node_config_for_tests_from_ports(
     rest_listen_port: u16,
     grpc_listen_port: u16,
 ) -> NodeConfig {
-    let node_id = NodeId::new(default_node_id().unwrap());
+    let node_id = NodeId::from_str(&default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
@@ -744,7 +747,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(
+            config.node_id.as_str(),
+            get_short_hostname().unwrap().as_str()
+        );
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()

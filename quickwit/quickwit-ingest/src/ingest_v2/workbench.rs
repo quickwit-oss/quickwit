@@ -785,7 +785,7 @@ mod tests {
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
 
         let persist_error = IngestV2Error::Timeout("request timed out".to_string());
-        let leader_id = NodeId::from("test-leader");
+        let leader_id = NodeId::from_str("test-leader");
         let persist_summary = PersistRequestSummary {
             leader_id: leader_id.clone(),
             subrequest_ids: vec![0],
@@ -811,7 +811,7 @@ mod tests {
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
 
         let persist_error = IngestV2Error::Unavailable("connection error".to_string());
-        let leader_id = NodeId::from("test-leader");
+        let leader_id = NodeId::from_str("test-leader");
         let persist_summary = PersistRequestSummary {
             leader_id: leader_id.clone(),
             subrequest_ids: vec![0],
@@ -840,7 +840,7 @@ mod tests {
 
         let persist_error = IngestV2Error::Internal("IO error".to_string());
         let persist_summary = PersistRequestSummary {
-            leader_id: NodeId::from("test-leader"),
+            leader_id: NodeId::from_str("test-leader"),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);

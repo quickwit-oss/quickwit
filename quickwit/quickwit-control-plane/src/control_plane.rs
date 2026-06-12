@@ -34,7 +34,6 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
 use quickwit_common::{Progress, shared_consts};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
@@ -1154,12 +1153,12 @@ impl Handler<IndexerJoined> for ControlPlane {
         if is_maintenance {
             info!(
                 "indexer `{}` joined the cluster during maintenance mode",
-                message.0.node_id()
+                message.0.node_id
             );
         } else {
             info!(
                 "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing plan",
-                message.0.node_id()
+                message.0.node_id
             );
         }
 
@@ -1199,13 +1198,13 @@ impl Handler<IndexerLeft> for ControlPlane {
         if is_maintenance {
             info!(
                 "indexer `{}` left the cluster during maintenance mode",
-                message.0.node_id()
+                message.0.node_id
             );
             return Ok(());
         } else {
             info!(
                 "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-                message.0.node_id()
+                message.0.node_id
             );
         }
         // TODO: Update shard table.
@@ -1413,14 +1412,14 @@ async fn watcher_indexers(
         };
         match cluster_change {
             ClusterChange::Add(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
+                if node.is_indexer()
                     && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
                 {
                     error!(%error, "failed to forward `IndexerJoined` event to control plane");
                 }
             }
             ClusterChange::Remove(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
+                if node.is_indexer()
                     && let Err(error) = mailbox.send_message(IndexerLeft(node)).await
                 {
                     error!(%error, "failed to forward `IndexerLeft` event to control plane");
@@ -1531,7 +1530,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
 
         // Add one indexer to the pool
-        let node_1: NodeId = "test-node-1".into();
+        let node_1: NodeId = NodeId::from_str("test-node-1");
         let _indexing_inbox_1 =
             add_test_indexer_with_mailbox(&universe, &indexer_pool, node_1.clone());
 
@@ -1620,7 +1619,7 @@ mod tests {
         );
 
         // Add another node
-        let node_2: NodeId = "test-node-2".into();
+        let node_2: NodeId = NodeId::from_str("test-node-2");
         let _indexing_inbox_2 =
             add_test_indexer_with_mailbox(&universe, &indexer_pool, node_2.clone());
         // Check that the rebuild is still skipped
@@ -1637,7 +1636,7 @@ mod tests {
     #[tokio::test]
     async fn test_maintenance_mode_allows_delete_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1686,7 +1685,7 @@ mod tests {
     #[tokio::test]
     async fn test_maintenance_mode_allows_add_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1744,7 +1743,7 @@ mod tests {
     #[tokio::test]
     async fn test_maintenance_mode_enable_disable_cycle() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1834,7 +1833,7 @@ mod tests {
     #[tokio::test]
     async fn test_maintenance_mode_observable_state() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1881,7 +1880,7 @@ mod tests {
     #[tokio::test]
     async fn test_maintenance_mode_allows_toggle_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -1944,7 +1943,7 @@ mod tests {
         // In maintenance mode, GetOrCreateOpenShards should still work for existing sources
         // (ingest must continue), but auto_create_indexes is skipped.
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2010,7 +2009,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_create_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2067,7 +2066,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_index() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2110,7 +2109,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_add_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2174,7 +2173,7 @@ mod tests {
     async fn test_control_plane_update_source() {
         let universe = Universe::with_accelerated_time();
         let pipelines_after_update = 3;
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let mut mock_indexer = MockIndexingService::new();
         // call when starting the cp
@@ -2273,7 +2272,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2352,7 +2351,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_delete_source() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
@@ -2400,7 +2399,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_get_or_create_open_shards() {
         let universe = Universe::with_accelerated_time();
-        let self_node_id: NodeId = "test-node".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2481,7 +2480,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_supervision_reload_from_metastore() {
         let universe = Universe::default();
-        let node_id = NodeId::new("test_node".to_string());
+        let node_id = NodeId::from_str("test_node");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -2618,12 +2617,12 @@ mod tests {
     #[tokio::test]
     async fn test_delete_shard_on_eof() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let client_inbox = add_test_indexer_with_mailbox(
             &universe,
             &indexer_pool,
-            NodeId::new("test-indexer".to_string()),
+            NodeId::from_str("test-indexer"),
         );
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -2763,12 +2762,12 @@ mod tests {
     #[tokio::test]
     async fn test_fill_shard_table_position_from_metastore_on_startup() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let _indexing_inbox = add_test_indexer_with_mailbox(
             &universe,
             &indexer_pool,
-            NodeId::new("test-indexer".to_string()),
+            NodeId::from_str("test-indexer"),
         );
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -2837,12 +2836,12 @@ mod tests {
     async fn test_delete_non_existing_shard() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let _indexing_inbox = add_test_indexer_with_mailbox(
             &universe,
             &indexer_pool,
-            NodeId::new("test-indexer".to_string()),
+            NodeId::from_str("test-indexer"),
         );
         let ingester_pool = IngesterPool::default();
         let mut mock_metastore = MockMetastoreService::new();
@@ -2926,7 +2925,7 @@ mod tests {
     async fn test_delete_index() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -3012,7 +3011,7 @@ mod tests {
                 Ok(RetainShardsResponse {})
             });
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let cluster_config = ClusterConfig::for_test();
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
@@ -3041,7 +3040,7 @@ mod tests {
     async fn test_delete_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("test-control-plane".to_string());
+        let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -3058,7 +3057,7 @@ mod tests {
                 Ok(RetainShardsResponse {})
             });
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
-        ingester_pool.insert("node1".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("node1"), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let index_uid_clone = index_0.index_uid.clone();
@@ -3142,7 +3141,7 @@ mod tests {
         let mut cluster_config = ClusterConfig::for_test();
         cluster_config.auto_create_indexes = true;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
@@ -3260,10 +3259,10 @@ mod tests {
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
         let IndexerJoined(joined) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(joined.grpc_advertise_addr().port(), 1516);
+        assert_eq!(joined.grpc_advertise_addr.port(), 1516);
 
         let IndexerLeft(left) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(left.grpc_advertise_addr().port(), 1516);
+        assert_eq!(left.grpc_advertise_addr.port(), 1516);
 
         universe.assert_quit().await;
     }
@@ -3273,7 +3272,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
@@ -3352,12 +3351,12 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
             .expect_retain_shards()
@@ -3489,7 +3488,7 @@ mod tests {
     #[tokio::test]
     async fn test_control_plane_swap_pipelines_applied_on_next_control_loop() {
         let universe = Universe::default();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
@@ -3505,9 +3504,9 @@ mod tests {
             .returning(|_| Ok(ApplyIndexingPlanResponse {}));
 
         indexer_pool.insert(
-            NodeId::from("indexer-1"),
+            NodeId::from_str("indexer-1"),
             IndexerNodeInfo {
-                node_id: NodeId::from("indexer-1"),
+                node_id: NodeId::from_str("indexer-1"),
                 generation_id: 0,
                 client: IndexingServiceClient::from_mock(mock_indexer_1),
                 indexing_tasks: Vec::new(),
@@ -3515,9 +3514,9 @@ mod tests {
             },
         );
         indexer_pool.insert(
-            NodeId::from("indexer-2"),
+            NodeId::from_str("indexer-2"),
             IndexerNodeInfo {
-                node_id: NodeId::from("indexer-2"),
+                node_id: NodeId::from_str("indexer-2"),
                 generation_id: 0,
                 client: IndexingServiceClient::from_mock(mock_indexer_2),
                 indexing_tasks: Vec::new(),
@@ -3733,11 +3732,11 @@ mod tests {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
-        let node_id = NodeId::from("test-control-plane");
+        let node_id = NodeId::from_str("test-control-plane");
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
 
         let indexer_pool = IndexerPool::default();
-        let ingester_id = NodeId::from("test-ingester");
+        let ingester_id = NodeId::from_str("test-ingester");
 
         let mut mock_indexer = MockIndexingService::new();
         mock_indexer

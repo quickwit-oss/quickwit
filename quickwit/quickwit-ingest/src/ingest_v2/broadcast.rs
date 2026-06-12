@@ -426,7 +426,7 @@ pub async fn setup_local_shards_update_listener(
                 warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
-            let leader_id: NodeId = event.node.node_id.clone().into();
+            let leader_id: NodeId = NodeId::from_arc_str(event.node.node_id.clone());
 
             let local_shards_update = LocalShardsUpdate {
                 leader_id,
@@ -619,7 +619,7 @@ mod tests {
 
         let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
         let mut shard_02 = IngesterShard::new_replica(
-            NodeId::from("test-leader"),
+            NodeId::from_str("test-leader"),
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,

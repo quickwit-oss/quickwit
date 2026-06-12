@@ -250,7 +250,7 @@ mod tests {
         let doc_mapper = build_doc_mapper(&doc_mapping, &search_settings).unwrap();
 
         let primary_shard = IngesterShard::new_primary(
-            "test-follower".into(),
+            NodeId::from_str("test-follower"),
             ShardState::Closed,
             Position::offset(42u64),
             Position::Beginning,
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_new_replica_shard() {
         let replica_shard = IngesterShard::new_replica(
-            "test-leader".into(),
+            NodeId::from_str("test-leader"),
             ShardState::Closed,
             Position::offset(42u64),
             Position::Beginning,

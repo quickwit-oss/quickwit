@@ -117,7 +117,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                 .chitchat_id
                 .expect("`chitchat_id` should be a required field");
             let chitchat_id = ChitchatId {
-                node_id: proto_chitchat_id.node_id.clone(),
+                node_id: Arc::from(proto_chitchat_id.node_id.as_str()),
                 generation_id: proto_chitchat_id.generation_id,
                 gossip_advertise_addr: proto_chitchat_id
                     .gossip_advertise_addr
@@ -147,7 +147,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                     },
                 )
             });
-            chitchat_guard.reset_node_state(
+            chitchat_guard.reset_node_state_if_update(
                 &chitchat_id,
                 key_values,
                 proto_node_state.max_version,
@@ -195,7 +195,7 @@ fn select_gossip_candidates(
         })
         .choose_multiple(&mut rand::rng(), MAX_GOSSIP_PEERS)
         .into_iter()
-        .map(|(node_id, grpc_addr)| (node_id.clone(), grpc_addr))
+        .map(|(node_id, grpc_addr)| (node_id.to_string(), grpc_addr))
         .unzip()
 }
 
@@ -338,7 +338,7 @@ mod tests {
 
         let chitchat_mutex_guard = chitchat.lock().await;
         let chitchat_id = ChitchatId {
-            node_id: "node-4".to_string(),
+            node_id: Arc::from("node-4"),
             generation_id: 0,
             gossip_advertise_addr: "127.0.0.1:14000".parse().unwrap(),
         };

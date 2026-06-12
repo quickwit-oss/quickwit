@@ -106,10 +106,26 @@ pub struct ClusterMember {
 impl ClusterMember {
     pub fn chitchat_id(&self) -> ChitchatId {
         ChitchatId::new(
-            self.node_id.clone().into(),
+            self.node_id.clone(),
             self.generation_id.as_u64(),
             self.gossip_advertise_addr,
         )
+    }
+
+    pub fn is_service_enabled(&self, service: QuickwitService) -> bool {
+        self.enabled_services.contains(&service)
+    }
+
+    pub fn is_indexer(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_ingester(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_searcher(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Searcher)
     }
 }
 
@@ -153,7 +169,7 @@ pub(crate) fn build_cluster_member(
     let indexing_tasks = parse_indexing_tasks(node_state);
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
     let member = ClusterMember {
-        node_id: chitchat_id.node_id.into(),
+        node_id: NodeId::from_arc_str(chitchat_id.node_id.clone()),
         generation_id: chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,

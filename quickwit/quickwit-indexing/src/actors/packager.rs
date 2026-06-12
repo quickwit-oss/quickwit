@@ -509,7 +509,7 @@ mod tests {
         }
         let index = index_writer.finalize()?;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 

@@ -141,7 +141,7 @@ impl Ingester {
         replication_factor: usize,
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
 
         let weak_state = state.weak();
@@ -224,8 +224,8 @@ impl Ingester {
             .insert(queue_id, (rate_limiter, rate_meter));
 
         let primary_shard = if let Some(follower_id) = &shard.follower_id {
-            let leader_id: NodeId = shard.leader_id.clone().into();
-            let follower_id: NodeId = follower_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&shard.leader_id);
+            let follower_id: NodeId = NodeId::from_str(follower_id);
 
             let replication_client = self
                 .init_replication_stream(
@@ -385,8 +385,8 @@ impl Ingester {
             Entry::Vacant(entry) => entry,
         };
         let open_request = OpenReplicationStreamRequest {
-            leader_id: leader_id.clone().into(),
-            follower_id: follower_id.clone().into(),
+            leader_id: leader_id.clone().to_string(),
+            follower_id: follower_id.clone().to_string(),
             replication_seqno: 0,
         };
         let open_message = SynReplicationMessage::new_open_request(open_request);
@@ -457,7 +457,7 @@ impl Ingester {
 
         let commit_type = persist_request.commit_type();
         let force_commit = commit_type == CommitTypeV2::Force;
-        let leader_id: NodeId = persist_request.leader_id.into();
+        let leader_id: NodeId = NodeId::from_str(&persist_request.leader_id);
 
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully().await, "persist", "write")?;
@@ -476,7 +476,7 @@ impl Ingester {
                 persist_failures.push(persist_failure);
             }
             let persist_response = PersistResponse {
-                leader_id: leader_id.into(),
+                leader_id: leader_id.to_string(),
                 successes: Vec::new(),
                 failures: persist_failures,
             };
@@ -848,8 +848,8 @@ impl Ingester {
         if open_replication_stream_request.follower_id != self.self_node_id {
             return Err(IngestV2Error::Internal("routing error".to_string()));
         }
-        let leader_id: NodeId = open_replication_stream_request.leader_id.into();
-        let follower_id: NodeId = open_replication_stream_request.follower_id.into();
+        let leader_id: NodeId = NodeId::from_str(&open_replication_stream_request.leader_id);
+        let follower_id: NodeId = NodeId::from_str(&open_replication_stream_request.follower_id);
 
         let mut state_guard = self.state.lock_partially().await?;
 
@@ -923,7 +923,7 @@ impl Ingester {
         let self_node_id = self.self_node_id.clone();
         let observation_stream = status_stream.map(move |status| {
             let observation_message = ObservationMessage {
-                node_id: self_node_id.clone().into(),
+                node_id: self_node_id.clone().to_string(),
                 status: status as i32,
             };
             Ok(observation_message)
@@ -1345,7 +1345,7 @@ mod tests {
             let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
             Self {
-                node_id: "test-ingester".into(),
+                node_id: NodeId::from_str("test-ingester"),
                 control_plane,
                 ingester_pool: IngesterPool::default(),
                 disk_capacity: ByteSize::mb(256),
@@ -1359,7 +1359,7 @@ mod tests {
 
     impl IngesterForTest {
         pub fn with_node_id(mut self, node_id: &str) -> Self {
-            self.node_id = node_id.into();
+            self.node_id = NodeId::from_str(node_id);
             self
         }
 

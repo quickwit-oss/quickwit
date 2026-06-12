@@ -41,7 +41,7 @@ impl From<Shard> for RoutingEntry {
             source_id: shard.source_id,
             shard_id,
             shard_state,
-            leader_id: shard.leader_id.into(),
+            leader_id: NodeId::from_str(&shard.leader_id),
         }
     }
 }
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_routing_table_entry_new() {
-        let self_node_id: NodeId = "test-node-0".into();
+        let self_node_id: NodeId = NodeId::from_str("test-node-0");
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let table_entry = RoutingTableEntry::new(
@@ -584,8 +584,14 @@ mod tests {
         assert!(closed_shard_ids.is_empty());
         assert!(unavailable_leaders.is_empty());
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterServiceClient::mocked(),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-1"),
+            IngesterServiceClient::mocked(),
+        );
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -596,14 +602,14 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -632,21 +638,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-2".into(),
+                    leader_id: NodeId::from_str("test-ingester-2"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -675,8 +681,14 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, NextOpenShardError::NoShardsAvailable);
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterServiceClient::mocked(),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-1"),
+            IngesterServiceClient::mocked(),
+        );
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -687,21 +699,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -731,7 +743,7 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Closed,
-                leader_id: "test-ingester-0".into(),
+                leader_id: NodeId::from_str("test-ingester-0"),
             }],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: vec![
@@ -740,28 +752,28 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(4),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-2".into(),
+                    leader_id: NodeId::from_str("test-ingester-2"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -795,7 +807,10 @@ mod tests {
         let source_id: SourceId = "test-source".into();
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterServiceClient::mocked(),
+        );
 
         let rate_limited_shards = HashSet::from_iter([ShardId::from(1)]);
 
@@ -807,7 +822,7 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                leader_id: "test-ingester-0".into(),
+                leader_id: NodeId::from_str("test-ingester-0"),
             }],
             local_round_robin_idx: AtomicUsize::default(),
             remote_shards: Vec::new(),
@@ -825,8 +840,8 @@ mod tests {
         let source_id: SourceId = "test-source".into();
         let mut table_entry = RoutingTableEntry::empty(index_uid_0.clone(), source_id.clone());
 
-        let local_node_id: NodeId = "test-ingester-0".into();
-        let remote_node_id: NodeId = "test-ingester-1".into();
+        let local_node_id: NodeId = NodeId::from_str("test-ingester-0");
+        let remote_node_id: NodeId = NodeId::from_str("test-ingester-1");
         table_entry.insert_open_shards(&local_node_id, &local_node_id, &index_uid_0, &[]);
 
         assert_eq!(table_entry.local_shards.len(), 0);
@@ -948,21 +963,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -972,21 +987,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),
@@ -1029,21 +1044,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(3),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
+                    leader_id: NodeId::from_str("test-ingester-0"),
                 },
             ],
             local_round_robin_idx: AtomicUsize::default(),
@@ -1053,21 +1068,21 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(5),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(6),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
                 RoutingEntry {
                     index_uid: index_uid.clone(),
                     source_id: "test-source".to_string(),
                     shard_id: ShardId::from(7),
                     shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
+                    leader_id: NodeId::from_str("test-ingester-1"),
                 },
             ],
             remote_round_robin_idx: AtomicUsize::default(),

@@ -72,7 +72,7 @@ impl ClusterService for Cluster {
 
         for (chitchat_id, node_state) in chitchat_guard.node_states() {
             let proto_chitchat_id = ProtoChitchatId {
-                node_id: chitchat_id.node_id.clone(),
+                node_id: chitchat_id.node_id.to_string(),
                 generation_id: chitchat_id.generation_id,
                 gossip_advertise_addr: chitchat_id.gossip_advertise_addr.to_string(),
             };
@@ -135,7 +135,7 @@ mod tests {
             .unwrap();
 
         let cluster_id = cluster.cluster_id().to_string();
-        let node_id = cluster.self_node_id().to_owned();
+        let node_id = cluster.self_node_id();
 
         cluster.set_self_key_value("foo", "bar").await;
 
@@ -155,7 +155,7 @@ mod tests {
         let node_state = &mut fetch_cluster_state_response.node_states[0];
 
         let chitchat_id = node_state.chitchat_id.clone().unwrap();
-        assert_eq!(chitchat_id.node_id, node_id);
+        assert_eq!(chitchat_id.node_id.as_str(), node_id.as_str());
         assert_eq!(chitchat_id.generation_id, 1);
 
         node_state

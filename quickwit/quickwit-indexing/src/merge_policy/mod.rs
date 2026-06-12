@@ -386,7 +386,7 @@ pub mod tests {
         let merged_split_id = new_split_id();
         let tags = merge_tags(splits);
         let pipeline_id = MergePipelineId {
-            node_id: NodeId::from("test_node"),
+            node_id: NodeId::from_str("test_node"),
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
         };
@@ -418,7 +418,7 @@ pub mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let merge_planner = MergePlanner::new(

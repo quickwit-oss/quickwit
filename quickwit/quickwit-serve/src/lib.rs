@@ -256,27 +256,27 @@ async fn balance_channel_for_service(
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                    Some(Change::Insert(node.grpc_advertise_addr, node.channel()))
                 }
-                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -344,7 +344,7 @@ async fn start_control_plane_if_needed(
         )
         .await?;
 
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id();
 
         let control_plane_mailbox = setup_control_plane(
             universe,
@@ -916,7 +916,7 @@ async fn setup_ingest_v2(
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
-    let self_node_id: NodeId = cluster.self_node_id().into();
+    let self_node_id: NodeId = cluster.self_node_id();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
     let replication_factor = node_config
         .ingest_api_config
@@ -986,12 +986,12 @@ async fn setup_ingest_v2(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to ingester pool",
                         chitchat_id.node_id,
                     );
-                    let node_id: NodeId = node.node_id().into();
+                    let node_id: NodeId = node.node_id.clone();
 
                     if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
@@ -1010,7 +1010,7 @@ async fn setup_ingest_v2(
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
-                                node.grpc_advertise_addr(),
+                                node.grpc_advertise_addr,
                                 node.channel(),
                                 max_message_size,
                                 grpc_compression_encoding_opt,
@@ -1021,12 +1021,12 @@ async fn setup_ingest_v2(
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from ingester pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.node_id().into()))
+                    Some(Change::Remove(node.node_id.clone()))
                 }
                 _ => None,
             }
@@ -1061,12 +1061,12 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
-                    let grpc_addr = node.grpc_advertise_addr();
+                    let grpc_addr = node.grpc_advertise_addr;
 
                     if node.is_self_node() {
                         let search_client =
@@ -1086,12 +1086,12 @@ async fn setup_searcher(
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -1169,7 +1169,7 @@ fn setup_indexer_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to indexer pool",
                         chitchat_id.node_id,
@@ -1179,9 +1179,9 @@ fn setup_indexer_pool(
             };
             match cluster_change {
                 ClusterChange::Add(node) | ClusterChange::Update(node) if node.is_indexer() => {
-                    let node_id = node.node_id().to_owned();
-                    let indexing_tasks = node.indexing_tasks().to_vec();
-                    let indexing_capacity = node.indexing_capacity();
+                    let node_id = node.node_id.clone();
+                    let indexing_tasks = node.indexing_tasks.to_vec();
+                    let indexing_capacity = node.indexing_cpu_capacity;
 
                     if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
@@ -1213,7 +1213,7 @@ fn setup_indexer_pool(
                             .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
                             .build_from_channel(
-                                node.grpc_advertise_addr(),
+                                node.grpc_advertise_addr,
                                 node.channel(),
                                 max_message_size,
                                 None,
@@ -1234,12 +1234,12 @@ fn setup_indexer_pool(
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from indexer pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.node_id().to_owned()))
+                    Some(Change::Remove(node.node_id.clone()))
                 }
                 _ => None,
             }

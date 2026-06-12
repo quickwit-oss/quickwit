@@ -349,7 +349,7 @@ impl MergePlanner {
 
 /// We can only merge splits with the same (node_id, index_id, source_id).
 fn belongs_to_pipeline(pipeline_id: &MergePipelineId, split: &SplitMetadata) -> bool {
-    pipeline_id.node_id == split.node_id
+    pipeline_id.node_id.as_str() == split.node_id.as_str()
         && pipeline_id.index_uid == split.index_uid
         && pipeline_id.source_id == split.source_id
 }
@@ -408,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
         let [doc_mapping_uid1, doc_mapping_uid2] = {
@@ -526,7 +526,7 @@ mod tests {
     #[tokio::test]
     async fn test_merge_planner_spawns_merge_over_existing_splits_on_startup() -> anyhow::Result<()>
     {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
         let doc_mapping_uid = DocMappingUid::random();
@@ -611,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_dismiss_splits_from_different_pipeline_id() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
         let doc_mapping_uid = DocMappingUid::random();
@@ -682,7 +682,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_planner_inherit_mailbox_with_splits_bug_3847() -> anyhow::Result<()> {
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
         let doc_mapping_uid = DocMappingUid::random();

@@ -139,7 +139,7 @@ async fn compute_cluster_change_events_on_added(
     client_grpc_config: ClientGrpcConfig,
 ) -> Vec<ClusterChange> {
     let is_self_node = self_chitchat_id == new_chitchat_id;
-    let new_node_id: NodeId = new_chitchat_id.node_id.clone().into();
+    let new_node_id = NodeId::from_arc_str(new_chitchat_id.node_id.clone());
     let maybe_previous_node_entry = previous_nodes.entry(new_node_id);
 
     let mut events = Vec::new();
@@ -160,7 +160,7 @@ async fn compute_cluster_change_events_on_added(
         let previous_node = previous_node_entry.remove();
         verb = "rejoined";
 
-        if previous_node.is_ready() {
+        if previous_node.is_ready {
             events.push(ClusterChange::Remove(previous_node));
         }
     }
@@ -181,10 +181,10 @@ async fn compute_cluster_change_events_on_added(
         "node `{}` has {verb} the cluster",
         new_chitchat_id.node_id,
     );
-    let new_node_id: NodeId = new_node.node_id().into();
+    let new_node_id: NodeId = new_node.node_id.clone();
     previous_nodes.insert(new_node_id, new_node.clone());
 
-    if new_node.is_ready() {
+    if new_node.is_ready {
         info!(
             node_id=%new_chitchat_id.node_id,
             generation_id=%new_chitchat_id.generation_id,
@@ -204,7 +204,7 @@ async fn compute_cluster_change_events_on_updated(
     updated_node_state: &NodeState,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
 ) -> Option<ClusterChange> {
-    let previous_node = previous_nodes.get(&updated_chitchat_id.node_id)?.clone();
+    let previous_node = previous_nodes.get(&*updated_chitchat_id.node_id)?.clone();
 
     if previous_node.chitchat_id().generation_id > updated_chitchat_id.generation_id {
         warn!(
@@ -224,10 +224,10 @@ async fn compute_cluster_change_events_on_updated(
         previous_channel,
         is_self_node,
     )?;
-    let updated_node_id: NodeId = updated_node.chitchat_id().node_id.clone().into();
+    let updated_node_id = updated_node.node_id.clone();
     previous_nodes.insert(updated_node_id, updated_node.clone());
 
-    if !previous_node.is_ready() && updated_node.is_ready() {
+    if !previous_node.is_ready && updated_node.is_ready {
         warmup_channel(updated_node.channel()).await;
 
         info!(
@@ -237,7 +237,7 @@ async fn compute_cluster_change_events_on_updated(
             updated_chitchat_id.node_id
         );
         Some(ClusterChange::Add(updated_node))
-    } else if previous_node.is_ready() && !updated_node.is_ready() {
+    } else if previous_node.is_ready && !updated_node.is_ready {
         info!(
             node_id=%updated_chitchat_id.node_id,
             generation_id=%updated_chitchat_id.generation_id,
@@ -245,7 +245,7 @@ async fn compute_cluster_change_events_on_updated(
             updated_chitchat_id.node_id
         );
         Some(ClusterChange::Remove(updated_node))
-    } else if previous_node.is_ready() && updated_node.is_ready() {
+    } else if previous_node.is_ready && updated_node.is_ready {
         Some(ClusterChange::Update(updated_node))
     } else {
         None
@@ -256,7 +256,7 @@ fn compute_cluster_change_events_on_removed(
     removed_chitchat_id: &ChitchatId,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
 ) -> Option<ClusterChange> {
-    let removed_node_id: NodeId = removed_chitchat_id.node_id.clone().into();
+    let removed_node_id = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
 
     if let Entry::Occupied(previous_node_entry) = previous_nodes.entry(removed_node_id) {
         let previous_node_ref = previous_node_entry.get();
@@ -270,7 +270,7 @@ fn compute_cluster_change_events_on_removed(
             );
             let previous_node = previous_node_entry.remove();
 
-            if previous_node.is_ready() {
+            if previous_node.is_ready {
                 return Some(ClusterChange::Remove(previous_node));
             }
         }
@@ -476,12 +476,14 @@ pub(crate) mod tests {
             .await;
             assert!(events.is_empty());
 
-            let node = previous_nodes.get(&new_chitchat_id.node_id).unwrap();
+            let node = previous_nodes
+                .get(new_chitchat_id.node_id.as_ref())
+                .unwrap();
 
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(!node.is_ready());
+            assert!(!node.is_ready);
         }
         {
             // New node joins the cluster and is ready.
@@ -507,11 +509,16 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = &events[0] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(node.is_ready());
-            assert_eq!(previous_nodes.get(&new_chitchat_id.node_id).unwrap(), node);
+            assert!(node.is_ready);
+            assert_eq!(
+                previous_nodes
+                    .get(new_chitchat_id.node_id.as_ref())
+                    .unwrap(),
+                node
+            );
 
             // Node rejoins with same node ID but newer generation ID.
             let mut rejoined_chitchat_id = ChitchatId::for_local_test(port);
@@ -534,14 +541,16 @@ pub(crate) mod tests {
                     events[0]
                 );
             };
-            assert_eq!(removed_node.chitchat_id(), &new_chitchat_id);
+            assert_eq!(removed_node.chitchat_id(), new_chitchat_id);
 
             let ClusterChange::Add(rejoined_node) = &events[1] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[1]);
             };
-            assert_eq!(rejoined_node.chitchat_id(), &rejoined_chitchat_id);
+            assert_eq!(rejoined_node.chitchat_id(), rejoined_chitchat_id);
             assert_eq!(
-                previous_nodes.get(&rejoined_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(rejoined_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 rejoined_node
             );
 
@@ -557,7 +566,9 @@ pub(crate) mod tests {
             .await;
             assert!(events.is_empty());
             assert_eq!(
-                previous_nodes.get(&rejoined_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(rejoined_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 rejoined_node
             );
         }
@@ -585,11 +596,16 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = &events[0] else {
                 panic!("expected `ClusterChange::Add` event, got `{:?}`", events[0]);
             };
-            assert_eq!(node.chitchat_id(), &new_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), new_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(node.is_self_node());
-            assert!(node.is_ready());
-            assert_eq!(previous_nodes.get(&new_chitchat_id.node_id).unwrap(), node);
+            assert!(node.is_ready);
+            assert_eq!(
+                previous_nodes
+                    .get(new_chitchat_id.node_id.as_ref())
+                    .unwrap(),
+                node
+            );
         }
     }
 
@@ -603,7 +619,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id: NodeId = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(false)
@@ -636,12 +652,14 @@ pub(crate) mod tests {
             let ClusterChange::Add(node) = event else {
                 panic!("expected `ClusterChange::Add` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
-            assert!(node.is_ready());
+            assert_eq!(node.chitchat_id(), updated_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
+            assert!(node.is_ready);
             assert!(!node.is_self_node());
             assert_eq!(
-                previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(updated_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 &node
             );
         }
@@ -650,7 +668,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id: NodeId = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -684,12 +702,14 @@ pub(crate) mod tests {
             let ClusterChange::Update(node) = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), updated_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(node.is_ready());
+            assert!(node.is_ready);
             assert_eq!(
-                previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(updated_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 &node
             );
         }
@@ -698,7 +718,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id: NodeId = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -731,12 +751,14 @@ pub(crate) mod tests {
             let ClusterChange::Remove(node) = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), updated_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(!node.is_ready());
+            assert!(!node.is_ready);
             assert_eq!(
-                previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(updated_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 &node
             );
         }
@@ -745,7 +767,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let updated_chitchat_id = ChitchatId::for_local_test(port);
-            let updated_node_id: NodeId = updated_chitchat_id.node_id.clone().into();
+            let updated_node_id: NodeId = NodeId::from_arc_str(updated_chitchat_id.node_id.clone());
             let mut previous_chitchat_id = updated_chitchat_id.clone();
             previous_chitchat_id.generation_id += 1;
             let previous_node_state = NodeStateBuilder::default()
@@ -780,7 +802,9 @@ pub(crate) mod tests {
             assert!(event_opt.is_none());
 
             assert_eq!(
-                previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
+                previous_nodes
+                    .get(updated_chitchat_id.node_id.as_ref())
+                    .unwrap(),
                 &previous_node
             );
         }
@@ -803,7 +827,7 @@ pub(crate) mod tests {
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let removed_chitchat_id = ChitchatId::for_local_test(port);
-            let removed_node_id: NodeId = removed_chitchat_id.node_id.clone().into();
+            let removed_node_id: NodeId = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
             let previous_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(false)
@@ -822,14 +846,14 @@ pub(crate) mod tests {
             let event_opt =
                 compute_cluster_change_events_on_removed(&removed_chitchat_id, &mut previous_nodes);
             assert!(event_opt.is_none());
-            assert!(!previous_nodes.contains_key(&removed_chitchat_id.node_id));
+            assert!(!previous_nodes.contains_key(removed_chitchat_id.node_id.as_ref()));
         }
         {
             // Node leaves the cluster in ready state.
             let port = 1235;
             let grpc_advertise_addr: SocketAddr = ([127, 0, 0, 1], port + 1).into();
             let removed_chitchat_id = ChitchatId::for_local_test(port);
-            let removed_node_id: NodeId = removed_chitchat_id.node_id.clone().into();
+            let removed_node_id: NodeId = NodeId::from_arc_str(removed_chitchat_id.node_id.clone());
             let removed_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -851,11 +875,11 @@ pub(crate) mod tests {
             let ClusterChange::Remove(node) = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &removed_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
+            assert_eq!(node.chitchat_id(), removed_chitchat_id);
+            assert_eq!(node.grpc_advertise_addr, grpc_advertise_addr);
             assert!(!node.is_self_node());
-            assert!(node.is_ready());
-            assert!(!previous_nodes.contains_key(&removed_chitchat_id.node_id));
+            assert!(node.is_ready);
+            assert!(!previous_nodes.contains_key(removed_chitchat_id.node_id.as_ref()));
         }
         {
             // Node leaves the cluster in ready state but in the meantime it has rejoined the
@@ -866,7 +890,8 @@ pub(crate) mod tests {
 
             let mut rejoined_chitchat_id = removed_chitchat_id.clone();
             rejoined_chitchat_id.generation_id += 1;
-            let rejoined_node_id: NodeId = rejoined_chitchat_id.node_id.clone().into();
+            let rejoined_node_id: NodeId =
+                NodeId::from_arc_str(rejoined_chitchat_id.node_id.clone());
             let rejoined_node_state = NodeStateBuilder::default()
                 .with_grpc_advertise_addr(grpc_advertise_addr)
                 .with_readiness(true)
@@ -897,7 +922,7 @@ pub(crate) mod tests {
         let cluster_id = "test-cluster".to_string();
         let self_port = 1234;
         let self_chitchat_id = ChitchatId::for_local_test(self_port);
-        let self_node_id: NodeId = self_chitchat_id.node_id.clone().into();
+        let self_node_id: NodeId = NodeId::from_arc_str(self_chitchat_id.node_id.clone());
         {
             let mut previous_nodes = BTreeMap::default();
             let previous_node_states = BTreeMap::default();

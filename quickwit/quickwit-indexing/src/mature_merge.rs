@@ -580,7 +580,7 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage);
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let data_dir = TempDirectory::for_test();
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
 
         let semaphore = Arc::new(Semaphore::new(2));
         let outcome = run_mature_merges_for_index(

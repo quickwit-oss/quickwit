@@ -18,10 +18,11 @@ use std::time::Duration;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{ChannelTransport, Cluster, ClusterChange, create_cluster_for_test};
+use quickwit_cluster::{
+    ChannelTransport, Cluster, ClusterChange, ClusterMember, create_cluster_for_test,
+};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     ClusterConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
 };
@@ -71,12 +72,10 @@ pub fn test_indexer_change_stream(
         let indexing_clients = indexing_clients.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
-                    let node_id = node.node_id().to_owned();
+                ClusterChange::Add(node) if node.is_indexer() => {
+                    let node_id = node.node_id.clone();
                     let generation_id = node.chitchat_id().generation_id;
-                    let indexing_tasks = node.indexing_tasks().to_vec();
+                    let indexing_tasks = node.indexing_tasks.to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     let change = Change::Insert(
@@ -91,7 +90,7 @@ pub fn test_indexer_change_stream(
                     );
                     Some(change)
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_owned())),
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id.clone())),
                 _ => None,
             }
         })
@@ -133,7 +132,7 @@ async fn start_control_plane(
 
     for indexer in indexers {
         let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
-        indexing_clients.insert(indexer.self_node_id().to_owned(), indexing_service_mailbox);
+        indexing_clients.insert(indexer.self_node_id(), indexing_service_mailbox);
         indexer_inboxes.push(indexing_service_inbox);
     }
     let indexer_change_stream =
@@ -143,7 +142,7 @@ async fn start_control_plane(
     let mut cluster_config = ClusterConfig::for_test();
     cluster_config.cluster_id = cluster.cluster_id().to_string();
 
-    let self_node_id = cluster.self_node_id().to_owned();
+    let self_node_id = cluster.self_node_id();
     let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
         cluster_config,
@@ -333,11 +332,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .any(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-            },
+            |members| members.iter().any(ClusterMember::is_indexer),
             Duration::from_secs(5),
         )
         .await
@@ -395,13 +390,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .filter(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-                    .count()
-                    == 1
-            },
+            |members| members.iter().filter(|m| m.is_indexer()).count() == 1,
             Duration::from_secs(5),
         )
         .await
