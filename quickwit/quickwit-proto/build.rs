@@ -136,6 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config
         .bytes([
             "DocBatchV2.doc_buffer",
+            "DocMRecord.doc",
             "MRecordBatch.mrecord_buffer",
             "Position.position",
         ])
