@@ -251,9 +251,19 @@ async fn open_shards_on_metastore_and_model(
     Ok(open_shards_response)
 }
 
+/// Returns `true` if the ingester is available, i.e. in the ingester pool and ready to serve
+/// requests.
+fn is_ingester_available_and_ready(ingester_pool: &IngesterPool, ingester_id: &str) -> bool {
+    ingester_pool
+        .get(ingester_id)
+        .map(|ingester| ingester.status.is_ready())
+        .unwrap_or(false)
+}
+
 fn get_open_shard_from_model(
     get_open_shards_subrequest: &GetOrCreateOpenShardsSubrequest,
     model: &ControlPlaneModel,
+    ingester_pool: &IngesterPool,
     unavailable_leaders: &FnvHashSet<NodeId>,
 ) -> Result<Option<GetOrCreateOpenShardsSuccess>, GetOrCreateOpenShardsFailureReason> {
     let Some(index_uid) = model.index_uid(&get_open_shards_subrequest.index_id) else {
@@ -266,20 +276,23 @@ fn get_open_shard_from_model(
     ) else {
         return Err(GetOrCreateOpenShardsFailureReason::SourceNotFound);
     };
-    if open_shard_entries.is_empty() {
-        return Ok(None);
-    }
-    // We already have open shards. Let's return them.
     let open_shards: Vec<Shard> = open_shard_entries
         .into_iter()
+        .filter(|shard_entry| {
+            is_ingester_available_and_ready(ingester_pool, shard_entry.leader_id.as_str())
+        })
         .map(|shard_entry| shard_entry.shard)
         .collect();
-    Ok(Some(GetOrCreateOpenShardsSuccess {
+    if open_shards.is_empty() {
+        return Ok(None);
+    }
+    let success = GetOrCreateOpenShardsSuccess {
         subrequest_id: get_open_shards_subrequest.subrequest_id,
         index_uid: Some(index_uid.clone()),
         source_id: get_open_shards_subrequest.source_id.clone(),
         open_shards,
-    }))
+    };
+    Ok(Some(success))
 }
 
 impl IngestController {
@@ -464,9 +477,12 @@ impl IngestController {
         // We do a first pass to identify the shards that are missing from the model and need to be
         // created.
         for get_open_shards_subrequest in &get_open_shards_request.subrequests {
-            if let Ok(None) =
-                get_open_shard_from_model(get_open_shards_subrequest, model, &unavailable_leaders)
-            {
+            if let Ok(None) = get_open_shard_from_model(
+                get_open_shards_subrequest,
+                model,
+                &self.ingester_pool,
+                &unavailable_leaders,
+            ) {
                 // We did not find any open shard in the model, we will have to create one.
                 // Let's keep track of all of the source that require new shards, so we can batch
                 // create them after this loop.
@@ -513,6 +529,7 @@ impl IngestController {
             match get_open_shard_from_model(
                 &get_open_shards_subrequest,
                 model,
+                &self.ingester_pool,
                 &unavailable_leaders,
             ) {
                 Ok(Some(success)) => {
@@ -1705,6 +1722,72 @@ mod tests {
             .find(|shard| shard.shard_id() == ShardId::from(1))
             .unwrap();
         assert!(shard_1.is_closed());
+    }
+
+    #[test]
+    fn test_get_open_shard_from_model_excludes_ingesters_that_are_not_available_and_ready() {
+        let index_id = "test-index-0";
+        let index_uid = IndexUid::for_test(index_id, 0);
+        let source_id: SourceId = "test-source".to_string();
+
+        let mut model = ControlPlaneModel::default();
+        let mut index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index-0");
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.source_id = source_id.clone();
+        index_metadata.add_source(source_config).unwrap();
+        model.add_index(index_metadata);
+
+        let shards = vec![Shard {
+            shard_id: Some(ShardId::from(1)),
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            leader_id: "test-ingester-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        let subrequest = GetOrCreateOpenShardsSubrequest {
+            subrequest_id: 0,
+            index_id: index_id.to_string(),
+            source_id: source_id.clone(),
+        };
+        let unavailable_leaders = FnvHashSet::default();
+
+        // The leader holding the only open shard is missing from the pool: the shard is excluded
+        // and the control plane will have to create a new one.
+        let ingester_pool = IngesterPool::default();
+        let open_shard_opt =
+            get_open_shard_from_model(&subrequest, &model, &ingester_pool, &unavailable_leaders)
+                .unwrap();
+        assert!(open_shard_opt.is_none());
+
+        // The leader is in the pool but not ready (retiring): the shard is still excluded.
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry {
+                client: IngesterServiceClient::mocked(),
+                status: IngesterStatus::Retiring,
+                availability_zone: None,
+            },
+        );
+        let open_shard_opt =
+            get_open_shard_from_model(&subrequest, &model, &ingester_pool, &unavailable_leaders)
+                .unwrap();
+        assert!(open_shard_opt.is_none());
+
+        // The leader is in the pool and ready: the shard is returned.
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
+        );
+        let success =
+            get_open_shard_from_model(&subrequest, &model, &ingester_pool, &unavailable_leaders)
+                .unwrap()
+                .unwrap();
+        assert_eq!(success.open_shards.len(), 1);
+        assert_eq!(success.open_shards[0].shard_id(), ShardId::from(1));
+        assert_eq!(success.open_shards[0].leader_id, "test-ingester-0");
     }
 
     #[test]
