@@ -1642,6 +1642,10 @@ pub(crate) mod tests {
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester"),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
+        );
 
         let mut mock_metastore = mock_metastore();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
@@ -1672,6 +1676,7 @@ pub(crate) mod tests {
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
+                        leader_id: "test-ingester".to_string(),
                         ..Default::default()
                     }],
                 }];

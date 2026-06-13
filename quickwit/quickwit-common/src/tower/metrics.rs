@@ -102,7 +102,10 @@ pub struct GrpcMetricsLayer {
 
 impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
-        let labels = labels!("service" => subsystem, "kind" => kind);
+        // `service` is kept for backward compatibility with existing consumers. Prefer
+        // `grpc_service` for new consumers.
+        // TODO: Remove `service` in a future breaking release.
+        let labels = labels!("service" => subsystem, "grpc_service" => subsystem, "kind" => kind);
         Self {
             requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, labels: [labels]),
             requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels]),

@@ -17,10 +17,14 @@ use quickwit_metrics::{
     LabelNames, LazyCounter, LazyHistogram, label_names, lazy_counter, lazy_histogram,
 };
 
-pub(crate) const OTLP_GRPC_LABEL_NAMES: LabelNames<4> =
-    label_names!("service", "index", "transport", "format");
-pub(crate) const OTLP_GRPC_ERROR_LABEL_NAMES: LabelNames<5> =
-    label_names!("service", "index", "transport", "format", "error");
+// `service` is kept for backward compatibility with existing consumers. Prefer `signal` for new
+// consumers. For trace traffic, `service` remains singular (`trace`) while `signal` uses the
+// plural OTLP signal name (`traces`).
+// TODO: Remove `service` in a future breaking release.
+pub(crate) const OTLP_GRPC_LABEL_NAMES: LabelNames<5> =
+    label_names!("service", "signal", "index", "transport", "format");
+pub(crate) const OTLP_GRPC_ERROR_LABEL_NAMES: LabelNames<6> =
+    label_names!("service", "signal", "index", "transport", "format", "error");
 
 pub(crate) static REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "requests_total",

@@ -184,10 +184,6 @@ impl MultiRecordLogAsync {
         self.mrecordlog_ref().list_queues()
     }
 
-    pub fn last_record(&self, queue: &str) -> Result<Option<Record<'_>>, MissingQueue> {
-        self.mrecordlog_ref().last_record(queue)
-    }
-
     pub fn resource_usage(&self) -> ResourceUsage {
         self.mrecordlog_ref().resource_usage()
     }

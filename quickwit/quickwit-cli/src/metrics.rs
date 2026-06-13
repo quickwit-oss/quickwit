@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{LazyCounter, LazyHistogram, counter, labels, lazy_counter, lazy_histogram};
+use quickwit_metrics::{LazyGauge, LazyHistogram, gauge, labels, lazy_gauge, lazy_histogram};
 use quickwit_serve::BuildInfo;
 
-static BUILD_INFO: LazyCounter = lazy_counter!(
+static BUILD_INFO: LazyGauge = lazy_gauge!(
         name: "build_info",
         description: "Quickwit's build info",
         subsystem: "",
@@ -30,7 +30,7 @@ pub fn register_build_info_metric(build_info: &BuildInfo) {
         "commit_tags" => commit_tags,
         "target" => build_info.build_target,
     );
-    counter!(parent: BUILD_INFO, labels: [labels]).inc();
+    gauge!(parent: BUILD_INFO, labels: [labels]).set(1.0);
 }
 
 pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyHistogram = lazy_histogram!(

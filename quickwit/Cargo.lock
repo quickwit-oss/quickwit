@@ -9886,6 +9886,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sdk-sqs",
  "aws-smithy-async",
+ "aws-smithy-types",
  "futures 0.3.32",
  "quickwit-common",
  "tokio",
