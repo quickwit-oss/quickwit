@@ -2481,12 +2481,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "critical-section"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
-
-[[package]]
 name = "cron"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6197,18 +6191,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics-exporter-otel"
-version = "0.3.2"
-source = "git+https://github.com/shuheiktgw/metrics-exporter-otel?rev=b4032665307007ac03ac132fd60850d8c8b7af19#b4032665307007ac03ac132fd60850d8c8b7af19"
-dependencies = [
- "metrics",
- "metrics-util",
- "opentelemetry",
- "portable-atomic",
- "scc",
-]
-
-[[package]]
 name = "metrics-exporter-prometheus"
 version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6227,6 +6209,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "metrics-opentelemetry"
+version = "0.24032.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d370263dc0f77961bb87e185bf55b130fdcef51bfcf7a111170dff567ea891"
+dependencies = [
+ "metrics",
+ "opentelemetry",
+ "parking_lot",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -7000,7 +6994,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -7013,7 +7008,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-appender-tracing"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c0080f0dc1d7c786f467cd85a4e395fcab11ee852004f39a29a18ab7c25d837"
 dependencies = [
  "opentelemetry",
  "tracing",
@@ -7024,7 +7020,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-http"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
@@ -7036,7 +7033,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-otlp"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http 1.4.0",
  "opentelemetry",
@@ -7055,7 +7053,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-proto"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
  "base64 0.22.1",
  "const-hex",
@@ -7070,7 +7069,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry_sdk"
 version = "0.32.1"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
 dependencies = [
  "futures-channel",
  "futures-executor",
@@ -7845,9 +7845,6 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "portable-atomic-util"
@@ -9500,8 +9497,8 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "metrics",
- "metrics-exporter-otel",
  "metrics-exporter-prometheus",
+ "metrics-opentelemetry",
  "metrics-util",
  "opentelemetry",
  "opentelemetry-appender-tracing",
