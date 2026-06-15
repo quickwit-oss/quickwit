@@ -1055,6 +1055,132 @@ async fn test_graceful_shutdown_no_data_loss() {
         .unwrap();
 }
 
+/// Regression test for the decommissioning orphaned-pipeline bug. Two indexers each own a shard;
+/// shutting one down must produce a new indexing plan that excludes the retiring indexer but is
+/// still *sent* to it, so it sheds its now-unassigned indexing pipelines instead of orphan-running
+/// them (which previously crash-looped on invalid publish tokens).
+///
+/// We assert the retiring node's indexing pipelines are shut down (`num_running_pipelines == 0`)
+/// while it is still alive. We do not assert full graceful-decommission completion: draining the
+/// reassigned shard on the surviving indexer is a separate concern.
+#[tokio::test]
+async fn test_retiring_indexer_receives_empty_plan() {
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::Indexer])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+    let index_id = "test_retiring_indexer_receives_empty_plan";
+
+    // `min_shards: 2` so that, with two indexers, each indexer is assigned a shard to index.
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            format!(
+                r#"
+            version: 0.8
+            index_id: {index_id}
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            ingest_settings:
+              min_shards: 2
+            "#
+            ),
+            ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    for i in 0..6 {
+        ingest(
+            &sandbox.rest_client(QuickwitService::Indexer),
+            index_id,
+            ingest_json!({ "body": format!("doc-{i}") }),
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+    }
+
+    // Identify the two indexers by id so we never query or shut down the wrong node.
+    let indexer_node_ids: Vec<_> = sandbox
+        .node_configs
+        .iter()
+        .filter(|(_, services)| services.contains(&QuickwitService::Indexer))
+        .map(|(config, _)| config.node_id.clone())
+        .collect();
+    assert_eq!(indexer_node_ids.len(), 2, "expected exactly two indexer nodes");
+    let retiring_node_id = indexer_node_ids[0].clone();
+    let surviving_node_id = indexer_node_ids[1].clone();
+    let retiring_client = sandbox
+        .rest_client_for_node(&retiring_node_id)
+        .expect("the retiring node should have a REST client");
+    let surviving_client = sandbox
+        .rest_client_for_node(&surviving_node_id)
+        .expect("the surviving node should have a REST client");
+
+    // Precondition: each indexer is indexing a shard.
+    wait_until_predicate(
+        || async {
+            match retiring_client.node_stats().indexing().await {
+                Ok(counters) => counters.num_running_pipelines >= 1,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(1),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("the indexer we are about to retire should be indexing a shard");
+    wait_until_predicate(
+        || async {
+            match surviving_client.node_stats().indexing().await {
+                Ok(counters) => counters.num_running_pipelines >= 1,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(2),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("the surviving indexer should also be indexing a shard");
+
+    // Trigger the retiring node's decommission in the background. We only assert that it is told
+    // to shed its plan; we deliberately do not await full decommission.
+    let shutdown_handle = sandbox
+        .remove_node(&retiring_node_id)
+        .expect("the retiring node should be in the sandbox");
+    tokio::spawn(shutdown_handle.shutdown());
+
+    // The fix: the new plan excludes the retiring node but is still sent to it, so it shuts down
+    // its indexing pipelines (`num_running_pipelines` excludes merge pipelines) while still alive.
+    // Without the fix the orphaned pipeline keeps running and this never reaches 0.
+    wait_until_predicate(
+        || async {
+            match retiring_client.node_stats().indexing().await {
+                Ok(counters) => counters.num_running_pipelines == 0,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(2),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("retiring indexer should be sent an empty plan and shut down its indexing pipelines");
+}
+
 /// Verifies that after deleting an index and recreating it with the same name,
 /// ingest works correctly once the capacity broadcast has propagated (>2 broadcast
 /// cycles). Uses 2 ingesters to exercise the Chitchat broadcast path.
