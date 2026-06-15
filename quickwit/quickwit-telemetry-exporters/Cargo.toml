@@ -13,7 +13,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 metrics = { workspace = true }
-metrics-exporter-otel = { workspace = true }
+metrics-opentelemetry = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
