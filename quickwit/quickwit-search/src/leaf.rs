@@ -277,16 +277,10 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
     let warm_up_term_ranges_future =
         warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field)
             .instrument(debug_span!("warm_up_term_ranges"));
-    let warm_up_term_dict_future =
-        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields)
-            .instrument(debug_span!("warm_up_term_dicts"));
     let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_fields)
         .instrument(debug_span!("warm_up_fastfields"));
     let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, warmup_info.field_norms)
         .instrument(debug_span!("warm_up_fieldnorms"));
-    // TODO merge warm_up_postings into warm_up_term_dict_fields
-    let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.term_dict_fields)
-        .instrument(debug_span!("warm_up_postings"));
     let warm_up_automatons_future =
         warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field)
             .instrument(debug_span!("warm_up_automatons"));
@@ -295,42 +289,10 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
         warm_up_terms_future,
         warm_up_term_ranges_future,
         warm_up_fastfields_future,
-        warm_up_term_dict_future,
         warm_up_fieldnorms_future,
-        warm_up_postings_future,
         warm_up_automatons_future,
     )?;
 
-    Ok(())
-}
-
-async fn warm_up_term_dict_fields(
-    searcher: &Searcher,
-    term_dict_fields: &HashSet<Field>,
-) -> anyhow::Result<()> {
-    let mut warm_up_futures = Vec::new();
-    for field in term_dict_fields {
-        for segment_reader in searcher.segment_readers() {
-            let inverted_index = segment_reader.inverted_index(*field)?.clone();
-            warm_up_futures.push(async move {
-                let dict = inverted_index.terms();
-                dict.warm_up_dictionary().await
-            });
-        }
-    }
-    try_join_all(warm_up_futures).await?;
-    Ok(())
-}
-
-async fn warm_up_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
-    let mut warm_up_futures = Vec::new();
-    for field in fields {
-        for segment_reader in searcher.segment_readers() {
-            let inverted_index = segment_reader.inverted_index(*field)?.clone();
-            warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
-        }
-    }
-    try_join_all(warm_up_futures).await?;
     Ok(())
 }
 
@@ -448,6 +410,10 @@ async fn warm_up_automatons(
                                 .await
                                 .context("failed to load automaton")
                         }
+                        Automaton::TermSet(automaton) => inv_idx_clone
+                            .warm_postings_automaton(automaton.clone(), cpu_intensive_executor)
+                            .await
+                            .context("failed to warm term set"),
                     }
                 });
             }

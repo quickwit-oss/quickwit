@@ -8792,6 +8792,7 @@ dependencies = [
  "serde_yaml",
  "siphasher",
  "tantivy",
+ "tantivy-fst",
  "thiserror 2.0.18",
  "time",
  "tracing",
