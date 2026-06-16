@@ -8953,6 +8953,7 @@ dependencies = [
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-control-plane",
  "quickwit-datafusion",
  "quickwit-indexing",
  "quickwit-ingest",

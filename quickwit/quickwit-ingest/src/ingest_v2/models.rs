@@ -268,7 +268,11 @@ impl IngesterShard {
     }
 
     pub fn is_indexed(&self) -> bool {
-        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
+        // A shard is fully indexed once it is closed and all of its written records have been
+        // consumed, i.e. the truncation position has caught up to the last written (replication)
+        // position.
+        self.shard_state.is_closed()
+            && self.truncation_position_inclusive >= self.replication_position_inclusive
     }
 
     pub fn is_replica(&self) -> bool {

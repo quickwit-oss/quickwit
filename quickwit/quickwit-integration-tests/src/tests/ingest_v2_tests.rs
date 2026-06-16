@@ -1185,6 +1185,149 @@ async fn test_retiring_indexer_receives_empty_plan() {
     .expect("retiring indexer should be sent an empty plan and shut down its indexing pipelines");
 }
 
+/// Experiment: with two indexers each owning a shard, decommission one and await its FULL graceful
+/// shutdown. This is the condition that stalled in the integration harness. With the control-plane
+/// `testsuite` fast-timing feature enabled, this should complete quickly if the stall was purely
+/// the 30s production reconciliation interval; if it still stalls, there is a real residual.
+#[tokio::test]
+async fn test_retiring_indexer_decommissions_gracefully() {
+    quickwit_common::setup_logging_for_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::Indexer])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+    let index_id = "test_retiring_indexer_decommissions_gracefully";
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            format!(
+                r#"
+            version: 0.8
+            index_id: {index_id}
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            ingest_settings:
+              min_shards: 2
+            "#
+            ),
+            ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    for i in 0..6 {
+        ingest(
+            &sandbox.rest_client(QuickwitService::Indexer),
+            index_id,
+            ingest_json!({ "body": format!("doc-{i}") }),
+            CommitType::Auto,
+        )
+        .await
+        .unwrap();
+    }
+
+    let indexer_node_ids: Vec<_> = sandbox
+        .node_configs
+        .iter()
+        .filter(|(_, services)| services.contains(&QuickwitService::Indexer))
+        .map(|(config, _)| config.node_id.clone())
+        .collect();
+    assert_eq!(
+        indexer_node_ids.len(),
+        2,
+        "expected exactly two indexer nodes"
+    );
+    let retiring_node_id = indexer_node_ids[0].clone();
+    let surviving_node_id = indexer_node_ids[1].clone();
+    let retiring_client = sandbox
+        .rest_client_for_node(&retiring_node_id)
+        .expect("the retiring node should have a REST client");
+    let surviving_client = sandbox
+        .rest_client_for_node(&surviving_node_id)
+        .expect("the surviving node should have a REST client");
+
+    // Precondition: each indexer is indexing a shard.
+    wait_until_predicate(
+        || async {
+            match retiring_client.node_stats().indexing().await {
+                Ok(counters) => counters.num_running_pipelines >= 1,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(20),
+        Duration::from_millis(200),
+    )
+    .await
+    .expect("the indexer we are about to retire should be indexing a shard");
+    wait_until_predicate(
+        || async {
+            match surviving_client.node_stats().indexing().await {
+                Ok(counters) => counters.num_running_pipelines >= 1,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(20),
+        Duration::from_millis(200),
+    )
+    .await
+    .expect("the surviving indexer should also be indexing a shard");
+
+    // Decommission the retiring node and AWAIT its full graceful shutdown. The surviving indexer
+    // must drain the reassigned shard so the retiring ingester reaches `is_indexed`.
+    let shutdown_handle = sandbox
+        .remove_node(&retiring_node_id)
+        .expect("the retiring node should be in the sandbox");
+    tokio::time::timeout(Duration::from_secs(30), shutdown_handle.shutdown())
+        .await
+        .expect("graceful decommission of the retiring indexer timed out")
+        .expect("retiring indexer shutdown returned an error");
+
+    // No data lost: all 6 docs remain searchable after the decommission.
+    wait_until_predicate(
+        || async {
+            match sandbox
+                .rest_client(QuickwitService::Searcher)
+                .search(
+                    index_id,
+                    quickwit_serve::SearchRequestQueryString {
+                        query: "*".to_string(),
+                        max_hits: 10,
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(resp) => resp.num_hits == 6,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(15),
+        Duration::from_millis(500),
+    )
+    .await
+    .expect("all 6 documents should be searchable after decommission");
+
+    // Clean shutdown of the remaining nodes (also exercises decommissioning the last indexer).
+    tokio::time::timeout(Duration::from_secs(30), sandbox.shutdown())
+        .await
+        .expect("cluster shutdown timed out")
+        .expect("cluster shutdown failed");
+}
+
 /// Verifies that after deleting an index and recreating it with the same name,
 /// ingest works correctly once the capacity broadcast has propagated (>2 broadcast
 /// cycles). Uses 2 ingesters to exercise the Chitchat broadcast path.

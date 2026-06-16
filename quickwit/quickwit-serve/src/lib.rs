@@ -1320,10 +1320,7 @@ fn setup_indexer_pool(
                     );
                     Some(change)
                 }
-                ClusterChange::Update { previous, updated }
-                    if updated.is_indexer()
-                        && previous.ingester_status != updated.ingester_status =>
-                {
+                ClusterChange::Update { updated, .. } if updated.is_indexer() => {
                     let change = build_indexer_insert_change(
                         &updated,
                         indexing_service_clone_opt,
