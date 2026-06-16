@@ -268,11 +268,14 @@ impl IngesterShard {
     }
 
     pub fn is_indexed(&self) -> bool {
-        // A shard is fully indexed once it is closed and all of its written records have been
-        // consumed, i.e. the truncation position has caught up to the last written (replication)
-        // position.
+        // Closed and either truncated up to EOF, or empty (no record was ever written, so the
+        // replication position is still at the beginning). The empty case matters for empty
+        // replacement shards opened during a rebalance: they never reach an EOF truncation and
+        // would otherwise block the ingester's decommission forever. A non-empty shard must still
+        // reach an EOF truncation, so a node does not quit before committing the shard's EOF.
         self.shard_state.is_closed()
-            && self.truncation_position_inclusive >= self.replication_position_inclusive
+            && (self.truncation_position_inclusive.is_eof()
+                || self.replication_position_inclusive == Position::Beginning)
     }
 
     pub fn is_replica(&self) -> bool {
@@ -478,12 +481,21 @@ mod tests {
                 .is_indexed()
         );
 
-        // A closed shard whose records have all been consumed is indexed.
+        // A non-empty closed shard is only indexed once it has been truncated up to EOF;
+        // consuming all of its records is not enough — the EOF must be committed.
+        assert!(
+            !new_solo_shard()
+                .with_state(ShardState::Closed)
+                .with_replication_position_inclusive(Position::offset(5u64))
+                .with_truncation_position_inclusive(Position::offset(5u64))
+                .build()
+                .is_indexed()
+        );
         assert!(
             new_solo_shard()
                 .with_state(ShardState::Closed)
                 .with_replication_position_inclusive(Position::offset(5u64))
-                .with_truncation_position_inclusive(Position::offset(5u64))
+                .with_truncation_position_inclusive(Position::offset(5u64).as_eof())
                 .build()
                 .is_indexed()
         );

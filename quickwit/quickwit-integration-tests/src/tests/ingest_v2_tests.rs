@@ -1178,7 +1178,7 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(15),
         Duration::from_millis(100),
     )
     .await
