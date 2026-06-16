@@ -69,50 +69,67 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
         self.cache.lock().unwrap().len()
     }
 
-    /// Instead of the future directly, a constructor to build the future is passed.
-    /// In case there is already an existing Future for the passed key, the constructor is not
-    /// used.
-    pub async fn get_or_create<T, F>(&self, key: K, build_a_future: T) -> V
+    /// Returns the inflight future for `key`, deduplicating concurrent calls: if a future for
+    /// `key` is already inflight, all callers await that same shared future; otherwise
+    /// `build_a_future_fast` is invoked to create one.
+    ///
+    /// # Hidden contract
+    ///
+    /// `build_a_future_fast` is invoked **while the internal cache lock is held**. It must
+    /// therefore:
+    /// - be cheap — it only *constructs* the future, it must not perform blocking work (the future
+    ///   itself is awaited later, outside the lock);
+    /// - never re-enter this `AsyncDebouncer` (e.g. call `get_or_create` on the same instance),
+    ///   which would deadlock, since the cache lock is a non-reentrant [`std::sync::Mutex`].
+    ///
+    /// Holding the lock across both the lookup and the insert is deliberate: it makes the
+    /// lookup-then-insert atomic, so two concurrent callers for the same key cannot both build
+    /// and race to insert. The lock is always released before the future is awaited.
+    async fn get_or_create<T, F>(&self, key: K, build_a_future_fast: T) -> V
     where
         T: FnOnce() -> F,
         F: Future<Output = V> + Send + 'static,
     {
-        // Fast path: an inflight future for this key already exists. The lookup and the
-        // staleness check happen under a single lock; a stale entry (left by a cancelled future)
-        // is simply ignored here and overwritten by the insert below.
-        let existing_future_opt: Option<_> = {
-            let guard = self.cache.lock().unwrap();
-            match guard.get(&key) {
+        // `created` distinguishes the caller that actually built the entry (and is therefore
+        // responsible for removing it once the future resolves) from callers that merely joined
+        // an already-inflight future.
+        let (future, created) = {
+            let mut guard = self.cache.lock().unwrap();
+            // A stale entry (left behind by a cancelled future) fails to upgrade and is simply
+            // overwritten by the insert below.
+            let existing_future_opt = match guard.get(&key) {
                 Some(weak_future) => weak_future.upgrade(),
                 None => None,
+            };
+            match existing_future_opt {
+                Some(existing_future) => (existing_future, false),
+                None => {
+                    let fut = Box::pin(build_a_future_fast()) as BoxFuture<'static, V>;
+                    let fut = fut.shared();
+                    let weak_fut = fut.clone().downgrade().expect(
+                        "future has been dropped, but that shouldn't happen since it's still in \
+                         scope",
+                    );
+                    guard.insert(key.clone(), weak_fut);
+                    // Amortized garbage collection. Running a full scan on every call would make
+                    // each call O(n); instead we scan once every `CLEANUP_INTERVAL` inserts,
+                    // giving O(1) amortized cost while keeping the cache from growing unboundedly
+                    // when keys belonging to cancelled futures are never accessed again.
+                    let inserts = self.inserts_since_cleanup.fetch_add(1, Ordering::Relaxed);
+                    if inserts >= CLEANUP_INTERVAL {
+                        self.inserts_since_cleanup.store(0, Ordering::Relaxed);
+                        guard.retain(|_, weak_future| weak_future.upgrade().is_some());
+                    }
+                    (fut, true)
+                }
             }
         };
-        if let Some(existing_future) = existing_future_opt {
-            return existing_future.await;
-        }
 
-        let fut = Box::pin(build_a_future()) as BoxFuture<'static, V>;
-        let fut = fut.shared();
-        let weak_fut = fut
-            .clone()
-            .downgrade()
-            .expect("future has been dropped, but that shouldn't happen since it's still in scope");
-        {
-            let mut guard = self.cache.lock().unwrap();
-            guard.insert(key.clone(), weak_fut);
-            // Amortized garbage collection. Running a full scan on every call would make each
-            // call O(n); instead we scan once every `CLEANUP_INTERVAL` inserts, giving O(1)
-            // amortized cost while keeping the cache from growing unboundedly when keys belonging
-            // to cancelled futures are never accessed again.
-            let inserts = self.inserts_since_cleanup.fetch_add(1, Ordering::Relaxed) + 1;
-            if inserts >= CLEANUP_INTERVAL {
-                self.inserts_since_cleanup.store(0, Ordering::Relaxed);
-                guard.retain(|_, weak_future| weak_future.upgrade().is_some());
-            }
-        }
-        let res = fut.await;
+        let res = future.await;
 
-        self.cache.lock().unwrap().remove(&key);
+        if created {
+            self.cache.lock().unwrap().remove(&key);
+        }
 
         res
     }
