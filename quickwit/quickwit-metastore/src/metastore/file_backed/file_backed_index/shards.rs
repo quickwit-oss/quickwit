@@ -52,13 +52,20 @@ impl fmt::Debug for Shards {
 }
 
 /// Whether a shard recording `existing_token` can be acquired by a pipeline presenting
-/// `presented_token`. Acquisition is monotonic; a missing or legacy (`'/'`-containing) token ranks
-/// below any ULID.
+/// `presented_token`. Acquisition between ULIDs is monotonic (newer-or-equal wins). A legacy
+/// (`'/'`-containing, pre-ULID) presented token always wins, so a rolling upgrade can still hand a
+/// shard to an old indexer; a missing or legacy recorded token loses to any ULID.
 fn can_acquire_shard(existing_token: &str, presented_token: &str) -> bool {
+    // An old indexer presenting a legacy token keeps the pre-upgrade overwrite behavior.
+    if presented_token.contains('/') {
+        return true;
+    }
+    // A missing or legacy recorded token loses to any ULID.
     if existing_token.is_empty() || existing_token.contains('/') {
         return true;
     }
-    !presented_token.contains('/') && presented_token >= existing_token
+    // Both are ULIDs: acquire only if ours is newer-or-equal.
+    presented_token >= existing_token
 }
 
 impl Shards {
@@ -572,8 +579,9 @@ mod tests {
         assert!(can_acquire_shard(NEWER, NEWER));
         // An older ULID cannot steal a shard owned by a newer one.
         assert!(!can_acquire_shard(NEWER, OLDER));
-        // A legacy presented token cannot supersede a recorded ULID.
-        assert!(!can_acquire_shard(NEWER, LEGACY));
+        // A legacy presented token always wins, so a rolling upgrade can move a shard from a new
+        // indexer back to an old one.
+        assert!(can_acquire_shard(NEWER, LEGACY));
     }
 
     #[test]

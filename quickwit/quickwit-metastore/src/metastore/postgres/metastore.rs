@@ -1436,11 +1436,11 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&request.publish_token)
             .fetch_all(&self.connection_pool)
             .await?;
-        
+
         if pg_shards.len() != request.shard_ids.len() {
             warn_on_unacquired_shards(&request, &pg_shards);
         }
-        
+
         let acquired_shards = pg_shards
             .into_iter()
             .map(|pg_shard| pg_shard.into())

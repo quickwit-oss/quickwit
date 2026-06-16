@@ -229,6 +229,18 @@ pub async fn test_metastore_acquire_shards<
     )
     .await;
 
+    // Publish tokens are the ULID of the indexing plan that minted them; ULIDs are time-ordered, so
+    // lexicographic order is chronological order. A token containing '/' is the legacy pre-ULID
+    // format: it loses to a ULID when recorded, but always wins when presented, so a rolling
+    // upgrade can still hand a shard back to an old indexer.
+    const OLDER_TOKEN: &str = "01000000000000000000000000";
+    const TOKEN: &str = "02000000000000000000000000";
+    const NEWER_TOKEN: &str = "03000000000000000000000000";
+    const LEGACY_TOKEN: &str =
+        "indexer/test-node/test-index:0/test-source/01000000000000000000000000";
+
+    // Shard 1 owned by `TOKEN`, shard 2 unowned, shard 3 owned by a legacy token, shard 4 owned by
+    // `TOKEN`.
     let shards = vec![
         Shard {
             index_uid: Some(test_index.index_uid.clone()),
@@ -239,7 +251,7 @@ pub async fn test_metastore_acquire_shards<
             follower_id: Some("test-ingester-bar".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
-            publish_token: Some("test-publish-token-foo".to_string()),
+            publish_token: Some(TOKEN.to_string()),
             update_timestamp: 1724158996,
         },
         Shard {
@@ -251,7 +263,7 @@ pub async fn test_metastore_acquire_shards<
             follower_id: Some("test-ingester-qux".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
-            publish_token: Some("test-publish-token-bar".to_string()),
+            publish_token: None,
             update_timestamp: 1724158996,
         },
         Shard {
@@ -263,7 +275,7 @@ pub async fn test_metastore_acquire_shards<
             follower_id: Some("test-ingester-baz".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
-            publish_token: None,
+            publish_token: Some(LEGACY_TOKEN.to_string()),
             update_timestamp: 1724158996,
         },
         Shard {
@@ -275,7 +287,7 @@ pub async fn test_metastore_acquire_shards<
             follower_id: Some("test-ingester-tux".to_string()),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
-            publish_token: None,
+            publish_token: Some(TOKEN.to_string()),
             update_timestamp: 1724158996,
         },
     ];
@@ -283,27 +295,31 @@ pub async fn test_metastore_acquire_shards<
         .insert_shards(&test_index.index_uid, &test_index.source_id, shards)
         .await;
 
-    // Test acquire shards.
-    let acquire_shards_request = AcquireShardsRequest {
-        index_uid: Some(test_index.index_uid.clone()),
-        source_id: test_index.source_id.clone(),
-        shard_ids: vec![
-            ShardId::from(1),
-            ShardId::from(2),
-            ShardId::from(3),
-            ShardId::from(666),
-        ], // shard 666 does not exist
-        publish_token: "test-publish-token-foo".to_string(),
-    };
-    let mut acquire_shards_response = metastore
-        .acquire_shards(acquire_shards_request)
+    // A token ranking below the recorded one — and a non-existent shard — are refused: both are
+    // omitted from the response and the recorded token is left untouched.
+    let acquire_shards_response = metastore
+        .acquire_shards(AcquireShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_ids: vec![ShardId::from(1), ShardId::from(666)],
+            publish_token: OLDER_TOKEN.to_string(),
+        })
         .await
         .unwrap();
+    assert!(acquire_shards_response.acquired_shards.is_empty());
 
-    acquire_shards_response
-        .acquired_shards
-        .sort_unstable_by(|left, right| left.shard_id().cmp(right.shard_id()));
-
+    // The same token re-acquires successfully (idempotent, e.g. after a local respawn); the full
+    // shard is returned.
+    let acquire_shards_response = metastore
+        .acquire_shards(AcquireShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_ids: vec![ShardId::from(1)],
+            publish_token: TOKEN.to_string(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
     let shard = &acquire_shards_response.acquired_shards[0];
     assert_eq!(shard.index_uid(), &test_index.index_uid);
     assert_eq!(shard.source_id, test_index.source_id);
@@ -312,113 +328,72 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.leader_id, "test-ingester-foo");
     assert_eq!(shard.follower_id(), "test-ingester-bar");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
-    assert_eq!(shard.publish_token(), "test-publish-token-foo");
+    assert_eq!(shard.publish_token(), TOKEN);
 
-    let shard = &acquire_shards_response.acquired_shards[1];
-    assert_eq!(shard.index_uid(), &test_index.index_uid);
-    assert_eq!(shard.source_id, test_index.source_id);
-    assert_eq!(shard.shard_id(), ShardId::from(2));
-    assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-bar");
-    assert_eq!(shard.follower_id(), "test-ingester-qux");
-    assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
-    assert_eq!(shard.publish_token(), "test-publish-token-foo");
-
-    let shard = &acquire_shards_response.acquired_shards[2];
-    assert_eq!(shard.index_uid(), &test_index.index_uid);
-    assert_eq!(shard.source_id, test_index.source_id);
-    assert_eq!(shard.shard_id(), ShardId::from(3));
-    assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-qux");
-    assert_eq!(shard.follower_id(), "test-ingester-baz");
-    assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
-    assert_eq!(shard.publish_token(), "test-publish-token-foo");
-
-    // A token ranking below the recorded one is refused: the shard is left untouched and absent
-    // from the response.
+    // A strictly newer ULID takes the shard over.
     let acquire_shards_response = metastore
         .acquire_shards(AcquireShardsRequest {
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_ids: vec![ShardId::from(1)],
-            publish_token: "test-publish-token-aaa".to_string(),
-        })
-        .await
-        .unwrap();
-    assert!(acquire_shards_response.acquired_shards.is_empty());
-
-    // The same token re-acquires successfully (idempotent, e.g. after a local respawn).
-    let acquire_shards_response = metastore
-        .acquire_shards(AcquireShardsRequest {
-            index_uid: Some(test_index.index_uid.clone()),
-            source_id: test_index.source_id.clone(),
-            shard_ids: vec![ShardId::from(1)],
-            publish_token: "test-publish-token-foo".to_string(),
+            publish_token: NEWER_TOKEN.to_string(),
         })
         .await
         .unwrap();
     assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
     assert_eq!(
         acquire_shards_response.acquired_shards[0].publish_token(),
-        "test-publish-token-foo"
+        NEWER_TOKEN
     );
 
-    // A strictly greater token takes the shard over.
+    // An unowned shard can be acquired by any ULID.
     let acquire_shards_response = metastore
         .acquire_shards(AcquireShardsRequest {
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
-            shard_ids: vec![ShardId::from(1)],
-            publish_token: "test-publish-token-zzz".to_string(),
+            shard_ids: vec![ShardId::from(2)],
+            publish_token: TOKEN.to_string(),
         })
         .await
         .unwrap();
     assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
     assert_eq!(
         acquire_shards_response.acquired_shards[0].publish_token(),
-        "test-publish-token-zzz"
+        TOKEN
     );
 
-    // Legacy (pre-ULID, '/'-containing) tokens rank below any ULID. Shard 4 starts unowned: a
-    // legacy token can claim it, but is then superseded by a ULID and can no longer take it back.
-    let legacy_token = "indexer/test-node/test-index:0/test-source/01000000000000000000000000";
-    let ulid_token = "02000000000000000000000000";
+    // A ULID supersedes a recorded legacy token.
     let acquire_shards_response = metastore
         .acquire_shards(AcquireShardsRequest {
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
-            shard_ids: vec![ShardId::from(4)],
-            publish_token: legacy_token.to_string(),
-        })
-        .await
-        .unwrap();
-    assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
-
-    let acquire_shards_response = metastore
-        .acquire_shards(AcquireShardsRequest {
-            index_uid: Some(test_index.index_uid.clone()),
-            source_id: test_index.source_id.clone(),
-            shard_ids: vec![ShardId::from(4)],
-            publish_token: ulid_token.to_string(),
+            shard_ids: vec![ShardId::from(3)],
+            publish_token: TOKEN.to_string(),
         })
         .await
         .unwrap();
     assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
     assert_eq!(
         acquire_shards_response.acquired_shards[0].publish_token(),
-        ulid_token
+        TOKEN
     );
 
+    // Shard 4 is owned by a ULID, yet a legacy token reclaims it: the rolling-upgrade hand-back,
+    // where the control plane moves a shard from a new indexer back to an old one.
     let acquire_shards_response = metastore
         .acquire_shards(AcquireShardsRequest {
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_ids: vec![ShardId::from(4)],
-            publish_token: legacy_token.to_string(),
+            publish_token: LEGACY_TOKEN.to_string(),
         })
         .await
         .unwrap();
-    assert!(acquire_shards_response.acquired_shards.is_empty());
+    assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
+    assert_eq!(
+        acquire_shards_response.acquired_shards[0].publish_token(),
+        LEGACY_TOKEN
+    );
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
