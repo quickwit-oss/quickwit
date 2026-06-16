@@ -2925,12 +2925,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "critical-section"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
-
-[[package]]
 name = "cron"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7155,18 +7149,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics-exporter-otel"
-version = "0.3.2"
-source = "git+https://github.com/shuheiktgw/metrics-exporter-otel?rev=b4032665307007ac03ac132fd60850d8c8b7af19#b4032665307007ac03ac132fd60850d8c8b7af19"
-dependencies = [
- "metrics",
- "metrics-util 0.20.4",
- "opentelemetry",
- "portable-atomic",
- "scc",
-]
-
-[[package]]
 name = "metrics-exporter-prometheus"
 version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7185,6 +7167,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing 0.1.44",
+]
+
+[[package]]
+name = "metrics-opentelemetry"
+version = "0.24032.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d370263dc0f77961bb87e185bf55b130fdcef51bfcf7a111170dff567ea891"
+dependencies = [
+ "metrics",
+ "opentelemetry",
+ "parking_lot",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -7413,9 +7407,9 @@ checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
 
 [[package]]
 name = "murmurhash32"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2195bf6aa996a481483b29d62a7663eed3fe39600c460e323f8ff41e90bdd89b"
+checksum = "a8afc6df942f4c022d70c5725e18df1a705773870e5b7f96fde94ca0334ce77a"
 
 [[package]]
 name = "native-tls"
@@ -8153,7 +8147,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -8166,7 +8161,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-appender-tracing"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c0080f0dc1d7c786f467cd85a4e395fcab11ee852004f39a29a18ab7c25d837"
 dependencies = [
  "opentelemetry",
  "tracing 0.1.44",
@@ -8197,7 +8193,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-http"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes 1.11.1",
@@ -8209,7 +8206,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-otlp"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http 1.4.0",
  "opentelemetry",
@@ -8247,7 +8245,8 @@ dependencies = [
 [[package]]
 name = "opentelemetry-proto"
 version = "0.32.0"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
  "base64 0.22.1",
  "const-hex",
@@ -8268,7 +8267,8 @@ checksum = "6ca2f98a0437b427b4b08f19f1caa3c44db885a202bc12cfea13d6c702243d68"
 [[package]]
 name = "opentelemetry_sdk"
 version = "0.32.1"
-source = "git+https://github.com/shuheiktgw/opentelemetry-rust?rev=4279a0115915cdb0a18259d933f58a287b9188eb#4279a0115915cdb0a18259d933f58a287b9188eb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
 dependencies = [
  "futures-channel",
  "futures-executor",
@@ -8362,7 +8362,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -9110,9 +9110,6 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "portable-atomic-util"
@@ -10887,6 +10884,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "tokio-util",
  "tower 0.5.3",
  "tracing 0.1.44",
  "ttl_cache",
@@ -11058,8 +11056,8 @@ dependencies = [
  "anyhow",
  "metrics",
  "metrics-exporter-dogstatsd",
- "metrics-exporter-otel",
  "metrics-exporter-prometheus",
+ "metrics-opentelemetry",
  "metrics-util 0.20.4",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -13789,7 +13787,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -13829,7 +13827,7 @@ dependencies = [
  "tantivy-columnar",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar 0.26.0 (git+https://github.com/quickwit-oss/tantivy/?rev=6270552)",
+ "tantivy-query-grammar 0.26.0 (git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a)",
  "tantivy-sstable",
  "tantivy-stacker",
  "tantivy-tokenizer-api",
@@ -13845,7 +13843,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "bitpacking",
 ]
@@ -13853,7 +13851,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -13868,7 +13866,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.11.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -13904,7 +13902,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -13916,7 +13914,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -13929,7 +13927,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -13938,7 +13936,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=6270552#62705526e889004586f84b718270a7989b53eda1"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
 dependencies = [
  "serde",
 ]

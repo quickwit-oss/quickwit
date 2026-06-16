@@ -342,6 +342,7 @@ fn build_metric(
             let sum = metric::SumAggregation {
                 field,
                 missing: None,
+                none_if_no_match: None,
             };
             AggregationVariants::Sum(sum)
         }

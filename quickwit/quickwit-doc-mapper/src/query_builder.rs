@@ -196,7 +196,7 @@ pub(crate) fn build_query(
     }
     .visit(&query_ast);
 
-    let query = query_ast.build_tantivy_query(context)?;
+    let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
     let term_set_query_fields = extract_term_set_query_fields(&query_ast, context.schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
@@ -225,6 +225,7 @@ pub(crate) fn build_query(
         term_ranges_grouped_by_field,
         fast_fields,
         automatons_grouped_by_field,
+        required_terms,
         ..WarmupInfo::default()
     };
 
