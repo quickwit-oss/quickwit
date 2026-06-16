@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use ahash::HashMap;
 use async_trait::async_trait;
-use fnv::FnvHashMap;
 use futures::future::{BoxFuture, WeakShared};
 use futures::{Future, FutureExt};
 use quickwit_common::uri::Uri;
@@ -38,7 +38,7 @@ use crate::{BulkDeleteError, Storage, StorageResult};
 ///
 /// Since most Futures return an Result<V, Error>, this also encompasses the error.
 pub struct AsyncDebouncer<K, V: Clone> {
-    cache: Mutex<FnvHashMap<K, WeakShared<BoxFuture<'static, V>>>>,
+    cache: Mutex<HashMap<K, WeakShared<BoxFuture<'static, V>>>>,
     /// Number of inserts performed since the last full garbage-collection scan.
     ///
     /// Used to amortize the cost of reclaiming entries left behind by cancelled futures (see

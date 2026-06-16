@@ -94,6 +94,7 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
 arrow = { version = "58", default-features = false, features = ["ipc"] }
