@@ -118,7 +118,6 @@ pub struct ProcessedLog {
 
     pub id: String,
     pub discovery_timestamp: i64,
-    pub tiebreaker: i16,
     pub ingest_size_in_bytes: usize,
 }
 
@@ -420,7 +419,6 @@ impl ProcessedLog {
             source: msg.ddsource,
             tag: convert_tags(&tags).into(),
             id: Uuid::new_v4().to_string(),
-            tiebreaker: rand::random(),
             discovery_timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
