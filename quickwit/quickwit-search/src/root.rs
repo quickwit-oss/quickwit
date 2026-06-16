@@ -22,6 +22,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::shared_consts;
+use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
@@ -836,15 +837,15 @@ pub(crate) async fn search_partial_hits_phase(
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
 
-    // Merging is a cpu-bound task.
-    // It should be executed by Tokio's blocking threads.
+    // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
+    // final response once all leaf responses are available.
 
     // Wrap into result for merge_fruits
     let leaf_search_results: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
     let span = info_span!("merge_fruits");
     let leaf_search_response = crate::search_thread_pool()
-        .run_cpu_intensive(move || {
+        .run_cpu_intensive_with_priority(Priority::High, move || {
             let _span_guard = span.enter();
             merge_collector.merge_fruits(leaf_search_results)
         })

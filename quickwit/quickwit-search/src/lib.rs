@@ -46,7 +46,7 @@ mod search_permit_provider;
 mod tests;
 
 pub use collector::QuickwitAggregations;
-use quickwit_common::thread_pool::ThreadPool;
+use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
@@ -96,9 +96,9 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
-fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_THREAD_POOL: LazyLock<ThreadPool> =
-        LazyLock::new(|| ThreadPool::new("search", None));
+fn search_thread_pool() -> &'static ThreadPoolWithPriority {
+    static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
     &SEARCH_THREAD_POOL
 }
 
