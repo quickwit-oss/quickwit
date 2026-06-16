@@ -16,6 +16,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -38,28 +39,34 @@ use crate::{BulkDeleteError, Storage, StorageResult};
 /// Since most Futures return an Result<V, Error>, this also encompasses the error.
 pub struct AsyncDebouncer<K, V: Clone> {
     cache: Mutex<FnvHashMap<K, WeakShared<BoxFuture<'static, V>>>>,
+    /// Number of inserts performed since the last full garbage-collection scan.
+    ///
+    /// Used to amortize the cost of reclaiming entries left behind by cancelled futures (see
+    /// `get_or_create`). Always mutated while holding the `cache` lock, so the increment/reset
+    /// logic is effectively serialized; `Relaxed` ordering is therefore sufficient.
+    inserts_since_cleanup: AtomicUsize,
 }
 
 impl<K, V: Clone> Default for AsyncDebouncer<K, V> {
     fn default() -> Self {
         Self {
             cache: Default::default(),
+            inserts_since_cleanup: AtomicUsize::new(0),
         }
     }
 }
+
+/// Number of inserts between two full garbage-collection scans of the cache.
+///
+/// Cancelled `get_or_create` futures leave a stale (non-upgradeable) entry behind. A stale entry
+/// is harmless on its own — the next lookup of the same key fails to upgrade and overwrites it —
+/// so we only need a periodic sweep to reclaim entries whose key is never accessed again.
+const CLEANUP_INTERVAL: usize = 1_024;
 
 impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
     /// Returns the number of inflight futures.
     pub fn len(&self) -> usize {
         self.cache.lock().unwrap().len()
-    }
-
-    /// Cleanup
-    /// In case there is already an existing Future for the passed key, the constructor is not
-    /// used.
-    fn cleanup(&self) {
-        let mut guard = self.cache.lock().unwrap();
-        guard.retain(|_, v| v.upgrade().is_some());
     }
 
     /// Instead of the future directly, a constructor to build the future is passed.
@@ -70,24 +77,39 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
         T: FnOnce() -> F,
         F: Future<Output = V> + Send + 'static,
     {
-        self.cleanup();
-
-        // explicit scope to drop the lock
-        let weak_fut_opt = { self.cache.lock().unwrap().get(&key).cloned() };
-        if let Some(weak_future) = weak_fut_opt
-            && let Some(future) = weak_future.upgrade()
-        {
-            return future.await;
+        // Fast path: an inflight future for this key already exists. The lookup and the
+        // staleness check happen under a single lock; a stale entry (left by a cancelled future)
+        // is simply ignored here and overwritten by the insert below.
+        let existing_future_opt: Option<_> = {
+            let guard = self.cache.lock().unwrap();
+            match guard.get(&key) {
+                Some(weak_future) => weak_future.upgrade(),
+                None => None,
+            }
+        };
+        if let Some(existing_future) = existing_future_opt {
+            return existing_future.await;
         }
 
         let fut = Box::pin(build_a_future()) as BoxFuture<'static, V>;
         let fut = fut.shared();
-        self.cache.lock().unwrap().insert(
-            key.clone(),
-            fut.clone().downgrade().expect(
-                "future has been dropped, but that shouldn't happen since it's still in scope",
-            ),
-        );
+        let weak_fut = fut
+            .clone()
+            .downgrade()
+            .expect("future has been dropped, but that shouldn't happen since it's still in scope");
+        {
+            let mut guard = self.cache.lock().unwrap();
+            guard.insert(key.clone(), weak_fut);
+            // Amortized garbage collection. Running a full scan on every call would make each
+            // call O(n); instead we scan once every `CLEANUP_INTERVAL` inserts, giving O(1)
+            // amortized cost while keeping the cache from growing unboundedly when keys belonging
+            // to cancelled futures are never accessed again.
+            let inserts = self.inserts_since_cleanup.fetch_add(1, Ordering::Relaxed) + 1;
+            if inserts >= CLEANUP_INTERVAL {
+                self.inserts_since_cleanup.store(0, Ordering::Relaxed);
+                guard.retain(|_, weak_future| weak_future.upgrade().is_some());
+            }
+        }
         let res = fut.await;
 
         self.cache.lock().unwrap().remove(&key);
