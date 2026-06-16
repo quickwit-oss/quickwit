@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
 use quickwit_metrics::{Gauge, GaugeGuard, LazyGauge, gauge, labels, lazy_gauge};
 use tokio::sync::oneshot;
 use tracing::error;
+
+use super::Panicked;
 
 static THREAD_POOL_ONGOING_TASKS: LazyGauge = lazy_gauge!(
     name: "ongoing_tasks",
@@ -37,14 +38,14 @@ static THREAD_POOL_PENDING_TASKS: LazyGauge = lazy_gauge!(
 /// tokio::spawn_blocking should only used for IO-bound tasks, as it has not limit on its
 /// thread count.
 #[derive(Clone)]
-pub struct ThreadPool {
+struct SimpleThreadPool {
     thread_pool: Arc<rayon::ThreadPool>,
     ongoing_tasks: Gauge,
     pending_tasks: Gauge,
 }
 
-impl ThreadPool {
-    pub fn new(name: &'static str, num_threads_opt: Option<usize>) -> ThreadPool {
+impl SimpleThreadPool {
+    fn new(name: &'static str, num_threads_opt: Option<usize>) -> SimpleThreadPool {
         let mut rayon_pool_builder = rayon::ThreadPoolBuilder::new()
             .thread_name(move |thread_id| format!("quickwit-{name}-{thread_id}"))
             .panic_handler(move |_my_panic| {
@@ -59,15 +60,11 @@ impl ThreadPool {
         let labels = labels!("pool" => name);
         let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, labels: [labels]);
         let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, labels: [labels]);
-        ThreadPool {
+        SimpleThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,
             pending_tasks,
         }
-    }
-
-    pub fn get_underlying_rayon_thread_pool(&self) -> Arc<rayon::ThreadPool> {
-        self.thread_pool.clone()
     }
 
     /// Function similar to `tokio::spawn_blocking`.
@@ -85,7 +82,7 @@ impl ThreadPool {
     ///
     /// This is nice because it makes work that has been scheduled
     /// but is not running yet "cancellable".
-    pub fn run_cpu_intensive<F, R>(
+    fn run_cpu_intensive<F, R>(
         &self,
         cpu_intensive_fn: F,
     ) -> impl Future<Output = Result<R, Panicked>>
@@ -111,6 +108,15 @@ impl ThreadPool {
     }
 }
 
+fn small_task_executor() -> &'static SimpleThreadPool {
+    static SMALL_TASK_EXECUTOR: std::sync::LazyLock<SimpleThreadPool> =
+        std::sync::LazyLock::new(|| {
+            let num_threads: usize = (crate::num_cpus() / 3).max(2);
+            SimpleThreadPool::new("small_tasks", Some(num_threads))
+        });
+    &SMALL_TASK_EXECUTOR
+}
+
 /// Run a small (<200ms) CPU-intensive task on a dedicated thread pool with a few threads.
 ///
 /// When running blocking io (or side-effects in general), prefer using `tokio::spawn_blocking`
@@ -124,23 +130,12 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    static SMALL_TASK_EXECUTOR: std::sync::LazyLock<ThreadPool> = std::sync::LazyLock::new(|| {
-        let num_threads: usize = (crate::num_cpus() / 3).max(2);
-        ThreadPool::new("small_tasks", Some(num_threads))
-    });
-    SMALL_TASK_EXECUTOR.run_cpu_intensive(cpu_intensive_fn)
+    small_task_executor().run_cpu_intensive(cpu_intensive_fn)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Panicked;
-
-impl fmt::Display for Panicked {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "scheduled task panicked")
-    }
+pub fn get_underlying_rayon_thread_pool() -> Arc<rayon::ThreadPool> {
+    small_task_executor().thread_pool.clone()
 }
-
-impl std::error::Error for Panicked {}
 
 #[cfg(test)]
 mod tests {

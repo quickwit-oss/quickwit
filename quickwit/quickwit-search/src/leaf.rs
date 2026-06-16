@@ -27,6 +27,7 @@ use anyhow::Context;
 use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
@@ -1506,7 +1507,7 @@ pub async fn multi_index_leaf_search(
     }
 
     let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
-        .run_cpu_intensive(|| {
+        .run_cpu_intensive_with_priority(Priority::High, || {
             incremental_merge_collector
                 .finalize()
                 .map_err(SearchError::from)
@@ -1911,7 +1912,9 @@ pub async fn single_doc_mapping_leaf_search(
 
     let leaf_search_response_result: tantivy::Result<LeafSearchResponse> =
         crate::search_thread_pool()
-            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .run_cpu_intensive_with_priority(Priority::High, || {
+                incremental_merge_collector.finalize()
+            })
             .instrument(info_span!("incremental_merge_intermediate"))
             .await
             .context("failed to merge split search responses: thread panicked")?;
