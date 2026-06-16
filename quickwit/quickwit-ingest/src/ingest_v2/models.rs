@@ -447,4 +447,45 @@ mod tests {
         );
         assert!(!solo_shard.is_advertisable);
     }
+
+    #[test]
+    fn test_is_indexed() {
+        let new_solo_shard = || {
+            IngesterShard::new_solo(
+                IndexUid::for_test("test-index", 0),
+                SourceId::from("test-source"),
+                ShardId::from(1),
+            )
+        };
+
+        // An empty shard (replication and truncation both at `Beginning`) has no un-indexed data,
+        // so once it is closed it must be considered indexed. Otherwise an empty replacement shard
+        // opened during a rebalance would block the ingester's decommission forever.
+        assert!(!new_solo_shard().build().is_indexed());
+        assert!(
+            new_solo_shard()
+                .with_state(ShardState::Closed)
+                .build()
+                .is_indexed()
+        );
+
+        // A closed shard with records that have not been fully consumed is not indexed.
+        assert!(
+            !new_solo_shard()
+                .with_state(ShardState::Closed)
+                .with_replication_position_inclusive(Position::offset(5u64))
+                .build()
+                .is_indexed()
+        );
+
+        // A closed shard whose records have all been consumed is indexed.
+        assert!(
+            new_solo_shard()
+                .with_state(ShardState::Closed)
+                .with_replication_position_inclusive(Position::offset(5u64))
+                .with_truncation_position_inclusive(Position::offset(5u64))
+                .build()
+                .is_indexed()
+        );
+    }
 }
