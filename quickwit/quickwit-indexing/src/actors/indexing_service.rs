@@ -789,8 +789,7 @@ impl IndexingService {
         plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<(), IndexingError> {
-        let tasks = &plan_request.indexing_tasks;
-        let pipeline_diff = self.compute_pipeline_diff(tasks);
+        let pipeline_diff = self.compute_pipeline_diff(&plan_request.indexing_tasks);
 
         if !pipeline_diff.pipelines_to_shutdown.is_empty() {
             self.shutdown_pipelines(&pipeline_diff.pipelines_to_shutdown)

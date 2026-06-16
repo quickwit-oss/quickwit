@@ -1436,6 +1436,11 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&request.publish_token)
             .fetch_all(&self.connection_pool)
             .await?;
+        
+        if pg_shards.len() != request.shard_ids.len() {
+            warn_on_unacquired_shards(&request, &pg_shards);
+        }
+        
         let acquired_shards = pg_shards
             .into_iter()
             .map(|pg_shard| pg_shard.into())
@@ -2951,6 +2956,28 @@ impl PostgresqlMetastore {
         );
         Ok(EmptyResponse {})
     }
+}
+
+/// Best-effort diagnostics for the acquire error path: logs the shards from `request` that were not
+/// acquired — those absent from `acquired_pg_shards` because a more recent publish token owns them,
+/// or because they no longer exist. Does not touch the database.
+fn warn_on_unacquired_shards(request: &AcquireShardsRequest, acquired_pg_shards: &[PgShard]) {
+    let not_acquired_shard_ids: Vec<&ShardId> = request
+        .shard_ids
+        .iter()
+        .filter(|shard_id| {
+            !acquired_pg_shards
+                .iter()
+                .any(|pg_shard| &pg_shard.shard_id == *shard_id)
+        })
+        .collect();
+    warn!(
+        index_uid=%request.index_uid(),
+        source_id=%request.source_id,
+        shard_ids=?not_acquired_shard_ids,
+        publish_token=%request.publish_token,
+        "could not acquire shards: held by a more recent publish token, or no longer present"
+    );
 }
 
 async fn open_or_fetch_shard<'e>(
