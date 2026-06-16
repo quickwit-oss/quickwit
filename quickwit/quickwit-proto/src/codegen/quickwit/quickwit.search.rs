@@ -413,6 +413,9 @@ pub struct LeafResourceStats {
     /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
     #[prost(uint64, tag = "14")]
     pub lambda_bottleneck: u64,
+    /// / Number of CPU threads available in the search pool.
+    #[prost(uint64, tag = "15")]
+    pub search_pool_cpu_threads: u64,
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -442,6 +445,19 @@ pub struct RootResourceStats {
     /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
     #[prost(uint64, repeated, tag = "6")]
     pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
+    /// The first phase identifies the partial hits, runs aggregate.
+    /// When running a top-k request, a second phase is required to fetch the documents.
+    ///
+    /// This includes getting the results from leaf searchers and merging them.
+    #[prost(uint64, tag = "7")]
+    pub root_first_phase_wall_time_microsecs: u64,
+    /// Overall wall time for the root search. This includes both
+    /// the first phase (running aggregation, and identifying the doc address of the top-k hits we should return)
+    /// and the second phase (fetch documents).
+    ///
+    /// If there are no top-k hits, the second phase .
+    #[prost(uint64, tag = "8")]
+    pub root_wall_time_microsecs: u64,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

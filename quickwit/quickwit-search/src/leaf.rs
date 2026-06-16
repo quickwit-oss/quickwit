@@ -1520,10 +1520,12 @@ pub async fn multi_index_leaf_search(
         .await
         .context("failed to merge split search responses")??;
     let wall_time_microsecs = leaf_start.elapsed().as_micros() as u64;
-    leaf_search_response
+    let search_pool_cpu_threads = crate::search_thread_pool().num_threads() as u64;
+    let resource_stats = leaf_search_response
         .resource_stats
-        .get_or_insert_with(LeafResourceStats::default)
-        .wall_time_microsecs = wall_time_microsecs;
+        .get_or_insert_with(LeafResourceStats::default);
+    resource_stats.wall_time_microsecs = wall_time_microsecs;
+    resource_stats.search_pool_cpu_threads = search_pool_cpu_threads;
     Ok(leaf_search_response)
 }
 
