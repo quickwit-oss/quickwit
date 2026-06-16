@@ -19,9 +19,9 @@ tracing = { workspace = true }
 url = "2"
 
 arrow = { workspace = true }
-datafusion = "53"
-datafusion-substrait = "53"
-datafusion-distributed = "1.0"
+datafusion = "54"
+datafusion-substrait = "54"
+datafusion-distributed = "2.0"
 object_store = "0.13"
 
 # gRPC surface is opt-in. The extension traits + session builder do not need
