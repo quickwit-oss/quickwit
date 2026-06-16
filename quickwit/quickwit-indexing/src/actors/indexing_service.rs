@@ -760,8 +760,8 @@ impl IndexingService {
     /// or not.
     ///
     /// If a pipeline actor has failed, this function just logs an error.
-    async fn assign_shards_to_pipelines(&mut self, tasks: &[IndexingTask]) {
-        for task in tasks {
+    async fn assign_shards_to_pipelines(&mut self, plan_request: &ApplyIndexingPlanRequest) {
+        for task in &plan_request.indexing_tasks {
             if task.shard_ids.is_empty() {
                 continue;
             }
@@ -771,6 +771,7 @@ impl IndexingService {
             };
             let assignment = Assignment {
                 shard_ids: task.shard_ids.iter().cloned().collect(),
+                indexing_plan_id: plan_request.indexing_plan_id.clone(),
             };
             let message = AssignShards(assignment);
 
@@ -785,9 +786,10 @@ impl IndexingService {
     /// - Starting the pipelines that are not running.
     async fn apply_indexing_plan(
         &mut self,
-        tasks: &[IndexingTask],
+        plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<(), IndexingError> {
+        let tasks = &plan_request.indexing_tasks;
         let pipeline_diff = self.compute_pipeline_diff(tasks);
 
         if !pipeline_diff.pipelines_to_shutdown.is_empty() {
@@ -801,7 +803,7 @@ impl IndexingService {
                 .spawn_pipelines(&pipeline_diff.pipelines_to_spawn, ctx)
                 .await?;
         }
-        self.assign_shards_to_pipelines(tasks).await;
+        self.assign_shards_to_pipelines(&plan_request).await;
         self.update_chitchat_running_plan().await;
 
         if !spawn_pipeline_failures.is_empty() {
@@ -1135,7 +1137,7 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
-            .apply_indexing_plan(&plan_request.indexing_tasks, ctx)
+            .apply_indexing_plan(plan_request, ctx)
             .await
             .map(|_| ApplyIndexingPlanResponse {}))
     }
@@ -1465,7 +1467,10 @@ mod tests {
                 },
             ];
             indexing_service
-                .ask_for_res(ApplyIndexingPlanRequest { indexing_tasks })
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                })
                 .await
                 .unwrap();
             assert_eq!(
@@ -1531,6 +1536,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1587,6 +1593,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1646,6 +1653,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1665,6 +1673,7 @@ mod tests {
         indexing_service
             .ask_for_res(ApplyIndexingPlanRequest {
                 indexing_tasks: Vec::new(),
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
             })
             .await
             .unwrap();
@@ -2072,6 +2081,7 @@ mod tests {
                         params_fingerprint: 0,
                     },
                 ],
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
             })
             .await
             .unwrap();

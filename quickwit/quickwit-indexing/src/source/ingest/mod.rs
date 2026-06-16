@@ -43,10 +43,9 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
-use ulid::Ulid;
 
 use super::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    Assignment, BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
     SourceRuntime, SourceSink, TypedSourceFactory,
 };
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
@@ -100,11 +99,6 @@ impl ClientId {
             source_uid,
             pipeline_uid,
         }
-    }
-
-    fn new_publish_token(&self) -> String {
-        let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
-        format!("{self}/{ulid}")
     }
 }
 
@@ -176,9 +170,10 @@ impl IngestSource {
             retry_params,
         );
         // We start as dead. The first reset with a non-empty list of shards will create an alive
-        // publish lock.
+        // publish lock. The publish token is left empty until then: the first reset adopts the
+        // indexing plan id carried by the assignment.
         let publish_lock = PublishLock::dead();
-        let publish_token = client_id.new_publish_token();
+        let publish_token = PublishToken::new();
 
         Ok(IngestSource {
             client_id,
@@ -393,6 +388,7 @@ impl IngestSource {
     async fn reset_if_needed(
         &mut self,
         new_assigned_shard_ids: &BTreeSet<ShardId>,
+        indexing_plan_id: &str,
         source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -439,7 +435,7 @@ impl IngestSource {
         self.fetch_stream.reset();
         self.publish_lock.kill().await;
         self.publish_lock = PublishLock::default();
-        self.publish_token = self.client_id.new_publish_token();
+        self.publish_token = indexing_plan_id.to_string();
         source_sink
             .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
             .await?;
@@ -504,11 +500,15 @@ impl Source for IngestSource {
 
     async fn assign_shards(
         &mut self,
-        new_assigned_shard_ids: BTreeSet<ShardId>,
+        assignment: Assignment,
         source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        self.reset_if_needed(&new_assigned_shard_ids, source_sink, ctx)
+        let Assignment {
+            shard_ids: new_assigned_shard_ids,
+            indexing_plan_id,
+        } = assignment;
+        self.reset_if_needed(&new_assigned_shard_ids, &indexing_plan_id, source_sink, ctx)
             .await?;
 
         // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
@@ -963,21 +963,36 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = once(0).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 1);
         assert!(!publish_lock.is_alive());
 
         assert!(source.publish_lock.is_alive());
-        assert!(!source.publish_token.is_empty());
+        // The first reset adopts the assignment's indexing plan id as the publish token.
+        assert_eq!(source.publish_token, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
 
         // We assign [0,1] (previously [0]). This should just add the shard 1.
         // The stream does not need to be reset.
         let shard_ids: BTreeSet<ShardId> = (0..2).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 2);
@@ -990,7 +1005,14 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = (1..3).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1006,12 +1028,12 @@ mod tests {
             .unwrap();
         assert_ne!(&source.publish_lock, &publish_lock);
 
-        // assert!(publish_token != source.publish_token);
-
         let NewPublishToken(publish_token) = doc_processor_inbox
             .recv_typed_message::<NewPublishToken>()
             .await
             .unwrap();
+        // On reset the source re-adopts the assignment's plan id and forwards it downstream.
+        assert_eq!(publish_token, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
         assert_eq!(source.publish_token, publish_token);
 
         assert_eq!(source.assigned_shards.len(), 2);
@@ -1169,7 +1191,14 @@ mod tests {
             BTreeSet::from_iter([ShardId::from(1), ShardId::from(2)]);
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1340,7 +1369,14 @@ mod tests {
 
         // In this scenario, the indexer will only be able to acquire shard 1.
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1716,7 +1752,14 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([ShardId::from(1)]);
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -2011,7 +2054,14 @@ mod tests {
         });
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 

@@ -26,6 +26,11 @@ service IndexingService {
 
 message ApplyIndexingPlanRequest {
   repeated IndexingTask indexing_tasks = 1;
+  // Identifier of the indexing plan, minted by the control plane as a ULID when the plan is
+  // applied. Indexers use it as the publish token for the shards they acquire: since ULIDs are
+  // monotonic, `AcquireShards` only succeeds for a token greater than or equal to the one already
+  // recorded, so a stale plan can never steal a shard from a more recent one.
+  string indexing_plan_id = 2;
 }
 
 message PipelineUid {

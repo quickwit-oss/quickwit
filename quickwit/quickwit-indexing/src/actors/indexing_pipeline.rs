@@ -89,6 +89,9 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
+    // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
+    // can be re-sent to the source on respawn; the source adopts it as its publish token.
+    indexing_plan_id: String,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
@@ -137,6 +140,7 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            indexing_plan_id: String::new(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
@@ -402,6 +406,7 @@ impl IndexingPipeline {
             .spawn(actor_source);
         let assign_shards_message = AssignShards(Assignment {
             shard_ids: self.shard_ids.clone(),
+            indexing_plan_id: self.indexing_plan_id.clone(),
         });
         source_mailbox.send_message(assign_shards_message).await?;
 
@@ -496,6 +501,8 @@ impl Handler<AssignShards> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids
             .clone_from(&assign_shards_message.0.shard_ids);
+        self.indexing_plan_id
+            .clone_from(&assign_shards_message.0.indexing_plan_id);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &self.handles_opt {

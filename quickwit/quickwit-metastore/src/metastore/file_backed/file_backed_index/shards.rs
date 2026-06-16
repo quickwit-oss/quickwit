@@ -25,7 +25,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, Position, PublishToken, ShardId, SourceId, queue_id};
 use time::OffsetDateTime;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 use crate::file_backed::MutationOccurred;
@@ -49,6 +49,16 @@ impl fmt::Debug for Shards {
             .field("shards", &self.shards)
             .finish()
     }
+}
+
+/// Whether a shard recording `existing_token` can be acquired by a pipeline presenting
+/// `presented_token`. Acquisition is monotonic; a missing or legacy (`'/'`-containing) token ranks
+/// below any ULID.
+fn can_acquire_shard(existing_token: &str, presented_token: &str) -> bool {
+    if existing_token.is_empty() || existing_token.contains('/') {
+        return true;
+    }
+    !presented_token.contains('/') && presented_token >= existing_token
 }
 
 impl Shards {
@@ -164,6 +174,17 @@ impl Shards {
 
         for shard_id in &request.shard_ids {
             if let Some(shard) = self.shards.get_mut(shard_id) {
+                if !can_acquire_shard(shard.publish_token(), &request.publish_token) {
+                    error!(
+                        index_uid=%self.index_uid,
+                        source_id=%self.source_id,
+                        %shard_id,
+                        existing_publish_token=%shard.publish_token(),
+                        publish_token=%request.publish_token,
+                        "cannot acquire shard held by a more recent publish token"
+                    );
+                    continue;
+                }
                 if shard.publish_token() != request.publish_token {
                     shard.publish_token = Some(request.publish_token.clone());
                     mutation_occurred = true;
@@ -533,6 +554,26 @@ mod tests {
                 .publish_token(),
             "test-publish-token"
         );
+    }
+
+    #[test]
+    fn test_can_acquire_shard() {
+        const OLDER: &str = "01000000000000000000000000";
+        const NEWER: &str = "02000000000000000000000000";
+        const LEGACY: &str = "indexer/node/index:0/source/01000000000000000000000000";
+
+        // No token recorded yet: free to acquire.
+        assert!(can_acquire_shard("", NEWER));
+        // A legacy (pre-ULID) recorded token is always superseded by a ULID.
+        assert!(can_acquire_shard(LEGACY, NEWER));
+        // A newer ULID supersedes an older one.
+        assert!(can_acquire_shard(OLDER, NEWER));
+        // The same ULID re-acquires (e.g. after a local respawn).
+        assert!(can_acquire_shard(NEWER, NEWER));
+        // An older ULID cannot steal a shard owned by a newer one.
+        assert!(!can_acquire_shard(NEWER, OLDER));
+        // A legacy presented token cannot supersede a recorded ULID.
+        assert!(!can_acquire_shard(NEWER, LEGACY));
     }
 
     #[test]

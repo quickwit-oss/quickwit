@@ -114,6 +114,9 @@ pub struct MetricsPipeline {
     handles_opt: Option<MetricsPipelineHandles>,
     kill_switch: KillSwitch,
     shard_ids: BTreeSet<ShardId>,
+    // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
+    // can be re-sent to the source on respawn; the source adopts it as its publish token.
+    indexing_plan_id: String,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
@@ -163,6 +166,7 @@ impl MetricsPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            indexing_plan_id: String::new(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
@@ -447,6 +451,7 @@ impl MetricsPipeline {
             .spawn(actor_source);
         let assign_shards_message = AssignShards(Assignment {
             shard_ids: self.shard_ids.clone(),
+            indexing_plan_id: self.indexing_plan_id.clone(),
         });
         source_mailbox.send_message(assign_shards_message).await?;
 
@@ -539,6 +544,8 @@ impl Handler<AssignShards> for MetricsPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids
             .clone_from(&assign_shards_message.0.shard_ids);
+        self.indexing_plan_id
+            .clone_from(&assign_shards_message.0.indexing_plan_id);
         if let Some(handles) = &self.handles_opt {
             info!(
                 shard_ids=?assign_shards_message.0.shard_ids,
