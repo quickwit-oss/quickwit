@@ -185,6 +185,11 @@ impl ThreadPoolWithPriority {
     ///
     /// This is nice because it makes work that has been scheduled
     /// but is not running yet "cancellable".
+    /// Returns the number of threads in the underlying rayon thread pool.
+    pub fn num_threads(&self) -> usize {
+        self.inner.max_running_tasks
+    }
+
     pub fn run_cpu_intensive<F, R>(
         &self,
         cpu_intensive_fn: F,

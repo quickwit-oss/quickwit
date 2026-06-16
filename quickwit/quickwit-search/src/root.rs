@@ -742,6 +742,8 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
 ///
 /// `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
 /// `leaf_resources_sum` is a field-wise sum of every leaf's stats.
+///
+/// Root specific stats are left as 0 and will be filled in within the root phase.
 fn compute_root_resource_stats(
     leaf_responses: &[LeafSearchResponse],
     leaf_num_calls: u64,
@@ -780,6 +782,8 @@ fn compute_root_resource_stats(
         leaf_num_calls_including_retries,
         num_failed_splits,
         leaf_wall_times_microsecs,
+        root_first_phase_wall_time_microsecs: 0u64,
+        root_wall_time_microsecs: 0u64,
     })
 }
 
@@ -1056,7 +1060,8 @@ async fn root_search_aux(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
-    let (first_phase_result, scroll_key_and_start_offset_opt, root_resource_stats): (
+    let start = Instant::now();
+    let (first_phase_result, scroll_key_and_start_offset_opt, mut root_resource_stats_opt): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
         Option<RootResourceStats>,
@@ -1068,6 +1073,11 @@ async fn root_search_aux(
         cluster_client,
     )
     .await?;
+
+    if let Some(root_resource_stats) = root_resource_stats_opt.as_mut() {
+        root_resource_stats.root_first_phase_wall_time_microsecs =
+            start.elapsed().as_micros() as u64;
+    }
 
     let hits = fetch_docs_phase(
         indexes_metas_for_leaf_search,
@@ -1088,6 +1098,10 @@ async fn root_search_aux(
         aggregation_result_postcard_opt = None;
     }
 
+    if let Some(root_resource_stats) = root_resource_stats_opt.as_mut() {
+        root_resource_stats.root_wall_time_microsecs = start.elapsed().as_micros() as u64;
+    }
+
     Ok(SearchResponse {
         aggregation_postcard: aggregation_result_postcard_opt,
         num_hits: first_phase_result.num_hits,
@@ -1099,7 +1113,7 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
-        resource_stats: root_resource_stats,
+        resource_stats: root_resource_stats_opt,
     })
 }
 
