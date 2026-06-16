@@ -170,7 +170,7 @@ lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
-metrics-exporter-otel = "0.3.2"
+metrics-opentelemetry = "=0.24032.8"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
@@ -417,13 +417,6 @@ encoding_rs = "=0.8.35"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
-metrics-exporter-otel = { git = "https://github.com/shuheiktgw/metrics-exporter-otel", rev = "b4032665307007ac03ac132fd60850d8c8b7af19" }
-opentelemetry = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
-opentelemetry-appender-tracing = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
-opentelemetry-http = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
-opentelemetry-otlp = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
-opentelemetry-proto = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
-opentelemetry_sdk = { git = "https://github.com/shuheiktgw/opentelemetry-rust", rev = "4279a0115915cdb0a18259d933f58a287b9188eb" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
