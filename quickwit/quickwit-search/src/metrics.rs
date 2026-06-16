@@ -43,6 +43,7 @@ pub struct SplitSearchOutcomeCounters {
     pub cache_hit: Counter,
     pub pruned_before_warmup: Counter,
     pub cancel_warmup: Counter,
+    pub pruned_during_warmup: Counter,
     pub pruned_after_warmup: Counter,
     pub cancel_cpu_queue: Counter,
     pub cancel_cpu: Counter,
@@ -56,6 +57,7 @@ impl Default for SplitSearchOutcomeCounters {
             cache_hit: Counter::local(),
             pruned_before_warmup: Counter::local(),
             cancel_warmup: Counter::local(),
+            pruned_during_warmup: Counter::local(),
             pruned_after_warmup: Counter::local(),
             cancel_cpu_queue: Counter::local(),
             cancel_cpu: Counter::local(),
@@ -70,6 +72,7 @@ impl fmt::Display for SplitSearchOutcomeCounters {
         print_if_not_null("cache_hit", &self.cache_hit, f)?;
         print_if_not_null("pruned_before_warmup", &self.pruned_before_warmup, f)?;
         print_if_not_null("cancel_warmup", &self.cancel_warmup, f)?;
+        print_if_not_null("pruned_during_warmup", &self.pruned_during_warmup, f)?;
         print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
         print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
         print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
@@ -92,6 +95,7 @@ impl SplitSearchOutcomeCounters {
             cache_hit: counter("cache_hit"),
             pruned_before_warmup: counter("pruned_before_warmup"),
             cancel_warmup: counter("cancel_warmup"),
+            pruned_during_warmup: counter("pruned_during_warmup"),
             pruned_after_warmup: counter("pruned_after_warmup"),
             cancel_cpu_queue: counter("cancel_cpu_queue"),
             cancel_cpu: counter("cancel_cpu"),
