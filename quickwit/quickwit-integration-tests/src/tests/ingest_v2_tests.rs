@@ -1121,7 +1121,11 @@ async fn test_retiring_indexer_receives_empty_plan() {
         .filter(|(_, services)| services.contains(&QuickwitService::Indexer))
         .map(|(config, _)| config.node_id.clone())
         .collect();
-    assert_eq!(indexer_node_ids.len(), 2, "expected exactly two indexer nodes");
+    assert_eq!(
+       indexer_node_ids.len(),
+        2,
+       "expected exactly two indexer nodes"
+    );
     let retiring_node_id = indexer_node_ids[0].clone();
     let surviving_node_id = indexer_node_ids[1].clone();
     let retiring_client = sandbox
