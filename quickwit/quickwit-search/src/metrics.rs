@@ -233,6 +233,12 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
     buckets: pseudo_exponential_bytes_buckets(),
 );
 
+pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
+    name: "leaf_search_warmup_ongoing_num_bytes",
+    description: "Total bytes currently held in warmup caches across all in-flight split searches.",
+    subsystem: "search",
+);
+
 pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
         name: "job_assigned_total",
         description: "Number of job assigned to searchers, per affinity rank.",
