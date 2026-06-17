@@ -7171,9 +7171,9 @@ dependencies = [
 
 [[package]]
 name = "metrics-opentelemetry"
-version = "0.24032.7"
+version = "0.24032.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d370263dc0f77961bb87e185bf55b130fdcef51bfcf7a111170dff567ea891"
+checksum = "df39cbce71be50bf6c438f95940f166991a3845a53dcf68c77f08270cf4e327e"
 dependencies = [
  "metrics",
  "opentelemetry",

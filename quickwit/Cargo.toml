@@ -179,7 +179,7 @@ lru = "0.18"
 matches = "0.1"
 metrics = "0.24"
 metrics-exporter-dogstatsd = "0.9"
-metrics-opentelemetry = "=0.24032.7"
+metrics-opentelemetry = "=0.24032.8"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 md5 = "0.8"
