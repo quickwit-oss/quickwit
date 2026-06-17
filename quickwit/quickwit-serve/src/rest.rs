@@ -548,7 +548,9 @@ mod tls {
     use std::{fs, io};
 
     use quickwit_config::TlsConfig;
+    use rustls::RootCertStore;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    use rustls::server::WebPkiClientVerifier;
     use tokio_rustls::rustls::ServerConfig;
 
     fn io_error(error: String) -> io::Error {
@@ -580,14 +582,19 @@ mod tls {
         let certs = load_certs(&config.cert_path)?;
         let key = load_private_key(&config.key_path)?;
 
-        // TODO we could add support for client authorization, it seems less important than on the
-        // gRPC side though
-        if config.validate_client {
-            anyhow::bail!("mTLS isn't supported on rest api");
-        }
-
-        let mut cfg = rustls::ServerConfig::builder()
-            .with_no_client_auth()
+        let builder = rustls::ServerConfig::builder();
+        let builder = if config.validate_client {
+            let ca_certs = load_certs(&config.ca_path)?;
+            let mut roots = RootCertStore::empty();
+            for ca_cert in ca_certs {
+                roots.add(ca_cert)?;
+            }
+            let verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+            builder.with_client_cert_verifier(verifier)
+        } else {
+            builder.with_no_client_auth()
+        };
+        let mut cfg = builder
             .with_single_cert(certs, key)
             .map_err(|error| io_error(error.to_string()))?;
         // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.

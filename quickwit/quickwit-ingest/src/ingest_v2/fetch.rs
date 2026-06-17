@@ -847,8 +847,15 @@ pub(super) mod tests {
         fetch_task_handle.await.unwrap();
     }
 
-    #[tokio::test]
-    async fn test_fetch_task_signals_eof() {
+    /// Spawns a fetch task against a closed shard whose queue holds `num_records` records and whose
+    /// replication position is `replication_position_inclusive`, then asserts that fetching from
+    /// `from_position_exclusive` immediately signals EOF at `expected_eof_position`.
+    async fn check_fetch_task_signals_eof(
+        num_records: usize,
+        replication_position_inclusive: Position,
+        from_position_exclusive: Position,
+        expected_eof_position: Position,
+    ) {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
@@ -868,26 +875,25 @@ pub(super) mod tests {
             .await
             .unwrap();
 
-        mrecordlog_guard
-            .as_mut()
-            .unwrap()
-            .append_records(
-                &queue_id,
-                None,
-                std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
-            )
-            .await
-            .unwrap();
+        if num_records > 0 {
+            let records = (0..num_records).map(|_| MRecord::new_doc("test-doc-foo").encode());
+            mrecordlog_guard
+                .as_mut()
+                .unwrap()
+                .append_records(&queue_id, None, records)
+                .await
+                .unwrap();
+        }
         drop(mrecordlog_guard);
 
         let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
+            client_id,
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(shard_id.clone()),
-            from_position_exclusive: Some(Position::offset(0u64)),
+            from_position_exclusive: Some(from_position_exclusive.clone()),
         };
-        let shard_status = (ShardState::Closed, Position::offset(0u64));
+        let shard_status = (ShardState::Closed, replication_position_inclusive);
         let (_shard_status_tx, shard_status_rx) = watch::channel(shard_status);
 
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
@@ -906,63 +912,56 @@ pub(super) mod tests {
         assert_eq!(fetch_eof.index_uid(), &index_uid);
         assert_eq!(fetch_eof.source_id, source_id);
         assert_eq!(fetch_eof.shard_id(), shard_id);
-        assert_eq!(fetch_eof.eof_position, Some(Position::eof(0u64).as_eof()));
+        assert_eq!(
+            fetch_eof.eof_position,
+            Some(expected_eof_position),
+            "unexpected EOF position when fetching from `{from_position_exclusive:?}`"
+        );
 
         fetch_task_handle.await.unwrap();
     }
 
     #[tokio::test]
-    async fn test_fetch_task_signals_eof_at_beginning() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
-        )));
-        let client_id = "test-client".to_string();
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let source_id = "test-source".to_string();
-        let shard_id = ShardId::from(1);
-        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+    async fn test_fetch_task_signals_eof() {
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::Beginning,
+            Position::Beginning.as_eof(),
+        )
+        .await;
 
-        let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            from_position_exclusive: Some(Position::Beginning),
-        };
-        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
-            open_fetch_stream_request,
-            mrecordlog.clone(),
-            shard_status_rx,
-            1024,
-        );
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::offset(0u64),
+            Position::eof(0u64),
+        )
+        .await;
 
-        mrecordlog_guard
-            .as_mut()
-            .unwrap()
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
-        drop(mrecordlog_guard);
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::offset(42u64),
+            Position::eof(42u64),
+        )
+        .await;
 
-        let shard_status = (ShardState::Closed, Position::Beginning);
-        shard_status_tx.send(shard_status).unwrap();
+        check_fetch_task_signals_eof(
+            1,
+            Position::offset(0u64),
+            Position::offset(0u64),
+            Position::eof(0u64),
+        )
+        .await;
 
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let fetch_eof = into_fetch_eof(fetch_message);
-
-        assert_eq!(fetch_eof.index_uid(), &index_uid);
-        assert_eq!(fetch_eof.source_id, source_id);
-        assert_eq!(fetch_eof.shard_id(), shard_id);
-        assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
-
-        fetch_task_handle.await.unwrap();
+        check_fetch_task_signals_eof(
+            1,
+            Position::offset(0u64),
+            Position::offset(42u64),
+            Position::eof(42u64),
+        )
+        .await;
     }
 
     #[tokio::test]
