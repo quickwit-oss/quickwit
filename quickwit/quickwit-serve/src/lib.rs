@@ -1703,13 +1703,13 @@ mod tests {
         );
 
         let node_id = NodeId::from_str("test-indexer-node");
-        let task = IndexingTask {
+        let plan = [IndexingTask {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
             source_id: "test-source".to_string(),
             pipeline_uid: Some(PipelineUid::for_test(1)),
             shard_ids: Vec::new(),
             params_fingerprint: 0,
-        };
+        }];
         let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
             ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
         };
@@ -1736,14 +1736,14 @@ mod tests {
         }
 
         // The control plane assigns it an indexing plan: the new plan must be reflected exactly.
-        let ready_with_plan = build_node(&[task.clone()], IngesterStatus::Ready).await;
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
                 previous: ready_no_plan,
                 updated: ready_with_plan.clone(),
             })
             .unwrap();
-        assert_eventually!(pool_tasks() == [task.clone()]);
+        assert_eventually!(pool_tasks() == plan);
         assert_eq!(
             indexer_pool
                 .get(&node_id)
@@ -1755,7 +1755,7 @@ mod tests {
 
         // The node begins retiring while still owning its plan: the status change is applied and
         // the plan is preserved.
-        let retiring_with_plan = build_node(&[task.clone()], IngesterStatus::Retiring).await;
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
                 previous: ready_with_plan,
@@ -1766,7 +1766,7 @@ mod tests {
             indexer_pool.get(&node_id),
             Some(entry) if entry.ingester_status == IngesterStatus::Retiring
         ));
-        assert_eq!(pool_tasks(), [task.clone()]);
+        assert_eq!(pool_tasks(), plan);
         assert_eq!(indexer_pool.len(), 1);
 
         // The node transitions to decommissioning and sheds its plan: both the status and the
