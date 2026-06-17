@@ -15,7 +15,9 @@
 use anyhow::Context;
 use metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
 use opentelemetry::metrics::MeterProvider;
-use opentelemetry_otlp::{MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_otlp::{
+    MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
@@ -28,15 +30,18 @@ impl OtlpProtocol {
         match self {
             OtlpProtocol::Grpc => MetricExporter::builder()
                 .with_tonic()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .build(),
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
