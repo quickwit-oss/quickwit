@@ -793,6 +793,34 @@ mod tests {
         }
     }
 
+    // Reproduction of bug #6524: solve() is unstable when called twice on the same problem.
+    // solution_2 != solution_3 violates the idempotency postcondition.
+    // Source 2 (250 mcpu, 1 shard) bounces between indexer 0 and indexer 1 on each call.
+    #[test]
+    fn test_reproduce_6524() {
+        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![
+            CpuCapacity::from_cpu_millis(951),
+            CpuCapacity::from_cpu_millis(911),
+        ]);
+        problem.add_source(2, NonZeroU32::new(376).unwrap()); // source 0
+        problem.add_source(1, NonZeroU32::new(587).unwrap()); // source 1
+        problem.add_source(1, NonZeroU32::new(250).unwrap()); // source 2
+
+        let mut initial_solution = problem.new_solution();
+        initial_solution.indexer_assignments[0].add_shards(0, 1);
+        initial_solution.indexer_assignments[0].add_shards(2, 1);
+        initial_solution.indexer_assignments[1].add_shards(0, 1);
+
+        let solution_1 = solve(problem.clone(), initial_solution);
+        let solution_2 = solve(problem.clone(), solution_1.clone());
+        let solution_3 = solve(problem, solution_2.clone());
+        assert_eq!(
+            solution_2.indexer_assignments, solution_3.indexer_assignments,
+            "solution unstable!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}\nSolution \
+             3: {solution_3:?}"
+        );
+    }
+
     #[test]
     fn test_capacity_scaling_iteration_required() {
         // Create a problem where affinity constraints cause suboptimal placement
