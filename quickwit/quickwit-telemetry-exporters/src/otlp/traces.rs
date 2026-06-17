@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use anyhow::Context;
-use opentelemetry_otlp::{Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{
+    Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
 
@@ -22,13 +24,18 @@ use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 impl OtlpProtocol {
     pub(crate) fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
         match self {
-            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
+            OtlpProtocol::Grpc => SpanExporter::builder()
+                .with_tonic()
+                .with_retry_policy(super::RETRY_POLICY)
+                .build(),
             OtlpProtocol::HttpProtobuf => SpanExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => SpanExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }

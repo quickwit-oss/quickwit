@@ -18,3 +18,12 @@ pub(crate) mod metrics;
 pub(crate) mod traces;
 
 pub(crate) use config::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
+use opentelemetry_otlp::retry::RetryPolicy;
+
+//Common retry policy for OTLP exporters
+const RETRY_POLICY: RetryPolicy = RetryPolicy {
+    max_retries: 5,
+    initial_delay_ms: 500,
+    max_delay_ms: 30_000,
+    jitter_ms: 100,
+};
