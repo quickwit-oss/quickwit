@@ -52,6 +52,12 @@ pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
         Duration::from_secs(30)
     };
 
+pub(crate) const APPLY_INDEXING_PLAN_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(2)
+};
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
@@ -413,31 +419,41 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
-        // The indexing plan needs to be sent to every reachable indexer in the pool, including not
-        // ready ones, so that any indexer that previously was part of a plan but no longer is can
-        // gracefully shut down its pipelines, such as in the decommissioning case.
-        for indexer in self.indexer_pool.values() {
+        // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
+        // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
+        for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
+            matches!(
+                indexer.ingester_status,
+                IngesterStatus::Ready | IngesterStatus::Retiring | IngesterStatus::Decommissioning
+            )
+        }) {
             let indexing_tasks = new_physical_plan
                 .indexer(indexer.node_id.as_str())
                 .unwrap_or(&[])
                 .to_vec();
             // We don't want to block on a slow indexer so we apply this change asynchronously
-            // TODO not blocking is cool, but we need to make sure there is not accumulation
-            // possible here.
             let notify_on_drop = notify_on_drop.clone();
             tokio::spawn(async move {
-                if let Err(error) = indexer
-                    .client
-                    .clone()
-                    .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
-                    .await
-                {
-                    warn!(
-                        %error,
-                        node_id=%indexer.node_id,
-                        generation_id=indexer.generation_id,
-                        "failed to apply indexing plan to indexer"
-                    );
+                let client = indexer.client.clone();
+                let apply_plan_fut =
+                    client.apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks });
+                match tokio::time::timeout(APPLY_INDEXING_PLAN_TIMEOUT, apply_plan_fut).await {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        warn!(
+                            %error,
+                            node_id=%indexer.node_id,
+                            generation_id=indexer.generation_id,
+                            "failed to apply indexing plan to indexer"
+                        );
+                    }
+                    Err(_elapsed) => {
+                        warn!(
+                            node_id=%indexer.node_id,
+                            generation_id=indexer.generation_id,
+                            "timed out applying indexing plan to indexer"
+                        );
+                    }
                 }
                 drop(notify_on_drop);
             });
@@ -1182,37 +1198,50 @@ mod tests {
         assert!(selected.is_empty());
     }
 
-    // Builds an `IndexerNodeInfo` whose client asserts the exact `ApplyIndexingPlanRequest` it
-    // receives (via `withf`) and that it is called exactly once (via `times(1)`, verified on drop).
-    fn asserting_indexer_node_info(
-        node_id: &str,
-        status: IngesterStatus,
-        expect_empty_plan: bool,
-    ) -> IndexerNodeInfo {
-        let mut mock_indexer = MockIndexingService::new();
-        mock_indexer
-            .expect_apply_indexing_plan()
-            .times(1)
-            .withf(move |request| request.indexing_tasks.is_empty() == expect_empty_plan)
-            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
-        let client = IndexingServiceClient::from_mock(mock_indexer);
-        IndexerNodeInfo {
-            node_id: NodeId::from_str(node_id),
-            generation_id: 0,
-            client,
-            indexing_tasks: Vec::new(),
-            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
-            ingester_status: status,
+    // Only ready, retiring, and decommissioning indexers receive a plan; indexers in any other
+    // state must be skipped entirely. See `apply_physical_indexing_plan`.
+    #[tokio::test]
+    async fn test_apply_plan_skips_non_eligible_indexers() {
+        let indexer_pool = IndexerPool::default();
+        let eligible_indexers = [
+            asserting_indexer_node_info("indexer-ready", IngesterStatus::Ready, true),
+            asserting_indexer_node_info("indexer-retiring", IngesterStatus::Retiring, true),
+            asserting_indexer_node_info(
+                "indexer-decommissioning",
+                IngesterStatus::Decommissioning,
+                true,
+            ),
+        ];
+        let skipped_indexers = [
+            never_applied_indexer_node_info("indexer-unspecified", IngesterStatus::Unspecified),
+            never_applied_indexer_node_info("indexer-initializing", IngesterStatus::Initializing),
+            never_applied_indexer_node_info(
+                "indexer-decommissioned",
+                IngesterStatus::Decommissioned,
+            ),
+            never_applied_indexer_node_info("indexer-failed", IngesterStatus::Failed),
+        ];
+        for indexer in eligible_indexers.into_iter().chain(skipped_indexers) {
+            indexer_pool.insert(indexer.node_id.clone(), indexer);
         }
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
+        let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
+        let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
+        scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
+        waiter.await;
     }
 
     // A node the planner dropped from the plan (e.g. a retiring indexer) must still receive an
-    // empty plan so it shuts down its now-orphaned pipelines, while nodes in the plan receive
-    // their tasks. See `apply_physical_indexing_plan`.
+    // empty plan so it shuts down its now-orphaned pipelines.
     #[tokio::test]
     async fn test_apply_plan_sends_empty_plan_to_dropped_indexer() {
         let indexer_pool = IndexerPool::default();
-        // In the plan: receives its task.
         let ready_indexer =
             asserting_indexer_node_info("indexer-ready", IngesterStatus::Ready, false);
         // Dropped from the plan (retiring): must receive an empty plan.
@@ -1246,6 +1275,47 @@ mod tests {
         let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
         scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
         waiter.await;
+    }
+
+    // Builds an `IndexerNodeInfo` whose client asserts the exact `ApplyIndexingPlanRequest` it
+    // receives (via `withf`) and that it is called exactly once (via `times(1)`, verified on drop).
+    fn asserting_indexer_node_info(
+        node_id: &str,
+        status: IngesterStatus,
+        expect_empty_plan: bool,
+    ) -> IndexerNodeInfo {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .times(1)
+            .withf(move |request| request.indexing_tasks.is_empty() == expect_empty_plan)
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // Builds an `IndexerNodeInfo` whose client asserts it is never asked to apply a plan (via
+    // `never()`, verified on drop). The shared mock is `Arc`-cloned across the client, so a wrong
+    // call from a spawned task is seen when the pool's copy drops on the main thread.
+    fn never_applied_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer.expect_apply_indexing_plan().never();
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
     }
 
     fn kafka_source_params_for_test() -> SourceParams {
