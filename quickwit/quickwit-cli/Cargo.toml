@@ -69,8 +69,8 @@ quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
-quickwit-telemetry = { workspace = true }
 tantivy = { workspace = true }
+
 
 [dev-dependencies]
 predicates = { workspace = true }

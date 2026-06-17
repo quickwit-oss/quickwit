@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
 use warp::hyper::header::HeaderValue;
@@ -52,9 +51,6 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     } else {
         // Quickwit UI is a single page application.
         // Any path request that is not an asset should serve the `index.html` file.
-        // The client (browser) usually request `index.html` once unless the user refreshes the
-        // page.
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad).await;
         UI_INDEX_FILE_NAME
     };
     let asset = Asset::get(path_to_file).ok_or_else(warp::reject::not_found)?;
