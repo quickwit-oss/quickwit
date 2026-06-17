@@ -1556,8 +1556,10 @@ mod tests {
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
@@ -1700,57 +1702,103 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
-        // adding a indexer node refreshes the indexer pool
-        let new_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Ready,
-        )
-        .await;
+        let node_id = NodeId::from_str("test-indexer-node");
+        // Distinct pipeline UIDs so the two tasks are stored under distinct chitchat keys.
+        let make_task = |source_id: &str, pipeline_uid: u128| IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: source_id.to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(pipeline_uid)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        };
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        // Reads the pool entry's sorted source IDs, or an empty vec if the node is absent.
+        let pool_source_ids = || {
+            let Some(entry) = indexer_pool.get(&node_id) else {
+                return Vec::new();
+            };
+            let mut source_ids: Vec<String> = entry
+                .indexing_tasks
+                .iter()
+                .map(|task| task.source_id.clone())
+                .collect();
+            source_ids.sort();
+            source_ids
+        };
+
+        let indexing_tasks = vec![make_task("source-1", 1), make_task("source-2", 2)];
+
+        // A node first joins ready with no assigned plan.
+        let ready_no_plan = build_node(&[], IngesterStatus::Ready).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Add(new_indexer_node.clone()))
+            .send(ClusterChange::Add(ready_no_plan.clone()))
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(indexer_pool.len() == 1);
+        {
+            let entry = indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool");
+            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
+            assert!(entry.indexing_tasks.is_empty());
+        }
 
-        assert_eq!(indexer_pool.len(), 1);
-
-        // changing the ingester status of an indexer node refreshes the indexer pool
-        let updated_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Retiring,
-        )
-        .await;
+        // The control plane assigns it an indexing plan: the new plan must be reflected.
+        let ready_with_plan = build_node(&indexing_tasks, IngesterStatus::Ready).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
-                previous: new_indexer_node.clone(),
-                updated: updated_indexer_node.clone(),
+                previous: ready_no_plan,
+                updated: ready_with_plan.clone(),
             })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(pool_source_ids() == ["source-1", "source-2"]);
+        {
+            let entry = indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool");
+            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
+            assert_eq!(indexer_pool.len(), 1);
+        }
 
-        assert_eq!(indexer_pool.len(), 1);
-        assert_eq!(
-            indexer_pool
-                .get(&NodeId::from_str("test-indexer-node"))
-                .expect("indexer node should be in the pool")
-                .ingester_status,
-            IngesterStatus::Retiring
-        );
-
-        // removing an indexer node refreshes the indexer pool
+        // The node begins retiring while still owning its plan: the status change is applied and
+        // the plan is preserved.
+        let retiring_with_plan = build_node(&indexing_tasks, IngesterStatus::Retiring).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Remove(new_indexer_node))
+            .send(ClusterChange::Update {
+                previous: ready_with_plan,
+                updated: retiring_with_plan.clone(),
+            })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry) if entry.ingester_status == IngesterStatus::Retiring
+        ));
+        assert_eq!(pool_source_ids(), ["source-1", "source-2"]);
+        assert_eq!(indexer_pool.len(), 1);
 
-        assert!(indexer_pool.is_empty());
+        // The node transitions to decommissioning and sheds its plan: both the status and the
+        // now-empty plan must be reflected.
+        let decommissioning_no_plan = build_node(&[], IngesterStatus::Decommissioning).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: retiring_with_plan,
+                updated: decommissioning_no_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry)
+                if entry.ingester_status == IngesterStatus::Decommissioning
+                    && entry.indexing_tasks.is_empty()
+        ));
+        assert_eq!(indexer_pool.len(), 1);
+
+        // Removing the node clears the pool.
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(decommissioning_no_plan))
+            .unwrap();
+        assert_eventually!(indexer_pool.is_empty());
     }
 
     #[tokio::test]
