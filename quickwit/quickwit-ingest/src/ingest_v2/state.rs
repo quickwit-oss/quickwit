@@ -641,7 +641,7 @@ impl WeakIngesterState {
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::types::{NodeId, ShardId, SourceId, queue_id};
     use tokio::time::timeout;
@@ -652,7 +652,7 @@ mod tests {
         create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -809,7 +809,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -855,7 +855,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -905,7 +905,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await

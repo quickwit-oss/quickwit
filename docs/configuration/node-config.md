@@ -42,6 +42,7 @@ This section contains the REST API configuration options.
 | `listen_port` | The port on which the REST API listens for HTTP traffic. | `QW_REST_LISTEN_PORT` | `7280` |
 | `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
 | `extra_headers` | List of header names and values | | |
+| `tls` | Enables HTTPS for the REST API. [Read more](#tls-configuration) | | |
 
 ### Configuring CORS (Cross-origin resource sharing)
 
@@ -74,6 +75,7 @@ This section contains the configuration options for gRPC services and clients us
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
 | `max_message_size` | The maximum size (in bytes) of messages exchanged by internal gRPC clients and services. | | `20 MiB` |
+| `tls` | Enables TLS for gRPC services and clients. [Read more](#tls-configuration) | | |
 
 Example of a gRPC configuration:
 
@@ -86,6 +88,58 @@ grpc:
 We advise changing the default value of 20 MiB only if you encounter the following error:
 `Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit will rely exclusively on gRPC streaming endpoints and handle messages of any length.
 :::
+
+## TLS configuration
+
+Both the REST API (`rest.tls`) and the internal gRPC services (`grpc.tls`) can be secured with TLS, optionally with mutual TLS (mTLS). The two sections share the same properties:
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `cert_path` | Path to the PEM-encoded X.509 certificate (or chain) presented by the server. Setting this enables TLS. | |
+| `key_path` | Path to the PEM-encoded private key matching `cert_path`. | |
+| `ca_path` | Path to a PEM file holding the trusted CA certificate(s). Used by the server to validate client certificates when `verify_client_cert` is enabled, and by the gRPC client to validate peer certificates. Multiple CA certificates may be concatenated in the same file: all of them are trusted (see [CA rotation](#ca-rotation)). | |
+| `verify_client_cert` | If `true`, require clients (REST) or peers (gRPC) to present a certificate signed by `ca_path`, i.e. enforce mutual TLS. | `false` |
+| `expected_name` | gRPC only. The hostname the gRPC client checks against the peer certificate's Subject Alternative Name (SAN). Defaults to the peer's address. | |
+| `cert_reload_interval` | How often `cert_path` and `key_path` are polled for on-disk changes and hot-reloaded, without restarting the process. An immediate reload can also be triggered by sending `SIGHUP` to the process. | `5m` |
+
+Certificates are hot-reloaded: when `cert_path`/`key_path` change on disk, new connections pick up the new certificate within `cert_reload_interval` (or immediately on `SIGHUP`), while in-flight connections keep the certificate they negotiated. A new certificate is only applied if it parses and matches its key; otherwise the previous certificate is kept. Note that the CA trust roots (`ca_path`) are **not** hot-reloaded — rotating them still requires a restart.
+
+### CA rotation
+
+Because `ca_path` accepts multiple CA certificates concatenated in a single PEM file, you can rotate the CA without downtime by temporarily trusting both the old and the new CA:
+
+1. Append the **new** CA certificate to the `ca_path` file, so it contains both the old and the new CA.
+2. Roll-restart every node. Each node now trusts certificates signed by either CA, while peers may still present certificates signed by the old CA.
+3. Re-issue every node's `cert_path`/`key_path` with certificates signed by the new CA (these are hot-reloaded, no restart needed).
+4. Remove the **old** CA certificate from the `ca_path` file, leaving only the new CA.
+5. Roll-restart every node again to drop trust in the old CA.
+
+Since the CA file is read once at startup, both restarts are required to pick up the changes to `ca_path`.
+
+Example of a REST configuration with mTLS:
+
+```yaml
+rest:
+  tls:
+    cert_path: /path/to/server.crt
+    key_path: /path/to/server.key
+    ca_path: /path/to/ca.crt
+    verify_client_cert: true
+    cert_reload_interval: 5m
+```
+
+Example of a gRPC configuration with mTLS:
+
+```yaml
+grpc:
+  tls:
+    cert_path: /path/to/server.crt
+    key_path: /path/to/server.key
+    ca_path: /path/to/ca.crt
+    expected_name: quickwit.local
+    verify_client_cert: true
+    cert_reload_interval: 5m
+```
 
 ## Storage configuration
 

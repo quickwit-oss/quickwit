@@ -28,9 +28,10 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
+use quickwit_proto::tonic::transport::Server;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
-use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
@@ -52,26 +53,11 @@ pub(crate) async fn start_grpc_server(
 ) -> anyhow::Result<()> {
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
+    // TLS (when configured) is terminated by us below, by wrapping the accepted TCP connections
+    // with a `TlsAcceptor` whose certificate can be hot-reloaded. This is deliberately not using
+    // tonic's builtin `Server::tls_config`, which bakes the certificate in at startup and offers
+    // no way to reload it without restarting the process.
     let mut server = Server::builder();
-
-    if let Some(tls_config) = grpc_config.tls {
-        let cert = std::fs::read_to_string(tls_config.cert_path)?;
-        let key = std::fs::read_to_string(tls_config.key_path)?;
-        let identity = Identity::from_pem(cert, key);
-
-        let mut tls = ServerTlsConfig::new().identity(identity);
-
-        if tls_config.validate_client {
-            let ca_cert = std::fs::read_to_string(tls_config.ca_path)?;
-            let ca_cert = Certificate::from_pem(ca_cert);
-            tls = tls.client_ca_root(ca_cert);
-        }
-        // TODO using this builtin method means we have no way of hot-reloading certificates
-        // (i.e. the process must be restarted every time its certificate expires)
-        // to do better, we'd need to wra the TcpListener with something that does (m)TLS
-        // and that we control, however it would be somewhat painful, and more error prone
-        server = server.tls_config(tls)?;
-    }
 
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
     file_descriptor_sets.push(quickwit_proto::cluster::CLUSTER_PLANE_FILE_DESCRIPTOR_SET);
@@ -275,9 +261,23 @@ pub(crate) async fn start_grpc_server(
     let tcp_incoming = TcpIncoming::from(tcp_listener)
         .with_nodelay(Some(true))
         .with_keepalive(None);
-    let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
-    let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
-    serve_res?;
+
+    // When TLS is configured we terminate it ourselves so the certificate can be hot-reloaded;
+    // otherwise we serve the plaintext TCP stream directly. The two branches produce different
+    // `Stream` item types, hence the duplicated `serve`/`join` tail.
+    if let Some(tls_config) = &grpc_config.tls_config {
+        // gRPC only speaks HTTP/2, so we offer just `h2` in ALPN.
+        let server_config = quickwit_transport::make_tls_server_config(tls_config, &[b"h2"])?;
+        let tls_acceptor = TlsAcceptor::from(server_config);
+        let tls_incoming = quickwit_transport::accept_tls_incoming(tcp_incoming, tls_acceptor);
+        let serve_fut = server_router.serve_with_incoming_shutdown(tls_incoming, shutdown_signal);
+        let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+        serve_res?;
+    } else {
+        let serve_fut = server_router.serve_with_incoming_shutdown(tcp_incoming, shutdown_signal);
+        let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
+        serve_res?;
+    }
     Ok(())
 }
 

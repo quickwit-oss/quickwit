@@ -1315,7 +1315,7 @@ mod tests {
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use bytes::Bytes;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test_with_id};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test_with_id};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
@@ -1424,7 +1424,7 @@ mod tests {
 
             let tempdir = tempfile::tempdir().unwrap();
             let wal_dir_path = tempdir.path();
-            let transport = ChannelTransport::default();
+            let transport = ChitchatTransport::default();
 
             let gossip_advertise_port =
                 GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -1472,7 +1472,7 @@ mod tests {
 
     pub struct IngesterContext {
         tempdir: tempfile::TempDir,
-        _transport: ChannelTransport,
+        _transport: ChitchatTransport,
         node_id: NodeId,
         cluster: Cluster,
         ingester_pool: IngesterPool,

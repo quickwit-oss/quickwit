@@ -448,8 +448,8 @@ struct RestConfigBuilder {
     #[serde(with = "http_serde::header_map")]
     #[serde(default)]
     pub extra_headers: HeaderMap,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
 }
 
 impl RestConfigBuilder {
@@ -464,11 +464,15 @@ impl RestConfigBuilder {
             listen_port_from_config_or_default,
         )
         .resolve(env_vars)?;
+
+        if let Some(tls_config) = &self.tls_config {
+            tls_config.validate()?;
+        }
         let rest_config = RestConfig {
             listen_addr: SocketAddr::new(listen_ip, listen_port),
             cors_allow_origins: self.cors_allow_origins,
             extra_headers: self.extra_headers,
-            tls: self.tls,
+            tls_config: self.tls_config,
         };
         Ok(rest_config)
     }
@@ -507,7 +511,7 @@ pub fn node_config_for_tests_from_ports(
         listen_addr: rest_listen_addr,
         cors_allow_origins: Vec::new(),
         extra_headers: HeaderMap::new(),
-        tls: None,
+        tls_config: None,
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),

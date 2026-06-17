@@ -78,6 +78,7 @@ pub use crate::node_config::{
     JaegerConfig, KeepAliveConfig, LambdaConfig, LambdaDeployConfig, NodeConfig, RestConfig,
     SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
+pub use crate::serde_utils::HumanDuration;
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig, GoogleCloudStorageConfig,
