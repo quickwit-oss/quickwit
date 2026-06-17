@@ -236,7 +236,17 @@ pub fn make_tls_client_config(tls_config: &TlsConfig) -> anyhow::Result<Arc<Clie
 
 /// Loads the CA certificate(s) at `ca_path` into a [`RootCertStore`].
 fn load_root_cert_store(ca_path: &str) -> anyhow::Result<RootCertStore> {
-    let ca_certs = load_certs(ca_path)?;
+    anyhow::ensure!(
+        !ca_path.is_empty(),
+        "TLS CA certificate path (`tls.ca_path`) is not set; it is required to verify peer \
+         certificates"
+    );
+    let ca_certs = load_certs(ca_path)
+        .with_context(|| format!("failed to load TLS CA certificate(s) from `{ca_path}`"))?;
+    anyhow::ensure!(
+        !ca_certs.is_empty(),
+        "no CA certificate found in `{ca_path}`"
+    );
     let mut roots = RootCertStore::empty();
     for ca_cert in ca_certs {
         roots.add(ca_cert)?;

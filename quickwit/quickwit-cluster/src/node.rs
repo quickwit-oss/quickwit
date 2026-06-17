@@ -59,15 +59,15 @@ impl ClusterNode {
         ingester_status: IngesterStatus,
     ) -> Self {
         use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
-        use quickwit_transport::ChannelFactory;
 
+        use crate::change::for_test::channel_factory_for_test;
         use crate::cluster::set_indexing_tasks_in_node_state;
         use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
         let chitchat_id = ChitchatId::new(node_id, 0, gossip_advertise_addr);
-        let channel = ChannelFactory::default()
+        let channel = channel_factory_for_test()
             .make_channel(grpc_advertise_addr)
             .await;
         let mut node_state = NodeState::for_test();

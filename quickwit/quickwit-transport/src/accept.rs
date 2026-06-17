@@ -21,7 +21,7 @@ use futures_util::{Stream, StreamExt};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
-use tracing::error;
+use tracing::{error, warn};
 
 /// Maximum number of TLS handshakes performed concurrently. A handshake holds a slot only until it
 /// completes or times out, so this bounds the work a burst of new connections can create while
@@ -69,7 +69,7 @@ where
                         None
                     }
                     Err(_elapsed) => {
-                        error!("timed out while performing TLS handshake");
+                        warn!("timed out while performing TLS handshake");
                         None
                     }
                 }

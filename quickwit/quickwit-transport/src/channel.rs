@@ -53,15 +53,6 @@ pub struct ChannelFactory {
     mode: TransportMode,
 }
 
-impl Default for ChannelFactory {
-    fn default() -> Self {
-        Self {
-            keep_alive_opt: None,
-            mode: TransportMode::Plaintext,
-        }
-    }
-}
-
 impl ChannelFactory {
     /// Builds the factory from a node's gRPC config: plaintext, or TLS with a hot-reloadable client
     /// config. Under mTLS (`verify_client_cert`) the client also presents a hot-reloadable identity

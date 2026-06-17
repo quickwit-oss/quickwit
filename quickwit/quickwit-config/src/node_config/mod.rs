@@ -123,6 +123,8 @@ impl Default for GrpcConfig {
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
+    // Path to a PEM file holding the trusted CA certificate(s). Multiple CA certificates may be
+    // concatenated in the same file: all of them are trusted.
     #[serde(default)]
     pub ca_path: String,
     #[serde(default)]

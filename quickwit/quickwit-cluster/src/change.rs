@@ -334,9 +334,16 @@ async fn try_new_node(
 pub mod for_test {
     use std::sync::{Arc, Mutex};
 
+    use quickwit_config::GrpcConfig;
     use tokio::sync::mpsc;
 
     use super::*;
+
+    /// Builds a plaintext [`ChannelFactory`] for tests.
+    pub fn channel_factory_for_test() -> ChannelFactory {
+        ChannelFactory::for_grpc(&GrpcConfig::default())
+            .expect("plaintext channel factory should build")
+    }
 
     #[derive(Clone, Default)]
     pub struct ClusterChangeStreamFactoryForTest {
@@ -455,7 +462,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -478,7 +485,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -507,7 +514,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
 
@@ -530,7 +537,7 @@ pub(crate) mod tests {
                 &rejoined_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 2);
@@ -559,7 +566,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -584,7 +591,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -915,7 +922,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -945,7 +952,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -963,7 +970,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -978,7 +985,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &new_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 0);
@@ -1011,7 +1018,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -1031,7 +1038,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);

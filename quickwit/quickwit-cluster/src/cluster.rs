@@ -726,7 +726,7 @@ pub async fn create_cluster_for_test_with_id(
         Duration::from_millis(25),
         failure_detector_config,
         transport,
-        Default::default(),
+        crate::change::for_test::channel_factory_for_test(),
     )
     .await?;
     cluster.set_self_node_readiness(self_node_readiness).await;
