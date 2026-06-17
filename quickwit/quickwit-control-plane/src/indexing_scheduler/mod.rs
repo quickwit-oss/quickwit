@@ -431,13 +431,25 @@ impl IndexingScheduler {
                 .indexer(indexer.node_id.as_str())
                 .unwrap_or(&[])
                 .to_vec();
-            // We don't want to block on a slow indexer so we apply this change asynchronously
+            // We don't want to block on a slow indexer so we apply this change asynchronously.
+            // Bound the apply only for retiring/decommissioning indexers, so a slow or unreachable
+            // draining node can't hold the change-notification guard; ready indexers get no
+            // timeout.
+            let apply_deadline = matches!(
+                indexer.ingester_status,
+                IngesterStatus::Retiring | IngesterStatus::Decommissioning
+            )
+            .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
             let notify_on_drop = notify_on_drop.clone();
             tokio::spawn(async move {
                 let client = indexer.client.clone();
                 let apply_plan_fut =
                     client.apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks });
-                match tokio::time::timeout(APPLY_INDEXING_PLAN_TIMEOUT, apply_plan_fut).await {
+                let apply_result = match apply_deadline {
+                    Some(timeout) => tokio::time::timeout(timeout, apply_plan_fut).await,
+                    None => Ok(apply_plan_fut.await),
+                };
+                match apply_result {
                     Ok(Ok(_)) => {}
                     Ok(Err(error)) => {
                         warn!(
@@ -1316,6 +1328,76 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
         }
+    }
+
+    // An `IndexingService` whose apply RPC never returns, so the spawned apply task can only
+    // finish if a timeout cancels it.
+    #[derive(Debug)]
+    struct HangingIndexingService;
+
+    #[async_trait::async_trait]
+    impl IndexingService for HangingIndexingService {
+        async fn apply_indexing_plan(
+            &self,
+            _request: ApplyIndexingPlanRequest,
+        ) -> quickwit_proto::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+            std::future::pending().await
+        }
+    }
+
+    fn hanging_indexer_node_info(status: IngesterStatus) -> IndexerNodeInfo {
+        let client = IndexingServiceClient::tower().build(HangingIndexingService);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str("indexer"),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // Applies a plan to a single indexer whose apply RPC hangs forever, then reports whether the
+    // apply task finished within `observe` — i.e. whether a timeout cancelled it.
+    async fn hanging_apply_is_cancelled_within(status: IngesterStatus, observe: Duration) -> bool {
+        let indexer_pool = IndexerPool::default();
+        let indexer = hanging_indexer_node_info(status);
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
+        let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
+        let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
+        scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
+        // The waiter resolves only once the spawned apply task drops its `notify_on_drop`, which
+        // for a hanging RPC happens only if a timeout fires.
+        tokio::time::timeout(observe, waiter).await.is_ok()
+    }
+
+    #[tokio::test]
+    async fn test_apply_plan_times_out_only_for_draining_indexers() {
+        // A ready indexer is unbounded: the hanging apply is never cancelled, so its task never
+        // finishes (a wrongly-applied timeout would fire well within 500ms and flip this).
+        assert!(
+            !hanging_apply_is_cancelled_within(IngesterStatus::Ready, Duration::from_millis(500))
+                .await
+        );
+        // Retiring/decommissioning indexers are bounded, so the hanging apply is cancelled and the
+        // task finishes (resolves in ~APPLY_INDEXING_PLAN_TIMEOUT, far within the window).
+        assert!(
+            hanging_apply_is_cancelled_within(IngesterStatus::Retiring, Duration::from_secs(5))
+                .await
+        );
+        assert!(
+            hanging_apply_is_cancelled_within(
+                IngesterStatus::Decommissioning,
+                Duration::from_secs(5)
+            )
+            .await
+        );
     }
 
     fn kafka_source_params_for_test() -> SourceParams {
