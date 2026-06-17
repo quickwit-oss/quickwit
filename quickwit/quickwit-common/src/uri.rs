@@ -189,13 +189,33 @@ impl Uri {
         let parent_path = path.parent()?;
 
         Some(Self {
-            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{}", parent_path.display()),
+            // Preserve the scheme verbatim so an `s3+<name>` qualifier survives.
+            uri: format!(
+                "{}{PROTOCOL_SEPARATOR}{}",
+                self.scheme(),
+                parent_path.display()
+            ),
             protocol,
         })
     }
 
+    /// Returns the URI scheme, preserving any `s3+<name>` qualifier, which may
+    /// differ from the canonical protocol string (e.g. `s3+alt` vs `s3`).
+    fn scheme(&self) -> &str {
+        match self.uri.split_once(PROTOCOL_SEPARATOR) {
+            Some((scheme, _path)) => scheme,
+            None => self.protocol.as_str(),
+        }
+    }
+
     fn path(&self) -> &Path {
-        Path::new(&self.uri[self.protocol.as_str().len() + PROTOCOL_SEPARATOR.len()..])
+        // Slice at the actual `://` separator rather than assuming the scheme
+        // equals the canonical protocol — `s3+<name>` schemes are longer.
+        let path = match self.uri.split_once(PROTOCOL_SEPARATOR) {
+            Some((_scheme, path)) => path,
+            None => &self.uri,
+        };
+        Path::new(path)
     }
 
     /// Returns the last component of the URI.
@@ -674,6 +694,26 @@ mod tests {
             Uri::for_test("gs://bucket/foo/bar/").parent().unwrap(),
             "gs://bucket/foo"
         );
+    }
+
+    #[test]
+    fn test_uri_named_s3_scheme() {
+        // `s3+<name>` schemes are preserved end-to-end: `path` strips the real
+        // scheme (not the canonical `s3`), and `parent`/`file_name` keep the
+        // qualifier intact.
+        let uri = Uri::for_test("s3+alt://bucket/foo/bar");
+        assert_eq!(uri.as_str(), "s3+alt://bucket/foo/bar");
+        assert_eq!(uri.protocol(), Protocol::S3);
+        assert_eq!(uri.parent().unwrap(), "s3+alt://bucket/foo");
+        assert_eq!(uri.file_name().unwrap(), Path::new("bar"));
+
+        let uri = Uri::for_test("s3+with-dash://bucket/key");
+        assert_eq!(uri.parent().unwrap(), "s3+with-dash://bucket");
+        assert_eq!(uri.file_name().unwrap(), Path::new("key"));
+
+        // Mirrors the plain-`s3` guard: a bucket-only URI has no parent.
+        assert!(Uri::for_test("s3+alt://bucket").parent().is_none());
+        assert!(Uri::for_test("s3+alt://bucket/").parent().is_none());
     }
 
     #[test]

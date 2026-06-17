@@ -111,6 +111,8 @@ In addition to the primary `s3:` block, you can declare any number of additional
 
 Each named entry accepts the same fields as the primary `s3:` block, *except* `named` itself (no recursion). If `access_key_id` / `secret_access_key` are omitted on a named entry, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
 
+Named backends are self-contained: the process-wide `QW_S3_ENDPOINT` and `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary `s3:` backend only. A named backend always uses its own `endpoint` and `force_path_style_access` values.
+
 ```yaml
 storage:
   s3:

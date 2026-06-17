@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::ops::Deref;
-use std::sync::OnceLock;
 use std::{env, fmt};
 
 use anyhow::ensure;
@@ -368,6 +367,12 @@ pub struct S3StorageConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub named: std::collections::BTreeMap<String, NamedS3StorageConfig>,
+    /// Set when this config is the projection of a named backend. Named
+    /// backends are self-contained, so the process-wide `QW_S3_ENDPOINT` /
+    /// `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary backend
+    /// only. Not serialized; defaults to `false` (the primary backend).
+    #[serde(skip)]
+    pub is_named_backend: bool,
 }
 
 /// Configuration for a named S3-compatible backend nested under
@@ -389,12 +394,20 @@ pub struct NamedS3StorageConfig {
     pub endpoint: Option<String>,
     #[serde(default)]
     pub force_path_style_access: bool,
+    #[serde(alias = "disable_multi_object_delete_requests")]
     #[serde(default)]
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
     pub checksum_algorithm: ChecksumAlgorithm,
+    /// Deprecated: applies into `checksum_algorithm: disabled`.
+    #[serde(default, skip_serializing)]
+    pub disable_checksums: bool,
+    #[serde(default)]
+    pub disable_stalled_stream_protection_upload: bool,
+    #[serde(default)]
+    pub disable_stalled_stream_protection_download: bool,
 }
 
 impl NamedS3StorageConfig {
@@ -402,7 +415,7 @@ impl NamedS3StorageConfig {
     /// (with an empty `named` map) so it can flow through the existing
     /// S3 client construction code unchanged.
     pub fn as_s3_config(&self) -> S3StorageConfig {
-        S3StorageConfig {
+        let mut s3_config = S3StorageConfig {
             flavor: self.flavor,
             access_key_id: self.access_key_id.clone(),
             secret_access_key: self.secret_access_key.clone(),
@@ -412,11 +425,17 @@ impl NamedS3StorageConfig {
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
             checksum_algorithm: self.checksum_algorithm,
-            disable_checksums: false,
-            disable_stalled_stream_protection_upload: false,
-            disable_stalled_stream_protection_download: false,
+            disable_checksums: self.disable_checksums,
+            disable_stalled_stream_protection_upload: self.disable_stalled_stream_protection_upload,
+            disable_stalled_stream_protection_download: self
+                .disable_stalled_stream_protection_download,
             named: Default::default(),
-        }
+            is_named_backend: true,
+        };
+        // Expand `flavor` shortcuts (region/path-style/checksum defaults) the
+        // same way the primary backend does at config load time.
+        s3_config.apply_flavor();
+        s3_config
     }
 
     pub fn redact(&mut self) {
@@ -438,9 +457,20 @@ impl fmt::Debug for NamedS3StorageConfig {
             .field("region", &self.region)
             .field("endpoint", &self.endpoint)
             .field("force_path_style_access", &self.force_path_style_access)
-            .field("disable_multi_object_delete", &self.disable_multi_object_delete)
+            .field(
+                "disable_multi_object_delete",
+                &self.disable_multi_object_delete,
+            )
             .field("disable_multipart_upload", &self.disable_multipart_upload)
             .field("checksum_algorithm", &self.checksum_algorithm)
+            .field(
+                "disable_stalled_stream_protection_upload",
+                &self.disable_stalled_stream_protection_upload,
+            )
+            .field(
+                "disable_stalled_stream_protection_download",
+                &self.disable_stalled_stream_protection_download,
+            )
             .finish()
     }
 }
@@ -484,20 +514,26 @@ impl S3StorageConfig {
     }
 
     pub fn endpoint(&self) -> Option<String> {
-        env::var("QW_S3_ENDPOINT")
-            .ok()
-            .or_else(|| self.endpoint.clone())
+        // `QW_S3_ENDPOINT` overrides the primary backend only; named backends
+        // are self-contained and use their own configured endpoint.
+        if !self.is_named_backend
+            && let Ok(endpoint) = env::var("QW_S3_ENDPOINT")
+        {
+            return Some(endpoint);
+        }
+        self.endpoint.clone()
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        static FORCE_PATH_STYLE: OnceLock<Option<bool>> = OnceLock::new();
-        *FORCE_PATH_STYLE.get_or_init(|| {
-            let force_path_style_access = get_bool_from_env(
-                "QW_S3_FORCE_PATH_STYLE_ACCESS",
-                self.force_path_style_access,
-            );
-            Some(force_path_style_access)
-        })
+        // `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides the primary backend only.
+        // No process-wide cache: each backend must honor its own setting.
+        if self.is_named_backend {
+            return Some(self.force_path_style_access);
+        }
+        Some(get_bool_from_env(
+            "QW_S3_FORCE_PATH_STYLE_ACCESS",
+            self.force_path_style_access,
+        ))
     }
 }
 
@@ -872,5 +908,79 @@ mod tests {
         named.redact();
         assert_eq!(named.access_key_id.as_deref(), Some("public-key"));
         assert_eq!(named.secret_access_key.as_deref(), Some("***redacted***"));
+    }
+
+    #[test]
+    fn test_storage_s3_named_backends_field_parity() {
+        // Named backends accept the same fields as the primary S3 block,
+        // including the legacy `disable_multi_object_delete_requests` alias and
+        // the stalled-stream toggles, and project them through `as_s3_config`.
+        let s3_storage_config_yaml = r#"
+            named:
+              alt:
+                endpoint: https://alt.example.com
+                disable_multi_object_delete_requests: true
+                disable_stalled_stream_protection_upload: true
+                disable_stalled_stream_protection_download: true
+                checksum_algorithm: disabled
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        let alt = s3_storage_config.named.get("alt").unwrap();
+        assert!(alt.disable_multi_object_delete);
+        assert!(alt.disable_stalled_stream_protection_upload);
+        assert!(alt.disable_stalled_stream_protection_download);
+
+        let projected = alt.as_s3_config();
+        assert!(projected.is_named_backend);
+        assert!(projected.disable_multi_object_delete);
+        assert!(projected.disable_stalled_stream_protection_upload);
+        assert!(projected.disable_stalled_stream_protection_download);
+        assert_eq!(projected.checksum_algorithm, ChecksumAlgorithm::Disabled);
+
+        // A genuinely unknown field is still rejected.
+        let invalid_yaml = r#"
+            named:
+              alt:
+                bogus_field: true
+        "#;
+        assert!(serde_yaml::from_str::<S3StorageConfig>(invalid_yaml).is_err());
+    }
+
+    #[test]
+    fn test_storage_s3_named_backend_applies_flavor() {
+        // `flavor` shortcuts expand for named backends just like the primary.
+        let s3_storage_config_yaml = r#"
+            named:
+              minio-backend:
+                flavor: minio
+                endpoint: http://minio.example.com:9000
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        let projected = s3_storage_config
+            .named
+            .get("minio-backend")
+            .unwrap()
+            .as_s3_config();
+        assert_eq!(projected.region.as_deref(), Some("minio"));
+        assert!(projected.force_path_style_access);
+    }
+
+    #[test]
+    fn test_storage_s3_named_backend_uses_own_endpoint() {
+        // A named backend is self-contained: `endpoint()` returns its configured
+        // endpoint regardless of the process-wide `QW_S3_ENDPOINT` override,
+        // which applies to the primary backend only.
+        let named = NamedS3StorageConfig {
+            endpoint: Some("https://named.example.com".to_string()),
+            ..Default::default()
+        };
+        let projected = named.as_s3_config();
+        assert!(projected.is_named_backend);
+        assert_eq!(
+            projected.endpoint(),
+            Some("https://named.example.com".to_string())
+        );
     }
 }
