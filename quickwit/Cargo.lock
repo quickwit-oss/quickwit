@@ -9442,6 +9442,7 @@ dependencies = [
 name = "quickwit-storage"
 version = "0.8.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "async-trait",
  "aws-config",
@@ -9456,7 +9457,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "bytesize",
- "fnv",
  "futures",
  "http 1.4.0",
  "http-body-util",
