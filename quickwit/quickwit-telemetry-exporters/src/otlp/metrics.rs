@@ -13,9 +13,11 @@
 // limitations under the License.
 
 use anyhow::Context;
-use metrics_exporter_otel::OpenTelemetryRecorder;
+use metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
 use opentelemetry::metrics::MeterProvider;
-use opentelemetry_otlp::{MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_otlp::{
+    MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
@@ -28,15 +30,18 @@ impl OtlpProtocol {
         match self {
             OtlpProtocol::Grpc => MetricExporter::builder()
                 .with_tonic()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .build(),
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
@@ -58,9 +63,10 @@ pub(crate) fn build_recorder(
         .build();
     let meter = metrics_provider.meter("quickwit");
 
-    let recorder = OpenTelemetryRecorder::new(meter);
+    let otel_metrics = OpenTelemetryMetrics::new(meter);
+    let recorder = OpenTelemetryRecorder::new(otel_metrics);
     for (name, buckets) in quickwit_metrics::histogram_buckets() {
-        recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
+        recorder.set_histogram_bounds(std::iter::once(metrics::KeyName::from(name)), &buckets);
     }
     Ok((recorder, metrics_provider))
 }

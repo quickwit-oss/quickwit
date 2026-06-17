@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use anyhow::Context;
-use opentelemetry_otlp::{LogExporter, Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_otlp::{
+    LogExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 
@@ -22,13 +24,18 @@ use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 impl OtlpProtocol {
     pub(crate) fn log_exporter(&self) -> anyhow::Result<LogExporter> {
         match self {
-            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
+            OtlpProtocol::Grpc => LogExporter::builder()
+                .with_tonic()
+                .with_retry_policy(super::RETRY_POLICY)
+                .build(),
             OtlpProtocol::HttpProtobuf => LogExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => LogExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }
