@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::not_nan_f32::NotNaNf32;
+use crate::query_ast::bitwise_mask_range_query::BitwiseMaskRangeQuery;
 use crate::query_ast::cache_node::CacheState;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
@@ -35,6 +36,7 @@ pub trait QueryAstVisitor<'a> {
                 self.visit_phrase_prefix(phrase_prefix_query)
             }
             QueryAst::Range(range_query) => self.visit_range(range_query),
+            QueryAst::BitwiseMaskRange(query) => self.visit_bitwise_mask_range(query),
             QueryAst::MatchAll => self.visit_match_all(),
             QueryAst::MatchNone => self.visit_match_none(),
             QueryAst::Boost { underlying, boost } => self.visit_boost(underlying, *boost),
@@ -98,6 +100,13 @@ pub trait QueryAstVisitor<'a> {
         Ok(())
     }
 
+    fn visit_bitwise_mask_range(
+        &mut self,
+        _query: &'a BitwiseMaskRangeQuery,
+    ) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
     fn visit_user_text(&mut self, _user_text_query: &'a UserInputQuery) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -142,6 +151,7 @@ pub trait QueryAstTransformer {
                 self.transform_phrase_prefix(phrase_prefix_query)
             }
             QueryAst::Range(range_query) => self.transform_range(range_query),
+            QueryAst::BitwiseMaskRange(query) => self.transform_bitwise_mask_range(query),
             QueryAst::MatchAll => self.transform_match_all(),
             QueryAst::MatchNone => self.transform_match_none(),
             QueryAst::Boost { underlying, boost } => self.transform_boost(*underlying, boost),
@@ -226,6 +236,13 @@ pub trait QueryAstTransformer {
 
     fn transform_range(&mut self, range_query: RangeQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Range(range_query)))
+    }
+
+    fn transform_bitwise_mask_range(
+        &mut self,
+        query: BitwiseMaskRangeQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::BitwiseMaskRange(query)))
     }
 
     fn transform_user_text(

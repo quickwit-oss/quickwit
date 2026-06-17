@@ -19,8 +19,9 @@ use std::sync::Arc;
 
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
-    QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
+    BitwiseMaskRangeQuery, BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery,
+    PhrasePrefixQuery, QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery,
+    TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -43,6 +44,14 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
     fn visit_range(&mut self, range_query: &'a RangeQuery) -> Result<(), Infallible> {
         self.range_query_field_names
             .insert(range_query.field.to_string());
+        Ok(())
+    }
+
+    fn visit_bitwise_mask_range(
+        &mut self,
+        query: &'a BitwiseMaskRangeQuery,
+    ) -> Result<(), Infallible> {
+        self.range_query_field_names.insert(query.field.clone());
         Ok(())
     }
 }

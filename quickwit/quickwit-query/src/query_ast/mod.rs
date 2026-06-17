@@ -18,6 +18,7 @@ use tantivy::schema::Schema as TantivySchema;
 
 use crate::tokenizers::TokenizerManager;
 
+mod bitwise_mask_range_query;
 mod bool_query;
 mod cache_node;
 mod field_presence;
@@ -33,6 +34,7 @@ pub(crate) mod utils;
 mod visitor;
 mod wildcard_query;
 
+pub use bitwise_mask_range_query::{BitwiseMaskRangeQuery, sampling_params_range};
 pub use bool_query::BoolQuery;
 pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
 pub use field_presence::FieldPresenceQuery;
@@ -61,6 +63,7 @@ pub enum QueryAst {
     FullText(FullTextQuery),
     PhrasePrefix(PhrasePrefixQuery),
     Range(RangeQuery),
+    BitwiseMaskRange(BitwiseMaskRangeQuery),
     UserInput(UserInputQuery),
     Wildcard(WildcardQuery),
     Regex(RegexQuery),
@@ -107,6 +110,7 @@ impl QueryAst {
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::FieldPresence(_)
             | ast @ QueryAst::Range(_)
+            | ast @ QueryAst::BitwiseMaskRange(_)
             | ast @ QueryAst::Wildcard(_)
             | ast @ QueryAst::Regex(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
@@ -237,6 +241,7 @@ impl BuildTantivyAst for QueryAst {
             QueryAst::Bool(bool_query) => bool_query.build_tantivy_ast_call(context),
             QueryAst::Term(term_query) => term_query.build_tantivy_ast_call(context),
             QueryAst::Range(range_query) => range_query.build_tantivy_ast_call(context),
+            QueryAst::BitwiseMaskRange(q) => q.build_tantivy_ast_call(context),
             QueryAst::MatchAll => Ok(TantivyQueryAst::match_all()),
             QueryAst::MatchNone => Ok(TantivyQueryAst::match_none()),
             QueryAst::Boost { boost, underlying } => {

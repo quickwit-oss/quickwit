@@ -324,15 +324,15 @@ impl IndexerState {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
             let _protect_guard = ctx.protect_zone();
-            if let Some(tiebreaker_field) = self.tiebreaker_field_opt {
-                if doc.get_first(tiebreaker_field).is_none() {
-                    doc.add_field_value(
-                        tiebreaker_field,
-                        &TantivyValue::I64(indexed_split.tiebreaker_seq_number as i64),
-                    );
-                    indexed_split.tiebreaker_seq_number =
-                        indexed_split.tiebreaker_seq_number.wrapping_add(1);
-                }
+            if let Some(tiebreaker_field) = self.tiebreaker_field_opt
+                && doc.get_first(tiebreaker_field).is_none()
+            {
+                doc.add_field_value(
+                    tiebreaker_field,
+                    &TantivyValue::I64(indexed_split.tiebreaker_seq_number as i64),
+                );
+                indexed_split.tiebreaker_seq_number =
+                    indexed_split.tiebreaker_seq_number.wrapping_add(1);
             }
             indexed_split
                 .index_writer

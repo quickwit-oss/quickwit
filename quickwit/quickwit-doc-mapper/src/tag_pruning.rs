@@ -62,7 +62,7 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
             value: term_query.value,
         },
         QueryAst::MatchAll | QueryAst::MatchNone => UnsimplifiedTagFilterAst::Uninformative,
-        QueryAst::Range(_) => {
+        QueryAst::Range(_) | QueryAst::BitwiseMaskRange(_) => {
             // We could technically add support for range over some quantitive tag value (like we do
             // for timestamps). This is not supported at this point.
             UnsimplifiedTagFilterAst::Uninformative
