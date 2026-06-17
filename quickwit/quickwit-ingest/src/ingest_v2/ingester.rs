@@ -3667,9 +3667,7 @@ mod tests {
         let source_id = SourceId::from("test-source");
 
         // Give the shard un-indexed data (replication position ahead of truncation) so that, once
-        // closed, it is not immediately `is_indexed`. This keeps the ingester in `Decommissioning`
-        // long enough for the test to observe that state. An empty shard would now fast-path
-        // straight to `Decommissioned` (nothing to index).
+        // closed, it is not immediately `is_indexed`.
         let shard = IngesterShard::new_solo(index_uid, source_id, ShardId::from(1))
             .with_replication_position_inclusive(Position::offset(12u64))
             .build();

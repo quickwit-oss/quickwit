@@ -1143,8 +1143,8 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(1),
         Duration::from_millis(100),
+        Duration::from_millis(1),
     )
     .await
     .expect("the indexer we are about to retire should be indexing a shard");
@@ -1155,8 +1155,8 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(2),
         Duration::from_millis(100),
+        Duration::from_millis(1),
     )
     .await
     .expect("the surviving indexer should also be indexing a shard");
@@ -1178,8 +1178,8 @@ async fn test_retiring_indexer_receives_empty_plan() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(15),
         Duration::from_millis(100),
+        Duration::from_millis(1),
     )
     .await
     .expect("retiring indexer should be sent an empty plan and shut down its indexing pipelines");
