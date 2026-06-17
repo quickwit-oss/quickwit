@@ -1185,10 +1185,6 @@ async fn test_retiring_indexer_receives_empty_plan() {
     .expect("retiring indexer should be sent an empty plan and shut down its indexing pipelines");
 }
 
-/// Experiment: with two indexers each owning a shard, decommission one and await its FULL graceful
-/// shutdown. This is the condition that stalled in the integration harness. With the control-plane
-/// `testsuite` fast-timing feature enabled, this should complete quickly if the stall was purely
-/// the 30s production reconciliation interval; if it still stalls, there is a real residual.
 #[tokio::test]
 async fn test_retiring_indexer_decommissions_gracefully() {
     quickwit_common::setup_logging_for_tests();
@@ -1268,8 +1264,8 @@ async fn test_retiring_indexer_decommissions_gracefully() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(20),
         Duration::from_millis(200),
+        Duration::from_millis(1),
     )
     .await
     .expect("the indexer we are about to retire should be indexing a shard");
@@ -1280,18 +1276,16 @@ async fn test_retiring_indexer_decommissions_gracefully() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(20),
         Duration::from_millis(200),
+        Duration::from_millis(1),
     )
     .await
     .expect("the surviving indexer should also be indexing a shard");
 
-    // Decommission the retiring node and AWAIT its full graceful shutdown. The surviving indexer
-    // must drain the reassigned shard so the retiring ingester reaches `is_indexed`.
     let shutdown_handle = sandbox
         .remove_node(&retiring_node_id)
         .expect("the retiring node should be in the sandbox");
-    tokio::time::timeout(Duration::from_secs(30), shutdown_handle.shutdown())
+    tokio::time::timeout(Duration::from_secs(5), shutdown_handle.shutdown())
         .await
         .expect("graceful decommission of the retiring indexer timed out")
         .expect("retiring indexer shutdown returned an error");
@@ -1315,14 +1309,14 @@ async fn test_retiring_indexer_decommissions_gracefully() {
                 Err(_) => false,
             }
         },
-        Duration::from_secs(15),
-        Duration::from_millis(500),
+        Duration::from_secs(3),
+        Duration::from_millis(200),
     )
     .await
     .expect("all 6 documents should be searchable after decommission");
 
     // Clean shutdown of the remaining nodes (also exercises decommissioning the last indexer).
-    tokio::time::timeout(Duration::from_secs(30), sandbox.shutdown())
+    tokio::time::timeout(Duration::from_secs(3), sandbox.shutdown())
         .await
         .expect("cluster shutdown timed out")
         .expect("cluster shutdown failed");
