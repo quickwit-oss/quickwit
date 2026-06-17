@@ -1703,32 +1703,23 @@ mod tests {
         );
 
         let node_id = NodeId::from_str("test-indexer-node");
-        // Distinct pipeline UIDs so the two tasks are stored under distinct chitchat keys.
-        let make_task = |source_id: &str, pipeline_uid: u128| IndexingTask {
+        let task = IndexingTask {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
-            source_id: source_id.to_string(),
-            pipeline_uid: Some(PipelineUid::for_test(pipeline_uid)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
             shard_ids: Vec::new(),
             params_fingerprint: 0,
         };
         let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
             ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
         };
-        // Reads the pool entry's sorted source IDs, or an empty vec if the node is absent.
-        let pool_source_ids = || {
-            let Some(entry) = indexer_pool.get(&node_id) else {
-                return Vec::new();
-            };
-            let mut source_ids: Vec<String> = entry
-                .indexing_tasks
-                .iter()
-                .map(|task| task.source_id.clone())
-                .collect();
-            source_ids.sort();
-            source_ids
+        // Reads the pool entry's indexing tasks, or an empty vec if the node is absent.
+        let pool_tasks = || {
+            indexer_pool
+                .get(&node_id)
+                .map(|entry| entry.indexing_tasks.clone())
+                .unwrap_or_default()
         };
-
-        let indexing_tasks = vec![make_task("source-1", 1), make_task("source-2", 2)];
 
         // A node first joins ready with no assigned plan.
         let ready_no_plan = build_node(&[], IngesterStatus::Ready).await;
@@ -1744,26 +1735,27 @@ mod tests {
             assert!(entry.indexing_tasks.is_empty());
         }
 
-        // The control plane assigns it an indexing plan: the new plan must be reflected.
-        let ready_with_plan = build_node(&indexing_tasks, IngesterStatus::Ready).await;
+        // The control plane assigns it an indexing plan: the new plan must be reflected exactly.
+        let ready_with_plan = build_node(&[task.clone()], IngesterStatus::Ready).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
                 previous: ready_no_plan,
                 updated: ready_with_plan.clone(),
             })
             .unwrap();
-        assert_eventually!(pool_source_ids() == ["source-1", "source-2"]);
-        {
-            let entry = indexer_pool
+        assert_eventually!(pool_tasks() == [task.clone()]);
+        assert_eq!(
+            indexer_pool
                 .get(&node_id)
-                .expect("indexer node should be in the pool");
-            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
-            assert_eq!(indexer_pool.len(), 1);
-        }
+                .expect("indexer node should be in the pool")
+                .ingester_status,
+            IngesterStatus::Ready
+        );
+        assert_eq!(indexer_pool.len(), 1);
 
         // The node begins retiring while still owning its plan: the status change is applied and
         // the plan is preserved.
-        let retiring_with_plan = build_node(&indexing_tasks, IngesterStatus::Retiring).await;
+        let retiring_with_plan = build_node(&[task.clone()], IngesterStatus::Retiring).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
                 previous: ready_with_plan,
@@ -1774,7 +1766,7 @@ mod tests {
             indexer_pool.get(&node_id),
             Some(entry) if entry.ingester_status == IngesterStatus::Retiring
         ));
-        assert_eq!(pool_source_ids(), ["source-1", "source-2"]);
+        assert_eq!(pool_tasks(), [task.clone()]);
         assert_eq!(indexer_pool.len(), 1);
 
         // The node transitions to decommissioning and sheds its plan: both the status and the
