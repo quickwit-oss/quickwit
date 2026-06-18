@@ -376,6 +376,28 @@ impl ClusterSandbox {
         .build()
     }
 
+    /// Returns a client targeting the node with the given id specifically, or `None` if no such
+    /// node exists. Unlike [`Self::rest_client`], which returns a client for an arbitrary node
+    /// running a service, this pins the client to a known node — e.g. to keep querying a specific
+    /// node while it is being decommissioned.
+    pub fn rest_client_for_node(&self, node_id: &NodeId) -> Option<QuickwitClient> {
+        let node_config = self
+            .node_configs
+            .iter()
+            .find(|(config, _)| &config.node_id == node_id)?
+            .0
+            .clone();
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
+        let client = QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            ca_cert.is_some(),
+        ))
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
+        .build();
+        Some(client)
+    }
+
     /// A client configured to ingest documents and return detailed parse failures.
     pub fn detailed_ingest_client(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
@@ -674,6 +696,18 @@ impl ClusterSandbox {
             .unwrap_or_else(|| panic!("no node with service {service:?}"));
         self.node_configs.remove(idx);
         self.node_shutdown_handles.remove(idx)
+    }
+
+    /// Remove the node with the given id from the sandbox and return its shutdown handle, or
+    /// `None` if no such node exists. After this call, `rest_client` and other lookup methods
+    /// skip the removed node, so callers can trigger its shutdown independently.
+    pub fn remove_node(&mut self, node_id: &NodeId) -> Option<NodeShutdownHandle> {
+        let idx = self
+            .node_shutdown_handles
+            .iter()
+            .position(|handle| &handle.node_id == node_id)?;
+        self.node_configs.remove(idx);
+        Some(self.node_shutdown_handles.remove(idx))
     }
 }
 
