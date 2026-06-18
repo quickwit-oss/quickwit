@@ -268,14 +268,7 @@ impl IngesterShard {
     }
 
     pub fn is_indexed(&self) -> bool {
-        // Closed and either truncated up to EOF, or empty (no record was ever written, so the
-        // replication position is still at the beginning). The empty case matters for empty
-        // replacement shards opened during a rebalance: they never reach an EOF truncation and
-        // would otherwise block the ingester's decommission forever. A non-empty shard must still
-        // reach an EOF truncation, so a node does not quit before committing the shard's EOF.
-        self.shard_state.is_closed()
-            && (self.truncation_position_inclusive.is_eof()
-                || self.replication_position_inclusive == Position::Beginning)
+        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
     }
 
     pub fn is_replica(&self) -> bool {
@@ -462,17 +455,14 @@ mod tests {
         };
 
         // An empty shard (replication and truncation both at `Beginning`) has no un-indexed data,
-        // so once it is closed it must be considered indexed. Otherwise an empty replacement shard
-        // opened during a rebalance would block the ingester's decommission forever.
+        // but we have to wait for EOF to be gossipped or the shard will be orphaned on decommission
         assert!(!new_solo_shard().build().is_indexed());
         assert!(
-            new_solo_shard()
+            !new_solo_shard()
                 .with_state(ShardState::Closed)
                 .build()
                 .is_indexed()
         );
-
-        // A closed shard with records that have not been fully consumed is not indexed.
         assert!(
             !new_solo_shard()
                 .with_state(ShardState::Closed)
@@ -480,9 +470,6 @@ mod tests {
                 .build()
                 .is_indexed()
         );
-
-        // A non-empty closed shard is only indexed once it has been truncated up to EOF;
-        // consuming all of its records is not enough — the EOF must be committed.
         assert!(
             !new_solo_shard()
                 .with_state(ShardState::Closed)

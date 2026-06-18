@@ -82,6 +82,16 @@ impl InnerIngesterState {
             .await;
     }
 
+    /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
+    pub async fn check_decommissioning_status(&mut self) {
+        if self.status() != IngesterStatus::Decommissioning {
+            return;
+        }
+        if self.shards.values().all(|shard| shard.is_indexed()) {
+            self.set_status(IngesterStatus::Decommissioned).await;
+        }
+    }
+
     /// Returns the shard with the most available permits for this index and source.
     pub fn find_most_capacity_shard_mut(
         &mut self,

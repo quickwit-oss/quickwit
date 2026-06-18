@@ -204,7 +204,7 @@ impl FetchStreamTask {
                         index_uid=%self.index_uid,
                         source_id=%self.source_id,
                         shard_id=%self.shard_id,
-                        to_position_inclusive=%to_position_inclusive,
+                        %to_position_inclusive,
                         "fetch stream reached end of shard"
                     );
                     let eof_position = to_position_inclusive.as_eof();
