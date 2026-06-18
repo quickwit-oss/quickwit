@@ -54,6 +54,18 @@ pub struct RestConfig {
     pub tls_config: Option<TlsConfig>,
 }
 
+/// Configuration for the optional plaintext health-check HTTP server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. It is disabled unless `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT`
+/// environment variable) is set.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HealthConfig {
+    pub listen_addr: SocketAddr,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GrpcConfig {
@@ -802,6 +814,8 @@ pub struct NodeConfig {
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_config: Option<HealthConfig>,
     pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
