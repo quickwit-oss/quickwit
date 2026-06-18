@@ -8903,6 +8903,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
+ "criterion",
  "fail",
  "futures",
  "http 1.4.0",
