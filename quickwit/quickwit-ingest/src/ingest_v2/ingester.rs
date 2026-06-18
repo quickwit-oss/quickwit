@@ -3755,7 +3755,10 @@ mod tests {
                 .await;
         }
 
-        assert_eq!(*status_rx.borrow_and_update(), IngesterStatus::Decommissioning);
+        assert_eq!(
+            *status_rx.borrow_and_update(),
+            IngesterStatus::Decommissioning
+        );
 
         event_broker.publish(ShardPositionsUpdate {
             source_uid: SourceUid {
