@@ -3290,6 +3290,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingester_truncate_empty_shard_to_eof() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(r#"{{ "doc_mapping_uid": "{doc_mapping_uid}" }}"#);
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            doc_mapping_uid: Some(doc_mapping_uid),
+            ..Default::default()
+        };
+
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                &doc_mapping_json,
+                Instant::now(),
+                true,
+            )
+            .await
+            .unwrap();
+        // An empty shard only reaches EOF once closed, and `is_indexed` requires a closed shard.
+        state_guard.shards.get_mut(&queue_id).unwrap().close();
+        drop(state_guard);
+
+        let truncate_shards_request = TruncateShardsRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            subrequests: vec![TruncateShardsSubrequest {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+                truncate_up_to_position_inclusive: Some(Position::Beginning.as_eof()),
+            }],
+        };
+        ingester
+            .truncate_shards(truncate_shards_request.clone())
+            .await
+            .unwrap();
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        shard.assert_truncation_position(Position::Beginning.as_eof());
+        assert!(shard.is_indexed());
+        assert!(state_guard.mrecordlog.queue_exists(&queue_id));
+        state_guard.mrecordlog.assert_records_eq(&queue_id, .., &[]);
+    }
+
+    #[tokio::test]
     async fn test_ingester_truncate_shards_deletes_dangling_shards() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
