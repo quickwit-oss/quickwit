@@ -134,11 +134,12 @@ impl WildcardQuery {
                 let tokenizer_name = text_field_indexing.tokenizer();
                 let regex =
                     sub_query_parts_to_regex(sub_query_parts, tokenizer_name, tokenizer_manager)?;
-                let regex = if self.case_insensitive {
-                    format!("(?i){}", regex)
-                } else {
-                    regex
-                };
+                let regex =
+                    if self.case_insensitive && self.value.chars().any(|c| c.is_alphabetic()) {
+                        format!("(?i){}", regex)
+                    } else {
+                        regex
+                    };
 
                 Ok((field, None, regex))
             }
@@ -153,11 +154,12 @@ impl WildcardQuery {
                 let tokenizer_name = text_field_indexing.tokenizer();
                 let regex =
                     sub_query_parts_to_regex(sub_query_parts, tokenizer_name, tokenizer_manager)?;
-                let regex = if self.case_insensitive {
-                    format!("(?i){}", regex)
-                } else {
-                    regex
-                };
+                let regex =
+                    if self.case_insensitive && self.value.chars().any(|c| c.is_alphabetic()) {
+                        format!("(?i){}", regex)
+                    } else {
+                        regex
+                    };
 
                 let mut term_for_path = Term::from_field_json_path(
                     field,
@@ -409,5 +411,41 @@ mod tests {
             assert_eq!(regex, "(?i)mystring wh1ch.a\\.normal tokenizer would.*cut");
             assert!(path.is_none());
         }
+    }
+
+    #[test]
+    fn test_wildcard_query_to_regex_on_text_case_insensitive_no_letters() {
+        // When the pattern contains no letters, case_insensitive should have no effect
+        // (no (?i) prefix added).
+        let query = WildcardQuery {
+            field: "text_field".to_string(),
+            value: "1234*5678".to_string(),
+            lenient: false,
+            case_insensitive: true,
+        };
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        for tokenizer in ["raw", "whitespace"] {
+            let schema = single_text_field_schema("text_field", tokenizer);
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "1234.*5678");
+            assert!(path.is_none());
+        }
+    }
+
+    #[test]
+    fn test_wildcard_query_to_regex_on_text_case_insensitive_mixed() {
+        // A pattern with both letters and digits still gets (?i).
+        let query = WildcardQuery {
+            field: "text_field".to_string(),
+            value: "abc123*".to_string(),
+            lenient: false,
+            case_insensitive: true,
+        };
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let schema = single_text_field_schema("text_field", "raw");
+        let (_field, _path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+        assert_eq!(regex, "(?i)abc123.*");
     }
 }

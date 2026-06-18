@@ -104,7 +104,7 @@ impl ConvertibleToQueryAst for TermQuery {
             boost,
             case_insensitive,
         } = self.value;
-        if case_insensitive {
+        if case_insensitive && value.chars().any(|c| c.is_alphabetic()) {
             let ci_value = format!("(?i){}", regex::escape(&value));
             let term_ast: QueryAst = query_ast::RegexQuery {
                 field: self.field,
@@ -125,6 +125,44 @@ impl ConvertibleToQueryAst for TermQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_term_query_case_insensitive_with_letters_uses_regex() {
+        let term_query = TermQuery {
+            field: "field".to_string(),
+            value: TermQueryParams {
+                value: "Hello123".to_string(),
+                boost: None,
+                case_insensitive: true,
+            },
+        };
+        let query_ast = term_query.convert_to_query_ast().unwrap();
+        let QueryAst::Regex(regex_query) = query_ast else {
+            panic!("expected QueryAst::Regex");
+        };
+        assert_eq!(regex_query.field, "field");
+        assert_eq!(regex_query.regex, "(?i)Hello123");
+    }
+
+    #[test]
+    fn test_term_query_case_insensitive_without_letters_uses_term() {
+        for value in ["12345", "192.168.1.1", "!@#$%"] {
+            let term_query = TermQuery {
+                field: "field".to_string(),
+                value: TermQueryParams {
+                    value: value.to_string(),
+                    boost: None,
+                    case_insensitive: true,
+                },
+            };
+            let query_ast = term_query.convert_to_query_ast().unwrap();
+            let QueryAst::Term(term) = query_ast else {
+                panic!("expected QueryAst::Term for value {value:?}");
+            };
+            assert_eq!(term.field, "field");
+            assert_eq!(term.value, value);
+        }
+    }
 
     #[test]
     fn test_term_query_string() {
