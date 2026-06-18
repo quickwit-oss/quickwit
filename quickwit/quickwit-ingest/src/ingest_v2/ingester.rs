@@ -1279,8 +1279,6 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
                     .await;
             }
         }
-        // Gossip-driven deletion is the only way an empty shard is retired, so re-check here or a
-        // decommissioning ingester whose last shard is empty would never reach `Decommissioned`.
         state_guard.check_decommissioning_status().await;
     }
 }
@@ -3320,7 +3318,6 @@ mod tests {
             )
             .await
             .unwrap();
-        // An empty shard only reaches EOF once closed, and `is_indexed` requires a closed shard.
         state_guard.shards.get_mut(&queue_id).unwrap().close();
         drop(state_guard);
 
@@ -3341,7 +3338,6 @@ mod tests {
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_truncation_position(Position::Beginning.as_eof());
-        assert!(shard.is_indexed());
         assert!(state_guard.mrecordlog.queue_exists(&queue_id));
         state_guard.mrecordlog.assert_records_eq(&queue_id, .., &[]);
     }
@@ -3714,8 +3710,6 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
 
-        // Give the shard un-indexed data (replication position ahead of truncation) so that, once
-        // closed, it is not immediately `is_indexed`.
         let shard = IngesterShard::new_solo(index_uid, source_id, ShardId::from(1))
             .with_replication_position_inclusive(Position::offset(12u64))
             .build();
@@ -3781,13 +3775,16 @@ mod tests {
 
         let shard = state_guard.shards.get_mut(&queue_id).unwrap();
         shard.truncation_position_inclusive = Position::Beginning.as_eof();
+        state_guard.check_decommissioning_status().await;
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioning);
 
+        state_guard.shards.remove(&queue_id);
         state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
     }
 
     #[tokio::test]
-    async fn test_decommission_completes_when_empty_shard_retired_via_gossip() {
+    async fn test_decommission_completes_when_empty_shard_deleted_via_gossip() {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let event_broker = EventBroker::default();
@@ -3831,7 +3828,7 @@ mod tests {
             }
         })
         .await
-        .expect("ingester should reach Decommissioned once its empty shard is retired via gossip");
+        .expect("ingester should reach Decommissioned once its empty shard is deleted via gossip");
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         assert!(!state_guard.shards.contains_key(&queue_id));

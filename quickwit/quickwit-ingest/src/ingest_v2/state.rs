@@ -87,7 +87,7 @@ impl InnerIngesterState {
         if self.status() != IngesterStatus::Decommissioning {
             return;
         }
-        if self.shards.values().all(|shard| shard.is_indexed()) {
+        if self.shards.is_empty() {
             self.set_status(IngesterStatus::Decommissioned).await;
         }
     }
@@ -605,11 +605,7 @@ impl FullyLockedIngesterState<'_> {
             "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} initiated via \
              `{initiator}`"
         );
-        self.inner
-            .shards
-            .get_mut(queue_id)
-            .expect("shard was present above and is only removed on the missing-queue path")
-            .truncation_position_inclusive = truncate_up_to_position_inclusive;
+        shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
     }
 
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
@@ -1119,7 +1115,6 @@ mod tests {
             shard_01.truncation_position_inclusive,
             Position::Beginning.as_eof()
         );
-        assert!(shard_01.is_indexed());
         assert!(state_guard.mrecordlog.queue_exists(&queue_id_01));
         assert_eq!(
             state_guard
@@ -1135,7 +1130,6 @@ mod tests {
             .await;
         let shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         assert_eq!(shard_02.truncation_position_inclusive, Position::eof(1u64));
-        assert!(shard_02.is_indexed());
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_02, .., &[]);

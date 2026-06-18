@@ -267,10 +267,6 @@ impl IngesterShard {
         now.duration_since(self.last_write_instant) >= idle_timeout
     }
 
-    pub fn is_indexed(&self) -> bool {
-        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
-    }
-
     pub fn is_replica(&self) -> bool {
         matches!(self.shard_type, IngesterShardType::Replica { .. })
     }
@@ -442,49 +438,5 @@ mod tests {
             Position::Beginning
         );
         assert!(!solo_shard.is_advertisable);
-    }
-
-    #[test]
-    fn test_is_indexed() {
-        let new_solo_shard = || {
-            IngesterShard::new_solo(
-                IndexUid::for_test("test-index", 0),
-                SourceId::from("test-source"),
-                ShardId::from(1),
-            )
-        };
-
-        // An empty shard (replication and truncation both at `Beginning`) has no un-indexed data,
-        // but we have to wait for EOF to be gossipped or the shard will be orphaned on decommission
-        assert!(!new_solo_shard().build().is_indexed());
-        assert!(
-            !new_solo_shard()
-                .with_state(ShardState::Closed)
-                .build()
-                .is_indexed()
-        );
-        assert!(
-            !new_solo_shard()
-                .with_state(ShardState::Closed)
-                .with_replication_position_inclusive(Position::offset(5u64))
-                .build()
-                .is_indexed()
-        );
-        assert!(
-            !new_solo_shard()
-                .with_state(ShardState::Closed)
-                .with_replication_position_inclusive(Position::offset(5u64))
-                .with_truncation_position_inclusive(Position::offset(5u64))
-                .build()
-                .is_indexed()
-        );
-        assert!(
-            new_solo_shard()
-                .with_state(ShardState::Closed)
-                .with_replication_position_inclusive(Position::offset(5u64))
-                .with_truncation_position_inclusive(Position::offset(5u64).as_eof())
-                .build()
-                .is_indexed()
-        );
     }
 }
