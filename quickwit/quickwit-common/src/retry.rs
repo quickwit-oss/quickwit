@@ -24,6 +24,12 @@ pub trait Retryable {
     fn is_retryable(&self) -> bool {
         false
     }
+
+    /// Returns a server-suggested delay before the next retry, if provided.
+    /// When present, this overrides the computed exponential backoff delay.
+    fn retry_after(&self) -> Option<Duration> {
+        None
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -166,7 +172,9 @@ where
             );
             return Err(error);
         }
-        let delay = retry_params.compute_delay(num_attempts);
+        let delay = error
+            .retry_after()
+            .unwrap_or_else(|| retry_params.compute_delay(num_attempts));
         debug!(
             num_attempts=%num_attempts,
             delay_ms=%delay.as_millis(),

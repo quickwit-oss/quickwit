@@ -53,6 +53,18 @@ where E: AwsRetryable
             _ => false,
         }
     }
+
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        let headers = match self {
+            SdkError::ServiceError(error) => error.raw().headers(),
+            SdkError::ResponseError(error) => error.raw().headers(),
+            _ => return None,
+        };
+        headers
+            .get("x-amz-retry-after")
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(std::time::Duration::from_millis)
+    }
 }
 
 fn is_retryable(meta: &aws_sdk_s3::error::ErrorMetadata) -> bool {
