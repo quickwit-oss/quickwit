@@ -84,18 +84,25 @@ impl BuildTantivyAst for BitwiseMaskRangeQuery {
 /// Computes `(mask, lo, hi)` such that `lo <= (V as u64) & mask < hi` fires with probability
 /// approximately `hi_f - lo_f`, with at most 3.125% relative overshoot.
 ///
-/// `mask` is of the form `2^n - 1` with `n` as small as possible.
+/// `mask` is of the form `2^n - 1` with `n` as small as possible, capped at `max_bits`.
+/// Pass `max_bits = 32` for full precision. Use a smaller value (e.g. 16 for i16 fields) to
+/// avoid sampling bits that carry sign-extension noise rather than entropy.
 ///
 /// # Panics
 ///
-/// Panics in debug builds if `lo_f >= hi_f` or either is outside `[0.0, 1.0]`.
-pub fn sampling_params_range(lo_f: f64, hi_f: f64) -> (u64, u64, u64) {
+/// Panics in debug builds if `lo_f >= hi_f` or either is outside `[0.0, 1.0]`, or
+/// `max_bits` is 0 or exceeds 63.
+pub fn sampling_params_range(lo_f: f64, hi_f: f64, max_bits: u32) -> (u64, u64, u64) {
     debug_assert!(
         lo_f >= 0.0 && hi_f <= 1.0 && lo_f < hi_f,
         "lo_f={lo_f} hi_f={hi_f}: must satisfy 0 <= lo_f < hi_f <= 1"
     );
+    debug_assert!(
+        max_bits > 0 && max_bits <= 63,
+        "max_bits={max_bits} must be in 1..=63"
+    );
     let width = hi_f - lo_f;
-    for n in 0u32..32 {
+    for n in 0u32..max_bits {
         let scale = (1u64 << n) as f64;
         let lo = (lo_f * scale).floor() as u64;
         let hi = (hi_f * scale).ceil() as u64;
@@ -104,10 +111,10 @@ pub fn sampling_params_range(lo_f: f64, hi_f: f64) -> (u64, u64, u64) {
             return ((1u64 << n) - 1, lo, hi);
         }
     }
-    // n=32 fallback: absolute error ≤ 2^-32
-    let scale = (1u64 << 32) as f64;
+    // max_bits fallback: best achievable precision with the given bit budget
+    let scale = (1u64 << max_bits) as f64;
     (
-        u32::MAX as u64,
+        (1u64 << max_bits) - 1,
         (lo_f * scale).floor() as u64,
         (hi_f * scale).ceil() as u64,
     )
@@ -395,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_sampling_params_range_half() {
-        let (mask, lo, hi) = sampling_params_range(0.0, 0.5);
+        let (mask, lo, hi) = sampling_params_range(0.0, 0.5, 32);
         assert_eq!(mask, 1);
         assert_eq!(lo, 0);
         assert_eq!(hi, 1);
@@ -404,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_sampling_params_range_eighth() {
-        let (mask, lo, hi) = sampling_params_range(0.0, 0.125);
+        let (mask, lo, hi) = sampling_params_range(0.0, 0.125, 32);
         // 0.125 = 1/8: exact fit with 3-bit mask (n=3 is minimal)
         assert_eq!(mask, 7, "expected 3-bit mask");
         assert_eq!(lo, 0);
@@ -414,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_sampling_params_range_interior() {
-        let (mask, lo, hi) = sampling_params_range(0.2, 0.4);
+        let (mask, lo, hi) = sampling_params_range(0.2, 0.4, 32);
         let width = 0.2_f64;
         let actual = (hi - lo) as f64 / (mask + 1) as f64;
         assert!(actual >= width, "actual {actual} < target width {width}");
@@ -423,13 +430,13 @@ mod tests {
             "actual {actual} > 3.125% above target {width}"
         );
         // distinct from [0.0, 0.2] and [0.4, 0.6]
-        let (_, lo2, hi2) = sampling_params_range(0.0, 0.2);
+        let (_, lo2, hi2) = sampling_params_range(0.0, 0.2, 32);
         assert!(lo2 != lo || hi2 != hi, "ranges should differ");
     }
 
     #[test]
     fn test_sampling_params_range_full() {
-        let (mask, lo, hi) = sampling_params_range(0.0, 1.0);
+        let (mask, lo, hi) = sampling_params_range(0.0, 1.0, 32);
         // hi = ceil(1.0 * 2^n) = 2^n > mask = 2^n - 1, so always matches
         assert!(
             hi > mask,
@@ -447,7 +454,7 @@ mod tests {
             (0.9, 1.0),
             (0.0, 0.01),
         ] {
-            let (mask, lo, hi) = sampling_params_range(lo_f, hi_f);
+            let (mask, lo, hi) = sampling_params_range(lo_f, hi_f, 32);
             let width = hi_f - lo_f;
             let actual = (hi - lo) as f64 / (mask + 1) as f64;
             assert!(

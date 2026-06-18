@@ -185,7 +185,7 @@ fn build_range_query_helper(
         if lo >= hi || hi <= 0.0 || lo >= 1.0 {
             return Ok(QueryAst::MatchNone);
         }
-        let (mask, c, b) = sampling_params_range(lo.max(0.0), hi.min(1.0));
+        let (mask, c, b) = sampling_params_range(lo.max(0.0), hi.min(1.0), 16);
         return Ok(BitwiseMaskRangeQuery {
             field: QW_TIEBREAKER.to_string(),
             mask,

@@ -36,7 +36,7 @@ pub struct IndexedSplitBuilder {
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
-    pub tiebreaker_seq_number: i32,
+    pub tiebreaker_seq_number: i16,
 }
 
 pub struct IndexedSplit {
