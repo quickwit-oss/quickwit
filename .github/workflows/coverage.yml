@@ -107,7 +107,7 @@ jobs:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install lib libsasl2
         run: |
@@ -157,7 +157,7 @@ jobs:
         run: rustup update stable
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
+        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2.81.11
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
@@ -172,7 +172,7 @@ jobs:
         working-directory: ./quickwit
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./quickwit/lcov.info
