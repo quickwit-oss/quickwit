@@ -13,13 +13,13 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::OnceCell;
 
 use super::s3_compatible_storage::create_s3_client;
 use crate::{
@@ -43,8 +43,8 @@ pub struct S3CompatibleObjectStorageFactory {
     // end up being used, or if something like azure, gcs, or even local files, will be used
     // instead.
     s3_client: OnceCell<S3Client>,
-    // One cached S3Client per named backend. Built lazily on first use.
-    named_s3_clients: Mutex<HashMap<String, S3Client>>,
+    // Per-named-backend client cell; the mutex is held only to fetch/insert the cell, never across the build.
+    named_s3_clients: Mutex<HashMap<String, Arc<OnceCell<S3Client>>>>,
 }
 
 impl S3CompatibleObjectStorageFactory {
@@ -76,15 +76,17 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
                     ))
                 })?
                 .as_s3_config();
-            let mut clients = self.named_s3_clients.lock().await;
-            let client = if let Some(client) = clients.get(name) {
-                client.clone()
-            } else {
-                let client = create_s3_client(&named_config).await;
-                clients.insert(name.to_string(), client.clone());
-                client
+            let client_cell = {
+                let mut clients = self
+                    .named_s3_clients
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                Arc::clone(clients.entry(name.to_string()).or_default())
             };
-            drop(clients);
+            let client = client_cell
+                .get_or_init(|| create_s3_client(&named_config))
+                .await
+                .clone();
             let storage =
                 S3CompatibleObjectStorage::from_uri_and_client(&named_config, uri, client).await?;
             return Ok(Arc::new(DebouncedStorage::new(storage)));
