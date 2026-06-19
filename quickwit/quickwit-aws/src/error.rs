@@ -29,6 +29,20 @@ use aws_smithy_types::retry::ErrorKind;
 
 use crate::retry::AwsRetryable;
 
+/// Extracts the `x-amz-retry-after` header from an SDK error response, if present.
+/// The header value is in milliseconds.
+pub fn retry_after_from_sdk_error<E>(error: &SdkError<E>) -> Option<std::time::Duration> {
+    let headers = match error {
+        SdkError::ServiceError(e) => e.raw().headers(),
+        SdkError::ResponseError(e) => e.raw().headers(),
+        _ => return None,
+    };
+    headers
+        .get("x-amz-retry-after")
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(std::time::Duration::from_millis)
+}
+
 impl<E> AwsRetryable for SdkError<E>
 where E: AwsRetryable
 {
@@ -52,6 +66,10 @@ where E: AwsRetryable
             SdkError::ServiceError(error) => error.err().is_retryable(),
             _ => false,
         }
+    }
+
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        retry_after_from_sdk_error(self)
     }
 }
 

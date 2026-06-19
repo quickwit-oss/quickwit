@@ -41,6 +41,7 @@ members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 # The following list excludes `quickwit-metastore-utils`
@@ -82,6 +83,7 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 [workspace.package]
@@ -94,6 +96,7 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
 arrow = { version = "58", default-features = false, features = ["ipc"] }
@@ -401,8 +404,9 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c096b2a", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1e859fd", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

@@ -40,9 +40,41 @@ version: 0.8
 #   extra_headers:
 #     x-header-1: header-value-1
 #     x-header-2: header-value-2
+#   tls:
+#     cert_path: /path/to/server.crt
+#     key_path: /path/to/server.key
+#     # mTLS: require clients to present a certificate signed by this CA.
+#     ca_path: /path/to/ca.crt
+#     verify_client_cert: true
+#     # How often cert_path/key_path are polled for changes and hot-reloaded; an
+#     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
+#     cert_reload_interval: 5m
+#
+# Optional plaintext health-check server. Disabled unless `listen_port` is set (or the
+# `QW_HEALTH_LISTEN_PORT` environment variable). It serves only `/health/livez` and
+# `/health/readyz`, letting liveness/readiness probes reach the node even when the REST API above
+# is put behind mTLS. The same routes also stay on the main REST server. Bind it to a
+# cluster-internal interface, as it performs no TLS termination or client authentication.
+#
+# health:
+#   listen_port: 7282
 #
 # grpc:
 #   max_message_size: 10 MiB
+#   tls:
+#     cert_path: /path/to/server.crt
+#     key_path: /path/to/server.key
+#     # Trust root for peers this node *connects to* (every node is also a gRPC client to
+#     # its peers). With verify_client_cert, also validates peers connecting to this node.
+#     ca_path: /path/to/ca.crt
+#     # mTLS: require peers to present a certificate signed by ca_path. Each node reuses
+#     # cert_path/key_path above as its own client identity toward peers.
+#     verify_client_cert: true
+#     # Hostname checked against the peer certificate's SAN when connecting to peers.
+#     expected_name: quickwit.local
+#     # How often cert_path/key_path are polled for changes and hot-reloaded; an
+#     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
+#     cert_reload_interval: 5m
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.

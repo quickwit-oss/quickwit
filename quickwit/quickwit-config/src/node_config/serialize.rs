@@ -28,7 +28,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{GrpcConfig, RestConfig};
+use super::{GrpcConfig, HealthConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -195,6 +195,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
+    #[serde(rename = "health")]
+    #[serde(default)]
+    health_config_builder: HealthConfigBuilder,
     #[serde(rename = "grpc")]
     #[serde(default)]
     grpc_config: GrpcConfig,
@@ -256,6 +259,8 @@ impl NodeConfigBuilder {
         let rest_config = self
             .rest_config_builder
             .build_and_validate(listen_ip, env_vars)?;
+
+        let health_config = self.health_config_builder.build(listen_ip, env_vars)?;
 
         self.grpc_config.validate()?;
 
@@ -327,6 +332,7 @@ impl NodeConfigBuilder {
             metastore_uri,
             default_index_root_uri,
             rest_config,
+            health_config,
             grpc_config: self.grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
@@ -425,6 +431,7 @@ impl Default for NodeConfigBuilder {
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
+            health_config_builder: HealthConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
@@ -448,8 +455,8 @@ struct RestConfigBuilder {
     #[serde(with = "http_serde::header_map")]
     #[serde(default)]
     pub extra_headers: HeaderMap,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
 }
 
 impl RestConfigBuilder {
@@ -464,13 +471,48 @@ impl RestConfigBuilder {
             listen_port_from_config_or_default,
         )
         .resolve(env_vars)?;
+
+        if let Some(tls_config) = &self.tls_config {
+            tls_config.validate()?;
+        }
         let rest_config = RestConfig {
             listen_addr: SocketAddr::new(listen_ip, listen_port),
             cors_allow_origins: self.cors_allow_origins,
             extra_headers: self.extra_headers,
-            tls: self.tls,
+            tls_config: self.tls_config,
         };
         Ok(rest_config)
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+struct HealthConfigBuilder {
+    #[serde(default)]
+    listen_port: Option<u16>,
+}
+
+impl HealthConfigBuilder {
+    /// Builds the optional [`HealthConfig`]. The health server is enabled only when a listen port
+    /// is provided via the config file or the `QW_HEALTH_LISTEN_PORT` environment variable.
+    fn build(
+        self,
+        listen_ip: IpAddr,
+        env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<Option<HealthConfig>> {
+        let listen_port_opt = match self.listen_port {
+            // A port was set in the config file; an env var (if any) still takes precedence.
+            Some(listen_port) => Some(
+                ConfigValue::<u16, QW_HEALTH_LISTEN_PORT>::with_default(listen_port)
+                    .resolve(env_vars)?,
+            ),
+            // No port in the config file; the server is enabled only if the env var is set.
+            None => ConfigValue::<u16, QW_HEALTH_LISTEN_PORT>::none().resolve_optional(env_vars)?,
+        };
+        let health_config_opt = listen_port_opt.map(|listen_port| HealthConfig {
+            listen_addr: SocketAddr::new(listen_ip, listen_port),
+        });
+        Ok(health_config_opt)
     }
 }
 
@@ -507,7 +549,7 @@ pub fn node_config_for_tests_from_ports(
         listen_addr: rest_listen_addr,
         cors_allow_origins: Vec::new(),
         extra_headers: HeaderMap::new(),
-        tls: None,
+        tls_config: None,
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
@@ -524,6 +566,7 @@ pub fn node_config_for_tests_from_ports(
         metastore_uri,
         default_index_root_uri,
         rest_config,
+        health_config: None,
         grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
@@ -582,6 +625,15 @@ mod tests {
             "header-value-2"
         );
         assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
+
+        assert_eq!(
+            config
+                .health_config
+                .as_ref()
+                .expect("health config should be set")
+                .listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 4444)
+        );
 
         assert_eq!(
             config.gossip_listen_addr,
@@ -784,6 +836,7 @@ mod tests {
             config.grpc_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7281)
         );
+        assert!(config.health_config.is_none());
         assert_eq!(
             config.data_dir_path.to_string_lossy(),
             format!("{}/qwdata", env::current_dir().unwrap().display())
@@ -818,6 +871,7 @@ mod tests {
         env_vars.insert("QW_LISTEN_ADDRESS".to_string(), "172.0.0.12".to_string());
         env_vars.insert("QW_ADVERTISE_ADDRESS".to_string(), "172.0.0.13".to_string());
         env_vars.insert("QW_REST_LISTEN_PORT".to_string(), "1234".to_string());
+        env_vars.insert("QW_HEALTH_LISTEN_PORT".to_string(), "3456".to_string());
         env_vars.insert("QW_GOSSIP_LISTEN_PORT".to_string(), "5678".to_string());
         env_vars.insert("QW_GRPC_LISTEN_PORT".to_string(), "9012".to_string());
         env_vars.insert(
@@ -851,6 +905,14 @@ mod tests {
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 1234)
+        );
+        assert_eq!(
+            config
+                .health_config
+                .as_ref()
+                .expect("health config should be set")
+                .listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 3456)
         );
         assert_eq!(
             config.gossip_listen_addr,

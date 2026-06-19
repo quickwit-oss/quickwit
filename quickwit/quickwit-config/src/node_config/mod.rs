@@ -36,7 +36,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
-use crate::serde_utils::DurationAsStr;
+use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
@@ -50,8 +50,20 @@ pub struct RestConfig {
     pub cors_allow_origins: Vec<String>,
     #[serde(with = "http_serde::header_map")]
     pub extra_headers: HeaderMap,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
+}
+
+/// Configuration for the optional plaintext health-check HTTP server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. It is disabled unless `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT`
+/// environment variable) is set.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HealthConfig {
+    pub listen_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -59,20 +71,20 @@ pub struct RestConfig {
 pub struct GrpcConfig {
     #[serde(default = "GrpcConfig::default_max_message_size")]
     pub max_message_size: ByteSize,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
     // If set, keeps idle connection alive by periodically perform a
     // keep alive ping request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<KeepAliveConfig>,
 }
 
-fn default_http2_keep_alive_interval() -> DurationAsStr {
-    DurationAsStr::try_from("10s".to_string()).unwrap()
+fn default_http2_keep_alive_interval() -> HumanDuration {
+    HumanDuration::try_from("10s".to_string()).unwrap()
 }
 
-fn default_keep_alive_timeout() -> DurationAsStr {
-    DurationAsStr::try_from("5s".to_string()).unwrap()
+fn default_keep_alive_timeout() -> HumanDuration {
+    HumanDuration::try_from("5s".to_string()).unwrap()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,23 +92,14 @@ pub struct KeepAliveConfig {
     // Set the HTTP/2 KEEP_ALIVE_INTERVAL. This is the time the connection
     // should be idle before sending a keepalive ping.
     #[serde(default = "default_http2_keep_alive_interval")]
-    pub interval: DurationAsStr,
+    pub interval: HumanDuration,
 
     // Set the HTTP/2 KEEP_ALIVE_TIMEOUT. This is the time to wait for an ACK
     // after sending a keepalive ping. If the server doesn't respond within
     // this time, the connection might be considered dead.
     // Tonic uses hyper's default (20 seconds) if not set.
     #[serde(default = "default_keep_alive_timeout")]
-    pub timeout: DurationAsStr,
-}
-
-impl From<KeepAliveConfig> for quickwit_common::tower::KeepAliveConfig {
-    fn from(val: KeepAliveConfig) -> Self {
-        quickwit_common::tower::KeepAliveConfig {
-            interval: *val.interval,
-            timeout: *val.timeout,
-        }
-    }
+    pub timeout: HumanDuration,
 }
 
 impl GrpcConfig {
@@ -110,6 +113,9 @@ impl GrpcConfig {
             "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
             self.max_message_size
         );
+        if let Some(tls_config) = &self.tls_config {
+            tls_config.validate()?;
+        }
         Ok(())
     }
 }
@@ -118,7 +124,7 @@ impl Default for GrpcConfig {
     fn default() -> Self {
         Self {
             max_message_size: Self::default_max_message_size(),
-            tls: None,
+            tls_config: None,
             keep_alive: None,
         }
     }
@@ -129,12 +135,33 @@ impl Default for GrpcConfig {
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
+    // Path to a PEM file holding the trusted CA certificate(s). Multiple CA certificates may be
+    // concatenated in the same file: all of them are trusted.
     #[serde(default)]
     pub ca_path: String,
     #[serde(default)]
     pub expected_name: Option<String>,
-    #[serde(default)]
-    pub validate_client: bool,
+    #[serde(default, alias = "validate_client")]
+    pub verify_client_cert: bool,
+    // How often the certificate and key files are polled for changes and hot-reloaded (e.g.
+    // `"5m"`). An immediate reload can also be triggered out-of-band with `SIGHUP`.
+    #[serde(default = "default_cert_reload_interval")]
+    pub cert_reload_interval: HumanDuration,
+}
+
+impl TlsConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.cert_reload_interval.is_zero(),
+            "`tls.cert_reload_interval` must be greater than zero, got `{}`",
+            self.cert_reload_interval
+        );
+        Ok(())
+    }
+}
+
+fn default_cert_reload_interval() -> HumanDuration {
+    HumanDuration::try_from("5m".to_string()).expect("`5m`should be a valid human duration")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -787,6 +814,8 @@ pub struct NodeConfig {
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_config: Option<HealthConfig>,
     pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
@@ -985,39 +1014,33 @@ mod tests {
     #[track_caller]
     fn test_keepalive_config_serialization_aux(
         keep_alive_json: serde_json::Value,
-        expected: quickwit_common::tower::KeepAliveConfig,
+        expected_interval: Duration,
+        expected_timeout: Duration,
     ) {
-        let keep_alive_config: KeepAliveConfig =
-            serde_json::from_value(keep_alive_json.clone()).unwrap();
-        let keep_alive_deser: quickwit_common::tower::KeepAliveConfig =
-            keep_alive_config.clone().into();
-        assert_eq!(&keep_alive_deser, &expected);
-        let keep_alive_config_deser_ser = serde_json::to_value(keep_alive_config).unwrap();
-        let keep_alive_config_deser_ser_deser: KeepAliveConfig =
-            serde_json::from_value(keep_alive_config_deser_ser).unwrap();
-        let keep_alive_config_deser_ser_deser: quickwit_common::tower::KeepAliveConfig =
-            keep_alive_config_deser_ser_deser.into();
-        assert_eq!(&keep_alive_config_deser_ser_deser, &expected);
+        let keep_alive_config: KeepAliveConfig = serde_json::from_value(keep_alive_json).unwrap();
+        assert_eq!(*keep_alive_config.interval, expected_interval);
+        assert_eq!(*keep_alive_config.timeout, expected_timeout);
+        // The config round-trips through serde unchanged.
+        let reserialized = serde_json::to_value(&keep_alive_config).unwrap();
+        let roundtripped: KeepAliveConfig = serde_json::from_value(reserialized).unwrap();
+        assert_eq!(*roundtripped.interval, expected_interval);
+        assert_eq!(*roundtripped.timeout, expected_timeout);
     }
 
     #[test]
     fn test_keepalive_config_serialization() {
         test_keepalive_config_serialization_aux(
             serde_json::json!({}),
-            quickwit_common::tower::KeepAliveConfig {
-                interval: Duration::from_secs(10),
-                timeout: Duration::from_secs(5),
-            },
+            Duration::from_secs(10),
+            Duration::from_secs(5),
         );
         test_keepalive_config_serialization_aux(
             serde_json::json!({
                 "interval": "3s",
                 "timeout": "1s",
             }),
-            quickwit_common::tower::KeepAliveConfig {
-                interval: Duration::from_secs(3),
-                timeout: Duration::from_secs(1),
-            },
+            Duration::from_secs(3),
+            Duration::from_secs(1),
         );
     }
 
@@ -1042,14 +1065,46 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
-            tls: None,
+            tls_config: None,
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
-            tls: None,
+            tls_config: None,
+            keep_alive: None,
+        };
+        assert!(grpc_config.validate().is_err());
+    }
+
+    fn tls_config(reload_interval: &str) -> TlsConfig {
+        TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: false,
+            cert_reload_interval: HumanDuration::try_from(reload_interval.to_string()).unwrap(),
+        }
+    }
+
+    #[test]
+    fn test_tls_config_validate() {
+        assert!(tls_config("5m").validate().is_ok());
+
+        let error = tls_config("0s").validate().unwrap_err().to_string();
+        assert!(
+            error.contains("must be greater than zero"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_grpc_config_validate_rejects_zero_tls_reload_interval() {
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::mib(20),
+            tls_config: Some(tls_config("0s")),
             keep_alive: None,
         };
         assert!(grpc_config.validate().is_err());

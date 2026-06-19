@@ -115,6 +115,7 @@ use quickwit_search::{
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
+pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -408,6 +409,7 @@ async fn shutdown_signal_handler(
     ingester_opt: Option<Ingester>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
+    health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
@@ -425,6 +427,11 @@ async fn shutdown_signal_handler(
     }
     if rest_shutdown_trigger_tx.send(()).is_err() {
         debug!("REST server shutdown signal receiver was dropped");
+    }
+    if let Some(health_shutdown_trigger_tx) = health_shutdown_trigger_tx_opt
+        && health_shutdown_trigger_tx.send(()).is_err()
+    {
+        debug!("health check server shutdown signal receiver was dropped");
     }
     if let Err(err) = cluster.initiate_shutdown().await {
         debug!("{err}");
@@ -830,10 +837,44 @@ pub async fn serve_quickwit(
 
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
-        quickwit_services,
+        quickwit_services.clone(),
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
+
+    // Setup and start the optional plaintext health-check server. It only runs when a health
+    // listen port is configured (`health.listen_port` or `QW_HEALTH_LISTEN_PORT`).
+    let (health_shutdown_trigger_tx_opt, health_server_fut) =
+        if let Some(health_config) = quickwit_services.node_config.health_config.clone() {
+            let health_listener = tcp_listener_resolver
+                .resolve(health_config.listen_addr)
+                .await?;
+            // The health server serves probes as soon as it is up: it does not wait on the node
+            // readiness signal, since liveness must work during startup and `readyz` reflects
+            // cluster readiness on its own.
+            let health_readiness_trigger = Box::pin(async {});
+            let (health_shutdown_trigger_tx, health_shutdown_signal_rx) = oneshot::channel::<()>();
+            let health_shutdown_signal = Box::pin(async move {
+                if health_shutdown_signal_rx.await.is_err() {
+                    debug!("health check server shutdown trigger sender was dropped");
+                }
+            });
+            let health_server = rest::start_health_check_server(
+                health_listener,
+                quickwit_services.clone(),
+                health_readiness_trigger,
+                health_shutdown_signal,
+            );
+            (
+                Some(health_shutdown_trigger_tx),
+                futures::future::Either::Left(health_server),
+            )
+        } else {
+            (
+                None,
+                futures::future::Either::Right(futures::future::ready(anyhow::Ok(()))),
+            )
+        };
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -855,6 +896,7 @@ pub async fn serve_quickwit(
         ingester_opt,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
+        health_shutdown_trigger_tx_opt,
         cluster.clone(),
     ));
     let grpc_join_handle = async move {
@@ -871,9 +913,21 @@ pub async fn serve_quickwit(
             .context("REST server failed")
     };
 
+    let health_join_handle = async move {
+        spawn_named_task(health_server_fut, "health_server")
+            .await
+            .expect("tasks running the health check server should not panic or be cancelled")
+            .context("health check server failed")
+    };
+
     let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle, chitchat_server_handle) {
+    if let Err(err) = tokio::try_join!(
+        grpc_join_handle,
+        rest_join_handle,
+        health_join_handle,
+        chitchat_server_handle
+    ) {
         error!("server failed: {err:?}");
     }
 
@@ -1500,7 +1554,7 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
@@ -1544,7 +1598,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_readiness_updates() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();

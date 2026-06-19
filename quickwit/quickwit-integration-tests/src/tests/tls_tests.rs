@@ -12,13 +12,69 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use hyper_util::rt::TokioExecutor;
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{HumanDuration, TlsConfig};
 use quickwit_serve::SearchRequestQueryString;
 
 use crate::test_utils::ClusterSandboxBuilder;
+
+const TLS_FIXTURES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/tests/tls");
+
+/// The standard TLS config pointing at the shared fixtures: one-way TLS, no client-certificate
+/// verification, 5-minute reload interval. Tests override individual fields as needed.
+fn fixture_tls_config() -> TlsConfig {
+    TlsConfig {
+        cert_path: format!("{TLS_FIXTURES_DIR}/server.crt"),
+        key_path: format!("{TLS_FIXTURES_DIR}/server.key"),
+        ca_path: format!("{TLS_FIXTURES_DIR}/ca.crt"),
+        expected_name: None,
+        verify_client_cert: false,
+        cert_reload_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+    }
+}
+
+/// Reads a PEM certificate file and returns the DER bytes of its first (leaf) certificate.
+fn leaf_cert_der(cert_path: &str) -> Vec<u8> {
+    let cert_file = std::fs::File::open(cert_path).unwrap();
+    let mut reader = std::io::BufReader::new(cert_file);
+    let leaf = rustls_pemfile::certs(&mut reader)
+        .next()
+        .expect("PEM file should contain a certificate")
+        .unwrap();
+    leaf.as_ref().to_vec()
+}
+
+/// Opens a fresh TLS connection to `addr` (trusting `ca_path`), completes the handshake, and
+/// returns the DER of the leaf certificate the server presented. A new connection is used on every
+/// call so each observes the certificate currently served by the resolver.
+async fn fetch_served_leaf_cert(addr: SocketAddr, ca_path: &str) -> Vec<u8> {
+    // Build a no-client-auth client config trusting `ca_path`, reusing the production TLS builder.
+    // Uses the process-wide default crypto provider, which the node installs (ring) at startup.
+    let tls_config = TlsConfig {
+        ca_path: ca_path.to_string(),
+        ..fixture_tls_config()
+    };
+    let client_config = quickwit_transport::make_tls_client_config(&tls_config).unwrap();
+    let tls_connector = tokio_rustls::TlsConnector::from(client_config);
+
+    let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    // The server certificate's SAN includes `127.0.0.1`, so validate against the peer IP.
+    let server_name = rustls::pki_types::ServerName::IpAddress(addr.ip().into());
+    let tls_stream = tls_connector
+        .connect(server_name, tcp_stream)
+        .await
+        .unwrap();
+    let (_tcp_stream, connection) = tls_stream.get_ref();
+    let peer_certs = connection
+        .peer_certificates()
+        .expect("the server must present a certificate");
+    peer_certs[0].as_ref().to_vec()
+}
 
 #[tokio::test]
 async fn test_tls_rest() {
@@ -27,13 +83,7 @@ async fn test_tls_rest() {
         .add_node(QuickwitService::supported_services())
         .build_config()
         .await;
-    sandbox_config.node_configs[0].0.rest_config.tls = Some(quickwit_config::TlsConfig {
-        cert_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.crt").to_string(),
-        key_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.key").to_string(),
-        ca_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/ca.crt").to_string(),
-        expected_name: None,
-        validate_client: false,
-    });
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(fixture_tls_config());
     let sandbox = sandbox_config.start().await;
     let node_config = sandbox.node_configs.first().unwrap();
     let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
@@ -75,15 +125,16 @@ async fn test_tls_grpc() {
         .await;
 
     for node in &mut sandbox_config.node_configs {
-        node.0.rest_config.tls = Some(quickwit_config::TlsConfig {
-            cert_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.crt").to_string(),
-            key_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.key").to_string(),
-            ca_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/ca.crt").to_string(),
+        // Enable mTLS on the node-to-node gRPC transport. Each node reuses the server cert as its
+        // own client identity (the cert carries the `clientAuth` EKU), so this exercises both the
+        // hot-reloadable server resolver and the hot-reloadable client identity introduced for
+        // gRPC.
+        node.0.grpc_config.tls_config = Some(TlsConfig {
             expected_name: Some("quickwit.local".to_string()),
-            validate_client: false,
+            verify_client_cert: true,
+            ..fixture_tls_config()
         });
     }
-
     let sandbox = sandbox_config.start().await;
 
     // TODO connect to grpc port and verify it refuses non-tls connection
@@ -146,25 +197,19 @@ async fn test_mtls_rest() {
         .await;
     // Reuse the server cert/key as the client identity — it is signed by the same CA, so the
     // server's WebPkiClientVerifier will accept it.
-    sandbox_config.node_configs[0].0.rest_config.tls = Some(quickwit_config::TlsConfig {
-        cert_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.crt").to_string(),
-        key_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.key").to_string(),
-        ca_path: concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/ca.crt").to_string(),
-        expected_name: None,
-        validate_client: true,
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
+        verify_client_cert: true,
+        ..fixture_tls_config()
     });
     let sandbox = sandbox_config.start().await;
     let listen_addr = sandbox.node_configs[0].0.rest_config.listen_addr;
 
-    let ca_bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/ca.crt")).unwrap();
+    let ca_bytes = std::fs::read(format!("{TLS_FIXTURES_DIR}/ca.crt")).unwrap();
     let ca_cert = reqwest::tls::Certificate::from_pem(&ca_bytes).unwrap();
 
     // reqwest::Identity::from_pem expects a single buffer with key + cert concatenated.
-    let mut identity_pem =
-        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.key")).unwrap();
-    identity_pem.extend(
-        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/server.crt")).unwrap(),
-    );
+    let mut identity_pem = std::fs::read(format!("{TLS_FIXTURES_DIR}/server.key")).unwrap();
+    identity_pem.extend(std::fs::read(format!("{TLS_FIXTURES_DIR}/server.crt")).unwrap());
     let client_identity = reqwest::tls::Identity::from_pem(&identity_pem).unwrap();
 
     // A client with no certificate should be rejected during the TLS handshake.
@@ -191,6 +236,108 @@ async fn test_mtls_rest() {
         .await
         .expect("connection with valid client certificate should succeed");
     assert!(resp.status().is_success());
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_health_check_server_plaintext_with_mtls_rest() {
+    quickwit_common::setup_logging_for_tests();
+    let mut sandbox_config = ClusterSandboxBuilder::default()
+        .add_node(QuickwitService::supported_services())
+        .enable_health_check()
+        .build_config()
+        .await;
+    // Put the main REST API behind mTLS, while keeping the health server plaintext.
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
+        verify_client_cert: true,
+        ..fixture_tls_config()
+    });
+    let sandbox = sandbox_config.start().await;
+
+    let rest_addr = sandbox.node_configs[0].0.rest_config.listen_addr;
+    let health_addr = sandbox.node_configs[0]
+        .0
+        .health_config
+        .as_ref()
+        .expect("health config should be set")
+        .listen_addr;
+
+    // The plaintext health server answers liveness and readiness probes without any TLS.
+    let livez_response = reqwest::get(format!("http://{health_addr}/health/livez"))
+        .await
+        .expect("plaintext liveness probe should connect");
+    assert!(livez_response.status().is_success());
+    let readyz_response = reqwest::get(format!("http://{health_addr}/health/readyz"))
+        .await
+        .expect("plaintext readiness probe should connect");
+    assert!(readyz_response.status().is_success());
+
+    // The same plaintext probe against the mTLS-protected REST port must fail: that port speaks
+    // TLS and requires a client certificate, so a plaintext request cannot succeed.
+    reqwest::get(format!("http://{rest_addr}/health/livez"))
+        .await
+        .expect_err("plaintext request to the mTLS REST port should fail");
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_tls_rest_cert_hot_reload() {
+    quickwit_common::setup_logging_for_tests();
+    // The node reads its certificate from a temp directory we can mutate to simulate a rotation.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cert_path = temp_dir.path().join("server.crt");
+    let key_path = temp_dir.path().join("server.key");
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server.crt"), &cert_path).unwrap();
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server.key"), &key_path).unwrap();
+    let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
+
+    let mut sandbox_config = ClusterSandboxBuilder::default()
+        .add_node(QuickwitService::supported_services())
+        .build_config()
+        .await;
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
+        cert_path: cert_path.to_str().unwrap().to_string(),
+        key_path: key_path.to_str().unwrap().to_string(),
+        ca_path: ca_path.clone(),
+        // Long interval: the only reload trigger exercised here is `reload_tls_cert()`, so the
+        // assertion below cannot be satisfied by the periodic poll instead.
+        cert_reload_interval: HumanDuration::try_from("1h".to_string()).unwrap(),
+        ..fixture_tls_config()
+    });
+    let sandbox = sandbox_config.start().await;
+    let rest_addr = sandbox.node_configs[0].0.rest_config.listen_addr;
+
+    // Initially the server presents the first certificate.
+    let served_before = fetch_served_leaf_cert(rest_addr, &ca_path).await;
+    let server1_der = leaf_cert_der(&format!("{TLS_FIXTURES_DIR}/server.crt"));
+    assert_eq!(served_before, server1_der);
+
+    // Rotate the certificate on disk to a second, distinct certificate signed by the same CA.
+    let server2_der = leaf_cert_der(&format!("{TLS_FIXTURES_DIR}/server2.crt"));
+    assert_ne!(server1_der, server2_der);
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server2.crt"), &cert_path).unwrap();
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server2.key"), &key_path).unwrap();
+
+    // Trigger an immediate reload (as `SIGHUP` would) and wait for new connections to pick up the
+    // rotated certificate. In-flight reload is asynchronous, hence the bounded poll.
+    quickwit_serve::reload_tls_cert();
+
+    wait_until_predicate(
+        || async {
+            let served = fetch_served_leaf_cert(rest_addr, &ca_path).await;
+            assert!(
+                served == server1_der || served == server2_der,
+                "server should serve either the old or the new certificate, never anything else"
+            );
+            served == server2_der
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    )
+    .await
+    .expect("timed out waiting for the rotated certificate to be served");
 
     sandbox.shutdown().await.unwrap();
 }

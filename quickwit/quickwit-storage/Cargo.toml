@@ -11,12 +11,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-fnv = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }

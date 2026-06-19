@@ -19,7 +19,7 @@ use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
 use quickwit_cluster::{
-    ChannelTransport, Cluster, ClusterChange, ClusterMember, create_cluster_for_test,
+    ChitchatTransport, Cluster, ClusterChange, ClusterMember, create_cluster_for_test,
 };
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
@@ -156,7 +156,7 @@ async fn start_control_plane(
 #[tokio::test]
 async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     quickwit_common::setup_logging_for_tests();
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster =
         create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)
             .await
@@ -248,7 +248,7 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_no_indexer() {
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await
         .unwrap();
@@ -284,7 +284,7 @@ async fn test_scheduler_scheduling_no_indexer() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_multiple_indexers() {
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await
         .unwrap();
