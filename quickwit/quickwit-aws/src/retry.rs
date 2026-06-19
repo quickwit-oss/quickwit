@@ -31,11 +31,18 @@ pub trait AwsRetryable {
     }
 }
 
-impl<E> AwsRetryable for Retry<E> {
+impl<E: AwsRetryable> AwsRetryable for Retry<E> {
     fn is_retryable(&self) -> bool {
         match self {
             Retry::Transient(_) => true,
             Retry::Permanent(_) => false,
+        }
+    }
+
+    fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Retry::Transient(e) => e.retry_after(),
+            Retry::Permanent(_) => None,
         }
     }
 }

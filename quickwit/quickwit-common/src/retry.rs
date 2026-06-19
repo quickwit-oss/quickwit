@@ -172,9 +172,10 @@ where
             );
             return Err(error);
         }
-        let delay = error
-            .retry_after()
-            .unwrap_or_else(|| retry_params.compute_delay(num_attempts));
+        let delay = match error.retry_after() {
+            Some(hint) => hint.min(retry_params.max_delay),
+            None => retry_params.compute_delay(num_attempts),
+        };
         debug!(
             num_attempts=%num_attempts,
             delay_ms=%delay.as_millis(),
