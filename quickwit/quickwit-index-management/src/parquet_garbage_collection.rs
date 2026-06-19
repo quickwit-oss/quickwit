@@ -407,6 +407,7 @@ async fn delete_parquet_splits_from_storage_and_metastore(
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;

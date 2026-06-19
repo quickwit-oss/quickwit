@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::fmt::Debug;
+use std::time::Duration;
 
 use futures::{Future, TryFutureExt};
 use quickwit_common::retry::{
@@ -23,13 +24,25 @@ pub trait AwsRetryable {
     fn is_retryable(&self) -> bool {
         false
     }
+
+    /// Returns a server-suggested delay before the next retry, if provided by the response.
+    fn retry_after(&self) -> Option<Duration> {
+        None
+    }
 }
 
-impl<E> AwsRetryable for Retry<E> {
+impl<E: AwsRetryable> AwsRetryable for Retry<E> {
     fn is_retryable(&self) -> bool {
         match self {
             Retry::Transient(_) => true,
             Retry::Permanent(_) => false,
+        }
+    }
+
+    fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Retry::Transient(e) => e.retry_after(),
+            Retry::Permanent(_) => None,
         }
     }
 }
@@ -42,6 +55,10 @@ where E: AwsRetryable
 {
     fn is_retryable(&self) -> bool {
         self.0.is_retryable()
+    }
+
+    fn retry_after(&self) -> Option<Duration> {
+        self.0.retry_after()
     }
 }
 
