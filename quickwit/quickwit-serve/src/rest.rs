@@ -223,9 +223,81 @@ pub(crate) async fn start_rest_server(
         .with(extra_headers)
         .boxed();
 
-    let warp_service = warp::service(rest_routes);
+    let tls_acceptor_opt: Option<TlsAcceptor> = if let Some(tls_config) =
+        &quickwit_services.node_config.rest_config.tls_config
+    {
+        let alpn_protocols: &[&[u8]] = &[b"h2", b"http/1.1", b"http/1.0"];
+        let rustls_config = quickwit_transport::make_tls_server_config(tls_config, alpn_protocols)?;
+        Some(TlsAcceptor::from(rustls_config))
+    } else {
+        None
+    };
+    serve_warp_routes(
+        "REST",
+        tcp_listener,
+        rest_routes,
+        quickwit_services
+            .node_config
+            .rest_config
+            .cors_allow_origins
+            .clone(),
+        tls_acceptor_opt,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Starts the optional plaintext health-check server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. The same routes remain mounted on the main REST server.
+pub(crate) async fn start_health_check_server(
+    tcp_listener: TcpListener,
+    quickwit_services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
+    let health_check_routes = health_check_handlers(
+        quickwit_services.cluster.clone(),
+        quickwit_services.indexing_service_opt.clone(),
+        quickwit_services.janitor_service_opt.clone(),
+    )
+    .recover(recover_fn_final)
+    .boxed();
+    // No TLS: the whole point of this server is to offer a plaintext probe surface that bypasses
+    // the mTLS configured on the main REST server.
+    serve_warp_routes(
+        "health check",
+        tcp_listener,
+        health_check_routes,
+        Vec::new(),
+        None,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Serves a set of warp `routes` over `tcp_listener` until `shutdown_signal` resolves, optionally
+/// terminating TLS. Shared by the main REST server and the health-check server.
+async fn serve_warp_routes<F>(
+    server_name: &str,
+    tcp_listener: TcpListener,
+    routes: F,
+    cors_allow_origins: Vec<String>,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()>
+where
+    F: Filter<Error = Rejection> + Clone + Send + Sync + 'static,
+    F::Extract: Reply,
+{
+    let warp_service = warp::service(routes);
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
-    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
+    let cors = build_cors(&cors_allow_origins);
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
@@ -246,11 +318,8 @@ pub(crate) async fn start_rest_server(
         .layer(cors)
         .service(warp_service);
 
-    let rest_listen_addr = tcp_listener.local_addr()?;
-    info!(
-        rest_listen_addr=?rest_listen_addr,
-        "starting REST server listening on {rest_listen_addr}"
-    );
+    let listen_addr = tcp_listener.local_addr()?;
+    info!(listen_addr=?listen_addr, "starting {server_name} server listening on {listen_addr}");
 
     let service = TowerToHyperService::new(service);
 
@@ -259,15 +328,6 @@ pub(crate) async fn start_rest_server(
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
     readiness_trigger.await;
 
-    let tls_acceptor_opt: Option<TlsAcceptor> = if let Some(tls_config) =
-        &quickwit_services.node_config.rest_config.tls_config
-    {
-        let alpn_protocols: &[&[u8]] = &[b"h2", b"http/1.1", b"http/1.0"];
-        let rustls_config = quickwit_transport::make_tls_server_config(tls_config, alpn_protocols)?;
-        Some(TlsAcceptor::from(rustls_config))
-    } else {
-        None
-    };
     // A stream of accepted TCP connections, preserving the previous raw-`accept` semantics.
     let tcp_incoming = futures_util::stream::unfold(tcp_listener, |tcp_listener| async move {
         let tcp_accept_res = tcp_listener
@@ -301,14 +361,14 @@ pub(crate) async fn start_rest_server(
                 });
             },
             _ = &mut shutdown_signal => {
-                info!("REST server shutdown signal received");
+                info!("{server_name} server shutdown signal received");
                 break;
             }
         }
     }
-    info!("shutting down REST server");
+    info!("shutting down {server_name} server");
     graceful.shutdown().await;
-    info!("REST server successfully shut down");
+    info!("{server_name} server successfully shut down");
 
     Ok(())
 }

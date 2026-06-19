@@ -89,9 +89,36 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 `Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit will rely exclusively on gRPC streaming endpoints and handle messages of any length.
 :::
 
+## Health check configuration
+
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
+
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `listen_port` | The port on which the plaintext health server listens for HTTP traffic. When unset, the health server is disabled. | `QW_HEALTH_LISTEN_PORT` | _(disabled)_ |
+
+Pick a free port that is not already used by the REST or gRPC servers.
+
+Example of a health check configuration:
+
+```yaml
+health:
+  listen_port: 7282
+```
+
+:::warning
+This server performs no TLS termination and no client authentication. Bind it to a cluster-internal interface (via `listen_address`) and do not expose it publicly.
+:::
+
 ## TLS configuration
 
 Both the REST API (`rest.tls`) and the internal gRPC services (`grpc.tls`) can be secured with TLS, optionally with mutual TLS (mTLS). The two sections share the same properties:
+
+:::tip
+When the REST API is behind mTLS, simple HTTP health probes can no longer reach it. Enable the plaintext [health check server](#health-check-configuration) to keep liveness/readiness probes working.
+:::
 
 | Property | Description | Default value |
 | --- | --- | --- |
