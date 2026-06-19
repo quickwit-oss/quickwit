@@ -22,7 +22,8 @@ use tokio::sync::OnceCell;
 
 use super::s3_compatible_storage::create_s3_client;
 use crate::{
-    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
+    CoalescingStorage, DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory,
+    StorageResolverError,
 };
 
 /// S3 compatible object storage resolver.
@@ -61,6 +62,9 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         let storage =
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        // Coalesce nearby slice requests into fewer, larger GETs, then debounce identical
+        // in-flight requests on top of that.
+        let coalesced_storage = CoalescingStorage::new(storage);
+        Ok(Arc::new(DebouncedStorage::new(coalesced_storage)))
     }
 }
