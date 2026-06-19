@@ -15,7 +15,7 @@
 </p>
 
 <h2 align="center">
-Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
+Open-source search engine for observability (logs, traces, and soon metrics!).
 </h2>
 
 <h4 align="center">
