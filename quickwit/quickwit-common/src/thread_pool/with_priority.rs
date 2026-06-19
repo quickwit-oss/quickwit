@@ -158,6 +158,10 @@ impl ThreadPoolWithPriority {
         }
     }
 
+    pub fn num_threads(&self) -> usize {
+        self.inner.max_running_tasks
+    }
+
     /// Schedules a cpu intensive function with a normal priority.
     /// If the result future is dropped before it is scheduled on the
     /// underlying thread pool, the task will be cancelled.

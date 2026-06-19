@@ -466,6 +466,9 @@ message LeafResourceStats {
     // across leaves) it is the count of leaves where lambda was the
     // bottleneck. Voluntarily a uint64 (not a bool) for summability.
     uint64 lambda_bottleneck = 14;
+
+    /// Number of CPU threads available in the search pool.
+    uint64 search_pool_cpu_threads = 15;
 }
 
 // Resource statistics for a root search.
@@ -488,6 +491,19 @@ message RootResourceStats {
     // distinguishing "one straggler" from "all leaves comparably slow"
     // without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
     repeated uint64 leaf_wall_times_microsecs = 6;
+
+    // The first phase identifies the partial hits, runs aggregate.
+    // When running a top-k request, a second phase is required to fetch the documents.
+    //
+    // This includes getting the results from leaf searchers and merging them.
+    uint64 root_first_phase_wall_time_microsecs = 7;
+
+    // Overall wall time for the root search. This includes both
+    // the first phase (running aggregation, and identifying the doc address of the top-k hits we should return)
+    // and the second phase (fetch documents).
+    //
+    // If there are no top-k hits, the second phase is skipped.
+    uint64 root_wall_time_microsecs = 8;
 }
 
 // LeafRequestRef references data in LeafSearchRequest to deduplicate data.
