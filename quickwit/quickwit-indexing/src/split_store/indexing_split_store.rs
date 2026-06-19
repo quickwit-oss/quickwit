@@ -93,8 +93,8 @@ impl IndexingSplitStore {
         self.inner.remote_storage.uri()
     }
 
-    fn split_path(&self, split_id: &str) -> PathBuf {
-        PathBuf::from(quickwit_common::split_file(split_id))
+    fn split_path(&self, split_id: &str, prefix: &str) -> PathBuf {
+        PathBuf::from(quickwit_common::split_storage_path(split_id, prefix))
     }
 
     /// Stores a split.
@@ -116,7 +116,7 @@ impl IndexingSplitStore {
         let start = Instant::now();
         let split_num_bytes = put_payload.len();
 
-        let key = self.split_path(split.split_id());
+        let key = self.split_path(split.split_id(), &split.prefix);
         let is_mature = split.is_mature(OffsetDateTime::now_utc());
         self.inner
             .remote_storage
@@ -179,10 +179,13 @@ impl IndexingSplitStore {
     pub async fn fetch_and_open_split(
         &self,
         split_id: &str,
+        prefix: &str,
         output_dir_path: &Path,
         io_controls: &IoControls,
     ) -> StorageResult<Box<dyn Directory>> {
-        let path = PathBuf::from(quickwit_common::split_file(split_id));
+        // The local filename is always flat (no prefix directory) — the prefix only affects the
+        // remote S3 key.
+        let local_filename = quickwit_common::split_file(split_id);
         if let Some(split_path) = self
             .inner
             .split_cache
@@ -198,13 +201,14 @@ impl IndexingSplitStore {
         } else {
             tracing::Span::current().record("cache_hit", false);
         }
-        let dest_filepath = output_dir_path.join(&path);
+        let remote_path = self.split_path(split_id, prefix);
+        let dest_filepath = output_dir_path.join(&local_filename);
         let dest_file = tokio::fs::File::create(&dest_filepath).await?;
         let mut dest_file_with_write_limit = io_controls.clone().wrap_write(dest_file);
         self.inner
             .remote_storage
-            .copy_to(&path, &mut dest_file_with_write_limit)
-            .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
+            .copy_to(&remote_path, &mut dest_file_with_write_limit)
+            .instrument(info_span!("fetch_split_from_remote_storage", path=?remote_path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
     }
@@ -314,7 +318,7 @@ mod tests {
         {
             let output = tempfile::tempdir()?;
             let split1 = split_store
-                .fetch_and_open_split(&split_id1, output.path(), &io_controls)
+                .fetch_and_open_split(&split_id1, "", output.path(), &io_controls)
                 .await?;
             let local_store_stats = split_store.inspect_split_cache().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -323,7 +327,7 @@ mod tests {
         {
             let output = tempfile::tempdir()?;
             let split2 = split_store
-                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
+                .fetch_and_open_split(&split_id2, "", output.path(), &io_controls)
                 .await?;
             let local_store_stats = split_store.inspect_split_cache().await;
             assert_eq!(local_store_stats.len(), 0);
@@ -410,7 +414,7 @@ mod tests {
             // get from remote storage because split_id1 was evicted by split_id2
             let output = tempfile::tempdir()?;
             let _split1 = split_store
-                .fetch_and_open_split(&split_id1, output.path(), &io_controls)
+                .fetch_and_open_split(&split_id1, "", output.path(), &io_controls)
                 .await?;
             assert_eq!(io_controls.num_bytes(), split_payload1.len());
         }
@@ -418,7 +422,7 @@ mod tests {
             // get from cache
             let output = tempfile::tempdir()?;
             let _split2 = split_store
-                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
+                .fetch_and_open_split(&split_id2, "", output.path(), &io_controls)
                 .await?;
             // the number of downloaded by didn't change (still the size of split_payload1)
             assert_eq!(io_controls.num_bytes(), split_payload1.len());
@@ -427,7 +431,7 @@ mod tests {
             // get from remote because getting from cache removes the split from the cache
             let output = tempfile::tempdir()?;
             let _split2 = split_store
-                .fetch_and_open_split(&split_id2, output.path(), &io_controls)
+                .fetch_and_open_split(&split_id2, "", output.path(), &io_controls)
                 .await?;
             assert_eq!(
                 io_controls.num_bytes(),

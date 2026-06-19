@@ -132,6 +132,17 @@ pub struct SplitMetadata {
     /// Doc mapping UID used when creating this split. This split may only be merged with other
     /// splits using the same doc mapping UID.
     pub doc_mapping_uid: DocMappingUid,
+
+    /// S3 key prefix directory used when this split was stored (e.g., `"ND"`).
+    ///
+    /// An empty string means the legacy flat scheme: `{split_id}.split` directly under the index
+    /// URI. A non-empty prefix (with no trailing `/`) means the split is stored at
+    /// `{prefix}/{split_id}.split`.
+    ///
+    /// This value is set once at split creation time from the `QW_SPLIT_KEY_PREFIX_LEN`
+    /// environment variable and never changed afterwards.
+    #[serde(default)]
+    pub prefix: String,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -229,7 +240,7 @@ impl SplitMetadata {
 
     /// Converts the split metadata into a [`SplitInfo`].
     pub fn as_split_info(&self) -> SplitInfo {
-        let file_name = quickwit_common::split_file(self.split_id());
+        let file_name = quickwit_common::split_storage_path(self.split_id(), &self.prefix);
 
         SplitInfo {
             uncompressed_docs_size_bytes: ByteSize(self.uncompressed_docs_size_in_bytes),
@@ -281,6 +292,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
             doc_mapping_uid: DocMappingUid::default(),
+            prefix: String::new(),
         }
     }
 
@@ -421,6 +433,7 @@ mod tests {
             delete_opstamp: 0,
             num_merge_ops: 0,
             doc_mapping_uid: DocMappingUid::default(),
+            prefix: String::new(),
         };
 
         let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \

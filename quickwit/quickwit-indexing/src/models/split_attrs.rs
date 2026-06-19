@@ -125,6 +125,7 @@ pub fn create_split_metadata(
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,
         num_merge_ops: split_attrs.num_merge_ops,
+        prefix: crate::actors::compute_split_key_prefix(&split_attrs.split_id),
     }
 }
 

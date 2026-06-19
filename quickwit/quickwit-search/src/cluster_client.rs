@@ -336,6 +336,7 @@ mod tests {
                 timestamp_start: None,
                 timestamp_end: None,
                 num_docs: 0,
+                prefix: String::new(),
             }],
             ..Default::default()
         }
@@ -363,6 +364,7 @@ mod tests {
                         timestamp_start: None,
                         timestamp_end: None,
                         num_docs: 0,
+                        prefix: String::new(),
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
@@ -371,6 +373,7 @@ mod tests {
                         timestamp_start: None,
                         timestamp_end: None,
                         num_docs: 0,
+                        prefix: String::new(),
                     },
                 ],
             }],

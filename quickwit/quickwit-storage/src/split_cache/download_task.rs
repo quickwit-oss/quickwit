@@ -32,12 +32,15 @@ async fn download_split(
         split_ulid,
         storage_uri,
         living_token: _,
+        remote_split_path,
     } = candidate_split;
-    let split_filename = split_file(*split_ulid);
-    let target_filepath = root_path.join(&split_filename);
+    // Local cache always uses the flat filename (no prefix directory); the remote key may be
+    // sharded under a prefix directory (carried verbatim in `remote_split_path`).
+    let local_filename = split_file(*split_ulid);
+    let target_filepath = root_path.join(&local_filename);
     let storage = storage_resolver.resolve(storage_uri).await?;
     let num_bytes = storage
-        .copy_to_file(Path::new(&split_filename), &target_filepath)
+        .copy_to_file(Path::new(remote_split_path), &target_filepath)
         .await?;
     Ok(num_bytes)
 }

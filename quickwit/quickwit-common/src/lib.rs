@@ -112,6 +112,43 @@ pub fn split_file(split_id: impl Display) -> String {
     format!("{split_id}.split")
 }
 
+/// Returns the storage path for a split given its ID and key prefix.
+///
+/// - Empty `prefix`: legacy flat scheme `{split_id}.split`
+/// - Non-empty `prefix`: `{prefix}/{split_id}.split` — the `/` separator is inserted here, so the
+///   `prefix` itself must NOT contain a trailing `/`
+///
+/// The prefix is computed once at split creation time and stored in `SplitMetadata`.
+pub fn split_storage_path(split_id: &str, prefix: &str) -> String {
+    if prefix.is_empty() {
+        return format!("{split_id}.split");
+    }
+    format!("{prefix}/{split_id}.split")
+}
+
+#[cfg(test)]
+mod split_path_tests {
+    use super::*;
+
+    const SAMPLE_ULID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+    #[test]
+    fn test_split_storage_path_empty_prefix() {
+        assert_eq!(
+            split_storage_path(SAMPLE_ULID, ""),
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV.split"
+        );
+    }
+
+    #[test]
+    fn test_split_storage_path_with_prefix() {
+        assert_eq!(
+            split_storage_path(SAMPLE_ULID, "TS"),
+            "TS/01ARZ3NDEKTSV4RRFFQ69G5FAV.split"
+        );
+    }
+}
+
 fn get_from_env_opt_aux<T: Debug>(
     key: &str,
     parse_fn: impl FnOnce(&str) -> Option<T>,

@@ -146,20 +146,27 @@ impl SplitCache {
                 error!(storage_uri=%report_split.storage_uri, "received invalid storage uri: ignoring");
                 continue;
             };
-            split_table.report(split_ulid, storage_uri);
+            let remote_split_path =
+                quickwit_common::split_storage_path(&report_split.split_id, &report_split.prefix);
+            split_table.report(split_ulid, storage_uri, remote_split_path);
         }
     }
 
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
-    async fn get_split_file(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFile> {
+    async fn get_split_file(
+        &self,
+        split_id: Ulid,
+        storage_uri: &Uri,
+        remote_split_path: String,
+    ) -> Option<SplitFile> {
         // We touch before even checking the fd cache in order to update the file's last access time
         // for the file cache.
-        let num_bytes_opt: Option<u64> = self
-            .split_table
-            .lock()
-            .unwrap()
-            .touch(split_id, storage_uri);
+        let num_bytes_opt: Option<u64> =
+            self.split_table
+                .lock()
+                .unwrap()
+                .touch(split_id, storage_uri, remote_split_path);
 
         let num_bytes = num_bytes_opt?;
         self.fd_cache
@@ -200,18 +207,22 @@ struct SplitCacheBackingStorage {
 impl SplitCacheBackingStorage {
     async fn get_impl(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         let split_id = split_id_from_path(path)?;
+        // The path we are handed is exactly the relative storage key of the split.
+        let remote_split_path = path.to_string_lossy().into_owned();
         let split_file: SplitFile = self
             .split_cache
-            .get_split_file(split_id, &self.storage_root_uri)
+            .get_split_file(split_id, &self.storage_root_uri, remote_split_path)
             .await?;
         split_file.get_range(byte_range).await.ok()
     }
 
     async fn get_all_impl(&self, path: &Path) -> Option<OwnedBytes> {
         let split_id = split_id_from_path(path)?;
+        // The path we are handed is exactly the relative storage key of the split.
+        let remote_split_path = path.to_string_lossy().into_owned();
         let split_file = self
             .split_cache
-            .get_split_file(split_id, &self.storage_root_uri)
+            .get_split_file(split_id, &self.storage_root_uri, remote_split_path)
             .await?;
         split_file.get_all().await.ok()
     }

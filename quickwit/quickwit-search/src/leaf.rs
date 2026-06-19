@@ -132,7 +132,10 @@ async fn get_split_footer_from_cache_or_fetch(
             return Ok(footer_data);
         }
     }
-    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let split_file = PathBuf::from(quickwit_common::split_storage_path(
+        &split_and_footer_offsets.split_id,
+        &split_and_footer_offsets.prefix,
+    ));
     let footer_data_opt = index_storage
         .get_slice(
             &split_file,
@@ -163,7 +166,10 @@ pub(crate) async fn open_split_bundle(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(FileSlice, BundleStorage)> {
-    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let split_file = PathBuf::from(quickwit_common::split_storage_path(
+        &split_and_footer_offsets.split_id,
+        &split_and_footer_offsets.prefix,
+    ));
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
         split_and_footer_offsets,

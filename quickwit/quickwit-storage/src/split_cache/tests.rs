@@ -32,8 +32,8 @@ fn test_split_table() {
     });
     let ulid1 = Ulid::new();
     let ulid2 = Ulid::new();
-    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
-    split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI), String::new());
+    split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI), String::new());
     let candidate = split_table.best_candidate().unwrap();
     assert_eq!(candidate.split_ulid, ulid2);
 }
@@ -47,8 +47,8 @@ fn test_split_table_prefer_last_touched() {
     });
     let ulid1 = Ulid::new();
     let ulid2 = Ulid::new();
-    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
-    split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI), String::new());
+    split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI), String::new());
     let split_guard_opt = split_table.get_split_guard(ulid1, &Uri::for_test("s3://test1/"));
     assert!(split_guard_opt.is_none());
     let candidate = split_table.best_candidate().unwrap();
@@ -63,7 +63,7 @@ fn test_split_table_prefer_start_download_prevent_new_report() {
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
     let ulid1 = Ulid::new();
-    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI), String::new());
     assert_eq!(split_table.num_bytes(), 0);
     let download = split_table.start_download(ulid1);
     assert!(download.is_some());
@@ -72,7 +72,7 @@ fn test_split_table_prefer_start_download_prevent_new_report() {
     assert_eq!(split_table.num_bytes(), 10_000_000);
     split_table.get_split_guard(ulid1, &Uri::for_test(TEST_STORAGE_URI));
     let ulid2 = Ulid::new();
-    split_table.report(ulid2, Uri::for_test("s3://test`/"));
+    split_table.report(ulid2, Uri::for_test("s3://test`/"), String::new());
     let download = split_table.start_download(ulid2);
     assert!(download.is_some());
     assert!(split_table.start_download(ulid2).is_none());
@@ -99,11 +99,11 @@ fn test_eviction_due_to_size() {
         (split_ulids[5], 300_000),
     ];
     for (split_ulid, num_bytes) in splits {
-        split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+        split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
         split_table.register_as_downloaded(split_ulid, num_bytes);
     }
     let new_ulid = Ulid::new();
-    split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
     let DownloadOpportunity {
         splits_to_delete,
         split_to_download,
@@ -133,11 +133,11 @@ fn test_eviction_due_to_num_splits() {
         (split_ulids[5], 300_000),
     ];
     for (split_ulid, num_bytes) in splits {
-        split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+        split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
         split_table.register_as_downloaded(split_ulid, num_bytes);
     }
     let new_ulid = Ulid::new();
-    split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(new_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
     let DownloadOpportunity {
         splits_to_delete,
         split_to_download,
@@ -154,10 +154,10 @@ fn test_failed_download_can_be_re_reported() {
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
     let split_ulid = Ulid::new();
-    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
     let candidate = split_table.start_download(split_ulid).unwrap();
     // This report should be cancelled as we have a download currently running.
-    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
 
     assert!(split_table.start_download(split_ulid).is_none());
     std::mem::drop(candidate);
@@ -166,7 +166,7 @@ fn test_failed_download_can_be_re_reported() {
     assert!(split_table.start_download(split_ulid).is_none());
 
     // This report should be considered as our candidate (and its alive token has been dropped)
-    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+    split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI), String::new());
 
     let candidate2 = split_table.start_download(split_ulid).unwrap();
     assert_eq!(candidate2.split_ulid, split_ulid);

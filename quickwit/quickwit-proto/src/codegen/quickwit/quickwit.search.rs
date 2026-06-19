@@ -43,6 +43,9 @@ pub struct ReportSplit {
     /// The storage uri. This URI does NOT include the split id.
     #[prost(string, tag = "1")]
     pub storage_uri: ::prost::alloc::string::String,
+    /// S3 key prefix directory with no trailing "/" (e.g. "ND"). Empty string means the legacy flat scheme.
+    #[prost(string, tag = "3")]
+    pub prefix: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -480,6 +483,9 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// S3 key prefix directory with no trailing "/" (e.g. "ND"). Empty string means the legacy flat scheme.
+    #[prost(string, tag = "7")]
+    pub prefix: ::prost::alloc::string::String,
 }
 /// Hits returned by a FetchDocRequest.
 ///

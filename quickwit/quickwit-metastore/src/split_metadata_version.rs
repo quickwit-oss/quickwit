@@ -92,6 +92,10 @@ pub(crate) struct SplitMetadataV0_8 {
     // splits before when updates first appeared are compatible with each other.
     #[serde(default)]
     doc_mapping_uid: DocMappingUid,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub prefix: String,
 }
 
 impl From<SplitMetadataV0_8> for SplitMetadata {
@@ -128,6 +132,7 @@ impl From<SplitMetadataV0_8> for SplitMetadata {
             footer_offsets: v8.footer_offsets,
             num_merge_ops: v8.num_merge_ops,
             doc_mapping_uid: v8.doc_mapping_uid,
+            prefix: v8.prefix,
         }
     }
 }
@@ -150,6 +155,7 @@ impl From<SplitMetadata> for SplitMetadataV0_8 {
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,
             doc_mapping_uid: split.doc_mapping_uid,
+            prefix: split.prefix,
         }
     }
 }

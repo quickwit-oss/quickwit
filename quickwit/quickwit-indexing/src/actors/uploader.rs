@@ -338,6 +338,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
                         split_id: packaged_split.split_id().to_string(),
+                        prefix: split_metadata.prefix.clone(),
                     });
 
                     split_metadata_list.push(split_metadata);
