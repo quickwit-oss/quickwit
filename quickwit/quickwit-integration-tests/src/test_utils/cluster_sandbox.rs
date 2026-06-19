@@ -27,8 +27,8 @@ use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{HealthConfig, NodeConfig};
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
@@ -54,6 +54,7 @@ use super::shutdown::NodeShutdownHandle;
 pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
     pub enable_otlp: bool,
+    pub enable_health_check: bool,
 }
 
 impl TestNodeConfig {
@@ -74,6 +75,15 @@ impl TestNodeConfig {
         );
         tcp_listener_resolver.add_listener(rest_tcp_listener).await;
         tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
+        if self.enable_health_check {
+            let health_tcp_listener = TcpListener::bind(socket).await.unwrap();
+            config.health_config = Some(HealthConfig {
+                listen_addr: health_tcp_listener.local_addr().unwrap(),
+            });
+            tcp_listener_resolver
+                .add_listener(health_tcp_listener)
+                .await;
+        }
         config.indexer_config.enable_otlp_endpoint = self.enable_otlp;
         config.enabled_services.clone_from(&self.services);
         config.jaeger_config.enable_endpoint = true;
@@ -110,6 +120,7 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            enable_health_check: false,
         });
         self
     }
@@ -121,7 +132,17 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: true,
+            enable_health_check: false,
         });
+        self
+    }
+
+    /// Enables the plaintext health-check server on the most recently added node.
+    pub fn enable_health_check(mut self) -> Self {
+        self.node_configs
+            .last_mut()
+            .expect("a node must be added before enabling the health check server")
+            .enable_health_check = true;
         self
     }
 
@@ -301,6 +322,7 @@ impl ClusterSandbox {
         self.add_node_inner(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            enable_health_check: false,
         })
         .await;
     }

@@ -241,6 +241,48 @@ async fn test_mtls_rest() {
 }
 
 #[tokio::test]
+async fn test_health_check_server_plaintext_with_mtls_rest() {
+    quickwit_common::setup_logging_for_tests();
+    let mut sandbox_config = ClusterSandboxBuilder::default()
+        .add_node(QuickwitService::supported_services())
+        .enable_health_check()
+        .build_config()
+        .await;
+    // Put the main REST API behind mTLS, while keeping the health server plaintext.
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
+        verify_client_cert: true,
+        ..fixture_tls_config()
+    });
+    let sandbox = sandbox_config.start().await;
+
+    let rest_addr = sandbox.node_configs[0].0.rest_config.listen_addr;
+    let health_addr = sandbox.node_configs[0]
+        .0
+        .health_config
+        .as_ref()
+        .expect("health config should be set")
+        .listen_addr;
+
+    // The plaintext health server answers liveness and readiness probes without any TLS.
+    let livez_response = reqwest::get(format!("http://{health_addr}/health/livez"))
+        .await
+        .expect("plaintext liveness probe should connect");
+    assert!(livez_response.status().is_success());
+    let readyz_response = reqwest::get(format!("http://{health_addr}/health/readyz"))
+        .await
+        .expect("plaintext readiness probe should connect");
+    assert!(readyz_response.status().is_success());
+
+    // The same plaintext probe against the mTLS-protected REST port must fail: that port speaks
+    // TLS and requires a client certificate, so a plaintext request cannot succeed.
+    reqwest::get(format!("http://{rest_addr}/health/livez"))
+        .await
+        .expect_err("plaintext request to the mTLS REST port should fail");
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_tls_rest_cert_hot_reload() {
     quickwit_common::setup_logging_for_tests();
     // The node reads its certificate from a temp directory we can mutate to simulate a rotation.

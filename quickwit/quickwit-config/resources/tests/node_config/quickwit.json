@@ -26,6 +26,9 @@
             "x-header-2": "header-value-2"
         }
     },
+    "health": {
+        "listen_port": 4444
+    },
     "grpc": {
         "max_message_size": "10 MB"
     },
