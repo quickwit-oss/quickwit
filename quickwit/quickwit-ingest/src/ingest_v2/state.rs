@@ -82,6 +82,16 @@ impl InnerIngesterState {
             .await;
     }
 
+    /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
+    pub async fn check_decommissioning_status(&mut self) {
+        if self.status() != IngesterStatus::Decommissioning {
+            return;
+        }
+        if self.shards.is_empty() {
+            self.set_status(IngesterStatus::Decommissioned).await;
+        }
+    }
+
     /// Returns the shard with the most available permits for this index and source.
     pub fn find_most_capacity_shard_mut(
         &mut self,
@@ -566,32 +576,36 @@ impl FullyLockedIngesterState<'_> {
         truncate_up_to_position_inclusive: Position,
         initiator: &'static str,
     ) {
-        if let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
-            && let Some(shard) = self.inner.shards.get_mut(queue_id)
-            && shard.truncation_position_inclusive < truncate_up_to_position_inclusive
-        {
+        let Some(shard) = self.inner.shards.get_mut(queue_id) else {
+            return;
+        };
+        if shard.truncation_position_inclusive >= truncate_up_to_position_inclusive {
+            return;
+        }
+        if let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64() {
             match self
                 .mrecordlog
                 .truncate(queue_id, truncate_up_to_offset_inclusive)
                 .await
             {
-                Ok(_) => {
-                    info!(
-                        "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
-                         initiated via `{initiator}`"
-                    );
-                    shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
-                }
+                Ok(_) => {}
                 Err(TruncateError::MissingQueue(_)) => {
                     error!("failed to truncate shard `{queue_id}`: WAL queue not found");
                     self.shards.remove(queue_id);
                     info!("deleted dangling shard `{queue_id}`");
+                    return;
                 }
                 Err(TruncateError::IoError(io_error)) => {
                     error!("failed to truncate shard `{queue_id}`: {io_error}");
+                    return;
                 }
-            };
+            }
         }
+        info!(
+            "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} initiated via \
+             `{initiator}`"
+        );
+        shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
     }
 
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
@@ -1045,5 +1059,88 @@ mod tests {
         let mut source_b_ids = closed_shards[1].shard_ids.clone();
         source_b_ids.sort();
         assert_eq!(source_b_ids, vec![ShardId::from(5), ShardId::from(6)]);
+    }
+
+    #[tokio::test]
+    async fn test_truncate_shard() {
+        let cluster = test_cluster().await;
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        // Shard 1 is empty (never written): its EOF is `Eof(None)`, with no WAL offset.
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        // Shard 2 holds two records: its EOF is `Eof(Some(1))`.
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
+
+        let mut state_guard = state.lock_fully("test").await.unwrap();
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id_01)
+            .await
+            .unwrap();
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id_02)
+            .await
+            .unwrap();
+        state_guard
+            .mrecordlog
+            .append_records(
+                &queue_id_02,
+                None,
+                [&b"test-doc-foo"[..], &b"test-doc-bar"[..]].into_iter(),
+            )
+            .await
+            .unwrap();
+
+        let shard_01 =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .build();
+        state_guard.shards.insert(queue_id_01.clone(), shard_01);
+        let shard_02 =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(2))
+                .with_state(ShardState::Closed)
+                .with_replication_position_inclusive(Position::offset(1u64))
+                .build();
+        state_guard.shards.insert(queue_id_02.clone(), shard_02);
+
+        state_guard
+            .truncate_shard(&queue_id_01, Position::Beginning.as_eof(), "test")
+            .await;
+        let shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        assert_eq!(
+            shard_01.truncation_position_inclusive,
+            Position::Beginning.as_eof()
+        );
+        assert!(state_guard.mrecordlog.queue_exists(&queue_id_01));
+        assert_eq!(
+            state_guard
+                .shards
+                .get(&queue_id_01)
+                .unwrap()
+                .truncation_position_inclusive,
+            Position::Beginning.as_eof()
+        );
+
+        state_guard
+            .truncate_shard(&queue_id_02, Position::eof(1u64), "test")
+            .await;
+        let shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
+        assert_eq!(shard_02.truncation_position_inclusive, Position::eof(1u64));
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_02, .., &[]);
+
+        assert_eq!(
+            state_guard
+                .shards
+                .get(&queue_id_02)
+                .unwrap()
+                .truncation_position_inclusive,
+            Position::eof(1u64)
+        );
     }
 }
