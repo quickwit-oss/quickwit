@@ -9241,7 +9241,7 @@ dependencies = [
 [[package]]
 name = "tantivy-fst"
 version = "0.5.0"
-source = "git+https://github.com/SekoiaLab/fst/?rev=1997e450c52712357a2ffdbf0446263357ee0c02#1997e450c52712357a2ffdbf0446263357ee0c02"
+source = "git+https://github.com/SekoiaLab/fst/?rev=c37128c307b0ba5d7c0040352f0d2606d6383b68#c37128c307b0ba5d7c0040352f0d2606d6383b68"
 dependencies = [
  "byteorder",
  "regex-syntax",

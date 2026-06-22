@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
@@ -27,10 +27,15 @@ use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::doc_mapper::FastFieldWarmupInfo;
 use crate::{Automaton, ExactSetAutomaton, QueryParserError, TermRange, WarmupInfo};
+
+/// Maximum number of distinct fields that can be targeted by regex queries in a
+/// single query. Multiple regexes targeting the same field count as one field.
+static MAX_REGEX_QUERY_FIELDS: LazyLock<usize> =
+    LazyLock::new(|| quickwit_common::get_from_env("QW_MAX_REGEX_QUERY_FIELDS", 20, false));
 
 #[derive(Default)]
 struct RangeQueryFields {
@@ -224,6 +229,26 @@ pub(crate) fn build_query(
         2,
     )?;
 
+    coalesce_regexes_by_field(&mut automatons_grouped_by_field);
+
+    let regex_field_count = automatons_grouped_by_field
+        .values()
+        .flatten()
+        .filter(|automaton| matches!(automaton, Automaton::Regex(_, _)))
+        .count();
+    if regex_field_count > *MAX_REGEX_QUERY_FIELDS {
+        let error_msg = format!(
+            "query targets {} distinct fields with regexes, but at most {} are allowed",
+            regex_field_count, *MAX_REGEX_QUERY_FIELDS,
+        );
+        warn!(
+            count = regex_field_count,
+            max = *MAX_REGEX_QUERY_FIELDS,
+            "too many regexes on distinct paths"
+        );
+        return Err(InvalidQuery::Other(anyhow::anyhow!(error_msg)).into());
+    }
+
     let warmup_info = WarmupInfo {
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
@@ -283,6 +308,38 @@ fn coalesce_multi_term_fields_into_automatons(
         }
     }
     Ok(())
+}
+
+/// Merges all `Automaton::Regex` entries that target the same field and json path into a single
+/// multi-pattern `Automaton::Regex`.
+///
+/// During warmup, each `Automaton::Regex` triggers one term-dictionary traversal. By collapsing all
+/// regexes sharing a `(field, path)` into a single entry, warmup can build one combined automaton
+/// (matching the union of the patterns) and traverse the term dictionary once per field+path
+/// instead of once per regex. The union is a safe over-approximation: the actual per-regex queries
+/// still perform exact matching at execution time, so results are unchanged.
+///
+/// Entries with different json paths are kept separate (the path is applied via `JsonPathPrefix`
+/// and cannot be shared). `Automaton::TermSet` entries are left untouched.
+fn coalesce_regexes_by_field(automatons_grouped_by_field: &mut HashMap<Field, HashSet<Automaton>>) {
+    for automatons in automatons_grouped_by_field.values_mut() {
+        let mut regexes_by_path: HashMap<Option<Vec<u8>>, Vec<String>> = HashMap::new();
+        let mut others: Vec<Automaton> = Vec::new();
+        for automaton in automatons.drain() {
+            match automaton {
+                Automaton::Regex(path, patterns) => {
+                    regexes_by_path.entry(path).or_default().extend(patterns);
+                }
+                other => others.push(other),
+            }
+        }
+        for (path, mut patterns) in regexes_by_path {
+            patterns.sort();
+            patterns.dedup();
+            automatons.insert(Automaton::Regex(path, patterns));
+        }
+        automatons.extend(others);
+    }
 }
 
 /// Converts a `prefix` term into the equivalent term range.
@@ -403,7 +460,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
                 Err(e) => return Err(e),
             };
 
-        self.add_automaton(field, Automaton::Regex(path, regex));
+        self.add_automaton(field, Automaton::Regex(path, vec![regex]));
         Ok(())
     }
 
@@ -414,7 +471,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        self.add_automaton(field, Automaton::Regex(path, regex));
+        self.add_automaton(field, Automaton::Regex(path, vec![regex]));
         Ok(())
     }
 }
@@ -441,8 +498,9 @@ mod test {
 
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
-        BuildTantivyAstContext, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
-        UserInputQuery, query_ast_from_user_text,
+        BoolQuery, BuildTantivyAstContext, FullTextMode, FullTextParams, PhrasePrefixQuery,
+        QueryAst, QueryAstVisitor, RegexQuery, UserInputQuery, WildcardQuery,
+        query_ast_from_user_text,
     };
     use quickwit_query::{
         BooleanOperand, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
@@ -1037,5 +1095,194 @@ mod test {
         let mut expected = std::collections::HashMap::new();
         expected.insert(field, expected_inner);
         assert_eq!(extractor1.term_ranges_to_warm_up, expected);
+    }
+
+    /// Builds a bool query made of one regex clause per `(field, regex)` pair.
+    fn regex_bool_query(clauses: &[(String, &str)]) -> QueryAst {
+        let must = clauses
+            .iter()
+            .map(|(field, regex)| {
+                QueryAst::Regex(RegexQuery {
+                    field: field.clone(),
+                    regex: regex.to_string(),
+                })
+            })
+            .collect();
+        QueryAst::Bool(BoolQuery {
+            must,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn test_build_query_coalesces_regexes_on_same_field() {
+        let schema = make_schema(false);
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        // Several regexes (including a duplicate) targeting the same field collapse into a single
+        // automaton holding the deduplicated, sorted set of patterns.
+        let clauses: Vec<(String, &str)> = vec![
+            ("title".to_string(), "abc.*"),
+            ("title".to_string(), "xyz"),
+            ("title".to_string(), "foo.*"),
+            ("title".to_string(), "abc.*"),
+        ];
+        let query_ast = regex_bool_query(&clauses);
+        let (_, warmup_info) = build_query(query_ast, &context, None).unwrap();
+
+        assert_eq!(warmup_info.automatons_grouped_by_field.len(), 1);
+        let automatons = warmup_info
+            .automatons_grouped_by_field
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(automatons.len(), 1);
+        let Automaton::Regex(path, patterns) = automatons.iter().next().unwrap() else {
+            panic!("expected a regex automaton");
+        };
+        assert!(path.is_none());
+        assert_eq!(
+            patterns,
+            &vec!["abc.*".to_string(), "foo.*".to_string(), "xyz".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_build_query_keeps_regexes_on_different_fields_separate() {
+        let schema = make_schema(false);
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        let clauses: Vec<(String, &str)> = vec![
+            ("title".to_string(), "abc.*"),
+            ("desc".to_string(), "xyz.*"),
+        ];
+        let query_ast = regex_bool_query(&clauses);
+        let (_, warmup_info) = build_query(query_ast, &context, None).unwrap();
+
+        assert_eq!(warmup_info.automatons_grouped_by_field.len(), 2);
+        for automatons in warmup_info.automatons_grouped_by_field.values() {
+            assert_eq!(automatons.len(), 1);
+            assert!(matches!(
+                automatons.iter().next().unwrap(),
+                Automaton::Regex(None, patterns) if patterns.len() == 1
+            ));
+        }
+    }
+
+    #[test]
+    fn test_build_query_rejects_too_many_regex_fields() {
+        let schema = make_schema(true);
+
+        // 21 distinct fields targeted by regexes: rejected.
+        let clauses: Vec<(String, &str)> =
+            (0..21).map(|i| (format!("field_{i}"), "abc.*")).collect();
+        let query_ast = regex_bool_query(&clauses);
+        let err = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("distinct fields with regexes"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_query_accepts_exactly_twenty_regex_fields() {
+        let schema = make_schema(true);
+
+        // Exactly 20 distinct fields: accepted.
+        let clauses: Vec<(String, &str)> =
+            (0..20).map(|i| (format!("field_{i}"), "abc.*")).collect();
+        let query_ast = regex_bool_query(&clauses);
+        assert!(build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None).is_ok());
+    }
+
+    #[test]
+    fn test_build_query_accepts_many_regexes_on_same_field() {
+        let schema = make_schema(false);
+
+        // 50 regexes all targeting the same field: accepted, since only one
+        // distinct field is involved.
+        let clauses: Vec<(String, &str)> =
+            (0..50).map(|_| ("title".to_string(), "abc.*")).collect();
+        let query_ast = regex_bool_query(&clauses);
+        assert!(build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None).is_ok());
+    }
+
+    /// Builds a bool query made of wildcards.
+    fn wildcard_bool_query(clauses: &[(String, &str)]) -> QueryAst {
+        let must = clauses
+            .iter()
+            .map(|(field, value)| {
+                QueryAst::Wildcard(WildcardQuery {
+                    field: field.clone(),
+                    value: value.to_string(),
+                    lenient: false,
+                    case_insensitive: false,
+                })
+            })
+            .collect();
+        QueryAst::Bool(BoolQuery {
+            must,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn test_build_query_rejects_too_many_wilcard_fields() {
+        let schema = make_schema(true);
+
+        // 21 distinct fields targeted by wilcards: rejected.
+        let clauses: Vec<(String, &str)> =
+            (0..21).map(|i| (format!("field_{i}"), "abc*")).collect();
+        let query_ast = wildcard_bool_query(&clauses);
+        let err = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("distinct fields with regexes"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Builds a bool query made of both regexes and wildcards.
+    fn regex_wildcard_bool_query(clauses: &[(String, &str)]) -> QueryAst {
+        let must = clauses
+            .iter()
+            .flat_map(|(field, value)| {
+                let wildcard = QueryAst::Wildcard(WildcardQuery {
+                    field: format!("{}_wild", field),
+                    value: value.to_string(),
+                    lenient: false,
+                    case_insensitive: false,
+                });
+                let regex = QueryAst::Regex(RegexQuery {
+                    field: format!("{}_re", field),
+                    regex: value.to_string(),
+                });
+                vec![wildcard, regex]
+            })
+            .collect();
+        QueryAst::Bool(BoolQuery {
+            must,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn test_build_query_rejects_too_many_wilcard_or_regex_fields() {
+        let schema = make_schema(true);
+
+        // 21 distinct fields targeted by wilcards: rejected.
+        let clauses: Vec<(String, &str)> =
+            (0..11).map(|i| (format!("field_{i}"), "abc*")).collect();
+        let query_ast = regex_wildcard_bool_query(&clauses);
+        let err = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("distinct fields with regexes"),
+            "unexpected error: {err}"
+        );
     }
 }

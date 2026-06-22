@@ -78,9 +78,11 @@ pub struct TermRange {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Supported automaton types to warmup
 pub enum Automaton {
-    /// A regex in its str representation as tantivy_fst::Regex isn't PartialEq, and the path if
-    /// inside a json field
-    Regex(Option<Vec<u8>>, String),
+    /// One or more regexes (in their str representation, as tantivy_fst::Regex isn't PartialEq)
+    /// targeting the same field and json path. They are warmed up as a single combined automaton
+    /// matching the union of the patterns. The optional path is the json path prefix when the
+    /// field is a json field.
+    Regex(Option<Vec<u8>>, Vec<String>),
     /// An exact-match automaton for a TermSet query.
     TermSet(ExactSetAutomaton),
 }
@@ -661,7 +663,7 @@ mod tests {
     fn automaton_hashset(elements: &[&str]) -> HashSet<Automaton> {
         elements
             .iter()
-            .map(|elem| Automaton::Regex(None, elem.to_string()))
+            .map(|elem| Automaton::Regex(None, vec![elem.to_string()]))
             .collect()
     }
 
@@ -783,7 +785,7 @@ mod tests {
         let expected_automatons = [(1, "my_reg.*ex"), (1, "other-re.ex"), (2, "my_reg.*ex")];
         for (field, regex) in expected_automatons {
             let field = Field::from_field_id(field);
-            let automaton = Automaton::Regex(None, regex.to_string());
+            let automaton = Automaton::Regex(None, vec![regex.to_string()]);
             assert!(
                 wi_base
                     .automatons_grouped_by_field
