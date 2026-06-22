@@ -138,12 +138,14 @@ async fn test_merge_pipeline_crash_and_restart() {
     let final_publish_done = Arc::new(AtomicBool::new(false));
     let final_publish_clone = final_publish_done.clone();
 
+    // `publish_with_retry` retries each publish up to 3×; the second logical publish must fail on
+    // all 3 attempts (calls 1-3) to actually crash the pipeline rather than be masked by a retry.
     mock_metastore
         .expect_publish_metrics_splits()
         .returning(move |request| {
             let call_num = publish_call_clone.fetch_add(1, Ordering::SeqCst);
-            if call_num == 1 {
-                // Fail on the second publish to trigger pipeline restart.
+            if (1..=3).contains(&call_num) {
+                // Second publish: fail every retry attempt to trigger pipeline restart.
                 return Err(quickwit_proto::metastore::MetastoreError::Internal {
                     message: "injected failure for crash test".to_string(),
                     cause: "test".to_string(),
@@ -153,8 +155,8 @@ async fn test_merge_pipeline_crash_and_restart() {
                 .lock()
                 .unwrap()
                 .extend(request.replaced_split_ids.clone());
-            // Signal completion after a post-restart publish.
-            if call_num >= 2 {
+            // Signal completion on the first post-restart publish (call 4, after the 3 failures).
+            if call_num >= 4 {
                 final_publish_clone.store(true, Ordering::SeqCst);
             }
             Ok(EmptyResponse {})
