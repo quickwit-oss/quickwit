@@ -13,11 +13,10 @@
 // limitations under the License.
 
 use std::borrow::Borrow;
-use std::convert::Infallible;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::str::FromStr;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -94,17 +93,16 @@ impl Display for SourceUid {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct NodeId(String);
+pub struct NodeId(Arc<str>);
 
 impl NodeId {
-    /// Constructs a new [`NodeId`].
-    pub const fn new(node_id: String) -> Self {
-        Self(node_id)
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(node_id: &str) -> Self {
+        Self(Arc::from(node_id))
     }
 
-    /// Takes ownership of the underlying [`String`], consuming `self`.
-    pub fn take(self) -> String {
-        self.0
+    pub fn from_arc_str(node_id: Arc<str>) -> Self {
+        Self(node_id)
     }
 }
 
@@ -126,12 +124,6 @@ impl Borrow<str> for NodeId {
     }
 }
 
-impl Borrow<String> for NodeId {
-    fn borrow(&self) -> &String {
-        &self.0
-    }
-}
-
 impl Borrow<NodeIdRef> for NodeId {
     fn borrow(&self) -> &NodeIdRef {
         self.deref()
@@ -147,51 +139,19 @@ impl Deref for NodeId {
 }
 
 impl Display for NodeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl From<&'_ str> for NodeId {
-    fn from(node_id: &str) -> Self {
-        Self::new(node_id.to_string())
-    }
-}
-
-impl From<String> for NodeId {
-    fn from(node_id: String) -> Self {
-        Self::new(node_id)
-    }
-}
-
-impl From<NodeId> for String {
+impl From<NodeId> for Arc<str> {
     fn from(node_id: NodeId) -> Self {
         node_id.0
     }
 }
 
-impl From<&'_ NodeIdRef> for NodeId {
-    fn from(node_id: &NodeIdRef) -> Self {
-        node_id.to_owned()
-    }
-}
-
-impl FromStr for NodeId {
-    type Err = Infallible;
-
-    fn from_str(node_id: &str) -> Result<Self, Self::Err> {
-        Ok(NodeId::new(node_id.to_string()))
-    }
-}
-
 impl PartialEq<&str> for NodeId {
     fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
-}
-
-impl PartialEq<String> for NodeId {
-    fn eq(&self, other: &String) -> bool {
         self.as_str() == *other
     }
 }
@@ -238,12 +198,6 @@ impl Display for NodeIdRef {
     }
 }
 
-impl<'a> From<&'a str> for &'a NodeIdRef {
-    fn from(node_id: &'a str) -> &'a NodeIdRef {
-        NodeIdRef::from_str(node_id)
-    }
-}
-
 impl PartialEq<NodeIdRef> for NodeId {
     fn eq(&self, other: &NodeIdRef) -> bool {
         self.as_str() == other.as_str()
@@ -278,7 +232,7 @@ impl ToOwned for NodeIdRef {
     type Owned = NodeId;
 
     fn to_owned(&self) -> Self::Owned {
-        NodeId(self.0.to_string())
+        NodeId(Arc::from(&self.0))
     }
 }
 
@@ -327,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_node_id() {
-        let node_id = NodeId::new("test-node".to_string());
+        let node_id = NodeId::from_str("test-node");
         assert_eq!(node_id.as_str(), "test-node");
         assert_eq!(node_id, NodeIdRef::from_str("test-node"));
     }
@@ -339,7 +293,7 @@ mod tests {
             node_id: NodeId,
         }
         let node = Node {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
         };
         let serialized = serde_json::to_string(&node).unwrap();
         assert_eq!(serialized, r#"{"node_id":"test-node"}"#);

@@ -1,0 +1,30 @@
+[package]
+name = "quickwit-transport"
+description = "Node-to-node gRPC channels and hot-reloadable TLS for Quickwit"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+futures-util = { workspace = true, features = ["alloc"] }
+hyper-util = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-metrics = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+tonic = { workspace = true, features = ["channel"] }
+tower = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

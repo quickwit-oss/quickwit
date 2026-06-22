@@ -20,12 +20,12 @@ use std::time::Duration;
 use anyhow::Context;
 use quickwit_common::{Progress, is_sketches_index};
 use quickwit_metastore::{
-    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
-    ParquetSplitRecord, SplitState,
+    ListParquetSplitsQuery, PARQUET_SPLITS_PAGE_SIZE, ParquetSplitRecord, SplitState,
+    list_parquet_splits_page, list_parquet_splits_paginated,
 };
+use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{
-    DeleteMetricsSplitsRequest, DeleteSketchSplitsRequest, ListMetricsSplitsRequest,
-    ListSketchSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    DeleteMetricsSplitsRequest, DeleteSketchSplitsRequest, MarkMetricsSplitsForDeletionRequest,
     MarkSketchSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
@@ -68,9 +68,6 @@ impl ParquetSplitRemovalInfo {
         self.failed_parquet_splits.len()
     }
 }
-
-/// Maximum number of parquet splits to process per paginated query.
-const DELETE_PARQUET_SPLITS_BATCH_SIZE: usize = 10_000;
 
 /// Runs garbage collection for parquet splits.
 #[instrument(skip_all, fields(num_indexes=%indexes.len()))]
@@ -177,22 +174,13 @@ async fn list_parquet_splits(
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(states)
         .with_update_timestamp_lte(cutoff);
-
-    if is_sketches_index(&index_uid.index_id) {
-        let request = ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query)
-            .context("failed to build list sketch splits request")?;
-        protect_future(progress_opt, metastore.list_sketch_splits(request))
-            .await?
-            .deserialize_splits()
-            .context("failed to deserialize sketch splits")
-    } else {
-        let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
-            .context("failed to build list metrics splits request")?;
-        protect_future(progress_opt, metastore.list_metrics_splits(request))
-            .await?
-            .deserialize_splits()
-            .context("failed to deserialize metrics splits")
-    }
+    let kind = parquet_split_kind_for_index(index_uid);
+    protect_future(
+        progress_opt,
+        list_parquet_splits_paginated(metastore.clone(), kind, query),
+    )
+    .await
+    .context("failed to list parquet splits")
 }
 
 /// Marks the given splits for deletion in the metastore, grouped by index.
@@ -216,26 +204,32 @@ async fn mark_splits_for_deletion(
 
     for (index_uid_str, split_ids) in splits_by_index {
         let index_uid: IndexUid = index_uid_str.parse()?;
-        info!(index_uid=%index_uid, count=%split_ids.len(), "marking stale staged parquet splits for deletion");
+        let is_sketch = is_sketches_index(&index_uid.index_id);
+        for split_ids_chunk in split_ids.chunks(PARQUET_SPLITS_PAGE_SIZE) {
+            let split_ids = split_ids_chunk.to_vec();
+            info!(index_uid=%index_uid, count=%split_ids.len(), "marking stale staged parquet splits for deletion");
 
-        if is_sketches_index(&index_uid.index_id) {
-            protect_future(
-                progress_opt,
-                metastore.mark_sketch_splits_for_deletion(MarkSketchSplitsForDeletionRequest {
-                    index_uid: Some(index_uid),
-                    split_ids,
-                }),
-            )
-            .await?;
-        } else {
-            protect_future(
-                progress_opt,
-                metastore.mark_metrics_splits_for_deletion(MarkMetricsSplitsForDeletionRequest {
-                    index_uid: Some(index_uid),
-                    split_ids,
-                }),
-            )
-            .await?;
+            if is_sketch {
+                protect_future(
+                    progress_opt,
+                    metastore.mark_sketch_splits_for_deletion(MarkSketchSplitsForDeletionRequest {
+                        index_uid: Some(index_uid.clone()),
+                        split_ids,
+                    }),
+                )
+                .await?;
+            } else {
+                protect_future(
+                    progress_opt,
+                    metastore.mark_metrics_splits_for_deletion(
+                        MarkMetricsSplitsForDeletionRequest {
+                            index_uid: Some(index_uid.clone()),
+                            split_ids,
+                        },
+                    ),
+                )
+                .await?;
+            }
         }
     }
 
@@ -255,75 +249,39 @@ async fn delete_marked_parquet_splits(
 
     let mut query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec![SplitState::MarkedForDeletion])
-        .with_update_timestamp_lte(deletion_cutoff)
-        .with_limit(DELETE_PARQUET_SPLITS_BATCH_SIZE);
+        .with_update_timestamp_lte(deletion_cutoff);
 
-    let is_sketch = is_sketches_index(&index_uid.index_id);
+    let kind = parquet_split_kind_for_index(index_uid);
 
     loop {
         let sleep_duration = if let Some(max_rate) = get_maximum_split_deletion_rate_per_sec() {
-            Duration::from_secs(DELETE_PARQUET_SPLITS_BATCH_SIZE.div_ceil(max_rate) as u64)
+            Duration::from_secs(PARQUET_SPLITS_PAGE_SIZE.div_ceil(max_rate) as u64)
         } else {
             Duration::default()
         };
         let sleep_future = tokio::time::sleep(sleep_duration);
 
-        let splits: Vec<ParquetSplitRecord> = if is_sketch {
-            let request = match ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query) {
-                Ok(req) => req,
-                Err(err) => {
-                    error!(index_uid=%index_uid, error=?err, "failed to build list sketch splits request");
-                    break;
-                }
-            };
-            match protect_future(progress_opt, metastore.list_sketch_splits(request)).await {
-                Ok(resp) => match resp.deserialize_splits() {
-                    Ok(splits) => splits,
-                    Err(err) => {
-                        error!(index_uid=%index_uid, error=?err, "failed to deserialize sketch splits");
-                        break;
-                    }
-                },
-                Err(err) => {
-                    error!(index_uid=%index_uid, error=?err, "failed to list sketch splits");
-                    break;
-                }
-            }
-        } else {
-            let request = match ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
-            {
-                Ok(req) => req,
-                Err(err) => {
-                    error!(index_uid=%index_uid, error=?err, "failed to build list metrics splits request");
-                    break;
-                }
-            };
-            match protect_future(progress_opt, metastore.list_metrics_splits(request)).await {
-                Ok(resp) => match resp.deserialize_splits() {
-                    Ok(splits) => splits,
-                    Err(err) => {
-                        error!(index_uid=%index_uid, error=?err, "failed to deserialize metrics splits");
-                        break;
-                    }
-                },
-                Err(err) => {
-                    error!(index_uid=%index_uid, error=?err, "failed to list metrics splits");
-                    break;
-                }
+        let page = match protect_future(
+            progress_opt,
+            list_parquet_splits_page(metastore, kind, &mut query),
+        )
+        .await
+        {
+            Ok(page) => page,
+            Err(err) => {
+                error!(index_uid=%index_uid, error=?err, "failed to list parquet splits");
+                break;
             }
         };
+        let splits = page.splits;
 
-        // We page through the list of splits to delete using a limit and a `search_after` trick.
-        // To detect if this is the last page, we check if the number of splits is less than the
-        // limit.
-        assert!(splits.len() <= DELETE_PARQUET_SPLITS_BATCH_SIZE);
-        let splits_to_delete_possibly_remaining = splits.len() == DELETE_PARQUET_SPLITS_BATCH_SIZE;
+        // The metastore helper advanced the cursor when the page was full.
+        assert!(splits.len() <= PARQUET_SPLITS_PAGE_SIZE);
+        let splits_to_delete_possibly_remaining = page.has_next_page;
 
-        // Set split after which to search for the next loop.
-        let Some(last_split) = splits.last() else {
+        if splits.is_empty() {
             break;
-        };
-        query = query.with_after_split_id(last_split.metadata.split_id.to_string());
+        }
 
         let (batch_succeeded, batch_failed) = delete_parquet_splits_from_storage_and_metastore(
             metastore,
@@ -342,12 +300,20 @@ async fn delete_marked_parquet_splits(
             sleep_future.await;
         } else {
             // Stop the GC if this was the last batch.
-            // We are guaranteed to make progress due to .with_after_split_id().
+            // The paginator advanced the cursor before this batch was processed.
             break;
         }
     }
 
     Ok(removal_info)
+}
+
+fn parquet_split_kind_for_index(index_uid: &IndexUid) -> ParquetSplitKind {
+    if is_sketches_index(&index_uid.index_id) {
+        ParquetSplitKind::Sketches
+    } else {
+        ParquetSplitKind::Metrics
+    }
 }
 
 /// Deletes a single batch of parquet splits from storage and metastore.
@@ -441,6 +407,7 @@ async fn delete_parquet_splits_from_storage_and_metastore(
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;

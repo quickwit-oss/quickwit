@@ -13,12 +13,12 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 metrics = { workspace = true }
-metrics-exporter-otel = { workspace = true }
+metrics-opentelemetry = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
-opentelemetry-otlp = { workspace = true }
+opentelemetry-otlp = { workspace = true, features = ["experimental-grpc-retry", "experimental-http-retry"] }
 opentelemetry_sdk = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["parsing"] }

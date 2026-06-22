@@ -129,7 +129,7 @@ impl Ingester {
         replication_factor: usize,
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
             cluster.clone(),
             wal_dir_path,
@@ -158,16 +158,6 @@ impl Ingester {
         ingester.background_reset_shards();
 
         Ok(ingester)
-    }
-
-    /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
-    async fn check_decommissioning_status(&self, state: &mut InnerIngesterState) {
-        if state.status() != IngesterStatus::Decommissioning {
-            return;
-        }
-        if state.shards.values().all(|shard| shard.is_indexed()) {
-            state.set_status(IngesterStatus::Decommissioned).await;
-        }
     }
 
     /// Initializes a primary shard by creating a queue in the write-ahead log and inserting a new
@@ -220,8 +210,8 @@ impl Ingester {
         let rate_meter = RateMeter::default();
 
         let primary_shard = if let Some(follower_id) = &shard.follower_id {
-            let leader_id: NodeId = shard.leader_id.clone().into();
-            let follower_id: NodeId = follower_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&shard.leader_id);
+            let follower_id: NodeId = NodeId::from_str(follower_id);
 
             let replication_client = self
                 .init_replication_stream(
@@ -388,8 +378,8 @@ impl Ingester {
             Entry::Vacant(entry) => entry,
         };
         let open_request = OpenReplicationStreamRequest {
-            leader_id: leader_id.clone().into(),
-            follower_id: follower_id.clone().into(),
+            leader_id: leader_id.to_string(),
+            follower_id: follower_id.to_string(),
             replication_seqno: 0,
         };
         let open_message = SynReplicationMessage::new_open_request(open_request);
@@ -868,8 +858,8 @@ impl Ingester {
         if open_replication_stream_request.follower_id != self.self_node_id {
             return Err(IngestV2Error::Internal("routing error".to_string()));
         }
-        let leader_id: NodeId = open_replication_stream_request.leader_id.into();
-        let follower_id: NodeId = open_replication_stream_request.follower_id.into();
+        let leader_id: NodeId = NodeId::from_str(&open_replication_stream_request.leader_id);
+        let follower_id: NodeId = NodeId::from_str(&open_replication_stream_request.follower_id);
 
         let mut state_guard = self.state.lock_partially("open_replication_stream").await?;
         let status = state_guard.status();
@@ -947,7 +937,7 @@ impl Ingester {
         let self_node_id = self.self_node_id.clone();
         let observation_stream = status_stream.map(move |status| {
             let observation_message = ObservationMessage {
-                node_id: self_node_id.clone().into(),
+                node_id: self_node_id.to_string(),
                 status: status as i32,
             };
             Ok(observation_message)
@@ -1024,18 +1014,22 @@ impl Ingester {
             let queue_id = subrequest.queue_id();
             let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
 
-            if truncate_up_to_position_inclusive.is_eof() {
-                state_guard.delete_shard(&queue_id, "indexer RPC").await;
-            } else {
-                state_guard
-                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer RPC")
-                    .await;
-            }
+            // We deliberately do NOT delete the shard when the indexer truncates up to EOF over
+            // this gRPC path. Shard deletion is driven solely by the `ShardPositionsUpdate` gossip
+            // event (see the `EventSubscriber<ShardPositionsUpdate>` impl below), which is the same
+            // signal the control plane uses to delete the shard from the metastore and its model.
+            //
+            // Handling shard deletion through that single, shared signal keeps the ingester and
+            // control plane views consistent: the ingester never removes a shard the
+            // control plane does not also remove.
+            state_guard
+                .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer RPC")
+                .await;
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
         report_wal_usage(wal_usage);
 
-        self.check_decommissioning_status(&mut state_guard).await;
+        state_guard.check_decommissioning_status().await;
         let truncate_response = TruncateShardsResponse {};
         Ok(truncate_response)
     }
@@ -1195,7 +1189,7 @@ impl IngesterService for Ingester {
                 .delete_shard(&queue_id, "control-plane-retain-shards-rpc")
                 .await;
         }
-        self.check_decommissioning_status(&mut state_guard).await;
+        state_guard.check_decommissioning_status().await;
         Ok(RetainShardsResponse {})
     }
 
@@ -1254,9 +1248,7 @@ impl IngesterService for Ingester {
             for shard in state_guard.shards.values_mut() {
                 shard.close();
             }
-            self_clone
-                .check_decommissioning_status(&mut state_guard)
-                .await;
+            state_guard.check_decommissioning_status().await;
         });
         Ok(DecommissionResponse {})
     }
@@ -1287,6 +1279,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
                     .await;
             }
         }
+        state_guard.check_decommissioning_status().await;
     }
 }
 
@@ -1311,7 +1304,7 @@ mod tests {
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use bytes::Bytes;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test_with_id};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test_with_id};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
@@ -1359,7 +1352,7 @@ mod tests {
             let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
 
             Self {
-                node_id: "test-ingester".into(),
+                node_id: NodeId::from_str("test-ingester"),
                 control_plane,
                 ingester_pool: IngesterPool::default(),
                 disk_capacity: ByteSize::mb(256),
@@ -1373,7 +1366,7 @@ mod tests {
 
     impl IngesterForTest {
         pub fn with_node_id(mut self, node_id: &str) -> Self {
-            self.node_id = node_id.into();
+            self.node_id = NodeId::from_str(node_id);
             self
         }
 
@@ -1420,7 +1413,7 @@ mod tests {
 
             let tempdir = tempfile::tempdir().unwrap();
             let wal_dir_path = tempdir.path();
-            let transport = ChannelTransport::default();
+            let transport = ChitchatTransport::default();
 
             let gossip_advertise_port =
                 GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -1468,7 +1461,7 @@ mod tests {
 
     pub struct IngesterContext {
         tempdir: tempfile::TempDir,
-        _transport: ChannelTransport,
+        _transport: ChitchatTransport,
         node_id: NodeId,
         cluster: Cluster,
         ingester_pool: IngesterPool,
@@ -1545,7 +1538,14 @@ mod tests {
             .await;
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
-        assert_eq!(state_guard.shards.len(), 1);
+        assert_eq!(state_guard.shards.len(), 3);
+
+        let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        solo_shard_01.assert_is_solo();
+        solo_shard_01.assert_is_closed();
+        solo_shard_01.assert_replication_position(Position::offset(0u64));
+        solo_shard_01.assert_truncation_position(Position::offset(0u64));
+        assert!(solo_shard_01.is_advertisable);
 
         let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         solo_shard_02.assert_is_solo();
@@ -1553,6 +1553,13 @@ mod tests {
         solo_shard_02.assert_replication_position(Position::offset(1u64));
         solo_shard_02.assert_truncation_position(Position::offset(0u64));
         assert!(solo_shard_02.is_advertisable);
+
+        let solo_shard_03 = state_guard.shards.get(&queue_id_03).unwrap();
+        solo_shard_03.assert_is_solo();
+        solo_shard_03.assert_is_closed();
+        solo_shard_03.assert_replication_position(Position::Beginning);
+        solo_shard_03.assert_truncation_position(Position::Beginning);
+        assert!(solo_shard_03.is_advertisable);
 
         state_guard
             .mrecordlog
@@ -3260,16 +3267,79 @@ mod tests {
             .unwrap();
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
-
-        assert_eq!(state_guard.shards.len(), 1);
-        assert_eq!(state_guard.doc_mappers.len(), 1);
+        assert_eq!(state_guard.shards.len(), 2);
+        assert_eq!(state_guard.doc_mappers.len(), 2);
 
         assert!(state_guard.shards.contains_key(&queue_id_01));
+        assert!(state_guard.shards.contains_key(&queue_id_02));
         assert!(state_guard.doc_mappers.contains_key(&doc_mapping_uid_01));
+        assert!(state_guard.doc_mappers.contains_key(&doc_mapping_uid_02));
+
+        let solo_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
+        solo_shard_02.assert_truncation_position(Position::eof(0u64));
 
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[(1, [0, 0], "test-doc-bar")]);
+
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_02, .., &[]);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_truncate_empty_shard_to_eof() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(r#"{{ "doc_mapping_uid": "{doc_mapping_uid}" }}"#);
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            doc_mapping_uid: Some(doc_mapping_uid),
+            ..Default::default()
+        };
+
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                &doc_mapping_json,
+                Instant::now(),
+                true,
+            )
+            .await
+            .unwrap();
+        state_guard.shards.get_mut(&queue_id).unwrap().close();
+        drop(state_guard);
+
+        let truncate_shards_request = TruncateShardsRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            subrequests: vec![TruncateShardsSubrequest {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+                truncate_up_to_position_inclusive: Some(Position::Beginning.as_eof()),
+            }],
+        };
+        ingester
+            .truncate_shards(truncate_shards_request.clone())
+            .await
+            .unwrap();
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        shard.assert_truncation_position(Position::Beginning.as_eof());
+        assert!(state_guard.mrecordlog.queue_exists(&queue_id));
+        state_guard.mrecordlog.assert_records_eq(&queue_id, .., &[]);
     }
 
     #[tokio::test]
@@ -3640,7 +3710,9 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
 
-        let shard = IngesterShard::new_solo(index_uid, source_id, ShardId::from(1)).build();
+        let shard = IngesterShard::new_solo(index_uid, source_id, ShardId::from(1))
+            .with_replication_position_inclusive(Position::offset(12u64))
+            .build();
         let queue_id = shard.queue_id();
 
         state_guard.shards.insert(queue_id.clone(), shard);
@@ -3675,17 +3747,13 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
 
-        ingester
-            .check_decommissioning_status(&mut state_guard)
-            .await;
+        state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Ready);
 
         state_guard
             .set_status(IngesterStatus::Decommissioning)
             .await;
-        ingester
-            .check_decommissioning_status(&mut state_guard)
-            .await;
+        state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
 
         state_guard
@@ -3702,18 +3770,68 @@ mod tests {
         let queue_id = solo_shard.queue_id();
 
         state_guard.shards.insert(queue_id.clone(), solo_shard);
-        ingester
-            .check_decommissioning_status(&mut state_guard)
-            .await;
+        state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioning);
 
         let shard = state_guard.shards.get_mut(&queue_id).unwrap();
         shard.truncation_position_inclusive = Position::Beginning.as_eof();
+        state_guard.check_decommissioning_status().await;
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioning);
 
-        ingester
-            .check_decommissioning_status(&mut state_guard)
-            .await;
+        state_guard.shards.remove(&queue_id);
+        state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
+    }
+
+    #[tokio::test]
+    async fn test_decommission_completes_when_empty_shard_deleted_via_gossip() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let event_broker = EventBroker::default();
+        ingester.subscribe(&event_broker);
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
+        let empty_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), shard_id.clone())
+                .with_state(ShardState::Closed)
+                .build();
+
+        let mut status_rx = ingester.state.status_rx.clone();
+        {
+            let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+            state_guard.shards.insert(queue_id.clone(), empty_shard);
+            state_guard
+                .set_status(IngesterStatus::Decommissioning)
+                .await;
+        }
+
+        assert_eq!(
+            *status_rx.borrow_and_update(),
+            IngesterStatus::Decommissioning
+        );
+
+        event_broker.publish(ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: source_id.clone(),
+            },
+            updated_shard_positions: vec![(shard_id, Position::Beginning.as_eof())],
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while *status_rx.borrow_and_update() != IngesterStatus::Decommissioned {
+                status_rx.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("ingester should reach Decommissioned once its empty shard is deleted via gossip");
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        assert!(!state_guard.shards.contains_key(&queue_id));
     }
 
     #[tokio::test]

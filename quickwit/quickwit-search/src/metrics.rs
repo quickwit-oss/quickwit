@@ -43,6 +43,7 @@ pub struct SplitSearchOutcomeCounters {
     pub cache_hit: Counter,
     pub pruned_before_warmup: Counter,
     pub cancel_warmup: Counter,
+    pub pruned_during_warmup: Counter,
     pub pruned_after_warmup: Counter,
     pub cancel_cpu_queue: Counter,
     pub cancel_cpu: Counter,
@@ -56,6 +57,7 @@ impl Default for SplitSearchOutcomeCounters {
             cache_hit: Counter::local(),
             pruned_before_warmup: Counter::local(),
             cancel_warmup: Counter::local(),
+            pruned_during_warmup: Counter::local(),
             pruned_after_warmup: Counter::local(),
             cancel_cpu_queue: Counter::local(),
             cancel_cpu: Counter::local(),
@@ -70,6 +72,7 @@ impl fmt::Display for SplitSearchOutcomeCounters {
         print_if_not_null("cache_hit", &self.cache_hit, f)?;
         print_if_not_null("pruned_before_warmup", &self.pruned_before_warmup, f)?;
         print_if_not_null("cancel_warmup", &self.cancel_warmup, f)?;
+        print_if_not_null("pruned_during_warmup", &self.pruned_during_warmup, f)?;
         print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
         print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
         print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
@@ -92,6 +95,7 @@ impl SplitSearchOutcomeCounters {
             cache_hit: counter("cache_hit"),
             pruned_before_warmup: counter("pruned_before_warmup"),
             cancel_warmup: counter("cancel_warmup"),
+            pruned_during_warmup: counter("pruned_during_warmup"),
             pruned_after_warmup: counter("pruned_after_warmup"),
             cancel_cpu_queue: counter("cancel_cpu_queue"),
             cancel_cpu: counter("cancel_cpu"),
@@ -229,6 +233,12 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyHistogram = laz
     buckets: pseudo_exponential_bytes_buckets(),
 );
 
+pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
+    name: "leaf_search_warmup_ongoing_num_bytes",
+    description: "Total bytes currently held in warmup caches across all in-flight split searches.",
+    subsystem: "search",
+);
+
 pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
         name: "job_assigned_total",
         description: "Number of job assigned to searchers, per affinity rank.",
@@ -238,5 +248,11 @@ pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
 pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         name: "searcher_local_kv_store_size_bytes",
         description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",
+        subsystem: "search",
+);
+
+pub(crate) static SEARCHER_NODE_LOAD: LazyGauge = lazy_gauge!(
+        name: "searcher_node_load",
+        description: "Current load on this searcher node, expressed as the sum of job costs for all queued and active split search tasks.",
         subsystem: "search",
 );

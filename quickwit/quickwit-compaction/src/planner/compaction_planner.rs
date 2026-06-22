@@ -106,7 +106,7 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
         msg: ReportStatusRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<CompactionResult<ReportStatusResponse>, ActorExitStatus> {
-        let node_id = NodeId::from(msg.node_id);
+        let node_id = NodeId::from_str(msg.node_id.as_str());
         self.state.process_successes(&msg.successes);
         self.state.process_failures(&msg.failures);
         self.state.update_heartbeats(&node_id, &msg.in_progress);
@@ -391,7 +391,7 @@ mod tests {
             ..Default::default()
         });
         planner.state.update_heartbeats(
-            &NodeId::from("test-node"),
+            &NodeId::from_str("test-node"),
             &[CompactionInProgress {
                 task_id: "t-1".to_string(),
                 index_uid: Some(index_uid.clone()),
@@ -523,7 +523,7 @@ mod tests {
             .returning(move |_| Ok(index_metadata_response.clone()));
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
 
         planner.scan_and_plan().await.unwrap();
         let assignments = planner.assign_tasks(&node_id, 10);
@@ -579,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_assign_tasks_returns_assignments_and_drains_queue() {
         let (mut planner, index_uid) = planner_with_pending_merges(&["s1", "s2"]).await;
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
 
         // First call: get the assignment.
         let assignments = planner.assign_tasks(&node_id, 10);
@@ -602,7 +602,7 @@ mod tests {
     async fn test_assign_tasks_respects_available_slots() {
         // 4 splits with merge_factor=2 produces 2 merge operations.
         let (mut planner, _) = planner_with_pending_merges(&["s1", "s2", "s3", "s4"]).await;
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
 
         // Request only 1 slot.
         let assignments = planner.assign_tasks(&node_id, 1);
@@ -616,7 +616,7 @@ mod tests {
     #[tokio::test]
     async fn test_report_status_success_frees_splits_for_future_merges() {
         let (mut planner, index_uid) = planner_with_pending_merges(&["s1", "s2"]).await;
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
 
         let assignments = planner.assign_tasks(&node_id, 10);
         assert_eq!(assignments.len(), 1);

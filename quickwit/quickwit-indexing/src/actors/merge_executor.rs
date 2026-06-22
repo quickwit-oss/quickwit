@@ -485,7 +485,7 @@ impl MergeExecutor {
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
-                node_id: NodeId::new(split.node_id),
+                node_id: NodeId::from_str(&split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
                 doc_mapping_uid: split.doc_mapping_uid,

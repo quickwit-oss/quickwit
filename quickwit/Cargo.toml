@@ -42,6 +42,7 @@ members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 # The following list excludes `quickwit-metastore-utils`
@@ -84,6 +85,7 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-transport",
 ]
 
 [workspace.package]
@@ -96,6 +98,7 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
 arrow = { version = "58", default-features = false, features = ["ipc"] }
@@ -111,7 +114,7 @@ bitpacking = "0.9.3"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.3.1", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.10.1"
+chitchat = "0.11.0"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -172,7 +175,7 @@ lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
-metrics-exporter-otel = "0.3"
+metrics-opentelemetry = "=0.24032.8"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
@@ -185,10 +188,10 @@ numfmt = "1.2"
 oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
-opentelemetry = "0.31"
-opentelemetry-appender-tracing = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
+opentelemetry = "0.32"
+opentelemetry-appender-tracing = "0.32"
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
 parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
@@ -311,7 +314,7 @@ tower-http = { version = "0.6", features = [
   "trace",
 ] }
 tracing = "0.1"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
   "json",
@@ -365,7 +368,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.56", default-features = false }
+opendal = { version = "0.56", default-features = false, features = ["reqwest-rustls-tls"] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 quickwit-actors = { path = "quickwit-actors" }
@@ -405,8 +408,9 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "46b3fb9", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1e859fd", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

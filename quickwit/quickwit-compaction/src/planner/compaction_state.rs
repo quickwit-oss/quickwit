@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_process_successes_and_failures_clear_in_flight() {
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
         let mut state = CompactionState::new();
 
         // Simulate what plan_partition + record_assignment does:
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_update_heartbeats_adopts_unknown_tasks() {
-        let node_id = NodeId::from("worker-1");
+        let node_id = NodeId::from_str("worker-1");
         let mut state = CompactionState::new();
 
         // Simulate a split that was tracked as needing compaction.
@@ -431,7 +431,7 @@ mod tests {
             .collect();
 
         // Splits are already in in_flight_split_ids from plan_partition.
-        state.record_assignment("task-1".to_string(), split_ids.clone(), NodeId::from("w1"));
+        state.record_assignment("task-1".to_string(), split_ids.clone(), NodeId::from_str("w1"));
 
         for split_id in &split_ids {
             assert!(state.is_split_tracked(split_id));

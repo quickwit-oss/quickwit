@@ -239,8 +239,9 @@ impl OtlpGrpcMetricsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
-        let labels =
-            label_values!(OTLP_GRPC_LABEL_NAMES => "metrics", index_id, "grpc", "protobuf");
+        let labels = label_values!(
+            OTLP_GRPC_LABEL_NAMES => "metrics", "metrics", index_id, "grpc", "protobuf"
+        );
         counter!(parent: INGESTED_DATA_POINTS_TOTAL, labels: [labels])
             .inc_by(num_data_points - num_parse_errors);
         counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).inc_by(num_bytes);
@@ -332,8 +333,9 @@ impl OtlpGrpcMetricsService {
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels =
-            label_values!(OTLP_GRPC_LABEL_NAMES => "metrics", index_id.clone(), "grpc", "protobuf");
+        let labels = label_values!(
+            OTLP_GRPC_LABEL_NAMES => "metrics", "metrics", index_id.clone(), "grpc", "protobuf"
+        );
         counter!(parent: REQUESTS_TOTAL, labels: [labels]).inc();
 
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
@@ -346,7 +348,7 @@ impl OtlpGrpcMetricsService {
 
         let elapsed = start.elapsed().as_secs_f64();
         let error_labels = label_values!(
-            OTLP_GRPC_ERROR_LABEL_NAMES => "metrics", index_id, "grpc", "protobuf", is_error
+            OTLP_GRPC_ERROR_LABEL_NAMES => "metrics", "metrics", index_id, "grpc", "protobuf", is_error
         );
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).observe(elapsed);
 

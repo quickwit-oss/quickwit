@@ -11,12 +11,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-fnv = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
@@ -62,7 +62,13 @@ reqwest = { workspace = true, optional = true }
 http = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
+# Match OpenDAL's internal reqwest major. `default-features = false` is
+# intentional: the HTTPS regression test should get TLS only from OpenDAL's
+# `reqwest-rustls-tls` feature, not from this dev-dependency.
+reqwest-013 = { package = "reqwest", version = "0.13", default-features = false }
+rustls = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 aws-sdk-s3 = { workspace = true }

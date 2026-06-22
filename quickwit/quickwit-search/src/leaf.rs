@@ -27,10 +27,11 @@ use anyhow::Context;
 use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
-use quickwit_metrics::HistogramTimer;
+use quickwit_metrics::{GaugeGuard, HistogramTimer};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
@@ -52,13 +53,14 @@ use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
 use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::{JoinError, JoinSet};
+use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
-    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+    LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES, SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
 };
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
@@ -254,6 +256,33 @@ pub(crate) async fn open_index_with_caches(
     Ok((index, hot_directory))
 }
 
+/// Outcome of [`warmup`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WarmupOutcome {
+    /// The warmup completed; the split must be searched.
+    Completed,
+    /// A required term has an empty posting list, so the query provably matches
+    /// nothing in this split. The remaining warmup downloads were cancelled.
+    ProvablyEmpty,
+}
+
+/// Runs `fut`, racing it against `cancel`. If cancellation fires first, the
+/// (possibly in-flight) future is dropped — aborting its downloads — and
+/// `Ok(())` is returned. With no token, `fut` simply runs to completion.
+async fn run_cancellable(
+    cancel: Option<&CancellationToken>,
+    fut: impl std::future::Future<Output = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    let Some(cancel) = cancel else {
+        return fut.await;
+    };
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Ok(()),
+        result = fut => result,
+    }
+}
+
 /// Tantivy search does not make it possible to fetch data asynchronously during
 /// search.
 ///
@@ -264,32 +293,69 @@ pub(crate) async fn open_index_with_caches(
 /// are position required too), and the collector.
 ///
 /// * `query` - query is used to extract the terms and their fields which will be loaded from the
-/// inverted_index.
+///   inverted_index.
 ///
 /// * `term_dict_field_names` - A list of fields, where the whole dictionary needs to be loaded.
-/// This is e.g. required for term aggregation, since we don't know in advance which terms are going
-/// to be hit.
+///   This is e.g. required for term aggregation, since we don't know in advance which terms are
+///   going to be hit.
 #[instrument(skip_all)]
-pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
+pub(crate) async fn warmup(
+    searcher: &Searcher,
+    warmup_info: &WarmupInfo,
+) -> anyhow::Result<WarmupOutcome> {
     debug!(warmup_info=?warmup_info);
-    let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
-        .instrument(debug_span!("warm_up_terms"));
-    let warm_up_term_ranges_future =
-        warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field)
-            .instrument(debug_span!("warm_up_term_ranges"));
-    let warm_up_term_dict_future =
-        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields)
-            .instrument(debug_span!("warm_up_term_dicts"));
-    let warm_up_fastfields_future = warm_up_fastfields(searcher, &warmup_info.fast_fields)
-        .instrument(debug_span!("warm_up_fastfields"));
-    let warm_up_fieldnorms_future = warm_up_fieldnorms(searcher, warmup_info.field_norms)
-        .instrument(debug_span!("warm_up_fieldnorms"));
+
+    // Early-abort optimization: the split's downloads can be cancelled as soon as
+    // a *required* term is found to have an empty posting list, which proves the
+    // query matches nothing here. This conclusion is only sound for the whole
+    // split when there is a single segment (the common case in Quickwit), so we
+    // only arm the token then. `warm_up_terms` fires the token; every other
+    // warmup task observes it through `run_cancellable` and bails.
+    let abort_token: Option<CancellationToken> =
+        if searcher.segment_readers().len() == 1 && !warmup_info.required_terms.is_empty() {
+            Some(CancellationToken::new())
+        } else {
+            None
+        };
+
+    let warm_up_terms_future = warm_up_terms(
+        searcher,
+        &warmup_info.terms_grouped_by_field,
+        &warmup_info.required_terms,
+        abort_token.as_ref(),
+    )
+    .instrument(debug_span!("warm_up_terms"));
+    let warm_up_term_ranges_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field),
+    )
+    .instrument(debug_span!("warm_up_term_ranges"));
+    let warm_up_term_dict_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields),
+    )
+    .instrument(debug_span!("warm_up_term_dicts"));
+    let warm_up_fastfields_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_fastfields(searcher, &warmup_info.fast_fields),
+    )
+    .instrument(debug_span!("warm_up_fastfields"));
+    let warm_up_fieldnorms_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_fieldnorms(searcher, warmup_info.field_norms),
+    )
+    .instrument(debug_span!("warm_up_fieldnorms"));
     // TODO merge warm_up_postings into warm_up_term_dict_fields
-    let warm_up_postings_future = warm_up_postings(searcher, &warmup_info.term_dict_fields)
-        .instrument(debug_span!("warm_up_postings"));
-    let warm_up_automatons_future =
-        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field)
-            .instrument(debug_span!("warm_up_automatons"));
+    let warm_up_postings_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_postings(searcher, &warmup_info.term_dict_fields),
+    )
+    .instrument(debug_span!("warm_up_postings"));
+    let warm_up_automatons_future = run_cancellable(
+        abort_token.as_ref(),
+        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field),
+    )
+    .instrument(debug_span!("warm_up_automatons"));
 
     tokio::try_join!(
         warm_up_terms_future,
@@ -301,7 +367,15 @@ pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> any
         warm_up_automatons_future,
     )?;
 
-    Ok(())
+    let provably_empty = match &abort_token {
+        Some(abort_token) => abort_token.is_cancelled(),
+        None => false,
+    };
+    if provably_empty {
+        Ok(WarmupOutcome::ProvablyEmpty)
+    } else {
+        Ok(WarmupOutcome::Completed)
+    }
 }
 
 async fn warm_up_term_dict_fields(
@@ -377,6 +451,8 @@ async fn warm_up_fastfields(
 async fn warm_up_terms(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashMap<Term, bool>>,
+    required_terms: &HashSet<Term>,
+    abort_token: Option<&CancellationToken>,
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
@@ -384,13 +460,30 @@ async fn warm_up_terms(
             let inv_idx = segment_reader.inverted_index(*field)?;
             for (term, position_needed) in terms.iter() {
                 let inv_idx_clone = inv_idx.clone();
-                warm_up_futures
-                    .push(async move { inv_idx_clone.warm_postings(term, *position_needed).await });
+                // Only a required term can prove the query empty. When such a
+                // term turns out to have an empty posting list, fire the token so
+                // the rest of the warmup is cancelled.
+                let cancel_on_empty = match abort_token {
+                    Some(abort_token) if required_terms.contains(term) => Some(abort_token),
+                    _ => None,
+                };
+                warm_up_futures.push(async move {
+                    let found = inv_idx_clone.warm_postings(term, *position_needed).await?;
+                    if !found && let Some(abort_token) = cancel_on_empty {
+                        abort_token.cancel();
+                    }
+                    anyhow::Ok(())
+                });
             }
         }
     }
-    try_join_all(warm_up_futures).await?;
-    Ok(())
+    // Race against the token so we also stop loading the *other* terms' postings
+    // once a required term has proven the query empty.
+    run_cancellable(abort_token, async move {
+        try_join_all(warm_up_futures).await?;
+        anyhow::Ok(())
+    })
+    .await
 }
 
 async fn warm_up_term_ranges(
@@ -484,6 +577,36 @@ fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
         num_successful_splits: 1,
         intermediate_aggregation_result: None,
         resource_stats: None,
+    }
+}
+
+/// Wraps a single split's [`SplitResourceStats`] into a [`LeafResourceStats`],
+/// attributing it to either local execution or lambda offload.
+///
+/// Lambda-executed splits do not contribute to `split_resources_sum` /
+/// `split_resources_worst` — those aggregates are reserved for locally-executed
+/// splits. The `lambda_num_*` totals (success + failure) are injected once by the
+/// caller in `run_offloaded_search_tasks`, so only the success counters are set
+/// here.
+fn leaf_resource_stats_for_split(split_stats: SplitResourceStats) -> LeafResourceStats {
+    if quickwit_common::is_running_in_lambda() {
+        LeafResourceStats {
+            lambda_success_num_splits: 1,
+            lambda_success_num_docs: split_stats.split_num_docs,
+            ..Default::default()
+        }
+    } else {
+        LeafResourceStats {
+            localexec_num_splits: 1,
+            localexec_num_docs: split_stats.split_num_docs,
+            split_resources_sum: Some(split_stats),
+            split_resources_worst: Some(split_stats),
+            min_wait_for_search_permit_microsecs: Some(
+                split_stats.wait_for_search_permit_microsecs,
+            ),
+            min_wait_for_cpu_pool_microsecs: Some(split_stats.wait_for_cpu_pool_microsecs),
+            ..Default::default()
+        }
     }
 }
 
@@ -589,7 +712,7 @@ async fn leaf_search_single_split(
 
     let warmup_start = Instant::now();
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
-    warmup(&searcher, &warmup_info).await?;
+    let warmup_outcome = warmup(&searcher, &warmup_info).await?;
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
@@ -601,8 +724,48 @@ async fn leaf_search_single_split(
         );
     }
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
+    let _warmup_bytes_guard = GaugeGuard::new(
+        &LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES,
+        warmup_size.as_u64() as f64,
+    );
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
+
+    if warmup_outcome == WarmupOutcome::ProvablyEmpty {
+        // A required term's posting list was empty, so the query matches no
+        // document in this split. The remaining warmup downloads were aborted;
+        // skip the search and report an empty (but counted) result. This is the
+        // identity for hit and aggregation merging.
+        //
+        // We still report the bytes pulled during the (aborted) warmup and the
+        // time spent queued for the search permit, so resource stats stay
+        // accurate; only the CPU-queue and CPU phases never happened.
+        let (download_num_bytes, download_num_requests) = download_counters.snapshot();
+        let split_stats = SplitResourceStats {
+            split_num_docs: split.num_docs,
+            matched_num_docs: 0,
+            input_memory_bytes: warmup_size.as_u64(),
+            download_num_bytes,
+            download_num_requests,
+            wait_for_search_permit_microsecs: search_permit.wait_for_acquisition().as_micros()
+                as u64,
+            warmup_microsecs: warmup_duration.as_micros() as u64,
+            wait_for_cpu_pool_microsecs: 0,
+            cpu_search_microsecs: 0,
+        };
+        let mut leaf_search_response = get_leaf_resp_from_count(0);
+        leaf_search_response.resource_stats = Some(leaf_resource_stats_for_split(split_stats));
+        // Cache the empty result so repeated identical queries hit the partial
+        // result cache instead of re-opening the split and re-probing the term
+        // every time (matching what the normal search path does).
+        ctx.searcher_context.leaf_search_cache.put(
+            split.clone(),
+            search_request.clone(),
+            leaf_search_response.clone(),
+        );
+        leaf_search_state_guard.set_state(SplitSearchState::PrunedDuringWarmup);
+        return Ok(Some(leaf_search_response));
+    }
 
     let split_num_docs = split.num_docs;
     let span = info_span!("tantivy_search");
@@ -651,39 +814,8 @@ async fn leaf_search_single_split(
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
                 };
-                let resource_stats = if quickwit_common::is_running_in_lambda() {
-                    // Running inside an AWS Lambda runtime: this split was
-                    // dispatched here via lambda offload. Per the proto
-                    // contract, lambda-executed splits do not contribute
-                    // to `split_resources_worst` / `split_resources_sum` — those
-                    // aggregates are reserved for locally-executed splits.
-                    //
-                    // Only the success counters are set here. The
-                    // `lambda_num_*` totals (success + failure) are
-                    // injected once by the caller in
-                    // `run_offloaded_search_tasks` so they reflect every
-                    // dispatched split, not just the ones that came back.
-                    LeafResourceStats {
-                        lambda_success_num_splits: 1,
-                        lambda_success_num_docs: split_num_docs,
-                        ..Default::default()
-                    }
-                } else {
-                    LeafResourceStats {
-                        localexec_num_splits: 1,
-                        localexec_num_docs: split_num_docs,
-                        split_resources_sum: Some(split_stats),
-                        split_resources_worst: Some(split_stats),
-                        min_wait_for_search_permit_microsecs: Some(
-                            split_stats.wait_for_search_permit_microsecs,
-                        ),
-                        min_wait_for_cpu_pool_microsecs: Some(
-                            split_stats.wait_for_cpu_pool_microsecs,
-                        ),
-                        ..Default::default()
-                    }
-                };
-                leaf_search_response.resource_stats = Some(resource_stats);
+                leaf_search_response.resource_stats =
+                    Some(leaf_resource_stats_for_split(split_stats));
                 leaf_search_state_guard.set_state(SplitSearchState::Success);
                 Result::<_, TantivyError>::Ok(Some((
                     simplified_search_request,
@@ -1379,7 +1511,7 @@ pub async fn multi_index_leaf_search(
     }
 
     let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
-        .run_cpu_intensive(|| {
+        .run_cpu_intensive_with_priority(Priority::High, || {
             incremental_merge_collector
                 .finalize()
                 .map_err(SearchError::from)
@@ -1388,10 +1520,12 @@ pub async fn multi_index_leaf_search(
         .await
         .context("failed to merge split search responses")??;
     let wall_time_microsecs = leaf_start.elapsed().as_micros() as u64;
-    leaf_search_response
+    let search_pool_cpu_threads = crate::search_thread_pool().num_threads() as u64;
+    let resource_stats = leaf_search_response
         .resource_stats
-        .get_or_insert_with(LeafResourceStats::default)
-        .wall_time_microsecs = wall_time_microsecs;
+        .get_or_insert_with(LeafResourceStats::default);
+    resource_stats.wall_time_microsecs = wall_time_microsecs;
+    resource_stats.search_pool_cpu_threads = search_pool_cpu_threads;
     Ok(leaf_search_response)
 }
 
@@ -1622,15 +1756,20 @@ async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
 ) -> ScheduleSearchTaskResult {
-    let permit_sizes: Vec<ByteSize> = splits
+    let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
         .iter()
         .map(|(split, _)| {
-            compute_initial_memory_allocation(
+            let memory_allocation = compute_initial_memory_allocation(
                 split,
                 searcher_context
                     .searcher_config
                     .warmup_single_split_initial_allocation,
-            )
+            );
+            let job_cost = crate::root::compute_split_cost(split.num_docs);
+            crate::search_permit_provider::SplitSearchTaskMetadata {
+                memory_allocation,
+                job_cost,
+            }
         })
         .collect();
 
@@ -1644,7 +1783,7 @@ async fn schedule_search_tasks(
 
     let search_permit_futures = searcher_context
         .search_permit_provider
-        .get_permits_with_offload(permit_sizes, offload_threshold)
+        .get_permits_with_offload(task_metadata, offload_threshold)
         .await;
 
     let splits_to_run_on_lambda: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
@@ -1779,7 +1918,9 @@ pub async fn single_doc_mapping_leaf_search(
 
     let leaf_search_response_result: tantivy::Result<LeafSearchResponse> =
         crate::search_thread_pool()
-            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .run_cpu_intensive_with_priority(Priority::High, || {
+                incremental_merge_collector.finalize()
+            })
             .instrument(info_span!("incremental_merge_intermediate"))
             .await
             .context("failed to merge split search responses: thread panicked")?;
@@ -1903,6 +2044,7 @@ enum SplitSearchState {
     CacheHit,
     PrunedBeforeWarmup,
     WarmUp,
+    PrunedDuringWarmup,
     PrunedAfterWarmup,
     CpuQueue,
     Cpu,
@@ -1916,6 +2058,7 @@ impl SplitSearchState {
             SplitSearchState::CacheHit => counters.cache_hit.inc(),
             SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.inc(),
             SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
+            SplitSearchState::PrunedDuringWarmup => counters.pruned_during_warmup.inc(),
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
             SplitSearchState::Cpu => counters.cancel_cpu.inc(),
@@ -2580,6 +2723,75 @@ mod tests {
 
         assert!(directory_size_larger > directory_size_smaller + 100);
         assert!(larger_size > smaller_size + 100);
+    }
+
+    /// Builds a single-segment in-RAM searcher with one text field, one document
+    /// per provided value.
+    fn ram_searcher_with_text(field_name: &str, docs: &[&str]) -> (Searcher, Field) {
+        let mut schema_builder = Schema::builder();
+        let field = schema_builder.add_text_field(field_name, tantivy::schema::TEXT);
+        let schema = schema_builder.build();
+        let index = Index::create_in_ram(schema);
+        let mut index_writer = index.writer(15_000_000).unwrap();
+        for doc_text in docs {
+            let mut doc = TantivyDocument::default();
+            doc.add_text(field, doc_text);
+            index_writer.add_document(doc).unwrap();
+        }
+        index_writer.commit().unwrap();
+        let searcher = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .unwrap()
+            .searcher();
+        (searcher, field)
+    }
+
+    fn warmup_info_with_required(terms: &[&Term], required: &[&Term]) -> WarmupInfo {
+        let mut terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>> = HashMap::new();
+        for term in terms {
+            terms_grouped_by_field
+                .entry(term.field())
+                .or_default()
+                .insert((*term).clone(), false);
+        }
+        WarmupInfo {
+            terms_grouped_by_field,
+            required_terms: required.iter().map(|term| (*term).clone()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_warmup_aborts_when_required_term_is_missing() {
+        let (searcher, body) = ram_searcher_with_text("body", &["hello world"]);
+        // Single segment: the early-abort optimization is armed.
+        assert_eq!(searcher.segment_readers().len(), 1);
+
+        let present = Term::from_field_text(body, "hello");
+        let missing = Term::from_field_text(body, "missing");
+
+        // A required term with an empty posting list proves the query empty.
+        let warmup_info = warmup_info_with_required(&[&present, &missing], &[&missing]);
+        assert_eq!(
+            warmup(&searcher, &warmup_info).await.unwrap(),
+            WarmupOutcome::ProvablyEmpty
+        );
+
+        // The required term is present: warmup completes normally.
+        let warmup_info = warmup_info_with_required(&[&present], &[&present]);
+        assert_eq!(
+            warmup(&searcher, &warmup_info).await.unwrap(),
+            WarmupOutcome::Completed
+        );
+
+        // A missing term that is not required must not abort.
+        let warmup_info = warmup_info_with_required(&[&present, &missing], &[]);
+        assert_eq!(
+            warmup(&searcher, &warmup_info).await.unwrap(),
+            WarmupOutcome::Completed
+        );
     }
 
     fn nz(n: usize) -> std::num::NonZeroUsize {

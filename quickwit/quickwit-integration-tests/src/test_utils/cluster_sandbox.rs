@@ -27,8 +27,8 @@ use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{HealthConfig, NodeConfig};
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_client::SpanReaderPluginClient;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_client::LogsServiceClient;
@@ -54,6 +54,7 @@ use super::shutdown::NodeShutdownHandle;
 pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
     pub enable_otlp: bool,
+    pub enable_health_check: bool,
 }
 
 impl TestNodeConfig {
@@ -74,11 +75,20 @@ impl TestNodeConfig {
         );
         tcp_listener_resolver.add_listener(rest_tcp_listener).await;
         tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
+        if self.enable_health_check {
+            let health_tcp_listener = TcpListener::bind(socket).await.unwrap();
+            config.health_config = Some(HealthConfig {
+                listen_addr: health_tcp_listener.local_addr().unwrap(),
+            });
+            tcp_listener_resolver
+                .add_listener(health_tcp_listener)
+                .await;
+        }
         config.indexer_config.enable_otlp_endpoint = self.enable_otlp;
         config.enabled_services.clone_from(&self.services);
         config.jaeger_config.enable_endpoint = true;
         config.cluster_id.clone_from(&cluster_id);
-        config.node_id = NodeId::new(format!("test-node-{node_idx}"));
+        config.node_id = NodeId::from_str(&format!("test-node-{node_idx}"));
         let root_data_dir = temp_dir.path().to_path_buf();
         config.data_dir_path = root_data_dir.join(config.node_id.as_str());
         config.metastore_uri =
@@ -110,6 +120,7 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            enable_health_check: false,
         });
         self
     }
@@ -121,7 +132,17 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: true,
+            enable_health_check: false,
         });
+        self
+    }
+
+    /// Enables the plaintext health-check server on the most recently added node.
+    pub fn enable_health_check(mut self) -> Self {
+        self.node_configs
+            .last_mut()
+            .expect("a node must be added before enabling the health check server")
+            .enable_health_check = true;
         self
     }
 
@@ -301,6 +322,7 @@ impl ClusterSandbox {
         self.add_node_inner(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            enable_health_check: false,
         })
         .await;
     }
@@ -342,41 +364,72 @@ impl ClusterSandbox {
             .connect_lazy()
     }
 
-    /// Returns a client to one of the nodes that runs the specified service
-    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
-        let node_config = self.find_node_for_service(service);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
+    fn tls_parts(
+        node_config: &NodeConfig,
+    ) -> (
+        Option<reqwest::tls::Certificate>,
+        Option<reqwest::tls::Identity>,
+    ) {
+        let Some(tls_conf) = &node_config.rest_config.tls_config else {
+            return (None, None);
+        };
+        let ca_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
+        let ca_cert = reqwest::tls::Certificate::from_pem(&ca_bytes).unwrap();
+        let identity = if tls_conf.verify_client_cert {
+            let mut pem = std::fs::read(&tls_conf.key_path).unwrap();
+            pem.extend(std::fs::read(&tls_conf.cert_path).unwrap());
+            Some(reqwest::tls::Identity::from_pem(&pem).unwrap())
         } else {
             None
         };
+        (Some(ca_cert), identity)
+    }
 
+    /// Returns a client to one of the nodes that runs the specified service
+    pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
+        let node_config = self.find_node_for_service(service);
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .build()
+    }
+
+    /// Returns a client targeting the node with the given id specifically, or `None` if no such
+    /// node exists. Unlike [`Self::rest_client`], which returns a client for an arbitrary node
+    /// running a service, this pins the client to a known node — e.g. to keep querying a specific
+    /// node while it is being decommissioned.
+    pub fn rest_client_for_node(&self, node_id: &NodeId) -> Option<QuickwitClient> {
+        let node_config = self
+            .node_configs
+            .iter()
+            .find(|(config, _)| &config.node_id == node_id)?
+            .0
+            .clone();
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
+        let client = QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            ca_cert.is_some(),
+        ))
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
+        .build();
+        Some(client)
     }
 
     /// A client configured to ingest documents and return detailed parse failures.
     pub fn detailed_ingest_client(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
-        } else {
-            None
-        };
-
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .detailed_response(true)
         .build()
     }
@@ -384,19 +437,13 @@ impl ClusterSandbox {
     // TODO(#5604)
     pub fn rest_client_legacy_indexer(&self) -> QuickwitClient {
         let node_config = self.find_node_for_service(QuickwitService::Indexer);
-
-        let certificate = if let Some(tls_conf) = &node_config.rest_config.tls {
-            let cert_bytes = std::fs::read(&tls_conf.ca_path).unwrap();
-            Some(reqwest::tls::Certificate::from_pem(&cert_bytes).unwrap())
-        } else {
-            None
-        };
-
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
         QuickwitClientBuilder::new(transport_url(
             node_config.rest_config.listen_addr,
-            certificate.is_some(),
+            ca_cert.is_some(),
         ))
-        .set_tls_ca(certificate)
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
         .use_legacy_ingest(true)
         .build()
     }
@@ -671,6 +718,18 @@ impl ClusterSandbox {
             .unwrap_or_else(|| panic!("no node with service {service:?}"));
         self.node_configs.remove(idx);
         self.node_shutdown_handles.remove(idx)
+    }
+
+    /// Remove the node with the given id from the sandbox and return its shutdown handle, or
+    /// `None` if no such node exists. After this call, `rest_client` and other lookup methods
+    /// skip the removed node, so callers can trigger its shutdown independently.
+    pub fn remove_node(&mut self, node_id: &NodeId) -> Option<NodeShutdownHandle> {
+        let idx = self
+            .node_shutdown_handles
+            .iter()
+            .position(|handle| &handle.node_id == node_id)?;
+        self.node_configs.remove(idx);
+        Some(self.node_shutdown_handles.remove(idx))
     }
 }
 

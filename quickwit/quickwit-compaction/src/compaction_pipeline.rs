@@ -398,7 +398,7 @@ pub(crate) mod tests {
             .collect();
         let merge_operation = MergeOperation::new_merge_operation(splits);
         let pipeline_id = MergePipelineId {
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: "test-source".to_string(),
         };

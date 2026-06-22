@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
+use tantivy::Term;
 use tantivy::query::BoostQuery as TantivyBoostQuery;
 use tantivy::schema::Schema as TantivySchema;
 
@@ -25,6 +28,7 @@ mod full_text_query;
 mod phrase_prefix_query;
 mod range_query;
 mod regex_query;
+mod required_terms;
 mod tantivy_query_ast;
 mod term_query;
 mod term_set_query;
@@ -266,6 +270,25 @@ impl QueryAst {
     ) -> Result<Box<dyn crate::TantivyQuery>, InvalidQuery> {
         let tantivy_query_ast = self.build_tantivy_ast_call(context)?;
         Ok(tantivy_query_ast.simplify().into())
+    }
+
+    /// Like [`Self::build_tantivy_query`], but additionally returns the set of
+    /// *required terms*: terms that must all be present in a split for the query
+    /// to match any document. A leaf search uses this to abort warmup early when
+    /// a required term turns out to have an empty posting list. See
+    /// [`required_terms`] for the contract.
+    pub fn build_tantivy_query_and_required_terms(
+        &self,
+        context: &BuildTantivyAstContext,
+    ) -> Result<(Box<dyn crate::TantivyQuery>, HashSet<Term>), InvalidQuery> {
+        let tantivy_query_ast = self.build_tantivy_ast_call(context)?.simplify();
+        let mut required_terms = HashSet::new();
+        required_terms::collect_required_terms(
+            &tantivy_query_ast,
+            context.schema,
+            &mut required_terms,
+        );
+        Ok((tantivy_query_ast.into(), required_terms))
     }
 }
 

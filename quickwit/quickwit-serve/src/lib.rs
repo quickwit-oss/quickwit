@@ -118,6 +118,7 @@ use quickwit_search::{
 };
 use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
+pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -247,27 +248,27 @@ async fn balance_channel_for_service(
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                    Some(Change::Insert(node.grpc_advertise_addr, node.channel()))
                 }
-                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -400,7 +401,7 @@ async fn start_control_plane_if_needed(
         )
         .await?;
 
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id().to_owned();
 
         let control_plane_mailbox = setup_control_plane(
             universe,
@@ -484,6 +485,7 @@ async fn shutdown_signal_handler(
     ingester_opt: Option<Ingester>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
+    health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
@@ -501,6 +503,11 @@ async fn shutdown_signal_handler(
     }
     if rest_shutdown_trigger_tx.send(()).is_err() {
         debug!("REST server shutdown signal receiver was dropped");
+    }
+    if let Some(health_shutdown_trigger_tx) = health_shutdown_trigger_tx_opt
+        && health_shutdown_trigger_tx.send(()).is_err()
+    {
+        debug!("health check server shutdown signal receiver was dropped");
     }
     if let Err(err) = cluster.initiate_shutdown().await {
         debug!("{err}");
@@ -977,10 +984,44 @@ pub async fn serve_quickwit(
 
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
-        quickwit_services,
+        quickwit_services.clone(),
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
+
+    // Setup and start the optional plaintext health-check server. It only runs when a health
+    // listen port is configured (`health.listen_port` or `QW_HEALTH_LISTEN_PORT`).
+    let (health_shutdown_trigger_tx_opt, health_server_fut) =
+        if let Some(health_config) = quickwit_services.node_config.health_config.clone() {
+            let health_listener = tcp_listener_resolver
+                .resolve(health_config.listen_addr)
+                .await?;
+            // The health server serves probes as soon as it is up: it does not wait on the node
+            // readiness signal, since liveness must work during startup and `readyz` reflects
+            // cluster readiness on its own.
+            let health_readiness_trigger = Box::pin(async {});
+            let (health_shutdown_trigger_tx, health_shutdown_signal_rx) = oneshot::channel::<()>();
+            let health_shutdown_signal = Box::pin(async move {
+                if health_shutdown_signal_rx.await.is_err() {
+                    debug!("health check server shutdown trigger sender was dropped");
+                }
+            });
+            let health_server = rest::start_health_check_server(
+                health_listener,
+                quickwit_services.clone(),
+                health_readiness_trigger,
+                health_shutdown_signal,
+            );
+            (
+                Some(health_shutdown_trigger_tx),
+                futures::future::Either::Left(health_server),
+            )
+        } else {
+            (
+                None,
+                futures::future::Either::Right(futures::future::ready(anyhow::Ok(()))),
+            )
+        };
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -1002,6 +1043,7 @@ pub async fn serve_quickwit(
         ingester_opt,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
+        health_shutdown_trigger_tx_opt,
         cluster.clone(),
     ));
     let grpc_join_handle = async move {
@@ -1018,9 +1060,21 @@ pub async fn serve_quickwit(
             .context("REST server failed")
     };
 
+    let health_join_handle = async move {
+        spawn_named_task(health_server_fut, "health_server")
+            .await
+            .expect("tasks running the health check server should not panic or be cancelled")
+            .context("health check server failed")
+    };
+
     let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle, chitchat_server_handle) {
+    if let Err(err) = tokio::try_join!(
+        grpc_join_handle,
+        rest_join_handle,
+        health_join_handle,
+        chitchat_server_handle
+    ) {
         error!("server failed: {err:?}");
     }
 
@@ -1087,7 +1141,7 @@ async fn setup_ingest_v2(
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
-    let self_node_id: NodeId = cluster.self_node_id().into();
+    let self_node_id: NodeId = cluster.self_node_id().to_owned();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
     let replication_factor = node_config
         .ingest_api_config
@@ -1185,7 +1239,7 @@ fn setup_ingester_pool(
                 // unnecessary churn
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
-                        && previous.ingester_status() != updated.ingester_status() =>
+                        && previous.ingester_status != updated.ingester_status =>
                 {
                     let change = build_ingester_insert_change(
                         &updated,
@@ -1214,13 +1268,13 @@ fn build_ingester_insert_change(
 ) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
+        node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "adding/updating node `{}` with ingester status `{}` to ingester pool",
         chitchat_id.node_id,
-        node.ingester_status(),
+        node.ingester_status,
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
         node,
         ingester_opt,
@@ -1229,7 +1283,7 @@ fn build_ingester_insert_change(
     );
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
-        status: node.ingester_status(),
+        status: node.ingester_status,
         availability_zone: node.availability_zone().map(|az| az.to_string()),
     };
     Change::Insert(node_id, pool_entry)
@@ -1238,12 +1292,12 @@ fn build_ingester_insert_change(
 fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
+        node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 
@@ -1268,7 +1322,7 @@ fn build_ingester_service(
         .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             grpc_compression_encoding_opt,
@@ -1302,12 +1356,12 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
-                    let grpc_addr = node.grpc_advertise_addr();
+                    let grpc_addr = node.grpc_advertise_addr;
 
                     if node.is_self_node() {
                         let search_client =
@@ -1326,12 +1380,12 @@ async fn setup_searcher(
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
+                        node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -1413,6 +1467,14 @@ fn setup_indexer_pool(
                     );
                     Some(change)
                 }
+                ClusterChange::Update { updated, .. } if updated.is_indexer() => {
+                    let change = build_indexer_insert_change(
+                        &updated,
+                        indexing_service_clone_opt,
+                        grpc_max_message_size,
+                    );
+                    Some(change)
+                }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let change = build_indexer_remove_change(&node);
                     Some(change)
@@ -1431,13 +1493,13 @@ fn build_indexer_insert_change(
 ) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
+        node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "adding node `{}` with ingester status `{}` to indexer pool",
         chitchat_id.node_id,
-        node.ingester_status()
+        node.ingester_status
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(
         node_id.clone(),
@@ -1445,8 +1507,9 @@ fn build_indexer_insert_change(
             node_id,
             generation_id: chitchat_id.generation_id,
             client,
-            indexing_tasks: node.indexing_tasks().to_vec(),
-            indexing_capacity: node.indexing_capacity(),
+            indexing_tasks: node.indexing_tasks.to_vec(),
+            indexing_capacity: node.indexing_cpu_capacity,
+            ingester_status: node.ingester_status,
         },
     )
 }
@@ -1454,12 +1517,12 @@ fn build_indexer_insert_change(
 fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
+        node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 
@@ -1486,7 +1549,7 @@ fn build_indexing_service(
         .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             None,
@@ -1635,13 +1698,15 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
@@ -1679,7 +1744,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_readiness_updates() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
@@ -1784,30 +1849,95 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
-        // adding a indexer node refreshes the indexer pool
-        let new_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Ready,
-        )
-        .await;
-        cluster_change_stream_tx
-            .send(ClusterChange::Add(new_indexer_node.clone()))
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        let node_id = NodeId::from_str("test-indexer-node");
+        let plan = [IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        }];
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        // Reads the pool entry's indexing tasks, or an empty vec if the node is absent.
+        let pool_tasks = || {
+            indexer_pool
+                .get(&node_id)
+                .map(|entry| entry.indexing_tasks.clone())
+                .unwrap_or_default()
+        };
 
+        // A node first joins ready with no assigned plan.
+        let ready_no_plan = build_node(&[], IngesterStatus::Ready).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(ready_no_plan.clone()))
+            .unwrap();
+        assert_eventually!(indexer_pool.len() == 1);
+        {
+            let entry = indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool");
+            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
+            assert!(entry.indexing_tasks.is_empty());
+        }
+
+        // The control plane assigns it an indexing plan: the new plan must be reflected exactly.
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: ready_no_plan,
+                updated: ready_with_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(pool_tasks() == plan);
+        assert_eq!(
+            indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool")
+                .ingester_status,
+            IngesterStatus::Ready
+        );
         assert_eq!(indexer_pool.len(), 1);
 
-        // removing an indexer node refreshes the indexer pool
+        // The node begins retiring while still owning its plan: the status change is applied and
+        // the plan is preserved.
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Remove(new_indexer_node))
+            .send(ClusterChange::Update {
+                previous: ready_with_plan,
+                updated: retiring_with_plan.clone(),
+            })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry) if entry.ingester_status == IngesterStatus::Retiring
+        ));
+        assert_eq!(pool_tasks(), plan);
+        assert_eq!(indexer_pool.len(), 1);
 
-        assert!(indexer_pool.is_empty());
+        // The node transitions to decommissioning and sheds its plan: both the status and the
+        // now-empty plan must be reflected.
+        let decommissioning_no_plan = build_node(&[], IngesterStatus::Decommissioning).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: retiring_with_plan,
+                updated: decommissioning_no_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry)
+                if entry.ingester_status == IngesterStatus::Decommissioning
+                    && entry.indexing_tasks.is_empty()
+        ));
+        assert_eq!(indexer_pool.len(), 1);
+
+        // Removing the node clears the pool.
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(decommissioning_no_plan))
+            .unwrap();
+        assert_eventually!(indexer_pool.is_empty());
     }
 
     #[tokio::test]
@@ -1919,7 +2049,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Initializing);
 
@@ -1943,7 +2073,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
@@ -1968,7 +2098,7 @@ mod tests {
         // The node should still be in the pool with updated status.
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Decommissioning);
 
@@ -1983,7 +2113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compaction_service_on_janitor_node() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster =
             create_cluster_for_test(Vec::new(), &["janitor", "indexer"], &transport, true)
                 .await
@@ -2041,7 +2171,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compaction_service_returns_error_when_no_janitor() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
             .await
             .unwrap();

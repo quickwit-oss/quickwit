@@ -45,7 +45,9 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 mockall = { workspace = true }
+mrecordlog = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 tempfile = { workspace = true }
@@ -55,6 +57,10 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
+
+[[bench]]
+name = "mrecord_bench"
+harness = false
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }

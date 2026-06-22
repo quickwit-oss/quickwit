@@ -386,7 +386,7 @@ pub async fn setup_local_shards_update_listener(
                 warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
-            let leader_id: NodeId = event.node.node_id.clone().into();
+            let leader_id: NodeId = NodeId::from_str(&event.node.node_id);
 
             let local_shards_update = LocalShardsUpdate {
                 leader_id,
@@ -404,7 +404,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
@@ -536,7 +536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_local_shards_task() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -573,7 +573,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(2),
-            NodeId::from("test-leader"),
+            NodeId::from_str("test-leader"),
         )
         .advertisable()
         .build();
@@ -610,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_shards_update_listener() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

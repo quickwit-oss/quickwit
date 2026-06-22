@@ -104,10 +104,10 @@ async fn get_node_debug_infos(
     let mut get_debug_info_futures = FuturesUnordered::new();
 
     for ready_node in ready_nodes {
-        if node_id_patterns.matches(ready_node.node_id()) {
-            let node_id = ready_node.node_id().to_owned();
+        if node_id_patterns.matches(&ready_node.node_id) {
+            let node_id = ready_node.node_id.clone();
             let client = DeveloperServiceClient::from_channel(
-                ready_node.grpc_advertise_addr(),
+                ready_node.grpc_advertise_addr,
                 ready_node.channel(),
                 DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
                 Some(CompressionEncoding::Zstd),
@@ -185,14 +185,14 @@ impl NodeIdGlobPatterns {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
 
     use super::*;
 
     #[tokio::test]
     async fn test_developer_api_debug_handler() {
         let peer_seeds = Vec::new();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let self_node_readiness = true;
         let cluster = create_cluster_for_test(
             peer_seeds,

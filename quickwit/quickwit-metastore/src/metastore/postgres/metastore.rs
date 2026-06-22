@@ -1958,6 +1958,7 @@ impl PostgresqlMetastore {
         let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
         let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
         let mut zonemap_regexes_json_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+        let mut maturity_timestamps: Vec<i64> = Vec::with_capacity(splits_metadata.len());
 
         for metadata in &splits_metadata {
             let insertable = InsertableParquetSplit::from_metadata(metadata, SplitState::Staged)
@@ -1996,6 +1997,7 @@ impl PostgresqlMetastore {
             num_merge_ops_list.push(insertable.num_merge_ops);
             row_keys_list.push(insertable.row_keys);
             zonemap_regexes_json_list.push(insertable.zonemap_regexes.to_string());
+            maturity_timestamps.push(metadata.maturity_timestamp_secs());
         }
 
         info!(
@@ -2029,6 +2031,7 @@ impl PostgresqlMetastore {
                 num_merge_ops,
                 row_keys,
                 zonemap_regexes,
+                maturity_timestamp,
                 create_timestamp,
                 update_timestamp
             )
@@ -2059,6 +2062,7 @@ impl PostgresqlMetastore {
                 num_merge_ops,
                 row_keys,
                 zonemap_regexes_json::jsonb,
+                to_timestamp(maturity_timestamp),
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
             FROM UNNEST(
@@ -2082,7 +2086,8 @@ impl PostgresqlMetastore {
                 $18::text[],
                 $19::int[],
                 $20::bytea[],
-                $21::text[]
+                $21::text[],
+                $22::bigint[]
             ) AS staged(
                 split_id,
                 split_state,
@@ -2104,7 +2109,8 @@ impl PostgresqlMetastore {
                 sort_fields,
                 num_merge_ops,
                 row_keys,
-                zonemap_regexes_json
+                zonemap_regexes_json,
+                maturity_timestamp
             )
             ON CONFLICT (split_id) DO UPDATE
                 SET
@@ -2127,6 +2133,7 @@ impl PostgresqlMetastore {
                     num_merge_ops = EXCLUDED.num_merge_ops,
                     row_keys = EXCLUDED.row_keys,
                     zonemap_regexes = EXCLUDED.zonemap_regexes,
+                    maturity_timestamp = EXCLUDED.maturity_timestamp,
                     update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 WHERE {table_name}.split_state = 'Staged'
             RETURNING split_id
@@ -2161,6 +2168,7 @@ impl PostgresqlMetastore {
                     .bind(&num_merge_ops_list)
                     .bind(&row_keys_list)
                     .bind(&zonemap_regexes_json_list)
+                    .bind(&maturity_timestamps)
                     .fetch_all(tx_ref.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))

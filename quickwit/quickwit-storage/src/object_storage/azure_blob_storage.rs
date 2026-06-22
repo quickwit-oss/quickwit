@@ -389,6 +389,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        // The Azure SDK has no batch delete, so bulk_delete also funnels through
+        // here one blob at a time.
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
             .container_client

@@ -743,6 +743,10 @@ impl IndexingService {
             merge_scheduler_service,
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
+            skip_initial_seed: quickwit_common::get_bool_from_env(
+                super::parquet_pipeline::PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY,
+                false,
+            ),
             writer_config,
             use_streaming_engine: self.parquet_merge_use_streaming_engine,
             target_split_size_bytes: cfg.target_split_size_bytes,
@@ -1177,7 +1181,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{HEARTBEAT, Health, ObservationType, Universe};
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{
@@ -1215,7 +1219,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path.to_path_buf(),
             indexer_config,
             num_blocking_threads,
@@ -1236,7 +1240,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_spawn_observe_detach() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1338,7 +1342,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_supervise_pipelines() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1403,7 +1407,7 @@ mod tests {
         const PARAMS_FINGERPRINT_SOURCE_2: u64 = 16199199787360162635;
 
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1688,7 +1692,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_shutdown_merge_pipeline_when_no_indexing_pipeline() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1732,7 +1736,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_service = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -1787,7 +1791,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_no_merge_pipeline_when_no_merge_scheduler() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1829,7 +1833,7 @@ mod tests {
                 .await
                 .unwrap();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -1867,7 +1871,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_spawns_merge_pipeline_with_merge_scheduler() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -1910,7 +1914,7 @@ mod tests {
                 .unwrap();
         let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -1981,7 +1985,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_service_does_not_shutdown_pipelines_on_indexing_pipeline_freeze() {
         quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -2058,7 +2062,7 @@ mod tests {
         let index_id = "test-ingest-api-gc-index".to_string();
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -2095,7 +2099,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let mut indexing_server = IndexingService::new(
-            NodeId::from("test-ingest-api-gc-node"),
+            NodeId::from_str("test-ingest-api-gc-node"),
             data_dir_path,
             indexer_config,
             num_blocking_threads,
@@ -2197,7 +2201,7 @@ mod tests {
                 Ok(response)
             });
 
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

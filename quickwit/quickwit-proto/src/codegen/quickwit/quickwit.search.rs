@@ -54,6 +54,18 @@ pub struct ReportSplitsRequest {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReportSplitsResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLoadRequest {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetLoadResponse {
+    /// Current load expressed as the sum of job costs (same arbitrary unit as
+    /// Job::cost() in the search job placer) across all queued and active tasks
+    /// in the SearchPermitProvider.
+    #[prost(uint64, tag = "1")]
+    pub load_job_cost: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListFieldsRequest {
     /// Index ID patterns
@@ -401,6 +413,9 @@ pub struct LeafResourceStats {
     /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
     #[prost(uint64, tag = "14")]
     pub lambda_bottleneck: u64,
+    /// / Number of CPU threads available in the search pool.
+    #[prost(uint64, tag = "15")]
+    pub search_pool_cpu_threads: u64,
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -430,6 +445,19 @@ pub struct RootResourceStats {
     /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
     #[prost(uint64, repeated, tag = "6")]
     pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
+    /// The first phase identifies the partial hits, runs aggregate.
+    /// When running a top-k request, a second phase is required to fetch the documents.
+    ///
+    /// This includes getting the results from leaf searchers and merging them.
+    #[prost(uint64, tag = "7")]
+    pub root_first_phase_wall_time_microsecs: u64,
+    /// Overall wall time for the root search. This includes both
+    /// the first phase (running aggregation, and identifying the doc address of the top-k hits we should return)
+    /// and the second phase (fetch documents).
+    ///
+    /// If there are no top-k hits, the second phase is skipped.
+    #[prost(uint64, tag = "8")]
+    pub root_wall_time_microsecs: u64,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -1292,6 +1320,31 @@ pub mod search_service_client {
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "SearchPlan"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the current load of this searcher node.
+        pub async fn get_load(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetLoadRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetLoadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/GetLoad",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "GetLoad"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1412,6 +1465,11 @@ pub mod search_service_server {
             tonic::Response<super::SearchPlanResponse>,
             tonic::Status,
         >;
+        /// Returns the current load of this searcher node.
+        async fn get_load(
+            &self,
+            request: tonic::Request<super::GetLoadRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetLoadResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceServer<T> {
@@ -2013,6 +2071,51 @@ pub mod search_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SearchPlanSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/GetLoad" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetLoadSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::GetLoadRequest>
+                    for GetLoadSvc<T> {
+                        type Response = super::GetLoadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetLoadRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as SearchService>::get_load(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetLoadSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

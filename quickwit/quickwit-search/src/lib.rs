@@ -46,7 +46,7 @@ mod search_permit_provider;
 mod tests;
 
 pub use collector::QuickwitAggregations;
-use quickwit_common::thread_pool::ThreadPool;
+use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
@@ -96,9 +96,9 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
-fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_THREAD_POOL: LazyLock<ThreadPool> =
-        LazyLock::new(|| ThreadPool::new("search", None));
+fn search_thread_pool() -> &'static ThreadPoolWithPriority {
+    static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
     &SEARCH_THREAD_POOL
 }
 
@@ -398,6 +398,7 @@ pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceSt
     acc.localexec_num_splits += other.localexec_num_splits;
     acc.localexec_num_docs += other.localexec_num_docs;
     acc.wall_time_microsecs += other.wall_time_microsecs;
+    acc.search_pool_cpu_threads += other.search_pool_cpu_threads;
     acc.min_wait_for_search_permit_microsecs = min_opt(
         acc.min_wait_for_search_permit_microsecs,
         other.min_wait_for_search_permit_microsecs,
@@ -562,6 +563,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(100),
             min_wait_for_cpu_pool_microsecs: Some(2_000),
             wall_time_microsecs: 100_000_000,
+            search_pool_cpu_threads: 8,
         };
         let other = LeafResourceStats {
             partial_result_cache_num_splits: 2,
@@ -578,6 +580,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(50),
             min_wait_for_cpu_pool_microsecs: Some(1_000),
             wall_time_microsecs: 200_000_000,
+            search_pool_cpu_threads: 16,
         };
 
         add_leaf_stats(&mut acc, &other);
@@ -595,6 +598,7 @@ mod stats_merge_tests {
         assert_eq!(acc.localexec_num_docs, 30_000_000);
         // `wall_time_microsecs` is summed post-refactor, not maxed.
         assert_eq!(acc.wall_time_microsecs, 300_000_000);
+        assert_eq!(acc.search_pool_cpu_threads, 24);
 
         // `min_wait_for_*_microsecs` is MIN, not sum — the exception to the
         // extensive-sum rule.

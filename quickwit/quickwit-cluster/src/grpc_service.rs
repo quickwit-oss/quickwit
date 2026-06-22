@@ -17,13 +17,14 @@ use std::sync::LazyLock;
 
 use bytesize::ByteSize;
 use itertools::Itertools;
-use quickwit_common::tower::{ClientGrpcConfig, GrpcMetricsLayer, make_channel};
+use quickwit_common::tower::GrpcMetricsLayer;
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
     ChitchatId as ProtoChitchatId, ClusterError, ClusterResult, ClusterService,
     ClusterServiceClient, ClusterServiceGrpcServerAdapter, FetchClusterStateRequest,
     FetchClusterStateResponse, NodeState as ProtoNodeState, VersionedKeyValue,
 };
+use quickwit_transport::ChannelFactory;
 use tonic::async_trait;
 
 use crate::Cluster;
@@ -37,9 +38,9 @@ static CLUSTER_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
 
 pub(crate) async fn cluster_grpc_client(
     socket_addr: SocketAddr,
-    client_grpc_config: ClientGrpcConfig,
+    channel_factory: ChannelFactory,
 ) -> ClusterServiceClient {
-    let channel = make_channel(socket_addr, client_grpc_config).await;
+    let channel = channel_factory.make_channel(socket_addr).await;
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())
@@ -72,7 +73,7 @@ impl ClusterService for Cluster {
 
         for (chitchat_id, node_state) in chitchat_guard.node_states() {
             let proto_chitchat_id = ProtoChitchatId {
-                node_id: chitchat_id.node_id.clone(),
+                node_id: chitchat_id.node_id.to_string(),
                 generation_id: chitchat_id.generation_id,
                 gossip_advertise_addr: chitchat_id.gossip_advertise_addr.to_string(),
             };
@@ -121,15 +122,13 @@ impl ClusterService for Cluster {
 
 #[cfg(test)]
 mod tests {
-    use chitchat::transport::ChannelTransport;
-
     use super::*;
-    use crate::create_cluster_for_test;
     use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY};
+    use crate::{ChitchatTransport, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_fetch_cluster_state() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

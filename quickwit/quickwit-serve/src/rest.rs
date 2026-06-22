@@ -14,8 +14,10 @@
 
 use std::fmt::Formatter;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_util::{Stream, StreamExt};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
@@ -23,9 +25,9 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 use tokio_util::either::Either;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
@@ -115,18 +117,27 @@ impl Predicate for CompressionPredicate {
     }
 }
 
-async fn apply_tls_if_necessary(
-    tcp_stream: TcpStream,
-    tls_acceptor_opt: &Option<TlsAcceptor>,
-) -> io::Result<impl AsyncRead + AsyncWrite + Unpin + 'static> {
-    let Some(tls_acceptor) = &tls_acceptor_opt else {
-        return Ok(Either::Right(tcp_stream));
-    };
-    let tls_stream_res = tls_acceptor
-        .accept(tcp_stream)
-        .await
-        .inspect_err(|err| error!("failed to perform tls handshake: {err:#}"))?;
-    Ok(Either::Left(tls_stream_res))
+/// A ready-to-serve connection: TLS-terminated (`Left`) or plaintext (`Right`). Both implement
+/// `AsyncRead`/`AsyncWrite`, so the serve loop handles them uniformly.
+type MaybeTlsStream = Either<TlsStream<TcpStream>, TcpStream>;
+
+/// Wraps a stream of accepted TCP connections into the stream of connections the serve loop reads.
+///
+/// When TLS is configured we terminate it ourselves (so the certificate can be hot-reloaded),
+/// running the handshakes off the accept path so a client that connects but stalls its handshake
+/// cannot block new connections; otherwise the plaintext stream is served directly. Either way the
+/// result is a single stream of [`MaybeTlsStream`]s.
+fn accept_connections(
+    tcp_incoming: impl Stream<Item = io::Result<TcpStream>> + Send + 'static,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+) -> Pin<Box<dyn Stream<Item = io::Result<MaybeTlsStream>> + Send>> {
+    match tls_acceptor_opt {
+        Some(tls_acceptor) => {
+            let tls_incoming = quickwit_transport::accept_tls_incoming(tcp_incoming, tls_acceptor);
+            Box::pin(tls_incoming.map(|stream_res| stream_res.map(Either::Left)))
+        }
+        None => Box::pin(tcp_incoming.map(|stream_res| stream_res.map(Either::Right))),
+    }
 }
 
 /// Starts REST services.
@@ -212,9 +223,81 @@ pub(crate) async fn start_rest_server(
         .with(extra_headers)
         .boxed();
 
-    let warp_service = warp::service(rest_routes);
+    let tls_acceptor_opt: Option<TlsAcceptor> = if let Some(tls_config) =
+        &quickwit_services.node_config.rest_config.tls_config
+    {
+        let alpn_protocols: &[&[u8]] = &[b"h2", b"http/1.1", b"http/1.0"];
+        let rustls_config = quickwit_transport::make_tls_server_config(tls_config, alpn_protocols)?;
+        Some(TlsAcceptor::from(rustls_config))
+    } else {
+        None
+    };
+    serve_warp_routes(
+        "REST",
+        tcp_listener,
+        rest_routes,
+        quickwit_services
+            .node_config
+            .rest_config
+            .cors_allow_origins
+            .clone(),
+        tls_acceptor_opt,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Starts the optional plaintext health-check server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. The same routes remain mounted on the main REST server.
+pub(crate) async fn start_health_check_server(
+    tcp_listener: TcpListener,
+    quickwit_services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
+    let health_check_routes = health_check_handlers(
+        quickwit_services.cluster.clone(),
+        quickwit_services.indexing_service_opt.clone(),
+        quickwit_services.janitor_service_opt.clone(),
+    )
+    .recover(recover_fn_final)
+    .boxed();
+    // No TLS: the whole point of this server is to offer a plaintext probe surface that bypasses
+    // the mTLS configured on the main REST server.
+    serve_warp_routes(
+        "health check",
+        tcp_listener,
+        health_check_routes,
+        Vec::new(),
+        None,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Serves a set of warp `routes` over `tcp_listener` until `shutdown_signal` resolves, optionally
+/// terminating TLS. Shared by the main REST server and the health-check server.
+async fn serve_warp_routes<F>(
+    server_name: &str,
+    tcp_listener: TcpListener,
+    routes: F,
+    cors_allow_origins: Vec<String>,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()>
+where
+    F: Filter<Error = Rejection> + Clone + Send + Sync + 'static,
+    F::Extract: Reply,
+{
+    let warp_service = warp::service(routes);
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
-    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
+    let cors = build_cors(&cors_allow_origins);
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
@@ -235,11 +318,8 @@ pub(crate) async fn start_rest_server(
         .layer(cors)
         .service(warp_service);
 
-    let rest_listen_addr = tcp_listener.local_addr()?;
-    info!(
-        rest_listen_addr=?rest_listen_addr,
-        "starting REST server listening on {rest_listen_addr}"
-    );
+    let listen_addr = tcp_listener.local_addr()?;
+    info!(listen_addr=?listen_addr, "starting {server_name} server listening on {listen_addr}");
 
     let service = TowerToHyperService::new(service);
 
@@ -248,46 +328,47 @@ pub(crate) async fn start_rest_server(
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
     readiness_trigger.await;
 
-    let tls_acceptor_opt: Option<TlsAcceptor> =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            Some(TlsAcceptor::from(rustls_config))
-        } else {
-            None
-        };
+    // A stream of accepted TCP connections, preserving the previous raw-`accept` semantics.
+    let tcp_incoming = futures_util::stream::unfold(tcp_listener, |tcp_listener| async move {
+        let tcp_accept_res = tcp_listener
+            .accept()
+            .await
+            .map(|(tcp_stream, _remote_addr)| tcp_stream);
+        Some((tcp_accept_res, tcp_listener))
+    });
+    let mut incoming_connections = accept_connections(tcp_incoming, tls_acceptor_opt);
 
     loop {
         tokio::select! {
-            tcp_accept_res = tcp_listener.accept() => {
-                let tcp_stream = match tcp_accept_res {
-                    Ok((tcp_stream, _remote_addr)) => tcp_stream,
-                    Err(err) => {
-                        error!("failed to accept connection: {err:#}");
+            next_connection_opt = incoming_connections.next() => {
+                let Some(connection_res) = next_connection_opt else {
+                    break;
+                };
+                let connection = match connection_res {
+                    Ok(connection) => connection,
+                    Err(accept_error) => {
+                        error!("failed to accept connection: {accept_error:#}");
                         continue;
                     }
                 };
-
-                let Ok(tcp_or_tls_stream) = apply_tls_if_necessary(tcp_stream, &tls_acceptor_opt).await else {
-                    continue;
-                };
-
-                let serve_fut = server.serve_connection_with_upgrades(TokioIo::new(tcp_or_tls_stream), service.clone());
-                let serve_with_shutdown_fut = graceful.watch(serve_fut.into_owned());
+                let serve_connection_fut = server
+                    .serve_connection_with_upgrades(TokioIo::new(connection), service.clone());
+                let serve_with_shutdown_fut = graceful.watch(serve_connection_fut.into_owned());
                 tokio::spawn(async move {
-                    if let Err(err) = serve_with_shutdown_fut.await {
-                        error!("failed to serve connection: {err:#}");
+                    if let Err(serve_error) = serve_with_shutdown_fut.await {
+                        error!("failed to serve connection: {serve_error:#}");
                     }
                 });
             },
             _ = &mut shutdown_signal => {
-                info!("REST server shutdown signal received");
+                info!("{server_name} server shutdown signal received");
                 break;
             }
         }
     }
-
+    info!("shutting down {server_name} server");
     graceful.shutdown().await;
-    info!("gracefully shutdown");
+    info!("{server_name} server successfully shut down");
 
     Ok(())
 }
@@ -540,69 +621,13 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     cors
 }
 
-mod tls {
-    // most of this module is copied from hyper-tls examples, licensed under Apache 2.0, MIT or ISC
-
-    use std::sync::Arc;
-    use std::vec::Vec;
-    use std::{fs, io};
-
-    use quickwit_config::TlsConfig;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-    use tokio_rustls::rustls::ServerConfig;
-
-    fn io_error(error: String) -> io::Error {
-        io::Error::other(error)
-    }
-
-    // Load public certificate from file.
-    fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
-        // Open certificate file.
-        let certfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(certfile);
-        // Load and return certificate.
-        rustls_pemfile::certs(&mut reader).collect()
-    }
-
-    // Load private key from file.
-    fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
-        // Open keyfile.
-        let keyfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(keyfile);
-
-        // Load and return a single private key.
-        rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
-    }
-
-    pub fn make_rustls_config(config: &TlsConfig) -> anyhow::Result<Arc<ServerConfig>> {
-        let certs = load_certs(&config.cert_path)?;
-        let key = load_private_key(&config.key_path)?;
-
-        // TODO we could add support for client authorization, it seems less important than on the
-        // gRPC side though
-        if config.validate_client {
-            anyhow::bail!("mTLS isn't supported on rest api");
-        }
-
-        let mut cfg = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|error| io_error(error.to_string()))?;
-        // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.
-        cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-        Ok(Arc::new(cfg))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -851,7 +876,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
         let control_plane_client = ControlPlaneServiceClient::mocked();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();

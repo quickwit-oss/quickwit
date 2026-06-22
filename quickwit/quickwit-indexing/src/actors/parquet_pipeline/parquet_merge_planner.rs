@@ -259,21 +259,16 @@ impl ParquetMergePlanner {
     fn record_splits_if_necessary(&mut self, splits: Vec<ParquetSplitMetadata>) {
         let now = std::time::SystemTime::now();
         for split in splits {
-            match self
+            if let ParquetSplitMaturity::Mature = self
                 .merge_policy
                 .split_maturity(split.size_bytes, split.num_merge_ops)
             {
-                ParquetSplitMaturity::Mature => continue,
-                ParquetSplitMaturity::Immature {
-                    maturation_period, ..
-                } => {
-                    // A split that has lived past its maturation period is
-                    // effectively mature — no further merges needed. This
-                    // mirrors the Tantivy merge planner's `is_mature(now)`.
-                    if split.created_at + maturation_period <= now {
-                        continue;
-                    }
-                }
+                // This can happen if the merge policy changed (e.g. decreased
+                // target_split_size_bytes or max_merge_ops).
+                continue;
+            }
+            if split.is_mature(now) {
+                continue;
             }
             if !self.acknowledge_split(split.split_id.as_str()) {
                 continue;
@@ -435,7 +430,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_parquet_engine::merge::policy::{
-        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig,
+        ConstWriteAmplificationParquetMergePolicy, ParquetMergePolicyConfig, ParquetSplitMaturity,
     };
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
@@ -453,6 +448,9 @@ mod tests {
             .sort_fields("metric_name|host|timestamp_secs/V2")
             .window_start_secs(0)
             .window_duration_secs(3600)
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            })
             .num_merge_ops(num_merge_ops)
             .build()
     }
@@ -690,6 +688,9 @@ mod tests {
             .num_rows(100)
             .size_bytes(size_bytes)
             .sort_fields("metric_name|host|timestamp_secs/V2")
+            .maturity(ParquetSplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            })
             .num_merge_ops(num_merge_ops)
             .build();
 

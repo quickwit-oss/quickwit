@@ -56,9 +56,11 @@ itertools = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -67,6 +69,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-control-plane = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
@@ -76,3 +79,4 @@ quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
+quickwit-transport = { workspace = true }

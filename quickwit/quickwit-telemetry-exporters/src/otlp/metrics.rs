@@ -13,31 +13,30 @@
 // limitations under the License.
 
 use anyhow::Context;
-use metrics_exporter_otel::OpenTelemetryRecorder;
+use metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
 use opentelemetry::metrics::MeterProvider;
-use opentelemetry_otlp::{MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig};
-use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
+use opentelemetry_otlp::{
+    MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
 
 impl OtlpProtocol {
-    pub(crate) fn metric_exporter(
-        &self,
-        temporality: Temporality,
-    ) -> anyhow::Result<MetricExporter> {
+    pub(crate) fn metric_exporter(&self) -> anyhow::Result<MetricExporter> {
         match self {
             OtlpProtocol::Grpc => MetricExporter::builder()
                 .with_tonic()
-                .with_temporality(temporality)
+                .with_retry_policy(super::RETRY_POLICY)
                 .build(),
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
-                .with_temporality(temporality)
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
-                .with_temporality(temporality)
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }
@@ -50,17 +49,17 @@ pub(crate) fn build_recorder(
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
-    let temporality = otlp_config.metrics_temporality()?;
-    let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
+    let metric_exporter = metrics_protocol.metric_exporter()?;
     let metrics_provider = SdkMeterProvider::builder()
         .with_resource(quickwit_resource(service_version))
         .with_periodic_exporter(metric_exporter)
         .build();
     let meter = metrics_provider.meter("quickwit");
 
-    let recorder = OpenTelemetryRecorder::new(meter);
+    let otel_metrics = OpenTelemetryMetrics::new(meter);
+    let recorder = OpenTelemetryRecorder::new(otel_metrics);
     for (name, buckets) in quickwit_metrics::histogram_buckets() {
-        recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
+        recorder.set_histogram_bounds(std::iter::once(metrics::KeyName::from(name)), &buckets);
     }
     Ok((recorder, metrics_provider))
 }

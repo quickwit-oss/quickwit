@@ -356,7 +356,7 @@ mod tests {
             ..CompactorConfig::for_test()
         };
         CompactorSupervisor::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             compaction_client,
             &compactor_config,
             metastore,
@@ -572,7 +572,7 @@ mod tests {
             ..CompactorConfig::for_test()
         };
         let mut supervisor = CompactorSupervisor::new(
-            NodeId::from("test-node"),
+            NodeId::from_str("test-node"),
             client,
             &compactor_config,
             metastore,

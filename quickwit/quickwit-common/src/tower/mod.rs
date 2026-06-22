@@ -52,9 +52,7 @@ pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
 pub use retry::{RetryLayer, RetryPolicy};
 pub use timeout::{Timeout, TimeoutExceeded, TimeoutLayer};
-pub use transport::{
-    BalanceChannel, ClientGrpcConfig, KeepAliveConfig, make_channel, warmup_channel,
-};
+pub use transport::{BalanceChannel, warmup_channel};
 
 pub type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
 
