@@ -27,6 +27,7 @@ mod publisher_message;
 mod raw_doc_batch;
 mod shard_positions;
 mod split_attrs;
+mod split_prefix;
 
 pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
@@ -48,6 +49,7 @@ pub use raw_doc_batch::RawDocBatch;
 pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{SplitAttrs, create_split_metadata};
+pub(crate) use split_prefix::compute_split_key_prefix;
 
 #[derive(Debug)]
 pub struct NewPublishToken(pub PublishToken);

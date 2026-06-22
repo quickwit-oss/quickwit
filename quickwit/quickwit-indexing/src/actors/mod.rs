@@ -30,7 +30,6 @@ pub(crate) mod parquet_pipeline;
 pub(crate) mod pipeline_shared;
 mod publisher;
 mod sequencer;
-mod split_prefix;
 mod uploader;
 #[cfg(feature = "vrl")]
 mod vrl_processing;
@@ -60,5 +59,4 @@ pub use parquet_pipeline::*;
 pub use publisher::{Publisher, PublisherCounters};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
-pub(crate) use split_prefix::compute_split_key_prefix;
 pub use uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};
