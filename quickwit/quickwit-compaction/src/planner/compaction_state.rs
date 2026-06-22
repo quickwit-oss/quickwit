@@ -431,7 +431,11 @@ mod tests {
             .collect();
 
         // Splits are already in in_flight_split_ids from plan_partition.
-        state.record_assignment("task-1".to_string(), split_ids.clone(), NodeId::from_str("w1"));
+        state.record_assignment(
+            "task-1".to_string(),
+            split_ids.clone(),
+            NodeId::from_str("w1"),
+        );
 
         for split_id in &split_ids {
             assert!(state.is_split_tracked(split_id));

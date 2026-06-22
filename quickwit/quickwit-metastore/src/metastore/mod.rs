@@ -1078,6 +1078,11 @@ pub struct ListSplitsQuery {
 
     /// Exclude any split whose `split_id` appears in this list. Empty means no
     /// exclusion.
+    ///
+    /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
+    /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
+    /// metastore must still deserialize the query (an absent list means "no exclusion").
+    #[serde(default)]
     pub excluded_split_ids: Vec<SplitId>,
 }
 
@@ -1627,5 +1632,26 @@ mod tests {
         let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
         assert_eq!(indexes_metadata.len(), 1);
         assert_eq!(indexes_metadata[0], index_metadata);
+    }
+
+    #[test]
+    fn test_list_splits_query_excluded_split_ids_backward_compatible_serde() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let query = ListSplitsQuery::for_index(index_uid)
+            .with_excluded_split_ids(vec!["split-1".to_string()]);
+
+        let mut query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        query_value
+            .as_object_mut()
+            .unwrap()
+            .remove("excluded_split_ids")
+            .expect("freshly serialized query should contain the field before removal");
+
+        let request = ListSplitsRequest {
+            query_json: query_value.to_string(),
+        };
+        let deserialized = request.deserialize_list_splits_query().unwrap();
+        assert!(deserialized.excluded_split_ids.is_empty());
     }
 }

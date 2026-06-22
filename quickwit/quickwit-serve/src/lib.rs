@@ -342,6 +342,28 @@ fn spawn_merge_scheduler_service(
     mailbox
 }
 
+/// The split cache is used when a node both indexes and merges its own splits. Split compactors
+/// never do; indexers only do if split compaction is disabled. The third case is a node running
+/// both services, in which case the two services share it.
+async fn indexing_split_cache_for_config(
+    node_config: &NodeConfig,
+) -> anyhow::Result<Arc<IndexingSplitCache>> {
+    let runs_indexer = node_config.is_service_enabled(QuickwitService::Indexer);
+    let runs_local_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    let merges_own_splits =
+        runs_indexer && (!node_config.enable_standalone_compactors || runs_local_compactor);
+    if merges_own_splits {
+        let cache = IndexingSplitCache::from_config(
+            &node_config.indexer_config,
+            &node_config.data_dir_path,
+        )
+        .await?;
+        Ok(Arc::new(cache))
+    } else {
+        Ok(Arc::new(IndexingSplitCache::no_caching()))
+    }
+}
+
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
     universe: &Universe,
@@ -636,22 +658,7 @@ pub async fn serve_quickwit(
         .await
         .context("failed to initialize compaction service client")?;
 
-    // In the case where a compactor and indexer run on the same node (in a single node deployment,
-    // for example), they should share the split cache so that downloads/new splits end up in
-    // predictable locations. If there's only one service enabled, no harm, no foul.
-    let indexing_split_cache: Arc<IndexingSplitCache> = if node_config
-        .is_service_enabled(QuickwitService::Indexer)
-        && node_config.is_service_enabled(QuickwitService::Compactor)
-    {
-        let cache = IndexingSplitCache::from_config(
-            &node_config.indexer_config,
-            &node_config.data_dir_path,
-        )
-        .await?;
-        Arc::new(cache)
-    } else {
-        Arc::new(IndexingSplitCache::no_caching())
-    };
+    let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.
@@ -871,7 +878,7 @@ pub async fn serve_quickwit(
         let split_cache = indexing_split_cache.clone();
         let compactor_mailbox = start_compactor_service(
             &universe,
-            cluster.self_node_id().into(),
+            cluster.self_node_id(),
             compaction_client,
             &node_config.compactor_config,
             metastore_client.clone(),
@@ -2167,6 +2174,40 @@ mod tests {
         assert!(handle_opt.is_none());
 
         universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_split_cache_for_config() {
+        async fn cache_created(services: &[QuickwitService], standalone_compactors: bool) -> bool {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let mut node_config = NodeConfig::for_test();
+            node_config.data_dir_path = temp_dir.path().to_path_buf();
+            node_config.enabled_services = services.iter().copied().collect();
+            node_config.enable_standalone_compactors = standalone_compactors;
+            indexing_split_cache_for_config(&node_config).await.unwrap();
+            temp_dir
+                .path()
+                .join("indexer-split-cache")
+                .join("splits")
+                .is_dir()
+        }
+
+        // Indexer merging its own splits in-pipeline → real cache.
+        assert!(cache_created(&[QuickwitService::Indexer], false).await);
+        // Indexer co-located with a compactor → shared real cache.
+        assert!(
+            cache_created(
+                &[QuickwitService::Indexer, QuickwitService::Compactor],
+                true
+            )
+            .await
+        );
+        // Indexer offloading merges to remote compactors → no cache.
+        assert!(!cache_created(&[QuickwitService::Indexer], true).await);
+        // Standalone compactor → no cache by default.
+        assert!(!cache_created(&[QuickwitService::Compactor], true).await);
+        // Node that neither produces nor merges splits → no cache.
+        assert!(!cache_created(&[QuickwitService::Searcher], false).await);
     }
 
     #[tokio::test]

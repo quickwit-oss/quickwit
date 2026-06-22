@@ -73,7 +73,10 @@ impl Actor for CompactionPlanner {
     fn observable_state(&self) -> Self::ObservableState {}
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        info!("compaction planner starting, scanning metastore for immature splits");
+        info!(
+            "compaction planner starting, scanning metastore for immature splits in {} seconds",
+            INITIAL_SCAN_AND_PLAN_INTERVAL.as_secs()
+        );
         ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
         Ok(())
     }
