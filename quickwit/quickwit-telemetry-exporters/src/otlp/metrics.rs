@@ -18,31 +18,25 @@ use opentelemetry::metrics::MeterProvider;
 use opentelemetry_otlp::{
     MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
 };
-use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
 
 impl OtlpProtocol {
-    pub(crate) fn metric_exporter(
-        &self,
-        temporality: Temporality,
-    ) -> anyhow::Result<MetricExporter> {
+    pub(crate) fn metric_exporter(&self) -> anyhow::Result<MetricExporter> {
         match self {
             OtlpProtocol::Grpc => MetricExporter::builder()
                 .with_tonic()
                 .with_retry_policy(super::RETRY_POLICY)
-                .with_temporality(temporality)
                 .build(),
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
                 .with_retry_policy(super::RETRY_POLICY)
-                .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
                 .with_retry_policy(super::RETRY_POLICY)
-                .with_temporality(temporality)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }
@@ -55,8 +49,7 @@ pub(crate) fn build_recorder(
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
-    let temporality = otlp_config.metrics_temporality()?;
-    let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
+    let metric_exporter = metrics_protocol.metric_exporter()?;
     let metrics_provider = SdkMeterProvider::builder()
         .with_resource(quickwit_resource(service_version))
         .with_periodic_exporter(metric_exporter)
