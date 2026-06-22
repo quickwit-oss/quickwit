@@ -46,7 +46,7 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
-use crate::models::IndexingStatistics;
+use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
@@ -92,6 +92,7 @@ pub struct IndexingPipeline {
     // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
     // can be re-sent to the source on respawn; the source adopts it as its publish token.
     indexing_plan_id: String,
+    publish_token: SharedPublishToken,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
@@ -141,6 +142,7 @@ impl IndexingPipeline {
             },
             shard_ids: Default::default(),
             indexing_plan_id: String::new(),
+            publish_token: SharedPublishToken::default(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
@@ -310,6 +312,7 @@ impl IndexingPipeline {
             self.params.metastore.clone(),
             Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
+            self.publish_token.clone(),
         );
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
@@ -394,6 +397,7 @@ impl IndexingPipeline {
             storage_resolver: self.params.source_storage_resolver.clone(),
             event_broker: self.params.event_broker.clone(),
             indexing_setting: self.params.indexing_settings.clone(),
+            publish_token: self.publish_token.clone(),
         };
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))

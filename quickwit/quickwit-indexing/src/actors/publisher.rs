@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreError, MetastoreResult, MetastoreServiceClient};
 use serde::Serialize;
+use tracing::warn;
 
 use crate::actors::MergePlanner;
+use crate::models::SharedPublishToken;
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -44,6 +48,7 @@ pub struct Publisher {
     pub(crate) parquet_merge_planner_mailbox_opt:
         Option<Mailbox<super::parquet_pipeline::ParquetMergePlanner>>,
     pub(crate) source_mailbox_opt: Option<Mailbox<SourceActor>>,
+    pub(crate) publish_token: SharedPublishToken,
     pub(crate) counters: PublisherCounters,
 }
 
@@ -54,6 +59,7 @@ impl Publisher {
         metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
+        publish_token: SharedPublishToken,
     ) -> Publisher {
         Publisher {
             name,
@@ -63,6 +69,7 @@ impl Publisher {
             #[cfg(feature = "metrics")]
             parquet_merge_planner_mailbox_opt: None,
             source_mailbox_opt,
+            publish_token,
             counters: PublisherCounters::default(),
         }
     }
@@ -105,6 +112,47 @@ pub(crate) async fn suggest_truncate(
             )
             .await;
     }
+}
+
+pub(crate) async fn publish_with_retry<T, F, Fut>(
+    ctx: &ActorContext<Publisher>,
+    operation_name: &str,
+    mut publish: F,
+) -> Result<(), ActorExitStatus>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = MetastoreResult<T>>,
+{
+    for retry_delay in [
+        Some(Duration::from_millis(100)),
+        Some(Duration::from_millis(250)),
+        None,
+    ] {
+        let Err(error) = ctx.protect_future(publish()).await else {
+            return Ok(());
+        };
+        let retryable = matches!(
+            error,
+            MetastoreError::InvalidArgument { .. }
+                | MetastoreError::Unavailable(_)
+                | MetastoreError::TooManyRequests
+                | MetastoreError::Connection { .. }
+                | MetastoreError::Internal { .. }
+        );
+        match retry_delay {
+            Some(retry_delay) if retryable => {
+                warn!(%error, operation = operation_name, "metastore publish failed, retrying");
+                ctx.protect_future(tokio::time::sleep(retry_delay)).await;
+            }
+            _ => {
+                warn!(%error, operation = operation_name, retryable, "metastore publish failed, giving up after 3 tries");
+                return Err(anyhow::Error::from(error)
+                    .context(format!("failed to {operation_name}"))
+                    .into());
+            }
+        }
+    }
+    unreachable!("retry loop returns on the final attempt")
 }
 
 #[async_trait]

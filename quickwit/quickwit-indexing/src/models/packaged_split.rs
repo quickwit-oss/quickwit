@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use itertools::Itertools;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::types::{IndexUid, PublishToken, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
 use tracing::Span;
 
 use crate::merge_policy::MergeTask;
@@ -60,7 +60,6 @@ pub struct PackagedSplitBatch {
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
@@ -78,7 +77,6 @@ impl PackagedSplitBatch {
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_lock: PublishLock,
-        publish_token_opt: Option<PublishToken>,
         merge_task_opt: Option<MergeTask>,
         batch_parent_span: Span,
     ) -> Self {
@@ -94,7 +92,6 @@ impl PackagedSplitBatch {
             splits,
             checkpoint_delta_opt,
             publish_lock,
-            publish_token_opt,
             merge_task_opt,
             batch_parent_span,
         }

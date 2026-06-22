@@ -89,7 +89,6 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             splits,
             checkpoint_delta_opt: batch_builder.checkpoint_delta_opt,
             publish_lock: batch_builder.publish_lock,
-            publish_token_opt: batch_builder.publish_token_opt,
             merge_task_opt: None,
             batch_parent_span: batch_builder.batch_parent_span,
         };

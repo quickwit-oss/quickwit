@@ -123,7 +123,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::RawDocBatch;
+use crate::models::{RawDocBatch, SharedPublishToken};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -166,6 +166,7 @@ pub struct SourceRuntime {
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
     pub indexing_setting: IndexingSettings,
+    pub publish_token: SharedPublishToken,
 }
 
 impl SourceRuntime {
@@ -633,6 +634,7 @@ mod tests {
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
                 indexing_setting: IndexingSettings::default(),
+                publish_token: SharedPublishToken::default(),
             }
         }
 

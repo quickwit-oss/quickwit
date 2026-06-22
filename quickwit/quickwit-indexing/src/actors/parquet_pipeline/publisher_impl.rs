@@ -15,7 +15,6 @@
 //! `Handler<ParquetSplitsUpdate>` implementation for `Publisher`,
 //! specific to the metrics pipeline.
 
-use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
@@ -25,7 +24,9 @@ use quickwit_proto::metastore::{
 use tracing::{info, instrument};
 
 use super::ParquetSplitsUpdate;
-use crate::actors::publisher::{Publisher, serialize_checkpoint_delta, suggest_truncate};
+use crate::actors::publisher::{
+    Publisher, publish_with_retry, serialize_checkpoint_delta, suggest_truncate,
+};
 
 pub(crate) const METRICS_PUBLISHER_NAME: &str = "ParquetPublisher";
 
@@ -45,7 +46,6 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
-            publish_token_opt,
             _merge_task_opt,
             ..
         } = split_update;
@@ -57,27 +57,31 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             .collect();
         if let Some(_guard) = publish_lock.acquire().await {
             if quickwit_common::is_sketches_index(&index_uid.index_id) {
-                let publish_request = PublishSketchSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
-                };
-                ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
-                    .await
-                    .context("failed to publish sketch splits")?;
+                publish_with_retry(ctx, "publish sketch splits", || {
+                    let metastore = self.metastore.clone();
+                    let publish_request = PublishSketchSplitsRequest {
+                        index_uid: Some(index_uid.clone()),
+                        staged_split_ids: split_ids.clone(),
+                        replaced_split_ids: replaced_split_ids.clone(),
+                        index_checkpoint_delta_json_opt: index_checkpoint_delta_json_opt.clone(),
+                        publish_token_opt: self.publish_token.load().as_deref().cloned(),
+                    };
+                    async move { metastore.publish_sketch_splits(publish_request).await }
+                })
+                .await?;
             } else {
-                let publish_request = PublishMetricsSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
-                };
-                ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
-                    .await
-                    .context("failed to publish metrics splits")?;
+                publish_with_retry(ctx, "publish metrics splits", || {
+                    let metastore = self.metastore.clone();
+                    let publish_request = PublishMetricsSplitsRequest {
+                        index_uid: Some(index_uid.clone()),
+                        staged_split_ids: split_ids.clone(),
+                        replaced_split_ids: replaced_split_ids.clone(),
+                        index_checkpoint_delta_json_opt: index_checkpoint_delta_json_opt.clone(),
+                        publish_token_opt: self.publish_token.load().as_deref().cloned(),
+                    };
+                    async move { metastore.publish_metrics_splits(publish_request).await }
+                })
+                .await?;
             }
         } else {
             info!(
@@ -165,7 +169,7 @@ mod tests {
 
     use super::{METRICS_PUBLISHER_NAME, ParquetSplitsUpdate};
     use crate::actors::publisher::Publisher;
-    use crate::models::PublishLock;
+    use crate::models::{PublishLock, SharedPublishToken};
 
     fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
         ParquetSplitMetadata::metrics_builder()
@@ -200,6 +204,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -215,7 +220,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             }),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };
@@ -252,6 +256,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -264,7 +269,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..1),
             }),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };
@@ -292,6 +296,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -310,7 +315,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             }),
             publish_lock,
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };

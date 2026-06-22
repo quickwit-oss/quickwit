@@ -19,7 +19,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::IndexUid;
 use tracing::Span;
 
 use super::parquet_merge_messages::ParquetMergeTask;
@@ -40,8 +40,6 @@ pub struct ParquetSplitsUpdate {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     /// Publish lock for coordination.
     pub publish_lock: PublishLock,
-    /// Optional publish token.
-    pub publish_token_opt: Option<PublishToken>,
     /// Parent span for tracing.
     pub parent_span: Span,
     /// Merge task — held until the publisher drops this message, ensuring the

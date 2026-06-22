@@ -420,7 +420,7 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
-        // The indexing plan ID is a monotonically increased time based ID that's used as the
+        // The indexing plan ID is a monotonically increasing time based ID that's used as the
         // publish token for indexers, which ensures indexing plans and shard acquisition are always
         // informed by the most recent plan.
         let indexing_plan_id = Ulid::new().to_string();
@@ -446,12 +446,15 @@ impl IndexingScheduler {
                 IngesterStatus::Retiring | IngesterStatus::Decommissioning
             )
             .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
+
             let notify_on_drop = notify_on_drop.clone();
             let indexing_plan_id = indexing_plan_id.clone();
             tokio::spawn(async move {
                 let client = indexer.client.clone();
-                let apply_plan_fut =
-                    client.apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks,  indexing_plan_id });
+                let apply_plan_fut = client.apply_indexing_plan(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id,
+                });
                 let apply_result = match apply_deadline {
                     Some(timeout) => tokio::time::timeout(timeout, apply_plan_fut).await,
                     None => Ok(apply_plan_fut.await),

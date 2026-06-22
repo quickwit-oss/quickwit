@@ -150,7 +150,6 @@ impl Handler<MergeScratch> for MergeExecutor {
                     splits: vec![indexed_split],
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
-                    publish_token_opt: None,
                     batch_parent_span: merge_task.merge_parent_span.clone(),
                     merge_task_opt: Some(merge_task),
                 },

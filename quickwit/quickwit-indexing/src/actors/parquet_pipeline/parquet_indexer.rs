@@ -33,7 +33,7 @@ use quickwit_doc_mapper::{ArrowRowContext, RoutingExpr};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::types::{IndexUid, PublishToken, SourceId};
+use quickwit_proto::types::{IndexUid, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
@@ -43,7 +43,7 @@ use super::ProcessedParquetBatch;
 use super::parquet_merge_messages::ParquetMergeTask;
 use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager, PartitionedRecordBatch};
 use crate::actors::indexer::OTHER_PARTITION_ID;
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{NewPublishLock, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
 // TODO: read from index config commit_timeout_secs.
@@ -118,8 +118,6 @@ pub struct ParquetSplitBatch {
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     /// Publish lock for coordinating with sources.
     pub publish_lock: PublishLock,
-    /// Optional publish token.
-    pub publish_token_opt: Option<PublishToken>,
     /// Split IDs being replaced by this batch (non-empty for merges).
     /// Empty for the ingest path.
     pub replaced_split_ids: Vec<String>,
@@ -176,8 +174,6 @@ pub struct ParquetIndexer {
     checkpoint_delta: SourceCheckpointDelta,
     /// Publish lock for coordinating with sources.
     publish_lock: PublishLock,
-    /// Optional publish token.
-    publish_token_opt: Option<PublishToken>,
     /// Observability counters.
     counters: ParquetIndexerCounters,
     /// Current workbench ID for tracing.
@@ -270,7 +266,6 @@ impl ParquetIndexer {
             accumulator_config,
             checkpoint_delta: SourceCheckpointDelta::default(),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             counters,
             workbench_id: Ulid::new(),
             packager_mailbox,
@@ -557,7 +552,6 @@ impl ParquetIndexer {
             index_uid: self.index_uid.clone(),
             checkpoint_delta: self.make_index_checkpoint_delta(),
             publish_lock: self.publish_lock.clone(),
-            publish_token_opt: self.publish_token_opt.clone(),
         };
 
         if batch_for_packager.batches.is_empty()
@@ -691,21 +685,6 @@ impl Handler<NewPublishLock> for ParquetIndexer {
         self.workbench_id = Ulid::new();
         self.commit_timeout_scheduled = false;
 
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<NewPublishToken> for ParquetIndexer {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        let NewPublishToken(publish_token) = message;
-        self.publish_token_opt = Some(publish_token);
         Ok(())
     }
 }

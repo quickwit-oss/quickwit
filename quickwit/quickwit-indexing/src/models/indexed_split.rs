@@ -20,7 +20,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken};
+use quickwit_proto::types::{DocMappingUid, IndexUid};
 use tantivy::IndexBuilder;
 use tantivy::directory::MmapDirectory;
 use tracing::{Span, instrument};
@@ -155,7 +155,6 @@ pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
@@ -179,7 +178,6 @@ pub struct IndexedSplitBatchBuilder {
     pub splits: Vec<IndexedSplitBuilder>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
     pub memory_usage: GaugeGuard,
@@ -192,6 +190,5 @@ pub struct EmptySplit {
     pub index_uid: IndexUid,
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     pub batch_parent_span: Span,
 }
