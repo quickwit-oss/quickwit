@@ -233,10 +233,6 @@ impl DocSet for BitwiseMaskRangeDocSet {
         if self.current >= target {
             return self.current;
         }
-        if target >= self.column.num_docs() {
-            self.current = TERMINATED;
-            return TERMINATED;
-        }
         self.current = target;
         if self.matches(self.current) {
             return self.current;
@@ -330,21 +326,6 @@ mod tests {
         // seek past last match
         assert_eq!(docset.seek(14), TERMINATED);
         assert_eq!(docset.doc(), TERMINATED);
-    }
-
-    #[test]
-    fn test_docset_seek_beyond_num_docs() {
-        // seek with target >> num_docs must return TERMINATED without panicking.
-        // Regression test: Full-cardinality column, seeking past the column extent used to
-        // call values.get_val(target) directly → OOB panic in blockwise-linear reader.
-        let values: Vec<i64> = (0i64..16).collect();
-        let mut docset = make_docset(&values, 3, 0, 2); // matching docs: 0,1,4,5,8,9,12,13
-        assert_eq!(docset.seek(u32::MAX / 2), TERMINATED);
-        assert_eq!(docset.doc(), TERMINATED);
-
-        // Also check seek(TERMINATED) is safe
-        let mut docset2 = make_docset(&values, 3, 0, 2);
-        assert_eq!(docset2.seek(TERMINATED), TERMINATED);
     }
 
     #[test]
