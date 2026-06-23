@@ -524,7 +524,13 @@ fn build_mock_metastore(tracker: Arc<MockMetastoreState>) -> MetastoreServiceCli
         let n = publish_clone
             .publish_call_count
             .fetch_add(1, Ordering::SeqCst);
-        if Some(n) == publish_clone.fail_publish_at_call {
+        // `publish_with_retry` retries each logical publish up to 3× on a retryable error
+        // (Internal is retryable). To actually crash the pipeline the injected failure must
+        // span all 3 attempts (calls k..=k+2) so the retry budget is exhausted rather than
+        // masked by a successful retry.
+        if let Some(k) = publish_clone.fail_publish_at_call
+            && (k..=k + 2).contains(&n)
+        {
             // Failed publish: do NOT promote staged → published.
             return Err(quickwit_proto::metastore::MetastoreError::Internal {
                 message: "injected failure for trace conformance test".to_string(),
@@ -545,9 +551,11 @@ fn build_mock_metastore(tracker: Arc<MockMetastoreState>) -> MetastoreServiceCli
             published.remove(replaced_id);
             replaced_history.insert(replaced_id.clone(), ());
         }
+        // The first successful publish after the exhausted retries (call k+3) marks
+        // completion. With no injected failure (None), the first publish (n >= 0) marks it.
         if n >= publish_clone
             .fail_publish_at_call
-            .map(|x| x + 1)
+            .map(|x| x + 3)
             .unwrap_or(0)
         {
             publish_clone.publish_done.store(true, Ordering::SeqCst);
