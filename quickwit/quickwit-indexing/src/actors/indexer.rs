@@ -41,7 +41,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{DocMappingUid, PublishToken};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
-use tantivy::schema::{OwnedValue as TantivyValue, Schema};
+use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
@@ -100,7 +100,6 @@ struct IndexerState {
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
     cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
-    tiebreaker_field_opt: Option<tantivy::schema::Field>,
 }
 
 impl IndexerState {
@@ -298,7 +297,7 @@ impl IndexerState {
         counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
-                mut doc,
+                doc,
                 timestamp_opt,
                 partition,
                 num_bytes,
@@ -324,16 +323,6 @@ impl IndexerState {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
             let _protect_guard = ctx.protect_zone();
-            if let Some(tiebreaker_field) = self.tiebreaker_field_opt {
-                if doc.get_first(tiebreaker_field).is_none() {
-                    doc.add_field_value(
-                        tiebreaker_field,
-                        &TantivyValue::I64(indexed_split.tiebreaker_seq_number as i64),
-                    );
-                    indexed_split.tiebreaker_seq_number =
-                        indexed_split.tiebreaker_seq_number.wrapping_add(1);
-                }
-            }
             indexed_split
                 .index_writer
                 .add_document(doc)
@@ -550,7 +539,6 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
-        let tiebreaker_field_opt = schema.get_field("tiebreaker").ok();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
@@ -582,7 +570,6 @@ impl Indexer {
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_opt,
-                tiebreaker_field_opt,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -722,8 +709,7 @@ mod tests {
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
-    use tantivy::schema::Value as TantivyValue;
-    use tantivy::{DateTime, TantivyDocument, doc};
+    use tantivy::{DateTime, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
 
@@ -1668,199 +1654,6 @@ mod tests {
             IndexCheckpointDelta::for_test("test-source", 4..8)
         );
 
-        universe.assert_quit().await;
-        Ok(())
-    }
-
-    const DOCMAPPER_WITH_TIEBREAKER_JSON: &str = r#"{
-        "field_mappings": [
-            { "name": "body", "type": "text" },
-            { "name": "tiebreaker", "type": "i64", "fast": true, "stored": true }
-        ]
-    }"#;
-
-    fn read_tiebreakers(split: IndexedSplitBuilder) -> anyhow::Result<Vec<i64>> {
-        // Keep the full IndexedSplit alive so the scratch directory isn't dropped
-        // before the reader can access it.
-        let indexed_split = split.finalize()?;
-        let reader = indexed_split.index.reader()?;
-        let searcher = reader.searcher();
-        let schema = searcher.schema();
-        let tiebreaker_field = schema.get_field("tiebreaker").unwrap();
-        let mut values = Vec::new();
-        for doc_address in searcher.search(
-            &tantivy::query::AllQuery,
-            &tantivy::collector::DocSetCollector,
-        )? {
-            let doc: TantivyDocument = searcher.doc(doc_address)?;
-            let value = doc
-                .get_first(tiebreaker_field)
-                .and_then(|v| v.as_i64())
-                .expect("tiebreaker must be present and i64");
-            values.push(value);
-        }
-        Ok(values)
-    }
-
-    #[tokio::test]
-    async fn test_indexer_stamps_tiebreaker_sequentially() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new_with_random_ulid("test-index"),
-            source_id: "test-source".to_string(),
-            node_id: NodeId::from_str("test-node"),
-            pipeline_uid: PipelineUid::default(),
-        };
-        let doc_mapper: Arc<DocMapper> =
-            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_WITH_TIEBREAKER_JSON).unwrap());
-        let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let indexing_directory = TempDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_last_delete_opstamp()
-            .once()
-            .returning(|_| Ok(LastDeleteOpstampResponse::new(0)));
-        mock_metastore.expect_publish_splits().never();
-        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
-            pipeline_id,
-            doc_mapper,
-            MetastoreServiceClient::from_mock(mock_metastore),
-            indexing_directory,
-            indexing_settings,
-            None,
-            index_serializer_mailbox,
-        );
-        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
-        indexer_mailbox
-            .send_message(ProcessedDocBatch::new(
-                vec![
-                    ProcessedDoc {
-                        doc: doc!(body_field => "doc 1"),
-                        timestamp_opt: None,
-                        partition: 0,
-                        num_bytes: 10,
-                    },
-                    ProcessedDoc {
-                        doc: doc!(body_field => "doc 2"),
-                        timestamp_opt: None,
-                        partition: 0,
-                        num_bytes: 10,
-                    },
-                    ProcessedDoc {
-                        doc: doc!(body_field => "doc 3"),
-                        timestamp_opt: None,
-                        partition: 0,
-                        num_bytes: 10,
-                    },
-                ],
-                SourceCheckpointDelta::from_range(0..3),
-                false,
-            ))
-            .await?;
-        universe
-            .send_exit_with_success(&indexer_mailbox)
-            .await
-            .unwrap();
-        indexer_handle.join().await;
-        let messages: Vec<IndexedSplitBatchBuilder> = index_serializer_inbox.drain_for_test_typed();
-        assert_eq!(messages.len(), 1);
-        let split = messages
-            .into_iter()
-            .next()
-            .unwrap()
-            .splits
-            .into_iter()
-            .next()
-            .unwrap();
-        assert_eq!(split.split_attrs.num_docs, 3);
-
-        let mut tiebreakers = read_tiebreakers(split)?;
-        tiebreakers.sort_unstable();
-        // Values must be strictly consecutive (sequential per-split counter).
-        for window in tiebreakers.windows(2) {
-            assert_eq!(
-                window[1].wrapping_sub(window[0]),
-                1,
-                "tiebreakers must be consecutive: {:?}",
-                tiebreakers,
-            );
-        }
-        universe.assert_quit().await;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_indexer_does_not_overwrite_existing_tiebreaker() -> anyhow::Result<()> {
-        let universe = Universe::with_accelerated_time();
-        let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new_with_random_ulid("test-index"),
-            source_id: "test-source".to_string(),
-            node_id: NodeId::from_str("test-node"),
-            pipeline_uid: PipelineUid::default(),
-        };
-        let doc_mapper: Arc<DocMapper> =
-            Arc::new(serde_json::from_str::<DocMapper>(DOCMAPPER_WITH_TIEBREAKER_JSON).unwrap());
-        let schema = doc_mapper.schema();
-        let body_field = schema.get_field("body").unwrap();
-        let tiebreaker_field = schema.get_field("tiebreaker").unwrap();
-        let indexing_directory = TempDirectory::for_test();
-        let indexing_settings = IndexingSettings::for_test();
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_last_delete_opstamp()
-            .once()
-            .returning(|_| Ok(LastDeleteOpstampResponse::new(0)));
-        mock_metastore.expect_publish_splits().never();
-        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
-            pipeline_id,
-            doc_mapper,
-            MetastoreServiceClient::from_mock(mock_metastore),
-            indexing_directory,
-            indexing_settings,
-            None,
-            index_serializer_mailbox,
-        );
-        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
-        let pre_set_tiebreaker: i64 = 12345;
-        indexer_mailbox
-            .send_message(ProcessedDocBatch::new(
-                vec![ProcessedDoc {
-                    doc: doc!(body_field => "doc with tiebreaker", tiebreaker_field => pre_set_tiebreaker),
-                    timestamp_opt: None,
-                    partition: 0,
-                    num_bytes: 10,
-                }],
-                SourceCheckpointDelta::from_range(0..1),
-                false,
-            ))
-            .await?;
-        universe
-            .send_exit_with_success(&indexer_mailbox)
-            .await
-            .unwrap();
-        indexer_handle.join().await;
-        let messages: Vec<IndexedSplitBatchBuilder> = index_serializer_inbox.drain_for_test_typed();
-        assert_eq!(messages.len(), 1);
-        let split = messages
-            .into_iter()
-            .next()
-            .unwrap()
-            .splits
-            .into_iter()
-            .next()
-            .unwrap();
-        assert_eq!(split.split_attrs.num_docs, 1);
-
-        let tiebreakers = read_tiebreakers(split)?;
-        assert_eq!(
-            tiebreakers.len(),
-            1,
-            "doc with pre-existing tiebreaker must not get a second one"
-        );
-        assert_eq!(tiebreakers[0], pre_set_tiebreaker);
         universe.assert_quit().await;
         Ok(())
     }

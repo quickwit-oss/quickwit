@@ -21,7 +21,6 @@ use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken};
-use rand::random;
 use tantivy::IndexBuilder;
 use tantivy::directory::MmapDirectory;
 use tracing::{Span, instrument};
@@ -36,7 +35,6 @@ pub struct IndexedSplitBuilder {
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
-    pub tiebreaker_seq_number: i16,
 }
 
 pub struct IndexedSplit {
@@ -116,7 +114,6 @@ impl IndexedSplitBuilder {
             index_writer,
             split_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
-            tiebreaker_seq_number: random(),
         })
     }
 
