@@ -299,7 +299,7 @@ mod tests {
         }
         .parse_user_query(&[])
         .unwrap();
-        let (query, _) = doc_mapper.query(schema, query_ast, true, "", None).unwrap();
+        let (query, _) = doc_mapper.query(schema, query_ast, true, None).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"TermQuery(Term(field=2, type=Json, path=toto.titi, type=Str, "hello"))"#
@@ -313,7 +313,7 @@ mod tests {
         let query_ast = query_ast_from_user_text("toto.titi:hello", None)
             .parse_user_query(doc_mapper.default_search_fields())
             .unwrap();
-        let (query, _) = doc_mapper.query(schema, query_ast, true, "", None).unwrap();
+        let (query, _) = doc_mapper.query(schema, query_ast, true, None).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"TermQuery(Term(field=1, type=Json, path=toto.titi, type=Str, "hello"))"#
@@ -327,7 +327,7 @@ mod tests {
         let query_ast = query_ast_from_user_text("toto:5", None)
             .parse_user_query(&[])
             .unwrap();
-        let (query, _) = doc_mapper.query(schema, query_ast, true, "", None).unwrap();
+        let (query, _) = doc_mapper.query(schema, query_ast, true, None).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))], minimum_number_should_match: 1 }"#

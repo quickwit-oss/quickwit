@@ -186,7 +186,6 @@ pub struct BuildTantivyAstContext<'a> {
     pub tokenizer_manager: &'a TokenizerManager,
     pub search_fields: &'a [String],
     pub with_validation: bool,
-    pub split_id: &'a str,
 }
 
 impl<'a> BuildTantivyAstContext<'a> {
@@ -202,7 +201,6 @@ impl<'a> BuildTantivyAstContext<'a> {
             tokenizer_manager: &DEFAULT_TOKENIZER_MANAGER,
             search_fields: &[],
             with_validation: true,
-            split_id: "",
         }
     }
 

@@ -19,6 +19,7 @@ use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Geometric};
 use serde::{Deserialize, Serialize};
+use tantivy::index::SegmentId;
 use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
 use tantivy::{DocId, DocSet, Score, SegmentReader, TERMINATED};
 
@@ -27,7 +28,7 @@ use crate::InvalidQuery;
 use crate::query_ast::QueryAst;
 
 /// A query that samples documents with a given probability, seeded deterministically from the
-/// split ID.
+/// segment ID.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RandomQuery {
     pub probability: f64,
@@ -50,54 +51,51 @@ impl From<RandomQuery> for QueryAst {
 impl BuildTantivyAst for RandomQuery {
     fn build_tantivy_ast_impl(
         &self,
-        context: &BuildTantivyAstContext,
+        _context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let seed = seed_from_split_id(context.split_id);
         Ok(TantivyRandomQuery {
             probability: self.probability,
-            seed,
         }
         .into())
     }
 }
 
-fn seed_from_split_id(split_id: &str) -> u64 {
+fn seed_from_segment_id(segment_id: SegmentId) -> u64 {
     let mut hasher = FnvHasher::default();
-    hasher.write(split_id.as_bytes());
+    hasher.write(segment_id.uuid_string().as_bytes());
     hasher.finish()
 }
 
 #[derive(Clone, Debug)]
 struct TantivyRandomQuery {
     probability: f64,
-    seed: u64,
 }
 
 impl Query for TantivyRandomQuery {
     fn weight(&self, _enable_scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
         Ok(Box::new(RandomWeight {
             probability: self.probability,
-            seed: self.seed,
         }))
     }
 }
 
 struct RandomWeight {
     probability: f64,
-    seed: u64,
 }
 
 impl Weight for RandomWeight {
     fn scorer(&self, reader: &SegmentReader, _boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
+        let seed = seed_from_segment_id(reader.segment_id());
         Ok(Box::new(RandomDocSet::new(
             self.probability,
             reader.max_doc(),
-            self.seed,
+            seed,
         )))
     }
 
     fn explain(&self, reader: &SegmentReader, doc: DocId) -> tantivy::Result<Explanation> {
-        let mut scorer = RandomDocSet::new(self.probability, reader.max_doc(), self.seed);
+        let seed = seed_from_segment_id(reader.segment_id());
+        let mut scorer = RandomDocSet::new(self.probability, reader.max_doc(), seed);
         if scorer.seek(doc) == doc {
             Ok(Explanation::new("random match", 1.0))
         } else {
@@ -277,9 +275,10 @@ impl Scorer for RandomDocSet {
 
 #[cfg(test)]
 mod tests {
+    use tantivy::index::SegmentId;
     use tantivy::{DocSet, TERMINATED};
 
-    use super::{RandomDocSet, seed_from_split_id};
+    use super::{RandomDocSet, seed_from_segment_id};
 
     fn collect_docs(mut docset: RandomDocSet) -> Vec<u32> {
         let mut docs = Vec::new();
@@ -371,14 +370,10 @@ mod tests {
     }
 
     #[test]
-    fn test_seed_from_split_id_deterministic() {
-        assert_eq!(
-            seed_from_split_id("split-abc"),
-            seed_from_split_id("split-abc")
-        );
-        assert_ne!(
-            seed_from_split_id("split-abc"),
-            seed_from_split_id("split-abd")
-        );
+    fn test_seed_from_segment_id_deterministic() {
+        let seg_a = SegmentId::from_uuid_string("a5c4dfcbdfe645089129e308e26d5523").unwrap();
+        let seg_b = SegmentId::from_uuid_string("b6d5e0dceff756199230f419f37e6634").unwrap();
+        assert_eq!(seed_from_segment_id(seg_a), seed_from_segment_id(seg_a));
+        assert_ne!(seed_from_segment_id(seg_a), seed_from_segment_id(seg_b));
     }
 }

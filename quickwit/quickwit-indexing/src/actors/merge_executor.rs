@@ -533,10 +533,8 @@ impl MergeExecutor {
                     "Delete all documents matched by query `{:?}`",
                     parsed_query_ast
                 );
-                // split_id is "" here: RandomQuery in a delete task is nonsensical, so the
-                // fixed seed is acceptable.
                 let (query, _) =
-                    doc_mapper.query(union_index.schema(), parsed_query_ast, false, "", None)?;
+                    doc_mapper.query(union_index.schema(), parsed_query_ast, false, None)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");
