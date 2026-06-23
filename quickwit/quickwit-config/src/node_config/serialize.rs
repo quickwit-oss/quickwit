@@ -1476,7 +1476,7 @@ mod tests {
                     mtls_header: Some("my-header".to_string()),
                     grpc_config: GrpcConfig {
                         max_message_size: ByteSize::mib(30),
-                        tls: None,
+                        tls_config: None,
                         keep_alive: None,
                     },
                     datadog_config: WebsocketConfig {

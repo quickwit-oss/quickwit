@@ -230,9 +230,9 @@ mod tests {
     use super::*;
 
     const TEST_CA_CERT: &[u8] =
-        include_bytes!("../../../quickwit-integration-tests/test_data/ca.crt");
+        include_bytes!("../../../resources/tests/tls/ca.crt");
     const TEST_CLIENT_CERT: &[u8] =
-        include_bytes!("../../../quickwit-integration-tests/test_data/server.crt");
+        include_bytes!("../../../resources/tests/tls/server.crt");
 
     #[test]
     fn test_mtls_header_interceptor_impl() {
