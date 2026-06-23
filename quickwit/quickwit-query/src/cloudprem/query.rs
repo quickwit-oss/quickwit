@@ -12,9 +12,8 @@ use serde_json::Number;
 
 use super::{missing_required, unsupported_query_error};
 use crate::query_ast::{
-    BitwiseMaskRangeQuery, BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams,
-    FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
-    sampling_params_range,
+    BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
+    QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 use crate::{InvalidQuery, JsonLiteral};
 
@@ -165,32 +164,16 @@ fn build_range_query_helper(
             value_type,
         });
     } else if field == EVP_RANDOM_DRAW {
-        // Returns Some(Some(f64)) for a numeric bound, Some(None) for Unbounded, and None for a
-        // non-numeric literal (which is always invalid for random_draw and should produce
-        // MatchNone).
-        let bound_to_f64 = |bound: Bound<JsonLiteral>| -> Option<Option<f64>> {
-            match bound {
-                Bound::Unbounded => Some(None),
-                Bound::Included(JsonLiteral::Number(n))
-                | Bound::Excluded(JsonLiteral::Number(n)) => Some(n.as_f64()),
-                _ => None,
-            }
-        };
-        let (Some(lo_opt), Some(hi_opt)) = (bound_to_f64(lower_bound), bound_to_f64(upper_bound))
-        else {
+        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) = (
+            map_bound_randomdraw_to_tiebreaker(lower_bound),
+            map_bound_randomdraw_to_tiebreaker(upper_bound),
+        ) else {
             return Ok(QueryAst::MatchNone);
         };
-        let lo = lo_opt.unwrap_or(0.0);
-        let hi = hi_opt.unwrap_or(1.0);
-        if lo >= hi || hi <= 0.0 || lo >= 1.0 {
-            return Ok(QueryAst::MatchNone);
-        }
-        let (mask, c, b) = sampling_params_range(lo.max(0.0), hi.min(1.0), 16);
-        return Ok(BitwiseMaskRangeQuery {
+        return Ok(RangeQuery {
             field: QW_TIEBREAKER.to_string(),
-            mask,
-            lo: c,
-            hi: b,
+            lower_bound: remapped_lower_bound,
+            upper_bound: remapped_upper_bound,
         }
         .into());
     }
@@ -200,6 +183,28 @@ fn build_range_query_helper(
         upper_bound,
     }
     .into())
+}
+
+fn map_bound_randomdraw_to_tiebreaker(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
+    let map_literal = |literal: JsonLiteral| {
+        let JsonLiteral::Number(num) = literal else {
+            return None;
+        };
+        // this maps [0, 1) to [i16::MIN, i16::MAX)
+        // we ceil so that low enough probability still allow for a non-empty range
+        let int = num
+            .as_f64()?
+            .mul_add(u16::MAX as f64, i16::MIN as f64)
+            .ceil() as i64;
+
+        Some(JsonLiteral::Number(int.into()))
+    };
+    let new_bound = match bound {
+        Bound::Included(lit) => Bound::Included(map_literal(lit)?),
+        Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
+        Bound::Unbounded => Bound::Unbounded,
+    };
+    Some(new_bound)
 }
 
 fn build_range_query(range_query: AttributeRangeQueryNode) -> Result<QueryAst, InvalidQuery> {
@@ -875,67 +880,47 @@ mod tests {
 
     #[test]
     fn test_range_remap_random_draw() {
-        use crate::query_ast::BitwiseMaskRangeQuery;
-
-        // random_draw < 0.125 (12.5%) → 3-bit mask, selects (v & 7) == 0
         let ast = build_range_query_helper(
             "random_draw".to_string(),
             Bound::Unbounded,
             Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.125).unwrap())),
         )
         .unwrap();
-        let expected_ast = QueryAst::BitwiseMaskRange(BitwiseMaskRangeQuery {
+
+        let expected_ast = QueryAst::Range(RangeQuery {
             field: "tiebreaker".to_string(),
-            mask: 7,
-            lo: 0,
-            hi: 1,
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-24576_i32))),
         });
         assert_eq!(ast, expected_ast);
 
-        // random_draw < 0 → empty range → MatchNone
-        let zero_ast = build_range_query_helper(
-            "random_draw".to_string(),
-            Bound::Unbounded,
-            Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.0).unwrap())),
-        )
+        let zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(0.0).unwrap()),
+        ))
         .unwrap();
-        assert_eq!(zero_ast, QueryAst::MatchNone);
+        assert_eq!(
+            zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN)))
+        );
 
-        // random_draw < 1.0 → matches all docs (mask=0, v & 0 == 0 always)
-        let everything_ast = build_range_query_helper(
-            "random_draw".to_string(),
-            Bound::Unbounded,
-            Bound::Excluded(JsonLiteral::Number(Number::from_f64(1.0).unwrap())),
-        )
+        let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(1.0).unwrap()),
+        ))
         .unwrap();
-        let QueryAst::BitwiseMaskRange(everything_query) = everything_ast else {
-            panic!("expected BitwiseMaskRange");
-        };
-        assert_eq!(everything_query.field, "tiebreaker");
-        // hi > mask means the upper bound is never reached: always matches
-        assert!(everything_query.hi > everything_query.mask);
+        assert_eq!(
+            everything_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MAX)))
+        );
 
         // anything more than zero, we want to return at least some result
-        let tiny_ast = build_range_query_helper(
-            "random_draw".to_string(),
-            Bound::Unbounded,
-            Bound::Excluded(JsonLiteral::Number(Number::from_f64(f64::EPSILON).unwrap())),
-        )
+        let non_zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(f64::EPSILON).unwrap()),
+        ))
         .unwrap();
-        let QueryAst::BitwiseMaskRange(tiny_query) = tiny_ast else {
-            panic!("expected BitwiseMaskRange");
-        };
-        // hi must be at least 1 so that very small probabilities still select something
-        assert!(tiny_query.hi >= 1);
-
-        // non-numeric bounds → MatchNone (not a full-scan)
-        let string_bound_ast = build_range_query_helper(
-            "random_draw".to_string(),
-            Bound::Unbounded,
-            Bound::Excluded(JsonLiteral::String("high".to_string())),
-        )
-        .unwrap();
-        assert_eq!(string_bound_ast, QueryAst::MatchNone);
+        assert_eq!(
+            non_zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN + 1)))
+        );
     }
 
     #[test]
