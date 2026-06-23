@@ -78,7 +78,7 @@ pub(crate) async fn start_grpc_server(
     // with a `TlsAcceptor` whose certificate can be hot-reloaded. This is deliberately not using
     // tonic's builtin `Server::tls_config`, which bakes the certificate in at startup and offers
     // no way to reload it without restarting the process.
-    let mut server = Server::builder().trace_fn(|request| {
+    let server = Server::builder().trace_fn(|request| {
         let method = request.method();
         let path = request.uri().path();
         let span = tracing::span!(tracing::Level::INFO, "grpc-request", %method, %path);
