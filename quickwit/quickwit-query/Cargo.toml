@@ -29,6 +29,9 @@ tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+fnv = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
 rustc-hash = { workspace = true }
 
 quickwit-common = { workspace = true }

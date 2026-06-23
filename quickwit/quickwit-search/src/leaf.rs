@@ -702,6 +702,7 @@ async fn leaf_search_single_split(
         split_schema.clone(),
         query_ast.clone(),
         false,
+        &split_id,
         predicate_cache,
     )?;
 

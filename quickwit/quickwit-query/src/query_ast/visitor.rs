@@ -17,8 +17,8 @@ use crate::query_ast::cache_node::CacheState;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, CacheNode, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery,
-    TermQuery, TermSetQuery, WildcardQuery,
+    BoolQuery, CacheNode, FullTextQuery, PhrasePrefixQuery, QueryAst, RandomQuery, RangeQuery,
+    RegexQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -34,6 +34,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::PhrasePrefix(phrase_prefix_query) => {
                 self.visit_phrase_prefix(phrase_prefix_query)
             }
+            QueryAst::Random(random_query) => self.visit_random(random_query),
             QueryAst::Range(range_query) => self.visit_range(range_query),
             QueryAst::MatchAll => self.visit_match_all(),
             QueryAst::MatchNone => self.visit_match_none(),
@@ -94,6 +95,10 @@ pub trait QueryAstVisitor<'a> {
         self.visit(underlying)
     }
 
+    fn visit_random(&mut self, _random_query: &'a RandomQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
     fn visit_range(&mut self, _range_query: &'a RangeQuery) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -141,6 +146,7 @@ pub trait QueryAstTransformer {
             QueryAst::PhrasePrefix(phrase_prefix_query) => {
                 self.transform_phrase_prefix(phrase_prefix_query)
             }
+            QueryAst::Random(random_query) => self.transform_random(random_query),
             QueryAst::Range(range_query) => self.transform_range(range_query),
             QueryAst::MatchAll => self.transform_match_all(),
             QueryAst::MatchNone => self.transform_match_none(),
@@ -222,6 +228,13 @@ pub trait QueryAstTransformer {
                 boost,
             })
         })
+    }
+
+    fn transform_random(
+        &mut self,
+        random_query: RandomQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::Random(random_query)))
     }
 
     fn transform_range(&mut self, range_query: RangeQuery) -> Result<Option<QueryAst>, Self::Err> {

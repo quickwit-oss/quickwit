@@ -26,6 +26,7 @@ mod cache_node;
 mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
+mod random_query;
 mod range_query;
 mod regex_query;
 mod required_terms;
@@ -42,6 +43,7 @@ pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
+pub use random_query::RandomQuery;
 pub use range_query::RangeQuery;
 pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
@@ -64,6 +66,7 @@ pub enum QueryAst {
     FieldPresence(FieldPresenceQuery),
     FullText(FullTextQuery),
     PhrasePrefix(PhrasePrefixQuery),
+    Random(RandomQuery),
     Range(RangeQuery),
     UserInput(UserInputQuery),
     Wildcard(WildcardQuery),
@@ -110,6 +113,7 @@ impl QueryAst {
             | ast @ QueryAst::MatchAll
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::FieldPresence(_)
+            | ast @ QueryAst::Random(_)
             | ast @ QueryAst::Range(_)
             | ast @ QueryAst::Wildcard(_)
             | ast @ QueryAst::Regex(_) => Ok(ast),
@@ -182,6 +186,7 @@ pub struct BuildTantivyAstContext<'a> {
     pub tokenizer_manager: &'a TokenizerManager,
     pub search_fields: &'a [String],
     pub with_validation: bool,
+    pub split_id: &'a str,
 }
 
 impl<'a> BuildTantivyAstContext<'a> {
@@ -197,6 +202,7 @@ impl<'a> BuildTantivyAstContext<'a> {
             tokenizer_manager: &DEFAULT_TOKENIZER_MANAGER,
             search_fields: &[],
             with_validation: true,
+            split_id: "",
         }
     }
 
@@ -240,6 +246,7 @@ impl BuildTantivyAst for QueryAst {
         match self {
             QueryAst::Bool(bool_query) => bool_query.build_tantivy_ast_call(context),
             QueryAst::Term(term_query) => term_query.build_tantivy_ast_call(context),
+            QueryAst::Random(random_query) => random_query.build_tantivy_ast_call(context),
             QueryAst::Range(range_query) => range_query.build_tantivy_ast_call(context),
             QueryAst::MatchAll => Ok(TantivyQueryAst::match_all()),
             QueryAst::MatchNone => Ok(TantivyQueryAst::match_none()),
