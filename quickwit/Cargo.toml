@@ -85,6 +85,7 @@ default-members = [
   "quickwit-metrics-inventory",
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
+  "quickwit-processing",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",

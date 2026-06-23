@@ -52,7 +52,7 @@ tests:
      - "env:testenv"
      - "version:1.2.3"
     timestamp: 1
-    trace_id: "123452345676543345654323456"
+    trace_id: "0000000000661e0d11ad103ca4255900"
  -
   sample: "time=\"2015-03-26T01:27:38-04:00\" level=debug msg=\"Started observing beach\" animal=walrus number=8 dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
   result:
@@ -72,7 +72,7 @@ tests:
      - "env:testenv"
      - "version:1.2.3"
     timestamp: 1
-    trace_id: "123452345676543345654323456"
+    trace_id: "0000000000661e0d11ad103ca4255900"
  -
   sample: "[Oct 27 02:18:00] DEBUG main: started observing beach animal=walrus dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=\"123452345676543345654323456\" dd.span_id=\"67890\""
   result:
@@ -93,5 +93,5 @@ tests:
      - "env:testenv"
      - "version:1.2.3"
     timestamp: 25841880000
-    trace_id: "123452345676543345654323456"
+    trace_id: "0000000000661e0d11ad103ca4255900"
 
