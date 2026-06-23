@@ -74,10 +74,7 @@ struct TantivyRandomQuery {
 }
 
 impl Query for TantivyRandomQuery {
-    fn weight(
-        &self,
-        _enable_scoring: EnableScoring<'_>,
-    ) -> tantivy::Result<Box<dyn Weight>> {
+    fn weight(&self, _enable_scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
         Ok(Box::new(RandomWeight {
             probability: self.probability,
             seed: self.seed,
@@ -111,13 +108,14 @@ impl Weight for RandomWeight {
     }
 }
 
-/// Selects documents with probability p using a geometric distribution (first success of a Bernoulli trials)
+/// Selects documents with probability p using a geometric distribution (first success of a
+/// Bernoulli trials)
 ///
 /// Two modes are used depending on the probability:
-/// - Selecting (p <= 0.5): Geometric(p) gaps between *selected* docs.
-///   E[gap] = (1-p)/p -- efficient when few docs are selected.
-/// - Rejecting (p > 0.5): Geometric(1-p) gaps between *rejected* docs.
-///   E[gap] = p/(1-p) -- efficient when few docs are rejected.
+/// - Selecting (p <= 0.5): Geometric(p) gaps between *selected* docs. E[gap] = (1-p)/p -- efficient
+///   when few docs are selected.
+/// - Rejecting (p > 0.5): Geometric(1-p) gaps between *rejected* docs. E[gap] = p/(1-p) --
+///   efficient when few docs are rejected.
 enum SamplingMode {
     Selecting {
         geo: Geometric,
@@ -186,7 +184,10 @@ impl RandomDocSet {
                 max_doc,
                 probability,
                 rng,
-                mode: SamplingMode::Rejecting { geo, next_rejection },
+                mode: SamplingMode::Rejecting {
+                    geo,
+                    next_rejection,
+                },
             }
         }
     }
@@ -212,7 +213,11 @@ fn advance_past_rejections(
             TERMINATED
         };
     }
-    let selected = if candidate < max_doc { candidate } else { TERMINATED };
+    let selected = if candidate < max_doc {
+        candidate
+    } else {
+        TERMINATED
+    };
     (selected, next_rejection)
 }
 
@@ -233,10 +238,18 @@ impl DocSet for RandomDocSet {
                     TERMINATED
                 };
             }
-            SamplingMode::Rejecting { geo, next_rejection } => {
+            SamplingMode::Rejecting {
+                geo,
+                next_rejection,
+            } => {
                 let candidate = self.current_doc + 1;
-                let (new_doc, new_next_rej) =
-                    advance_past_rejections(candidate, *next_rejection, self.max_doc, &geo, &mut self.rng);
+                let (new_doc, new_next_rej) = advance_past_rejections(
+                    candidate,
+                    *next_rejection,
+                    self.max_doc,
+                    geo,
+                    &mut self.rng,
+                );
                 self.current_doc = new_doc;
                 if let SamplingMode::Rejecting { next_rejection, .. } = &mut self.mode {
                     *next_rejection = new_next_rej;
@@ -349,13 +362,23 @@ mod tests {
     fn test_random_query_docs_strictly_increasing() {
         let docs = collect_docs(RandomDocSet::new(0.5, 10_000, 99));
         for window in docs.windows(2) {
-            assert!(window[0] < window[1], "docs not strictly increasing: {:?}", window);
+            assert!(
+                window[0] < window[1],
+                "docs not strictly increasing: {:?}",
+                window
+            );
         }
     }
 
     #[test]
     fn test_seed_from_split_id_deterministic() {
-        assert_eq!(seed_from_split_id("split-abc"), seed_from_split_id("split-abc"));
-        assert_ne!(seed_from_split_id("split-abc"), seed_from_split_id("split-abd"));
+        assert_eq!(
+            seed_from_split_id("split-abc"),
+            seed_from_split_id("split-abc")
+        );
+        assert_ne!(
+            seed_from_split_id("split-abc"),
+            seed_from_split_id("split-abd")
+        );
     }
 }

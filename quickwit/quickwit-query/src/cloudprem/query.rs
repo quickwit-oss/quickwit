@@ -878,7 +878,11 @@ mod tests {
         let QueryAst::Random(q) = ast else {
             panic!("expected RandomQuery, got {ast:?}");
         };
-        assert!((q.probability - 0.01).abs() < 1e-10, "probability={}", q.probability);
+        assert!(
+            (q.probability - 0.01).abs() < 1e-10,
+            "probability={}",
+            q.probability
+        );
 
         let ast = build_range_query_helper(
             "random_draw".to_string(),
@@ -889,7 +893,11 @@ mod tests {
         let QueryAst::Random(q) = ast else {
             panic!("expected RandomQuery, got {ast:?}");
         };
-        assert!((q.probability - 0.125).abs() < 1e-10, "probability={}", q.probability);
+        assert!(
+            (q.probability - 0.125).abs() < 1e-10,
+            "probability={}",
+            q.probability
+        );
 
         let ast = build_range_query_helper(
             "random_draw".to_string(),
