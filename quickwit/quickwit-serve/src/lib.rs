@@ -418,6 +418,7 @@ fn start_shard_positions_service(
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
+#[allow(clippy::too_many_arguments)]
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,

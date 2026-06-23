@@ -633,7 +633,7 @@ impl IntermediateResultMapper {
                 let sum_other_doc_count = buckets.sum_other_doc_count();
                 let mut total_in_buckets = 0u64;
                 for (bucket_key, entry) in buckets.entries().iter() {
-                    let doc_count = entry.doc_count as u64;
+                    let doc_count = entry.doc_count;
                     total_in_buckets += doc_count;
                     state.key.push(bucket_key.to_string());
                     let mut sub_agg = entry.sub_aggregation.clone();
