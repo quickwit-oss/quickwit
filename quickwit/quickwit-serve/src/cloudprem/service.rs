@@ -1208,7 +1208,7 @@ mod tests {
 
     use prost::Message;
     use prost_types::Any;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_proto::cloudprem::{MatchNoneQueryNode, QueryNode, query_node};
     use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -1219,7 +1219,7 @@ mod tests {
     use super::*;
 
     async fn make_service_with_mock_search(mock_search: MockSearchService) -> CloudPremServiceImpl {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, true)
             .await
             .unwrap();

@@ -404,7 +404,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
@@ -536,7 +536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_local_shards_task() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -610,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_shards_update_listener() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

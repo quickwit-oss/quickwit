@@ -299,7 +299,7 @@ mod tests {
     use std::sync::Arc;
 
     use assert_json_diff::assert_json_eq;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_proto::cloudprem::{CloudPremError, EsHttpRequest};
     use quickwit_proto::metastore::MetastoreServiceClient;
@@ -324,7 +324,7 @@ mod tests {
     ) -> Result<super::EsHttpResponse, CloudPremError> {
         let search_service = Arc::new(MockSearchService::new());
         let metastore = MetastoreServiceClient::mocked();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();

@@ -18,7 +18,6 @@ use std::str::FromStr;
 use anyhow::Context;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::metrics::Temporality;
 use quickwit_common::datadog_api_key::resolve_dd_api_key_from_env;
 use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
 use secrecy::{ExposeSecret, SecretString};
@@ -31,8 +30,6 @@ const OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_PROTOCOL";
 const OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
 const OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL";
 const OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL";
-const OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY: &str =
-    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE";
 const BYOC_TELEMETRY_ENABLED_ENV_KEY: &str = "BYOC_TELEMETRY_ENABLED";
 const DD_API_KEY_HTTP_HEADER_NAME: &str = "DD-API-KEY";
 const DD_API_KEY_GRPC_METADATA_KEY: &str = "dd-api-key";
@@ -105,29 +102,6 @@ impl OtlpExporterConfig {
         self.resolve_protocol_from_env(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
     }
 
-    pub(crate) fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
-        let temporality = get_from_env_opt::<String>(
-            OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY,
-            false,
-        );
-        temporality
-            .as_deref()
-            .map(|temporality_str| {
-                OtlpMetricsTemporality::from_str(temporality_str).with_context(|| {
-                    format!(
-                        "failed to parse environment variable \
-                         `{OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY}`"
-                    )
-                })
-            })
-            .transpose()
-            .map(|temporality| {
-                temporality
-                    .map(Temporality::from)
-                    .unwrap_or(Temporality::Cumulative)
-            })
-    }
-
     pub(crate) fn headers(&self) -> &OtlpHeaders {
         &self.headers
     }
@@ -193,34 +167,6 @@ impl OtlpHeaders {
             metadata.insert(metadata_key, metadata_value);
         }
         Ok(metadata)
-    }
-}
-
-struct OtlpMetricsTemporality(Temporality);
-
-impl FromStr for OtlpMetricsTemporality {
-    type Err = anyhow::Error;
-
-    fn from_str(temporality_str: &str) -> anyhow::Result<Self> {
-        const TEMPORALITY_DELTA: &str = "delta";
-        const TEMPORALITY_LOWMEMORY: &str = "lowmemory";
-        const TEMPORALITY_CUMULATIVE: &str = "cumulative";
-
-        match temporality_str {
-            TEMPORALITY_DELTA => Ok(Self(Temporality::Delta)),
-            TEMPORALITY_LOWMEMORY => Ok(Self(Temporality::LowMemory)),
-            TEMPORALITY_CUMULATIVE => Ok(Self(Temporality::Cumulative)),
-            other => anyhow::bail!(
-                "unsupported OTLP metrics temporality `{other}`, supported values are \
-                 `{TEMPORALITY_DELTA}`, `{TEMPORALITY_LOWMEMORY}` and `{TEMPORALITY_CUMULATIVE}`"
-            ),
-        }
-    }
-}
-
-impl From<OtlpMetricsTemporality> for Temporality {
-    fn from(temporality: OtlpMetricsTemporality) -> Self {
-        temporality.0
     }
 }
 
@@ -314,23 +260,6 @@ mod tests {
         let error = format!("{error:#}");
         assert!(error.contains(OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY));
         assert!(error.contains("unsupported OTLP protocol `http/xml`"));
-    }
-
-    #[test]
-    fn test_otlp_metrics_temporality_from_str() {
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("delta").unwrap()),
-            Temporality::Delta
-        );
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("lowmemory").unwrap()),
-            Temporality::LowMemory
-        );
-        assert_eq!(
-            Temporality::from(OtlpMetricsTemporality::from_str("cumulative").unwrap()),
-            Temporality::Cumulative
-        );
-        assert!(OtlpMetricsTemporality::from_str("invalid").is_err());
     }
 
     #[test]

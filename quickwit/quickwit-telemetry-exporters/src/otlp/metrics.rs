@@ -18,34 +18,30 @@ use opentelemetry::metrics::MeterProvider;
 use opentelemetry_otlp::{
     MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
 };
-use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::otlp::{OtlpExporterConfig, OtlpHeaders, OtlpProtocol, quickwit_resource};
 
 impl OtlpProtocol {
-    pub(crate) fn metric_exporter(
-        &self,
-        headers: &OtlpHeaders,
-        temporality: Temporality,
-    ) -> anyhow::Result<MetricExporter> {
+    pub(crate) fn metric_exporter(&self, headers: &OtlpHeaders) -> anyhow::Result<MetricExporter> {
         match self {
             OtlpProtocol::Grpc => {
                 let metadata = headers.grpc_metadata()?;
                 MetricExporter::builder()
                     .with_tonic()
-                    .with_temporality(temporality)
+                    .with_retry_policy(super::RETRY_POLICY)
                     .with_metadata(metadata)
                     .build()
             }
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
-                .with_temporality(temporality)
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .with_headers(headers.http_headers())
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
-                .with_temporality(temporality)
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .with_headers(headers.http_headers())
                 .build(),
@@ -59,8 +55,7 @@ pub(crate) fn build_recorder(
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
-    let temporality = otlp_config.metrics_temporality()?;
-    let metric_exporter = metrics_protocol.metric_exporter(otlp_config.headers(), temporality)?;
+    let metric_exporter = metrics_protocol.metric_exporter(otlp_config.headers())?;
     let metrics_provider = SdkMeterProvider::builder()
         .with_resource(quickwit_resource(service_version))
         .with_periodic_exporter(metric_exporter)

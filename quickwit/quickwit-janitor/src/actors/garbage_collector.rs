@@ -342,6 +342,7 @@ impl Handler<Loop> for GarbageCollector {
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
     use std::collections::HashSet;
     use std::ops::Bound;

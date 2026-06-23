@@ -8210,6 +8210,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http 1.4.0",
+ "httpdate",
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-proto 0.32.0",
@@ -8362,7 +8363,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -9924,6 +9925,7 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry-exporters",
+ "quickwit-transport",
  "reqwest 0.12.28",
  "rustls 0.23.40",
  "serde_json",
@@ -9956,6 +9958,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-metrics",
  "quickwit-proto",
+ "quickwit-transport",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -10372,6 +10375,7 @@ dependencies = [
  "async-trait",
  "bytes 1.11.1",
  "bytesize",
+ "criterion",
  "fail",
  "futures 0.3.32",
  "http 1.4.0",
@@ -10425,6 +10429,7 @@ dependencies = [
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-control-plane",
  "quickwit-datafusion",
  "quickwit-datetime",
  "quickwit-indexing",
@@ -10438,12 +10443,15 @@ dependencies = [
  "quickwit-search",
  "quickwit-serve",
  "quickwit-storage",
+ "quickwit-transport",
  "rand 0.10.1",
  "reqwest 0.12.28",
  "rustls 0.23.40",
+ "rustls-pemfile 2.2.0",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-rustls 0.26.4",
  "tonic 0.14.6",
  "tracing 0.1.44",
  "tracing-subscriber",
@@ -10961,11 +10969,10 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry-exporters",
+ "quickwit-transport",
  "rand 0.10.1",
  "regex",
  "rust-embed",
- "rustls 0.23.40",
- "rustls-pemfile 2.2.0",
  "secrecy",
  "serde",
  "serde_json",
@@ -10998,6 +11005,7 @@ dependencies = [
 name = "quickwit-storage"
 version = "0.1.30-dev"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "async-trait",
  "aws-config",
@@ -11012,7 +11020,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes 1.11.1",
  "bytesize",
- "fnv",
  "futures 0.3.32",
  "http 1.4.0",
  "http-body-util",
@@ -11073,6 +11080,26 @@ dependencies = [
  "tracing 0.1.44",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "quickwit-transport"
+version = "0.1.30-dev"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "futures-util",
+ "hyper-util",
+ "quickwit-config",
+ "quickwit-metrics",
+ "rustls 0.23.40",
+ "rustls-pemfile 2.2.0",
+ "tempfile",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tonic 0.14.6",
+ "tower 0.5.3",
+ "tracing 0.1.44",
 ]
 
 [[package]]
@@ -13787,7 +13814,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -13827,7 +13854,7 @@ dependencies = [
  "tantivy-columnar",
  "tantivy-common",
  "tantivy-fst",
- "tantivy-query-grammar 0.26.0 (git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a)",
+ "tantivy-query-grammar 0.26.0 (git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd)",
  "tantivy-sstable",
  "tantivy-stacker",
  "tantivy-tokenizer-api",
@@ -13843,7 +13870,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "bitpacking",
 ]
@@ -13851,7 +13878,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -13866,7 +13893,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.11.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -13902,7 +13929,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -13914,7 +13941,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -13927,7 +13954,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -13936,7 +13963,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.7.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=c096b2a#c096b2ad8948055d73c948b5e29b5bbd44757510"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=1e859fd#1e859fd78d71986a7d53bc096b0fd27bfa91aec2"
 dependencies = [
  "serde",
 ]

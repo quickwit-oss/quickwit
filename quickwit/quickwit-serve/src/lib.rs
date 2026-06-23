@@ -125,6 +125,7 @@ use quickwit_search::{
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
+pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -417,6 +418,7 @@ fn start_shard_positions_service(
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
+#[allow(clippy::too_many_arguments)]
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
@@ -424,6 +426,7 @@ async fn shutdown_signal_handler(
     cloudprem_shutdown_trigger_tx: oneshot::Sender<()>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
+    health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
@@ -445,8 +448,13 @@ async fn shutdown_signal_handler(
     if rest_shutdown_trigger_tx.send(()).is_err() {
         debug!("REST server shutdown signal receiver was dropped");
     }
-    if let Err(error) = cluster.initiate_shutdown().await {
-        debug!("{error}");
+    if let Some(health_shutdown_trigger_tx) = health_shutdown_trigger_tx_opt
+        && health_shutdown_trigger_tx.send(()).is_err()
+    {
+        debug!("health check server shutdown signal receiver was dropped");
+    }
+    if let Err(err) = cluster.initiate_shutdown().await {
+        debug!("{err}");
     }
     actor_exit_statuses
 }
@@ -850,10 +858,44 @@ pub async fn serve_quickwit(
 
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
-        quickwit_services,
+        quickwit_services.clone(),
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
+
+    // Setup and start the optional plaintext health-check server. It only runs when a health
+    // listen port is configured (`health.listen_port` or `QW_HEALTH_LISTEN_PORT`).
+    let (health_shutdown_trigger_tx_opt, health_server_fut) =
+        if let Some(health_config) = quickwit_services.node_config.health_config.clone() {
+            let health_listener = tcp_listener_resolver
+                .resolve(health_config.listen_addr)
+                .await?;
+            // The health server serves probes as soon as it is up: it does not wait on the node
+            // readiness signal, since liveness must work during startup and `readyz` reflects
+            // cluster readiness on its own.
+            let health_readiness_trigger = Box::pin(async {});
+            let (health_shutdown_trigger_tx, health_shutdown_signal_rx) = oneshot::channel::<()>();
+            let health_shutdown_signal = Box::pin(async move {
+                if health_shutdown_signal_rx.await.is_err() {
+                    debug!("health check server shutdown trigger sender was dropped");
+                }
+            });
+            let health_server = rest::start_health_check_server(
+                health_listener,
+                quickwit_services.clone(),
+                health_readiness_trigger,
+                health_shutdown_signal,
+            );
+            (
+                Some(health_shutdown_trigger_tx),
+                futures::future::Either::Left(health_server),
+            )
+        } else {
+            (
+                None,
+                futures::future::Either::Right(futures::future::ready(anyhow::Ok(()))),
+            )
+        };
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -877,6 +919,7 @@ pub async fn serve_quickwit(
         cloudprem_shutdown_trigger_tx,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
+        health_shutdown_trigger_tx_opt,
         cluster.clone(),
     ));
     let cloudprem_join_handle = async move {
@@ -897,12 +940,21 @@ pub async fn serve_quickwit(
             .expect("tasks running the REST server should not panic or be cancelled")
             .context("REST server failed")
     };
+
+    let health_join_handle = async move {
+        spawn_named_task(health_server_fut, "health_server")
+            .await
+            .expect("tasks running the health check server should not panic or be cancelled")
+            .context("health check server failed")
+    };
+
     let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
 
     if let Err(err) = tokio::try_join!(
         cloudprem_join_handle,
         grpc_join_handle,
         rest_join_handle,
+        health_join_handle,
         chitchat_server_handle
     ) {
         error!("server failed: {err:?}");
@@ -1296,10 +1348,7 @@ fn setup_indexer_pool(
                     );
                     Some(change)
                 }
-                ClusterChange::Update { previous, updated }
-                    if updated.is_indexer()
-                        && previous.ingester_status != updated.ingester_status =>
-                {
+                ClusterChange::Update { updated, .. } if updated.is_indexer() => {
                     let change = build_indexer_insert_change(
                         &updated,
                         indexing_service_clone_opt,
@@ -1706,13 +1755,15 @@ fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
@@ -1750,7 +1801,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_readiness_updates() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
@@ -1858,57 +1909,95 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
-        // adding a indexer node refreshes the indexer pool
-        let new_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Ready,
-        )
-        .await;
+        let node_id = NodeId::from_str("test-indexer-node");
+        let plan = [IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        }];
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        // Reads the pool entry's indexing tasks, or an empty vec if the node is absent.
+        let pool_tasks = || {
+            indexer_pool
+                .get(&node_id)
+                .map(|entry| entry.indexing_tasks.clone())
+                .unwrap_or_default()
+        };
+
+        // A node first joins ready with no assigned plan.
+        let ready_no_plan = build_node(&[], IngesterStatus::Ready).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Add(new_indexer_node.clone()))
+            .send(ClusterChange::Add(ready_no_plan.clone()))
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(indexer_pool.len() == 1);
+        {
+            let entry = indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool");
+            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
+            assert!(entry.indexing_tasks.is_empty());
+        }
 
-        assert_eq!(indexer_pool.len(), 1);
-
-        // changing the ingester status of an indexer node refreshes the indexer pool
-        let updated_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Retiring,
-        )
-        .await;
+        // The control plane assigns it an indexing plan: the new plan must be reflected exactly.
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
-                previous: new_indexer_node.clone(),
-                updated: updated_indexer_node.clone(),
+                previous: ready_no_plan,
+                updated: ready_with_plan.clone(),
             })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
-
-        assert_eq!(indexer_pool.len(), 1);
+        assert_eventually!(pool_tasks() == plan);
         assert_eq!(
             indexer_pool
-                .get(&NodeId::from_str("test-indexer-node"))
+                .get(&node_id)
                 .expect("indexer node should be in the pool")
                 .ingester_status,
-            IngesterStatus::Retiring
+            IngesterStatus::Ready
         );
+        assert_eq!(indexer_pool.len(), 1);
 
-        // removing an indexer node refreshes the indexer pool
+        // The node begins retiring while still owning its plan: the status change is applied and
+        // the plan is preserved.
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Remove(new_indexer_node))
+            .send(ClusterChange::Update {
+                previous: ready_with_plan,
+                updated: retiring_with_plan.clone(),
+            })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry) if entry.ingester_status == IngesterStatus::Retiring
+        ));
+        assert_eq!(pool_tasks(), plan);
+        assert_eq!(indexer_pool.len(), 1);
 
-        assert!(indexer_pool.is_empty());
+        // The node transitions to decommissioning and sheds its plan: both the status and the
+        // now-empty plan must be reflected.
+        let decommissioning_no_plan = build_node(&[], IngesterStatus::Decommissioning).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: retiring_with_plan,
+                updated: decommissioning_no_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry)
+                if entry.ingester_status == IngesterStatus::Decommissioning
+                    && entry.indexing_tasks.is_empty()
+        ));
+        assert_eq!(indexer_pool.len(), 1);
+
+        // Removing the node clears the pool.
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(decommissioning_no_plan))
+            .unwrap();
+        assert_eventually!(indexer_pool.is_empty());
     }
 
     #[tokio::test]

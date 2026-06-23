@@ -27,10 +27,11 @@ use anyhow::Context;
 use bytesize::ByteSize;
 use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
-use quickwit_metrics::HistogramTimer;
+use quickwit_metrics::{GaugeGuard, HistogramTimer};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
@@ -59,7 +60,7 @@ use crate::collector::{IncrementalCollector, make_collector_for_split, make_merg
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
-    SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
+    LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES, SPLIT_SEARCH_OUTCOME_TOTAL, SplitSearchOutcomeCounters,
 };
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
@@ -723,6 +724,10 @@ async fn leaf_search_single_split(
         );
     }
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.observe(warmup_size.as_u64() as f64);
+    let _warmup_bytes_guard = GaugeGuard::new(
+        &LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES,
+        warmup_size.as_u64() as f64,
+    );
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1506,7 +1511,7 @@ pub async fn multi_index_leaf_search(
     }
 
     let mut leaf_search_response: LeafSearchResponse = crate::search_thread_pool()
-        .run_cpu_intensive(|| {
+        .run_cpu_intensive_with_priority(Priority::High, || {
             incremental_merge_collector
                 .finalize()
                 .map_err(SearchError::from)
@@ -1515,10 +1520,12 @@ pub async fn multi_index_leaf_search(
         .await
         .context("failed to merge split search responses")??;
     let wall_time_microsecs = leaf_start.elapsed().as_micros() as u64;
-    leaf_search_response
+    let search_pool_cpu_threads = crate::search_thread_pool().num_threads() as u64;
+    let resource_stats = leaf_search_response
         .resource_stats
-        .get_or_insert_with(LeafResourceStats::default)
-        .wall_time_microsecs = wall_time_microsecs;
+        .get_or_insert_with(LeafResourceStats::default);
+    resource_stats.wall_time_microsecs = wall_time_microsecs;
+    resource_stats.search_pool_cpu_threads = search_pool_cpu_threads;
     Ok(leaf_search_response)
 }
 
@@ -1911,7 +1918,9 @@ pub async fn single_doc_mapping_leaf_search(
 
     let leaf_search_response_result: tantivy::Result<LeafSearchResponse> =
         crate::search_thread_pool()
-            .run_cpu_intensive(|| incremental_merge_collector.finalize())
+            .run_cpu_intensive_with_priority(Priority::High, || {
+                incremental_merge_collector.finalize()
+            })
             .instrument(info_span!("incremental_merge_intermediate"))
             .await
             .context("failed to merge split search responses: thread panicked")?;

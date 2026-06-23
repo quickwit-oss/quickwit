@@ -21,8 +21,9 @@ use chitchat::{ChitchatId, NodeState};
 use futures::Stream;
 use pin_project::pin_project;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
-use quickwit_common::tower::{ClientGrpcConfig, make_channel, warmup_channel};
+use quickwit_common::tower::warmup_channel;
 use quickwit_proto::types::NodeId;
+use quickwit_transport::ChannelFactory;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
@@ -84,7 +85,7 @@ pub(crate) async fn compute_cluster_change_events(
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
     previous_node_states: &BTreeMap<ChitchatId, NodeState>,
     new_node_states: &BTreeMap<ChitchatId, NodeState>,
-    client_grpc_config: &ClientGrpcConfig,
+    channel_factory: &ChannelFactory,
 ) -> Vec<ClusterChange> {
     let mut cluster_events = Vec::new();
 
@@ -101,7 +102,7 @@ pub(crate) async fn compute_cluster_change_events(
                     chitchat_id,
                     node_state,
                     previous_nodes,
-                    client_grpc_config.clone(),
+                    channel_factory.clone(),
                 )
                 .await;
 
@@ -146,7 +147,7 @@ async fn compute_cluster_change_events_on_added(
     new_chitchat_id: &ChitchatId,
     new_node_state: &NodeState,
     previous_nodes: &mut BTreeMap<NodeId, ClusterNode>,
-    client_grpc_config: ClientGrpcConfig,
+    channel_factory: ChannelFactory,
 ) -> Vec<ClusterChange> {
     let is_self_node = self_chitchat_id == new_chitchat_id;
     let new_node_id = NodeId::from_arc_str(new_chitchat_id.node_id.clone());
@@ -179,7 +180,7 @@ async fn compute_cluster_change_events_on_added(
         new_chitchat_id,
         new_node_state,
         is_self_node,
-        &client_grpc_config,
+        &channel_factory,
     )
     .await
     else {
@@ -317,11 +318,11 @@ async fn try_new_node(
     chitchat_id: &ChitchatId,
     node_state: &NodeState,
     is_self_node: bool,
-    grpc_config: &ClientGrpcConfig,
+    channel_factory: &ChannelFactory,
 ) -> Option<ClusterNode> {
     match node_state.grpc_advertise_addr() {
         Ok(socket_addr) => {
-            let channel = make_channel(socket_addr, grpc_config.clone()).await;
+            let channel = channel_factory.make_channel(socket_addr).await;
             try_new_node_with_channel(cluster_id, chitchat_id, node_state, channel, is_self_node)
         }
         Err(error) => {
@@ -340,9 +341,16 @@ async fn try_new_node(
 pub mod for_test {
     use std::sync::{Arc, Mutex};
 
+    use quickwit_config::GrpcConfig;
     use tokio::sync::mpsc;
 
     use super::*;
+
+    /// Builds a plaintext [`ChannelFactory`] for tests.
+    pub fn channel_factory_for_test() -> ChannelFactory {
+        ChannelFactory::for_grpc(&GrpcConfig::default())
+            .expect("plaintext channel factory should build")
+    }
 
     #[derive(Clone, Default)]
     pub struct ClusterChangeStreamFactoryForTest {
@@ -468,7 +476,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -491,7 +499,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -520,7 +528,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
 
@@ -543,7 +551,7 @@ pub(crate) mod tests {
                 &rejoined_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 2);
@@ -572,7 +580,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -597,7 +605,7 @@ pub(crate) mod tests {
                 &new_chitchat_id,
                 &new_node_state,
                 &mut previous_nodes,
-                Default::default(),
+                for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -928,7 +936,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -958,7 +966,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert!(events.is_empty());
@@ -976,7 +984,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -991,7 +999,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &new_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 0);
@@ -1024,7 +1032,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);
@@ -1044,7 +1052,7 @@ pub(crate) mod tests {
                 &mut previous_nodes,
                 &previous_node_states,
                 &new_node_states,
-                &Default::default(),
+                &for_test::channel_factory_for_test(),
             )
             .await;
             assert_eq!(events.len(), 1);

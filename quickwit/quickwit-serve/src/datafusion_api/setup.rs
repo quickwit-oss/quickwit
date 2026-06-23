@@ -83,7 +83,7 @@ pub(crate) fn build_datafusion_session_builder(
         node_config.grpc_config.max_message_size,
     );
     let worker_resolver = QuickwitWorkerResolver::new(datafusion_worker_pool)
-        .with_tls(node_config.grpc_config.tls.is_some());
+        .with_tls(node_config.grpc_config.tls_config.is_some());
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)

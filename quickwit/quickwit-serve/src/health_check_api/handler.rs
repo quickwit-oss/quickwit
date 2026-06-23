@@ -118,11 +118,11 @@ async fn get_readiness(cluster: Cluster) -> impl warp::Reply {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();

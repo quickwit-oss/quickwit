@@ -3,7 +3,7 @@
 # this script regenerate cryptographic material used in tests. These are valid for 10y, but better
 # keep how to regenerate them than get stuck with failing tests eventually
 
-rm ca.{crt,key,srl} server.{csr,key,v3.ext,crt}
+rm ca.{crt,key,srl} server.{csr,key,v3.ext,crt} server2.{csr,key,crt}
 openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 3653 -out ca.crt -subj '/CN=qw test CA'
 openssl req -new -nodes -out server.csr -newkey rsa:4096 -keyout server.key -subj '/CN=qw test certificate'
@@ -19,3 +19,8 @@ IP.1 = 127.0.0.1
 EOF
 
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3653 -sha256 -extfile server.v3.ext
+
+# A second leaf certificate signed by the same CA, with the same SANs. Used by the certificate
+# hot-reload integration test to rotate the server certificate on disk and observe the change.
+openssl req -new -nodes -out server2.csr -newkey rsa:4096 -keyout server2.key -subj '/CN=qw test certificate 2'
+openssl x509 -req -in server2.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server2.crt -days 3653 -sha256 -extfile server.v3.ext

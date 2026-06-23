@@ -12,7 +12,7 @@ use tonic::Request;
 
 use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder};
 
-const TEST_CERT: &[u8] = include_bytes!("../../test_data/test_cert_main_ca.crt");
+const TEST_CERT: &[u8] = include_bytes!("../../../resources/tests/tls/test_cert_main_ca.crt");
 
 // this data is extracted from staging through the admin ui, and cleaned off a bit
 //
@@ -25,7 +25,7 @@ const TEST_CERT: &[u8] = include_bytes!("../../test_data/test_cert_main_ca.crt")
 // right format
 // some tests are written as to work with any dataset smaller than 100 elems (configurable),
 // others may assert on values specific to the provided dataset
-const TEST_DATA: &[u8] = include_bytes!("../../test_data/test_data.json");
+const TEST_DATA: &[u8] = include_bytes!("../../../resources/tests/tls/test_data.json");
 
 fn build_list_request(query: &QueryNode) -> ListRequest {
     let any_query = Any {

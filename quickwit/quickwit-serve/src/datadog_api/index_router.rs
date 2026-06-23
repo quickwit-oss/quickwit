@@ -162,7 +162,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::{ClusterConfig, IndexConfig};
     use quickwit_control_plane::IndexerPool;
     use quickwit_control_plane::control_plane::ControlPlane;
@@ -240,8 +240,8 @@ mod tests {
             metastore.create_index(create_request).await.unwrap();
         }
 
-        // 2. Create two cluster nodes with ChannelTransport
-        let transport = ChannelTransport::default();
+        // 2. Create two cluster nodes with ChitchatTransport
+        let transport = ChitchatTransport::default();
 
         // Control plane node
         let control_plane_cluster =
@@ -337,7 +337,7 @@ mod tests {
             metastore.create_index(create_request).await.unwrap();
         }
 
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(vec![], &["indexer"], &transport, true)
             .await
             .unwrap();

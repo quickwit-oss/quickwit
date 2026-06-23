@@ -164,7 +164,7 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
-    use quickwit_cluster::{ChannelTransport, Cluster, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, Cluster, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -189,7 +189,7 @@ mod tests {
     }
 
     pub async fn mock_cluster() -> Cluster {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap()
