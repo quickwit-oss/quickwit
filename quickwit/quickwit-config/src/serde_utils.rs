@@ -39,30 +39,30 @@ pub mod bytesize_serde {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "String", into = "String")]
-pub struct DurationAsStr {
+pub struct HumanDuration {
     duration_str: String,
     duration: Duration,
 }
 
-impl TryFrom<String> for DurationAsStr {
+impl TryFrom<String> for HumanDuration {
     type Error = humantime::DurationError;
 
     fn try_from(duration_str: String) -> Result<Self, Self::Error> {
         let duration = humantime::parse_duration(&duration_str)?;
-        Ok(DurationAsStr {
+        Ok(HumanDuration {
             duration_str,
             duration,
         })
     }
 }
 
-impl From<DurationAsStr> for String {
-    fn from(duration_as_str: DurationAsStr) -> String {
-        duration_as_str.duration_str
+impl From<HumanDuration> for String {
+    fn from(human_duration: HumanDuration) -> String {
+        human_duration.duration_str
     }
 }
 
-impl Deref for DurationAsStr {
+impl Deref for HumanDuration {
     type Target = Duration;
 
     fn deref(&self) -> &Self::Target {
@@ -70,19 +70,27 @@ impl Deref for DurationAsStr {
     }
 }
 
-impl From<DurationAsStr> for Duration {
-    fn from(duration_as_str: DurationAsStr) -> Self {
-        *duration_as_str
+impl From<HumanDuration> for Duration {
+    fn from(human_duration: HumanDuration) -> Self {
+        *human_duration
     }
 }
 
-impl fmt::Debug for DurationAsStr {
+impl fmt::Debug for HumanDuration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("HumanDuration")
+            .field(&self.duration_str)
+            .finish()
+    }
+}
+
+impl fmt::Display for HumanDuration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.duration_str.fmt(f)
     }
 }
 
-impl PartialEq for DurationAsStr {
+impl PartialEq for HumanDuration {
     fn eq(&self, other: &Self) -> bool {
         // We do not check for the chosen representation here
         self.duration == other.duration
@@ -96,9 +104,9 @@ mod tests {
 
     #[test]
     fn test_duration_deserialize() {
-        let duration: DurationAsStr = serde_json::from_str("\"10s\"").unwrap();
+        let duration: HumanDuration = serde_json::from_str("\"10s\"").unwrap();
         assert_eq!(*duration, Duration::from_secs(10));
-        let deser_error = serde_json::from_str::<DurationAsStr>("\"10\"").unwrap_err();
+        let deser_error = serde_json::from_str::<HumanDuration>("\"10\"").unwrap_err();
         assert_eq!(
             deser_error.to_string(),
             "time unit needed, for example 10sec or 10ms"

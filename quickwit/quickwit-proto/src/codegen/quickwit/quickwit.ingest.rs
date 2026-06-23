@@ -33,6 +33,43 @@ pub struct MRecordBatch {
     #[prost(uint32, repeated, tag = "2")]
     pub mrecord_lengths: ::prost::alloc::vec::Vec<u32>,
 }
+/// Payload of an mrecord encoded with header version 1 (see `MRecord` in
+/// `quickwit-ingest`). The first byte of an encoded mrecord is the header
+/// version: `0x00` selects the legacy raw encoding, `0x01` is followed by a
+/// protobuf-encoded `MRecordV1` message.
+///
+/// The format is forward and backward compatible: new fields can be added to
+/// the record messages below, and an older binary that does not know a field or
+/// a new `mrecord` variant simply ignores it. Adding per-record data (e.g. an
+/// arrival timestamp) MUST be done by adding a field to an existing message
+/// here, never by introducing a new top-level mrecord type.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MRecordV1 {
+    #[prost(oneof = "m_record_v1::Mrecord", tags = "1, 2")]
+    pub mrecord: ::core::option::Option<m_record_v1::Mrecord>,
+}
+/// Nested message and enum types in `MRecordV1`.
+pub mod m_record_v1 {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Mrecord {
+        #[prost(message, tag = "1")]
+        Doc(super::DocMRecord),
+        #[prost(message, tag = "2")]
+        Commit(super::CommitMRecord),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DocMRecord {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub doc: ::prost::bytes::Bytes,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CommitMRecord {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Shard {

@@ -1527,6 +1527,109 @@ mod tests {
         assert_eq!(shard.status, IndexingStatus::Active);
     }
 
+    // Drives the source with an `MRecordBatch` whose records are encoded with the v1
+    // (`HeaderVersion::V1`, protobuf) format, asserting they are decoded and flow through to the
+    // emitted `RawDocBatch` exactly like v0 records. This exercises the read path end to end while
+    // the write path still emits v0.
+    #[tokio::test]
+    async fn test_ingest_source_emit_batches_mrecord_v1() {
+        use quickwit_ingest::MRecord;
+
+        let pipeline_id = IndexingPipelineId {
+            node_id: NodeId::from_str("test-node"),
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
+        let mock_metastore = MockMetastoreService::new();
+        let ingester_pool = IngesterPool::default();
+        let event_broker = EventBroker::default();
+
+        let source_runtime = SourceRuntime {
+            pipeline_id,
+            source_config,
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            ingester_pool: ingester_pool.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker,
+            indexing_setting: IndexingSettings::default(),
+        };
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(source_runtime, retry_params)
+            .await
+            .unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        source.assigned_shards.insert(
+            ShardId::from(1),
+            AssignedShard {
+                leader_id: NodeId::from_str("test-ingester-0"),
+                follower_id_opt: None,
+                partition_id: 1u64.into(),
+                current_position_inclusive: Position::offset(11u64),
+                status: IndexingStatus::Active,
+            },
+        );
+
+        // Build a batch of v1-encoded records: a `Doc` followed by a `Commit`.
+        let encoded_mrecords = [
+            MRecord::Doc("test-doc-v1".into()).encode_v1(),
+            MRecord::Commit.encode_v1(),
+        ];
+        let mut mrecord_buffer: Vec<u8> = Vec::new();
+        let mut mrecord_lengths: Vec<u32> = Vec::new();
+        for encoded_mrecord in &encoded_mrecords {
+            mrecord_lengths.push(encoded_mrecord.len() as u32);
+            mrecord_buffer.extend_from_slice(encoded_mrecord);
+        }
+        let mrecord_batch = Some(MRecordBatch {
+            mrecord_buffer: mrecord_buffer.into(),
+            mrecord_lengths,
+        });
+
+        let fetch_message_tx = source.fetch_stream.fetch_message_tx();
+        let fetch_payload = FetchPayload {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".into(),
+            shard_id: Some(ShardId::from(1)),
+            mrecord_batch,
+            from_position_exclusive: Some(Position::offset(11u64)),
+            to_position_inclusive: Some(Position::offset(13u64)),
+        };
+        let batch_size = fetch_payload.estimate_size();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        let in_flight_value =
+            InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
+        fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
+
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        let doc_batch = doc_processor_inbox
+            .recv_typed_message::<RawDocBatch>()
+            .await
+            .unwrap();
+
+        // The v1 `Doc` is decoded into a document, and the v1 `Commit` forces a commit.
+        assert_eq!(doc_batch.docs.len(), 1);
+        assert_eq!(doc_batch.docs[0], "test-doc-v1");
+        assert!(doc_batch.force_commit);
+
+        let partition_deltas = doc_batch.checkpoint_delta.iter().collect::<Vec<_>>();
+        assert_eq!(partition_deltas.len(), 1);
+        assert_eq!(partition_deltas[0].0, 1u64.into());
+        assert_eq!(partition_deltas[0].1.from, Position::offset(11u64));
+        assert_eq!(partition_deltas[0].1.to, Position::offset(13u64));
+    }
+
     #[tokio::test]
     async fn test_ingest_source_emit_batches_shard_not_found() {
         let pipeline_id = IndexingPipelineId {

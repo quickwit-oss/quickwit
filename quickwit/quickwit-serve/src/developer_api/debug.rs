@@ -185,14 +185,14 @@ impl NodeIdGlobPatterns {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
 
     use super::*;
 
     #[tokio::test]
     async fn test_developer_api_debug_handler() {
         let peer_seeds = Vec::new();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let self_node_readiness = true;
         let cluster = create_cluster_for_test(
             peer_seeds,

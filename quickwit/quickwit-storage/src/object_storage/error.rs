@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use aws_sdk_s3::error::{DisplayErrorContext, ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
@@ -22,6 +24,8 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
+use quickwit_aws::error::retry_after_from_sdk_error;
+use quickwit_aws::retry::AwsRetryable;
 use quickwit_metrics::counter;
 
 use crate::metrics::OBJECT_STORAGE_GET_ERRORS_TOTAL;
@@ -53,8 +57,16 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
             _ => StorageErrorKind::Internal,
         };
+        // Extract the server-suggested retry delay before consuming the error.
+        let retry_after = retry_after_from_sdk_error(&error);
         let source = anyhow::anyhow!("{}", DisplayErrorContext(error));
-        error_kind.with_error(source)
+        error_kind.with_error(source).with_retry_after(retry_after)
+    }
+}
+
+impl AwsRetryable for StorageError {
+    fn retry_after(&self) -> Option<Duration> {
+        self.retry_after
     }
 }
 

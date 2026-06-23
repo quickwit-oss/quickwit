@@ -41,7 +41,11 @@ impl<W: AsyncWrite + Send + Unpin> SendableAsync for W {}
 /// object storage treat them. This means when directory separators a present
 /// in the storage operation path, the storage implementation should create and remove transparently
 /// these intermediate directories.
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[cfg_attr(
+    any(test, feature = "testsuite"),
+    allow(clippy::result_large_err), // BulkDeleteError is large but only in mock/test code
+    mockall::automock
+)]
 #[async_trait]
 pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Check storage connection if applicable

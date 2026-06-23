@@ -83,7 +83,7 @@ impl CloseIdleShardsTask {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::types::{IndexUid, ShardId};
 
@@ -96,7 +96,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await

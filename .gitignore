@@ -48,3 +48,6 @@ quickwit/lambda-artifact/
 
 # Claude settings
 .claude/settings.json
+
+# OpenSSL CA serial file generated during TLS test setup
+**/ca.srl

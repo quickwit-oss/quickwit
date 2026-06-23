@@ -224,6 +224,7 @@ impl From<OtlpMetricsTemporality> for Temporality {
     }
 }
 
+
 pub(crate) fn quickwit_resource(service_version: &str) -> Resource {
     Resource::builder()
         .with_service_name("quickwit")

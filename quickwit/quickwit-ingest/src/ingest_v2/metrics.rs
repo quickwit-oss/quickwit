@@ -72,6 +72,22 @@ pub(super) static INGEST_RESULT_SHARD_NOT_FOUND: LazyCounter =
 pub(super) static INGEST_RESULT_UNAVAILABLE: LazyCounter =
     lazy_counter!(parent: INGEST_RESULT_TOTAL, "result" => "unavailable");
 
+static SKIPPED_MRECORDS_TOTAL: LazyCounter = lazy_counter!(
+        name: "skipped_mrecords_total",
+        description: "Number of mrecords skipped during decoding, by reason (e.g. an unknown \
+                      header version or record type written by a newer binary).",
+        subsystem: "ingest",
+);
+
+pub(super) static SKIPPED_MRECORDS_UNKNOWN_HEADER_VERSION: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "unknown_header_version");
+
+pub(super) static SKIPPED_MRECORDS_UNKNOWN_RECORD_TYPE: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "unknown_record_type");
+
+pub(super) static SKIPPED_MRECORDS_MALFORMED: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "malformed");
+
 pub(super) static INGEST_ATTEMPTS: LazyCounter = lazy_counter!(
         name: "ingest_attempts",
         description: "Number of routing attempts by AZ locality",

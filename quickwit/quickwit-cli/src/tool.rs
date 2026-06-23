@@ -25,9 +25,7 @@ use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
-use quickwit_cluster::{
-    ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig, make_client_grpc_config,
-};
+use quickwit_cluster::{ChitchatTransport, Cluster, ClusterMember, FailureDetectorConfig};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
@@ -54,6 +52,7 @@ use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
 use quickwit_storage::{BundleStorage, Storage};
+use quickwit_transport::ChannelFactory;
 use thousands::Separable;
 use tracing::{debug, info};
 
@@ -1007,7 +1006,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
     };
-    let client_grpc_config = make_client_grpc_config(&config.grpc_config)?;
+    let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,
@@ -1015,8 +1014,8 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         Vec::new(),
         config.gossip_interval,
         FailureDetectorConfig::default(),
-        &ChannelTransport::default(),
-        client_grpc_config,
+        &ChitchatTransport::default(),
+        channel_factory,
     )
     .await?;
 

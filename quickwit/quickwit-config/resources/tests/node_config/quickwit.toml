@@ -20,6 +20,9 @@ listen_port = 1111
 x-header-1 = "header-value-1"
 x-header-2 = "header-value-2"
 
+[health]
+listen_port = 4444
+
 [grpc]
 max_message_size = "10 MB"
 

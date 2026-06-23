@@ -28,16 +28,19 @@ impl OtlpProtocol {
                 let metadata = headers.grpc_metadata()?;
                 LogExporter::builder()
                     .with_tonic()
+                    .with_retry_policy(super::RETRY_POLICY)
                     .with_metadata(metadata)
                     .build()
             }
             OtlpProtocol::HttpProtobuf => LogExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .with_headers(headers.http_headers())
                 .build(),
             OtlpProtocol::HttpJson => LogExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .with_headers(headers.http_headers())
                 .build(),
