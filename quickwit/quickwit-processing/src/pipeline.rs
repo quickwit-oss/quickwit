@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI16, Ordering};
 
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -40,6 +41,11 @@ pub trait PipelineStep: Send + Sync + std::fmt::Debug {
 #[derive(Debug)]
 pub struct Pipeline {
     steps: Vec<Box<dyn PipelineStep>>,
+    /// Sequential tiebreaker counter, initialized randomly at top-level pipeline creation.
+    /// `None` for nested pipelines that are steps within another pipeline.
+    /// This works best when partitioning is disabled. When partitioning is enabled, we might
+    /// get sequence gaps, which compress a bit less (though should still do okay).
+    tiebreaker_counter: Option<AtomicI16>,
 }
 
 impl PipelineStep for Pipeline {
@@ -47,6 +53,9 @@ impl PipelineStep for Pipeline {
     fn apply(&self, value: &mut ProcessedLog) -> Result<(), PipelineError> {
         for step in &self.steps {
             step.apply(value)?;
+        }
+        if let Some(counter) = &self.tiebreaker_counter {
+            value.tiebreaker = counter.fetch_add(1, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -63,7 +72,10 @@ impl PipelineStep for StepRef {
 
 impl Pipeline {
     pub fn from_steps(steps: Vec<Box<dyn PipelineStep>>) -> Self {
-        Self { steps }
+        Self {
+            steps,
+            tiebreaker_counter: None,
+        }
     }
 
     pub fn process_logs(
@@ -106,7 +118,10 @@ impl Pipeline {
                 }
             }
         }
-        Ok(Self { steps })
+        Ok(Self {
+            steps,
+            tiebreaker_counter: None,
+        })
     }
 
     /// Build a Pipeline from a `PipelineConfig`.
@@ -114,7 +129,10 @@ impl Pipeline {
         config: &PipelineConfig,
         filter_processing_from_integrations: bool,
     ) -> Result<Self, PipelineError> {
-        Self::from_step_configs(&config.0[..], filter_processing_from_integrations)
+        let mut pipeline =
+            Self::from_step_configs(&config.0[..], filter_processing_from_integrations)?;
+        pipeline.tiebreaker_counter = Some(AtomicI16::new(rand::random()));
+        Ok(pipeline)
     }
 }
 
