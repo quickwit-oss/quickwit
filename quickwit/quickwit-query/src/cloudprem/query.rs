@@ -13,7 +13,7 @@ use serde_json::Number;
 use super::{missing_required, unsupported_query_error};
 use crate::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
+    QueryAst, RandomQuery, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 use crate::{InvalidQuery, JsonLiteral};
 
@@ -23,7 +23,6 @@ const EVP_WES_FIELD: &str = "*";
 
 const QW_EXTRA_FTS: &str = "extra_fts";
 const QW_MESSAGE_FIELD: &str = "message";
-const QW_TIEBREAKER: &str = "tiebreaker";
 const QW_WES_FIELD: &str = "all";
 
 /// Returns true for fields indexed with the DatadogTokenizer (see
@@ -164,18 +163,8 @@ fn build_range_query_helper(
             value_type,
         });
     } else if field == EVP_RANDOM_DRAW {
-        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) = (
-            map_bound_randomdraw_to_tiebreaker(lower_bound),
-            map_bound_randomdraw_to_tiebreaker(upper_bound),
-        ) else {
-            return Ok(QueryAst::MatchNone);
-        };
-        return Ok(RangeQuery {
-            field: QW_TIEBREAKER.to_string(),
-            lower_bound: remapped_lower_bound,
-            upper_bound: remapped_upper_bound,
-        }
-        .into());
+        let probability = random_draw_to_probability(lower_bound, upper_bound);
+        return Ok(RandomQuery { probability }.into());
     }
     Ok(RangeQuery {
         field,
@@ -185,26 +174,26 @@ fn build_range_query_helper(
     .into())
 }
 
-fn map_bound_randomdraw_to_tiebreaker(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
-    let map_literal = |literal: JsonLiteral| {
-        let JsonLiteral::Number(num) = literal else {
-            return None;
-        };
-        // this maps [0, 1) to [i16::MIN, i16::MAX)
-        // we ceil so that low enough probability still allow for a non-empty range
-        let int = num
-            .as_f64()?
-            .mul_add(u16::MAX as f64, i16::MIN as f64)
-            .ceil() as i64;
+/// Computes the sampling probability from a `random_draw` range query.
+///
+/// The probability is the width of the `[lower, upper]` window within `[0, 1]`.
+/// Unbound lower defaults to 0.0 and unbound upper defaults to 1.0, so:
+/// - `random_draw > 0.99` (lower=Excluded(0.99), upper=Unbounded): probability = 0.01
+/// - `random_draw < 0.05` (lower=Unbounded, upper=Excluded(0.05)): probability = 0.05
+fn random_draw_to_probability(lower: Bound<JsonLiteral>, upper: Bound<JsonLiteral>) -> f64 {
+    let lower_val = bound_f64_value(&lower).unwrap_or(0.0);
+    let upper_val = bound_f64_value(&upper).unwrap_or(1.0);
+    (upper_val - lower_val).clamp(0.0, 1.0)
+}
 
-        Some(JsonLiteral::Number(int.into()))
-    };
-    let new_bound = match bound {
-        Bound::Included(lit) => Bound::Included(map_literal(lit)?),
-        Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
-        Bound::Unbounded => Bound::Unbounded,
-    };
-    Some(new_bound)
+fn bound_f64_value(bound: &Bound<JsonLiteral>) -> Option<f64> {
+    match bound {
+        // continuous distribution: included or excluded is equivalent
+        Bound::Included(JsonLiteral::Number(num)) | Bound::Excluded(JsonLiteral::Number(num)) => {
+            num.as_f64()
+        }
+        _ => None,
+    }
 }
 
 fn build_range_query(range_query: AttributeRangeQueryNode) -> Result<QueryAst, InvalidQuery> {
@@ -879,48 +868,58 @@ mod tests {
     }
 
     #[test]
-    fn test_range_remap_random_draw() {
+    fn test_random_draw_produces_random_query() {
+        let ast = build_range_query_helper(
+            "random_draw".to_string(),
+            Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.99).unwrap())),
+            Bound::Unbounded,
+        )
+        .unwrap();
+        let QueryAst::Random(q) = ast else {
+            panic!("expected RandomQuery, got {ast:?}");
+        };
+        assert!(
+            (q.probability - 0.01).abs() < 1e-10,
+            "probability={}",
+            q.probability
+        );
+
         let ast = build_range_query_helper(
             "random_draw".to_string(),
             Bound::Unbounded,
             Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.125).unwrap())),
         )
         .unwrap();
-
-        let expected_ast = QueryAst::Range(RangeQuery {
-            field: "tiebreaker".to_string(),
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-24576_i32))),
-        });
-        assert_eq!(ast, expected_ast);
-
-        let zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
-            JsonLiteral::Number(Number::from_f64(0.0).unwrap()),
-        ))
-        .unwrap();
-        assert_eq!(
-            zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN)))
+        let QueryAst::Random(q) = ast else {
+            panic!("expected RandomQuery, got {ast:?}");
+        };
+        assert!(
+            (q.probability - 0.125).abs() < 1e-10,
+            "probability={}",
+            q.probability
         );
 
-        let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
-            JsonLiteral::Number(Number::from_f64(1.0).unwrap()),
-        ))
+        let ast = build_range_query_helper(
+            "random_draw".to_string(),
+            Bound::Excluded(JsonLiteral::Number(Number::from_f64(1.0).unwrap())),
+            Bound::Unbounded,
+        )
         .unwrap();
-        assert_eq!(
-            everything_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MAX)))
-        );
+        let QueryAst::Random(q) = ast else {
+            panic!("expected RandomQuery, got {ast:?}");
+        };
+        assert_eq!(q.probability, 0.0);
 
-        // anything more than zero, we want to return at least some result
-        let non_zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
-            JsonLiteral::Number(Number::from_f64(f64::EPSILON).unwrap()),
-        ))
+        let ast = build_range_query_helper(
+            "random_draw".to_string(),
+            Bound::Unbounded,
+            Bound::Unbounded,
+        )
         .unwrap();
-        assert_eq!(
-            non_zero_percent_bound,
-            Bound::Excluded(JsonLiteral::Number(Number::from(i16::MIN + 1)))
-        );
+        let QueryAst::Random(q) = ast else {
+            panic!("expected RandomQuery, got {ast:?}");
+        };
+        assert_eq!(q.probability, 1.0);
     }
 
     #[test]
