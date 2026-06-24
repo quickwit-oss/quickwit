@@ -229,6 +229,21 @@ impl QuickwitServices {
     }
 }
 
+/// Computes the max number of in-flight requests for a metastore gRPC server, based on whether the
+/// backing connection is a database (PostgreSQL) and its configured connection pool size.
+fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usize {
+    if uri.protocol().is_database() {
+        node_config
+            .metastore_configs
+            .find_postgres()
+            .map(|config| config.max_connections.get() * 2)
+            .unwrap_or_default()
+            .max(100)
+    } else {
+        100
+    }
+}
+
 async fn balance_channel_for_service(
     cluster: &Cluster,
     service: QuickwitService,
@@ -351,8 +366,11 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
+        // A read-replica metastore node is skipped for the same reason: it only serves read-only
+        // metastore traffic and does not need the control plane.
         // If the node is a searcher, we skip this check because the searcher does not need to.
         if !node_config.is_service_enabled(QuickwitService::Metastore)
+            && !node_config.is_service_enabled(QuickwitService::MetastoreReadReplica)
             && node_config.enabled_services != HashSet::from([QuickwitService::Searcher])
         {
             info!("connecting to control plane");
@@ -458,7 +476,10 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
-    // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
+    // Instantiate a metastore "server" if the `metastore` or `metastore_read_replica` role is
+    // enabled on the node. Both roles expose the same gRPC metastore service; they differ only in
+    // the connection that is resolved (read-write primary vs. read-only replica) and in whether the
+    // control-plane event layers apply.
     let metastore_server_opt: Option<MetastoreServiceClient> =
         if node_config.is_service_enabled(QuickwitService::Metastore) {
             let metastore: MetastoreServiceClient = metastore_resolver
@@ -470,20 +491,13 @@ pub async fn serve_quickwit(
                         node_config.metastore_uri
                     )
                 })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
-            } else {
-                100
-            };
             // These layers apply to all the RPCs of the metastore.
             let shared_layer = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
+                .layer(LoadShedLayer::new(metastore_max_in_flight_requests(
+                    &node_config,
+                    &node_config.metastore_uri,
+                )))
                 .into_inner();
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
@@ -493,6 +507,30 @@ pub async fn serve_quickwit(
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
+                .build(metastore);
+            Some(metastore)
+        } else if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
+            let read_replica_uri = node_config.metastore_read_replica_uri.as_ref().expect(
+                "`metastore_read_replica_uri` should be set when the `metastore_read_replica` \
+                 role is enabled (validated at config load)",
+            );
+            let metastore: MetastoreServiceClient = metastore_resolver
+                .resolve_read_only(read_replica_uri)
+                .await
+                .with_context(|| {
+                    format!("failed to resolve metastore read replica uri `{read_replica_uri}`")
+                })?;
+            // The replica is read-only, so the control-plane event layers (which only wrap write
+            // RPCs) do not apply here.
+            let shared_layer = ServiceBuilder::new()
+                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+                .layer(LoadShedLayer::new(metastore_max_in_flight_requests(
+                    &node_config,
+                    read_replica_uri,
+                )))
+                .into_inner();
+            let metastore = MetastoreServiceClient::tower()
+                .stack_layer(shared_layer)
                 .build(metastore);
             Some(metastore)
         } else {
