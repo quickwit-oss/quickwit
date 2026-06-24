@@ -27,7 +27,7 @@ pub fn read_replica_header_interceptor() -> quickwit_common::tower::GrpcIntercep
     quickwit_common::tower::fixed_headers_interceptor(headers)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ReadReplicaGrpcService<S> {
     primary: S,
     read_replica: Option<S>,
@@ -39,6 +39,12 @@ impl<S> ReadReplicaGrpcService<S> {
             primary,
             read_replica,
         }
+    }
+}
+
+impl<S: Clone> Clone for ReadReplicaGrpcService<S> {
+    fn clone(&self) -> Self {
+        Self::new(self.primary.clone(), self.read_replica.clone())
     }
 }
 
@@ -63,9 +69,13 @@ where
 {
     type Response = http::Response<tonic::body::Body>;
     type Error = Infallible;
-    type Future = tonic::codegen::BoxFuture<Self::Response, Self::Error>;
+    type Future = S::Future;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        std::task::ready!(tower::Service::poll_ready(&mut self.primary, cx))?;
+        if let Some(read_replica) = self.read_replica.as_mut() {
+            std::task::ready!(tower::Service::poll_ready(read_replica, cx))?;
+        }
         Poll::Ready(Ok(()))
     }
 
@@ -75,13 +85,11 @@ where
             .get(READ_REPLICA_HEADER_NAME)
             .and_then(|value| value.to_str().ok())
             == Some(READ_REPLICA_HEADER_VALUE);
-        let mut service = if use_read_replica {
-            self.read_replica
-                .clone()
-                .unwrap_or_else(|| self.primary.clone())
+
+        if use_read_replica && let Some(read_replica) = self.read_replica.as_mut() {
+            tower::Service::call(read_replica, request)
         } else {
-            self.primary.clone()
-        };
-        Box::pin(async move { tower::Service::call(&mut service, request).await })
+            tower::Service::call(&mut self.primary, request)
+        }
     }
 }
