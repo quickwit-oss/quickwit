@@ -25,7 +25,7 @@ use quickwit_storage::StorageResolver;
 use crate::metastore::file_backed::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
 use crate::metastore::postgres::PostgresqlMetastoreFactory;
-use crate::{MetastoreFactory, MetastoreResolverError};
+use crate::{MetastoreFactory, MetastoreFactoryOptions, MetastoreResolverError};
 
 type FactoryAndConfig = (Box<dyn MetastoreFactory>, MetastoreConfig);
 
@@ -54,6 +54,24 @@ impl MetastoreResolver {
         &self,
         uri: &Uri,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
+        self.resolve_inner(uri, MetastoreFactoryOptions::default())
+            .await
+    }
+
+    /// Resolves the given `uri` as a read-only metastore client. Only supported for PostgreSQL.
+    pub async fn resolve_read_only(
+        &self,
+        uri: &Uri,
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
+        self.resolve_inner(uri, MetastoreFactoryOptions { read_only: true })
+            .await
+    }
+
+    async fn resolve_inner(
+        &self,
+        uri: &Uri,
+        options: MetastoreFactoryOptions,
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => MetastoreBackend::File,
             Protocol::Google => MetastoreBackend::File,
@@ -67,13 +85,20 @@ impl MetastoreResolver {
                 ));
             }
         };
+        if options.read_only && backend != MetastoreBackend::PostgreSQL {
+            return Err(MetastoreResolverError::UnsupportedBackend(
+                "read-only metastore connections are only supported for PostgreSQL".to_string(),
+            ));
+        }
         let (metastore_factory, metastore_config) = self
             .per_backend_factories
             .get(&backend)
             .ok_or(MetastoreResolverError::UnsupportedBackend(
                 "no metastore factory is registered for this backend".to_string(),
             ))?;
-        let metastore = metastore_factory.resolve(metastore_config, uri).await?;
+        let metastore = metastore_factory
+            .resolve(metastore_config, uri, options)
+            .await?;
         Ok(metastore)
     }
 
@@ -182,6 +207,21 @@ mod tests {
         let metastore_filepath = format!("file://{}/metastore", tmp_dir.path().display());
         let metastore_uri = Uri::from_str(&metastore_filepath).unwrap();
         metastore_resolver.resolve(&metastore_uri).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_metastore_resolver_should_reject_read_only_file() {
+        let metastore_resolver = MetastoreResolver::unconfigured();
+        let metastore_uri = Uri::from_str("ram:///metastore").unwrap();
+        let error = metastore_resolver
+            .resolve_read_only(&metastore_uri)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            MetastoreResolverError::UnsupportedBackend(message)
+                if message == "read-only metastore connections are only supported for PostgreSQL"
+        ));
     }
 
     #[cfg(feature = "postgres")]
