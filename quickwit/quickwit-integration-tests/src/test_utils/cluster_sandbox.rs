@@ -103,6 +103,7 @@ pub struct ClusterSandboxBuilder {
     temp_dir: TempDir,
     node_configs: Vec<TestNodeConfig>,
     use_legacy_ingest: bool,
+    enable_standalone_compactors: bool,
 }
 
 impl Default for ClusterSandboxBuilder {
@@ -111,6 +112,7 @@ impl Default for ClusterSandboxBuilder {
             temp_dir: tempfile::tempdir().unwrap(),
             node_configs: Vec::new(),
             use_legacy_ingest: false,
+            enable_standalone_compactors: false,
         }
     }
 }
@@ -151,6 +153,13 @@ impl ClusterSandboxBuilder {
         self
     }
 
+    /// Opts every node into the external compactor mode. Required for any node running the
+    /// `Compactor` service, and makes janitor nodes host the compaction planner.
+    pub fn enable_standalone_compactors(mut self) -> Self {
+        self.enable_standalone_compactors = true;
+        self
+    }
+
     /// Builds a list of of [`NodeConfig`] from the node definitions added to
     /// builder. For each node, a [`NodeConfig`] is built with the right
     /// parameters such that we will be able to run `quickwit_serve` on them and
@@ -166,7 +175,7 @@ impl ClusterSandboxBuilder {
         let unique_dir_name = new_coolid("test-dir");
         let tcp_listener_resolver = TestTcpListenerResolver::default();
         for (node_idx, node_builder) in self.node_configs.iter().enumerate() {
-            let config = node_builder
+            let mut config = node_builder
                 .build_node_config(
                     node_idx,
                     cluster_id.clone(),
@@ -175,6 +184,7 @@ impl ClusterSandboxBuilder {
                     &tcp_listener_resolver,
                 )
                 .await;
+            config.enable_standalone_compactors = self.enable_standalone_compactors;
             peers.push(config.gossip_advertise_addr.to_string());
             resolved_node_configs.push((config, node_builder.services.clone()));
         }

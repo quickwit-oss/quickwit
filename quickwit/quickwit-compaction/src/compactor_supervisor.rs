@@ -16,8 +16,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
 use quickwit_common::io::{self, Limiter};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
@@ -38,7 +39,7 @@ use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 
 use crate::compaction_pipeline::{CompactionPipeline, PipelineStatus, PipelineStatusUpdate};
@@ -50,6 +51,20 @@ const CHECK_PIPELINE_STATUSES_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug)]
 struct CheckPipelineStatuses;
 
+#[derive(Debug)]
+pub struct Decommission;
+
+/// Lifecycle state of a `CompactorSupervisor`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactorStatus {
+    /// Normal operation: accepts and spawns new merge tasks.
+    Ready,
+    /// Draining: rejects new tasks (reports zero available slots) while in-flight merges finish.
+    Decommissioning,
+    /// All in-flight merges have completed; the supervisor can be torn down.
+    Finished,
+}
+
 /// Manages a pool of `CompactionPipeline`s, each executing a single merge task.
 ///
 /// Periodically collects pipeline status updates and forwards them to the
@@ -57,6 +72,8 @@ struct CheckPipelineStatuses;
 pub struct CompactorSupervisor {
     node_id: NodeId,
     planner_client: CompactionPlannerServiceClient,
+    status: CompactorStatus,
+    status_tx: watch::Sender<CompactorStatus>,
     pipelines: Vec<Option<CompactionPipeline>>,
     // Bounds the number of pipelines running Tantivy merge step concurrently. There are 2x as many
     // pipeline slots as permits, so half the pipelines can be doing IO while the other half hold a
@@ -97,9 +114,12 @@ impl CompactorSupervisor {
         let merge_execution_semaphore =
             Arc::new(Semaphore::new(max_concurrent_merge_executions.get()));
         let io_throughput_limiter = max_merge_write_throughput.map(io::limiter);
+        let (status_tx, _status_rx) = watch::channel(CompactorStatus::Ready);
         CompactorSupervisor {
             node_id,
             planner_client,
+            status: CompactorStatus::Ready,
+            status_tx,
             pipelines,
             merge_execution_semaphore,
             io_throughput_limiter,
@@ -109,6 +129,47 @@ impl CompactorSupervisor {
             max_concurrent_split_uploads,
             event_broker,
             compaction_root_directory,
+        }
+    }
+
+    pub fn status_rx(&self) -> watch::Receiver<CompactorStatus> {
+        self.status_tx.subscribe()
+    }
+
+    fn set_status(&mut self, status: CompactorStatus) {
+        self.status = status;
+        self.status_tx.send_replace(status);
+    }
+
+    fn check_decommissioning_status(&mut self) {
+        if self.status != CompactorStatus::Decommissioning {
+            return;
+        }
+        let any_in_progress = self
+            .pipelines
+            .iter()
+            .flatten()
+            .any(|pipeline| matches!(pipeline.status(), PipelineStatus::InProgress));
+        if !any_in_progress {
+            self.set_status(CompactorStatus::Finished);
+        }
+    }
+
+    async fn report_status_and_maybe_finish(&mut self, ctx: &ActorContext<Self>) {
+        let statuses = self.check_pipeline_statuses();
+        let request = self.build_report_status_request(&statuses);
+        match ctx
+            .protect_future(self.planner_client.report_status(request))
+            .await
+        {
+            Ok(response) => {
+                ctx.protect_future(self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()))
+                    .await;
+                self.check_decommissioning_status();
+            }
+            Err(error) => {
+                error!(%error, "failed to report status to compaction planner");
+            }
         }
     }
 
@@ -153,6 +214,13 @@ impl CompactorSupervisor {
         assignment: MergeTaskAssignment,
         spawn_ctx: &SpawnContext,
     ) -> anyhow::Result<()> {
+        if self.status != CompactorStatus::Ready {
+            info!(
+                task_id = %assignment.task_id,
+                "compactor is decommissioning; dropping assigned merge task, the merge planner will reschedule it"
+            );
+            return Ok(());
+        }
         let source_uid_label = source_uid_metrics_label(
             assignment.index_uid.as_ref().unwrap(),
             &assignment.source_id,
@@ -232,6 +300,13 @@ impl CompactorSupervisor {
         ))
     }
 
+    fn available_slots(&self, in_progress_count: usize) -> u32 {
+        if self.status != CompactorStatus::Ready {
+            return 0;
+        }
+        (self.pipelines.len() - in_progress_count) as u32
+    }
+
     fn build_report_status_request(
         &self,
         statuses: &[PipelineStatusUpdate],
@@ -240,7 +315,7 @@ impl CompactorSupervisor {
             .iter()
             .filter(|s| matches!(s.status, PipelineStatus::InProgress))
             .count();
-        let available_slots = (self.pipelines.len() - in_progress_count) as i64;
+        let available_slots = self.available_slots(in_progress_count);
 
         let mut in_progress = Vec::new();
         let mut successes = Vec::new();
@@ -272,7 +347,7 @@ impl CompactorSupervisor {
 
         ReportStatusRequest {
             node_id: self.node_id.to_string(),
-            available_slots: available_slots as u32,
+            available_slots,
             in_progress,
             successes,
             failures,
@@ -309,23 +384,55 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
         _msg: CheckPipelineStatuses,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let statuses = self.check_pipeline_statuses();
-        let request = self.build_report_status_request(&statuses);
-        match ctx
-            .protect_future(self.planner_client.report_status(request))
-            .await
-        {
-            Ok(response) => {
-                ctx.protect_future(self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()))
-                    .await;
-            }
-            Err(error) => {
-                error!(%error, "failed to report status to compaction planner");
-            }
+        // Once finished decommissioning we stop the loop; the node is about to be torn down.
+        if self.status == CompactorStatus::Finished {
+            return Ok(());
+        }
+        self.report_status_and_maybe_finish(ctx).await;
+        if self.status == CompactorStatus::Finished {
+            info!("compactor finished draining in-flight merges");
+            return Ok(());
         }
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
         Ok(())
     }
+}
+
+#[async_trait]
+impl Handler<Decommission> for CompactorSupervisor {
+    type Reply = watch::Receiver<CompactorStatus>;
+
+    async fn handle(
+        &mut self,
+        _msg: Decommission,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<watch::Receiver<CompactorStatus>, ActorExitStatus> {
+        if self.status == CompactorStatus::Ready {
+            info!("decommissioning compactor");
+            self.set_status(CompactorStatus::Decommissioning);
+        }
+        Ok(self.status_rx())
+    }
+}
+
+pub async fn wait_for_compactor_decommission(
+    compactor_mailbox: &Mailbox<CompactorSupervisor>,
+    timeout_after: Duration,
+) -> anyhow::Result<()> {
+    let mut status_rx = compactor_mailbox
+        .send_message_with_high_priority(Decommission)
+        .context("failed to initiate compactor decommission")?
+        .await
+        .context("compactor dropped decommission reply")?;
+    tokio::time::timeout(
+        timeout_after,
+        status_rx.wait_for(|status| *status == CompactorStatus::Finished),
+    )
+    .await
+    .context("timed out waiting for compactor to finish decommissioning")?
+    .context("compactor status channel closed")?;
+    info!("compactor decommissioned successfully");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -649,5 +756,103 @@ mod tests {
         assert_eq!(request.failures.len(), 1);
         assert_eq!(request.failures[0].task_id, "task-3");
         assert_eq!(request.failures[0].error_message, "boom");
+    }
+
+    #[test]
+    fn test_check_decommissioning_status_finishes_when_idle() {
+        let mut supervisor = test_supervisor(2);
+        supervisor.set_status(CompactorStatus::Decommissioning);
+        supervisor.check_decommissioning_status();
+        assert_eq!(supervisor.status, CompactorStatus::Finished);
+    }
+
+    #[test]
+    fn test_check_decommissioning_status_noop_when_ready() {
+        let mut supervisor = test_supervisor(2);
+        supervisor.check_decommissioning_status();
+        assert_eq!(supervisor.status, CompactorStatus::Ready);
+    }
+
+    #[test]
+    fn test_decommissioning_reports_zero_available_slots() {
+        // 4 merge-executions → 8 free pipeline slots, but decommissioning advertises none.
+        let mut supervisor = test_supervisor(4);
+        supervisor.set_status(CompactorStatus::Decommissioning);
+        let request = supervisor.build_report_status_request(&[]);
+        assert_eq!(request.available_slots, 0);
+    }
+
+    #[tokio::test]
+    async fn test_decommissioning_waits_for_in_flight_merge() {
+        let universe = Universe::new();
+        let mut supervisor = test_supervisor(4);
+
+        let mut pipeline = test_pipeline("task-1", &["s1"]);
+        pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
+        supervisor.pipelines[0] = Some(pipeline);
+
+        supervisor.set_status(CompactorStatus::Decommissioning);
+        let statuses = supervisor.check_pipeline_statuses();
+        supervisor.check_decommissioning_status();
+
+        // The in-flight pipeline keeps the supervisor draining and advertising no capacity.
+        assert_eq!(supervisor.status, CompactorStatus::Decommissioning);
+        let request = supervisor.build_report_status_request(&statuses);
+        assert_eq!(request.available_slots, 0);
+        assert_eq!(request.in_progress.len(), 1);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_spawn_task_dropped_while_decommissioning() {
+        let universe = Universe::new();
+        let mut supervisor = test_supervisor(2);
+        supervisor.set_status(CompactorStatus::Decommissioning);
+
+        supervisor
+            .spawn_task(test_assignment("task-1", &["s1"]), universe.spawn_ctx())
+            .await
+            .unwrap();
+
+        assert!(supervisor.pipelines.iter().all(|slot| slot.is_none()));
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_compactor_decommission_drains_when_idle() {
+        let universe = Universe::new();
+
+        let mut mock = MockCompactionPlannerService::new();
+        mock.expect_report_status().returning(|_req| {
+            Ok(quickwit_proto::compaction::ReportStatusResponse {
+                new_tasks: Vec::new(),
+            })
+        });
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let client = CompactionPlannerServiceClient::from_mock(mock);
+        let compactor_config = CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            ..CompactorConfig::for_test()
+        };
+        let supervisor = CompactorSupervisor::new(
+            NodeId::from_str("test-node"),
+            client,
+            &compactor_config,
+            metastore,
+            StorageResolver::for_test(),
+            Arc::new(IndexingSplitCache::no_caching()),
+            EventBroker::default(),
+            TempDirectory::for_test(),
+        );
+        let status_rx = supervisor.status_rx();
+        let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
+
+        wait_for_compactor_decommission(&mailbox, Duration::from_secs(10))
+            .await
+            .unwrap();
+
+        assert_eq!(*status_rx.borrow(), CompactorStatus::Finished);
+        universe.assert_quit().await;
     }
 }

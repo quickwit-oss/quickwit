@@ -75,7 +75,9 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
-use quickwit_compaction::{CompactorSupervisor, start_compactor_service};
+use quickwit_compaction::{
+    CompactorSupervisor, start_compactor_service, wait_for_compactor_decommission,
+};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
@@ -501,10 +503,12 @@ fn start_shard_positions_service(
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
+#[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
     ingester_opt: Option<Ingester>,
+    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
@@ -517,6 +521,13 @@ async fn shutdown_signal_handler(
         && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
     {
         error!("failed to decommission ingester gracefully: {:?}", error);
+    }
+    // Let the compactor finish the merges already in flight before tearing down its pipelines.
+    if let Some(compactor_supervisor) = &compactor_supervisor_opt
+        && let Err(error) =
+            wait_for_compactor_decommission(compactor_supervisor, Duration::from_secs(300)).await
+    {
+        error!("failed to decommission compactor gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -943,7 +954,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_opt: ingester_opt.clone(),
         compaction_service_client_opt,
-        _compactor_supervisor_opt: compactor_supervisor_opt,
+        _compactor_supervisor_opt: compactor_supervisor_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -1048,6 +1059,7 @@ pub async fn serve_quickwit(
         shutdown_signal,
         universe,
         ingester_opt,
+        compactor_supervisor_opt,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
         health_shutdown_trigger_tx_opt,
