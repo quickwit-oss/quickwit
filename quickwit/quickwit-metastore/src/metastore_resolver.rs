@@ -240,4 +240,31 @@ mod tests {
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }
+
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn test_metastore_resolver_resolve_read_only_postgres() {
+        use std::env;
+
+        use quickwit_proto::metastore::{ListIndexesMetadataRequest, MetastoreService};
+
+        let metastore_resolver = MetastoreResolver::unconfigured();
+        let test_database_url = env::var("QW_TEST_DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://quickwit-dev:quickwit-dev@localhost/quickwit-metastore-dev".to_string()
+        });
+        let postgres_uri = Uri::from_str(&test_database_url).unwrap();
+        // The read replica skips migrations, so ensure the schema exists by resolving the
+        // read-write metastore first.
+        metastore_resolver.resolve(&postgres_uri).await.unwrap();
+
+        let read_only_metastore = metastore_resolver
+            .resolve_read_only(&postgres_uri)
+            .await
+            .unwrap();
+        // A read-only connection must still serve read RPCs.
+        read_only_metastore
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .await
+            .unwrap();
+    }
 }

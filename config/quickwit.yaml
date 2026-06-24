@@ -103,6 +103,13 @@ version: 0.8
 # metastore_uri: s3://your-bucket/indexes
 # metastore_uri: postgres://username:password@host:port/db
 #
+# Optional PostgreSQL read replica URI. Nodes started with the
+# `metastore_read_replica` service connect to it over a read-only connection and
+# serve stale-tolerant read-only metastore requests (e.g. from searchers). When
+# unset, those requests are served by the primary metastore. Defaults to unset.
+#
+# metastore_read_replica_uri: postgres://username:password@read-replica-host:port/db
+#
 # When using a file-backed metastore, the state of the metastore will be cached forever.
 # If you are indexing and searching from different processes, it is possible to periodically
 # refresh the state of the metastore on the searcher using the `polling_interval` hashtag.
