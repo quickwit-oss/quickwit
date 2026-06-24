@@ -147,6 +147,29 @@ impl<'de> Deserialize<'de> for PipelineConfig {
     }
 }
 
+/// The `type` tags of all processors we know how to deserialize, kept in sync with the
+/// `#[serde(rename = ...)]` attributes on [`PipelineStepConfig`]. Used to tell apart a genuinely
+/// unknown processor (safe to ignore) from a known processor with a broken config (a real problem).
+const KNOWN_PROCESSOR_TYPES: &[&str] = &[
+    "url-parser",
+    "user-agent-parser",
+    "geo-ip-parser",
+    "category-processor",
+    "arithmetic-processor",
+    "lookup-processor",
+    "pipeline",
+    "auto-grok",
+    "grok-parser",
+    "attribute-remapper",
+    "status-remapper",
+    "date-remapper",
+    "string-builder-processor",
+    "message-remapper",
+    "trace-id-remapper",
+    "span-id-remapper",
+    "service-remapper",
+];
+
 fn deserialize_pipeline_steps<'de, D>(
     deserializer: D,
 ) -> Result<Vec<PipelineStepConfig>, D::Error>
@@ -161,7 +184,12 @@ where D: Deserializer<'de> {
                     .get("type")
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or("<missing>");
-                // unknown processors are ignored
+                if KNOWN_PROCESSOR_TYPES.contains(&step_type) {
+                    // We know this processor, so we expect a valid config; a parse failure is a
+                    // real error (e.g. a broken or incompatible config) and we surface it.
+                    return Err(de::Error::custom(error));
+                }
+                // An unknown processor type, e.g. one we don't support yet. Safe to ignore.
                 warn!("ignoring unsupported pipeline processor `{step_type}`: {error}");
             }
         }
@@ -992,6 +1020,18 @@ sources:
             }
             other => panic!("expected a nested pipeline, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_known_processor_with_broken_config_errors() {
+        // A processor type we know about but with an invalid config must fail the whole
+        // config rather than being silently dropped like an unknown processor.
+        let json = r#"[
+            {"type": "service-remapper", "id": "1", "name": "service", "enabled": true}
+        ]"#;
+
+        serde_json::from_str::<PipelineConfig>(json)
+            .expect_err("a known processor with an invalid config must fail to deserialize");
     }
 
     #[test]
