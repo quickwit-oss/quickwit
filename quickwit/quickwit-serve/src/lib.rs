@@ -174,6 +174,23 @@ fn build_metastore_client_from_balance_channel(
         )
 }
 
+async fn metastore_balance_channel(
+    cluster: &Cluster,
+) -> anyhow::Result<BalanceChannel<SocketAddr>> {
+    info!("connecting to metastore");
+
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Metastore).await;
+    if !balance_channel
+        .wait_for(Duration::from_secs(300), |connections| {
+            !connections.is_empty()
+        })
+        .await
+    {
+        bail!("could not find any metastore node in the cluster");
+    }
+    Ok(balance_channel)
+}
+
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
 static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
@@ -550,19 +567,7 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            info!("connecting to metastore");
-
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
+            let balance_channel = metastore_balance_channel(&cluster).await?;
             build_metastore_client_from_balance_channel(
                 balance_channel,
                 grpc_config.max_message_size,
@@ -722,11 +727,13 @@ pub async fn serve_quickwit(
     };
 
     let searcher_metastore_client: MetastoreReadServiceClient =
-        if node_config.metastore_read_replica_uri.is_some() {
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        if let Some(metastore_read_replica_server) = &metastore_read_replica_server_opt {
+            Arc::new(metastore_read_replica_server.clone())
+        } else if node_config.metastore_read_replica_uri.is_some() {
+            let balance_channel = metastore_balance_channel(&cluster).await?;
             // The read-replica header is honored at the metastore gRPC server boundary,
-            // so read-only callers must use a remote metastore client when a replica exists.
+            // so remote read-only callers must use a remote metastore client when a
+            // replica exists.
             let metastore_read_only_client = build_metastore_client_from_balance_channel(
                 balance_channel,
                 grpc_config.max_message_size,
