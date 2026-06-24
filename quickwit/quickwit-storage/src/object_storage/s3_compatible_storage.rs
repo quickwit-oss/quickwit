@@ -31,6 +31,7 @@ use aws_sdk_s3::config::{
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
+use aws_sdk_s3::operation::put_object::builders::PutObjectFluentBuilder;
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{
@@ -158,9 +159,12 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
+    // We disable it for response. We mostly do range reads so S3 omits the checksum in the response
+    // anyway. Localstack seems to return the full file Crc which causes bugs.
+    s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
+
     if s3_storage_config.checksum_algorithm.is_disabled() {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
-        s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
@@ -264,11 +268,11 @@ fn aws_checksum_algorithm(
     }
 }
 
-const MD5_CHUNK_SIZE: usize = 1_000_000;
+const DIGEST_CHUNK_SIZE: usize = 1_048_576;
 
 async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
     let mut checksum = md5::Context::new();
-    let mut buf = vec![0; MD5_CHUNK_SIZE];
+    let mut buf = vec![0; DIGEST_CHUNK_SIZE];
     loop {
         let read_len = read.read(&mut buf).await?;
         if read_len == 0 {
@@ -277,6 +281,24 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
         (checksum, buf) = run_cpu_intensive(move || {
             checksum.consume(&buf[..read_len]);
             (checksum, buf)
+        })
+        .await
+        .map_err(io::Error::other)?;
+    }
+}
+
+/// Streams `read` and returns its CRC32C (Castagnoli) checksum.
+async fn compute_crc32c<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<u32> {
+    let mut crc: u32 = 0;
+    let mut buf = vec![0; DIGEST_CHUNK_SIZE];
+    loop {
+        let read_len = read.read(&mut buf).await?;
+        if read_len == 0 {
+            return Ok(crc);
+        }
+        (crc, buf) = run_cpu_intensive(move || {
+            let crc = crc32c::crc32c_append(crc, &buf[..read_len]);
+            (crc, buf)
         })
         .await
         .map_err(io::Error::other)?;
@@ -316,6 +338,35 @@ impl S3CompatibleObjectStorage {
             .to_path_buf()
     }
 
+    /// Computes the configured checksum over `payload[0..len]` and sets it on the
+    /// request as an explicit header (`Content-MD5` or `x-amz-checksum-crc32c`).
+    ///
+    /// Hidden motivation: by sending the checksum value as a header we make the
+    /// SDK's flexible-checksum interceptor short-circuit and *disable* the
+    /// `aws-chunked` transfer-encoding + trailing-checksum path that is causing
+    /// the presence of both a header and a trailer checksum, that is not really valid,
+    /// and not accepted by localstack.
+    async fn set_checksum(
+        &self,
+        put_object_request: PutObjectFluentBuilder,
+        payload: &dyn crate::PutPayload,
+        len: u64,
+    ) -> io::Result<PutObjectFluentBuilder> {
+        match self.checksum_algorithm {
+            quickwit_config::ChecksumAlgorithm::Disabled => Ok(put_object_request),
+            quickwit_config::ChecksumAlgorithm::Md5 => {
+                let read = payload.range_byte_stream(0..len).await?.into_async_read();
+                let digest = compute_md5(read).await?;
+                Ok(put_object_request.content_md5(BASE64_STANDARD.encode(digest.0)))
+            }
+            quickwit_config::ChecksumAlgorithm::Crc32c => {
+                let read = payload.range_byte_stream(0..len).await?.into_async_read();
+                let crc = compute_crc32c(read).await?;
+                Ok(put_object_request.checksum_crc32_c(BASE64_STANDARD.encode(crc.to_be_bytes())))
+            }
+        }
+    }
+
     async fn put_single_part_single_try<'a>(
         &'a self,
         bucket: &'a str,
@@ -323,15 +374,6 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> Result<(), Retry<StorageError>> {
-        // For MD5 uploads, compute Content-MD5 before streaming the body.
-        // The AWS SDK no-ops ChecksumAlgorithm::Md5, so MD5 must be sent via
-        // the legacy Content-MD5 header (same as the multipart path does per part).
-        let content_md5: Option<String> = self
-            .maybe_compute_part_md5(payload.as_ref(), 0..len)
-            .await
-            .map_err(|err| Retry::Permanent(StorageError::from(err)))?
-            .map(|digest| BASE64_STANDARD.encode(digest.0));
-
         let body = payload
             .byte_stream()
             .await
@@ -340,23 +382,25 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
 
-        self.s3_client
+        let put_object_request = self
+            .s3_client
             .put_object()
             .bucket(bucket)
             .key(key)
             .body(body)
-            .content_length(len as i64)
-            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
-            .set_content_md5(content_md5)
-            .send()
+            .content_length(len as i64);
+        let put_object_request = self
+            .set_checksum(put_object_request, payload.as_ref(), len)
             .await
-            .map_err(|sdk_error| {
-                if sdk_error.is_retryable() {
-                    Retry::Transient(StorageError::from(sdk_error))
-                } else {
-                    Retry::Permanent(StorageError::from(sdk_error))
-                }
-            })?;
+            .map_err(|err| Retry::Permanent(StorageError::from(err)))?;
+
+        put_object_request.send().await.map_err(|sdk_error| {
+            if sdk_error.is_retryable() {
+                Retry::Transient(StorageError::from(sdk_error))
+            } else {
+                Retry::Permanent(StorageError::from(sdk_error))
+            }
+        })?;
         Ok(())
     }
 
