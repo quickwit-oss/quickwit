@@ -29,6 +29,10 @@ pub enum QuickwitService {
     Searcher,
     Janitor,
     Metastore,
+    /// A read-only metastore node backed by a PostgreSQL read replica. It serves the same gRPC
+    /// metastore service as [`QuickwitService::Metastore`] but over a read-only connection, and is
+    /// discovered separately so that read-only callers (e.g. searchers) can route reads to it.
+    MetastoreReadReplica,
 }
 
 #[allow(clippy::from_over_into)]
@@ -46,11 +50,24 @@ impl QuickwitService {
             QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::MetastoreReadReplica => "metastore_read_replica",
         }
     }
 
+    /// Returns every service the binary knows how to run.
     pub fn supported_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>().collect()
+    }
+
+    /// Returns the services enabled on a node when none are explicitly configured.
+    ///
+    /// This is every supported service except [`QuickwitService::MetastoreReadReplica`], which is
+    /// opt-in: it requires a dedicated read replica URI and is meant to be deployed as its own set
+    /// of nodes, so it must never be enabled implicitly by an all-in-one node.
+    pub fn default_services() -> HashSet<QuickwitService> {
+        all::<QuickwitService>()
+            .filter(|service| *service != QuickwitService::MetastoreReadReplica)
+            .collect()
     }
 }
 
@@ -70,6 +87,9 @@ impl FromStr for QuickwitService {
             "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
+            "metastore-read-replica" | "metastore_read_replica" => {
+                Ok(QuickwitService::MetastoreReadReplica)
+            }
             _ => {
                 bail!(
                     "failed to parse service `{service_str}`. supported services are: `{}`",
@@ -77,5 +97,41 @@ impl FromStr for QuickwitService {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quickwit_service_str_round_trip() {
+        for service in QuickwitService::supported_services() {
+            let parsed = QuickwitService::from_str(service.as_str()).unwrap();
+            assert_eq!(parsed, service);
+        }
+    }
+
+    #[test]
+    fn test_quickwit_service_metastore_read_replica_aliases() {
+        assert_eq!(
+            QuickwitService::from_str("metastore_read_replica").unwrap(),
+            QuickwitService::MetastoreReadReplica
+        );
+        assert_eq!(
+            QuickwitService::from_str("metastore-read-replica").unwrap(),
+            QuickwitService::MetastoreReadReplica
+        );
+    }
+
+    #[test]
+    fn test_default_services_excludes_metastore_read_replica() {
+        let default_services = QuickwitService::default_services();
+        assert!(!default_services.contains(&QuickwitService::MetastoreReadReplica));
+        assert!(default_services.contains(&QuickwitService::Metastore));
+
+        let supported_services = QuickwitService::supported_services();
+        assert!(supported_services.contains(&QuickwitService::MetastoreReadReplica));
+        assert_eq!(default_services.len() + 1, supported_services.len());
     }
 }

@@ -812,6 +812,10 @@ pub struct NodeConfig {
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
+    /// Optional PostgreSQL read replica URI. It is used as the connection URI by nodes running the
+    /// [`QuickwitService::MetastoreReadReplica`] role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metastore_read_replica_uri: Option<Uri>,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -872,6 +876,9 @@ impl NodeConfig {
     pub fn redact(&mut self) {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
+        if let Some(metastore_read_replica_uri) = &mut self.metastore_read_replica_uri {
+            metastore_read_replica_uri.redact();
+        }
         self.storage_configs.redact();
     }
 
@@ -895,6 +902,26 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+
+    #[test]
+    fn test_node_config_redact_metastore_uris() {
+        let mut config = NodeConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@host:5432/db");
+        config.metastore_read_replica_uri = Some(Uri::for_test(
+            "postgresql://replica-user:replica-password@replica-host:5432/db",
+        ));
+
+        config.redact();
+
+        assert_eq!(
+            config.metastore_uri,
+            "postgresql://username:***redacted***@host:5432/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://replica-user:***redacted***@replica-host:5432/db"
+        );
+    }
 
     #[test]
     fn test_indexer_config_serialization() {
