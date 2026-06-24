@@ -69,8 +69,8 @@ use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcInterceptor, GrpcMetricsLayer,
+    LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -151,6 +151,27 @@ fn get_metastore_client_max_concurrency() -> usize {
         DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
         false,
     )
+}
+
+fn build_metastore_client_from_balance_channel(
+    balance_channel: BalanceChannel<SocketAddr>,
+    max_message_size: ByteSize,
+    grpc_compression_encoding_opt: Option<CompressionEncoding>,
+    interceptors: impl IntoIterator<Item = GrpcInterceptor>,
+) -> MetastoreServiceClient {
+    MetastoreServiceClient::tower()
+        .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+        .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+        .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+        .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            get_metastore_client_max_concurrency(),
+        ))
+        .build_from_balance_channel(
+            balance_channel,
+            max_message_size,
+            grpc_compression_encoding_opt,
+            interceptors,
+        )
 }
 
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
@@ -542,14 +563,12 @@ pub async fn serve_quickwit(
             {
                 bail!("could not find any metastore node in the cluster");
             }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None, [])
+            build_metastore_client_from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+                None,
+                [],
+            )
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -702,28 +721,25 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let balance_channel = balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-    // Search remains available without a control plane because not all metastore RPCs
-    // are proxied. Metastore nodes route read-replica headers to the primary when no
-    // read replica is configured.
-    let metastore_read_only_client = MetastoreServiceClient::tower()
-        .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-        .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-        .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-        .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-            get_metastore_client_max_concurrency(),
-        ))
-        .build_from_balance_channel(
-            balance_channel,
-            grpc_config.max_message_size,
-            None,
-            [quickwit_proto::grpc_read_replica::read_replica_header_interceptor()],
-        );
     let searcher_metastore_client: MetastoreReadServiceClient =
-        Arc::new(MetastoreServiceClient::new(ControlPlaneMetastore::new(
-            control_plane_client.clone(),
-            metastore_read_only_client,
-        )));
+        if node_config.metastore_read_replica_uri.is_some() {
+            let balance_channel =
+                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+            // The read-replica header is honored at the metastore gRPC server boundary,
+            // so read-only callers must use a remote metastore client when a replica exists.
+            let metastore_read_only_client = build_metastore_client_from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+                None,
+                [quickwit_proto::grpc_read_replica::read_replica_header_interceptor()],
+            );
+            Arc::new(MetastoreServiceClient::new(ControlPlaneMetastore::new(
+                control_plane_client.clone(),
+                metastore_read_only_client,
+            )))
+        } else {
+            Arc::new(metastore_through_control_plane.clone())
+        };
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
