@@ -88,9 +88,6 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     rest:
         listen_port: #rest_listen_port
     grpc_listen_port: #grpc_listen_port
-    storage:
-        s3:
-            checksum_algorithm: disabled
 "#;
 
 const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 72057597, "device": "rpi", "city": "tokio"}
