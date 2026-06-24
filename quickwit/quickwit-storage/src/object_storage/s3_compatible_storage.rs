@@ -158,9 +158,12 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
+    // We always disable response checksum. We mostly do range request anyway.
+    // Somehow, localstack keeps returning the full checksum on range request, which
+    // causes error.
+    s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     if s3_storage_config.checksum_algorithm.is_disabled() {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
-        s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
