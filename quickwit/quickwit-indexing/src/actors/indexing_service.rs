@@ -393,7 +393,7 @@ impl IndexingService {
             self.max_concurrent_split_uploads
         };
         let max_concurrent_split_uploads_merge =
-            self.max_concurrent_split_uploads - max_concurrent_split_uploads_index;
+            (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),

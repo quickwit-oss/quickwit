@@ -19,6 +19,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_cluster::Cluster;
+use quickwit_common::rate_limited_tracing::rate_limited_info;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
@@ -52,6 +54,7 @@ pub struct CompactionPlanner {
     state: CompactionState,
     index_config_metastore: IndexConfigMetastore,
     metastore: MetastoreServiceClient,
+    cluster: Cluster,
 }
 
 const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
@@ -61,6 +64,9 @@ const INITIAL_SCAN_AND_PLAN_INTERVAL: Duration = SCAN_AND_PLAN_INTERVAL.saturati
 
 #[derive(Debug)]
 struct ScanAndPlan;
+
+#[derive(Debug)]
+struct AwaitIndexersMigrated;
 
 #[async_trait]
 impl Actor for CompactionPlanner {
@@ -74,10 +80,11 @@ impl Actor for CompactionPlanner {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         info!(
-            "compaction planner starting, scanning metastore for immature splits in {} seconds",
+            "compaction planner initializing, waiting for indexers to hand off compaction in {} \
+             seconds",
             INITIAL_SCAN_AND_PLAN_INTERVAL.as_secs()
         );
-        ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
+        ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, AwaitIndexersMigrated);
         Ok(())
     }
 }
@@ -101,6 +108,32 @@ impl Handler<ScanAndPlan> for CompactionPlanner {
 }
 
 #[async_trait]
+impl Handler<AwaitIndexersMigrated> for CompactionPlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _msg: AwaitIndexersMigrated,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.all_indexers_migrated().await {
+            info!(
+                "all indexers report standalone compactors enabled, starting compaction scan loop"
+            );
+            ctx.send_self_message(ScanAndPlan).await?;
+        } else {
+            rate_limited_info!(
+                limit_per_min = 6,
+                "waiting for indexers to report standalone compactors enabled before planning \
+                 merges"
+            );
+            ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, AwaitIndexersMigrated);
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl Handler<ReportStatusRequest> for CompactionPlanner {
     type Reply = CompactionResult<ReportStatusResponse>;
 
@@ -119,12 +152,22 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
 }
 
 impl CompactionPlanner {
-    pub fn new(metastore: MetastoreServiceClient) -> Self {
+    pub fn new(metastore: MetastoreServiceClient, cluster: Cluster) -> Self {
         CompactionPlanner {
             state: CompactionState::new(),
             index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
             metastore,
+            cluster,
         }
+    }
+
+    async fn all_indexers_migrated(&self) -> bool {
+        self.cluster
+            .live_nodes()
+            .await
+            .iter()
+            .filter(|node| node.is_indexer())
+            .all(|node| node.enable_standalone_compactors())
     }
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
@@ -211,6 +254,7 @@ impl CompactionPlanner {
                 .iter()
                 .map(|s| s.split_id().to_string())
                 .collect();
+
             self.state
                 .record_assignment(task_id, split_ids, node_id.clone());
 
@@ -263,7 +307,9 @@ mod tests {
     use std::ops::Bound;
     use std::time::Duration;
 
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::IndexingSettings;
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig,
@@ -325,6 +371,15 @@ mod tests {
         IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap()
     }
 
+    async fn test_cluster() -> Cluster {
+        use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
+
+        let transport = ChitchatTransport::default();
+        create_cluster_for_test(Vec::new(), &["janitor"], &transport, true)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn test_scan_metastore_query_shape_and_passthrough() {
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -361,7 +416,10 @@ mod tests {
             Ok(ServiceStream::from(vec![Ok(response)]))
         });
 
-        let planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         let result = planner.scan_metastore().await.unwrap();
 
         assert_eq!(result.len(), 2);
@@ -387,7 +445,10 @@ mod tests {
             Ok(ServiceStream::from(vec![Ok(response)]))
         });
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         planner.state.track_split(SplitMetadata {
             split_id: "tracked".to_string(),
             index_uid: index_uid.clone(),
@@ -416,7 +477,10 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
 
         // Pre-populate: "in-flight" is already being compacted.
         planner.state.track_split(SplitMetadata {
@@ -451,7 +515,10 @@ mod tests {
             })
         });
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         assert!(planner.scan_and_plan().await.is_err());
     }
 
@@ -468,7 +535,10 @@ mod tests {
             })
         });
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         planner.ingest_splits(splits).await;
 
         assert!(!planner.state.is_split_tracked("orphan"));
@@ -494,7 +564,10 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(index_metadata_response.clone()));
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         planner.scan_and_plan().await.unwrap();
 
         assert!(planner.state.is_split_tracked("s1"));
@@ -525,7 +598,10 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(index_metadata_response.clone()));
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
         let node_id = NodeId::from_str("worker-1");
 
         planner.scan_and_plan().await.unwrap();
@@ -567,7 +643,10 @@ mod tests {
             )]))
         });
 
-        let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
+        let mut planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(mock),
+            test_cluster().await,
+        );
 
         let splits: Vec<Split> = split_ids
             .iter()
@@ -642,5 +721,73 @@ mod tests {
         let assignments = planner.assign_tasks(&node_id, 10);
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].splits_metadata_json.len(), 2);
+    }
+
+    async fn migrated_indexer(seeds: Vec<String>, transport: &ChitchatTransport) -> Cluster {
+        let cluster = create_cluster_for_test(seeds, &["indexer"], transport, true)
+            .await
+            .unwrap();
+        cluster.set_self_enable_standalone_compactors(true).await;
+        cluster
+    }
+
+    async fn wait_for_indexer_count(cluster: &Cluster, expected: usize) {
+        let cluster = cluster.clone();
+        wait_until_predicate(
+            move || {
+                let cluster = cluster.clone();
+                async move {
+                    cluster
+                        .live_nodes()
+                        .await
+                        .iter()
+                        .filter(|node| node.is_indexer())
+                        .count()
+                        == expected
+                }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_gate_opens_only_after_indexer_rollout() {
+        let transport = ChitchatTransport::default();
+        let janitor_cluster = create_cluster_for_test(Vec::new(), &["janitor"], &transport, true)
+            .await
+            .unwrap();
+        let seeds = vec![janitor_cluster.gossip_listen_addr.to_string()];
+        let planner = CompactionPlanner::new(
+            MetastoreServiceClient::from_mock(MockMetastoreService::new()),
+            janitor_cluster.clone(),
+        );
+
+        assert!(planner.all_indexers_migrated().await);
+
+        let old_indexer_1 = create_cluster_for_test(seeds.clone(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let old_indexer_2 = create_cluster_for_test(seeds.clone(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        wait_for_indexer_count(&janitor_cluster, 2).await;
+        assert!(!planner.all_indexers_migrated().await);
+
+        let new_indexer_1 = migrated_indexer(seeds.clone(), &transport).await;
+        wait_for_indexer_count(&janitor_cluster, 3).await;
+        assert!(!planner.all_indexers_migrated().await);
+
+        let new_indexer_2 = migrated_indexer(seeds.clone(), &transport).await;
+        drop(old_indexer_1);
+        drop(old_indexer_2);
+
+        wait_for_indexer_count(&janitor_cluster, 2).await;
+        assert!(planner.all_indexers_migrated().await);
+
+        drop(new_indexer_1);
+        drop(new_indexer_2);
     }
 }
