@@ -316,6 +316,10 @@ impl CodegenContext {
     }
 }
 
+fn is_metastore_service(context: &CodegenContext) -> bool {
+    context.package_name == "quickwit.metastore" && context.service_name == "MetastoreService"
+}
+
 fn generate_all(
     service: &Service,
     result_type_path: &str,
@@ -637,6 +641,21 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     } else {
         TokenStream::new()
     };
+    let metastore_read_replica_client_methods = if is_metastore_service(context) {
+        quote! {
+            pub fn as_grpc_service_with_read_replica(
+                &self,
+                read_replica: Option<Self>,
+                max_message_size: bytesize::ByteSize,
+            ) -> crate::grpc_read_replica::ReadReplicaGrpcService<#grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name>> {
+                let primary = self.as_grpc_service(max_message_size);
+                let read_replica = read_replica.map(|client| client.as_grpc_service(max_message_size));
+                crate::grpc_read_replica::ReadReplicaGrpcService::new(primary, read_replica)
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         #[derive(Debug, Clone)]
@@ -671,15 +690,21 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                     .max_encoding_message_size(max_message_size.0 as usize)
             }
 
+            #metastore_read_replica_client_methods
+
             pub fn from_channel(
                 addr: std::net::SocketAddr,
                 channel: tonic::transport::Channel,
                 max_message_size: bytesize::ByteSize,
                 compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
             ) -> Self
             {
                 let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
-                let mut client = #grpc_client_package_name::#grpc_client_name::new(channel)
+                let mut client = #grpc_client_package_name::#grpc_client_name::with_interceptor(
+                    channel,
+                    quickwit_common::tower::GrpcInterceptors::new(interceptors),
+                )
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
                 if let Some(compression_encoding) = compression_encoding_opt {
@@ -695,10 +720,14 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
                 max_message_size: bytesize::ByteSize,
                 compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
             ) -> #client_name
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
-                let mut client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
+                let mut client = #grpc_client_package_name::#grpc_client_name::with_interceptor(
+                    balance_channel,
+                    quickwit_common::tower::GrpcInterceptors::new(interceptors),
+                )
                     .max_decoding_message_size(max_message_size.0 as usize)
                     .max_encoding_message_size(max_message_size.0 as usize);
                 if let Some(compression_encoding) = compression_encoding_opt {
@@ -1024,7 +1053,6 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
 
         svc_attribute_idents.push(svc_attribute_name);
     }
-
     quote! {
         impl #tower_layer_stack_name {
             pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -1051,9 +1079,10 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 channel: tonic::transport::Channel,
                 max_message_size: bytesize::ByteSize,
                 compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
             ) -> #client_name
             {
-                let client =  #client_name::from_channel(addr, channel, max_message_size, compression_encoding_opt);
+                let client =  #client_name::from_channel(addr, channel, max_message_size, compression_encoding_opt, interceptors);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }
@@ -1063,9 +1092,10 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
                 max_message_size: bytesize::ByteSize,
                 compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+                interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
             ) -> #client_name
             {
-                let client =  #client_name::from_balance_channel(balance_channel, max_message_size, compression_encoding_opt);
+                let client =  #client_name::from_balance_channel(balance_channel, max_message_size, compression_encoding_opt, interceptors);
                 let inner_client = client.inner;
                 self.build_from_inner_client(inner_client)
             }
@@ -1279,7 +1309,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
             pub fn new(instance: T, connection_addrs_rx: tokio::sync::watch::Receiver<std::collections::HashSet<std::net::SocketAddr>>) -> Self {
                 Self {
                     inner: instance,
-                    connection_addrs_rx
+                    connection_addrs_rx,
                 }
             }
         }
@@ -1435,8 +1465,7 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
                 let span = #span_macro;
                 let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(&span, parent_context);
                 let fut = async move {
-                    self.inner
-                        .0
+                    self.inner.0
                         .#method_name(request)
                         .await
                         .map(#into_response_type)

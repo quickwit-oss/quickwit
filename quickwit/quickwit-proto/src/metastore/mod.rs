@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::fmt;
+use std::sync::Arc;
 
 use quickwit_common::rate_limited_error;
 use quickwit_common::retry::Retryable;
@@ -30,6 +31,87 @@ pub const METASTORE_FILE_DESCRIPTOR_SET: &[u8] =
     include_bytes!("../codegen/quickwit/metastore_descriptor.bin");
 
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
+
+/// Read-only subset of the metastore RPC surface that is safe to route to a read replica.
+///
+/// Add methods here only for RPCs that are safe to route to a read replica.
+#[async_trait::async_trait]
+pub trait MetastoreReadService: fmt::Debug + Send + Sync + 'static {
+    /// Fetches index metadata.
+    async fn index_metadata(
+        &self,
+        request: IndexMetadataRequest,
+    ) -> MetastoreResult<IndexMetadataResponse>;
+
+    /// Lists indexes metadata.
+    async fn list_indexes_metadata(
+        &self,
+        request: ListIndexesMetadataRequest,
+    ) -> MetastoreResult<ListIndexesMetadataResponse>;
+
+    /// Streams splits from indexes.
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>>;
+
+    /// Lists metrics parquet splits.
+    async fn list_metrics_splits(
+        &self,
+        request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse>;
+
+    /// Lists sketch parquet splits.
+    async fn list_sketch_splits(
+        &self,
+        request: ListSketchSplitsRequest,
+    ) -> MetastoreResult<ListSketchSplitsResponse>;
+}
+
+#[async_trait::async_trait]
+impl MetastoreReadService for MetastoreServiceClient {
+    async fn index_metadata(
+        &self,
+        request: IndexMetadataRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        MetastoreService::index_metadata(self, request).await
+    }
+
+    async fn list_indexes_metadata(
+        &self,
+        request: ListIndexesMetadataRequest,
+    ) -> MetastoreResult<ListIndexesMetadataResponse> {
+        MetastoreService::list_indexes_metadata(self, request).await
+    }
+
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
+        MetastoreService::list_splits(self, request).await
+    }
+
+    async fn list_metrics_splits(
+        &self,
+        request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        MetastoreService::list_metrics_splits(self, request).await
+    }
+
+    async fn list_sketch_splits(
+        &self,
+        request: ListSketchSplitsRequest,
+    ) -> MetastoreResult<ListSketchSplitsResponse> {
+        MetastoreService::list_sketch_splits(self, request).await
+    }
+}
+
+/// Cloneable read-only metastore service handle.
+///
+/// `Arc<dyn MetastoreReadService>` derefs to `dyn MetastoreReadService`, so a
+/// `&MetastoreReadServiceClient` coerces to the `&dyn MetastoreReadService`
+/// taken by the read-only helpers — no blanket `impl ... for Arc<T>` is needed.
+pub type MetastoreReadServiceClient = Arc<dyn MetastoreReadService>;
 
 /// Lists the object types stored and managed by the metastore.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -488,5 +570,144 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytesize::ByteSize;
+    use tonic::transport::{Endpoint, Server};
+
+    use super::*;
+
+    fn metastore_client_returning(marker: &'static str) -> MetastoreServiceClient {
+        let mut mock = MockMetastoreService::new();
+        mock.expect_list_indexes_metadata()
+            .times(1)
+            .returning(move |_| {
+                Ok(ListIndexesMetadataResponse {
+                    indexes_metadata_json_opt: Some(marker.to_string()),
+                    indexes_metadata_json_zstd: Default::default(),
+                })
+            });
+        MetastoreServiceClient::from_mock(mock)
+    }
+
+    async fn list_indexes_metadata_via_grpc(
+        primary: MetastoreServiceClient,
+        read_replica: Option<MetastoreServiceClient>,
+        use_read_replica: bool,
+    ) -> ListIndexesMetadataResponse {
+        let server = primary.as_grpc_service_with_read_replica(read_replica, ByteSize::mib(1));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let incoming = futures::stream::unfold(listener, |listener| async {
+            Some((listener.accept().await.map(|(stream, _)| stream), listener))
+        });
+        let server_handle = tokio::spawn(async move {
+            Server::builder()
+                .add_service(server)
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+
+        let channel = Endpoint::from_shared(format!("http://{addr}"))
+            .unwrap()
+            .connect_lazy();
+        let mut client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(channel);
+        let mut request = tonic::Request::new(ListIndexesMetadataRequest::all());
+        if use_read_replica {
+            request.metadata_mut().insert(
+                crate::grpc_read_replica::READ_REPLICA_HEADER_NAME,
+                tonic::metadata::MetadataValue::from_static(
+                    crate::grpc_read_replica::READ_REPLICA_HEADER_VALUE,
+                ),
+            );
+        }
+        let response = client
+            .list_indexes_metadata(request)
+            .await
+            .unwrap()
+            .into_inner();
+        server_handle.abort();
+        response
+    }
+
+    #[tokio::test]
+    async fn test_metastore_grpc_server_routes_without_header_to_primary() {
+        let primary = metastore_client_returning("primary");
+
+        let response =
+            list_indexes_metadata_via_grpc(primary, Some(MetastoreServiceClient::mocked()), false)
+                .await;
+        assert_eq!(
+            response.indexes_metadata_json_opt.as_deref(),
+            Some("primary")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_grpc_server_routes_read_replica_header_to_replica() {
+        let replica = metastore_client_returning("replica");
+
+        let response =
+            list_indexes_metadata_via_grpc(MetastoreServiceClient::mocked(), Some(replica), true)
+                .await;
+        assert_eq!(
+            response.indexes_metadata_json_opt.as_deref(),
+            Some("replica")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_grpc_server_routes_read_replica_header_to_primary_when_unset() {
+        let primary = metastore_client_returning("primary");
+
+        let response = list_indexes_metadata_via_grpc(primary, None, true).await;
+        assert_eq!(
+            response.indexes_metadata_json_opt.as_deref(),
+            Some("primary")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_grpc_client_sends_read_replica_header() {
+        let replica = metastore_client_returning("replica");
+        let server = MetastoreServiceClient::mocked()
+            .as_grpc_service_with_read_replica(Some(replica), ByteSize::mib(1));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let incoming = futures::stream::unfold(listener, |listener| async {
+            Some((listener.accept().await.map(|(stream, _)| stream), listener))
+        });
+        let server_handle = tokio::spawn(async move {
+            Server::builder()
+                .add_service(server)
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+
+        let channel = Endpoint::from_shared(format!("http://{addr}"))
+            .unwrap()
+            .connect_lazy();
+        let client = MetastoreServiceClient::from_channel(
+            addr,
+            channel,
+            ByteSize::mib(1),
+            None,
+            [crate::grpc_read_replica::read_replica_header_interceptor()],
+        );
+
+        let response =
+            MetastoreService::list_indexes_metadata(&client, ListIndexesMetadataRequest::all())
+                .await
+                .unwrap();
+        assert_eq!(
+            response.indexes_metadata_json_opt.as_deref(),
+            Some("replica")
+        );
+        server_handle.abort();
     }
 }

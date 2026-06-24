@@ -18,6 +18,7 @@
     ],
     "data_dir": "/opt/quickwit/data",
     "metastore_uri": "postgres://username:password@host:port/db",
+    "metastore_read_replica_uri": "postgres://username:replica-password@replica-host:port/db",
     "default_index_root_uri": "s3://quickwit-indexes",
     "rest": {
         "listen_port": 1111,

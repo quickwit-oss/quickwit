@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_metastore::{ListParquetSplitsQuery, list_parquet_splits_paginated};
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::MetastoreReadServiceClient;
 use quickwit_proto::types::IndexUid;
 use tracing::{debug, instrument};
 
@@ -30,14 +30,14 @@ use super::table_provider::MetricsSplitProvider;
 /// `MetricsSplitProvider` backed by the Quickwit metastore RPC.
 #[derive(Debug, Clone)]
 pub struct MetastoreSplitProvider {
-    metastore: MetastoreServiceClient,
+    metastore: MetastoreReadServiceClient,
     index_uid: IndexUid,
     split_kind: ParquetSplitKind,
 }
 
 impl MetastoreSplitProvider {
     pub fn new(
-        metastore: MetastoreServiceClient,
+        metastore: MetastoreReadServiceClient,
         index_uid: IndexUid,
         split_kind: ParquetSplitKind,
     ) -> Self {
@@ -64,10 +64,13 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
     )]
     async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
         let metastore_query = to_metastore_query(&self.index_uid, query);
-        let records =
-            list_parquet_splits_paginated(self.metastore.clone(), self.split_kind, metastore_query)
-                .await
-                .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+        let records = list_parquet_splits_paginated(
+            self.metastore.as_ref(),
+            self.split_kind,
+            metastore_query,
+        )
+        .await
+        .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
         let splits: Vec<ParquetSplitMetadata> =
             records.into_iter().map(|record| record.metadata).collect();
 

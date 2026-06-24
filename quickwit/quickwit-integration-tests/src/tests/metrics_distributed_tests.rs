@@ -56,7 +56,7 @@ fn metastore_client(sandbox: &ClusterSandbox) -> MetastoreServiceClient {
     let channel = tonic::transport::Channel::from_shared(format!("http://{addr}"))
         .unwrap()
         .connect_lazy();
-    MetastoreServiceClient::from_channel(addr, channel, bytesize::ByteSize::mib(20), None)
+    MetastoreServiceClient::from_channel(addr, channel, bytesize::ByteSize::mib(20), None, [])
 }
 
 fn datafusion_client(
@@ -323,7 +323,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
     publish_split(&metastore, &index_uid, data_dir.path(), "wide", &batch_b).await;
 
     let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
-    let source = Arc::new(MetricsDataSource::new(metastore));
+    let source = Arc::new(MetricsDataSource::new(Arc::new(metastore)));
     let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()

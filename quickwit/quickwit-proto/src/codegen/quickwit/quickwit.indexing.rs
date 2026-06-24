@@ -82,12 +82,14 @@ impl IndexingServiceClient {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::with_interceptor(
                 channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -106,10 +108,12 @@ impl IndexingServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let mut client = indexing_service_grpc_client::IndexingServiceGrpcClient::with_interceptor(
                 balance_channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -292,12 +296,14 @@ impl IndexingServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> IndexingServiceClient {
         let client = IndexingServiceClient::from_channel(
             addr,
             channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -307,11 +313,13 @@ impl IndexingServiceTowerLayerStack {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> IndexingServiceClient {
         let client = IndexingServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

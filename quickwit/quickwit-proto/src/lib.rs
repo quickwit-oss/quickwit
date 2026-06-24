@@ -27,6 +27,7 @@ pub use tonic;
 pub mod developer;
 pub mod error;
 mod getters;
+pub mod grpc_read_replica;
 pub mod indexing;
 pub mod ingest;
 pub mod metastore;
