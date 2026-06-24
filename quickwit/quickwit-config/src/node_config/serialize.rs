@@ -130,6 +130,10 @@ fn default_metastore_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes#polling_interval=30s").expect("Failed to create default metastore URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
+fn default_metastore_read_replica_uri() -> ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI> {
+    ConfigValue::none()
+}
+
 // See comment above.
 fn default_index_root_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes").expect("Failed to create default index root URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
@@ -191,6 +195,8 @@ struct NodeConfigBuilder {
     #[serde(default = "default_data_dir_uri")]
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
+    #[serde(default = "default_metastore_read_replica_uri")]
+    metastore_read_replica_uri: ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
     #[serde(rename = "rest")]
     #[serde(default)]
@@ -300,6 +306,8 @@ impl NodeConfigBuilder {
             .metastore_uri
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_metastore_uri(&data_dir_uri));
+        let metastore_read_replica_uri =
+            self.metastore_read_replica_uri.resolve_optional(env_vars)?;
 
         let default_index_root_uri = self
             .default_index_root_uri
@@ -330,6 +338,7 @@ impl NodeConfigBuilder {
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
+            metastore_read_replica_uri,
             default_index_root_uri,
             rest_config,
             health_config,
@@ -429,6 +438,7 @@ impl Default for NodeConfigBuilder {
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
+            metastore_read_replica_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
             health_config_builder: HealthConfigBuilder::default(),
@@ -564,6 +574,7 @@ pub fn node_config_for_tests_from_ports(
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
+        metastore_read_replica_uri: None,
         default_index_root_uri,
         rest_config,
         health_config: None,
@@ -662,6 +673,10 @@ mod tests {
         assert_eq!(
             config.metastore_uri,
             "postgresql://username:password@host:port/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.as_ref().unwrap().as_str(),
+            "postgresql://username:replica-password@replica-host:port/db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
 
@@ -848,6 +863,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
+        assert!(config.metastore_read_replica_uri.is_none());
         assert_eq!(
             config.default_index_root_uri,
             format!(
@@ -882,6 +898,11 @@ mod tests {
         env_vars.insert(
             "QW_METASTORE_URI".to_string(),
             "postgresql://test-user:test-password@test-host:4321/test-db".to_string(),
+        );
+        env_vars.insert(
+            "QW_METASTORE_READ_REPLICA_URI".to_string(),
+            "postgresql://test-user:test-replica-password@test-replica-host:4321/test-db"
+                .to_string(),
         );
         env_vars.insert(
             "QW_DEFAULT_INDEX_ROOT_URI".to_string(),
@@ -945,6 +966,10 @@ mod tests {
             config.metastore_uri,
             "postgresql://test-user:test-password@test-host:4321/test-db"
         );
+        assert_eq!(
+            config.metastore_read_replica_uri.as_ref().unwrap().as_str(),
+            "postgresql://test-user:test-replica-password@test-replica-host:4321/test-db"
+        );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
     }
 
@@ -968,6 +993,7 @@ mod tests {
             config.metastore_uri,
             "postgresql://username:password@host:port/db"
         );
+        assert!(config.metastore_read_replica_uri.is_none());
     }
 
     #[tokio::test]

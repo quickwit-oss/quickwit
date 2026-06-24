@@ -38,10 +38,11 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
     ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    MetastoreServiceStream, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
-    PublishSplitsRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest,
-    UpdateIndexRequest, UpdateSourceRequest, serde_utils,
+    MetastoreError, MetastoreReadService, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, MetastoreServiceStream, PublishMetricsSplitsRequest,
+    PublishSketchSplitsRequest, PublishSplitsRequest, StageMetricsSplitsRequest,
+    StageSketchSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -972,7 +973,7 @@ pub struct ParquetSplitsPage {
 
 /// Lists one parquet splits page and advances `query.after_split_id`.
 pub async fn list_parquet_splits_page(
-    metastore: &MetastoreServiceClient,
+    metastore: &dyn MetastoreReadService,
     kind: ParquetSplitKind,
     query: &mut ListParquetSplitsQuery,
 ) -> MetastoreResult<ParquetSplitsPage> {
@@ -1011,7 +1012,7 @@ pub async fn list_parquet_splits_page(
 /// `page_size`; `after_split_id` is used as the starting cursor when already
 /// set and is advanced internally after each full page.
 pub async fn list_parquet_splits_paginated(
-    metastore: MetastoreServiceClient,
+    metastore: &dyn MetastoreReadService,
     kind: ParquetSplitKind,
     mut query: ListParquetSplitsQuery,
 ) -> MetastoreResult<Vec<ParquetSplitRecord>> {
@@ -1019,7 +1020,7 @@ pub async fn list_parquet_splits_paginated(
     let mut splits = Vec::new();
 
     loop {
-        let mut page = list_parquet_splits_page(&metastore, kind, &mut query).await?;
+        let mut page = list_parquet_splits_page(metastore, kind, &mut query).await?;
         splits.append(&mut page.splits);
         if !page.has_next_page {
             break;

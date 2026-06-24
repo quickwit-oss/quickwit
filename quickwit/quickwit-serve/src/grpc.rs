@@ -67,7 +67,10 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("metastore");
         file_descriptor_sets.push(quickwit_proto::metastore::METASTORE_FILE_DESCRIPTOR_SET);
 
-        Some(metastore_server.as_grpc_service(grpc_config.max_message_size))
+        Some(metastore_server.as_grpc_service_with_read_replica(
+            services.metastore_read_replica_server_opt.clone(),
+            grpc_config.max_message_size,
+        ))
     } else {
         None
     };

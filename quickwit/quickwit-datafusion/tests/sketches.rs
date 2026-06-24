@@ -36,7 +36,7 @@ async fn start_sandbox() -> TestSandbox {
 }
 
 fn session_builder(sandbox: &TestSandbox) -> DataFusionSessionBuilder {
-    let source = Arc::new(MetricsDataSource::new(sandbox.metastore.clone()));
+    let source = Arc::new(MetricsDataSource::new(Arc::new(sandbox.metastore.clone())));
     let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(
         sandbox.storage_resolver.clone(),

@@ -222,12 +222,14 @@ impl ControlPlaneServiceClient {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let mut client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+        let mut client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::with_interceptor(
                 channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -246,10 +248,12 @@ impl ControlPlaneServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> ControlPlaneServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let mut client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+        let mut client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::with_interceptor(
                 balance_channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -1376,12 +1380,14 @@ impl ControlPlaneServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> ControlPlaneServiceClient {
         let client = ControlPlaneServiceClient::from_channel(
             addr,
             channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -1391,11 +1397,13 @@ impl ControlPlaneServiceTowerLayerStack {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> ControlPlaneServiceClient {
         let client = ControlPlaneServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
