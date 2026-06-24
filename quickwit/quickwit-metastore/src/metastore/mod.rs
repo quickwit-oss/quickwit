@@ -18,6 +18,7 @@ pub(crate) mod index_metadata;
 pub mod postgres;
 
 pub mod control_plane_metastore;
+pub mod read_replica_routing_metastore;
 
 use std::cmp::Ordering;
 use std::ops::{Bound, RangeInclusive};

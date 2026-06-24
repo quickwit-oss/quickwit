@@ -93,6 +93,7 @@ use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
+    ReadReplicaRoutingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -242,6 +243,33 @@ fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usiz
     } else {
         100
     }
+}
+
+/// Builds the metastore client used by the read-only search and analytics paths.
+///
+/// Stale-tolerant reads are routed to `metastore_read_replica` nodes when any are present in the
+/// cluster, falling back to `primary` otherwise. Write RPCs always go to `primary`.
+async fn build_search_metastore_client(
+    cluster: &Cluster,
+    max_message_size: ByteSize,
+    primary: MetastoreServiceClient,
+) -> MetastoreServiceClient {
+    let read_replica_balance_channel =
+        balance_channel_for_service(cluster, QuickwitService::MetastoreReadReplica).await;
+    let read_replica_connections = read_replica_balance_channel.connection_keys_watcher();
+    let read_replica_metastore = MetastoreServiceClient::tower()
+        .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+        .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+        .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+        .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            get_metastore_client_max_concurrency(),
+        ))
+        .build_from_balance_channel(read_replica_balance_channel, max_message_size, None);
+    MetastoreServiceClient::new(ReadReplicaRoutingMetastore::new(
+        primary,
+        read_replica_metastore,
+        read_replica_connections,
+    ))
 }
 
 async fn balance_channel_for_service(
@@ -714,12 +742,22 @@ pub async fn serve_quickwit(
         ))
     };
 
+    // Searchers and the DataFusion analytics path route their stale-tolerant, read-only metastore
+    // requests to `metastore_read_replica` nodes when any are present in the cluster, and fall back
+    // to the primary metastore otherwise.
+    let search_metastore_client = build_search_metastore_client(
+        &cluster,
+        grpc_config.max_message_size,
+        metastore_through_control_plane.clone(),
+    )
+    .await;
+
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
         // metastore RPCs are proxied
-        metastore_through_control_plane.clone(),
+        search_metastore_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -736,7 +774,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        metastore_through_control_plane.clone(),
+        search_metastore_client.clone(),
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not

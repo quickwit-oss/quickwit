@@ -42,6 +42,7 @@ pub use metastore::file_backed::FileBackedMetastore;
 pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_8, VersionedIndexMetadata};
 #[cfg(feature = "postgres")]
 pub use metastore::postgres::PostgresqlMetastore;
+pub use metastore::read_replica_routing_metastore::ReadReplicaRoutingMetastore;
 pub use metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
