@@ -8898,6 +8898,7 @@ dependencies = [
  "bytesize",
  "datafusion",
  "futures-util",
+ "http-body-util",
  "hyper 1.9.0",
  "hyper-util",
  "itertools 0.14.0",

@@ -52,6 +52,13 @@ pub struct RestConfig {
     pub extra_headers: HeaderMap,
     #[serde(default, rename = "tls")]
     pub tls_config: Option<TlsConfig>,
+    // See `GrpcConfig::max_connection_age`. Closes long-lived keep-alive connections so an updated
+    // TLS certificate is eventually presented.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // See `GrpcConfig::max_connection_age_grace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 /// Configuration for the optional plaintext health-check HTTP server.
@@ -77,6 +84,14 @@ pub struct GrpcConfig {
     // keep alive ping request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<KeepAliveConfig>,
+    // Maximum lifetime of an inbound connection before the server sends an HTTP/2 GOAWAY and the
+    // peer reconnects. Disabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // Grace period after the GOAWAY before a still-draining connection is forcefully closed.
+    // Requires `max_connection_age` to be set. Waits indefinitely when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 fn default_http2_keep_alive_interval() -> HumanDuration {
@@ -116,6 +131,10 @@ impl GrpcConfig {
         if let Some(tls_config) = &self.tls_config {
             tls_config.validate()?;
         }
+        ensure!(
+            !(self.max_connection_age_grace.is_some() && self.max_connection_age.is_none()),
+            "`grpc.max_connection_age_grace` requires `grpc.max_connection_age` to be set"
+        );
         Ok(())
     }
 }
@@ -126,6 +145,8 @@ impl Default for GrpcConfig {
             max_message_size: Self::default_max_message_size(),
             tls_config: None,
             keep_alive: None,
+            max_connection_age: None,
+            max_connection_age_grace: None,
         }
     }
 }
@@ -1065,17 +1086,35 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
-            tls_config: None,
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
-            tls_config: None,
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_grpc_config_validate_rejects_connection_age_grace_without_age() {
+        let grpc_config = GrpcConfig {
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        let error = grpc_config.validate().unwrap_err().to_string();
+        assert!(
+            error.contains("requires `grpc.max_connection_age`"),
+            "unexpected error: {error}"
+        );
+
+        let grpc_config = GrpcConfig {
+            max_connection_age: Some(HumanDuration::try_from("1h".to_string()).unwrap()),
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        assert!(grpc_config.validate().is_ok());
     }
 
     fn tls_config(reload_interval: &str) -> TlsConfig {
@@ -1105,7 +1144,7 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mib(20),
             tls_config: Some(tls_config("0s")),
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_err());
     }
