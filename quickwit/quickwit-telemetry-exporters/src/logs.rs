@@ -30,7 +30,7 @@ use tracing_subscriber::registry::LookupSpan;
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
 /// See discussion here: https://github.com/time-rs/time/discussions/418
 pub(crate) fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
-    let time_format = time::format_description::parse(
+    let time_format = time::format_description::parse_borrowed::<2>(
         "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
     )
     .expect("time format description should be valid");
