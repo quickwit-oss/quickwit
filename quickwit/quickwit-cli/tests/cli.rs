@@ -980,6 +980,7 @@ async fn test_all_local_index() {
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
     let test_env = create_test_env(index_id.clone(), TestStorageType::S3)
         .await
