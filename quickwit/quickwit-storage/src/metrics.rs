@@ -93,6 +93,24 @@ pub(crate) static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "storage",
 );
 
+pub(crate) static OBJECT_STORAGE_COALESCED_GETS_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_coalesced_gets_total",
+        description: "Number of GetObject requests issued by the slice coalescer (one per cluster of nearby ranges). Compare with object_storage_coalesced_subrequests_total to gauge how many caller requests were merged into a single request.",
+        subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_COALESCED_SUBREQUESTS_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_coalesced_subrequests_total",
+        description: "Number of caller get_slice requests served through the slice coalescer.",
+        subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_COALESCE_WASTED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_coalesce_wasted_bytes_total",
+        description: "Number of bytes fetched by the slice coalescer that fell in the gaps between requested ranges and were therefore downloaded but never requested.",
+        subsystem: "storage",
+);
+
 pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyGauge = lazy_gauge!(
         name: "object_storage_get_slice_in_flight_count",
         description: "Number of GetObject for which the memory was allocated but the download is still in progress.",
