@@ -16,13 +16,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use predicates::str;
 use quickwit_cli::ClientArgs;
 use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
-use quickwit_common::test_utils::wait_for_server_ready;
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, MetastoreResolver};
@@ -174,7 +175,7 @@ impl TestEnv {
                 _ = server_handle => {}
             }
         });
-        wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;
+        wait_for_quickwit_ready(self.rest_listen_port).await?;
         Ok(())
     }
 
@@ -184,6 +185,26 @@ impl TestEnv {
             ..Default::default()
         }
     }
+}
+
+async fn wait_for_quickwit_ready(rest_listen_port: u16) -> anyhow::Result<()> {
+    let ready_url = format!("http://127.0.0.1:{rest_listen_port}/health/readyz");
+    wait_until_predicate(
+        || async {
+            let Ok(response) = reqwest::get(&ready_url).await else {
+                return false;
+            };
+            if !response.status().is_success() {
+                return false;
+            }
+            response.json::<bool>().await.unwrap_or(false)
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(50),
+    )
+    .await
+    .with_context(|| format!("quickwit server did not become ready at `{ready_url}`"))?;
+    Ok(())
 }
 
 pub enum TestStorageType {
