@@ -80,6 +80,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 azure = [
   "azure_core",
   "azure_identity",
+  "azure_identity/enable_reqwest_rustls",
   "azure_storage",
   "azure_storage_blobs",
   "azure_core/hmac_rust",
