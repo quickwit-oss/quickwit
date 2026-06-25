@@ -25,7 +25,7 @@ use quickwit_proto::search::{
     SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
-    QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,
+    HitSet, PredicateCache, QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,
 };
 use serde_json::{Value as JsonValue, json};
 use tantivy::Term;
@@ -1872,6 +1872,154 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     }
     test_sandbox.assert_quit().await;
     Ok(())
+}
+
+/// Indexes a single split holding one `body: "hello world"` document and returns
+/// the pieces needed to drive `single_doc_mapping_leaf_search` directly, so the
+/// test owns the `SearcherContext` (and therefore its predicate cache).
+async fn negative_cache_test_setup() -> (
+    TestSandbox,
+    std::sync::Arc<SearcherContext>,
+    std::sync::Arc<dyn quickwit_storage::Storage>,
+    Vec<SplitIdAndFooterOffsets>,
+    std::sync::Arc<DocMapper>,
+) {
+    let index_id = "negative-cache-index";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+        "#;
+    // No timestamp field: `rewrite_request` leaves the query AST untouched, so the
+    // negative-cache key is simply the JSON of the parsed query AST.
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    test_sandbox
+        .add_documents(vec![json!({"body": "hello world"})])
+        .await
+        .unwrap();
+    let mut metastore = test_sandbox.metastore();
+    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &mut metastore)
+        .await
+        .unwrap();
+    let splits: Vec<SplitIdAndFooterOffsets> = splits_metadata
+        .iter()
+        .map(extract_split_and_footer_offsets)
+        .collect();
+    assert_eq!(splits.len(), 1, "test expects a single split");
+    let searcher_context = std::sync::Arc::new(SearcherContext::for_test());
+    let storage = test_sandbox.storage();
+    let doc_mapper = test_sandbox.doc_mapper();
+    (test_sandbox, searcher_context, storage, splits, doc_mapper)
+}
+
+/// The negative-cache key the leaf search computes for a request: the JSON of the
+/// parsed query AST (no `CacheNode` wrapper, no timestamp rewrite in this setup).
+fn negative_cache_key_for(query_ast_json: &str) -> String {
+    let query_ast: QueryAst = serde_json::from_str(query_ast_json).unwrap();
+    serde_json::to_string(&query_ast).unwrap()
+}
+
+#[tokio::test]
+async fn test_negative_cache_records_provably_empty_query() {
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper) =
+        negative_cache_test_setup().await;
+    let split_id = splits[0].split_id.clone();
+
+    let query_ast_json = qast_json_helper("missingtoken", &["body"]);
+    let request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-index".to_string()],
+        query_ast: query_ast_json.clone(),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let key = negative_cache_key_for(&query_ast_json);
+    // Nothing cached yet.
+    assert!(
+        searcher_context
+            .predicate_cache
+            .get(split_id.clone(), key.clone())
+            .is_none()
+    );
+
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 0);
+
+    // The provably-empty result was recorded as a fake empty entry, so a later
+    // request with the same predicate can short-circuit before warmup.
+    let entry = searcher_context.predicate_cache.get(split_id, key);
+    let (_segment_id, hits) = entry.expect("absent-term query should be recorded");
+    assert!(hits.is_empty());
+
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_negative_cache_short_circuits_known_empty_query() {
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper) =
+        negative_cache_test_setup().await;
+    let split_id = splits[0].split_id.clone();
+
+    // `hello` genuinely matches the indexed document.
+    let query_ast_json = qast_json_helper("hello", &["body"]);
+    // Control: without a cached absence, the query returns its hit.
+    let control_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-index".to_string()],
+        query_ast: query_ast_json.clone(),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(control_request),
+        storage.clone(),
+        splits.clone(),
+        doc_mapper.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 1);
+
+    // Seed a fake empty entry for this exact predicate (the segment id is
+    // irrelevant: an empty result is segment-agnostic).
+    let key = negative_cache_key_for(&query_ast_json);
+    let segment_id =
+        tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+    searcher_context
+        .predicate_cache
+        .put(split_id, key, segment_id, HitSet::empty());
+
+    // A different `max_hits` misses the request-keyed partial-result cache but
+    // shares the query-AST-keyed negative cache, so this exercises the
+    // cross-collector short-circuit. Despite `hello` being present, the seeded
+    // absence makes the search report no hit.
+    let cross_collector_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-index".to_string()],
+        query_ast: query_ast_json,
+        max_hits: 5,
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(cross_collector_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 0);
+
+    test_sandbox.assert_quit().await;
 }
 
 #[test]

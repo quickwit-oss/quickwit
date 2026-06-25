@@ -38,7 +38,8 @@ use quickwit_proto::search::{
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats, SplitSearchError,
 };
 use quickwit_query::query_ast::{
-    BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
+    BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
+    TermQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
@@ -621,6 +622,23 @@ fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
     ByteSize(size_bytes)
 }
 
+/// Cache key for the negative (never-match) cache.
+///
+/// We reuse the predicate cache's store, so the key must match the one its
+/// [`quickwit_query::query_ast::PredicateCacheInjector`] uses: the JSON of the
+/// query AST, unwrapped from any top-level [`CacheNode`] (added for
+/// `search_after`). The effective, split-intersected timestamp range is already
+/// folded into the query AST by `rewrite_request`, so this key distinguishes time
+/// windows; an entry is only ever reused for an identical predicate over the same
+/// window on the same split.
+fn negative_cache_key(query_ast: &QueryAst) -> Option<String> {
+    let inner = match query_ast {
+        QueryAst::Cache(cache_node) => cache_node.inner.as_ref(),
+        other => other,
+    };
+    serde_json::to_string(inner).ok()
+}
+
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
     search_request: SearchRequest,
@@ -712,7 +730,29 @@ async fn leaf_search_single_split(
 
     let warmup_start = Instant::now();
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
-    let warmup_outcome = warmup(&searcher, &warmup_info).await?;
+    // Negative cache: if this exact predicate was previously proven to match no
+    // document in this split, skip warmup (and the search) entirely. Reusing the
+    // predicate cache's store means an empty entry recorded by either this path
+    // or the predicate cache's filler short-circuits the request. An empty result
+    // is segment- and scoring-agnostic, so this is sound even for scored queries
+    // (which the `CacheNode` machinery itself does not support).
+    let negative_key = negative_cache_key(&query_ast);
+    let cached_known_empty = match &negative_key {
+        Some(key) => match ctx
+            .searcher_context
+            .predicate_cache
+            .get(split_id.clone(), key.clone())
+        {
+            Some((_segment_id, hits)) => hits.is_empty(),
+            None => false,
+        },
+        None => false,
+    };
+    let warmup_outcome = if cached_known_empty {
+        WarmupOutcome::ProvablyEmpty
+    } else {
+        warmup(&searcher, &warmup_info).await?
+    };
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
@@ -732,6 +772,21 @@ async fn leaf_search_single_split(
     search_permit.free_warmup_slot();
 
     if warmup_outcome == WarmupOutcome::ProvablyEmpty {
+        // Record a fake empty entry in the predicate cache so later requests with
+        // the same predicate over the same split — even with a different collector
+        // or aggregation — short-circuit before warmup. We only record when *this*
+        // request discovered the emptiness through warmup
+        if !cached_known_empty
+            && let Some(key) = &negative_key
+            && let Some(segment_reader) = searcher.segment_readers().first()
+        {
+            ctx.searcher_context.predicate_cache.put(
+                split_id.clone(),
+                key.clone(),
+                segment_reader.segment_id(),
+                HitSet::empty(),
+            );
+        }
         // A required term's posting list was empty, so the query matches no
         // document in this split. The remaining warmup downloads were aborted;
         // skip the search and report an empty (but counted) result. This is the
