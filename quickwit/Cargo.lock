@@ -8621,6 +8621,7 @@ dependencies = [
  "async-trait",
  "itertools 0.14.0",
  "quickwit-actors",
+ "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",

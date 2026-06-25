@@ -306,7 +306,7 @@ async fn get_compaction_planner_client_if_needed(
         return Ok((None, None));
     }
     if is_janitor {
-        let planner = CompactionPlanner::new(metastore_client.clone());
+        let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
         let (mailbox, handle) = universe.spawn_builder().spawn(planner);
         info!("compaction planner actor started on janitor node");
         return Ok((
