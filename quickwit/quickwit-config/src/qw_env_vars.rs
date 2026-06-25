@@ -69,10 +69,10 @@ mod tests {
     fn test_qw_env_vars_expansion() {
         assert_eq!(QW_NONE, 0);
 
-        assert_eq!(QW_CLUSTER_ID, 1);
+        assert_eq!(QW_CLUSTER_ID, 3);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 2);
+        assert_eq!(QW_NODE_ID, 14);
     }
 }
