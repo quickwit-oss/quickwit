@@ -50,7 +50,7 @@ pub fn solve(
     check_contract_conditions(&problem, &previous_solution);
     let base_problem = problem;
 
-    // Due to the inherent of the bin-packing, it is possible that the first inflation
+    // Due to the inherent nature of bin-packing, it is possible that the first inflation
     // is not sufficient to solve the problem.
     //
     // In that case, we inflate the capacity iteratively until we find a solution.
