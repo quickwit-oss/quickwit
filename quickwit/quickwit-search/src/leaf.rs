@@ -1195,10 +1195,11 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitTimestampHigher(timestamp)
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
-                    // sure we don't throw away something like 1.2s, so we should round up while
-                    // dividing.
-                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
+                    // Split timestamp_end is stored as floor(doc_nanos / 1e9). To avoid
+                    // pruning a split that straddles the worst-hit boundary (e.g. worst
+                    // hit at 1.5 s, split timestamp_end = 1 s, but split contains a doc
+                    // at 1.7 s), we must use floor here as well, not div_ceil.
+                    *timestamp = Some(timestamp_ns / 1_000_000_000);
                 }
             }
             CanSplitDoBetter::SplitTimestampLower(timestamp) => {
@@ -2224,6 +2225,45 @@ mod tests {
         assert!(
             error.contains("failed to build combined regex automaton during warmup"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_split_timestamp_higher_no_false_prune_subsecond_worst_hit() {
+        // worst hit at 1_700_000_000.5 s — sub-second component present
+        let worst_hit_nanos: i64 = 1_700_000_000_500_000_000;
+        let mut filter = CanSplitDoBetter::SplitTimestampHigher(None);
+        filter.record_new_worst_hit(&PartialHit {
+            sort_value: Some(SortValue::I64(worst_hit_nanos).into()),
+            ..Default::default()
+        });
+
+        // A split whose timestamp_end = floor(worst_hit_nanos / 1e9) = 1_700_000_000.
+        // It may hold a document at e.g. 1_700_000_000_700_000_000 ns — strictly
+        // better (higher) than the worst hit — and must NOT be pruned.
+        let split_same_second = SplitIdAndFooterOffsets {
+            split_id: "split_same_second".to_string(),
+            timestamp_start: Some(1_700_000_000),
+            timestamp_end: Some(1_700_000_000),
+            ..SplitIdAndFooterOffsets::default()
+        };
+        assert!(
+            filter.can_be_better(&split_same_second),
+            "split with timestamp_end == floor(worst_hit / 1e9) was incorrectly pruned; it may \
+             contain documents newer than the worst hit within the same second"
+        );
+
+        // A split one full second older than the worst hit cannot contain any
+        // document better than the worst hit and must be pruned.
+        let split_older = SplitIdAndFooterOffsets {
+            split_id: "split_older".to_string(),
+            timestamp_start: Some(1_699_999_999),
+            timestamp_end: Some(1_699_999_999),
+            ..SplitIdAndFooterOffsets::default()
+        };
+        assert!(
+            !filter.can_be_better(&split_older),
+            "split entirely before the worst-hit second should be pruned"
         );
     }
 }
