@@ -1398,15 +1398,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_service_apply_plan() {
-        // These fingerprints are hashes of IndexConfig + SourceConfig. They
-        // change whenever IndexingSettings fields are added/removed. Recompute
-        // by temporarily adding a test that prints
-        // `indexing_pipeline_params_fingerprint(&index_config, &source_config)`.
-        const PARAMS_FINGERPRINT_INGEST_API: u64 = 7973087274884969148;
-        const PARAMS_FINGERPRINT_SOURCE_1: u64 = 9420938500552890840;
-        const PARAMS_FINGERPRINT_SOURCE_2: u64 = 16199199787360162635;
-
         quickwit_common::setup_logging_for_tests();
+        // The expected fingerprints are computed dynamically from the actual
+        // `IndexConfig` + `SourceConfig` below (see `params_fingerprint_*`).
+        // Hardcoding them is brittle: the fingerprint depends on the enabled
+        // feature set (e.g. the `metrics`-gated fields of `IndexingSettings`),
+        // so a baked-in constant only matches one build configuration.
         let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
@@ -1416,6 +1413,10 @@ mod tests {
         let index_id = append_random_suffix("test-indexing-service");
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let params_fingerprint_ingest_api = indexing_pipeline_params_fingerprint(
+            &index_config,
+            &SourceConfig::ingest_api_default(),
+        );
 
         let create_index_request =
             CreateIndexRequest::try_from_index_config(&index_config).unwrap();
@@ -1454,6 +1455,8 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let params_fingerprint_source_1 =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config_1);
         {
             // Assign 2 indexing tasks
             // -> total: 1 source * 2 pipelines
@@ -1467,14 +1470,14 @@ mod tests {
                     source_id: source_config_1.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(0u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                    params_fingerprint: params_fingerprint_source_1,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_1.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                    params_fingerprint: params_fingerprint_source_1,
                 },
             ];
             indexing_service
@@ -1503,6 +1506,8 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let params_fingerprint_source_2 =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config_2);
         {
             // Assign 2 more indexing tasks (1 new source + activate ingest API source)
             // -> total: 2 source * 1 pipeline + 1 source * 2 pipelines
@@ -1517,28 +1522,28 @@ mod tests {
                     source_id: INGEST_API_SOURCE_ID.to_string(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
+                    params_fingerprint: params_fingerprint_ingest_api,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_1.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                    params_fingerprint: params_fingerprint_source_1,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_1.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(2u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                    params_fingerprint: params_fingerprint_source_1,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_2.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                    params_fingerprint: params_fingerprint_source_2,
                 },
             ];
             indexing_service
@@ -1580,21 +1585,21 @@ mod tests {
                     source_id: INGEST_API_SOURCE_ID.to_string(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
+                    params_fingerprint: params_fingerprint_ingest_api,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_1.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(1u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_1,
+                    params_fingerprint: params_fingerprint_source_1,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
                     source_id: source_config_2.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                    params_fingerprint: params_fingerprint_source_2,
                 },
             ];
             indexing_service
@@ -1639,7 +1644,7 @@ mod tests {
                     source_id: INGEST_API_SOURCE_ID.to_string(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(3u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_INGEST_API,
+                    params_fingerprint: params_fingerprint_ingest_api,
                 },
                 IndexingTask {
                     index_uid: Some(metadata.index_uid.clone()),
@@ -1653,7 +1658,7 @@ mod tests {
                     source_id: source_config_2.source_id.clone(),
                     shard_ids: Vec::new(),
                     pipeline_uid: Some(PipelineUid::for_test(4u128)),
-                    params_fingerprint: PARAMS_FINGERPRINT_SOURCE_2,
+                    params_fingerprint: params_fingerprint_source_2,
                 },
             ];
             indexing_service

@@ -1492,7 +1492,9 @@ fn setup_indexer_pool(
                     );
                     Some(change)
                 }
-                ClusterChange::Update { updated, .. } if updated.is_indexer() => {
+                ClusterChange::Update { previous, updated }
+                    if updated.is_indexer() && indexer_node_changed(&previous, &updated) =>
+                {
                     let change = build_indexer_insert_change(
                         &updated,
                         indexing_service_clone_opt,
@@ -1509,6 +1511,13 @@ fn setup_indexer_pool(
         })
     });
     indexer_pool.listen_for_changes(indexer_change_stream);
+}
+
+/// Only update the indexer pool when a change meaningful to indexing occurs.
+fn indexer_node_changed(previous: &ClusterNode, updated: &ClusterNode) -> bool {
+    previous.ingester_status != updated.ingester_status
+        || previous.indexing_cpu_capacity != updated.indexing_cpu_capacity
+        || previous.indexing_tasks != updated.indexing_tasks
 }
 
 fn build_indexer_insert_change(
@@ -1963,6 +1972,35 @@ mod tests {
             .send(ClusterChange::Remove(decommissioning_no_plan))
             .unwrap();
         assert_eventually!(indexer_pool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_indexer_node_changed() {
+        let plan = [IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        }];
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
+
+        // An update that touches none of the tracked fields is skipped. `indexing_cpu_capacity` is
+        // not exercised here because `ClusterNode::for_test` cannot set it; it follows the same
+        // comparison as the other two fields.
+        let unchanged = build_node(&plan, IngesterStatus::Ready).await;
+        assert!(!indexer_node_changed(&ready_with_plan, &unchanged));
+
+        // A change to the ingester status is material.
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
+        assert!(indexer_node_changed(&ready_with_plan, &retiring_with_plan));
+
+        // A change to the indexing plan is material.
+        let ready_without_plan = build_node(&[], IngesterStatus::Ready).await;
+        assert!(indexer_node_changed(&ready_with_plan, &ready_without_plan));
     }
 
     #[tokio::test]

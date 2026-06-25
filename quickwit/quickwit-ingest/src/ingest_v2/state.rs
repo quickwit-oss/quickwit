@@ -65,17 +65,15 @@ pub(super) struct InnerIngesterState {
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     cluster: Cluster,
     pub wal_capacity_tracker: WalCapacityTracker,
-    status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }
 
 impl InnerIngesterState {
     pub fn status(&self) -> IngesterStatus {
-        self.status
+        *self.status_tx.borrow()
     }
 
     pub async fn set_status(&mut self, status: IngesterStatus) {
-        self.status = status;
         self.status_tx.send(status).expect("channel should be open");
         self.cluster
             .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
@@ -156,7 +154,6 @@ impl IngesterState {
             replication_tasks: Default::default(),
             cluster,
             wal_capacity_tracker: WalCapacityTracker::new(disk_capacity, memory_capacity),
-            status,
             status_tx,
         };
         // We call `set_status` here instead of setting it directly because it also updates the
