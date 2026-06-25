@@ -272,6 +272,46 @@ async fn build_metastore_client(
         .build_from_balance_channel(balance_channel, max_message_size, None))
 }
 
+/// Builds the list of metastore clients whose connectivity gates this node's readiness.
+///
+/// `metastore` is the node's main metastore client (`metastore_through_control_plane`). The store
+/// it resolves to depends on the role:
+/// - on a `metastore` node, the locally served read-write primary;
+/// - on a `metastore_read_replica` node, the locally served read-only replica;
+/// - on any other node, a remote client to the primary `metastore` pool.
+///
+/// `metastore_read_replica_opt` is the separate remote read-replica client built only for
+/// searchers that route their reads to a replica.
+fn build_metastore_readiness_clients(
+    node_config: &NodeConfig,
+    metastore: MetastoreServiceClient,
+    metastore_read_replica_opt: Option<MetastoreServiceClient>,
+) -> Vec<MetastoreServiceClient> {
+    let mut readiness_clients = Vec::with_capacity(2);
+
+    // Every role relies on the main metastore client except a searcher routed to a read replica,
+    // which reads from `metastore_read_replica_opt` below instead. A read-replica node is *not* an
+    // exception: its `metastore` is the replica it serves locally (see above), so it is checked
+    // here too.
+    let should_check_main_metastore =
+        node_config
+            .enabled_services
+            .iter()
+            .any(|service| match service {
+                QuickwitService::Searcher => {
+                    !node_config.searcher_config.use_metastore_read_replica
+                }
+                _ => true,
+            });
+    if should_check_main_metastore {
+        readiness_clients.push(metastore);
+    }
+    if let Some(read_replica_metastore) = metastore_read_replica_opt {
+        readiness_clients.push(read_replica_metastore);
+    }
+    readiness_clients
+}
+
 async fn balance_channel_for_service(
     cluster: &Cluster,
     service: QuickwitService,
@@ -733,18 +773,29 @@ pub async fn serve_quickwit(
     let use_metastore_read_replica_for_search = node_config
         .is_service_enabled(QuickwitService::Searcher)
         && node_config.searcher_config.use_metastore_read_replica;
-    let search_metastore_client: MetastoreReadServiceClient =
-        if use_metastore_read_replica_for_search {
-            let read_replica_metastore = build_metastore_client(
+    let search_read_replica_metastore_opt = if use_metastore_read_replica_for_search {
+        Some(
+            build_metastore_client(
                 &cluster,
                 QuickwitService::MetastoreReadReplica,
                 grpc_config.max_message_size,
             )
-            .await?;
-            Arc::new(read_replica_metastore)
+            .await?,
+        )
+    } else {
+        None
+    };
+    let search_metastore_client: MetastoreReadServiceClient =
+        if let Some(read_replica_metastore) = &search_read_replica_metastore_opt {
+            Arc::new(read_replica_metastore.clone())
         } else {
             Arc::new(metastore_through_control_plane.clone())
         };
+    let metastore_readiness_clients = build_metastore_readiness_clients(
+        &node_config,
+        metastore_through_control_plane.clone(),
+        search_read_replica_metastore_opt,
+    );
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
@@ -951,7 +1002,7 @@ pub async fn serve_quickwit(
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
-            metastore_through_control_plane,
+            metastore_readiness_clients,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1507,10 +1558,32 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
     warp::any().map(move || arg.clone())
 }
 
+async fn metastores_are_available(metastores: &[MetastoreServiceClient]) -> bool {
+    if metastores.is_empty() {
+        warn!("no metastore configured for readiness checks");
+        return false;
+    }
+    futures::future::join_all(metastores.iter().map(|metastore| async move {
+        match metastore.check_connectivity().await {
+            Ok(()) => {
+                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
+                true
+            }
+            Err(error) => {
+                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
+                false
+            }
+        }
+    }))
+    .await
+    .into_iter()
+    .all(|metastore_is_available| metastore_is_available)
+}
+
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    metastores: Vec<MetastoreServiceClient>,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1541,16 +1614,7 @@ async fn node_readiness_reporting_task(
     loop {
         interval.tick().await;
 
-        let metastore_is_available = match metastore.check_connectivity().await {
-            Ok(()) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
-                true
-            }
-            Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
-                false
-            }
-        };
+        let metastore_is_available = metastores_are_available(&metastores).await;
         let ingester_is_available = if let Some(ingester) = &ingester_opt {
             match try_get_ingester_status(ingester).await {
                 Ok(status) => {
@@ -1648,6 +1712,26 @@ mod tests {
 
     use super::*;
 
+    fn metastore_readiness_client(
+        readiness_rx: watch::Receiver<bool>,
+        uri: &'static str,
+    ) -> MetastoreServiceClient {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_check_connectivity()
+            .returning(move || {
+                if *readiness_rx.borrow() {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("metastore `{uri}` not ready"))
+                }
+            });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test(uri)]);
+        MetastoreServiceClient::from_mock(mock_metastore)
+    }
+
     #[tokio::test]
     async fn test_check_cluster_configuration() {
         let services = HashSet::from_iter([QuickwitService::Metastore]);
@@ -1681,16 +1765,7 @@ mod tests {
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_check_connectivity()
-            .returning(move || {
-                if *metastore_readiness_rx.borrow() {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!("Metastore not ready"))
-                }
-            });
+        let mock_metastore = metastore_readiness_client(metastore_readiness_rx, "ram:///metastore");
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
@@ -1732,7 +1807,7 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            vec![mock_metastore],
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1762,6 +1837,145 @@ mod tests {
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::NotServing.into());
+    }
+
+    #[tokio::test]
+    async fn test_readiness_requires_all_metastores() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let (primary_readiness_tx, primary_readiness_rx) = watch::channel(false);
+        let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
+        let primary_metastore =
+            metastore_readiness_client(primary_readiness_rx, "ram:///primary-metastore");
+        let replica_metastore =
+            metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
+        let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+        let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
+        let (health_reporter, _health_service) = health_reporter();
+
+        tokio::spawn(node_readiness_reporting_task(
+            cluster.clone(),
+            vec![primary_metastore, replica_metastore],
+            None::<MockIngesterService>,
+            grpc_readiness_signal_rx,
+            rest_readiness_signal_rx,
+            health_reporter,
+        ));
+        grpc_readiness_trigger_tx.send(()).unwrap();
+        rest_readiness_trigger_tx.send(()).unwrap();
+
+        primary_readiness_tx.send(true).unwrap();
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
+        assert!(!cluster.is_self_node_ready().await);
+
+        replica_readiness_tx.send(true).unwrap();
+        assert_eventually!(cluster.is_self_node_ready().await);
+
+        primary_readiness_tx.send(false).unwrap();
+        assert_eventually!(!cluster.is_self_node_ready().await);
+    }
+
+    #[test]
+    fn test_build_metastore_readiness_clients() {
+        const MAIN_ENDPOINT: &str = "ram:///main-metastore";
+        const READ_REPLICA_ENDPOINT: &str = "ram:///read-replica-metastore";
+
+        fn mock_metastore(endpoint: &'static str) -> MetastoreServiceClient {
+            let mut mock_metastore = MockMetastoreService::new();
+            mock_metastore
+                .expect_endpoints()
+                .return_const(vec![Uri::for_test(endpoint)]);
+            MetastoreServiceClient::from_mock(mock_metastore)
+        }
+
+        struct TestCase {
+            comment: &'static str,
+            enabled_services: &'static [QuickwitService],
+            use_metastore_read_replica: bool,
+            with_read_replica_client: bool,
+            expected_endpoints: &'static [&'static str],
+        }
+
+        let test_cases = [
+            TestCase {
+                comment: "indexer depends on the main metastore",
+                enabled_services: &[QuickwitService::Indexer],
+                use_metastore_read_replica: false,
+                with_read_replica_client: false,
+                expected_endpoints: &[MAIN_ENDPOINT],
+            },
+            TestCase {
+                comment: "searcher without a read replica depends on the main metastore",
+                enabled_services: &[QuickwitService::Searcher],
+                use_metastore_read_replica: false,
+                with_read_replica_client: false,
+                expected_endpoints: &[MAIN_ENDPOINT],
+            },
+            TestCase {
+                comment: "searcher routed to a read replica skips the main metastore",
+                enabled_services: &[QuickwitService::Searcher],
+                use_metastore_read_replica: true,
+                with_read_replica_client: true,
+                expected_endpoints: &[READ_REPLICA_ENDPOINT],
+            },
+            TestCase {
+                comment: "searcher routed to a read replica still checks the main metastore for \
+                          its other roles",
+                enabled_services: &[QuickwitService::Searcher, QuickwitService::Indexer],
+                use_metastore_read_replica: true,
+                with_read_replica_client: true,
+                expected_endpoints: &[MAIN_ENDPOINT, READ_REPLICA_ENDPOINT],
+            },
+            TestCase {
+                comment: "standalone read replica node checks its locally served metastore",
+                enabled_services: &[QuickwitService::MetastoreReadReplica],
+                use_metastore_read_replica: false,
+                with_read_replica_client: false,
+                expected_endpoints: &[MAIN_ENDPOINT],
+            },
+            TestCase {
+                comment: "metastore node checks its locally served metastore",
+                enabled_services: &[QuickwitService::Metastore],
+                use_metastore_read_replica: false,
+                with_read_replica_client: false,
+                expected_endpoints: &[MAIN_ENDPOINT],
+            },
+        ];
+
+        for test_case in test_cases {
+            let mut node_config = NodeConfig::for_test();
+            node_config.enabled_services = test_case.enabled_services.iter().copied().collect();
+            node_config.searcher_config.use_metastore_read_replica =
+                test_case.use_metastore_read_replica;
+            let read_replica_client_opt = if test_case.with_read_replica_client {
+                Some(mock_metastore(READ_REPLICA_ENDPOINT))
+            } else {
+                None
+            };
+
+            let readiness_clients = build_metastore_readiness_clients(
+                &node_config,
+                mock_metastore(MAIN_ENDPOINT),
+                read_replica_client_opt,
+            );
+
+            let actual_endpoints: Vec<Uri> = readiness_clients
+                .iter()
+                .flat_map(|metastore| metastore.endpoints())
+                .collect();
+            let expected_endpoints: Vec<Uri> = test_case
+                .expected_endpoints
+                .iter()
+                .map(|endpoint| Uri::for_test(endpoint))
+                .collect();
+            assert_eq!(
+                actual_endpoints, expected_endpoints,
+                "{}",
+                test_case.comment
+            );
+        }
     }
 
     #[tokio::test]
