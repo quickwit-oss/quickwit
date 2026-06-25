@@ -23,7 +23,9 @@ pub type TaskId = String;
 
 use std::sync::Arc;
 
-pub use compactor_supervisor::{CompactorSupervisor, wait_for_compactor_decommission};
+pub use compactor_supervisor::{
+    CompactorSupervisor, notify_compactor_decommission, wait_for_compactor_decommission,
+};
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;

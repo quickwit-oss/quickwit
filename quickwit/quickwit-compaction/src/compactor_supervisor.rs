@@ -62,7 +62,7 @@ pub enum CompactorStatus {
     /// Draining: rejects new tasks (reports zero available slots) while in-flight merges finish.
     Decommissioning,
     /// All in-flight merges have completed; the supervisor can be torn down.
-    Finished,
+    Decommissioned,
 }
 
 /// Manages a pool of `CompactionPipeline`s, each executing a single merge task.
@@ -72,7 +72,6 @@ pub enum CompactorStatus {
 pub struct CompactorSupervisor {
     node_id: NodeId,
     planner_client: CompactionPlannerServiceClient,
-    status: CompactorStatus,
     status_tx: watch::Sender<CompactorStatus>,
     pipelines: Vec<Option<CompactionPipeline>>,
     // Bounds the number of pipelines running Tantivy merge step concurrently. There are 2x as many
@@ -118,7 +117,6 @@ impl CompactorSupervisor {
         CompactorSupervisor {
             node_id,
             planner_client,
-            status: CompactorStatus::Ready,
             status_tx,
             pipelines,
             merge_execution_semaphore,
@@ -136,13 +134,16 @@ impl CompactorSupervisor {
         self.status_tx.subscribe()
     }
 
+    fn status(&self) -> CompactorStatus {
+        *self.status_tx.borrow()
+    }
+
     fn set_status(&mut self, status: CompactorStatus) {
-        self.status = status;
         self.status_tx.send_replace(status);
     }
 
     fn check_decommissioning_status(&mut self) {
-        if self.status != CompactorStatus::Decommissioning {
+        if self.status() != CompactorStatus::Decommissioning {
             return;
         }
         let any_in_progress = self
@@ -151,7 +152,7 @@ impl CompactorSupervisor {
             .flatten()
             .any(|pipeline| matches!(pipeline.status(), PipelineStatus::InProgress));
         if !any_in_progress {
-            self.set_status(CompactorStatus::Finished);
+            self.set_status(CompactorStatus::Decommissioned);
         }
     }
 
@@ -214,7 +215,7 @@ impl CompactorSupervisor {
         assignment: MergeTaskAssignment,
         spawn_ctx: &SpawnContext,
     ) -> anyhow::Result<()> {
-        if self.status != CompactorStatus::Ready {
+        if self.status() != CompactorStatus::Ready {
             info!(
                 task_id = %assignment.task_id,
                 "compactor is decommissioning; dropping assigned merge task, the merge planner will reschedule it"
@@ -301,7 +302,7 @@ impl CompactorSupervisor {
     }
 
     fn available_slots(&self, in_progress_count: usize) -> u32 {
-        if self.status != CompactorStatus::Ready {
+        if self.status() != CompactorStatus::Ready {
             return 0;
         }
         (self.pipelines.len() - in_progress_count) as u32
@@ -384,12 +385,9 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
         _msg: CheckPipelineStatuses,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        // Once finished decommissioning we stop the loop; the node is about to be torn down.
-        if self.status == CompactorStatus::Finished {
-            return Ok(());
-        }
         self.report_status_and_maybe_finish(ctx).await;
-        if self.status == CompactorStatus::Finished {
+        if self.status() == CompactorStatus::Decommissioned {
+            // We stop the loop; the node is about to be torn down.
             info!("compactor finished draining in-flight merges");
             return Ok(());
         }
@@ -407,7 +405,7 @@ impl Handler<Decommission> for CompactorSupervisor {
         _msg: Decommission,
         _ctx: &ActorContext<Self>,
     ) -> Result<watch::Receiver<CompactorStatus>, ActorExitStatus> {
-        if self.status == CompactorStatus::Ready {
+        if self.status() == CompactorStatus::Ready {
             info!("decommissioning compactor");
             self.set_status(CompactorStatus::Decommissioning);
         }
@@ -415,18 +413,32 @@ impl Handler<Decommission> for CompactorSupervisor {
     }
 }
 
-pub async fn wait_for_compactor_decommission(
-    compactor_mailbox: &Mailbox<CompactorSupervisor>,
-    timeout_after: Duration,
-) -> anyhow::Result<()> {
-    let mut status_rx = compactor_mailbox
+/// Initiates compactor decommission if one is present, returning a receiver to await it.
+pub async fn notify_compactor_decommission(
+    compactor_mailbox_opt: Option<&Mailbox<CompactorSupervisor>>,
+) -> anyhow::Result<Option<watch::Receiver<CompactorStatus>>> {
+    let Some(compactor_mailbox) = compactor_mailbox_opt else {
+        return Ok(None);
+    };
+    let status_rx = compactor_mailbox
         .send_message_with_high_priority(Decommission)
         .context("failed to initiate compactor decommission")?
         .await
         .context("compactor dropped decommission reply")?;
+    Ok(Some(status_rx))
+}
+
+/// Waits for a compactor to finish draining its in-flight merges, if one is present.
+pub async fn wait_for_compactor_decommission(
+    status_rx_opt: Option<watch::Receiver<CompactorStatus>>,
+    timeout_after: Duration,
+) -> anyhow::Result<()> {
+    let Some(mut status_rx) = status_rx_opt else {
+        return Ok(());
+    };
     tokio::time::timeout(
         timeout_after,
-        status_rx.wait_for(|status| *status == CompactorStatus::Finished),
+        status_rx.wait_for(|status| *status == CompactorStatus::Decommissioned),
     )
     .await
     .context("timed out waiting for compactor to finish decommissioning")?
@@ -763,14 +775,14 @@ mod tests {
         let mut supervisor = test_supervisor(2);
         supervisor.set_status(CompactorStatus::Decommissioning);
         supervisor.check_decommissioning_status();
-        assert_eq!(supervisor.status, CompactorStatus::Finished);
+        assert_eq!(supervisor.status(), CompactorStatus::Decommissioned);
     }
 
     #[test]
     fn test_check_decommissioning_status_noop_when_ready() {
         let mut supervisor = test_supervisor(2);
         supervisor.check_decommissioning_status();
-        assert_eq!(supervisor.status, CompactorStatus::Ready);
+        assert_eq!(supervisor.status(), CompactorStatus::Ready);
     }
 
     #[test]
@@ -796,7 +808,7 @@ mod tests {
         supervisor.check_decommissioning_status();
 
         // The in-flight pipeline keeps the supervisor draining and advertising no capacity.
-        assert_eq!(supervisor.status, CompactorStatus::Decommissioning);
+        assert_eq!(supervisor.status(), CompactorStatus::Decommissioning);
         let request = supervisor.build_report_status_request(&statuses);
         assert_eq!(request.available_slots, 0);
         assert_eq!(request.in_progress.len(), 1);
@@ -848,11 +860,12 @@ mod tests {
         let status_rx = supervisor.status_rx();
         let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
 
-        wait_for_compactor_decommission(&mailbox, Duration::from_secs(10))
+        let decommission_rx_opt = notify_compactor_decommission(Some(&mailbox)).await.unwrap();
+        wait_for_compactor_decommission(decommission_rx_opt, Duration::from_secs(10))
             .await
             .unwrap();
 
-        assert_eq!(*status_rx.borrow(), CompactorStatus::Finished);
+        assert_eq!(*status_rx.borrow(), CompactorStatus::Decommissioned);
         universe.assert_quit().await;
     }
 }

@@ -76,7 +76,8 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_compaction::{
-    CompactorSupervisor, start_compactor_service, wait_for_compactor_decommission,
+    CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
+    wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
@@ -88,7 +89,7 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
     wait_for_ingester_status,
@@ -515,18 +516,23 @@ async fn shutdown_signal_handler(
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
-    // We must decommission the ingester first before terminating the indexing pipelines that
-    // may consume from it. We also need to keep the gRPC server running while doing so.
-    if let Some(ingester) = &ingester_opt
-        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
-    {
+    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+        error!("failed to initiate ingester decommission: {:?}", error);
+    }
+    let compactor_status_rx_opt = notify_compactor_decommission(compactor_supervisor_opt.as_ref())
+        .await
+        .unwrap_or_else(|error| {
+            error!("failed to initiate compactor decommission: {:?}", error);
+            None
+        });
+    let (ingester_result, compactor_result) = tokio::join!(
+        wait_for_ingester_decommission(ingester_opt.as_ref(), Duration::from_secs(300)),
+        wait_for_compactor_decommission(compactor_status_rx_opt, Duration::from_secs(300)),
+    );
+    if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
     }
-    // Let the compactor finish the merges already in flight before tearing down its pipelines.
-    if let Some(compactor_supervisor) = &compactor_supervisor_opt
-        && let Err(error) =
-            wait_for_compactor_decommission(compactor_supervisor, Duration::from_secs(300)).await
-    {
+    if let Err(error) = compactor_result {
         error!("failed to decommission compactor gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
