@@ -75,7 +75,10 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
-use quickwit_compaction::{CompactorSupervisor, start_compactor_service};
+use quickwit_compaction::{
+    CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
+    wait_for_compactor_decommission,
+};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
@@ -86,7 +89,7 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
     wait_for_ingester_status,
@@ -501,22 +504,36 @@ fn start_shard_positions_service(
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
+#[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
     ingester_opt: Option<Ingester>,
+    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
-    // We must decommission the ingester first before terminating the indexing pipelines that
-    // may consume from it. We also need to keep the gRPC server running while doing so.
-    if let Some(ingester) = &ingester_opt
-        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
-    {
+    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+        error!("failed to initiate ingester decommission: {:?}", error);
+    }
+    let compactor_status_rx_opt = notify_compactor_decommission(compactor_supervisor_opt.as_ref())
+        .await
+        .unwrap_or_else(|error| {
+            error!("failed to initiate compactor decommission: {:?}", error);
+            None
+        });
+    let (ingester_result, compactor_result) = tokio::join!(
+        wait_for_ingester_decommission(ingester_opt.as_ref(), Duration::from_secs(300)),
+        wait_for_compactor_decommission(compactor_status_rx_opt, Duration::from_secs(300)),
+    );
+    if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
+    }
+    if let Err(error) = compactor_result {
+        error!("failed to decommission compactor gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -943,7 +960,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_opt: ingester_opt.clone(),
         compaction_service_client_opt,
-        _compactor_supervisor_opt: compactor_supervisor_opt,
+        _compactor_supervisor_opt: compactor_supervisor_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -1048,6 +1065,7 @@ pub async fn serve_quickwit(
         shutdown_signal,
         universe,
         ingester_opt,
+        compactor_supervisor_opt,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
         health_shutdown_trigger_tx_opt,
