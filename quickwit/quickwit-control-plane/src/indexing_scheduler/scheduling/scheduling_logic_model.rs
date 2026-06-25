@@ -171,10 +171,25 @@ impl SchedulingProblem {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct IndexerAssignment {
     pub indexer_ord: IndexerOrd,
     pub num_shards_per_source: BTreeMap<SourceOrd, u32>,
+}
+
+impl std::fmt::Debug for IndexerAssignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut first = true;
+        for (source_ord, num_shards) in &self.num_shards_per_source {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{source_ord}:{num_shards}")?;
+            first = false;
+        }
+        write!(f, "}}")
+    }
 }
 
 impl IndexerAssignment {
@@ -234,22 +249,25 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
-    // used for tests
-    pub capacity_scaling_iterations: usize,
 }
 
 impl SchedulingSolution {
     pub fn with_num_indexers(num_indexers: usize) -> SchedulingSolution {
         SchedulingSolution {
             indexer_assignments: (0..num_indexers).map(IndexerAssignment::new).collect(),
-            capacity_scaling_iterations: 0,
         }
     }
     pub fn num_indexers(&self) -> usize {
         self.indexer_assignments.len()
+    }
+}
+
+impl std::fmt::Debug for SchedulingSolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.indexer_assignments)
     }
 }
 

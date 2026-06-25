@@ -304,7 +304,7 @@ fn place_unassigned_shards_ignoring_affinity(
     // logical bug.
     for attempt_number in 0..30 {
         match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, partial_solution) {
-            Ok(mut solution) => {
+            Ok(solution) => {
                 // the higher the attempt number, the more unbalanced the solution
                 if attempt_number > 0 {
                     tracing::warn!(
@@ -312,7 +312,6 @@ fn place_unassigned_shards_ignoring_affinity(
                         "capacity re-scaled, scheduling solution likely unbalanced"
                     );
                 }
-                solution.capacity_scaling_iterations = attempt_number;
                 return solution;
             }
             Err(NotEnoughCapacity) => {
@@ -823,16 +822,28 @@ mod tests {
 
     #[test]
     fn test_capacity_scaling_iteration_required() {
-        // Create a problem where affinity constraints cause suboptimal placement
-        // requiring iterative scaling despite initial capacity scaling.
+        // Sources 0 and 1 each need 2500 mcpu; source 2 needs 1500 mcpu.
+        // Each node can only fit one large source (2500) leaving 500 mcpu free,
+        // which is less than source 2's 1500 mcpu. Placement therefore requires
+        // capacity scaling, causing at least one node to exceed its original capacity.
         let mut problem =
             SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(3000), mcpu(3000)]);
         problem.add_source(1, NonZeroU32::new(2500).unwrap()); // Source 0
         problem.add_source(1, NonZeroU32::new(2500).unwrap()); // Source 1
         problem.add_source(1, NonZeroU32::new(1500).unwrap()); // Source 2
         let previous_solution = problem.new_solution();
-        let solution = solve(problem, previous_solution);
+        let solution = solve(problem.clone(), previous_solution);
 
-        assert_eq!(solution.capacity_scaling_iterations, 1);
+        let max_node_load = solution
+            .indexer_assignments
+            .iter()
+            .map(|assignment| assignment.total_cpu_load(&problem))
+            .max()
+            .unwrap_or(0);
+        assert!(
+            max_node_load > 3000,
+            "expected at least one node to exceed original capacity after scaling, max load was \
+             {max_node_load}"
+        );
     }
 }
