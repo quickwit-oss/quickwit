@@ -59,6 +59,7 @@ ingest_api:
   replication_factor: 2
 
 searcher:
+  use_metastore_read_replica: true
   aggregation_memory_limit: 1G
   aggregation_bucket_limit: 500000
   fast_field_cache_capacity: 10G

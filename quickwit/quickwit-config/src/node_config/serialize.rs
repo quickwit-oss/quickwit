@@ -794,6 +794,7 @@ mod tests {
                     timeout_millis: 2_000,
                     max_num_retries: 2
                 }),
+                use_metastore_read_replica: true,
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::mb(300),
                 lambda: Some(LambdaConfig {

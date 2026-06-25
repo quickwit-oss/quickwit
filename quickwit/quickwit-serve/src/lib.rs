@@ -728,10 +728,13 @@ pub async fn serve_quickwit(
     };
 
     // Searchers and the DataFusion analytics path use the primary metastore by default. When
-    // `metastore_read_replica_uri` is configured, they require `metastore_read_replica` nodes and
-    // do not fall back to the primary if none are available.
+    // `searcher.use_metastore_read_replica` is enabled, searcher nodes require
+    // `metastore_read_replica` nodes and do not fall back to the primary if none are available.
+    let use_metastore_read_replica_for_search = node_config
+        .is_service_enabled(QuickwitService::Searcher)
+        && node_config.searcher_config.use_metastore_read_replica;
     let search_metastore_client: MetastoreReadServiceClient =
-        if node_config.metastore_read_replica_uri.is_some() {
+        if use_metastore_read_replica_for_search {
             let read_replica_metastore = build_metastore_client(
                 &cluster,
                 QuickwitService::MetastoreReadReplica,
