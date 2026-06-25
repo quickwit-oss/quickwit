@@ -374,9 +374,17 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 
 /// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role.
 ///
-/// The role serves the same gRPC service as [`QuickwitService::Metastore`], so the two cannot run
-/// on the same node, and it requires a PostgreSQL `metastore_read_replica_uri` to connect to.
+/// When configured, `metastore_read_replica_uri` must be a PostgreSQL URI. The
+/// [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as
+/// [`QuickwitService::Metastore`], so the two cannot run on the same node, and the read-replica
+/// role requires `metastore_read_replica_uri` to connect to.
 fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
+    if let Some(uri) = &node_config.metastore_read_replica_uri {
+        if !uri.protocol().is_database() {
+            bail!("`metastore_read_replica_uri` must point to a PostgreSQL database, got `{uri}`");
+        }
+    }
+
     let read_replica_enabled =
         node_config.is_service_enabled(QuickwitService::MetastoreReadReplica);
     if !read_replica_enabled {
@@ -389,10 +397,7 @@ fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<(
         );
     }
     match &node_config.metastore_read_replica_uri {
-        Some(uri) if uri.protocol().is_database() => Ok(()),
-        Some(uri) => {
-            bail!("`metastore_read_replica_uri` must point to a PostgreSQL database, got `{uri}`")
-        }
+        Some(_) => Ok(()),
         None => {
             bail!(
                 "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be \
@@ -1129,6 +1134,23 @@ mod tests {
             node_id: test-node
             enabled_services:
               - metastore_read_replica
+            metastore_read_replica_uri: s3://not-a-database
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("must point to a PostgreSQL"));
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_uri_must_be_a_database_even_without_role() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
             metastore_read_replica_uri: s3://not-a-database
         "#;
         let error = load_node_config_with_env(

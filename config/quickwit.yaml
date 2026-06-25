@@ -105,8 +105,10 @@ version: 0.8
 #
 # Optional PostgreSQL read replica URI. Nodes started with the
 # `metastore_read_replica` service connect to it over a read-only connection and
-# serve stale-tolerant read-only metastore requests (e.g. from searchers). When
-# unset, those requests are served by the primary metastore. Defaults to unset.
+# serve stale-tolerant read-only metastore requests (e.g. from searchers).
+# When set, nodes that issue stale-tolerant read-only metastore requests require
+# a `metastore_read_replica` node at startup and do not fall back to the primary
+# metastore. Defaults to unset.
 #
 # metastore_read_replica_uri: postgres://username:password@read-replica-host:port/db
 #

@@ -93,7 +93,7 @@ use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreReadServiceClient,
-    MetastoreResolver, ReadReplicaRoutingMetastore,
+    MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -245,31 +245,31 @@ fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usiz
     }
 }
 
-/// Builds the read-only metastore client used by the search and analytics paths.
-///
-/// Stale-tolerant reads are routed to `metastore_read_replica` nodes when any are present in the
-/// cluster, falling back to `primary` otherwise.
-async fn build_search_metastore_client(
+async fn build_metastore_client(
     cluster: &Cluster,
+    service: QuickwitService,
     max_message_size: ByteSize,
-    primary: MetastoreServiceClient,
-) -> MetastoreReadServiceClient {
-    let read_replica_balance_channel =
-        balance_channel_for_service(cluster, QuickwitService::MetastoreReadReplica).await;
-    let read_replica_connections = read_replica_balance_channel.connection_keys_watcher();
-    let read_replica_metastore = MetastoreServiceClient::tower()
+) -> anyhow::Result<MetastoreServiceClient> {
+    info!(%service, "connecting to metastore service");
+
+    let balance_channel = balance_channel_for_service(cluster, service).await;
+
+    if !balance_channel
+        .wait_for(Duration::from_secs(300), |connections| {
+            !connections.is_empty()
+        })
+        .await
+    {
+        bail!("could not find any `{service}` node in the cluster");
+    }
+    Ok(MetastoreServiceClient::tower()
         .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
         .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
         .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
             get_metastore_client_max_concurrency(),
         ))
-        .build_from_balance_channel(read_replica_balance_channel, max_message_size, None);
-    Arc::new(ReadReplicaRoutingMetastore::new(
-        primary,
-        read_replica_metastore,
-        read_replica_connections,
-    ))
+        .build_from_balance_channel(balance_channel, max_message_size, None))
 }
 
 async fn balance_channel_for_service(
@@ -569,27 +569,12 @@ pub async fn serve_quickwit(
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            info!("connecting to metastore");
-
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
+            build_metastore_client(
+                &cluster,
+                QuickwitService::Metastore,
+                grpc_config.max_message_size,
+            )
+            .await?
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -742,15 +727,21 @@ pub async fn serve_quickwit(
         ))
     };
 
-    // Searchers and the DataFusion analytics path route their stale-tolerant, read-only metastore
-    // requests to `metastore_read_replica` nodes when any are present in the cluster, and fall back
-    // to the primary metastore otherwise.
-    let search_metastore_client = build_search_metastore_client(
-        &cluster,
-        grpc_config.max_message_size,
-        metastore_through_control_plane.clone(),
-    )
-    .await;
+    // Searchers and the DataFusion analytics path use the primary metastore by default. When
+    // `metastore_read_replica_uri` is configured, they require `metastore_read_replica` nodes and
+    // do not fall back to the primary if none are available.
+    let search_metastore_client: MetastoreReadServiceClient =
+        if node_config.metastore_read_replica_uri.is_some() {
+            let read_replica_metastore = build_metastore_client(
+                &cluster,
+                QuickwitService::MetastoreReadReplica,
+                grpc_config.max_message_size,
+            )
+            .await?;
+            Arc::new(read_replica_metastore)
+        } else {
+            Arc::new(metastore_through_control_plane.clone())
+        };
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,

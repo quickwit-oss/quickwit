@@ -18,7 +18,6 @@ pub(crate) mod index_metadata;
 pub mod postgres;
 
 pub mod control_plane_metastore;
-pub mod read_replica_routing_metastore;
 pub mod read_service;
 
 use std::cmp::Ordering;
