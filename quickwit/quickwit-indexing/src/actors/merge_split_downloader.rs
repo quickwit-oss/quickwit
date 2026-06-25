@@ -14,6 +14,7 @@
 
 use std::path::Path;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::io::IoControls;
@@ -73,7 +74,7 @@ impl Handler<MergeSource> for MergeSplitDownloader {
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
-                merge_source.as_operation().splits_as_slice(),
+                merge_source.as_operation().splits.as_slice(),
                 downloaded_splits_directory.path(),
                 ctx,
             )
@@ -112,11 +113,7 @@ impl MergeSplitDownloader {
                 self.split_store
                     .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
                     .await
-                    .map_err(|error| {
-                        let split_id = split.split_id();
-                        anyhow::anyhow!(error)
-                            .context(format!("failed to download split `{split_id}`"))
-                    })
+                    .with_context(|| format!("failed to download split `{}`", split.split_id()))
             }
         });
         let tantivy_dirs = futures::future::try_join_all(download_futures).await?;
@@ -188,15 +185,8 @@ mod tests {
             .unwrap()
             .downcast::<MergeScratch>()
             .unwrap();
-        assert_eq!(
-            merge_scratch
-                .merge_source
-                .as_operation()
-                .splits_as_slice()
-                .len(),
-            10
-        );
-        for split in merge_scratch.merge_source.as_operation().splits_as_slice() {
+        assert_eq!(merge_scratch.merge_source.as_operation().splits.len(), 10);
+        for split in &merge_scratch.merge_source.as_operation().splits {
             let split_filename = split_file(split.split_id());
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

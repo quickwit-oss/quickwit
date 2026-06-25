@@ -98,10 +98,7 @@ impl NodeStateExt for NodeState {
     }
 
     fn enable_standalone_compactors(&self) -> bool {
-        match self.get(STANDALONE_COMPACTORS_KEY) {
-            Some(value) => value == "true",
-            None => false,
-        }
+        matches!(self.get(STANDALONE_COMPACTORS_KEY), Some(value) if value == "true")
     }
 }
 

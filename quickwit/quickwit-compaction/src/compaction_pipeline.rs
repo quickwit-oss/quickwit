@@ -15,6 +15,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use anyhow::Context;
 use quickwit_actors::{ActorHandle, HEARTBEAT, Health, QueueCapacity, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
@@ -255,16 +256,18 @@ impl CompactionPipeline {
     }
 
     fn build_status_update(&self) -> PipelineStatusUpdate {
+        let split_ids = self
+            .merge_operation
+            .splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect();
+
         PipelineStatusUpdate {
             task_id: self.task_id.clone(),
             index_uid: self.pipeline_id.index_uid.clone(),
             source_id: self.pipeline_id.source_id.clone(),
-            split_ids: self
-                .merge_operation
-                .splits_as_slice()
-                .iter()
-                .map(|split| split.split_id().to_string())
-                .collect(),
+            split_ids,
             status: self.status.clone(),
         }
     }
@@ -352,9 +355,7 @@ impl CompactionPipeline {
         // Kick off the pipeline.
         merge_split_downloader_mailbox
             .try_send_message(MergeSource::Operation(self.merge_operation.clone()))
-            .map_err(|err| {
-                anyhow::anyhow!("failed to send merge operation to downloader: {err:?}")
-            })?;
+            .context("failed to send merge operation to downloader")?;
 
         self.handles = Some(CompactionPipelineHandles {
             merge_split_downloader: merge_split_downloader_handle,

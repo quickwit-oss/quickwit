@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_cluster::Cluster;
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limited_tracing::rate_limited_info;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
@@ -80,9 +81,8 @@ impl Actor for CompactionPlanner {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         info!(
-            "compaction planner initializing, waiting for indexers to hand off compaction in {} \
-             seconds",
-            INITIAL_SCAN_AND_PLAN_INTERVAL.as_secs()
+            "initializing compaction planner, waiting for indexers to hand off compaction in {}",
+            INITIAL_SCAN_AND_PLAN_INTERVAL.pretty_display()
         );
         ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, AwaitIndexersMigrated);
         Ok(())
@@ -99,7 +99,7 @@ impl Handler<ScanAndPlan> for CompactionPlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Err(error) = ctx.protect_future(self.scan_and_plan()).await {
-            error!(%error, "error scanning metastore and planning merges");
+            error!(%error, "failed to scan metastore and/or plan merges");
         }
         self.state.check_heartbeat_timeouts();
         ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
@@ -154,7 +154,7 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
 impl CompactionPlanner {
     pub fn new(metastore: MetastoreServiceClient, cluster: Cluster) -> Self {
         CompactionPlanner {
-            state: CompactionState::new(),
+            state: CompactionState::default(),
             index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
             metastore,
             cluster,
@@ -204,14 +204,14 @@ impl CompactionPlanner {
             .list_splits(request)
             .await
             .inspect_err(|error| {
-                error!(%error, "[compaction-planner] error calling metastore list_splits");
+                error!(%error, "failed to list splits from metastore");
                 let labels = label_values!(OPERATION => "scan");
                 counter!(parent: METASTORE_ERRORS, labels: [labels]).inc();
             })?
             .collect_splits()
             .await
             .inspect_err(|error| {
-                error!(%error, "[compaction-planner] error collecting metastore splits");
+                error!(%error, "failed to deserialize splits from metastore");
                 let labels = label_values!(OPERATION => "collect_splits");
                 counter!(parent: METASTORE_ERRORS, labels: [labels]).inc();
             })?;
@@ -220,8 +220,8 @@ impl CompactionPlanner {
     }
 
     async fn scan_and_plan(&mut self) -> Result<()> {
-        let splits = self.scan_metastore().await?;
-        self.ingest_splits(splits).await;
+        let new_splits = self.scan_metastore().await?;
+        self.ingest_splits(new_splits).await;
         self.run_merge_policies();
         self.state.emit_metrics();
         Ok(())
@@ -250,9 +250,9 @@ impl CompactionPlanner {
 
             let split_ids = merge_op
                 .operation
-                .splits_as_slice()
-                .iter()
-                .map(|s| s.split_id().to_string())
+                .splits
+                .into_iter()
+                .map(|split_metadata| split_metadata.split_id)
                 .collect();
 
             self.state
@@ -265,8 +265,7 @@ impl CompactionPlanner {
 }
 
 fn emit_metastore_scan_metrics(new_splits: &[Split]) {
-    let size = new_splits.len();
-    info!(%size, "[compaction planner] new splits scanned from metastore");
+    info!("scanned {} splits from metastore", new_splits.len());
     let counts = new_splits
         .iter()
         .counts_by(|split| &split.split_metadata.index_uid);
@@ -281,16 +280,17 @@ fn build_task_assignment(
     index_entry: &IndexEntry,
     merge_op: &PendingMerge,
 ) -> MergeTaskAssignment {
+    let splits_metadata_json = merge_op
+        .operation
+        .splits
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<String>, _>>()
+        .expect("split metadata serialization should not fail");
+
     MergeTaskAssignment {
         task_id: task_id.to_string(),
-        splits_metadata_json: merge_op
-            .operation
-            .splits_as_slice()
-            .iter()
-            .map(|s| {
-                serde_json::to_string(s).expect("split metadata serialization should not fail")
-            })
-            .collect(),
+        splits_metadata_json,
         doc_mapping_json: index_entry.doc_mapping_json(),
         search_settings_json: index_entry.search_settings_json(),
         indexing_settings_json: index_entry.indexing_settings_json(),

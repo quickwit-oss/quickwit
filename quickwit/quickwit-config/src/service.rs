@@ -24,12 +24,12 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 #[serde(into = "&'static str")]
 pub enum QuickwitService {
+    Compactor,
     ControlPlane,
     Indexer,
-    Searcher,
     Janitor,
     Metastore,
-    Compactor,
+    Searcher,
 }
 
 #[allow(clippy::from_over_into)]
@@ -42,12 +42,12 @@ impl Into<&'static str> for QuickwitService {
 impl QuickwitService {
     pub fn as_str(&self) -> &'static str {
         match self {
-            QuickwitService::ControlPlane => "control_plane",
+            QuickwitService::Compactor => "compactor",
+            QuickwitService::ControlPlane => "control-plane",
             QuickwitService::Indexer => "indexer",
-            QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
-            QuickwitService::Compactor => "compactor",
+            QuickwitService::Searcher => "searcher",
         }
     }
 
@@ -67,12 +67,12 @@ impl FromStr for QuickwitService {
 
     fn from_str(service_str: &str) -> Result<Self, Self::Err> {
         match service_str {
+            "compactor" => Ok(QuickwitService::Compactor),
             "control-plane" | "control_plane" => Ok(QuickwitService::ControlPlane),
             "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
-            "compactor" => Ok(QuickwitService::Compactor),
+            "searcher" => Ok(QuickwitService::Searcher),
             _ => {
                 bail!(
                     "failed to parse service `{service_str}`. supported services are: `{}`",

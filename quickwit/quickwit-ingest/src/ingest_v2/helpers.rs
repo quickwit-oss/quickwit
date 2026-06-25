@@ -24,6 +24,13 @@ use tracing::info;
 
 /// Tries to get the current status of an ingester by opening an observation stream
 /// and reading the first message.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The observation stream fails to open
+/// - The stream ends without producing a message
+/// - The stream ends after returning an error
 pub async fn try_get_ingester_status(
     ingester: &impl IngesterService,
 ) -> anyhow::Result<IngesterStatus> {
@@ -42,6 +49,17 @@ pub async fn try_get_ingester_status(
 }
 
 /// Waits for an ingester to reach a specific status by monitoring its observation stream.
+///
+/// This function continuously polls the observation stream until the ingester reaches
+/// the desired status.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The observation stream fails to open
+/// - The stream ends without producing a message
+/// - The stream ends after returning an error
+/// - The timeout is exceeded
 pub async fn wait_for_ingester_status(
     ingester: &impl IngesterService,
     status: IngesterStatus,
@@ -58,8 +76,8 @@ pub async fn wait_for_ingester_status(
     .await
     .with_context(|| {
         format!(
-            "timed out waiting for ingester to transition to status {status} after {} seconds",
-            timeout_after.as_secs(),
+            "timed out waiting for ingester to transition to status {status} after {}",
+            timeout_after.pretty_display(),
         )
     })?
 }
@@ -90,7 +108,8 @@ async fn wait_for_ingester_status_inner(
     }
 }
 
-/// Initiates decommission of an ingester, if one is present.
+/// Initiates decommission of an ingester, if one is present. Returns an error if the decommission
+/// request fails.
 pub async fn notify_ingester_decommission(
     ingester_opt: Option<&impl IngesterService>,
 ) -> anyhow::Result<()> {

@@ -1731,7 +1731,7 @@ async fn assign_client_fetch_docs_jobs(
             .iter()
             .map(|metadata| {
                 (
-                    metadata.split_id().to_string(),
+                    metadata.split_id.clone(),
                     (
                         metadata.index_uid.clone(),
                         extract_split_and_footer_offsets(metadata),

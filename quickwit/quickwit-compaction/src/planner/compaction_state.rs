@@ -14,7 +14,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
@@ -60,7 +59,7 @@ struct InFlightCompaction {
 /// Tracks all split-level state for the compaction planner:
 /// which splits need compaction, which are in-flight, and which
 /// operations are pending assignment to workers.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CompactionState {
     needs_compaction: HashMap<CompactionPartitionKey, Vec<SplitMetadata>>,
     needs_compaction_split_ids: HashSet<SplitId>,
@@ -70,16 +69,6 @@ pub struct CompactionState {
 }
 
 impl CompactionState {
-    pub fn new() -> Self {
-        CompactionState {
-            needs_compaction: HashMap::new(),
-            needs_compaction_split_ids: HashSet::new(),
-            in_flight: HashMap::new(),
-            in_flight_split_ids: HashSet::new(),
-            pending_operations: PendingOperations::new(),
-        }
-    }
-
     /// Returns true if the split is already tracked (either awaiting compaction or in-flight).
     pub fn is_split_tracked(&self, split_id: &str) -> bool {
         self.needs_compaction_split_ids.contains(split_id)
@@ -104,7 +93,7 @@ impl CompactionState {
 
     /// Adds a split to the needs_compaction set.
     pub fn track_split(&mut self, split: SplitMetadata) {
-        let split_id = split.split_id().to_string();
+        let split_id = split.split_id.clone();
         let key = CompactionPartitionKey::from_split(&split);
         self.needs_compaction_split_ids.insert(split_id);
         self.needs_compaction.entry(key).or_default().push(split);
@@ -119,7 +108,7 @@ impl CompactionState {
     pub fn plan_partition(
         &mut self,
         partition_key: &CompactionPartitionKey,
-        merge_policy: &Arc<dyn MergePolicy>,
+        merge_policy: &dyn MergePolicy,
     ) {
         let Some(splits) = self.needs_compaction.get_mut(partition_key) else {
             return;
@@ -134,8 +123,7 @@ impl CompactionState {
             for operation in operations {
                 for split in &operation.splits {
                     self.needs_compaction_split_ids.remove(split.split_id());
-                    self.in_flight_split_ids
-                        .insert(split.split_id().to_string());
+                    self.in_flight_split_ids.insert(split.split_id.clone());
                 }
                 self.pending_operations.push(PendingMerge::new(operation));
             }
@@ -178,7 +166,7 @@ impl CompactionState {
                 // (e.g. after planner start).
                 for split_id in &task.split_ids {
                     self.in_flight_split_ids.insert(split_id.clone());
-                    self.needs_compaction_split_ids.remove(split_id.as_str());
+                    self.needs_compaction_split_ids.remove(split_id);
                 }
                 self.in_flight.insert(
                     task.task_id.clone(),
@@ -207,7 +195,7 @@ impl CompactionState {
                 TIMED_OUT_OPERATIONS.inc();
                 for split_id in &inflight.split_ids {
                     // these splits will be picked up again on the next metastore scan.
-                    self.in_flight_split_ids.remove(split_id.as_str());
+                    self.in_flight_split_ids.remove(split_id);
                 }
             }
         }
@@ -261,6 +249,7 @@ impl CompactionState {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use quickwit_config::IndexingSettings;
@@ -304,7 +293,7 @@ mod tests {
     #[test]
     fn test_track_and_is_known() {
         let index_uid = IndexUid::for_test("test-index", 0);
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         assert!(!state.is_split_tracked("s1"));
 
@@ -316,7 +305,7 @@ mod tests {
     #[test]
     fn test_track_split_partitions_correctly() {
         let index_uid = IndexUid::for_test("test-index", 0);
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         state.track_split(test_split("s1", &index_uid));
         state.track_split(test_split("s2", &index_uid));
@@ -328,7 +317,7 @@ mod tests {
     fn test_plan_partition_moves_splits_to_in_flight() {
         let index_uid = IndexUid::for_test("test-index", 0);
         let merge_policy = test_merge_policy();
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         state.track_split(test_split("s0", &index_uid));
         state.track_split(test_split("s1", &index_uid));
@@ -336,12 +325,12 @@ mod tests {
         let keys = state.partition_keys();
         assert_eq!(keys.len(), 1);
 
-        state.plan_partition(&keys[0], &merge_policy);
+        state.plan_partition(&keys[0], &*merge_policy);
 
         // Splits moved from needs_compaction to in_flight.
         assert!(!state.pending_operations.is_empty());
         for pending in state.pending_operations.iter() {
-            for split in pending.operation.splits_as_slice() {
+            for split in &pending.operation.splits {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
                 assert!(state.in_flight_split_ids.contains(split.split_id()));
             }
@@ -351,7 +340,7 @@ mod tests {
     #[test]
     fn test_process_successes_and_failures_clear_in_flight() {
         let node_id = NodeId::from_str("worker-1");
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         // Simulate what plan_partition + record_assignment does:
         // split IDs go into in_flight_split_ids, then into InFlightCompaction.
@@ -385,7 +374,7 @@ mod tests {
     #[test]
     fn test_update_heartbeats_adopts_unknown_tasks() {
         let node_id = NodeId::from_str("worker-1");
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         // Simulate a split that was tracked as needing compaction.
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -412,22 +401,22 @@ mod tests {
     fn test_pop_pending_and_record_assignment() {
         let index_uid = IndexUid::for_test("test-index", 0);
         let merge_policy = test_merge_policy();
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         state.track_split(test_split("s0", &index_uid));
         state.track_split(test_split("s1", &index_uid));
 
         let keys = state.partition_keys();
-        state.plan_partition(&keys[0], &merge_policy);
+        state.plan_partition(&keys[0], &*merge_policy);
 
         let pending = state.pop_pending(1);
         assert_eq!(pending.len(), 1);
 
         let operation = &pending[0].operation;
         let split_ids: Vec<String> = operation
-            .splits_as_slice()
+            .splits
             .iter()
-            .map(|s| s.split_id().to_string())
+            .map(|split_metadata| split_metadata.split_id.clone())
             .collect();
 
         // Splits are already in in_flight_split_ids from plan_partition.
@@ -446,7 +435,7 @@ mod tests {
     fn test_pop_pending_respects_count() {
         let index_uid = IndexUid::for_test("test-index", 0);
         let merge_policy = test_merge_policy();
-        let mut state = CompactionState::new();
+        let mut state = CompactionState::default();
 
         // With merge_factor=2, 4 splits produces 2 operations.
         for i in 0..4 {
@@ -454,7 +443,7 @@ mod tests {
         }
 
         let keys = state.partition_keys();
-        state.plan_partition(&keys[0], &merge_policy);
+        state.plan_partition(&keys[0], &*merge_policy);
 
         let total_pending = state.pending_operations.len();
         assert!(total_pending >= 2);

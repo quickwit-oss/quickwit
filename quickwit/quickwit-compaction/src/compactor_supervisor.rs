@@ -255,7 +255,7 @@ impl CompactorSupervisor {
             .splits_metadata_json
             .iter()
             .map(|json| serde_json::from_str(json))
-            .collect::<Result<Vec<SplitMetadata>, serde_json::Error>>()?;
+            .collect::<Result<Vec<SplitMetadata>, _>>()?;
         let doc_mapping: DocMapping = serde_json::from_str(&assignment.doc_mapping_json)?;
         let search_settings: SearchSettings =
             serde_json::from_str(&assignment.search_settings_json)?;

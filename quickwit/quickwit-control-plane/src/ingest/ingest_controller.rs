@@ -3563,7 +3563,7 @@ mod tests {
             }
         }
         for (shard, count) in shard_counts_map {
-            if let Some(shard_count) = total_counts.get_mut::<NodeIdRef>(shard.as_ref()) {
+            if let Some(shard_count) = total_counts.get_mut(shard.as_ref()) {
                 *shard_count += *count;
             }
         }

@@ -92,18 +92,12 @@ impl Ord for PendingMerge {
 /// `PendingMerge`'s priority score. The `pending_merge_operations` gauge is
 /// maintained inline; push/pop are the only mutation paths so the metric
 /// stays consistent with `len()`.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct PendingOperations {
     inner: BinaryHeap<PendingMerge>,
 }
 
 impl PendingOperations {
-    pub(super) fn new() -> Self {
-        Self {
-            inner: BinaryHeap::new(),
-        }
-    }
-
     pub(super) fn push(&mut self, pending: PendingMerge) {
         Self::adjust_gauge(&pending, 1);
         self.inner.push(pending);

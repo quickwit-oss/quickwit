@@ -43,8 +43,8 @@ impl IndexEntry {
         )
     }
 
-    pub fn merge_policy(&self) -> &Arc<dyn MergePolicy> {
-        &self.merge_policy
+    pub fn merge_policy(&self) -> &dyn MergePolicy {
+        &*self.merge_policy
     }
 
     pub fn doc_mapping_json(&self) -> String {
@@ -107,7 +107,7 @@ impl IndexConfigMetastore {
             })
             .await
             .inspect_err(|error| {
-                error!(%error, "[compaction-planner] error getting index metadata from metastore");
+                error!(%error, "failed to get index metadata from metastore");
                 let labels = label_values!(OPERATION => "index_metadata");
                 counter!(parent: METASTORE_ERRORS, labels: [labels]).inc();
             })?;
