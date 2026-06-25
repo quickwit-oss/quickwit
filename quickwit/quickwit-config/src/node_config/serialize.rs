@@ -379,10 +379,10 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 /// [`QuickwitService::Metastore`], so the two cannot run on the same node, and the read-replica
 /// role requires `metastore_read_replica_uri` to connect to.
 fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
-    if let Some(uri) = &node_config.metastore_read_replica_uri {
-        if !uri.protocol().is_database() {
-            bail!("`metastore_read_replica_uri` must point to a PostgreSQL database, got `{uri}`");
-        }
+    if let Some(uri) = &node_config.metastore_read_replica_uri
+        && !uri.protocol().is_database()
+    {
+        bail!("`metastore_read_replica_uri` must point to a PostgreSQL database, got `{uri}`");
     }
 
     let read_replica_enabled =
