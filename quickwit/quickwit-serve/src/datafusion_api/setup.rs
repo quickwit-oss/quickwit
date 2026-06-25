@@ -39,7 +39,7 @@ use quickwit_datafusion::{
     DataFusionService, DataFusionSessionBuilder, QuickwitObjectStoreRegistry,
     QuickwitWorkerResolver, build_worker,
 };
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_metastore::MetastoreReadServiceClient;
 use quickwit_search::{SearchServiceClient, SearcherPool, create_search_client_from_grpc_addr};
 use quickwit_storage::StorageResolver;
 use tokio::time::timeout;
@@ -66,7 +66,7 @@ use crate::QuickwitServices;
 pub(crate) fn build_datafusion_session_builder(
     node_config: &NodeConfig,
     cluster_change_stream: ClusterChangeStream,
-    metastore: MetastoreServiceClient,
+    metastore: MetastoreReadServiceClient,
     storage_resolver: StorageResolver,
 ) -> anyhow::Result<Option<Arc<DataFusionSessionBuilder>>> {
     if !node_config.is_service_enabled(QuickwitService::Searcher) {

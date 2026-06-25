@@ -92,8 +92,8 @@ use quickwit_ingest::{
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
-    ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
-    ReadReplicaRoutingMetastore,
+    ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreReadServiceClient,
+    MetastoreResolver, ReadReplicaRoutingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -245,15 +245,15 @@ fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usiz
     }
 }
 
-/// Builds the metastore client used by the read-only search and analytics paths.
+/// Builds the read-only metastore client used by the search and analytics paths.
 ///
 /// Stale-tolerant reads are routed to `metastore_read_replica` nodes when any are present in the
-/// cluster, falling back to `primary` otherwise. Write RPCs always go to `primary`.
+/// cluster, falling back to `primary` otherwise.
 async fn build_search_metastore_client(
     cluster: &Cluster,
     max_message_size: ByteSize,
     primary: MetastoreServiceClient,
-) -> MetastoreServiceClient {
+) -> MetastoreReadServiceClient {
     let read_replica_balance_channel =
         balance_channel_for_service(cluster, QuickwitService::MetastoreReadReplica).await;
     let read_replica_connections = read_replica_balance_channel.connection_keys_watcher();
@@ -265,7 +265,7 @@ async fn build_search_metastore_client(
             get_metastore_client_max_concurrency(),
         ))
         .build_from_balance_channel(read_replica_balance_channel, max_message_size, None);
-    MetastoreServiceClient::new(ReadReplicaRoutingMetastore::new(
+    Arc::new(ReadReplicaRoutingMetastore::new(
         primary,
         read_replica_metastore,
         read_replica_connections,
@@ -1261,7 +1261,7 @@ fn build_ingester_service(
 async fn setup_searcher(
     node_config: &NodeConfig,
     cluster_change_stream: ClusterChangeStream,
-    metastore: MetastoreServiceClient,
+    metastore: MetastoreReadServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
@@ -1920,7 +1920,7 @@ mod tests {
         let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
-            metastore,
+            Arc::new(metastore),
             storage_resolver,
             searcher_context,
         )
