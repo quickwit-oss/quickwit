@@ -35,37 +35,110 @@ fn check_contract_conditions(problem: &SchedulingProblem, solution: &SchedulingS
     }
 }
 
+/// 1.2^30 is about 240. If we reach 30 attempts we are certain to have a logical bug.
+const MAX_INFLATION_ATTEMPTS: u32 = 30;
+
 pub fn solve(
     mut problem: SchedulingProblem,
     previous_solution: SchedulingSolution,
 ) -> SchedulingSolution {
     // We first inflate the indexer capacities to make sure they globally
     // have at least 120% of the total problem load. This is done proportionally
-    // to their original capacity.
+    // to their original capacity. This corresponds to inflation level 0.
     inflate_node_capacities_if_necessary(&mut problem);
-    // As a heuristic, to offer stability, we work iteratively
-    // from the previous solution.
+    // We run a few asserts to ensure that the problem is correct.
+    check_contract_conditions(&problem, &previous_solution);
+    let base_problem = problem;
+
+    // Due to the inherent of the bin-packing, it is possible that the first inflation
+    // is not sufficient to solve the problem.
+    //
+    // In that case, we inflate the capacity iteratively until we find a solution.
+    let mut best_solution: Option<SchedulingSolution> = None;
+    let mut best_attempt: u32 = 0;
+    for attempt in 0..MAX_INFLATION_ATTEMPTS {
+        let scaled_problem = problem_at_inflation_level(&base_problem, attempt);
+        if let Ok(solution) = attempt_solve(&scaled_problem, previous_solution.clone()) {
+            best_solution = Some(solution);
+            best_attempt = attempt;
+            break;
+        }
+    }
+    let mut best_solution =
+        best_solution.expect("failed to assign all of the sources (logical bug)");
+
+    // Just stopping here would not offer any stability guarantee.
+    //
+    // We descend: we re-feed the candidate solution to the algorithm at lower
+    // inflation levels to find the true minimal feasible level for *this* solution.
+    // This is what guarantees stability: the returned solution succeeds at
+    // `best_attempt` but fails at `best_attempt - 1`. On the next call to `solve`
+    // starting from this solution, the ascending search will fail at every level
+    // below `best_attempt` (less capacity than a level that already failed) and
+    // succeed at `best_attempt`, where the pipeline is a no-op. Hence `solve` is
+    // idempotent.
+    while let Some(lower_attempt) = best_attempt.checked_sub(1) {
+        let scaled_problem = problem_at_inflation_level(&base_problem, lower_attempt);
+        match attempt_solve(&scaled_problem, best_solution.clone()) {
+            Ok(solution) => {
+                best_solution = solution;
+                best_attempt = lower_attempt;
+            }
+            Err(NotEnoughCapacity) => break,
+        }
+    }
+
+    if best_attempt > 0 {
+        // the higher the attempt number, the more unbalanced the solution
+        tracing::warn!(
+            attempt_number = best_attempt,
+            "capacity re-scaled, scheduling solution likely unbalanced"
+        );
+    }
+    best_solution
+}
+
+/// Returns a clone of `base_problem` with its node capacities scaled by `1.2^inflation_attempt`.
+fn problem_at_inflation_level(
+    base_problem: &SchedulingProblem,
+    inflation_attempt: u32,
+) -> SchedulingProblem {
+    let mut problem = base_problem.clone();
+    let inflation_factor = 1.2f32.powi(inflation_attempt as i32);
+    problem.scale_node_capacities(inflation_factor);
+    problem
+}
+
+/// Runs the full scheduling pipeline once, for a given (already inflated) problem.
+///
+/// Returns `Err(NotEnoughCapacity)` if the placement step is unable to assign every
+/// shard within the node capacities of `problem`.
+fn attempt_solve(
+    problem: &SchedulingProblem,
+    previous_solution: SchedulingSolution,
+) -> Result<SchedulingSolution, NotEnoughCapacity> {
+    // As a heuristic, to offer stability, we work iteratively from the previous
+    // solution.
     let mut solution = previous_solution;
-    // We first run a few asserts to ensure that the problem is correct.
-    check_contract_conditions(&problem, &solution);
     // Due to scale down, or entire removal of sources some shards we might have
     // too many shards in the current solution.
     // Let's first shave off the extraneous shards.
-    remove_extraneous_shards(&problem, &mut solution);
+    remove_extraneous_shards(problem, &mut solution);
     // Because the load associated to shards can change, some indexers
     // may have too much work assigned to them.
     // Again, we shave off some shards to make sure they are
     // within their capacity.
-    enforce_indexers_cpu_capacity(&problem, &mut solution);
+    enforce_indexers_cpu_capacity(problem, &mut solution);
     // The solution now meets the constraint, but it does not necessarily
     // contains all of the shards that we need to assign.
     //
     // We first assign sources to indexers that have some affinity with them
     // (provided they have the capacity.)
-    place_unassigned_shards_with_affinity(&problem, &mut solution);
+    place_unassigned_shards_with_affinity(problem, &mut solution);
     // Finally we assign the remaining shards, regardess of whether they have affinity
     // or not.
-    place_unassigned_shards_ignoring_affinity(problem, &solution)
+    place_unassigned_shards_ignoring_affinity(problem, &mut solution)?;
+    Ok(solution)
 }
 
 // -------------------------------------------------------------------------
@@ -283,43 +356,25 @@ fn place_unassigned_shards_with_affinity(
     }
 }
 
-#[must_use]
+/// Places the still-unassigned shards onto the indexers with the most available
+/// capacity, ignoring affinity.
+///
+/// Returns `Err(NotEnoughCapacity)` if some shards cannot fit within the node
+/// capacities of `problem`. The caller (`solve`) is responsible for inflating the
+/// node capacities and retrying when that happens.
 fn place_unassigned_shards_ignoring_affinity(
-    mut problem: SchedulingProblem,
-    partial_solution: &SchedulingSolution,
-) -> SchedulingSolution {
-    let mut unassigned_shards: Vec<Source> = compute_unassigned_sources(&problem, partial_solution);
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) -> Result<(), NotEnoughCapacity> {
+    let mut unassigned_shards: Vec<Source> = compute_unassigned_sources(problem, solution);
     unassigned_shards.sort_by_key(|source| {
         let load = source.num_shards * source.load_per_shard.get();
         Reverse(load)
     });
-
-    // Thanks to the call to `inflate_node_capacities_if_necessary`, we are
-    // certain that even on our first attempt, the total capacity of the indexer
-    // exceeds 120% of the partial solution. If a large shard needs to be placed
-    // in an already well balanced solution, it may not fit on any node. In that
-    // case, we iteratively grow the virtual capacity until it can be placed.
-    //
-    // 1.2^30 is about 240. If we reach 30 attempts we are certain to have a
-    // logical bug.
-    for attempt_number in 0..30 {
-        match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, partial_solution) {
-            Ok(solution) => {
-                // the higher the attempt number, the more unbalanced the solution
-                if attempt_number > 0 {
-                    tracing::warn!(
-                        attempt_number = attempt_number,
-                        "capacity re-scaled, scheduling solution likely unbalanced"
-                    );
-                }
-                return solution;
-            }
-            Err(NotEnoughCapacity) => {
-                problem.scale_node_capacities(1.2f32);
-            }
-        }
-    }
-    unreachable!("Failed to assign all of the sources");
+    let placed_solution =
+        attempt_place_unassigned_shards(&unassigned_shards[..], problem, solution)?;
+    *solution = placed_solution;
+    Ok(())
 }
 
 fn assert_place_unassigned_shards_post_condition(
@@ -343,6 +398,7 @@ fn assert_place_unassigned_shards_post_condition(
     }
 }
 
+#[derive(Debug)]
 struct NotEnoughCapacity;
 
 /// Return Err(NotEnoughCapacity) iff the algorithm was unable to pack all of the sources
@@ -582,9 +638,9 @@ mod tests {
     fn test_place_unassigned_shards_simple() {
         let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(4_000)]);
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
-        let partial_solution = problem.new_solution();
-        let solution = place_unassigned_shards_ignoring_affinity(problem, &partial_solution);
-        assert_eq!(solution.indexer_assignments[0].num_shards(0), 4);
+        let mut partial_solution = problem.new_solution();
+        place_unassigned_shards_ignoring_affinity(&problem, &mut partial_solution).unwrap();
+        assert_eq!(partial_solution.indexer_assignments[0].num_shards(0), 4);
     }
 
     #[test]
@@ -781,14 +837,8 @@ mod tests {
         fn test_proptest_post_conditions((problem, solution) in problem_solution_strategy()) {
             let solution_1 = solve(problem.clone(), solution);
             let solution_2 = solve(problem.clone(), solution_1.clone());
-            // TODO: This assert actually fails for some scenarii. We say it is fine
-            // for now as long as the solution does not change again during the
-            // next resolution:
-            // let has_solution_changed_once = solution_1.indexer_assignments != solution_2.indexer_assignments;
-            // assert!(!has_solution_changed_once, "Solution changed for same problem\nSolution 1:{solution_1:?}\nSolution 2: {solution_2:?}");
-            let solution_3 = solve(problem, solution_2.clone());
-            let has_solution_changed_again = solution_2.indexer_assignments != solution_3.indexer_assignments;
-            assert!(!has_solution_changed_again, "solution unstable!!!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}\nSolution 3: {solution_3:?}");
+            let has_solution_changed_again = solution_1.indexer_assignments != solution_2.indexer_assignments;
+            assert!(!has_solution_changed_again, "solution unstable!!!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}");
         }
     }
 
