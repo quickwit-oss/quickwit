@@ -22,6 +22,7 @@ use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
+use aws_config::retry::ErrorKind;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::Client as S3Client;
@@ -46,7 +47,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
-use quickwit_metrics::HistogramTimer;
+use quickwit_metrics::{HistogramTimer, counter};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
@@ -264,6 +265,50 @@ fn aws_checksum_algorithm(
         quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
             None
         }
+    }
+}
+
+/// Coarse classification of an SDK error, used as a counter label.
+/// timeout, io, throttling, transient, or other.
+fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
+where E: ProvideErrorMetadata {
+    match error {
+        SdkError::TimeoutError(_) => "timeout",
+        SdkError::DispatchFailure(failure) => {
+            if failure.is_timeout() {
+                "timeout"
+            } else if failure.is_io() {
+                "io"
+            } else {
+                match failure.as_other() {
+                    Some(ErrorKind::ThrottlingError) => "throttling",
+                    Some(ErrorKind::TransientError) => "transient",
+                    _ => "other",
+                }
+            }
+        }
+        SdkError::ResponseError(_resp_error) => "response",
+        SdkError::ServiceError(service_error) => {
+            let Some(code_str) = service_error.err().code() else {
+                return "other";
+            };
+            match code_str {
+                "Throttling"
+                | "ThrottlingException"
+                | "ThrottledException"
+                | "RequestThrottledException"
+                | "TooManyRequestsException"
+                | "RequestLimitExceeded"
+                | "BandwidthLimitExceeded"
+                | "LimitExceededException"
+                | "RequestThrottled"
+                | "SlowDown"
+                | "EC2ThrottledException" => "throttling",
+                _ => "other",
+            }
+        }
+        // non-exhaustive future variants.
+        _ => "other",
     }
 }
 
@@ -614,15 +659,24 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
 
-        let get_object_output = self
-            .s3_client
+        self.s3_client
             .get_object()
             .bucket(self.bucket.clone())
             .key(key)
             .set_range(range_str)
             .send()
-            .await?;
-        Ok(get_object_output)
+            .await
+            // Count failed attempts per attempt (this method is re-invoked by `aws_retry` on each
+            // retry), labeled by error class so rate limiting (class="throttled") can be measured
+            // independently of other transient failures.
+            .inspect_err(|error| {
+                let error_class: &'static str = classify_sdk_error(error);
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL,
+                    "class" => error_class,
+                )
+                .inc();
+            })
     }
 
     async fn get_to_bytes(
