@@ -19,6 +19,7 @@ use opentelemetry_otlp::{
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 
+use super::tokio_runtime_exporter::TokioRuntimeExporter;
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 
 impl OtlpProtocol {
@@ -49,6 +50,7 @@ pub(crate) fn init_logger_provider(
 ) -> anyhow::Result<SdkLoggerProvider> {
     let logs_protocol = otlp_config.logs_protocol()?;
     let log_exporter = logs_protocol.log_exporter()?;
+    let log_exporter = TokioRuntimeExporter::new(log_exporter)?;
     Ok(SdkLoggerProvider::builder()
         .with_resource(resource)
         .with_batch_exporter(log_exporter)

@@ -19,6 +19,7 @@ use opentelemetry_otlp::{
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
 
+use super::tokio_runtime_exporter::TokioRuntimeExporter;
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 
 impl OtlpProtocol {
@@ -49,6 +50,7 @@ pub(crate) fn init_tracer_provider(
 ) -> anyhow::Result<SdkTracerProvider> {
     let traces_protocol = otlp_config.traces_protocol()?;
     let span_exporter = traces_protocol.span_exporter()?;
+    let span_exporter = TokioRuntimeExporter::new(span_exporter)?;
     let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
         .with_batch_config(
             BatchConfigBuilder::default()

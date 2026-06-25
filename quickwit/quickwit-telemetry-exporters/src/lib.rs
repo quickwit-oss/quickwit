@@ -49,20 +49,32 @@ pub struct TelemetryHandle {
 
 impl TelemetryHandle {
     pub fn shutdown(self) -> anyhow::Result<()> {
+        let mut errors = Vec::new();
+
         if let Some(tracer_provider) = self.tracer_provider {
-            tracer_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry tracer provider")?;
+            if let Err(error) = tracer_provider.shutdown() {
+                errors.push(format!(
+                    "failed to shutdown OpenTelemetry tracer provider: {error:#}"
+                ));
+            }
         }
         if let Some(logger_provider) = self.logger_provider {
-            logger_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry logger provider")?;
+            if let Err(error) = logger_provider.shutdown() {
+                errors.push(format!(
+                    "failed to shutdown OpenTelemetry logger provider: {error:#}"
+                ));
+            }
         }
         if let Some(meter_provider) = self.meter_provider {
-            meter_provider
-                .shutdown()
-                .context("failed to shutdown OpenTelemetry meter provider")?;
+            if let Err(error) = meter_provider.shutdown() {
+                errors.push(format!(
+                    "failed to shutdown OpenTelemetry meter provider: {error:#}"
+                ));
+            }
+        }
+
+        if !errors.is_empty() {
+            anyhow::bail!("{}", errors.join("; "));
         }
         Ok(())
     }
@@ -84,7 +96,9 @@ type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscrib
 
 /// Returns the regular Quickwit logging layer.
 pub fn logging_layer<S>(ansi_colors: bool) -> impl Layer<S> + Send + Sync + 'static
-where S: Subscriber + for<'span> LookupSpan<'span> {
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+{
     let event_format = logs::EventFormat::get_from_env();
     let fmt_fields = event_format.format_fields();
     tracing_subscriber::fmt::layer()

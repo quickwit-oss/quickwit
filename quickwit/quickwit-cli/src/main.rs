@@ -114,6 +114,17 @@ fn init_telemetry(
     Ok((telemetry_handle, env_filter_reload_fn))
 }
 
+fn shutdown_telemetry(telemetry_handle: quickwit_telemetry_exporters::TelemetryHandle) {
+    // Shut down on a plain OS thread: dropping OTel exporters that hold Tokio runtimes from a
+    // Tokio worker thread triggers "Cannot drop a runtime in a context where blocking is not
+    // allowed".
+    match std::thread::spawn(move || telemetry_handle.shutdown()).join() {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => eprintln!("warning: failed to shutdown telemetry cleanly: {error:#}"),
+        Err(_) => eprintln!("warning: telemetry shutdown thread panicked"),
+    }
+}
+
 async fn main_impl() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
@@ -148,7 +159,7 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    telemetry_handle.shutdown()?;
+    shutdown_telemetry(telemetry_handle);
 
     std::process::exit(return_code)
 }

@@ -20,6 +20,7 @@ use opentelemetry_otlp::{
 };
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 
+use super::tokio_runtime_exporter::TokioRuntimeExporter;
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
 
 impl OtlpProtocol {
@@ -50,6 +51,7 @@ pub(crate) fn build_recorder(
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
     let metric_exporter = metrics_protocol.metric_exporter()?;
+    let metric_exporter = TokioRuntimeExporter::new(metric_exporter)?;
     let metrics_provider = SdkMeterProvider::builder()
         .with_resource(quickwit_resource(service_version))
         .with_periodic_exporter(metric_exporter)

@@ -9468,6 +9468,7 @@ dependencies = [
  "quickwit-metrics",
  "serde_json",
  "time",
+ "tokio",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

@@ -15,6 +15,7 @@
 mod config;
 pub(crate) mod logs;
 pub(crate) mod metrics;
+mod tokio_runtime_exporter;
 pub(crate) mod traces;
 
 pub(crate) use config::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
