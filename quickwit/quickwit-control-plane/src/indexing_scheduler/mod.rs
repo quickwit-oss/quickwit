@@ -398,7 +398,12 @@ impl IndexingScheduler {
             .indexer_pool
             .values()
             .into_iter()
-            .filter(|indexer| indexer.ingester_status.accepts_write_requests())
+            .filter(|indexer| {
+                matches!(
+                    indexer.ingester_status,
+                    IngesterStatus::Ready | IngesterStatus::Retiring
+                )
+            })
             .partition(|indexer| indexer.ingester_status == IngesterStatus::Ready);
 
         if ready.is_empty() {
