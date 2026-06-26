@@ -361,6 +361,7 @@ aws-smithy-async = "1.2"
 aws-smithy-mocks = "0.2"
 aws-smithy-http-client = { version = "1.1", features = ["default-client"] }
 aws-smithy-runtime = "1.11"
+aws-smithy-runtime-api = "1.12"
 aws-smithy-types = { version = "1.4", features = [
   "byte-stream-poll-next",
   "http-body-1-x",
