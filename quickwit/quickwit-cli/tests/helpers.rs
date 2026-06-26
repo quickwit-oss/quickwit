@@ -157,7 +157,7 @@ impl TestEnv {
     pub async fn start_server(&self) -> anyhow::Result<()> {
         let run_command = RunCliCommand {
             config_uri: self.resource_files.config.clone(),
-            services: Some(QuickwitService::supported_services()),
+            services: Some(QuickwitService::default_services()),
         };
         let server_handle = tokio::spawn(async move {
             if let Err(error) = run_command

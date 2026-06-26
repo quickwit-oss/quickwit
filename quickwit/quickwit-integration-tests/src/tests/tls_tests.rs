@@ -80,7 +80,7 @@ async fn fetch_served_leaf_cert(addr: SocketAddr, ca_path: &str) -> Vec<u8> {
 async fn test_tls_rest() {
     quickwit_common::setup_logging_for_tests();
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .build_config()
         .await;
     sandbox_config.node_configs[0].0.rest_config.tls_config = Some(fixture_tls_config());
@@ -192,7 +192,7 @@ async fn test_tls_grpc() {
 async fn test_mtls_rest() {
     quickwit_common::setup_logging_for_tests();
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .build_config()
         .await;
     // Reuse the server cert/key as the client identity — it is signed by the same CA, so the
@@ -244,7 +244,7 @@ async fn test_mtls_rest() {
 async fn test_health_check_server_plaintext_with_mtls_rest() {
     quickwit_common::setup_logging_for_tests();
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .enable_health_check()
         .build_config()
         .await;
@@ -294,7 +294,7 @@ async fn test_tls_rest_cert_hot_reload() {
     let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
 
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .build_config()
         .await;
     sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
