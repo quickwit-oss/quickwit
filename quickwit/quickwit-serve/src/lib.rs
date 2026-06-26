@@ -181,6 +181,7 @@ static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
+    /// Locally served metastore gRPC service, either the primary metastore or a read-only replica.
     pub metastore_server_opt: Option<MetastoreServiceClient>,
     pub metastore_client: MetastoreServiceClient,
     pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
@@ -272,46 +273,6 @@ async fn build_metastore_client(
         .build_from_balance_channel(balance_channel, max_message_size, None))
 }
 
-/// Builds the list of metastore clients whose connectivity gates this node's readiness.
-///
-/// `metastore` is the node's main metastore client (`metastore_through_control_plane`). The store
-/// it resolves to depends on the role:
-/// - on a `metastore` node, the locally served read-write primary;
-/// - on a `metastore_read_replica` node, the locally served read-only replica;
-/// - on any other node, a remote client to the primary `metastore` pool.
-///
-/// `metastore_read_replica_opt` is the separate remote read-replica client built only for
-/// searchers that route their reads to a replica.
-fn build_metastore_readiness_clients(
-    node_config: &NodeConfig,
-    metastore: MetastoreServiceClient,
-    metastore_read_replica_opt: Option<MetastoreServiceClient>,
-) -> Vec<MetastoreServiceClient> {
-    let mut readiness_clients = Vec::with_capacity(2);
-
-    // Every role relies on the main metastore client except a searcher routed to a read replica,
-    // which reads from `metastore_read_replica_opt` below instead. A read-replica node is *not* an
-    // exception: its `metastore` is the replica it serves locally (see above), so it is checked
-    // here too.
-    let should_check_main_metastore =
-        node_config
-            .enabled_services
-            .iter()
-            .any(|service| match service {
-                QuickwitService::Searcher => {
-                    !node_config.searcher_config.use_metastore_read_replica
-                }
-                _ => true,
-            });
-    if should_check_main_metastore {
-        readiness_clients.push(metastore);
-    }
-    if let Some(read_replica_metastore) = metastore_read_replica_opt {
-        readiness_clients.push(read_replica_metastore);
-    }
-    readiness_clients
-}
-
 async fn balance_channel_for_service(
     cluster: &Cluster,
     service: QuickwitService,
@@ -395,7 +356,7 @@ async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
     event_broker: &EventBroker,
-    metastore_client: &MetastoreServiceClient,
+    primary_metastore_client: &MetastoreServiceClient,
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
@@ -404,7 +365,7 @@ async fn start_control_plane_if_needed(
         check_cluster_configuration(
             &node_config.enabled_services,
             &node_config.peer_seeds,
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
         )
         .await?;
 
@@ -417,7 +378,7 @@ async fn start_control_plane_if_needed(
             cluster.clone(),
             indexer_pool.clone(),
             ingester_pool.clone(),
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
             node_config.default_index_root_uri.clone(),
             &node_config.ingest_api_config,
         )
@@ -544,11 +505,8 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
-    // Instantiate a metastore "server" if the `metastore` or `metastore_read_replica` role is
-    // enabled on the node. Both roles expose the same gRPC metastore service; they differ only in
-    // the connection that is resolved (read-write primary vs. read-only replica) and in whether the
-    // control-plane event layers apply.
-    let metastore_server_opt: Option<MetastoreServiceClient> =
+    // Instantiate a primary metastore server if the `metastore` role is enabled on the node.
+    let primary_metastore_server_opt: Option<MetastoreServiceClient> =
         if node_config.is_service_enabled(QuickwitService::Metastore) {
             let metastore: MetastoreServiceClient = metastore_resolver
                 .resolve(&node_config.metastore_uri)
@@ -577,7 +535,14 @@ pub async fn serve_quickwit(
                 .stack_toggle_source_layer(broker_layer)
                 .build(metastore);
             Some(metastore)
-        } else if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
+        } else {
+            None
+        };
+
+    // Instantiate a read-only metastore replica server if the `metastore_read_replica` role is
+    // enabled on the node.
+    let read_only_metastore_server_opt: Option<MetastoreServiceClient> =
+        if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
             let read_replica_uri = node_config.metastore_read_replica_uri.as_ref().expect(
                 "`metastore_read_replica_uri` should be set when the `metastore_read_replica` \
                  role is enabled (validated at config load)",
@@ -588,8 +553,6 @@ pub async fn serve_quickwit(
                 .with_context(|| {
                     format!("failed to resolve metastore read replica uri `{read_replica_uri}`")
                 })?;
-            // The replica is read-only, so the control-plane event layers (which only wrap write
-            // RPCs) do not apply here.
             let shared_layer = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
                 .layer(LoadShedLayer::new(metastore_max_in_flight_requests(
@@ -604,9 +567,9 @@ pub async fn serve_quickwit(
         } else {
             None
         };
-    // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: MetastoreServiceClient =
-        if let Some(metastore_server) = &metastore_server_opt {
+
+    let primary_metastore_client: MetastoreServiceClient =
+        if let Some(metastore_server) = &primary_metastore_server_opt {
             metastore_server.clone()
         } else {
             build_metastore_client(
@@ -616,13 +579,31 @@ pub async fn serve_quickwit(
             )
             .await?
         };
+    let read_only_metastore_client_opt: Option<MetastoreServiceClient> =
+        if let Some(metastore_read_replica_server) = &read_only_metastore_server_opt {
+            Some(metastore_read_replica_server.clone())
+        } else if node_config.is_service_enabled(QuickwitService::Searcher)
+            && node_config.searcher_config.use_metastore_read_replica
+        {
+            Some(
+                build_metastore_client(
+                    &cluster,
+                    QuickwitService::MetastoreReadReplica,
+                    grpc_config.max_message_size,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let (control_plane_server_opt, control_plane_client) = start_control_plane_if_needed(
         &node_config,
         &cluster,
         &event_broker,
-        &metastore_client,
+        &primary_metastore_client,
         &universe,
         &indexer_pool,
         &ingester_pool,
@@ -630,11 +611,20 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start control plane service")?;
 
-    // Set up the "control plane proxy" for the metastore.
-    let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
-        control_plane_client.clone(),
-        metastore_client,
-    ));
+    // Set up the "control plane proxy" for the primary metastore.
+    let primary_metastore_through_control_plane =
+        MetastoreServiceClient::new(ControlPlaneMetastore::new(
+            control_plane_client.clone(),
+            primary_metastore_client.clone(),
+        ));
+    let read_only_metastore_through_control_plane_opt = read_only_metastore_client_opt
+        .as_ref()
+        .map(|read_only_metastore_client| {
+            MetastoreServiceClient::new(ControlPlaneMetastore::new(
+                control_plane_client.clone(),
+                read_only_metastore_client.clone(),
+            ))
+        });
 
     // Setup ingest service v1.
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
@@ -647,7 +637,7 @@ pub async fn serve_quickwit(
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
@@ -692,7 +682,7 @@ pub async fn serve_quickwit(
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
     let mut index_manager = IndexManager::new(
-        metastore_through_control_plane.clone(),
+        primary_metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     );
 
@@ -767,34 +757,10 @@ pub async fn serve_quickwit(
         ))
     };
 
-    // Searchers and the DataFusion analytics path use the primary metastore by default. When
-    // `searcher.use_metastore_read_replica` is enabled, searcher nodes require
-    // `metastore_read_replica` nodes and do not fall back to the primary if none are available.
-    let use_metastore_read_replica_for_search = node_config
-        .is_service_enabled(QuickwitService::Searcher)
-        && node_config.searcher_config.use_metastore_read_replica;
-    let search_read_replica_metastore_opt = if use_metastore_read_replica_for_search {
-        Some(
-            build_metastore_client(
-                &cluster,
-                QuickwitService::MetastoreReadReplica,
-                grpc_config.max_message_size,
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-    let search_metastore_client: MetastoreReadServiceClient =
-        if let Some(read_replica_metastore) = &search_read_replica_metastore_opt {
-            Arc::new(read_replica_metastore.clone())
-        } else {
-            Arc::new(metastore_through_control_plane.clone())
-        };
-    let metastore_readiness_clients = build_metastore_readiness_clients(
-        &node_config,
-        metastore_through_control_plane.clone(),
-        search_read_replica_metastore_opt,
+    let metastore_read_client: MetastoreReadServiceClient = Arc::new(
+        read_only_metastore_through_control_plane_opt
+            .clone()
+            .unwrap_or_else(|| primary_metastore_through_control_plane.clone()),
     );
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
@@ -802,7 +768,7 @@ pub async fn serve_quickwit(
         cluster.change_stream(),
         // search remains available without a control plane because not all
         // metastore RPCs are proxied
-        search_metastore_client.clone(),
+        metastore_read_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -819,7 +785,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        search_metastore_client.clone(),
+        metastore_read_client.clone(),
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not
@@ -850,7 +816,7 @@ pub async fn serve_quickwit(
         let janitor_service = start_janitor_service(
             &universe,
             &node_config,
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
@@ -899,8 +865,11 @@ pub async fn serve_quickwit(
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
-        metastore_server_opt,
-        metastore_client: metastore_through_control_plane.clone(),
+        metastore_server_opt: primary_metastore_server_opt
+            .as_ref()
+            .or(read_only_metastore_server_opt.as_ref())
+            .cloned(),
+        metastore_client: primary_metastore_through_control_plane.clone(),
         control_plane_server_opt,
         control_plane_client,
         _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
@@ -996,6 +965,15 @@ pub async fn serve_quickwit(
                 futures::future::Either::Right(futures::future::ready(anyhow::Ok(()))),
             )
         };
+
+    // The primary metastore is checked for every node because the REST layer exposes write-capable
+    // index-management APIs on every node. The read-only metastore is checked in addition when this
+    // node either serves a local read replica or routes search reads to remote read-replica nodes.
+    let mut metastore_readiness_clients = Vec::with_capacity(2);
+    metastore_readiness_clients.push(primary_metastore_through_control_plane.clone());
+    if let Some(read_only_metastore_client) = &read_only_metastore_through_control_plane_opt {
+        metastore_readiness_clients.push(read_only_metastore_client.clone());
+    }
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -1875,107 +1853,6 @@ mod tests {
 
         primary_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
-    }
-
-    #[test]
-    fn test_build_metastore_readiness_clients() {
-        const MAIN_ENDPOINT: &str = "ram:///main-metastore";
-        const READ_REPLICA_ENDPOINT: &str = "ram:///read-replica-metastore";
-
-        fn mock_metastore(endpoint: &'static str) -> MetastoreServiceClient {
-            let mut mock_metastore = MockMetastoreService::new();
-            mock_metastore
-                .expect_endpoints()
-                .return_const(vec![Uri::for_test(endpoint)]);
-            MetastoreServiceClient::from_mock(mock_metastore)
-        }
-
-        struct TestCase {
-            comment: &'static str,
-            enabled_services: &'static [QuickwitService],
-            use_metastore_read_replica: bool,
-            with_read_replica_client: bool,
-            expected_endpoints: &'static [&'static str],
-        }
-
-        let test_cases = [
-            TestCase {
-                comment: "indexer depends on the main metastore",
-                enabled_services: &[QuickwitService::Indexer],
-                use_metastore_read_replica: false,
-                with_read_replica_client: false,
-                expected_endpoints: &[MAIN_ENDPOINT],
-            },
-            TestCase {
-                comment: "searcher without a read replica depends on the main metastore",
-                enabled_services: &[QuickwitService::Searcher],
-                use_metastore_read_replica: false,
-                with_read_replica_client: false,
-                expected_endpoints: &[MAIN_ENDPOINT],
-            },
-            TestCase {
-                comment: "searcher routed to a read replica skips the main metastore",
-                enabled_services: &[QuickwitService::Searcher],
-                use_metastore_read_replica: true,
-                with_read_replica_client: true,
-                expected_endpoints: &[READ_REPLICA_ENDPOINT],
-            },
-            TestCase {
-                comment: "searcher routed to a read replica still checks the main metastore for \
-                          its other roles",
-                enabled_services: &[QuickwitService::Searcher, QuickwitService::Indexer],
-                use_metastore_read_replica: true,
-                with_read_replica_client: true,
-                expected_endpoints: &[MAIN_ENDPOINT, READ_REPLICA_ENDPOINT],
-            },
-            TestCase {
-                comment: "standalone read replica node checks its locally served metastore",
-                enabled_services: &[QuickwitService::MetastoreReadReplica],
-                use_metastore_read_replica: false,
-                with_read_replica_client: false,
-                expected_endpoints: &[MAIN_ENDPOINT],
-            },
-            TestCase {
-                comment: "metastore node checks its locally served metastore",
-                enabled_services: &[QuickwitService::Metastore],
-                use_metastore_read_replica: false,
-                with_read_replica_client: false,
-                expected_endpoints: &[MAIN_ENDPOINT],
-            },
-        ];
-
-        for test_case in test_cases {
-            let mut node_config = NodeConfig::for_test();
-            node_config.enabled_services = test_case.enabled_services.iter().copied().collect();
-            node_config.searcher_config.use_metastore_read_replica =
-                test_case.use_metastore_read_replica;
-            let read_replica_client_opt = if test_case.with_read_replica_client {
-                Some(mock_metastore(READ_REPLICA_ENDPOINT))
-            } else {
-                None
-            };
-
-            let readiness_clients = build_metastore_readiness_clients(
-                &node_config,
-                mock_metastore(MAIN_ENDPOINT),
-                read_replica_client_opt,
-            );
-
-            let actual_endpoints: Vec<Uri> = readiness_clients
-                .iter()
-                .flat_map(|metastore| metastore.endpoints())
-                .collect();
-            let expected_endpoints: Vec<Uri> = test_case
-                .expected_endpoints
-                .iter()
-                .map(|endpoint| Uri::for_test(endpoint))
-                .collect();
-            assert_eq!(
-                actual_endpoints, expected_endpoints,
-                "{}",
-                test_case.comment
-            );
-        }
     }
 
     #[tokio::test]
