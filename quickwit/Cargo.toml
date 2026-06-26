@@ -146,6 +146,7 @@ google-cloud-pubsub = { version = "0.30", default-features = false, features = [
 governor = "0.10.4"
 heck = "0.5"
 hex = "0.4"
+hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime", "system-config"] }
 home = "0.5"
 hostname = "0.4"
 http = "1.4"
