@@ -17,7 +17,10 @@ aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-sdk-sqs = { workspace = true, optional = true }
 aws-smithy-async = { workspace = true }
+aws-smithy-runtime-api = { workspace = true }
 aws-smithy-types = { workspace = true }
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 

@@ -148,7 +148,7 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     }
     s3_config.set_credentials_provider(credentials_provider);
     s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
-    s3_config.set_http_client(aws_config.http_client());
+    s3_config.set_http_client(Some(quickwit_aws::build_s3_http_client()));
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_sleep_impl(aws_config.sleep_impl());
     let stalled_stream_protection = StalledStreamProtectionConfig::enabled()

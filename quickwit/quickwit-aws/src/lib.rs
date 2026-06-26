@@ -20,6 +20,9 @@ use tokio::sync::OnceCell;
 
 pub mod error;
 pub mod retry;
+mod s3_http_client;
+
+pub use s3_http_client::build_s3_http_client;
 
 pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");
 
