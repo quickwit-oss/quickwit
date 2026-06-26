@@ -1890,8 +1890,8 @@ async fn negative_cache_test_setup() -> (
               - name: body
                 type: text
         "#;
-    // No timestamp field: `rewrite_request` leaves the query AST untouched, so the
-    // negative-cache key is simply the JSON of the parsed query AST.
+    // A plain text field; queries on it build single-token terms whose absence the
+    // per-term negative cache keys on.
     let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
         .await
         .unwrap();
@@ -1914,27 +1914,27 @@ async fn negative_cache_test_setup() -> (
     (test_sandbox, searcher_context, storage, splits, doc_mapper)
 }
 
-/// The negative-cache key the leaf search computes for a request: the JSON of the
-/// parsed query AST (no `CacheNode` wrapper, no timestamp rewrite in this setup).
-fn negative_cache_key_for(query_ast_json: &str) -> String {
-    let query_ast: QueryAst = serde_json::from_str(query_ast_json).unwrap();
-    serde_json::to_string(&query_ast).unwrap()
+/// The per-term absence cache key the leaf search uses for `field:value` on a text field
+/// with the default tokenizer (a single-token value builds exactly this term).
+fn term_absence_key_for(doc_mapper: &DocMapper, field_name: &str, value: &str) -> String {
+    let field = doc_mapper.schema().get_field(field_name).unwrap();
+    let term = tantivy::Term::from_field_text(field, value);
+    leaf::term_absence_cache_key(&term)
 }
 
 #[tokio::test]
-async fn test_negative_cache_records_provably_empty_query() {
+async fn test_negative_cache_records_term_absence() {
     let (test_sandbox, searcher_context, storage, splits, doc_mapper) =
         negative_cache_test_setup().await;
     let split_id = splits[0].split_id.clone();
 
-    let query_ast_json = qast_json_helper("missingtoken", &["body"]);
     let request = SearchRequest {
         index_id_patterns: vec!["negative-cache-index".to_string()],
-        query_ast: query_ast_json.clone(),
+        query_ast: qast_json_helper("missingtoken", &["body"]),
         max_hits: 10,
         ..Default::default()
     };
-    let key = negative_cache_key_for(&query_ast_json);
+    let key = term_absence_key_for(&doc_mapper, "body", "missingtoken");
     // Nothing cached yet.
     assert!(
         searcher_context
@@ -1954,27 +1954,26 @@ async fn test_negative_cache_records_provably_empty_query() {
     .unwrap();
     assert_eq!(response.num_hits, 0);
 
-    // The provably-empty result was recorded as a fake empty entry, so a later
-    // request with the same predicate can short-circuit before warmup.
+    // The absent term was recorded per-term, so any later query carrying it — with any
+    // other filters or time window — can short-circuit before warmup.
     let entry = searcher_context.predicate_cache.get(split_id, key);
-    let (_segment_id, hits) = entry.expect("absent-term query should be recorded");
+    let (_segment_id, hits) = entry.expect("absent term should be recorded");
     assert!(hits.is_empty());
 
     test_sandbox.assert_quit().await;
 }
 
 #[tokio::test]
-async fn test_negative_cache_short_circuits_known_empty_query() {
+async fn test_negative_cache_short_circuits_query_with_extra_terms() {
     let (test_sandbox, searcher_context, storage, splits, doc_mapper) =
         negative_cache_test_setup().await;
     let split_id = splits[0].split_id.clone();
 
-    // `hello` genuinely matches the indexed document.
-    let query_ast_json = qast_json_helper("hello", &["body"]);
-    // Control: without a cached absence, the query returns its hit.
+    // `hello` and `world` both genuinely match the indexed document. Control: with no
+    // cached absence, their conjunction returns the hit.
     let control_request = SearchRequest {
         index_id_patterns: vec!["negative-cache-index".to_string()],
-        query_ast: query_ast_json.clone(),
+        query_ast: qast_json_helper("hello world", &["body"]),
         max_hits: 10,
         ..Default::default()
     };
@@ -1989,28 +1988,186 @@ async fn test_negative_cache_short_circuits_known_empty_query() {
     .unwrap();
     assert_eq!(response.num_hits, 1);
 
-    // Seed a fake empty entry for this exact predicate (the segment id is
-    // irrelevant: an empty result is segment-agnostic).
-    let key = negative_cache_key_for(&query_ast_json);
+    // Seed a per-term absence for `hello` alone, as if an *earlier, different* query had
+    // proven it absent (the segment id is irrelevant for an empty result).
+    let key = term_absence_key_for(&doc_mapper, "body", "hello");
     let segment_id =
         tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
     searcher_context
         .predicate_cache
         .put(split_id, key, segment_id, HitSet::empty());
 
-    // A different `max_hits` misses the request-keyed partial-result cache but
-    // shares the query-AST-keyed negative cache, so this exercises the
-    // cross-collector short-circuit. Despite `hello` being present, the seeded
-    // absence makes the search report no hit.
-    let cross_collector_request = SearchRequest {
+    // A *larger* query that merely contains `hello` as a required term: despite `hello`
+    // (and `world`) being present, the cached absence of `hello` proves the whole
+    // conjunction empty, so it short-circuits to no hits. This is the cross-query reuse
+    // the per-term cache provides — adding required terms can only keep it empty. The
+    // different `max_hits` dodges the request-keyed partial-result cache so this really
+    // exercises the predicate cache.
+    let extra_terms_request = SearchRequest {
         index_id_patterns: vec!["negative-cache-index".to_string()],
-        query_ast: query_ast_json,
+        query_ast: qast_json_helper("hello world", &["body"]),
         max_hits: 5,
         ..Default::default()
     };
     let response = single_doc_mapping_leaf_search(
         searcher_context.clone(),
-        std::sync::Arc::new(cross_collector_request),
+        std::sync::Arc::new(extra_terms_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 0);
+
+    test_sandbox.assert_quit().await;
+}
+
+/// End-to-end version of the above with no manual seeding: a first real query proves a term
+/// absent (the warmup path records it), then a second query that *adds* a present term still
+/// prunes — exactly "first `body:nonexistent`, then `body:nonexistent body:hello`".
+#[tokio::test]
+async fn test_negative_cache_records_then_prunes_query_with_added_term() {
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper) =
+        negative_cache_test_setup().await;
+    let split_id = splits[0].split_id.clone();
+
+    // Query 1: a term absent from the only document. The real warmup proves it absent and
+    // records it per-term — no seeding.
+    let absent_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-index".to_string()],
+        query_ast: qast_json_helper("nonexistent", &["body"]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(absent_request),
+        storage.clone(),
+        splits.clone(),
+        doc_mapper.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 0);
+
+    // The first query recorded the absence through the real leaf-search path.
+    let key = term_absence_key_for(&doc_mapper, "body", "nonexistent");
+    let (_segment_id, hits) = searcher_context
+        .predicate_cache
+        .get(split_id, key)
+        .expect("the first query should have recorded the absent term");
+    assert!(hits.is_empty());
+
+    // Query 2 adds a present term: `nonexistent hello` parses (default AND) to
+    // `nonexistent AND hello`. `hello` matches the document, but the cached absence of
+    // `nonexistent` proves the conjunction empty, so it prunes before warmup. A different
+    // `max_hits` dodges the request-keyed partial-result cache so this exercises the
+    // predicate cache.
+    let added_term_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-index".to_string()],
+        query_ast: qast_json_helper("nonexistent hello", &["body"]),
+        max_hits: 5,
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(added_term_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.num_hits, 0);
+
+    test_sandbox.assert_quit().await;
+}
+
+/// Like [`negative_cache_test_setup`], but the index has a `ts` timestamp field, so a
+/// request's time range is folded into the query AST by `rewrite_request` — letting us
+/// check that a per-term absence still short-circuits regardless of the window. Returns
+/// the first indexed timestamp as well.
+async fn negative_cache_ts_test_setup() -> (
+    TestSandbox,
+    std::sync::Arc<SearcherContext>,
+    std::sync::Arc<dyn quickwit_storage::Storage>,
+    Vec<SplitIdAndFooterOffsets>,
+    std::sync::Arc<DocMapper>,
+    i64,
+) {
+    let index_id = "negative-cache-ts-index";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                fast: true
+            timestamp_field: ts
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    let start_timestamp = 1_700_000_000i64;
+    let mut docs = Vec::with_capacity(10);
+    for i in 0..10 {
+        docs.push(json!({"body": format!("info {i}"), "ts": start_timestamp + i}));
+    }
+    test_sandbox.add_documents(docs).await.unwrap();
+    let mut metastore = test_sandbox.metastore();
+    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &mut metastore)
+        .await
+        .unwrap();
+    let splits: Vec<SplitIdAndFooterOffsets> = splits_metadata
+        .iter()
+        .map(extract_split_and_footer_offsets)
+        .collect();
+    assert_eq!(splits.len(), 1, "test expects a single split");
+    let searcher_context = std::sync::Arc::new(SearcherContext::for_test());
+    let storage = test_sandbox.storage();
+    let doc_mapper = test_sandbox.doc_mapper();
+    (
+        test_sandbox,
+        searcher_context,
+        storage,
+        splits,
+        doc_mapper,
+        start_timestamp,
+    )
+}
+
+#[tokio::test]
+async fn test_negative_cache_short_circuits_across_time_windows() {
+    // A per-term absence does not depend on the time window: the required term
+    // `body:info` is unaffected by the timestamp range folded into the query AST, so an
+    // absence proven for any window short-circuits the same term over every other window.
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper, start_timestamp) =
+        negative_cache_ts_test_setup().await;
+    let split_id = splits[0].split_id.clone();
+
+    // `info` genuinely matches every indexed document. Seed its absence as if proven for
+    // some other window (the segment id is irrelevant for an empty result).
+    let key = term_absence_key_for(&doc_mapper, "body", "info");
+    let segment_id =
+        tantivy::index::SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+    searcher_context
+        .predicate_cache
+        .put(split_id, key, segment_id, HitSet::empty());
+
+    // Query a specific, different window: despite `info` matching, the seeded absence
+    // short-circuits the search.
+    let query_window = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("info", &["body"]),
+        start_timestamp: Some(start_timestamp + 4),
+        end_timestamp: Some(start_timestamp + 9),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(query_window),
         storage,
         splits,
         doc_mapper,
