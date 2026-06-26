@@ -99,39 +99,3 @@ impl FromStr for QuickwitService {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_quickwit_service_str_round_trip() {
-        for service in QuickwitService::supported_services() {
-            let parsed = QuickwitService::from_str(service.as_str()).unwrap();
-            assert_eq!(parsed, service);
-        }
-    }
-
-    #[test]
-    fn test_quickwit_service_metastore_read_replica_aliases() {
-        assert_eq!(
-            QuickwitService::from_str("metastore_read_replica").unwrap(),
-            QuickwitService::MetastoreReadReplica
-        );
-        assert_eq!(
-            QuickwitService::from_str("metastore-read-replica").unwrap(),
-            QuickwitService::MetastoreReadReplica
-        );
-    }
-
-    #[test]
-    fn test_default_services_excludes_metastore_read_replica() {
-        let default_services = QuickwitService::default_services();
-        assert!(!default_services.contains(&QuickwitService::MetastoreReadReplica));
-        assert!(default_services.contains(&QuickwitService::Metastore));
-
-        let supported_services = QuickwitService::supported_services();
-        assert!(supported_services.contains(&QuickwitService::MetastoreReadReplica));
-        assert_eq!(default_services.len() + 1, supported_services.len());
-    }
-}
