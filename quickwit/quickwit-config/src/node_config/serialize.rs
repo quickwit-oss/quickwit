@@ -374,19 +374,18 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 
 /// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role.
 ///
-/// The [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as
-/// [`QuickwitService::Metastore`], so the two cannot run on the same node, and the read-replica
-/// role requires `metastore_read_replica_uri` to connect to.
+/// The [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as a read-only
+/// metastore, so it must run standalone and requires `metastore_read_replica_uri` to connect to.
 fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
     let read_replica_enabled =
         node_config.is_service_enabled(QuickwitService::MetastoreReadReplica);
     if !read_replica_enabled {
         return Ok(());
     }
-    if node_config.is_service_enabled(QuickwitService::Metastore) {
+    if node_config.enabled_services.len() != 1 {
         bail!(
-            "a node cannot run both the `metastore` and `metastore_read_replica` services: they \
-             expose the same gRPC service and must be deployed as separate nodes"
+            "the `metastore_read_replica` service must run standalone and cannot be combined with \
+             any other service"
         );
     }
     match &node_config.metastore_read_replica_uri {
@@ -1122,23 +1121,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_metastore_and_read_replica_roles_are_mutually_exclusive() {
-        let config_yaml = r#"
-            version: 0.8
-            node_id: test-node
-            enabled_services:
-              - metastore
-              - metastore_read_replica
-            metastore_read_replica_uri: postgres://user:pass@host:5432/db
-        "#;
-        let error = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            config_yaml.as_bytes(),
-            &Default::default(),
-        )
-        .await
-        .unwrap_err();
-        assert!(error.to_string().contains("cannot run both"));
+    async fn test_metastore_read_replica_role_must_run_standalone() {
+        for service in [
+            QuickwitService::ControlPlane,
+            QuickwitService::Indexer,
+            QuickwitService::Searcher,
+            QuickwitService::Janitor,
+            QuickwitService::Metastore,
+        ] {
+            let config_yaml = format!(
+                r#"
+                version: 0.8
+                node_id: test-node
+                enabled_services:
+                  - metastore_read_replica
+                  - {}
+                metastore_read_replica_uri: postgres://user:pass@host:5432/db
+            "#,
+                service.as_str()
+            );
+            let error = load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default(),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("must run standalone"),
+                "{service} should not be allowed with metastore_read_replica: {error}"
+            );
+        }
     }
 
     #[tokio::test]
