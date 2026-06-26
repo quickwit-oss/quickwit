@@ -267,10 +267,6 @@ impl IngesterShard {
         now.duration_since(self.last_write_instant) >= idle_timeout
     }
 
-    pub fn is_indexed(&self) -> bool {
-        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
-    }
-
     pub fn is_replica(&self) -> bool {
         matches!(self.shard_type, IngesterShardType::Replica { .. })
     }

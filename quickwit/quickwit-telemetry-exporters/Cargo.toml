@@ -13,15 +13,20 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 metrics = { workspace = true }
-metrics-opentelemetry = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+metrics-opentelemetry = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = ["experimental-grpc-retry", "experimental-http-retry"] }
-opentelemetry_sdk = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = [
+    "experimental_logs_batch_log_processor_with_async_runtime",
+    "experimental_metrics_periodicreader_with_async_runtime",
+    "experimental_trace_batch_span_processor_with_async_runtime",
+] }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["parsing"] }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }

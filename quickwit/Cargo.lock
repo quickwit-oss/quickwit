@@ -1363,7 +1363,6 @@ dependencies = [
  "serde",
  "time",
  "tracing",
- "tz-rs",
  "url",
  "uuid",
 ]
@@ -2322,12 +2321,6 @@ dependencies = [
  "once_cell",
  "tiny-keccak",
 ]
-
-[[package]]
-name = "const_fn"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413d67b29ef1021b4d60f4aa1e925ca031751e213832b4b1d588fae623c05c60"
 
 [[package]]
 name = "const_format"
@@ -5135,22 +5128,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper-tls"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
-dependencies = [
- "bytes",
- "http-body-util",
- "hyper 1.9.0",
- "hyper-util",
- "native-tls",
- "tokio",
- "tokio-native-tls",
- "tower-service",
-]
-
-[[package]]
 name = "hyper-util"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6401,23 +6378,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8afc6df942f4c022d70c5725e18df1a705773870e5b7f96fde94ca0334ce77a"
 
 [[package]]
-name = "native-tls"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "465500e14ea162429d264d44189adc38b199b62b1c21eea9f69e4b73cb03bbf2"
-dependencies = [
- "libc",
- "log",
- "openssl",
- "openssl-probe",
- "openssl-sys",
- "schannel",
- "security-framework",
- "security-framework-sys",
- "tempfile",
-]
-
-[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6656,15 +6616,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "num_threads"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -8312,7 +8263,6 @@ dependencies = [
  "log",
  "lz4",
  "murmur3",
- "native-tls",
  "nom 7.1.3",
  "oauth2 5.0.0",
  "openidconnect",
@@ -8322,14 +8272,16 @@ dependencies = [
  "prost-derive 0.13.5",
  "rand 0.8.6",
  "regex",
+ "rustls 0.23.40",
  "serde",
  "serde_json",
  "snap",
  "tokio",
- "tokio-native-tls",
+ "tokio-rustls 0.26.4",
  "tokio-util",
  "url",
  "uuid",
+ "webpki-roots 1.0.7",
  "zstd",
 ]
 
@@ -8953,6 +8905,7 @@ dependencies = [
  "quickwit-cli",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-control-plane",
  "quickwit-datafusion",
  "quickwit-indexing",
  "quickwit-ingest",
@@ -9515,6 +9468,7 @@ dependencies = [
  "quickwit-metrics",
  "serde_json",
  "time",
+ "tokio",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -10080,12 +10034,10 @@ dependencies = [
  "http-body-util",
  "hyper 1.9.0",
  "hyper-rustls 0.27.9",
- "hyper-tls",
  "hyper-util",
  "js-sys",
  "log",
  "mime",
- "native-tls",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -10097,7 +10049,6 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tower 0.5.3",
@@ -10119,7 +10070,6 @@ checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http 1.4.0",
@@ -12151,9 +12101,7 @@ dependencies = [
  "deranged",
  "itoa",
  "js-sys",
- "libc",
  "num-conv",
- "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",
@@ -12281,16 +12229,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "tokio-native-tls"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
-dependencies = [
- "native-tls",
- "tokio",
 ]
 
 [[package]]
@@ -12814,15 +12752,6 @@ dependencies = [
  "serde_tokenstream",
  "syn 2.0.117",
  "typify-impl",
-]
-
-[[package]]
-name = "tz-rs"
-version = "0.6.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33851b15c848fad2cf4b105c6bb66eb9512b6f6c44a4b13f57c53c73c707e2b4"
-dependencies = [
- "const_fn",
 ]
 
 [[package]]

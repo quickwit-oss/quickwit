@@ -455,7 +455,7 @@ pub struct RootResourceStats {
     /// the first phase (running aggregation, and identifying the doc address of the top-k hits we should return)
     /// and the second phase (fetch documents).
     ///
-    /// If there are no top-k hits, the second phase .
+    /// If there are no top-k hits, the second phase is skipped.
     #[prost(uint64, tag = "8")]
     pub root_wall_time_microsecs: u64,
 }

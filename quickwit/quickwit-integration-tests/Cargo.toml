@@ -69,6 +69,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-control-plane = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
