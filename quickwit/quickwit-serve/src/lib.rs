@@ -140,6 +140,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 } else {
     Duration::from_secs(10)
 };
+const READINESS_FAILURE_THRESHOLD: usize = 3;
 
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
@@ -1467,7 +1468,7 @@ async fn node_readiness_reporting_task(
     info!("REST server is ready");
 
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
-
+    let mut consecutive_readiness_failures = 0usize;
     loop {
         interval.tick().await;
 
@@ -1496,7 +1497,16 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let new_node_ready = metastore_is_available && ingester_is_available;
+        let is_ready = metastore_is_available && ingester_is_available;
+        let new_node_ready = if is_ready {
+            consecutive_readiness_failures = 0;
+            true
+        } else {
+            consecutive_readiness_failures += 1;
+            // Only dampen READY -> NOT_READY transitions: a NOT_READY node must observe a
+            // successful readiness sample before becoming READY.
+            node_ready && consecutive_readiness_failures < READINESS_FAILURE_THRESHOLD
+        };
 
         if new_node_ready != node_ready {
             node_ready = new_node_ready;
@@ -1560,6 +1570,8 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
@@ -1611,10 +1623,19 @@ mod tests {
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
+        let metastore_failures_to_inject = Arc::new(Mutex::new(0usize));
+        let metastore_failures_to_inject_clone = metastore_failures_to_inject.clone();
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
+                let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
+                if *failures_to_inject > 0 {
+                    *failures_to_inject -= 1;
+                    return Err(anyhow::anyhow!("Metastore transiently not ready"));
+                }
+                drop(failures_to_inject);
+
                 if *metastore_readiness_rx.borrow() {
                     Ok(())
                 } else {
@@ -1685,6 +1706,12 @@ mod tests {
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::Serving.into());
+
+        // Inject fewer failures than the threshold while the steady-state metastore readiness
+        // remains healthy. The node should stay ready through this short outage.
+        *metastore_failures_to_inject.lock().unwrap() = READINESS_FAILURE_THRESHOLD - 1;
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * READINESS_FAILURE_THRESHOLD as u32).await;
+        assert!(cluster.is_self_node_ready().await);
 
         metastore_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
