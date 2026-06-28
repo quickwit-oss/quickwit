@@ -39,6 +39,16 @@ In 0.9:
 - **Stemming is now gated behind the `multilang` cargo feature.** If you build Quickwit from source and rely on stemming, add `--features multilang`. The official binaries and Docker images are built with `multilang` enabled, so users of the distributed images are unaffected.
 - The unused `multilang` *tokenizer* feature (distinct from the `multilang` cargo feature above) was removed. If you used a custom doc mapper referencing it, switch to the standard tokenizers.
 
+### Metric name changes
+
+Quickwit metrics now use the `metrics-rs` instrumentation stack. Most metric names are unchanged, but two groups changed and may require dashboard or alert updates:
+
+- gRPC metrics now use a `service` label instead of embedding the service name in the metric name:
+  - `quickwit_<service>_grpc_requests_total` becomes `quickwit_grpc_requests_total{service="<service>"}`
+  - `quickwit_<service>_grpc_requests_in_flight` becomes `quickwit_grpc_requests_in_flight{service="<service>"}`
+  - `quickwit_<service>_grpc_request_duration_seconds` becomes `quickwit_grpc_request_duration_seconds{service="<service>"}`
+- Janitor GC metrics no longer include the duplicated `quickwit_` prefix from the old `quickwit_janitor` namespace. For example, `quickwit_quickwit_janitor_gc_deleted_bytes_total` becomes `quickwit_janitor_gc_deleted_bytes_total`.
+
 ### Rust toolchain (for source builds only)
 
 Building from source now requires Rust **1.92** (tracked in `rust-toolchain.toml`). Users of the published Docker images or prebuilt binaries are unaffected.
