@@ -27,16 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking / Migration
 - **Ingest V2 is now the default ingest path.** The `/api/v1/{index}/ingest` endpoint transparently routes to V2.
 - The `rest_listen_port` top-level config field is deprecated; use `rest.listen_port` under the new `rest` block. The old field still works but emits a warning.
+- Quickwit metrics now use `metrics-rs`: gRPC metric names use a `service` label instead of embedding the service in the metric name, and janitor GC metric names no longer carry the duplicated `quickwit_` prefix (#6374).
 - Stemming is now restricted to the `multilang` cargo feature (#6085); the previously bundled generic stemmer is no longer available by default.
 - The unused multilang tokenizer feature was removed (#6154).
 - Metastore format: new `maturity` field and compaction columns on splits; PostgreSQL metastore migrates automatically on first start.
+- Building from source now requires Rust 1.92 (#6432, #6545).
 
 ### Added
 - Add Ingest V2 — now the default (#5600, #5566, #5463, #5375, #5350, #5252, #5202, #6078, #6185, #6203, #6207, #6217, #6249)
 - Offload leaf-search work to AWS Lambda functions — searchers can farm out part of their workload to Lambda (#6157, #5c1e60f)
+- Add experimental DataFusion query layer for Parquet metrics with SQL/Substrait execution, Arrow IPC streaming, and distributed workers (#6276)
+- Extend the Parquet metrics pipeline with DDSketch, sorted-series and row-key metadata, zone-map pruning, partitioning, sketch split pagination, and Substrait execution metadata (#6248, #6257, #6290, #6292, #6295, #6340, #6347, #6348, #6349, #6363, #6364, #6368)
+- Add column-major and streaming Parquet merge primitives, merge scheduler wiring, and a rollout flag for routing regular merges through the streaming engine (#6335, #6362, #6367, #6377, #6384, #6386, #6406, #6407, #6408, #6409, #6423, #6424, #6425, #6426, #6428, #6441)
+- Add optional mTLS validation to the REST API and an optional dedicated health-check HTTP server for deployments that put the REST API behind mTLS (#6467, #6528)
 - Add SQS source (#5374, #5335, #5148)
 - Add Jaeger v2 support (#6023)
 - Extract and propagate W3C `traceparent` header on incoming HTTP requests (#6224)
+- Add distributed tracing to the gRPC stack (#6403)
 - Support configurable OTLP exporter protocol for traces and logs (#6254)
 - Export internal logs via OTLP exporter (#6142)
 - Add `QW_LOG_FORMAT=DDG` JSON log formatter (#6215)
@@ -52,9 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add config to fail search when it targets too many splits (#6009)
 - Differentiate leaf- and root-level search timeouts (#6255)
 - Predicate cache in leaf search (#6024); skip CPU work when it cannot improve the result (#6001); propagate cancellation within leaf search (#6002)
+- Expose search resource stats, CPU thread count, root phase wall times, and warmup memory currently in flight (#6416, #6514, #6533)
 - Set `searcher.warmup_single_split_initial_allocation` default to 300 MB (#c34966c6)
 - Rebalance shards when ingester status changes (#6185) and improved rebalance algorithm (#6018)
 - Add object storage metrics for GCS (#5889)
+- Add IO metrics and track bytes written to the WAL (#6429)
+- Add configurable system prefix and separator for metrics (#6445)
 - Expose per-shard load configuration and disable the Tokio LIFO slot by default (#5898, #5899)
 - Redact sensitive information in developer API debug output (#6191)
 - Disable control plane check for searcher (#5599, #5360)
@@ -83,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enable str fast field range queries (#5324)
 - Allow querying non-existing fields (#5308)
 - Add optional special handling for hex in code tokenizer (#5200)
+- Add `UnicodeSegmenter` tokenizer and case-insensitive regex support for lowercasing tokenizers (#6277, #6454)
 - Added a circuit breaker layer (#5134)
 - Follow AWS hints for Lambda retries (#6195)
 - Improve cluster sizing documentation for control plane, metastore and janitor (#6202)
@@ -106,9 +117,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use correct precision level for fastfield-based term queries on datetime (#6027)
 - Disable the Tokio LIFO slot and tune per-shard default load (#5898)
 - Improve control-plane logging (#6003)
-- Upgraded Tantivy to 9b61999 / 04beab3b29 with multiple search/aggregation perf improvements (see Tantivy CHANGELOG)
+- Migrate Quickwit metrics to `metrics-rs` and move exporter setup into `quickwit-telemetry-exporters` (#6374)
+- Move OTLP metrics export to `metrics-opentelemetry`, remove the temporality override, and add default retry policy to OTLP exporters (#6499, #6510, #6522, #6535)
+- Use CRC32C instead of MD5 for object-storage checksums, and document the `disable_checksums` storage config parameter (#6325, #6442)
+- Make `Storage::get_slice` zero-copy for single-segment bodies (#6336)
+- Add Protobuf WAL mrecord serialization support for forward/backward-compatible schema evolution; legacy WAL writes remain supported (#6521)
+- Improve search scheduling by using current node load, prioritizing result merging over split searches, and aborting split warmup when a required term is missing (#6390, #6511, #6512)
+- Update Lambda release artifacts and automate Lambda binary builds in the release workflow (#6330, #6456, #6457, #6458)
+- Upgraded Tantivy to 1e859fd with multiple search, aggregation, and tokenizer improvements (see Tantivy CHANGELOG) (#6327, #6360, #6365, #6380, #6444, #6495, #6516, #6532)
 
 ### Fixed
+- Fix timestamp field bound precision and add range checks to floating-point timestamp parsing (#6201, #6525)
 - Fix existence queries for nested fields (#5581)
 - Fix lenient option with wildcard queries (#5575)
 - Fix incompatible ES Java date format (#5462)
@@ -131,7 +150,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix infinite-loop OOM bug caused by rebalancing shards from unavailable ingesters (#6078)
 - Fix index reincarnation routing bug (#6217)
 - Fix bug when deploying a new routing table (#6249)
-- Fix Chitchat gossip bug triggering excess gRPC traffic (#6082)
+- Fix retiring/decommissioned indexer handling, shard ownership deletion, empty-shard indexing checks, and material indexer pool updates (#6427, #6504, #6509, #6518, #6553)
+- Fix control-plane scheduling idempotency and unavailable-node reporting (#6503, #6524, #6551)
+- Fix descending sorted-series encoding, null ordering in sorted-series keys, and maturity assignment on Parquet splits (#6338, #6343, #6399)
+- Fix Parquet merge adapter and consumer edge cases around sorted input, sub-regions, and stronger verifiers (#6426, #6428)
+- Fix OpenDAL GCS TLS regression, GCS put memory growth, single-part MD5 headers, S3 stalled-stream retryability, S3 dispatch retries, and localstack checksum compatibility (#6478, #6482, #6485, #6492, #6501, #6502, #6539, #6541)
+- Fix Azure delete metrics for the Azure blob backend (#6469)
+- Fix Lambda retry log storms and empty `LAMBDA_ZIP_PATH` handling (#6318, #6462)
+- Fix gRPC telemetry exporters (#6558)
+- Truncate split lists in error logs to keep large routing errors readable (#6315)
+- Fix Chitchat gossip bug triggering excess gRPC traffic and bump chitchat (#6082, #6323)
 - Revert over-eager anchor lenience in regex queries (#6089)
 - `skip_aggregation_finalization` fixes for composite aggregations
 - Jaeger: query resource attributes when the Jaeger request carries tags
@@ -142,9 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove standalone AWS Lambda deployment mode — the previous dedicated search/indexing Lambda binaries are gone (#5884). *AWS Lambda is still supported for search offloading; see the Added section.*
 - Remove search stream endpoint (#5886)
 - Remove mentions of the stream API from the docs (#5958)
+- Remove the legacy telemetry crate and native-tls from transitive dependencies (#6431, #6537)
 - Remove the legacy `/api/v1/{index}/ingest-v2` REST endpoint (V2 is now served from `/ingest` — see Breaking / Migration)
 - Remove the unused multilang tokenizer feature (#6154)
 - Restrict stemming to the `multilang` feature (#6085)
+
+### Security
+- Upgrade dependencies including `rustls-webpki` for RUSTSEC-2026-0104, OpenSSL, Python requests, and UI packages with known vulnerabilities (#6219, #6307, #6341, #6342, #6387)
 
 # [0.8.1]
 
