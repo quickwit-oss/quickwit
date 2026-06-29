@@ -106,6 +106,12 @@ pub(crate) static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "storage",
 );
 
+pub(crate) static OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_get_attempt_errors_total",
+        description: "Number of failed GetObject attempts, counted per attempt (retried attempts included), labeled by error class (throttled, transient, timeout, other). Use class=\"throttled\" to measure S3 rate limiting.",
+        subsystem: "storage",
+);
+
 pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyGauge = lazy_gauge!(
         name: "object_storage_get_slice_in_flight_count",
         description: "Number of GetObject for which the memory was allocated but the download is still in progress.",

@@ -16,8 +16,9 @@ use anyhow::Context;
 use opentelemetry_otlp::{
     LogExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
 };
-use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor;
+use opentelemetry_sdk::{Resource, runtime};
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 
@@ -43,14 +44,16 @@ impl OtlpProtocol {
     }
 }
 
+/// Builds the OTLP logger provider.
 pub(crate) fn init_logger_provider(
     otlp_config: &OtlpExporterConfig,
     resource: Resource,
 ) -> anyhow::Result<SdkLoggerProvider> {
     let logs_protocol = otlp_config.logs_protocol()?;
     let log_exporter = logs_protocol.log_exporter()?;
+    let log_processor = BatchLogProcessor::builder(log_exporter, runtime::Tokio).build();
     Ok(SdkLoggerProvider::builder()
         .with_resource(resource)
-        .with_batch_exporter(log_exporter)
+        .with_log_processor(log_processor)
         .build())
 }
