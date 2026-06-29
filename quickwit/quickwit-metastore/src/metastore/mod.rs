@@ -20,6 +20,7 @@ pub mod postgres;
 pub mod control_plane_metastore;
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
@@ -1076,14 +1077,14 @@ pub struct ListSplitsQuery {
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
 
-    /// Exclude any split whose `split_id` appears in this list. Empty means no
+    /// Exclude any split whose `split_id` appears in this set. Empty means no
     /// exclusion.
     ///
     /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
     /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
-    /// metastore must still deserialize the query (an absent list means "no exclusion").
+    /// metastore must still deserialize the query (an absent set means "no exclusion").
     #[serde(default)]
-    pub excluded_split_ids: Vec<SplitId>,
+    pub excluded_split_ids: HashSet<SplitId>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1160,7 +1161,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            excluded_split_ids: Vec::new(),
+            excluded_split_ids: HashSet::new(),
         }
     }
 
@@ -1185,7 +1186,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            excluded_split_ids: Vec::new(),
+            excluded_split_ids: HashSet::new(),
         })
     }
 
@@ -1206,7 +1207,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            excluded_split_ids: Vec::new(),
+            excluded_split_ids: HashSet::new(),
         }
     }
 
@@ -1403,9 +1404,9 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Excludes splits whose `split_id` is in the provided list. Used by the
+    /// Excludes splits whose `split_id` is in the provided set. Used by the
     /// compaction planner to skip splits it is already tracking locally.
-    pub fn with_excluded_split_ids(mut self, excluded_split_ids: Vec<SplitId>) -> Self {
+    pub fn with_excluded_split_ids(mut self, excluded_split_ids: HashSet<SplitId>) -> Self {
         self.excluded_split_ids = excluded_split_ids;
         self
     }
@@ -1638,7 +1639,7 @@ mod tests {
     fn test_list_splits_query_excluded_split_ids_backward_compatible_serde() {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query = ListSplitsQuery::for_index(index_uid)
-            .with_excluded_split_ids(vec!["split-1".to_string()]);
+            .with_excluded_split_ids(HashSet::from(["split-1".to_string()]));
 
         let mut query_value: serde_json::Value =
             serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();

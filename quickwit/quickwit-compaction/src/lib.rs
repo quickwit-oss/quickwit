@@ -38,7 +38,8 @@ use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub fn source_uid_metrics_label(index_uid: &IndexUid, source_id: &SourceId) -> String {
-    format!("{}-{}", index_uid, source_id)
+    let source_uid = format!("{}-{}", index_uid, source_id);
+    quickwit_common::metrics::index_label(&source_uid).to_string()
 }
 
 #[allow(clippy::too_many_arguments)]

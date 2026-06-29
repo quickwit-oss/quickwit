@@ -279,6 +279,9 @@ impl Cluster {
             .collect()
     }
 
+    // live nodes is useful for cases where ready nodes isn't specific enough- such as when enabling
+    // split compaction, and needing to be sure all nodes in the cluster respect the same merge
+    // architecture, regardless of their readiness
     pub async fn live_nodes(&self) -> Vec<ClusterNode> {
         self.inner
             .read()

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -61,7 +63,7 @@ pub struct PipelineStatusUpdate {
     pub task_id: TaskId,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
-    pub split_ids: Vec<SplitId>,
+    pub split_ids: HashSet<SplitId>,
     pub status: PipelineStatus,
 }
 
@@ -108,7 +110,7 @@ pub struct CompactionPipeline {
     metastore: MetastoreServiceClient,
     split_store: IndexingSplitStore,
     io_throughput_limiter: Option<Limiter>,
-    max_concurrent_split_uploads: usize,
+    max_concurrent_split_uploads: NonZeroUsize,
     event_broker: EventBroker,
     merge_execution_semaphore: Arc<Semaphore>,
     pipeline_start: Option<Instant>,
@@ -127,7 +129,7 @@ impl CompactionPipeline {
         metastore: MetastoreServiceClient,
         split_store: IndexingSplitStore,
         io_throughput_limiter: Option<Limiter>,
-        max_concurrent_split_uploads: usize,
+        max_concurrent_split_uploads: NonZeroUsize,
         event_broker: EventBroker,
         merge_execution_semaphore: Arc<Semaphore>,
     ) -> Self {
@@ -302,7 +304,7 @@ impl CompactionPipeline {
             self.retention_policy.clone(),
             self.split_store.clone(),
             SplitsUpdateMailbox::from(merge_publisher_mailbox),
-            self.max_concurrent_split_uploads,
+            self.max_concurrent_split_uploads.get(),
             self.event_broker.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handle) = spawn_ctx
@@ -372,6 +374,8 @@ impl CompactionPipeline {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::collections::HashSet;
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
@@ -414,7 +418,7 @@ pub(crate) mod tests {
             metastore,
             split_store,
             None,
-            2,
+            NonZeroUsize::new(2).unwrap(),
             EventBroker::default(),
             Arc::new(Semaphore::new(2)),
         )
@@ -436,7 +440,7 @@ pub(crate) mod tests {
         let update = pipeline.pipeline_status_update();
         assert_eq!(update.status, PipelineStatus::InProgress);
         assert_eq!(update.task_id, "task-1");
-        assert_eq!(update.split_ids, vec!["split-1"]);
+        assert_eq!(update.split_ids, HashSet::from([String::from("split-1")]));
         assert_eq!(update.source_id, "test-source");
         assert_eq!(update.index_uid, IndexUid::for_test("test-index", 0));
     }

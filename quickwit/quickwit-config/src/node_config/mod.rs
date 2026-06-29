@@ -289,7 +289,7 @@ pub struct CompactorConfig {
     pub pipeline_slots_per_merge_execution: NonZeroUsize,
     /// Maximum number of concurrent split uploads across all pipelines.
     #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
-    pub max_concurrent_split_uploads: usize,
+    pub max_concurrent_split_uploads: NonZeroUsize,
     /// Limits the IO throughput of the split downloader and the merge executor.
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
@@ -305,8 +305,8 @@ impl CompactorConfig {
         NonZeroUsize::new(2).unwrap()
     }
 
-    fn default_max_concurrent_split_uploads() -> usize {
-        12
+    fn default_max_concurrent_split_uploads() -> NonZeroUsize {
+        NonZeroUsize::new(12).unwrap()
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -314,7 +314,7 @@ impl CompactorConfig {
         CompactorConfig {
             max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
             pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
-            max_concurrent_split_uploads: 4,
+            max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
             max_merge_write_throughput: None,
         }
     }

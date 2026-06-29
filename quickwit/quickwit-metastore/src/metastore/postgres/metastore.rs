@@ -3098,6 +3098,8 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use async_trait::async_trait;
     use quickwit_common::uri::Protocol;
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
@@ -3495,7 +3497,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes()
-            .with_excluded_split_ids(vec!["s1".to_string(), "s2".to_string()]);
+            .with_excluded_split_ids(HashSet::from(["s1".to_string(), "s2".to_string()]));
         append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),

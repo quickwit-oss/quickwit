@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,7 +84,7 @@ pub struct CompactorSupervisor {
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     split_cache: Arc<IndexingSplitCache>,
-    max_concurrent_split_uploads: usize,
+    max_concurrent_split_uploads: NonZeroUsize,
     event_broker: EventBroker,
     // Scratch directory root (<data_dir>/compaction/).
     compaction_root_directory: TempDirectory,
@@ -329,7 +330,7 @@ impl CompactorSupervisor {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
                         source_id: update.source_id.clone(),
-                        split_ids: update.split_ids.clone(),
+                        split_ids: update.split_ids.iter().cloned().collect(),
                     });
                 }
                 PipelineStatus::Completed => {
@@ -449,6 +450,7 @@ pub async fn wait_for_compactor_decommission(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::num::NonZeroUsize;
 
     use quickwit_actors::Universe;
@@ -509,9 +511,15 @@ mod tests {
         let statuses = supervisor.check_pipeline_statuses();
         assert_eq!(statuses.len(), 2);
         assert_eq!(statuses[0].task_id, "task-1");
-        assert_eq!(statuses[0].split_ids, vec!["split-a", "split-b"]);
+        assert_eq!(
+            statuses[0].split_ids,
+            HashSet::from(["split-a".to_string(), "split-b".to_string()])
+        );
         assert_eq!(statuses[1].task_id, "task-2");
-        assert_eq!(statuses[1].split_ids, vec!["split-c"]);
+        assert_eq!(
+            statuses[1].split_ids,
+            HashSet::from(["split-c".to_string()])
+        );
         universe.assert_quit().await;
     }
 
@@ -533,7 +541,14 @@ mod tests {
         assert_eq!(request.available_slots, 5);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
-        assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
+        assert_eq!(
+            request.in_progress[0]
+                .split_ids
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>(),
+            HashSet::from(["s1".to_string(), "s2".to_string()])
+        );
         assert!(request.successes.is_empty());
         assert!(request.failures.is_empty());
         universe.assert_quit().await;
@@ -735,21 +750,21 @@ mod tests {
                 task_id: "task-1".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: vec!["s1".to_string(), "s2".to_string()],
+                split_ids: HashSet::from(["s1".to_string(), "s2".to_string()]),
                 status: PipelineStatus::InProgress,
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: vec!["s3".to_string()],
+                split_ids: HashSet::from(["s3".to_string()]),
                 status: PipelineStatus::Completed,
             },
             PipelineStatusUpdate {
                 task_id: "task-3".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: vec!["s4".to_string()],
+                split_ids: HashSet::from(["s4".to_string()]),
                 status: PipelineStatus::Failed {
                     error: "boom".to_string(),
                 },
@@ -762,7 +777,14 @@ mod tests {
         assert_eq!(request.available_slots, 7);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
-        assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
+        assert_eq!(
+            request.in_progress[0]
+                .split_ids
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>(),
+            HashSet::from(["s1".to_string(), "s2".to_string()])
+        );
         assert_eq!(request.successes.len(), 1);
         assert_eq!(request.successes[0].task_id, "task-2");
         assert_eq!(request.failures.len(), 1);

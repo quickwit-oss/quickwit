@@ -200,16 +200,16 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
     }
 
     if !query.excluded_split_ids.is_empty() {
-        // One bind regardless of list length: avoids postgres' 65535 param
+        // One bind regardless of set size: avoids postgres' 65535 param
         // ceiling and keeps parse-time O(1) in the exclude size. The `$1` is
         // postgres' placeholder; sea-query substitutes it with the next bind
         // slot at build time.
-        let excluded_values: Vec<Value> = query
+        let excluded_split_ids: Vec<Value> = query
             .excluded_split_ids
             .into_iter()
             .map(|split_id| Value::String(Some(Box::new(split_id))))
             .collect();
-        let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_values)));
+        let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_split_ids)));
         sql.cond_where(Expr::cust_with_values(
             "split_id <> ALL($1::text[])",
             [excluded_array],

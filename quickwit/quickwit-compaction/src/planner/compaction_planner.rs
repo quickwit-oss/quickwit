@@ -270,7 +270,8 @@ fn emit_metastore_scan_metrics(new_splits: &[Split]) {
         .iter()
         .counts_by(|split| &split.split_metadata.index_uid);
     for (&index_uid, &count) in counts.iter() {
-        let labels = label_values!(SOURCE_UID => index_uid.to_string());
+        let index_label = quickwit_common::metrics::index_label(&index_uid.to_string()).to_string();
+        let labels = label_values!(SOURCE_UID => index_label);
         counter!(parent: NEW_SPLITS_SCANNED, labels: [labels]).inc_by(count as u64);
     }
 }
@@ -304,6 +305,7 @@ fn build_task_assignment(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::ops::Bound;
     use std::time::Duration;
 
@@ -434,11 +436,9 @@ mod tests {
         let mut mock = MockMetastoreService::new();
         mock.expect_list_splits().returning(move |req| {
             let query = req.deserialize_list_splits_query().unwrap();
-            let mut excluded = query.excluded_split_ids.clone();
-            excluded.sort();
             assert_eq!(
-                excluded,
-                vec!["in-flight".to_string(), "tracked".to_string()]
+                query.excluded_split_ids,
+                HashSet::from(["in-flight".to_string(), "tracked".to_string()])
             );
 
             let response = ListSplitsResponse::try_from_splits(Vec::new()).unwrap();

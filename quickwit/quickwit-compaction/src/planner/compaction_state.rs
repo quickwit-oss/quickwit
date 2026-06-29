@@ -51,7 +51,7 @@ impl CompactionPartitionKey {
 
 #[derive(Debug)]
 struct InFlightCompaction {
-    split_ids: Vec<SplitId>,
+    split_ids: HashSet<SplitId>,
     node_id: NodeId,
     last_heartbeat: Instant,
 }
@@ -77,8 +77,8 @@ impl CompactionState {
 
     /// All split IDs the planner is currently tracking. Used by the metastore
     /// scan to exclude already-known splits so each tick returns fresh work.
-    pub fn tracked_split_ids(&self, max_size: usize) -> Vec<SplitId> {
-        let mut out = Vec::with_capacity(
+    pub fn tracked_split_ids(&self, max_size: usize) -> HashSet<SplitId> {
+        let mut out = HashSet::with_capacity(
             (self.needs_compaction_split_ids.len() + self.in_flight_split_ids.len()).min(max_size),
         );
         out.extend(
@@ -171,7 +171,7 @@ impl CompactionState {
                 self.in_flight.insert(
                     task.task_id.clone(),
                     InFlightCompaction {
-                        split_ids: task.split_ids.clone(),
+                        split_ids: HashSet::from_iter(task.split_ids.iter().cloned()),
                         node_id: node_id.clone(),
                         last_heartbeat: Instant::now(),
                     },
@@ -212,7 +212,12 @@ impl CompactionState {
     }
 
     /// Records that an operation has been assigned to a worker.
-    pub fn record_assignment(&mut self, task_id: TaskId, split_ids: Vec<SplitId>, node_id: NodeId) {
+    pub fn record_assignment(
+        &mut self,
+        task_id: TaskId,
+        split_ids: HashSet<SplitId>,
+        node_id: NodeId,
+    ) {
         self.in_flight.insert(
             task_id,
             InFlightCompaction {
@@ -342,18 +347,19 @@ mod tests {
         let node_id = NodeId::from_str("worker-1");
         let mut state = CompactionState::default();
 
+        let mut split_ids = HashSet::new();
+        split_ids.insert("s1".to_string());
+        split_ids.insert("s2".to_string());
         // Simulate what plan_partition + record_assignment does:
         // split IDs go into in_flight_split_ids, then into InFlightCompaction.
         state.in_flight_split_ids.insert("s1".to_string());
         state.in_flight_split_ids.insert("s2".to_string());
-        state.record_assignment(
-            "task-1".to_string(),
-            vec!["s1".to_string(), "s2".to_string()],
-            node_id.clone(),
-        );
+        state.record_assignment("task-1".to_string(), split_ids, node_id.clone());
 
+        let mut split_ids_2 = HashSet::new();
+        split_ids_2.insert("s3".to_string());
         state.in_flight_split_ids.insert("s3".to_string());
-        state.record_assignment("task-2".to_string(), vec!["s3".to_string()], node_id);
+        state.record_assignment("task-2".to_string(), split_ids_2, node_id);
 
         assert!(state.is_split_tracked("s1"));
         assert!(state.is_split_tracked("s3"));
@@ -413,7 +419,7 @@ mod tests {
         assert_eq!(pending.len(), 1);
 
         let operation = &pending[0].operation;
-        let split_ids: Vec<String> = operation
+        let split_ids: HashSet<String> = operation
             .splits
             .iter()
             .map(|split_metadata| split_metadata.split_id.clone())
