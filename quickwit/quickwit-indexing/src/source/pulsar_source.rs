@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -82,6 +82,15 @@ pub struct PulsarSource {
     // broker distribute partitions across them (distributed indexing).
     consumer_name: String,
     current_positions: BTreeMap<PartitionId, Position>,
+    // Partitions whose `current_positions` entry has been aligned with the
+    // committed metastore checkpoint during this pipeline session. With
+    // `num_pipelines > 1`, a pipeline can become the active Failover consumer
+    // for a partition another pipeline already advanced; the startup snapshot in
+    // `current_positions` is then stale. We lazily re-read the committed position
+    // the first time we consume a partition so the first recorded delta is
+    // contiguous with the metastore checkpoint (otherwise the publish is
+    // rejected and the partition wedges).
+    synced_partitions: HashSet<PartitionId>,
     state: PulsarSourceState,
 }
 
@@ -151,6 +160,7 @@ impl PulsarSource {
             subscription_name,
             consumer_name,
             current_positions,
+            synced_partitions: HashSet::new(),
             state: PulsarSourceState::default(),
         })
     }
@@ -220,6 +230,94 @@ impl PulsarSource {
         }
         Ok(())
     }
+
+    /// Aligns the local position of a partition with the committed metastore
+    /// checkpoint the first time it is consumed in this pipeline session.
+    ///
+    /// This is required for distributed indexing (`num_pipelines > 1`): when this
+    /// pipeline becomes the active Failover consumer for a partition another
+    /// pipeline already advanced, the `current_positions` snapshot taken in
+    /// `try_new` is stale. Re-reading the committed position ensures the first
+    /// delta we record starts where the metastore checkpoint actually is, so the
+    /// publish is accepted.
+    async fn sync_partition_position(&mut self, partition: &PartitionId) -> anyhow::Result<()> {
+        if !self.synced_partitions.insert(partition.clone()) {
+            return Ok(());
+        }
+        let checkpoint = self.source_runtime.fetch_checkpoint().await?;
+        align_position(&mut self.current_positions, partition, &checkpoint);
+        Ok(())
+    }
+}
+
+/// Sets the local position of `partition` to the committed position from
+/// `checkpoint`, or removes any stale entry when the checkpoint has none (so the
+/// next delta starts from `Position::Beginning`).
+fn align_position(
+    current_positions: &mut BTreeMap<PartitionId, Position>,
+    partition: &PartitionId,
+    checkpoint: &SourceCheckpoint,
+) {
+    match checkpoint.position_for_partition(partition) {
+        Some(position) => {
+            current_positions.insert(partition.clone(), position.clone());
+        }
+        None => {
+            current_positions.remove(partition);
+        }
+    }
+}
+
+#[cfg(test)]
+mod position_alignment_tests {
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+
+    use super::*;
+
+    fn checkpoint_with(partition: &str, offset: u64) -> SourceCheckpoint {
+        let mut delta = SourceCheckpointDelta::default();
+        delta
+            .record_partition_delta(
+                PartitionId::from(partition),
+                Position::Beginning,
+                Position::offset(offset),
+            )
+            .unwrap();
+        let mut checkpoint = SourceCheckpoint::default();
+        checkpoint.try_apply_delta(delta).unwrap();
+        checkpoint
+    }
+
+    #[test]
+    fn align_position_adopts_committed_over_stale_local() {
+        // Simulates a Failover handoff: another pipeline advanced the partition to
+        // offset 42, but this pipeline still holds a stale startup snapshot (10).
+        let partition = PartitionId::from("topic-partition-0");
+        let committed = checkpoint_with("topic-partition-0", 42);
+        let mut current_positions = BTreeMap::new();
+        current_positions.insert(partition.clone(), Position::offset(10u64));
+
+        align_position(&mut current_positions, &partition, &committed);
+
+        assert_eq!(
+            current_positions.get(&partition),
+            Some(&Position::offset(42u64))
+        );
+    }
+
+    #[test]
+    fn align_position_clears_stale_entry_when_uncommitted() {
+        // The committed checkpoint has nothing for this partition, so any stale
+        // local entry must be dropped (next delta starts from `Beginning`).
+        let partition = PartitionId::from("topic-partition-1");
+        let committed = checkpoint_with("topic-partition-0", 42);
+        let mut current_positions = BTreeMap::new();
+        current_positions.insert(partition.clone(), Position::offset(10u64));
+
+        align_position(&mut current_positions, &partition, &committed);
+
+        assert_eq!(current_positions.get(&partition), None);
+    }
 }
 
 #[async_trait]
@@ -243,6 +341,12 @@ impl Source for PulsarSource {
                     let message = message
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("consumer was dropped")))?
                         .map_err(|e| ActorExitStatus::from(anyhow!("failed to get message from consumer: {:?}", e)))?;
+
+                    // Align with the committed checkpoint the first time we see a
+                    // partition, so a Failover handoff from another pipeline does not
+                    // record a delta from a stale startup position.
+                    let partition = PartitionId::from(message.topic.clone());
+                    self.sync_partition_position(&partition).await.map_err(ActorExitStatus::from)?;
 
                     self.process_message(message, &mut batch_builder).map_err(ActorExitStatus::from)?;
 
