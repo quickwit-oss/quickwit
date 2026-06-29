@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   build-macos-binaries:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
     permissions:
@@ -27,6 +30,9 @@ jobs:
           version: nightly
           token: ${{ secrets.GITHUB_TOKEN }}
   build-linux-binaries:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     strategy:
       fail-fast: false
       matrix:

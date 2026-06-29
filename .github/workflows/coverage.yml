@@ -27,6 +27,9 @@ env:
 
 jobs:
   test:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Coverage
     runs-on: gh-ubuntu-arm64
     timeout-minutes: 40
@@ -178,7 +181,9 @@ jobs:
           files: ./quickwit/lcov.info
 
   on-failure:
-    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: On Failure
     needs: [test]
     runs-on: ubuntu-latest

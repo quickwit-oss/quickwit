@@ -21,6 +21,9 @@ permissions:
 
 jobs:
   build-lambda:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Build Lambda ARM64
     runs-on: ubuntu-latest
     permissions:

@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   analysis:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Scorecards analysis
     runs-on: ubuntu-latest
     permissions:

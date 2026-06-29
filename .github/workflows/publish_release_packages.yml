@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   build-lambda:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Build Lambda ARM64
     runs-on: ubuntu-latest
     permissions:
@@ -62,6 +65,9 @@ jobs:
           retention-days: 3
 
   build-macos-binaries:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
     needs: [build-lambda]
@@ -90,6 +96,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux-binaries:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]

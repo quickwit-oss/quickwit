@@ -22,10 +22,10 @@ env:
 
 jobs:
   build-lambda:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Build Lambda ARM64
-    # Only build a fresh lambda for tag-triggered builds (v*, qw*, etc.).
-    # Branch/edge builds and workflow_dispatch fall back to the pinned URL in build.rs.
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,8 +77,10 @@ jobs:
           retention-days: 3
 
   docker:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     needs: [build-lambda]
-    if: always() && (needs.build-lambda.result == 'success' || needs.build-lambda.result == 'skipped')
     strategy:
       matrix:
         include:
@@ -187,6 +189,9 @@ jobs:
           retention-days: 1
 
   merge:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     runs-on: ubuntu-latest
     needs: [docker]
     permissions:

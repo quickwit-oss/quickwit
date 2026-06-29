@@ -4,18 +4,20 @@
 # means approval from ANY ONE of them satisfies the requirement.
 
 # Default: quickwit-core owns everything
-*                                                        @quickwit-oss/quickwit-core
+# *                                                        @quickwit-oss/quickwit-core
 
 # byoc-metrics paths — owned by byoc-metrics
-/quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
-/quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
-/quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
-/quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
-/quickwit/quickwit-indexing/src/actors/parquet_pipeline/ @quickwit-oss/byoc-metrics
+# /quickwit/quickwit-parquet-engine/                       @quickwit-oss/byoc-metrics
+# /quickwit/quickwit-datafusion/                           @quickwit-oss/byoc-metrics
+# /quickwit/quickwit-df-core/                              @quickwit-oss/byoc-metrics
+# /quickwit/quickwit-dst/                                  @quickwit-oss/byoc-metrics
+# /quickwit/quickwit-indexing/src/actors/parquet_pipeline/ @quickwit-oss/byoc-metrics
 
 # Shared paths — either team can approve. `docs/internals/` is shared
 # architecture + verification docs that any team working on the codebase
 # may need to update. `Cargo.lock` churns on routine dependency bumps
 # and doesn't carry domain-specific review value.
-/docs/internals/                                         @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
-/quickwit/Cargo.lock                                     @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
+# /docs/internals/                                         @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
+# /quickwit/Cargo.lock                                     @quickwit-oss/quickwit-core @quickwit-oss/byoc-metrics
+
+*   @celonis/identity-platform @celonis/platform-access

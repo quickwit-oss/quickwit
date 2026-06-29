@@ -13,6 +13,9 @@ permissions:
 
 jobs:
   build-cross-images:
+    # Disabled on current fork: only the shared workflows are kept, others are not required for the fork.
+    if: false
+
     name: Publish cross images
     runs-on: ubuntu-latest
     environment:
