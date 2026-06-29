@@ -27,9 +27,9 @@ pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
     "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
 
 const OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_PROTOCOL";
-const OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
 const OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL";
 const OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL";
+const OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
 const BYOC_TELEMETRY_ENABLED_ENV_KEY: &str = "BYOC_TELEMETRY_ENABLED";
 const DD_API_KEY_HTTP_HEADER_NAME: &str = "DD-API-KEY";
 const DD_API_KEY_GRPC_METADATA_KEY: &str = "dd-api-key";
@@ -46,17 +46,20 @@ impl FromStr for OtlpProtocol {
 
     fn from_str(protocol_str: &str) -> anyhow::Result<Self> {
         const OTLP_PROTOCOL_GRPC: &str = "grpc";
-        const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
         const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
+        const OTLP_PROTOCOL_HTTP_PROTO: &str = "http/proto";
+        const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
 
         match protocol_str {
             OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
-            OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
             OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
+            OTLP_PROTOCOL_HTTP_PROTO | OTLP_PROTOCOL_HTTP_PROTOBUF => {
+                Ok(OtlpProtocol::HttpProtobuf)
+            }
             other => anyhow::bail!(
                 "unsupported OTLP protocol `{other}`, supported values are \
-                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and \
-                 `{OTLP_PROTOCOL_HTTP_JSON}`"
+                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_JSON}`, and \
+                 `{OTLP_PROTOCOL_HTTP_PROTO}`"
             ),
         }
     }

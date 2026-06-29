@@ -11064,6 +11064,7 @@ dependencies = [
  "secrecy",
  "serde_json",
  "time",
+ "tokio",
  "tonic 0.14.6",
  "tracing 0.1.44",
  "tracing-opentelemetry",
@@ -11745,7 +11746,6 @@ checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes 1.11.1",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http 1.4.0",
