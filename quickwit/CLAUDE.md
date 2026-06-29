@@ -21,7 +21,7 @@ Log messages (`info!`, `warn!`, `error!`, `debug!`) must:
 
 ### Building
 - **`make doc`** — Generates docs with `cargo doc --all-features` (warnings as errors)
-- Rust toolchain: **1.95**
+- Rust toolchain: **1.96**
 
 ## Code Conventions
 

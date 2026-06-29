@@ -394,10 +394,16 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
-        let (ready, not_ready): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
+        let (ready, retiring): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
             .indexer_pool
             .values()
             .into_iter()
+            .filter(|indexer| {
+                matches!(
+                    indexer.ingester_status,
+                    IngesterStatus::Ready | IngesterStatus::Retiring
+                )
+            })
             .partition(|indexer| indexer.ingester_status == IngesterStatus::Ready);
 
         if ready.is_empty() {
@@ -406,7 +412,7 @@ impl IndexingScheduler {
             warn!(
                 "no ready indexer available, falling back to retiring indexers for shard draining"
             );
-            not_ready
+            retiring
         } else {
             ready
         }
@@ -1180,8 +1186,18 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let retiring_1 = mock_indexer_node_info("indexer-retiring-1", IngesterStatus::Retiring);
         let retiring_2 = mock_indexer_node_info("indexer-retiring-2", IngesterStatus::Retiring);
+        let decommissioned_1 =
+            mock_indexer_node_info("indexer-decommissioned-1", IngesterStatus::Decommissioned);
+        let decommissioning_1 =
+            mock_indexer_node_info("indexer-decommissioning-1", IngesterStatus::Decommissioning);
+        let initializing_1 =
+            mock_indexer_node_info("indexer-initializing-1", IngesterStatus::Initializing);
+
         indexer_pool.insert(retiring_1.node_id.clone(), retiring_1);
         indexer_pool.insert(retiring_2.node_id.clone(), retiring_2);
+        indexer_pool.insert(decommissioned_1.node_id.clone(), decommissioned_1);
+        indexer_pool.insert(decommissioning_1.node_id.clone(), decommissioning_1);
+        indexer_pool.insert(initializing_1.node_id.clone(), initializing_1);
 
         let scheduler = IndexingScheduler::new(
             "test-cluster".to_string(),
