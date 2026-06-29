@@ -25,8 +25,8 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
-    Supervisor, Universe, WeakMailbox,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Healthz,
+    Mailbox, Supervisor, Universe, WeakMailbox,
 };
 use quickwit_cluster::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
 use quickwit_common::pretty::PrettyDisplay;
@@ -438,6 +438,19 @@ impl ControlPlane {
         self.rebuild_plan_debouncer
             .self_send_with_cooldown::<RebuildPlan>(ctx);
         next_rebuild_waiter
+    }
+}
+
+#[async_trait]
+impl Handler<Healthz> for ControlPlane {
+    type Reply = bool;
+
+    async fn handle(
+        &mut self,
+        _message: Healthz,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<bool, ActorExitStatus> {
+        Ok(true)
     }
 }
 
