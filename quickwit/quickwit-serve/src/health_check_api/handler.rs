@@ -113,9 +113,7 @@ async fn ingester_is_live(ingester_opt: &Option<impl IngesterService>) -> bool {
         return true;
     };
     match try_get_ingester_status(ingester).await {
-        Ok(IngesterStatus::Failed) => {
-            false
-        }
+        Ok(IngesterStatus::Failed) => false,
         Ok(_) => true,
         Err(error) => {
             error!(%error, "failed to get ingester status");
