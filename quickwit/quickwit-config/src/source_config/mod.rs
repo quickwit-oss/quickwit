@@ -566,7 +566,10 @@ pub struct PulsarSourceParams {
     pub address: String,
     #[schema(default = "quickwit")]
     #[serde(default = "default_consumer_name")]
-    /// The name to register with the pulsar source.
+    /// The consumer name prefix to register with the pulsar source. With
+    /// distributed indexing (`num_pipelines > 1`), each pipeline appends its
+    /// pipeline UID to this prefix so it connects as a distinct consumer under
+    /// the shared subscription.
     pub consumer_name: String,
     // Serde yaml has some specific behaviour when deserializing
     // enums (see https://github.com/dtolnay/serde-yaml/issues/342)
@@ -955,15 +958,14 @@ mod tests {
                 "source_type": "pulsar",
                 "params": {
                     "topics": ["my-topic"],
-                    "address": "http://localhost:6650"
+                    "address": "pulsar://localhost:6650"
                 }
             }
             "#;
-            load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
-                .unwrap_err();
-            // TODO: uncomment asserts once distributed indexing is activated for pulsar.
-            // assert_eq!(source_config.num_pipelines(), 3);
-            // assert_eq!(source_config.max_num_pipelines_per_indexer(), 3);
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.num_pipelines.get(), 3);
         }
     }
 
@@ -978,6 +980,24 @@ mod tests {
                 "source_type": "kafka",
                 "params": {
                     "topic": "my-topic"
+                }
+            }
+            "#;
+            let source_config =
+                load_source_config_from_user_config(ConfigFormat::Json, content.as_bytes())
+                    .unwrap();
+            assert_eq!(source_config.num_pipelines.get(), 3);
+        }
+        {
+            let content = r#"
+            {
+                "version": "0.8",
+                "source_id": "hdfs-logs-pulsar-source",
+                "num_pipelines": 3,
+                "source_type": "pulsar",
+                "params": {
+                    "topics": ["my-topic"],
+                    "address": "pulsar://localhost:6650"
                 }
             }
             "#;

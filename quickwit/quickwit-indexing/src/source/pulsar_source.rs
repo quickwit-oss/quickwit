@@ -30,7 +30,7 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::{IndexUid, Position};
+use quickwit_proto::types::{IndexUid, PipelineUid, Position};
 use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
@@ -75,6 +75,12 @@ pub struct PulsarSource {
     source_params: PulsarSourceParams,
     pulsar_consumer: PulsarConsumer,
     subscription_name: String,
+    // Effective Pulsar consumer name, derived from the user-supplied
+    // `consumer_name` prefix and this pipeline's `pipeline_uid`. It must be
+    // unique per pipeline so that several pipelines of the same source connect
+    // as distinct consumers under the shared Failover subscription, letting the
+    // broker distribute partitions across them (distributed indexing).
+    consumer_name: String,
     current_positions: BTreeMap<PartitionId, Position>,
     state: PulsarSourceState,
 }
@@ -97,11 +103,17 @@ impl PulsarSource {
     ) -> anyhow::Result<Self> {
         let subscription_name =
             subscription_name(source_runtime.index_uid(), source_runtime.source_id());
+        // The consumer name must be unique per pipeline: under the shared
+        // Failover subscription, each pipeline connects as a separate consumer
+        // and the broker assigns each topic partition to exactly one of them.
+        let consumer_name =
+            consumer_name(&source_params.consumer_name, source_runtime.pipeline_uid());
         info!(
             index_id=%source_runtime.index_id(),
             source_id=%source_runtime.source_id(),
             topics=?source_params.topics,
             subscription_name=%subscription_name,
+            consumer_name=%consumer_name,
             "Create Pulsar source."
         );
         let pulsar = connect_pulsar(&source_params).await?;
@@ -125,6 +137,7 @@ impl PulsarSource {
         }
         let pulsar_consumer = create_pulsar_consumer(
             subscription_name.clone(),
+            consumer_name.clone(),
             source_params.clone(),
             pulsar,
             current_positions.clone(),
@@ -136,6 +149,7 @@ impl PulsarSource {
             source_params,
             pulsar_consumer,
             subscription_name,
+            consumer_name,
             current_positions,
             state: PulsarSourceState::default(),
         })
@@ -283,7 +297,7 @@ impl Source for PulsarSource {
             "source_id": self.source_runtime.source_id(),
             "topics": self.source_params.topics,
             "subscription_name": self.subscription_name,
-            "consumer_name": self.source_params.consumer_name,
+            "consumer_name": self.consumer_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
@@ -306,6 +320,7 @@ impl DeserializeMessage for PulsarMessage {
 /// Creates a new pulsar consumer
 async fn create_pulsar_consumer(
     subscription_name: String,
+    consumer_name: String,
     params: PulsarSourceParams,
     pulsar: Pulsar<TokioExecutor>,
     current_positions: BTreeMap<PartitionId, Position>,
@@ -313,8 +328,13 @@ async fn create_pulsar_consumer(
     let mut consumer: Consumer<PulsarMessage, _> = pulsar
         .consumer()
         .with_topics(&params.topics)
-        .with_consumer_name(&params.consumer_name)
+        .with_consumer_name(&consumer_name)
         .with_subscription(subscription_name)
+        // `Failover` (not `Shared`) is required for correctness: it assigns each
+        // topic partition to exactly one active consumer, so a given partition's
+        // checkpoint deltas always come from a single pipeline. `Shared` would
+        // spread a partition's messages across pipelines, producing conflicting,
+        // non-monotonic deltas that the metastore rejects.
         .with_subscription_type(SubType::Failover)
         .build()
         .await?;
@@ -324,6 +344,10 @@ async fn create_pulsar_consumer(
         .into_iter()
         .map(|id| id.to_string())
         .collect::<Vec<_>>();
+    // Every pipeline seeks all partitions to the positions read from the shared
+    // metastore checkpoint. The targets are identical across pipelines, so these
+    // seeks are idempotent even though each pipeline is only the active consumer
+    // for a subset of partitions under the Failover subscription.
     info!(positions = ?current_positions, "seeking to last checkpoint positions");
     for (_, position) in current_positions {
         let seek_to = msg_id_from_position(&position);
@@ -435,6 +459,16 @@ pub(crate) async fn check_connectivity(params: &PulsarSourceParams) -> anyhow::R
 
 fn subscription_name(index_uid: &IndexUid, source_id: &str) -> String {
     format!("quickwit-{index_uid}-{source_id}")
+}
+
+/// Builds the effective Pulsar consumer name for a pipeline.
+///
+/// `base` is the user-supplied `consumer_name` (a prefix); the `pipeline_uid`
+/// suffix makes the name unique per pipeline. This uniqueness lets several
+/// pipelines of the same source connect as distinct consumers under the shared
+/// Failover subscription, so the broker can distribute partitions across them.
+fn consumer_name(base: &str, pipeline_uid: PipelineUid) -> String {
+    format!("{base}-{pipeline_uid}")
 }
 
 #[cfg(all(test, feature = "pulsar-broker-tests"))]
@@ -638,15 +672,41 @@ mod pulsar_broker_tests {
         );
     }
 
+    /// Default pipeline UID used by single-pipeline tests.
+    fn default_test_pipeline_uid() -> PipelineUid {
+        PipelineUid::for_test(0u128)
+    }
+
     async fn create_source(
+        universe: &Universe,
+        metastore: MetastoreServiceClient,
+        index_uid: IndexUid,
+        source_config: SourceConfig,
+        start_checkpoint: SourceCheckpoint,
+    ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
+        create_source_with_pipeline_uid(
+            universe,
+            metastore,
+            index_uid,
+            source_config,
+            start_checkpoint,
+            default_test_pipeline_uid(),
+        )
+        .await
+    }
+
+    async fn create_source_with_pipeline_uid(
         universe: &Universe,
         _metastore: MetastoreServiceClient,
         index_uid: IndexUid,
         source_config: SourceConfig,
         _start_checkpoint: SourceCheckpoint,
+        pipeline_uid: PipelineUid,
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
         let source_loader = quickwit_supported_sources();
-        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
+        let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_pipeline_uid(pipeline_uid)
+            .build();
         let source = source_loader.load_source(source_runtime).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor::new(source, doc_processor_mailbox);
@@ -866,7 +926,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": CLIENT_NAME,
+            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
@@ -933,7 +993,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic1, topic2],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": CLIENT_NAME,
+            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
             "num_invalid_messages": 0,
@@ -987,7 +1047,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": CLIENT_NAME,
+            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
@@ -1070,13 +1130,162 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": CLIENT_NAME,
+            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
         });
         assert_eq!(exit_state1, expected_state);
         assert_eq!(exit_state2, expected_state);
+    }
+
+    /// Proves the distributed-indexing contract: several pipelines of the same
+    /// Pulsar source (distinct `pipeline_uid`s, shared Failover subscription)
+    /// split the partitions of a partitioned topic with no loss, no duplicates,
+    /// and produce checkpoint deltas that merge into a single consistent
+    /// metastore checkpoint.
+    #[tokio::test]
+    async fn test_partitioned_topic_distributed_indexing() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic = append_random_suffix("test-pulsar-source--distributed--topic");
+        let index_id = append_random_suffix("test-pulsar-source--distributed--index");
+        let (_source_id, source_config) = get_source_config([&topic]);
+
+        let num_partitions = 4;
+        let msgs_per_partition = 10;
+        let total_messages = num_partitions * msgs_per_partition;
+
+        create_partitioned_topic(&topic, num_partitions).await;
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+
+        let partition_topics: Vec<String> = (0..num_partitions)
+            .map(|partition| format!("{topic}-partition-{partition}"))
+            .collect();
+
+        // Two pipelines with distinct pipeline UIDs: the realistic distributed
+        // setup where the control plane spawns several pipelines for one source.
+        let (source_handle1, doc_processor_inbox1) = create_source_with_pipeline_uid(
+            &universe,
+            metastore.clone(),
+            index_uid.clone(),
+            source_config.clone(),
+            SourceCheckpoint::default(),
+            PipelineUid::for_test(1u128),
+        )
+        .await
+        .expect("Create source 1");
+        let (source_handle2, doc_processor_inbox2) = create_source_with_pipeline_uid(
+            &universe,
+            metastore.clone(),
+            index_uid.clone(),
+            source_config.clone(),
+            SourceCheckpoint::default(),
+            PipelineUid::for_test(2u128),
+        )
+        .await
+        .expect("Create source 2");
+
+        let expected_docs = populate_topic(
+            partition_topics.iter().map(|topic| topic.as_str()),
+            0..msgs_per_partition,
+            message_generator,
+        )
+        .await
+        .unwrap();
+
+        // Wait until the two pipelines together have processed every message.
+        loop {
+            let processed1 = source_handle1
+                .observe()
+                .await
+                .state
+                .get("num_messages_processed")
+                .unwrap()
+                .as_u64()
+                .unwrap();
+            let processed2 = source_handle2
+                .observe()
+                .await
+                .state
+                .get("num_messages_processed")
+                .unwrap()
+                .as_u64()
+                .unwrap();
+            if processed1 + processed2 >= total_messages as u64 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        source_handle1.quit().await;
+        source_handle2.quit().await;
+
+        let batch1 = merge_doc_batches(doc_processor_inbox1.drain_for_test_typed());
+        let batch2 = merge_doc_batches(doc_processor_inbox2.drain_for_test_typed());
+
+        // Each pipeline owns a non-empty, disjoint set of partitions.
+        let partitions1: HashSet<PartitionId> =
+            batch1.checkpoint_delta.partitions().cloned().collect();
+        let partitions2: HashSet<PartitionId> =
+            batch2.checkpoint_delta.partitions().cloned().collect();
+        assert!(
+            !partitions1.is_empty(),
+            "pipeline 1 should own at least one partition"
+        );
+        assert!(
+            !partitions2.is_empty(),
+            "pipeline 2 should own at least one partition"
+        );
+        assert!(
+            partitions1.is_disjoint(&partitions2),
+            "pipelines must not share partitions: {partitions1:?} vs {partitions2:?}"
+        );
+        let owned_partitions: HashSet<PartitionId> =
+            partitions1.union(&partitions2).cloned().collect();
+        assert_eq!(
+            owned_partitions.len(),
+            num_partitions,
+            "every partition must be owned by exactly one pipeline"
+        );
+
+        // Every produced message is accounted for, with no loss and no
+        // duplicates across the pipelines.
+        let produced: usize = expected_docs
+            .iter()
+            .map(|topic_data| topic_data.len())
+            .sum();
+        assert_eq!(produced, total_messages, "test should produce all messages");
+        let delta1 = batch1.checkpoint_delta.clone();
+        let delta2 = batch2.checkpoint_delta.clone();
+        let total_docs = batch1.docs.len() + batch2.docs.len();
+        let batches = vec![batch1, batch2];
+        assert_eq!(total_docs, total_messages, "no message should be dropped");
+        assert_eq!(
+            count_unique_messages_in_batches(&batches),
+            total_messages,
+            "no message should be duplicated across pipelines"
+        );
+
+        // The two pipelines' deltas merge into a single checkpoint without
+        // conflict (the metastore-consistency proof) and every partition has
+        // advanced past the beginning.
+        let mut checkpoint = SourceCheckpoint::default();
+        checkpoint
+            .try_apply_delta(delta1)
+            .expect("apply pipeline 1 delta");
+        checkpoint
+            .try_apply_delta(delta2)
+            .expect("apply pipeline 2 delta");
+        for partition_topic in &partition_topics {
+            let partition = PartitionId::from(partition_topic.as_str());
+            let position = checkpoint.position_for_partition(&partition);
+            assert!(
+                matches!(position, Some(position) if *position != Position::Beginning),
+                "partition {partition_topic} must have an advanced checkpoint position, got \
+                 {position:?}"
+            );
+        }
     }
 
     #[tokio::test]

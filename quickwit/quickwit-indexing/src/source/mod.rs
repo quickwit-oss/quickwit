@@ -595,6 +595,7 @@ mod tests {
         source_config: SourceConfig,
         metastore_opt: Option<MetastoreServiceClient>,
         queues_dir_path_opt: Option<PathBuf>,
+        pipeline_uid: PipelineUid,
     }
 
     impl SourceRuntimeBuilder {
@@ -604,6 +605,7 @@ mod tests {
                 source_config,
                 metastore_opt: None,
                 queues_dir_path_opt: None,
+                pipeline_uid: PipelineUid::for_test(0u128),
             }
         }
 
@@ -622,7 +624,7 @@ mod tests {
                     node_id: NodeId::from_str("test-node"),
                     index_uid: self.index_uid,
                     source_id: self.source_config.source_id.clone(),
-                    pipeline_uid: PipelineUid::for_test(0u128),
+                    pipeline_uid: self.pipeline_uid,
                 },
                 metastore,
                 ingester_pool: IngesterPool::default(),
@@ -653,6 +655,12 @@ mod tests {
 
         pub fn with_queues_dir(mut self, queues_dir_path: impl Into<PathBuf>) -> Self {
             self.queues_dir_path_opt = Some(queues_dir_path.into());
+            self
+        }
+
+        #[cfg(all(test, feature = "pulsar-broker-tests"))]
+        pub fn with_pipeline_uid(mut self, pipeline_uid: PipelineUid) -> Self {
+            self.pipeline_uid = pipeline_uid;
             self
         }
 
