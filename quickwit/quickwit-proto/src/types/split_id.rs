@@ -42,8 +42,37 @@ pub struct SplitId(Arc<str>);
 
 impl SplitId {
     /// Generates a new split id.
+    ///
+    /// When the `QW_RANDOM_SPLIT_PREFIX` environment variable is set to `true`,
+    /// the ID is prefixed with 4 random characters taken from the tail of the
+    /// ULID. This spreads S3 key prefixes across partitions and avoids hot-spots
+    /// when writes concentrate on the same time window.
+    ///
+    /// Layout with prefix enabled: `<4 random chars>_<22 remaining ULID chars>`
+    /// (27 chars total vs the usual 26).
     pub fn new() -> Self {
-        SplitId::from(ulid::Ulid::new().to_string())
+        static RANDOM_PREFIX_ENABLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+            quickwit_common::get_bool_from_env("QW_RANDOM_SPLIT_PREFIX", false)
+        });
+        Self::from_ulid(ulid::Ulid::new(), *RANDOM_PREFIX_ENABLED)
+    }
+
+    /// Constructs a `SplitId` from a `Ulid`, optionally prepending a random prefix.
+    ///
+    /// The prefix is the last 4 characters of the ULID string (pure random bits),
+    /// separated from the remaining 22 characters by `_`.
+    fn from_ulid(ulid: ulid::Ulid, random_prefix: bool) -> Self {
+        let ulid_str = ulid.to_string(); // 26 Crockford base32 chars
+        if random_prefix {
+            // The last 4 characters of a ULID are random bits.
+            // Moving them to a prefix spreads S3 key prefixes while keeping the
+            // full ULID entropy in the string.
+            let prefix = &ulid_str[22..]; // chars 22-25: random section
+            let body = &ulid_str[..22]; // chars 0-21: timestamp + most of random
+            SplitId::from(format!("{prefix}_{body}"))
+        } else {
+            SplitId::from(ulid_str)
+        }
     }
 
     /// Returns the id as a string slice.
@@ -164,5 +193,21 @@ mod tests {
         let split_id_a = SplitId::from("aaa");
         let split_id_b = SplitId::from("bbb");
         assert!(split_id_a < split_id_b);
+    }
+
+    #[test]
+    fn test_split_id_from_ulid_without_prefix() {
+        let ulid = ulid::Ulid::from_string("01HAV29D4XY3D462FS3D8K5Q2H").unwrap();
+        let split_id = SplitId::from_ulid(ulid, false);
+        assert_eq!(split_id.as_str(), "01HAV29D4XY3D462FS3D8K5Q2H");
+    }
+
+    #[test]
+    fn test_split_id_from_ulid_with_prefix() {
+        // "01HAV29D4XY3D462FS3D8K5Q2H": last 4 chars = "5Q2H", first 22 = "01HAV29D4XY3D462FS3D8K".
+        let ulid = ulid::Ulid::from_string("01HAV29D4XY3D462FS3D8K5Q2H").unwrap();
+        let split_id = SplitId::from_ulid(ulid, true);
+        assert_eq!(split_id.as_str(), "5Q2H_01HAV29D4XY3D462FS3D8K");
+        assert_eq!(split_id.as_str().len(), 27);
     }
 }
