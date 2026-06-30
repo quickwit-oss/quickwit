@@ -201,7 +201,7 @@ async fn test_distributed_tasks_not_shuffles() {
     quickwit_common::setup_logging_for_tests();
 
     let sandbox = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .add_node([QuickwitService::Searcher])
         .build_and_start()
         .await;
@@ -323,7 +323,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
     publish_split(&metastore, &index_uid, data_dir.path(), "wide", &batch_b).await;
 
     let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
-    let source = Arc::new(MetricsDataSource::new(metastore));
+    let source = Arc::new(MetricsDataSource::new(Arc::new(metastore)));
     let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()

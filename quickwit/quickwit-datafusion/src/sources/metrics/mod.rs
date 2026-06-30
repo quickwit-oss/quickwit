@@ -44,8 +44,9 @@ use quickwit_common::{is_metrics_index, is_parquet_pipeline_index, is_sketches_i
 use quickwit_df_core::{
     QuickwitRuntimePlugin, QuickwitRuntimeRegistration, QuickwitSubstraitConsumerExt,
 };
+use quickwit_metastore::MetastoreReadServiceClient;
 use quickwit_parquet_engine::split::ParquetSplitKind;
-use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
+use quickwit_proto::metastore::MetastoreError;
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory, SKETCHES_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
@@ -84,7 +85,7 @@ pub struct MetricsDataSource {
 
 impl MetricsDataSource {
     /// Create a production `MetricsDataSource` backed by the metastore.
-    pub fn new(metastore: MetastoreServiceClient) -> Self {
+    pub fn new(metastore: MetastoreReadServiceClient) -> Self {
         Self {
             index_resolver: Arc::new(MetastoreIndexResolver::new(metastore)),
         }

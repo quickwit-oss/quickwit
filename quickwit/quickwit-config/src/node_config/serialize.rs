@@ -88,7 +88,7 @@ impl FromStr for List {
 
 fn default_enabled_services() -> ConfigValue<List, QW_ENABLED_SERVICES> {
     ConfigValue::with_default(List(
-        QuickwitService::supported_services()
+        QuickwitService::default_services()
             .into_iter()
             .map(|service| service.to_string())
             .collect(),
@@ -128,6 +128,10 @@ fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
 // dir `./qwdata/indexes/{index-id}/splits`.
 fn default_metastore_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes#polling_interval=30s").expect("Failed to create default metastore URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+}
+
+fn default_metastore_read_replica_uri() -> ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI> {
+    ConfigValue::none()
 }
 
 // See comment above.
@@ -191,6 +195,8 @@ struct NodeConfigBuilder {
     #[serde(default = "default_data_dir_uri")]
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
+    #[serde(default = "default_metastore_read_replica_uri")]
+    metastore_read_replica_uri: ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
     #[serde(rename = "rest")]
     #[serde(default)]
@@ -301,6 +307,9 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_metastore_uri(&data_dir_uri));
 
+        let metastore_read_replica_uri =
+            self.metastore_read_replica_uri.resolve_optional(env_vars)?;
+
         let default_index_root_uri = self
             .default_index_root_uri
             .resolve_optional(env_vars)?
@@ -330,6 +339,7 @@ impl NodeConfigBuilder {
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
+            metastore_read_replica_uri,
             default_index_root_uri,
             rest_config,
             health_config,
@@ -357,8 +367,36 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
     }
+    validate_metastore_read_replica(node_config)?;
     validate_disk_usage(node_config);
     Ok(())
+}
+
+/// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role.
+///
+/// The [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as a read-only
+/// metastore, so it must run standalone and requires `metastore_read_replica_uri` to connect to.
+fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
+    let read_replica_enabled =
+        node_config.is_service_enabled(QuickwitService::MetastoreReadReplica);
+    if !read_replica_enabled {
+        return Ok(());
+    }
+    if node_config.enabled_services.len() != 1 {
+        bail!(
+            "the `metastore_read_replica` service must run standalone and cannot be combined with \
+             any other service"
+        );
+    }
+    match &node_config.metastore_read_replica_uri {
+        Some(_) => Ok(()),
+        None => {
+            bail!(
+                "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be \
+                 set"
+            )
+        }
+    }
 }
 
 /// A list of all the known disk budgets
@@ -429,6 +467,7 @@ impl Default for NodeConfigBuilder {
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
+            metastore_read_replica_uri: default_metastore_read_replica_uri(),
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
             health_config_builder: HealthConfigBuilder::default(),
@@ -522,7 +561,7 @@ pub fn node_config_for_tests_from_ports(
     grpc_listen_port: u16,
 ) -> NodeConfig {
     let node_id = NodeId::from_str(&default_node_id().unwrap());
-    let enabled_services = QuickwitService::supported_services();
+    let enabled_services = QuickwitService::default_services();
     let availability_zone = Some(String::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
@@ -564,6 +603,7 @@ pub fn node_config_for_tests_from_ports(
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
+        metastore_read_replica_uri: None,
         default_index_root_uri,
         rest_config,
         health_config: None,
@@ -663,6 +703,10 @@ mod tests {
             config.metastore_uri,
             "postgresql://username:password@host:port/db"
         );
+        assert_eq!(
+            config.metastore_read_replica_uri.as_ref().unwrap().as_str(),
+            "postgresql://username:replica-password@replica-host:port/db"
+        );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
 
         let azure_storage_config = config.storage_configs.find_azure().unwrap();
@@ -742,6 +786,7 @@ mod tests {
                     timeout_millis: 2_000,
                     max_num_retries: 2
                 }),
+                use_metastore_read_replica: true,
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::mb(300),
                 lambda: Some(LambdaConfig {
@@ -820,10 +865,7 @@ mod tests {
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id.as_str(), get_short_hostname().unwrap());
         assert_eq!(config.availability_zone, None);
-        assert_eq!(
-            config.enabled_services,
-            QuickwitService::supported_services()
-        );
+        assert_eq!(config.enabled_services, QuickwitService::default_services());
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7280)
@@ -848,6 +890,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
+        assert!(config.metastore_read_replica_uri.is_none());
         assert_eq!(
             config.default_index_root_uri,
             format!(
@@ -1008,6 +1051,107 @@ mod tests {
         load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_role_accepts_postgres_uri() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+            metastore_read_replica_uri: postgres://user:pass@host:5432/db
+        "#;
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://user:pass@host:5432/db"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_uri_can_be_set_from_env() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+        "#;
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "QW_METASTORE_READ_REPLICA_URI".to_string(),
+            "postgres://user:pass@replica-host:5432/db".to_string(),
+        );
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+                .await
+                .unwrap();
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://user:pass@replica-host:5432/db"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_role_without_uri_is_rejected() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires `metastore_read_replica_uri`")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_role_must_run_standalone() {
+        for service in [
+            QuickwitService::ControlPlane,
+            QuickwitService::Indexer,
+            QuickwitService::Searcher,
+            QuickwitService::Janitor,
+            QuickwitService::Metastore,
+        ] {
+            let config_yaml = format!(
+                r#"
+                version: 0.8
+                node_id: test-node
+                enabled_services:
+                  - metastore_read_replica
+                  - {}
+                metastore_read_replica_uri: postgres://user:pass@host:5432/db
+            "#,
+                service.as_str()
+            );
+            let error = load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default(),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("must run standalone"),
+                "{service} should not be allowed with metastore_read_replica: {error}"
+            );
+        }
     }
 
     #[tokio::test]

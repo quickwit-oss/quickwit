@@ -966,7 +966,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert!(selected_splits.is_empty());
@@ -978,7 +978,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
@@ -990,7 +990,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);

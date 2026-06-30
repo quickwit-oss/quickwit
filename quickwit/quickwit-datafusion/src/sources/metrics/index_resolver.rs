@@ -25,11 +25,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
-use quickwit_parquet_engine::split::ParquetSplitKind;
-use quickwit_proto::metastore::{
-    IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
+use quickwit_metastore::{
+    IndexMetadataResponseExt, ListIndexesMetadataResponseExt, MetastoreReadServiceClient,
 };
+use quickwit_parquet_engine::split::ParquetSplitKind;
+use quickwit_proto::metastore::{IndexMetadataRequest, ListIndexesMetadataRequest};
 use tracing::debug;
 
 use super::metastore_provider::MetastoreSplitProvider;
@@ -59,11 +59,11 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
 /// storage lazily on first read.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
-    metastore: MetastoreServiceClient,
+    metastore: MetastoreReadServiceClient,
 }
 
 impl MetastoreIndexResolver {
-    pub fn new(metastore: MetastoreServiceClient) -> Self {
+    pub fn new(metastore: MetastoreReadServiceClient) -> Self {
         Self { metastore }
     }
 }
@@ -85,7 +85,6 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
 
         let response = self
             .metastore
-            .clone()
             .index_metadata(IndexMetadataRequest::for_index_id(index_name.to_string()))
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
@@ -111,7 +110,6 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
     async fn list_index_names(&self) -> DFResult<Vec<String>> {
         let response = self
             .metastore
-            .clone()
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;

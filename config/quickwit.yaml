@@ -103,6 +103,13 @@ version: 0.8
 # metastore_uri: s3://your-bucket/indexes
 # metastore_uri: postgres://username:password@host:port/db
 #
+# Optional PostgreSQL read replica URI. Nodes started with the
+# `metastore_read_replica` service connect to it over a read-only connection and
+# serve stale-tolerant read-only metastore requests. Searchers use those nodes
+# only when `searcher.use_metastore_read_replica` is enabled. Defaults to unset.
+#
+# metastore_read_replica_uri: postgres://username:password@read-replica-host:port/db
+#
 # When using a file-backed metastore, the state of the metastore will be cached forever.
 # If you are indexing and searching from different processes, it is possible to periodically
 # refresh the state of the metastore on the searcher using the `polling_interval` hashtag.
@@ -168,6 +175,11 @@ indexer:
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration
 #
 # searcher:
+#   # If true, routes read-only metastore requests from searchers, including
+#   # DataFusion when enabled, to nodes running the `metastore_read_replica`
+#   # service. Searchers require at least one `metastore_read_replica` node at
+#   # startup and do not fall back to the primary metastore.
+#   use_metastore_read_replica: false
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
 #   partial_request_cache_capacity: 64M

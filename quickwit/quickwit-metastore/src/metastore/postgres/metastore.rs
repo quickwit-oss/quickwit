@@ -104,11 +104,66 @@ impl fmt::Debug for PostgresqlMetastore {
     }
 }
 
+/// Connection/migration options for a [`PostgresqlMetastore`].
+#[derive(Clone, Copy, Debug)]
+struct PostgresqlMetastoreOptions {
+    read_only: bool,
+    skip_migrations: bool,
+    skip_locking: bool,
+}
+
+impl PostgresqlMetastoreOptions {
+    /// Default options, with the read-only and migration flags read from the environment.
+    fn from_env() -> Self {
+        Self {
+            read_only: get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
+            skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
+            skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
+        }
+    }
+
+    /// Options for a read-only metastore: the connection is read-only and migrations are skipped,
+    /// since the read replica cannot be written to and is migrated by the primary.
+    fn read_only() -> Self {
+        Self {
+            read_only: true,
+            skip_migrations: true,
+            skip_locking: false,
+        }
+    }
+}
+
 impl PostgresqlMetastore {
     /// Creates a metastore given a database URI.
     pub async fn new(
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::from_env(),
+        )
+        .await
+    }
+
+    /// Creates a read-only metastore given a database URI.
+    pub async fn new_read_only(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::read_only(),
+        )
+        .await
+    }
+
+    async fn new_with_options(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+        options: PostgresqlMetastoreOptions,
     ) -> MetastoreResult<Self> {
         let min_connections = postgres_metastore_config.min_connections;
         let max_connections = postgres_metastore_config.max_connections.get();
@@ -122,10 +177,6 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
-        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
-        let skip_migrations = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false);
-        let skip_locking = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false);
-
         let connection_pool = establish_connection(
             connection_uri,
             min_connections,
@@ -133,11 +184,16 @@ impl PostgresqlMetastore {
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
-            read_only,
+            options.read_only,
         )
         .await?;
 
-        run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
+        run_migrations(
+            &connection_pool,
+            options.skip_migrations,
+            options.skip_locking,
+        )
+        .await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),

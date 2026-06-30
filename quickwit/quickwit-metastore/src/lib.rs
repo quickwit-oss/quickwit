@@ -42,6 +42,7 @@ pub use metastore::file_backed::FileBackedMetastore;
 pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_8, VersionedIndexMetadata};
 #[cfg(feature = "postgres")]
 pub use metastore::postgres::PostgresqlMetastore;
+pub use metastore::read_service::{MetastoreReadService, MetastoreReadServiceClient};
 pub use metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
@@ -52,7 +53,7 @@ pub use metastore::{
     StageParquetSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
     UpdateSourceRequestExt, file_backed, list_parquet_splits_page, list_parquet_splits_paginated,
 };
-pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
+pub use metastore_factory::{MetastoreFactory, MetastoreFactoryOptions, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
