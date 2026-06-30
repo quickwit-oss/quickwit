@@ -212,9 +212,14 @@ pub struct HitSet {
 const INCOMPLETE_BLOCK_MARKER: u8 = 0x80;
 
 impl HitSet {
-    #[cfg(test)]
-    fn empty() -> Self {
+    /// An empty hit set, matching no document.
+    pub fn empty() -> Self {
         Self::from_buffer(OwnedBytes::new(vec![0, 0, 0, 0]))
+    }
+
+    /// Returns true if this hit set matches no document.
+    pub fn is_empty(&self) -> bool {
+        self.size_hint() == 0
     }
 
     /// Build a HitSet from its serialized form.
