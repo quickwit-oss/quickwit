@@ -287,6 +287,20 @@ impl PulsarSource {
         }
         let committed = self.source_runtime.fetch_checkpoint().await?;
         advance_position(&mut self.current_positions, partition, &committed);
+        // Catch the broker cursor up to the committed position. The pipeline that
+        // advanced the metastore checkpoint may have died before acking (it never
+        // processed `SuggestTruncate`), leaving a backlog the broker keeps
+        // replaying — messages we then skip, so on a quiet partition no batch is
+        // published and no ack is ever sent, keeping the subscription behind. We
+        // ack only up to the committed (durable) position; anything beyond it is
+        // genuinely unprocessed and must still be delivered.
+        if let Some(committed_position) = committed.position_for_partition(partition)
+            && let Some(msg_id) = msg_id_from_position(committed_position)
+        {
+            self.pulsar_consumer
+                .cumulative_ack_with_id(partition.0.as_ref(), msg_id)
+                .await?;
+        }
         Ok(())
     }
 }
