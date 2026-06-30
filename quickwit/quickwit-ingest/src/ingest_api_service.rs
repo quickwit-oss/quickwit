@@ -27,7 +27,7 @@ use quickwit_proto::ingest::RateLimitingCause;
 use tracing::{error, info};
 use ulid::Ulid;
 
-use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
+use crate::metrics::{DD_INGEST_BYTES_TOTAL, DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::notifications::Notifications;
 use crate::{
     CommitType, CreateQueueIfNotExistsRequest, CreateQueueIfNotExistsResponse, CreateQueueRequest,
@@ -204,6 +204,8 @@ impl IngestApiService {
             num_docs += batch_num_docs;
             let labels = label_values!(VALIDITY => "valid");
             counter!(parent: DOCS_BYTES_TOTAL, labels: [labels]).inc_by(batch_num_bytes as u64);
+            counter!(parent: DD_INGEST_BYTES_TOTAL, labels: [labels])
+                .inc_by(batch_num_bytes as u64);
             counter!(parent: DOCS_TOTAL, labels: [labels]).inc_by(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.

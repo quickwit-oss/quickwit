@@ -28,6 +28,16 @@ pub(crate) static DOCS_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "ingest",
 );
 
+// TODO: This is a duplicate metric of DOCS_BYTES_TOTAL. It will be removed
+// https://datadoghq.atlassian.net/browse/CLOUDPREM-765
+pub(crate) static DD_INGEST_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "ingest_bytes.count",
+    description: "Sibling of docs_bytes_total for Datadog dashboards",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
 pub(crate) static REPLICATED_NUM_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "replicated_num_bytes_total",
         description: "Total size in bytes of the replicated docs.",
