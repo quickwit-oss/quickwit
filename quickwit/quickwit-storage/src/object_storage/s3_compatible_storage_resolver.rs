@@ -21,18 +21,10 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
 use tokio::sync::OnceCell;
 
-use super::s3_compatible_storage::create_s3_client;
+use super::s3_compatible_storage::{create_s3_client, parse_s3_uri};
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
 };
-
-/// Extracts the named-backend key out of an `s3+<name>://...` URI, if any.
-/// Returns `None` for plain `s3://...`.
-fn parse_named_key(uri: &Uri) -> Option<&str> {
-    let scheme_end = uri.as_str().find("://")?;
-    let scheme = &uri.as_str()[..scheme_end];
-    scheme.strip_prefix("s3+")
-}
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
@@ -43,8 +35,9 @@ pub struct S3CompatibleObjectStorageFactory {
     // end up being used, or if something like azure, gcs, or even local files, will be used
     // instead.
     s3_client: OnceCell<S3Client>,
-    // Per-named-backend client cell; the mutex is held only to fetch/insert the cell, never across the build.
-    named_s3_clients: Mutex<HashMap<String, Arc<OnceCell<S3Client>>>>,
+    // Per-bucket client cell for buckets matched by a `storage.s3.profiles.<bucket>` entry.
+    // The mutex is held only to fetch/insert the cell, never across the client build.
+    profile_s3_clients: Mutex<HashMap<String, Arc<OnceCell<S3Client>>>>,
 }
 
 impl S3CompatibleObjectStorageFactory {
@@ -53,7 +46,7 @@ impl S3CompatibleObjectStorageFactory {
         Self {
             storage_config,
             s3_client: OnceCell::new(),
-            named_s3_clients: Mutex::new(HashMap::new()),
+            profile_s3_clients: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -65,30 +58,26 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        if let Some(name) = parse_named_key(uri) {
-            let named_config = self
-                .storage_config
-                .named
-                .get(name)
-                .ok_or_else(|| {
-                    StorageResolverError::InvalidUri(format!(
-                        "no `storage.s3.named.{name}` entry configured for URI `{uri}`"
-                    ))
-                })?
-                .as_s3_config();
+        // A `storage.s3.profiles.<bucket>` entry, if present, supplies that bucket's
+        // own endpoint/credentials/region; any unlisted bucket uses the primary backend.
+        if let Some((bucket, _prefix)) = parse_s3_uri(uri)
+            && let Some(profile) = self.storage_config.profiles.get(&bucket)
+        {
+            let profile_config = profile.as_s3_config();
             let client_cell = {
                 let mut clients = self
-                    .named_s3_clients
+                    .profile_s3_clients
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                Arc::clone(clients.entry(name.to_string()).or_default())
+                Arc::clone(clients.entry(bucket).or_default())
             };
             let client = client_cell
-                .get_or_init(|| create_s3_client(&named_config))
+                .get_or_init(|| create_s3_client(&profile_config))
                 .await
                 .clone();
             let storage =
-                S3CompatibleObjectStorage::from_uri_and_client(&named_config, uri, client).await?;
+                S3CompatibleObjectStorage::from_uri_and_client(&profile_config, uri, client)
+                    .await?;
             return Ok(Arc::new(DebouncedStorage::new(storage)));
         }
         let s3_client = self
@@ -100,25 +89,5 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_named_key() {
-        // Plain s3:// URIs route through the primary backend.
-        assert_eq!(parse_named_key(&Uri::for_test("s3://bucket/key")), None);
-        // `s3+<name>` URIs return the named-backend key.
-        assert_eq!(
-            parse_named_key(&Uri::for_test("s3+alt://bucket/key")),
-            Some("alt")
-        );
-        assert_eq!(
-            parse_named_key(&Uri::for_test("s3+with-dash://bucket/key")),
-            Some("with-dash")
-        );
     }
 }
