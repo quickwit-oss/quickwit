@@ -173,7 +173,7 @@ fn cmp_splits_by_reverse_time_end(left: &SplitMetadata, right: &SplitMetadata) -
         .reverse()
         .then_with(|| left.num_docs.cmp(&right.num_docs))
         .then_with(|| {
-            left.split_id().cmp(right.split_id()) //< for determinism.
+            left.split_id().cmp(&right.split_id()) //< for determinism.
         })
 }
 

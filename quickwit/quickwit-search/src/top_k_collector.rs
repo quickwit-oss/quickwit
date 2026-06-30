@@ -597,7 +597,7 @@ impl<
             .map(|el| el.into_segment_partial_hit())
             .map(|segment_partial_hit: SegmentPartialHit| {
                 segment_partial_hit.into_partial_hit(
-                    self.split_id.clone(),
+                    &self.split_id,
                     self.segment_ord,
                     &self.hit_fetcher.first,
                     &self.hit_fetcher.second,
@@ -634,7 +634,7 @@ impl GenericQuickwitSegmentTopKCollector {
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         let precomp_search_after_order = match &search_after_option {
             Some(search_after) if !search_after.split_id.is_empty() => order1
-                .compare(&split_id, &search_after.split_id)
+                .compare(split_id.as_str(), search_after.split_id.as_str())
                 .then_with(|| order1.compare(&segment_ord, &search_after.segment_ord)),
             // This value isn't actually used.
             _ => Ordering::Equal,
@@ -807,7 +807,7 @@ impl QuickwitSegmentTopKCollector for GenericQuickwitSegmentTopKCollector {
             .into_iter()
             .map(|segment_partial_hit: SegmentPartialHit| {
                 segment_partial_hit.into_partial_hit(
-                    self.split_id.clone(),
+                    &self.split_id,
                     self.segment_ord,
                     &self.score_extractor.first,
                     &self.score_extractor.second,

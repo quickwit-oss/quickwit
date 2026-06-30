@@ -37,6 +37,7 @@ use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats, SplitSearchError,
 };
+use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
     BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
 };
@@ -686,8 +687,11 @@ async fn leaf_search_single_split(
         limits: ctx.searcher_context.get_aggregation_limits(),
         tokenizers: ctx.doc_mapper.tokenizer_manager().tantivy_manager().clone(),
     };
-    let mut collector =
-        make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
+    let mut collector = make_collector_for_split(
+        SplitId::from(split_id.as_str()),
+        &search_request,
+        agg_context_params,
+    )?;
 
     let predicate_cache = if collector.requires_scoring() {
         // at the moment the predicate cache doesn't support scoring

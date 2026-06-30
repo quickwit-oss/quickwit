@@ -2019,7 +2019,7 @@ mod tests {
             })
             .return_once(|_request| {
                 let splits = vec![Split {
-                    split_metadata: SplitMetadata::for_test("test-split".to_string()),
+                    split_metadata: SplitMetadata::for_test("test-split".into()),
                     split_state: SplitState::Published,
                     update_timestamp: 0,
                     publish_timestamp: Some(0),

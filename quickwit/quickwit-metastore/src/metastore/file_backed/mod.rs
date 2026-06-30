@@ -1834,7 +1834,7 @@ mod tests {
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
@@ -1936,7 +1936,7 @@ mod tests {
 
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: "split1".to_string(),
+            split_id: "split1".into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1999,7 +1999,7 @@ mod tests {
 
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: "split1".to_string(),
+            split_id: "split1".into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -2058,7 +2058,7 @@ mod tests {
                 async move {
                     let split_metadata = SplitMetadata {
                         footer_offsets: 1000..2000,
-                        split_id: format!("split-{i}"),
+                        split_id: format!("split-{i}").into(),
                         num_docs: 1,
                         uncompressed_docs_size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),

@@ -811,7 +811,7 @@ mod test_setup_helper {
         let publish_splits_request = PublishSplitsRequest {
             index_uid: Some(index_uid.clone()),
             index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
-            staged_split_ids: vec![split_id.clone()],
+            staged_split_ids: vec![split_id.to_string()],
             replaced_split_ids: Vec::new(),
             publish_token_opt: None,
         };
