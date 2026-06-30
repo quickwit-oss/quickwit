@@ -1663,7 +1663,7 @@ async fn run_offloaded_search_tasks(
         return Ok(());
     }
 
-    debug!(
+    info!(
         num_offloaded_splits = splits_with_requests.len(),
         "offloading to lambda"
     );
