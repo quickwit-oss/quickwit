@@ -1667,7 +1667,7 @@ async fn run_offloaded_search_tasks(
         return Ok(());
     }
 
-    info!(
+    debug!(
         num_offloaded_splits = splits_with_requests.len(),
         "offloading to lambda"
     );
@@ -1777,7 +1777,8 @@ async fn run_offloaded_search_tasks(
             Err(err) => {
                 // Transport-level failure: the Lambda invocation itself failed.
                 // Mark all splits in this batch as failed.
-                error!(
+                quickwit_common::rate_limited_error!(
+                    limit_per_min = 1,
                     error = %err,
                     num_splits = batch_split_ids.len(),
                     "lambda invocation failed for batch"
@@ -1893,7 +1894,7 @@ pub async fn single_doc_mapping_leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
-    info!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
+    debug!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     // We simplify the request as much as possible.
     let split_filter: CanSplitDoBetter =
@@ -2080,7 +2081,7 @@ async fn run_local_search_tasks(
         });
     }
 
-    info!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
+    debug!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
 }
 
 /// We identify the splits that are in the cache and append them to the incremental merge collector.

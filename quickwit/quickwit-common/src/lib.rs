@@ -134,7 +134,7 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T, sensitive: 
     if let Some(value) = get_from_env_opt(key, sensitive) {
         value
     } else {
-        info!(default_value=?default_value, "using environment variable `{key}` default value");
+        crate::rate_limited_info!(limit_per_min = 1, default_value=?default_value, "using environment variable `{key}` default value");
         default_value
     }
 }
@@ -151,7 +151,7 @@ pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
     if let Some(flag_value) = get_bool_from_env_opt(key) {
         flag_value
     } else {
-        info!(default_value=%default_value, "using environment variable `{key}` default value");
+        crate::rate_limited_info!(limit_per_min = 1, default_value=%default_value, "using environment variable `{key}` default value");
         default_value
     }
 }
