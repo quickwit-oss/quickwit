@@ -87,6 +87,9 @@ pub struct PulsarSource {
     // as distinct consumers under the shared Failover subscription, letting the
     // broker distribute partitions across them (distributed indexing).
     consumer_name: String,
+    // Whether this source runs with more than one pipeline. Only then can a
+    // partition be handed between pipelines, so only then do we resync positions.
+    distributed: bool,
     current_positions: BTreeMap<PartitionId, Position>,
     // Last time a message was received for each partition. Used to detect a
     // Failover (re)gain: with `num_pipelines > 1` a pipeline can lose a partition
@@ -123,6 +126,7 @@ impl PulsarSource {
         // and the broker assigns each topic partition to exactly one of them.
         let consumer_name =
             consumer_name(&source_params.consumer_name, source_runtime.pipeline_uid());
+        let distributed = source_runtime.source_config.num_pipelines.get() > 1;
         info!(
             index_id=%source_runtime.index_id(),
             source_id=%source_runtime.source_id(),
@@ -165,6 +169,7 @@ impl PulsarSource {
             pulsar_consumer,
             subscription_name,
             consumer_name,
+            distributed,
             current_positions,
             last_message_at: HashMap::new(),
             state: PulsarSourceState::default(),
@@ -248,10 +253,24 @@ impl PulsarSource {
     /// entry is stale. We resync the first time we see a partition and whenever it
     /// reappears after a gap longer than [`POSITION_RESYNC_GAP`] (a proxy for a
     /// handoff, since the Pulsar client does not surface partition reassignments).
-    /// Without this, the stale `from` makes the publish rejected and the partition
-    /// wedges after a rebalance. Continuously-owned partitions never resync (the
-    /// committed checkpoint only trails the positions we already recorded).
+    /// Continuously-owned partitions never resync (the committed checkpoint only
+    /// trails the positions we already recorded), and single-pipeline sources skip
+    /// it entirely since they can never hand a partition over.
+    ///
+    /// This is a best-effort optimization to avoid churn, not the correctness
+    /// guarantee. The per-partition single-writer invariant is ultimately enforced
+    /// by the metastore: `SourceCheckpoint::try_apply_delta` rejects any
+    /// overlapping or non-contiguous delta, so a stale position or a brief overlap
+    /// between the old and new active Failover consumers during a rebalance results
+    /// in a rejected publish and a pipeline restart (which resumes from the
+    /// committed checkpoint), never in lost or duplicated data. This matches how
+    /// the Kafka source relies on the metastore across consumer-group rebalances.
+    /// The time-gap heuristic cannot detect every reassignment (the Pulsar client
+    /// surfaces none), but any case it misses is caught by that backstop.
     async fn sync_partition_position(&mut self, partition: &PartitionId) -> anyhow::Result<()> {
+        if !self.distributed {
+            return Ok(());
+        }
         let now = Instant::now();
         let resync = match self.last_message_at.get(partition) {
             Some(last_message_at) => now.duration_since(*last_message_at) > POSITION_RESYNC_GAP,
@@ -837,7 +856,7 @@ mod pulsar_broker_tests {
 
     async fn create_source_with_pipeline_uid(
         universe: &Universe,
-        _metastore: MetastoreServiceClient,
+        metastore: MetastoreServiceClient,
         index_uid: IndexUid,
         source_config: SourceConfig,
         _start_checkpoint: SourceCheckpoint,
@@ -845,6 +864,7 @@ mod pulsar_broker_tests {
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
         let source_loader = quickwit_supported_sources();
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
+            .with_metastore(metastore)
             .with_pipeline_uid(pipeline_uid)
             .build();
         let source = source_loader.load_source(source_runtime).await?;
@@ -1426,6 +1446,72 @@ mod pulsar_broker_tests {
                  {position:?}"
             );
         }
+    }
+
+    /// Exercises the failover position resync against the real test metastore: a
+    /// distributed source whose partition was already advanced by "another
+    /// pipeline" (a committed checkpoint seeded in the metastore) must resume from
+    /// that committed position and not re-index the already-committed messages.
+    #[tokio::test]
+    async fn test_distributed_source_resumes_from_committed_checkpoint() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let topic = append_random_suffix("test-pulsar-source--distributed-resume--topic");
+        let index_id = append_random_suffix("test-pulsar-source--distributed-resume--index");
+        let (_source_id, mut source_config) = get_source_config([&topic]);
+        // Multiple pipelines: enables the failover resync path.
+        source_config.num_pipelines = NonZeroUsize::new(2).unwrap();
+
+        // First half is "already indexed and committed by another pipeline".
+        let committed = populate_topic([&topic], 0..5, message_generator)
+            .await
+            .unwrap();
+        // Second half is what this pipeline must index.
+        let to_index = populate_topic([&topic], 5..10, message_generator)
+            .await
+            .unwrap();
+
+        let partition = PartitionId::from(topic.clone());
+        let index_uid = setup_index(
+            metastore.clone(),
+            &index_id,
+            &source_config,
+            &[(
+                partition.clone(),
+                Position::Beginning,
+                committed[0].expected_position.clone(),
+            )],
+        )
+        .await;
+
+        let (source_handle, doc_processor_inbox) = create_source_with_pipeline_uid(
+            &universe,
+            metastore,
+            index_uid,
+            source_config,
+            SourceCheckpoint::default(),
+            PipelineUid::for_test(7u128),
+        )
+        .await
+        .expect("Create source");
+
+        let exit_state = wait_for_completion(
+            source_handle,
+            to_index[0].len(),
+            partition,
+            to_index[0].expected_position.clone(),
+        )
+        .await;
+
+        let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        let batch = merge_doc_batches(messages);
+        // Only the uncommitted second half is indexed; the committed first half is
+        // skipped because the source resumed from the metastore checkpoint.
+        assert_eq!(batch.docs, to_index[0].messages);
+        assert_eq!(
+            exit_state.get("num_messages_processed").unwrap().as_u64(),
+            Some(to_index[0].len() as u64)
+        );
     }
 
     #[tokio::test]
