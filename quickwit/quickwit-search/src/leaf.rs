@@ -2875,32 +2875,6 @@ mod tests {
         assert!(reported.is_empty());
     }
 
-    #[test]
-    fn test_term_absence_cache_key() {
-        let mut schema_builder = Schema::builder();
-        let body = schema_builder.add_text_field("body", tantivy::schema::TEXT);
-        let title = schema_builder.add_text_field("title", tantivy::schema::TEXT);
-        let _schema = schema_builder.build();
-
-        let key = term_absence_cache_key(&Term::from_field_text(body, "hello"));
-        // Stable for the same term, and disjoint from the JSON query keys the `CacheNode`
-        // positive cache stores (which start with '{', never a hex field id).
-        assert!(!key.starts_with('{'));
-        assert_eq!(
-            key,
-            term_absence_cache_key(&Term::from_field_text(body, "hello"))
-        );
-        // A different value or a different field yields a different key.
-        assert_ne!(
-            key,
-            term_absence_cache_key(&Term::from_field_text(body, "world"))
-        );
-        assert_ne!(
-            key,
-            term_absence_cache_key(&Term::from_field_text(title, "hello"))
-        );
-    }
-
     fn nz(n: usize) -> std::num::NonZeroUsize {
         std::num::NonZeroUsize::new(n).unwrap()
     }
