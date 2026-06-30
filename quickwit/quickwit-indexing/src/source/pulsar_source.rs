@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -41,6 +41,12 @@ use crate::source::{
 };
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
+
+/// Minimum time without receiving any message from a partition before we treat a
+/// new message for it as a Failover (re)gain and re-read its committed position
+/// from the metastore. Large enough that continuously-owned partitions never
+/// resync, small enough to recover quickly after a realistic rebalance.
+const POSITION_RESYNC_GAP: Duration = Duration::from_secs(30);
 
 pub struct PulsarSourceFactory;
 
@@ -82,15 +88,15 @@ pub struct PulsarSource {
     // broker distribute partitions across them (distributed indexing).
     consumer_name: String,
     current_positions: BTreeMap<PartitionId, Position>,
-    // Partitions whose `current_positions` entry has been aligned with the
-    // committed metastore checkpoint during this pipeline session. With
-    // `num_pipelines > 1`, a pipeline can become the active Failover consumer
-    // for a partition another pipeline already advanced; the startup snapshot in
-    // `current_positions` is then stale. We lazily re-read the committed position
-    // the first time we consume a partition so the first recorded delta is
-    // contiguous with the metastore checkpoint (otherwise the publish is
-    // rejected and the partition wedges).
-    synced_partitions: HashSet<PartitionId>,
+    // Last time a message was received for each partition. Used to detect a
+    // Failover (re)gain: with `num_pipelines > 1` a pipeline can lose a partition
+    // to another pipeline and later regain it. While it did not own the
+    // partition, the other pipeline may have advanced the committed checkpoint,
+    // leaving this pipeline's `current_positions` entry stale. When we start
+    // receiving a partition again after a gap (or for the first time), we re-read
+    // the committed position so the next delta is contiguous with the metastore
+    // checkpoint — otherwise the publish is rejected and the partition wedges.
+    last_message_at: HashMap<PartitionId, Instant>,
     state: PulsarSourceState,
 }
 
@@ -160,7 +166,7 @@ impl PulsarSource {
             subscription_name,
             consumer_name,
             current_positions,
-            synced_partitions: HashSet::new(),
+            last_message_at: HashMap::new(),
             state: PulsarSourceState::default(),
         })
     }
@@ -231,40 +237,53 @@ impl PulsarSource {
         Ok(())
     }
 
-    /// Aligns the local position of a partition with the committed metastore
-    /// checkpoint the first time it is consumed in this pipeline session.
+    /// Re-reads the committed position for a partition from the metastore when we
+    /// (re)start consuming it, so the next recorded delta is contiguous with the
+    /// metastore checkpoint.
     ///
-    /// This is required for distributed indexing (`num_pipelines > 1`): when this
-    /// pipeline becomes the active Failover consumer for a partition another
-    /// pipeline already advanced, the `current_positions` snapshot taken in
-    /// `try_new` is stale. Re-reading the committed position ensures the first
-    /// delta we record starts where the metastore checkpoint actually is, so the
-    /// publish is accepted.
+    /// Required for distributed indexing (`num_pipelines > 1`): a pipeline can
+    /// lose a partition to another pipeline under the Failover subscription and
+    /// later regain it. While it did not own the partition, the other pipeline may
+    /// have advanced the committed checkpoint, so the local `current_positions`
+    /// entry is stale. We resync the first time we see a partition and whenever it
+    /// reappears after a gap longer than [`POSITION_RESYNC_GAP`] (a proxy for a
+    /// handoff, since the Pulsar client does not surface partition reassignments).
+    /// Without this, the stale `from` makes the publish rejected and the partition
+    /// wedges after a rebalance. Continuously-owned partitions never resync (the
+    /// committed checkpoint only trails the positions we already recorded).
     async fn sync_partition_position(&mut self, partition: &PartitionId) -> anyhow::Result<()> {
-        if !self.synced_partitions.insert(partition.clone()) {
+        let now = Instant::now();
+        let resync = match self.last_message_at.get(partition) {
+            Some(last_message_at) => now.duration_since(*last_message_at) > POSITION_RESYNC_GAP,
+            None => true,
+        };
+        self.last_message_at.insert(partition.clone(), now);
+        if !resync {
             return Ok(());
         }
-        let checkpoint = self.source_runtime.fetch_checkpoint().await?;
-        align_position(&mut self.current_positions, partition, &checkpoint);
+        let committed = self.source_runtime.fetch_checkpoint().await?;
+        advance_position(&mut self.current_positions, partition, &committed);
         Ok(())
     }
 }
 
-/// Sets the local position of `partition` to the committed position from
-/// `checkpoint`, or removes any stale entry when the checkpoint has none (so the
-/// next delta starts from `Position::Beginning`).
-fn align_position(
+/// Advances the local position of `partition` to the committed position when the
+/// committed checkpoint is ahead. It never moves a position backwards, so
+/// uncommitted in-flight progress made by this pipeline is preserved and already
+/// consumed messages are not re-emitted.
+fn advance_position(
     current_positions: &mut BTreeMap<PartitionId, Position>,
     partition: &PartitionId,
-    checkpoint: &SourceCheckpoint,
+    committed: &SourceCheckpoint,
 ) {
-    match checkpoint.position_for_partition(partition) {
-        Some(position) => {
-            current_positions.insert(partition.clone(), position.clone());
-        }
-        None => {
-            current_positions.remove(partition);
-        }
+    let Some(committed_position) = committed.position_for_partition(partition) else {
+        return;
+    };
+    let local_position = current_positions
+        .entry(partition.clone())
+        .or_insert(Position::Beginning);
+    if *local_position < *committed_position {
+        *local_position = committed_position.clone();
     }
 }
 
@@ -289,15 +308,15 @@ mod position_alignment_tests {
     }
 
     #[test]
-    fn align_position_adopts_committed_over_stale_local() {
-        // Simulates a Failover handoff: another pipeline advanced the partition to
-        // offset 42, but this pipeline still holds a stale startup snapshot (10).
+    fn advance_position_adopts_committed_when_ahead() {
+        // Failover (re)gain: another pipeline advanced the partition to offset 42
+        // while this pipeline held a stale position (10).
         let partition = PartitionId::from("topic-partition-0");
         let committed = checkpoint_with("topic-partition-0", 42);
         let mut current_positions = BTreeMap::new();
         current_positions.insert(partition.clone(), Position::offset(10u64));
 
-        align_position(&mut current_positions, &partition, &committed);
+        advance_position(&mut current_positions, &partition, &committed);
 
         assert_eq!(
             current_positions.get(&partition),
@@ -306,15 +325,32 @@ mod position_alignment_tests {
     }
 
     #[test]
-    fn align_position_clears_stale_entry_when_uncommitted() {
-        // The committed checkpoint has nothing for this partition, so any stale
-        // local entry must be dropped (next delta starts from `Beginning`).
+    fn advance_position_keeps_local_when_ahead_of_committed() {
+        // Local uncommitted progress (50) must not be moved back to the committed
+        // checkpoint (42), otherwise already-consumed messages would be re-emitted.
+        let partition = PartitionId::from("topic-partition-0");
+        let committed = checkpoint_with("topic-partition-0", 42);
+        let mut current_positions = BTreeMap::new();
+        current_positions.insert(partition.clone(), Position::offset(50u64));
+
+        advance_position(&mut current_positions, &partition, &committed);
+
+        assert_eq!(
+            current_positions.get(&partition),
+            Some(&Position::offset(50u64))
+        );
+    }
+
+    #[test]
+    fn advance_position_noop_when_partition_uncommitted() {
+        // The committed checkpoint has nothing for this partition: leave the local
+        // entry untouched (a missing entry means the next delta starts at the
+        // beginning, which is correct when nothing was ever committed).
         let partition = PartitionId::from("topic-partition-1");
         let committed = checkpoint_with("topic-partition-0", 42);
         let mut current_positions = BTreeMap::new();
-        current_positions.insert(partition.clone(), Position::offset(10u64));
 
-        align_position(&mut current_positions, &partition, &committed);
+        advance_position(&mut current_positions, &partition, &committed);
 
         assert_eq!(current_positions.get(&partition), None);
     }
