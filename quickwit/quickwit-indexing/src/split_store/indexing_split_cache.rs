@@ -66,20 +66,25 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
     Ok(ByteSize(total_bytes))
 }
 
-/// The base-32 string length of a ULID.
-const ULID_STR_LEN: usize = 26;
-
-/// Recovers the ULID that terminates a split id, used to derive the split's creation time.
+/// Recovers the creation time of a split from its id.
 ///
 /// TEMPORARY: the indexing split store is slated for removal once the compactor service lands.
-/// Until then we recover a split's creation time from the ULID that terminates its id. A split id
-/// may carry a random prefix (added to spread S3 read load), but it always ENDS with a 26-char
-/// ULID, so we slice the suffix before parsing. Ids that do not end with a valid ULID fall back to
-/// the epoch, which simply makes them the first eviction candidates.
+///
+/// Split IDs are either a plain 26-char ULID or the prefixed form produced when
+/// `QW_RANDOM_SPLIT_PREFIX` is enabled: `<4 random chars>_<22 body chars>` (27 chars).
+/// In the prefixed form the original ULID is reconstructed as `body + prefix` before parsing.
+/// IDs that do not parse as a valid ULID fall back to now, treating them as freshly created.
 fn split_creation_time(split_id: &SplitId) -> SystemTime {
-    let split_id_str = split_id.as_str();
-    let ulid_start = split_id_str.len().saturating_sub(ULID_STR_LEN);
-    if let Ok(ulid) = Ulid::from_string(&split_id_str[ulid_start..]) {
+    let s = split_id.as_str();
+    // Detect the prefixed format by checking for `_` at byte position 4.
+    let ulid_str: std::borrow::Cow<str> = if s.len() == 27 && s.as_bytes()[4] == b'_' {
+        let prefix = &s[..4]; // chars 22-25 of the original ULID
+        let body = &s[5..]; // chars 0-21 of the original ULID
+        format!("{body}{prefix}").into()
+    } else {
+        s.into()
+    };
+    if let Ok(ulid) = Ulid::from_string(&ulid_str) {
         ulid.datetime()
     } else {
         SystemTime::now()
@@ -554,24 +559,23 @@ mod tests {
     #[test]
     fn test_split_creation_time() {
         let ulid_str = "01GF5449X7DA53TK9F9W2ZJST2";
-        let expected = Ulid::from_string(ulid_str).unwrap().datetime();
+        let ulid = Ulid::from_string(ulid_str).unwrap();
+        let expected = ulid.datetime();
 
         // A bare ULID split id (no prefix) resolves to that ULID's creation time.
         assert_eq!(split_creation_time(&SplitId::from(ulid_str)), expected);
 
-        // A split id carrying a random prefix still resolves to its trailing ULID's time.
-        let prefixed_split_id = SplitId::from(format!("deadbeef{ulid_str}"));
+        // A prefixed split id (QW_RANDOM_SPLIT_PREFIX format) resolves to the same creation time.
+        let prefixed_split_id = SplitId::from_ulid(ulid, true);
         assert_eq!(split_creation_time(&prefixed_split_id), expected);
 
-        // An id whose trailing 26 chars are not a valid ULID (or that is shorter than a ULID)
-        // falls back to ~now, so a malformed split is treated as freshly created rather than as
-        // the first eviction candidate.
-        let before = SystemTime::now();
-        let invalid = split_creation_time(&SplitId::from("this-is-not-a-valid-ulid!!"));
-        let short = split_creation_time(&SplitId::from("short"));
-        let after = SystemTime::now();
-        assert!(invalid >= before && invalid <= after);
-        assert!(short >= before && short <= after);
+        // An id that does not parse as a valid ULID falls back to ~now, so a malformed split is
+        // treated as freshly created rather than as the first eviction candidate.
+        let now = SystemTime::now();
+        let date_from_invalid = split_creation_time(&SplitId::from("this-is-not-a-valid-ulid!!"));
+        let date_from_short = split_creation_time(&SplitId::from("short"));
+        assert!(date_from_invalid >= now);
+        assert!(date_from_short >= now);
     }
 
     async fn create_fake_split(

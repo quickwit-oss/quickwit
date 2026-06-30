@@ -61,7 +61,7 @@ impl SplitId {
     ///
     /// The prefix is the last 4 characters of the ULID string (pure random bits),
     /// separated from the remaining 22 characters by `_`.
-    fn from_ulid(ulid: ulid::Ulid, random_prefix: bool) -> Self {
+    pub fn from_ulid(ulid: ulid::Ulid, random_prefix: bool) -> Self {
         let ulid_str = ulid.to_string(); // 26 Crockford base32 chars
         if random_prefix {
             // The last 4 characters of a ULID are random bits.
