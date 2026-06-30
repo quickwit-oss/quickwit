@@ -189,7 +189,18 @@ openssl-probe = "0.2"
 opentelemetry = "0.32"
 opentelemetry-appender-tracing = "0.32"
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "http-json"] }
+# `default-features = false` drops the default `reqwest-blocking-client`:
+# see https://github.com/quickwit-oss/quickwit/pull/6558 for more details.
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "grpc-tonic",
+    "http-json",
+    "http-proto",
+    "internal-logs",
+    "logs",
+    "metrics",
+    "reqwest-client",
+    "trace",
+] }
 ouroboros = "0.18"
 parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"

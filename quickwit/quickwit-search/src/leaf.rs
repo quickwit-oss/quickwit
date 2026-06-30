@@ -781,7 +781,8 @@ async fn leaf_search_single_split(
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
     if warmup_size > search_permit.memory_allocation() {
-        warn!(
+        quickwit_common::rate_limited_warn!(
+            limit_per_min = 1,
             memory_usage = ?warmup_size,
             memory_allocation = ?search_permit.memory_allocation(),
             "current leaf search is consuming more memory than the initial allocation"

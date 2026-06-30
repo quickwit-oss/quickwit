@@ -19,6 +19,8 @@ use opentelemetry_otlp::{
     MetricExporter, Protocol as OtlpWireProtocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
 };
 use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader;
+use opentelemetry_sdk::runtime;
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol, quickwit_resource};
 
@@ -44,15 +46,17 @@ impl OtlpProtocol {
     }
 }
 
+/// Builds the OTLP metrics recorder and its meter provider.
 pub(crate) fn build_recorder(
     service_version: &str,
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMeterProvider)> {
     let metrics_protocol = otlp_config.metrics_protocol()?;
     let metric_exporter = metrics_protocol.metric_exporter()?;
+    let metric_reader = PeriodicReader::builder(metric_exporter, runtime::Tokio).build();
     let metrics_provider = SdkMeterProvider::builder()
         .with_resource(quickwit_resource(service_version))
-        .with_periodic_exporter(metric_exporter)
+        .with_reader(metric_reader)
         .build();
     let meter = metrics_provider.meter("quickwit");
 
