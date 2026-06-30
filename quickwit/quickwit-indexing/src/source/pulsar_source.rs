@@ -81,11 +81,11 @@ pub struct PulsarSource {
     source_params: PulsarSourceParams,
     pulsar_consumer: PulsarConsumer,
     subscription_name: String,
-    // Effective Pulsar consumer name, derived from the user-supplied
-    // `consumer_name` prefix and this pipeline's `pipeline_uid`. It must be
-    // unique per pipeline so that several pipelines of the same source connect
-    // as distinct consumers under the shared Failover subscription, letting the
-    // broker distribute partitions across them (distributed indexing).
+    // Effective Pulsar consumer name. For a distributed source it is the
+    // user-supplied `consumer_name` suffixed with this pipeline's `pipeline_uid`,
+    // so that several pipelines connect as distinct consumers under the shared
+    // Failover subscription and the broker distributes partitions across them. For
+    // a single-pipeline source it is the configured `consumer_name` unchanged.
     consumer_name: String,
     // Whether this source runs with more than one pipeline. Only then can a
     // partition be handed between pipelines, so only then do we resync positions.
@@ -121,12 +121,17 @@ impl PulsarSource {
     ) -> anyhow::Result<Self> {
         let subscription_name =
             subscription_name(source_runtime.index_uid(), source_runtime.source_id());
-        // The consumer name must be unique per pipeline: under the shared
-        // Failover subscription, each pipeline connects as a separate consumer
-        // and the broker assigns each topic partition to exactly one of them.
-        let consumer_name =
-            consumer_name(&source_params.consumer_name, source_runtime.pipeline_uid());
         let distributed = source_runtime.source_config.num_pipelines.get() > 1;
+        // Only distributed sources need a per-pipeline consumer name: under the
+        // shared Failover subscription each pipeline connects as a separate
+        // consumer and the broker assigns each partition to exactly one of them. A
+        // single-pipeline source keeps the configured consumer name as-is, to stay
+        // backward compatible with monitoring/automation keyed on it.
+        let consumer_name = if distributed {
+            consumer_name(&source_params.consumer_name, source_runtime.pipeline_uid())
+        } else {
+            source_params.consumer_name.clone()
+        };
         info!(
             index_id=%source_runtime.index_id(),
             source_id=%source_runtime.source_id(),
@@ -1086,7 +1091,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
+            "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
@@ -1153,7 +1158,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic1, topic2],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
+            "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 20,
             "num_invalid_messages": 0,
@@ -1207,7 +1212,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
+            "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
@@ -1290,7 +1295,7 @@ mod pulsar_broker_tests {
             "source_id": source_id,
             "topics": vec![topic],
             "subscription_name": subscription_name(&index_uid, &source_id),
-            "consumer_name": consumer_name(CLIENT_NAME, default_test_pipeline_uid()),
+            "consumer_name": CLIENT_NAME,
             "num_bytes_processed": num_bytes,
             "num_messages_processed": 10,
             "num_invalid_messages": 0,
@@ -1310,7 +1315,8 @@ mod pulsar_broker_tests {
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source--distributed--topic");
         let index_id = append_random_suffix("test-pulsar-source--distributed--index");
-        let (_source_id, source_config) = get_source_config([&topic]);
+        let (_source_id, mut source_config) = get_source_config([&topic]);
+        source_config.num_pipelines = NonZeroUsize::new(2).unwrap();
 
         let num_partitions = 4;
         let msgs_per_partition = 10;
