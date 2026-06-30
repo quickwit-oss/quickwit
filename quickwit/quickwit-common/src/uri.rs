@@ -89,9 +89,6 @@ impl FromStr for Protocol {
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
             "gs" => Ok(Protocol::Google),
-            // `s3+<name>://...` for a named S3-compatible backend configured under
-            // `storage.s3.named.<name>`. Routes to the same factory as `s3://`.
-            s if s.starts_with("s3+") && s.len() > 3 => Ok(Protocol::S3),
             _ => bail!("unknown URI protocol `{protocol}`"),
         }
     }
@@ -189,33 +186,13 @@ impl Uri {
         let parent_path = path.parent()?;
 
         Some(Self {
-            // Preserve the scheme verbatim so an `s3+<name>` qualifier survives.
-            uri: format!(
-                "{}{PROTOCOL_SEPARATOR}{}",
-                self.scheme(),
-                parent_path.display()
-            ),
+            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{}", parent_path.display()),
             protocol,
         })
     }
 
-    /// Returns the URI scheme, preserving any `s3+<name>` qualifier, which may
-    /// differ from the canonical protocol string (e.g. `s3+alt` vs `s3`).
-    fn scheme(&self) -> &str {
-        match self.uri.split_once(PROTOCOL_SEPARATOR) {
-            Some((scheme, _path)) => scheme,
-            None => self.protocol.as_str(),
-        }
-    }
-
     fn path(&self) -> &Path {
-        // Slice at the actual `://` separator rather than assuming the scheme
-        // equals the canonical protocol — `s3+<name>` schemes are longer.
-        let path = match self.uri.split_once(PROTOCOL_SEPARATOR) {
-            Some((_scheme, path)) => path,
-            None => &self.uri,
-        };
-        Path::new(path)
+        Path::new(&self.uri[self.protocol.as_str().len() + PROTOCOL_SEPARATOR.len()..])
     }
 
     /// Returns the last component of the URI.
@@ -285,13 +262,9 @@ impl Uri {
         if uri_str.is_empty() {
             bail!("failed to parse empty URI");
         }
-        let (scheme_opt, protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
-            None => (None, Protocol::File, uri_str.to_string()),
-            Some((scheme, path)) => (
-                Some(scheme.to_string()),
-                Protocol::from_str(scheme)?,
-                path.to_string(),
-            ),
+        let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
+            None => (Protocol::File, uri_str.to_string()),
+            Some((protocol, path)) => (Protocol::from_str(protocol)?, path.to_string()),
         };
         if protocol == Protocol::File {
             if path.starts_with('~') {
@@ -319,14 +292,8 @@ impl Uri {
                 .to_string_lossy()
                 .to_string();
         }
-        // Preserve `s3+<name>` qualifier so the storage resolver can route to
-        // the named backend; other schemes normalize to canonical form.
-        let display_scheme: &str = match scheme_opt.as_deref() {
-            Some(s) if s.starts_with("s3+") => s,
-            _ => protocol.as_str(),
-        };
         Ok(Self {
-            uri: format!("{display_scheme}{PROTOCOL_SEPARATOR}{path}"),
+            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{path}"),
             protocol,
         })
     }
@@ -697,26 +664,6 @@ mod tests {
     }
 
     #[test]
-    fn test_uri_named_s3_scheme() {
-        // `s3+<name>` schemes are preserved end-to-end: `path` strips the real
-        // scheme (not the canonical `s3`), and `parent`/`file_name` keep the
-        // qualifier intact.
-        let uri = Uri::for_test("s3+alt://bucket/foo/bar");
-        assert_eq!(uri.as_str(), "s3+alt://bucket/foo/bar");
-        assert_eq!(uri.protocol(), Protocol::S3);
-        assert_eq!(uri.parent().unwrap(), "s3+alt://bucket/foo");
-        assert_eq!(uri.file_name().unwrap(), Path::new("bar"));
-
-        let uri = Uri::for_test("s3+with-dash://bucket/key");
-        assert_eq!(uri.parent().unwrap(), "s3+with-dash://bucket");
-        assert_eq!(uri.file_name().unwrap(), Path::new("key"));
-
-        // Mirrors the plain-`s3` guard: a bucket-only URI has no parent.
-        assert!(Uri::for_test("s3+alt://bucket").parent().is_none());
-        assert!(Uri::for_test("s3+alt://bucket/").parent().is_none());
-    }
-
-    #[test]
     fn test_uri_file_name() {
         assert!(Uri::for_test("file:///").file_name().is_none());
         assert_eq!(
@@ -864,25 +811,5 @@ mod tests {
             serde_json::to_value(uri).unwrap(),
             serde_json::Value::String("s3://bucket/key".to_string())
         );
-    }
-
-    #[test]
-    fn test_uri_s3_named_preserved() {
-        // The `s3+<name>` qualifier is the routing token for named S3-compatible
-        // backends (`storage.s3.named.<name>`). It must survive parse + serialize
-        // so the storage resolver can recover the backend name on deserialization;
-        // before this guarantee, the qualifier was stripped by URI normalization
-        // and every `s3+<name>://` URI silently resolved to the primary endpoint.
-        let uri = Uri::from_str("s3+alt://bucket/key").unwrap();
-        assert_eq!(uri.protocol(), Protocol::S3);
-        assert_eq!(uri.as_str(), "s3+alt://bucket/key");
-        let json = serde_json::to_value(&uri).unwrap();
-        assert_eq!(
-            json,
-            serde_json::Value::String("s3+alt://bucket/key".to_string())
-        );
-        let round_trip: Uri = serde_json::from_value(json).unwrap();
-        assert_eq!(round_trip.as_str(), "s3+alt://bucket/key");
-        assert_eq!(round_trip.protocol(), Protocol::S3);
     }
 }
