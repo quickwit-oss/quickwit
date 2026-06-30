@@ -9046,6 +9046,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pomsky-arrow"
+version = "0.1.30-dev"
+dependencies = [
+ "arrow",
+ "tantivy",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "pomsky-intake"
 version = "0.1.30-dev"
 dependencies = [
