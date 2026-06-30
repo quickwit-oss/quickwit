@@ -1572,6 +1572,7 @@ async fn check_cluster_configuration(
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use anyhow::bail;
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
@@ -1632,14 +1633,14 @@ mod tests {
                 let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
                 if *failures_to_inject > 0 {
                     *failures_to_inject -= 1;
-                    return Err(anyhow::anyhow!("Metastore transiently not ready"));
+                    bail!("metastore transiently not ready");
                 }
                 drop(failures_to_inject);
 
                 if *metastore_readiness_rx.borrow() {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Metastore not ready"))
+                    bail!("metastore not ready")
                 }
             });
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
