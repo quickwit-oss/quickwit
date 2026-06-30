@@ -23,8 +23,8 @@ use coarsetime::{Duration, Instant};
 pub enum ShouldLog {
     /// Emit the log normally, within the rate limit.
     Yes,
-    /// Emit the log, annotated with a `suppressed_in_last_min = N` field recording how many
-    /// similar messages were suppressed since the last emission.
+    /// Emit the log, annotated with a `num_suppressed = N` field recording how many similar
+    /// messages were suppressed since the last emission of this call site.
     YesAfterSuppression(u32),
     /// Suppressed — do not emit.
     No,
@@ -166,9 +166,9 @@ macro_rules! rate_limited_tracing {
                 ::tracing::$log_fn!($($args)*);
             }
             $crate::rate_limited_tracing::ShouldLog::YesAfterSuppression(skipped) => {
-                // Attach the count of messages suppressed in the last minute as a field on the
-                // emitted line, rather than as a separate preceding log line.
-                ::tracing::$log_fn!(suppressed_in_last_min = skipped, $($args)*);
+                // Attach the count of messages suppressed since this call site last emitted as a
+                // field on the emitted line, rather than as a separate preceding log line.
+                ::tracing::$log_fn!(num_suppressed = skipped, $($args)*);
             }
         }
     }};
