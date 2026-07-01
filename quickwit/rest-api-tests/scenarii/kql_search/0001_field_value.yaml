@@ -1,0 +1,26 @@
+# Basic `field:value` matches.
+endpoint: kql_demo/search
+params:
+  kql: "level:error"
+expected:
+  num_hits: 2
+---
+endpoint: kql_demo/search
+params:
+  kql: "service:worker"
+expected:
+  num_hits: 3
+---
+# Bare term searches the docmapper default field (`message`).
+endpoint: kql_demo/search
+params:
+  kql: "refused"
+expected:
+  num_hits: 1
+---
+# Quoted phrase against default field.
+endpoint: kql_demo/search
+params:
+  kql: '"job started"'
+expected:
+  num_hits: 1

@@ -1,0 +1,52 @@
+# Implicit AND between juxtaposed clauses.
+endpoint: kql_demo/search
+params:
+  kql: "level:error service:api"
+expected:
+  num_hits: 2
+---
+# Explicit AND.
+endpoint: kql_demo/search
+params:
+  kql: "level:error and service:api"
+expected:
+  num_hits: 2
+---
+# OR.
+endpoint: kql_demo/search
+params:
+  kql: "level:error or level:warn"
+expected:
+  num_hits: 3
+---
+# NOT — excludes the two error rows; the doc with no `level` is still counted
+# because NOT(level:error) is true when the field is absent.
+endpoint: kql_demo/search
+params:
+  kql: "not level:error"
+expected:
+  num_hits: 4
+---
+# Precedence: OR binds looser than AND.
+# `a or b and c` parses as `a or (b and c)` — matches the two errors plus the
+# single warn row (4 rows total are level:error OR level:warn, only 3 of those
+# satisfy the AND).
+endpoint: kql_demo/search
+params:
+  kql: "level:error or level:warn and service:api"
+expected:
+  num_hits: 3
+---
+# Parentheses override the default precedence.
+endpoint: kql_demo/search
+params:
+  kql: "(level:error or level:warn) and service:api"
+expected:
+  num_hits: 3
+---
+# Value group: distributes the field over the alternatives.
+endpoint: kql_demo/search
+params:
+  kql: "level:(error or warn)"
+expected:
+  num_hits: 3

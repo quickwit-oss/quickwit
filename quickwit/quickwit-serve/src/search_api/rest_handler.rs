@@ -18,7 +18,8 @@ use std::sync::Arc;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
-use quickwit_query::query_ast::query_ast_from_user_text;
+use quickwit_query::kql_to_query_ast;
+use quickwit_query::query_ast::{QueryAst, query_ast_from_user_text};
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -151,8 +152,21 @@ fn default_max_hits() -> u64 {
 #[into_params(parameter_in = Query)]
 #[serde(deny_unknown_fields)]
 pub struct SearchRequestQueryString {
-    /// Query text. The query language is that of tantivy.
+    /// Query text. The query language is that of tantivy. Mutually exclusive
+    /// with `kql` — exactly one must be supplied.
+    ///
+    /// Exposed to OpenAPI as `Option<String>` because `#[serde(default)]`
+    /// makes it semantically optional at the wire layer; without the
+    /// `value_type` override utoipa would still emit `required: ["query"]`,
+    /// which would mislead generated SDK clients.
+    #[serde(default)]
+    #[param(value_type = Option<String>)]
+    #[schema(value_type = Option<String>)]
     pub query: String,
+    /// Query text expressed in KQL (Kibana Query Language). Mutually exclusive
+    /// with `query`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kql: Option<String>,
     #[param(value_type = Object)]
     #[schema(value_type = Object)]
     /// The aggregation JSON string.
@@ -240,14 +254,55 @@ mod count_hits_from_bool {
     }
 }
 
+/// Hard upper bound on the KQL string length accepted at the REST layer.
+/// Bounds memory and parser work per request — far above any realistic user
+/// query, but small enough that this cap combined with the parser's depth and
+/// token caps closes obvious DoS angles.
+const MAX_KQL_INPUT_LEN: usize = 16 * 1024;
+
+/// Build a deferred `QueryAst` from the `query` / `kql` request fields,
+/// validating that exactly one was supplied. Whitespace-only inputs are
+/// treated as unset so a request like `?kql=%20` is rejected eagerly with a
+/// 400 rather than failing later at the root parse.
+fn build_query_ast(
+    query: &str,
+    kql: Option<&str>,
+    search_fields: Option<Vec<String>>,
+) -> Result<QueryAst, anyhow::Error> {
+    let query_set = !query.trim().is_empty();
+    let kql_text = kql.filter(|s| !s.trim().is_empty());
+    match (query_set, kql_text) {
+        (true, Some(_)) => {
+            anyhow::bail!("`query` and `kql` are mutually exclusive — supply exactly one")
+        }
+        (false, None) => anyhow::bail!("either `query` or `kql` must be supplied"),
+        (false, Some(kql_text)) => {
+            if kql_text.len() > MAX_KQL_INPUT_LEN {
+                anyhow::bail!("`kql` input exceeds maximum length of {MAX_KQL_INPUT_LEN} bytes");
+            }
+            // Translate KQL eagerly into a `QueryAst` built from existing
+            // variants. Bare default-field values are wrapped in a
+            // `UserInputQuery` vessel so the search root resolves them
+            // against each index's `default_search_fields`.
+            kql_to_query_ast(kql_text, search_fields.as_deref(), false)
+        }
+        (true, None) => Ok(query_ast_from_user_text(query, search_fields)),
+    }
+}
+
 pub fn search_request_from_api_request(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
 ) -> Result<quickwit_proto::search::SearchRequest, SearchError> {
-    // The query ast below may still contain user input query. The actual
-    // parsing of the user query will happen in the root service, and might require
-    // the user of the docmapper default fields (which we do not have at this point).
-    let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    // The query ast below may still contain a deferred user-input query
+    // (either Tantivy grammar or KQL). The actual parsing happens in the root
+    // service, which has access to the docmapper's default search fields.
+    let query_ast = build_query_ast(
+        &search_request.query,
+        search_request.kql.as_deref(),
+        search_request.search_fields.clone(),
+    )
+    .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::search::SearchRequest {
         index_id_patterns,
@@ -333,7 +388,12 @@ async fn search(
     search_request: SearchRequestQueryString,
     search_service: Arc<dyn SearchService>,
 ) -> impl warp::Reply {
-    info!(request =? search_request, "search");
+    info!(
+        request = ?search_request,
+        kql = search_request.kql.is_some(),
+        tantivy_grammar = !search_request.query.is_empty(),
+        "search"
+    );
     let body_format = search_request.format;
     let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
     into_rest_api_response(result, body_format)
@@ -1081,6 +1141,154 @@ mod tests {
                 .reply(&rest_search_api_handler)
                 .await;
             assert_eq!(response.status(), 400);
+        }
+    }
+
+    mod kql_routing {
+        use quickwit_query::query_ast::QueryAst;
+
+        use super::super::{SearchRequestQueryString, search_request_from_api_request};
+
+        fn request_with(query: &str, kql: Option<&str>) -> SearchRequestQueryString {
+            SearchRequestQueryString {
+                query: query.to_string(),
+                kql: kql.map(|s| s.to_string()),
+                ..Default::default()
+            }
+        }
+
+        fn extract_query_ast(request: SearchRequestQueryString) -> QueryAst {
+            let proto = search_request_from_api_request(vec!["idx".into()], request).unwrap();
+            serde_json::from_str(&proto.query_ast).unwrap()
+        }
+
+        #[test]
+        fn test_kql_param_lowers_to_full_text_for_field_qualified_clause() {
+            // KQL is translated eagerly at the REST layer to a `QueryAst`
+            // built from existing variants; no new `Kql` variant is created.
+            let request = request_with("", Some("level:error"));
+            let QueryAst::FullText(q) = extract_query_ast(request) else {
+                panic!("expected FullText after eager lowering");
+            };
+            assert_eq!(q.field, "level");
+            assert_eq!(q.text, "error");
+        }
+
+        #[test]
+        fn test_kql_bare_value_defers_to_user_input() {
+            // Bare default-field values defer to the search root via
+            // `UserInputQuery` — same vessel the Tantivy-grammar path uses.
+            let request = request_with("", Some("error"));
+            let QueryAst::UserInput(uiq) = extract_query_ast(request) else {
+                panic!("expected UserInput vessel");
+            };
+            assert_eq!(uiq.user_text, "error");
+        }
+
+        #[test]
+        fn test_query_param_routes_to_user_input_variant() {
+            let request = request_with("level:error", None);
+            let QueryAst::UserInput(_) = extract_query_ast(request) else {
+                panic!("expected QueryAst::UserInput");
+            };
+        }
+
+        #[test]
+        fn test_both_query_and_kql_is_rejected() {
+            let request = request_with("foo", Some("bar"));
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("mutually exclusive"));
+        }
+
+        #[test]
+        fn test_neither_query_nor_kql_is_rejected() {
+            let request = request_with("", None);
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("must be supplied"));
+        }
+
+        #[test]
+        fn test_empty_string_kql_is_treated_as_unset() {
+            // Explicit `kql=""` is rejected eagerly with "must be supplied"
+            // rather than routed into the parser to fail late.
+            let request = request_with("", Some(""));
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("must be supplied"));
+        }
+
+        #[test]
+        fn test_whitespace_only_kql_is_treated_as_unset() {
+            let request = request_with("", Some("   \t"));
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("must be supplied"));
+        }
+
+        #[test]
+        fn test_whitespace_only_query_is_treated_as_unset() {
+            // Symmetric with `kql` — a whitespace-only `query` shouldn't
+            // satisfy the "exactly one" rule on its own.
+            let request = request_with("   ", None);
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("must be supplied"));
+        }
+
+        #[test]
+        fn test_kql_with_whitespace_only_and_real_query_is_not_treated_as_conflict() {
+            // Only one is actually populated, so the request is valid.
+            let request = request_with("level:error", Some(""));
+            let proto = search_request_from_api_request(vec!["idx".into()], request).unwrap();
+            let ast: QueryAst = serde_json::from_str(&proto.query_ast).unwrap();
+            assert!(matches!(ast, QueryAst::UserInput(_)));
+        }
+
+        #[test]
+        fn test_search_fields_propagate_to_kql_default_fields() {
+            // The REST `search_fields` parameter is threaded into the
+            // `UserInputQuery` vessel that the KQL translator emits for
+            // bare default-field values. The search root then resolves the
+            // bare term against those fields.
+            let mut request = request_with("", Some("error"));
+            request.search_fields = Some(vec!["body".to_string(), "summary".to_string()]);
+            let proto = search_request_from_api_request(vec!["idx".into()], request).unwrap();
+            let QueryAst::UserInput(uiq) = serde_json::from_str(&proto.query_ast).unwrap() else {
+                panic!("expected QueryAst::UserInput vessel");
+            };
+            assert_eq!(
+                uiq.default_fields,
+                Some(vec!["body".to_string(), "summary".to_string()])
+            );
+        }
+
+        #[test]
+        fn test_json_body_with_kql_field_deserializes() {
+            // Goes through the same serde-derived Deserialize impl as the
+            // live POST handler — proves the kql field is actually exposed.
+            let body = r#"{"kql": "level:error"}"#;
+            let parsed: SearchRequestQueryString = serde_json::from_str(body)
+                .unwrap_or_else(|err| panic!("failed to deserialize {body:?}: {err}"));
+            assert_eq!(parsed.kql.as_deref(), Some("level:error"));
+            assert_eq!(parsed.query, "");
+        }
+
+        #[test]
+        fn test_oversize_kql_input_is_rejected() {
+            let oversize = "a".repeat(super::MAX_KQL_INPUT_LEN + 1);
+            let request = request_with("", Some(&oversize));
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(
+                err.to_string().contains("maximum length"),
+                "unexpected error: {err}"
+            );
+        }
+
+        #[test]
+        fn test_invalid_kql_syntax_surfaces_as_400_not_panic() {
+            // Syntactically broken KQL ("level:" — dangling colon) is
+            // rejected eagerly at the REST layer with InvalidQuery → HTTP
+            // 400. The parser is bounded; we must never panic.
+            let request = request_with("", Some("level:"));
+            let err = search_request_from_api_request(vec!["idx".into()], request).unwrap_err();
+            assert!(err.to_string().contains("value"), "unexpected error: {err}");
         }
     }
 }

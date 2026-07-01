@@ -1,0 +1,2 @@
+method: DELETE
+endpoint: indexes/kql_demo

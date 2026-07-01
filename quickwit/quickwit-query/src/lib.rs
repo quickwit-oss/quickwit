@@ -27,6 +27,9 @@ pub mod aggregations;
 mod elastic_query_dsl;
 mod error;
 mod json_literal;
+mod kql;
+
+pub use kql::kql_to_query_ast;
 mod not_nan_f32;
 pub mod query_ast;
 pub mod tokenizers;

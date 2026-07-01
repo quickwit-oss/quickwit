@@ -1,0 +1,45 @@
+# KQL integration scenario — exercises the new `kql` REST parameter and the
+# `{"kql": {...}}` ES-DSL surface against a small, deterministic dataset.
+method: DELETE
+endpoint: indexes/kql_demo
+status_code: null
+---
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: kql_demo
+  doc_mapping:
+    index_field_presence: true
+    field_mappings:
+      - name: level
+        type: text
+        tokenizer: raw
+        fast: true
+      - name: status
+        type: u64
+        fast: true
+        indexed: true
+      - name: service
+        type: text
+        tokenizer: raw
+        fast: true
+      - name: message
+        type: text
+        tokenizer: default
+        record: position
+  search_settings:
+    default_search_fields: ["message"]
+---
+method: POST
+endpoint: kql_demo/ingest
+params:
+  commit: force
+ndjson:
+  - {"level": "error", "status": 500, "service": "api",     "message": "connection refused"}
+  - {"level": "error", "status": 503, "service": "api",     "message": "upstream unavailable"}
+  - {"level": "warn",  "status": 200, "service": "api",     "message": "slow query"}
+  - {"level": "info",  "status": 200, "service": "worker",  "message": "job started"}
+  - {"level": "info",  "status": 200, "service": "worker",  "message": "job finished"}
+  # A document missing the `level` field — used by exists tests.
+  - {"status": 200, "service": "worker", "message": "heartbeat"}

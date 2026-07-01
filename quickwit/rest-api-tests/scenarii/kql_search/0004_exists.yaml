@@ -1,0 +1,13 @@
+# `field:*` is a field-presence check: matches docs where `level` is set.
+endpoint: kql_demo/search
+params:
+  kql: "level:*"
+expected:
+  num_hits: 5
+---
+# Negated presence: docs missing the `level` field.
+endpoint: kql_demo/search
+params:
+  kql: "not level:*"
+expected:
+  num_hits: 1

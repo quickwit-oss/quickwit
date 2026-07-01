@@ -1,0 +1,27 @@
+# Greater-than-or-equal numeric range.
+endpoint: kql_demo/search
+params:
+  kql: "status:>=500"
+expected:
+  num_hits: 2
+---
+# Strict greater-than.
+endpoint: kql_demo/search
+params:
+  kql: "status:>500"
+expected:
+  num_hits: 1
+---
+# Less-than-or-equal range.
+endpoint: kql_demo/search
+params:
+  kql: "status:<=200"
+expected:
+  num_hits: 4
+---
+# Compound range — bracketed by AND of two open bounds.
+endpoint: kql_demo/search
+params:
+  kql: "status:>=200 and status:<500"
+expected:
+  num_hits: 4
