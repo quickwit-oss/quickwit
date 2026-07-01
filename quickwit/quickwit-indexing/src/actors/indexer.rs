@@ -38,7 +38,7 @@ use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::{DocMappingUid, PublishToken};
+use quickwit_proto::types::DocMappingUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
@@ -55,7 +55,7 @@ use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingP
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
-    NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
+    ProcessedDoc, ProcessedDocBatch, PublishLock,
 };
 
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
@@ -93,7 +93,6 @@ struct IndexerState {
     indexing_directory: TempDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
-    publish_token_opt: Option<PublishToken>,
     schema: Schema,
     doc_mapping_uid: DocMappingUid,
     tokenizer_manager: TokenizerManager,
@@ -219,7 +218,6 @@ impl IndexerState {
             source_delta: SourceCheckpointDelta::default(),
         };
         let publish_lock = self.publish_lock.clone();
-        let publish_token_opt = self.publish_token_opt.clone();
 
         let split_builders_guard = GaugeGuard::new(&SPLIT_BUILDERS, 1.0);
 
@@ -231,7 +229,6 @@ impl IndexerState {
             other_indexed_split_opt: None,
             checkpoint_delta,
             publish_lock,
-            publish_token_opt,
             last_delete_opstamp,
             memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
             cooperative_indexing_period,
@@ -349,7 +346,6 @@ struct IndexingWorkbench {
 
     checkpoint_delta: IndexCheckpointDelta,
     publish_lock: PublishLock,
-    publish_token_opt: Option<PublishToken>,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
@@ -513,21 +509,6 @@ impl Handler<NewPublishLock> for Indexer {
     }
 }
 
-#[async_trait]
-impl Handler<NewPublishToken> for Indexer {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        let NewPublishToken(publish_token) = message;
-        self.indexer_state.publish_token_opt = Some(publish_token);
-        Ok(())
-    }
-}
-
 impl Indexer {
     pub fn new(
         pipeline_id: IndexingPipelineId,
@@ -563,7 +544,6 @@ impl Indexer {
                 indexing_directory,
                 indexing_settings,
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 schema,
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
@@ -630,7 +610,6 @@ impl Indexer {
             other_indexed_split_opt,
             checkpoint_delta,
             publish_lock,
-            publish_token_opt,
             batch_parent_span,
             memory_usage,
             split_builders_guard,
@@ -656,7 +635,6 @@ impl Indexer {
                         index_uid: self.indexer_state.pipeline_id.index_uid.clone(),
                         checkpoint_delta,
                         publish_lock,
-                        publish_token_opt,
                         batch_parent_span,
                     },
                 )
@@ -680,7 +658,6 @@ impl Indexer {
                 splits,
                 checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock,
-                publish_token_opt,
                 commit_trigger,
                 batch_parent_span,
                 memory_usage,

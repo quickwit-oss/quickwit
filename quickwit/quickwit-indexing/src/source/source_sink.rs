@@ -23,23 +23,19 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, Command, DeferableReplyHandler, Mailbox, SendError};
 
 use super::SourceContext;
-use crate::models::{NewPublishLock, NewPublishToken, RawDocBatch};
+use crate::models::{NewPublishLock, RawDocBatch};
 
 /// Internal trait used to type-erase the concrete `Mailbox<T>`.
 #[async_trait]
 trait SourceSinkTrait: Send + Sync + 'static {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError>;
     async fn send_publish_lock(&self, lock: NewPublishLock) -> Result<(), SendError>;
-    async fn send_publish_token(&self, token: NewPublishToken) -> Result<(), SendError>;
     async fn send_exit_with_success(&self) -> Result<(), SendError>;
 }
 
 #[async_trait]
 impl<A> SourceSinkTrait for Mailbox<A>
-where A: Actor
-        + DeferableReplyHandler<RawDocBatch>
-        + DeferableReplyHandler<NewPublishLock>
-        + DeferableReplyHandler<NewPublishToken>
+where A: Actor + DeferableReplyHandler<RawDocBatch> + DeferableReplyHandler<NewPublishLock>
 {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError> {
         self.send_message(batch).await?;
@@ -48,11 +44,6 @@ where A: Actor
 
     async fn send_publish_lock(&self, lock: NewPublishLock) -> Result<(), SendError> {
         self.send_message(lock).await?;
-        Ok(())
-    }
-
-    async fn send_publish_token(&self, token: NewPublishToken) -> Result<(), SendError> {
-        self.send_message(token).await?;
         Ok(())
     }
 
@@ -101,15 +92,6 @@ impl SourceSink {
     ) -> Result<(), SendError> {
         let _guard = ctx.protect_zone();
         self.inner.send_publish_lock(lock).await
-    }
-
-    pub async fn send_publish_token(
-        &self,
-        token: NewPublishToken,
-        ctx: &SourceContext,
-    ) -> Result<(), SendError> {
-        let _guard = ctx.protect_zone();
-        self.inner.send_publish_token(token).await
     }
 
     pub async fn send_exit_with_success(&self, ctx: &SourceContext) -> Result<(), SendError> {

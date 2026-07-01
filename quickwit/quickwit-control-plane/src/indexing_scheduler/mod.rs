@@ -35,6 +35,7 @@ use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, info, warn};
+use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
@@ -425,6 +426,11 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
+        // The indexing plan ID is a monotonically increasing time based ID that's used as the
+        // publish token for indexers, which ensures indexing plans and shard acquisition are always
+        // informed by the most recent plan.
+        let indexing_plan_id = Ulid::new().to_string();
+
         // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
         // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
         for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
@@ -437,20 +443,24 @@ impl IndexingScheduler {
                 .indexer(indexer.node_id.as_str())
                 .unwrap_or(&[])
                 .to_vec();
+
             // We don't want to block on a slow indexer so we apply this change asynchronously.
-            // Bound the apply only for retiring/decommissioning indexers, so a slow or unreachable
-            // draining node can't hold the change-notification guard; ready indexers get no
-            // timeout.
+            // Retiring/decommissioning indexers are time-bound, so a slow or unreachable
+            // draining node can't hold the notify guard. Ready indexers get no timeout.
             let apply_deadline = matches!(
                 indexer.ingester_status,
                 IngesterStatus::Retiring | IngesterStatus::Decommissioning
             )
             .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
+
             let notify_on_drop = notify_on_drop.clone();
+            let indexing_plan_id = indexing_plan_id.clone();
             tokio::spawn(async move {
                 let client = indexer.client.clone();
-                let apply_plan_fut =
-                    client.apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks });
+                let apply_plan_fut = client.apply_indexing_plan(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id,
+                });
                 let apply_result = match apply_deadline {
                     Some(timeout) => tokio::time::timeout(timeout, apply_plan_fut).await,
                     None => Ok(apply_plan_fut.await),
