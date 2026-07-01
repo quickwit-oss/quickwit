@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # Triggers an edge build, gated behind manual approval of the "production" environment.
       - main
-      - release-0.9
     paths:
       - "quickwit/**"
     tags:
@@ -23,9 +23,9 @@ env:
 jobs:
   build-lambda:
     name: Build Lambda ARM64
-    # Only build a fresh lambda for tag-triggered builds (v*, qw*, etc.).
-    # Branch/edge builds and workflow_dispatch fall back to the pinned URL in build.rs.
-    if: github.ref_type == 'tag'
+    # Build a fresh lambda for tag-triggered releases and edge builds on main.
+    # workflow_dispatch and other branches fall back to the pinned URL in build.rs.
+    if: github.ref_type == 'tag' || (github.ref_type == 'branch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -36,7 +36,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Extract asset version
-        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "ASSET_VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "ASSET_VERSION=edge-${GITHUB_SHA::7}" >> $GITHUB_ENV
+          fi
 
       - name: Install rustup
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
@@ -218,7 +223,6 @@ jobs:
             type=semver,pattern={{version}},value=latest
             type=semver,pattern={{version}},suffix=-slim-bookworm
             type=ref,event=tag
-            type=raw,value=v0.9.0-rc,enable=${{ github.ref == 'refs/heads/release-0.9' }}
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
