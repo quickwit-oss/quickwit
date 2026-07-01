@@ -130,6 +130,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_cpu_capacity,
         ingester_status: IngesterStatus::default(),
         availability_zone: node_config.availability_zone.clone(),
+        enable_standalone_compactors: node_config.enable_standalone_compactors,
     };
     let failure_detector_config = FailureDetectorConfig {
         dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours

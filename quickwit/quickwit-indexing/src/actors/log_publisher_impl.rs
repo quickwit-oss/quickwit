@@ -28,7 +28,7 @@ use crate::actors::publisher::{
 use crate::models::{NewSplits, SplitsUpdate};
 
 pub(crate) const PUBLISHER_NAME: &str = "Publisher";
-pub(crate) const MERGE_PUBLISHER_NAME: &str = "MergePublisher";
+pub const MERGE_PUBLISHER_NAME: &str = "MergePublisher";
 
 #[async_trait]
 impl Handler<DisconnectMergePlanner> for Publisher {

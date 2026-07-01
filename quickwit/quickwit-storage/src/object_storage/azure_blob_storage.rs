@@ -27,6 +27,7 @@ use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::{Bytes, BytesMut};
+use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
@@ -111,10 +112,11 @@ impl AzureBlobStorage {
             multipart_policy: MultiPartPolicy {
                 // Azure max part size is 100MB
                 // https://azure.microsoft.com/en-us/blog/general-availability-larger-block-blobs-in-azure-storage/
-                target_part_num_bytes: 100_000_000,
-                multipart_threshold_num_bytes: 100_000_000,
+                target_part_num_bytes: ByteSize::mb(100),
+                multipart_threshold_num_bytes: ByteSize::mb(100),
                 max_num_parts: 50_000, // Azure allows up to 50,000 blocks
-                max_object_num_bytes: 4_770_000_000_000u64, // Azure allows up to 4.77TB objects
+                max_object_num_bytes: ByteSize::b(4_770_000_000_000), /* Azure allows up to
+                                        * 4.77TB objects */
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),
@@ -214,6 +216,7 @@ impl AzureBlobStorage {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
+            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
                 let stream = self
                     .container_client
@@ -243,6 +246,7 @@ impl AzureBlobStorage {
     ) -> StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -278,6 +282,8 @@ impl AzureBlobStorage {
                 crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
                 crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
+                    let _timer =
+                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
                         let block_id = format!("block:{:05}", num);

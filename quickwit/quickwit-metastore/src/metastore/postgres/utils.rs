@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{Expr, Func, Order, SelectStatement, any};
+use sea_query::{ArrayType, Expr, Func, Order, SelectStatement, Value, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
@@ -96,10 +96,7 @@ pub(super) fn append_range_filters<V: Display>(
     };
 }
 
-pub(super) fn append_query_filters_and_order_by(
-    sql: &mut SelectStatement,
-    query: &ListSplitsQuery,
-) {
+pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query: ListSplitsQuery) {
     if let Some(index_uids) = &query.index_uids {
         // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
         // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform
@@ -202,6 +199,23 @@ pub(super) fn append_query_filters_and_order_by(
         );
     }
 
+    if !query.excluded_split_ids.is_empty() {
+        // One bind regardless of set size: avoids postgres' 65535 param
+        // ceiling and keeps parse-time O(1) in the exclude size. The `$1` is
+        // postgres' placeholder; sea-query substitutes it with the next bind
+        // slot at build time.
+        let excluded_split_ids: Vec<Value> = query
+            .excluded_split_ids
+            .into_iter()
+            .map(|split_id| Value::String(Some(Box::new(split_id))))
+            .collect();
+        let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_split_ids)));
+        sql.cond_where(Expr::cust_with_values(
+            "split_id <> ALL($1::text[])",
+            [excluded_array],
+        ));
+    }
+
     match query.sort_by {
         SortBy::Staleness => {
             sql.order_by(Splits::DeleteOpstamp, Order::Asc)
@@ -209,6 +223,10 @@ pub(super) fn append_query_filters_and_order_by(
         }
         SortBy::IndexUid => {
             sql.order_by(Splits::IndexUid, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
+        }
+        SortBy::MaturityTimestamp => {
+            sql.order_by(Splits::MaturityTimestamp, Order::Asc)
                 .order_by(Splits::SplitId, Order::Asc);
         }
         SortBy::None => (),

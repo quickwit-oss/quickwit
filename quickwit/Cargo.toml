@@ -8,6 +8,7 @@ members = [
   "quickwit-codegen",
   "quickwit-codegen/example",
   "quickwit-common",
+  "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
   "quickwit-datafusion",
@@ -26,9 +27,9 @@ members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
+  "quickwit-metrics-inventory",
   "quickwit-metrics",
   "quickwit-telemetry-exporters",
-  "quickwit-metrics-inventory",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
@@ -57,6 +58,7 @@ default-members = [
   "quickwit-codegen",
   "quickwit-codegen/example",
   "quickwit-common",
+  "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
   "quickwit-datetime",
@@ -72,9 +74,8 @@ default-members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
-  "quickwit-metrics",
-  "quickwit-telemetry-exporters",
   "quickwit-metrics-inventory",
+  "quickwit-metrics",
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
   "quickwit-proto",
@@ -83,6 +84,7 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-telemetry-exporters",
   "quickwit-transport",
 ]
 
@@ -254,6 +256,7 @@ rustls = "0.23"
 rustls-pemfile = "2.2"
 sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
+  "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
@@ -386,6 +389,7 @@ quickwit-cluster = { path = "quickwit-cluster" }
 quickwit-codegen = { path = "quickwit-codegen" }
 quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
+quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datafusion = { path = "quickwit-datafusion" }
@@ -405,7 +409,6 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }
-quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
 quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
@@ -415,6 +418,7 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1e859fd", default-features = false, features = [

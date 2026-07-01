@@ -64,6 +64,28 @@ impl MergeTask {
     }
 }
 
+/// Carries either a scheduled merge task (old pipeline, with RAII permit + inventory tracking)
+/// or a bare operation (compactor pipeline, which manages concurrency and dedup independently).
+pub enum MergeSource {
+    Task(MergeTask),
+    Operation(MergeOperation),
+}
+
+impl MergeSource {
+    pub fn as_operation(&self) -> &MergeOperation {
+        match self {
+            MergeSource::Task(task) => task,
+            MergeSource::Operation(op) => op,
+        }
+    }
+}
+
+impl fmt::Debug for MergeSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_operation().fmt(f)
+    }
+}
+
 impl fmt::Debug for MergeTask {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.merge_operation.as_ref().fmt(f)
@@ -121,6 +143,31 @@ impl MergeOperation {
     pub fn splits_as_slice(&self) -> &[SplitMetadata] {
         self.splits.as_slice()
     }
+
+    pub fn merge_level(&self) -> usize {
+        self.splits
+            .iter()
+            .map(|s| s.num_merge_ops)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+// The higher, the sooner we will execute the merge operation.
+// A good merge operation:
+// - strongly reduces the number of splits
+// - is light.
+pub fn compute_merge_score(num_splits: usize, total_num_bytes: u64) -> u64 {
+    if total_num_bytes == 0 {
+        // Silly corner case that should never happen.
+        return u64::MAX;
+    }
+    // We will remove num_splits and add 1 merge split.
+    let delta_num_splits = num_splits.saturating_sub(1) as u64;
+    // Integer arithmetic to avoid `f64 are not ordered` silliness.
+    (delta_num_splits << 48)
+        .checked_div(total_num_bytes)
+        .unwrap_or(1u64)
 }
 
 impl fmt::Debug for MergeOperation {
@@ -253,6 +300,21 @@ pub mod tests {
         merge_split_attrs,
     };
     use crate::models::{NewSplits, create_split_metadata};
+
+    #[test]
+    fn test_score() {
+        // Lighter merge at the same split count scores higher.
+        assert!(compute_merge_score(10, 100_000_000) < compute_merge_score(10, 9_999_990));
+        // More splits removed at the same total bytes scores higher.
+        assert!(compute_merge_score(10, 100_000_000) > compute_merge_score(9, 100_000_000));
+        // Equal `(delta_splits / total_bytes)` ratios yield equal scores.
+        assert_eq!(
+            // delta=8, 90M bytes.
+            compute_merge_score(9, 90_000_000),
+            // delta=4, 45M bytes (same 8/90M ratio).
+            compute_merge_score(5, 45_000_000),
+        );
+    }
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)
@@ -463,13 +525,15 @@ pub mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
-                let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-                if merge_tasks.is_empty() {
+                let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+                if merge_sources.is_empty() {
                     break;
                 }
-                let new_splits: Vec<SplitMetadata> = merge_tasks
+                let new_splits: Vec<SplitMetadata> = merge_sources
                     .into_iter()
-                    .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
+                    .map(|source| {
+                        apply_merge(&merge_policy, &mut split_index, source.as_operation())
+                    })
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })
@@ -487,9 +551,9 @@ pub mod tests {
         let obs = merge_planner_handler.process_pending_and_observe().await;
         assert_eq!(obs.obs_type, quickwit_actors::ObservationType::PostMortem);
 
-        let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-        for merge_task in merge_tasks {
-            apply_merge(&merge_policy, &mut split_index, &merge_task);
+        let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+        for source in merge_sources {
+            apply_merge(&merge_policy, &mut split_index, source.as_operation());
         }
 
         let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();

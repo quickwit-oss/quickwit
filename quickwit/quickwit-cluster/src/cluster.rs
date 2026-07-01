@@ -42,7 +42,7 @@ use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
     NodeStateExt, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY,
+    READINESS_VALUE_READY, STANDALONE_COMPACTORS_KEY,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -224,6 +224,10 @@ impl Cluster {
         if let Some(az) = &self_node.availability_zone {
             initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.clone()));
         }
+        initial_key_values.push((
+            STANDALONE_COMPACTORS_KEY.to_string(),
+            self_node.enable_standalone_compactors.to_string(),
+        ));
         let chitchat_handle =
             spawn_chitchat(chitchat_config, initial_key_values, transport).await?;
 
@@ -271,6 +275,19 @@ impl Cluster {
             .live_nodes
             .values()
             .filter(|node| node.is_ready)
+            .cloned()
+            .collect()
+    }
+
+    // live nodes is useful for cases where ready nodes isn't specific enough- such as when enabling
+    // split compaction, and needing to be sure all nodes in the cluster respect the same merge
+    // architecture, regardless of their readiness
+    pub async fn live_nodes(&self) -> Vec<ClusterNode> {
+        self.inner
+            .read()
+            .await
+            .live_nodes
+            .values()
             .cloned()
             .collect()
     }
@@ -337,6 +354,12 @@ impl Cluster {
         };
         self.set_self_key_value(READINESS_KEY, readiness_value)
             .await
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn set_self_enable_standalone_compactors(&self, enable: bool) {
+        self.set_self_key_value(STANDALONE_COMPACTORS_KEY, enable)
+            .await;
     }
 
     /// Sets a key-value pair on the cluster node's state.
@@ -716,6 +739,7 @@ pub async fn create_cluster_for_test_with_id(
         indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
+        enable_standalone_compactors: false,
     };
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
