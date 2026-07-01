@@ -1085,23 +1085,22 @@ mod tests {
             assert!(body.contains("invalid type: floating point `0.4`"));
         }
         {
-            // Invalid pulsar source config with number of pipelines > 1, not supported yet.
+            // Invalid kinesis source config with number of pipelines > 1, not supported yet.
             let resp = warp::test::request()
                 .path("/indexes/my-index/sources")
                 .method("POST")
                 .json(&true)
                 .body(
-                    r#"{"version": "0.8", "source_id": "pulsar-source",
-    "num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"],
-    "address": "pulsar://localhost:6650" }}"#,
+                    r#"{"version": "0.8", "source_id": "kinesis-source",
+    "num_pipelines": 2, "source_type": "kinesis", "params": {"stream_name": "my-stream"}}"#,
                 )
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
             let body = std::str::from_utf8(resp.body()).unwrap();
             assert!(body.contains(
-                "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
-                 sources"
+                "Quickwit currently supports multiple pipelines only for GCP PubSub, Kafka or \
+                 Pulsar sources"
             ));
         }
         {
