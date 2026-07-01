@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
-
 pub use prometheus::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{Gauge, LazyCounter, LazyGauge, gauge, lazy_counter, lazy_gauge};
 
 pub fn index_label(index_id: &str) -> &str {
-    static PER_INDEX_METRICS_ENABLED: LazyLock<bool> =
-        LazyLock::new(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
+    let per_index_metrics_enabled =
+        !crate::get_bool_from_env_cached!("QW_DISABLE_PER_INDEX_METRICS", false);
 
-    if *PER_INDEX_METRICS_ENABLED {
+    if per_index_metrics_enabled {
         index_id
     } else {
         "__any__"

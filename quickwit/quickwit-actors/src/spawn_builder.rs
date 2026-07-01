@@ -19,7 +19,7 @@ use anyhow::Context;
 use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::envelope::Envelope;
 use crate::mailbox::{Inbox, create_mailbox};
@@ -406,7 +406,7 @@ async fn actor_loop<A: Actor>(
         | ActorExitStatus::Quit
         | ActorExitStatus::DownstreamClosed
         | ActorExitStatus::Killed => {
-            quickwit_common::rate_limited_info!(limit_per_min = 1, actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
+            info!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
         }
         ActorExitStatus::Failure(_) | ActorExitStatus::Panicked => {
             error!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
