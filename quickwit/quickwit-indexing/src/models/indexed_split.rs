@@ -44,8 +44,8 @@ pub struct IndexedSplit {
 }
 
 impl IndexedSplit {
-    pub fn split_id_str(&self) -> &str {
-        &self.split_attrs.split_id.as_str()
+    pub fn split_id(&self) -> &SplitId {
+        &self.split_attrs.split_id
     }
 }
 
@@ -144,8 +144,8 @@ impl IndexedSplitBuilder {
         self.split_scratch_directory.path()
     }
 
-    pub fn split_id_str(&self) -> &str {
-        self.split_attrs.split_id.as_str()
+    pub fn split_id(&self) -> &SplitId {
+        &self.split_attrs.split_id
     }
 }
 

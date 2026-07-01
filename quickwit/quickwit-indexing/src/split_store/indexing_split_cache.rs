@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -102,11 +101,12 @@ struct SplitFolder {
     num_bytes: ByteSize,
 }
 
+/// Orders `SplitFolder`s for eviction: oldest `created_at` first, ties broken by
+/// insertion order (`insertion_seq`) rather than by `split_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
-struct SplitFolderKey {
-    // Creation time, recovered once from the trailing ULID of `split_id` at construction time
+struct SplitFolderOrderKey {
     created_at: SystemTime,
-    split_id: SplitId,
+    insertion_seq: u64,
 }
 
 impl SplitFolder {
@@ -175,11 +175,17 @@ struct InnerSplitCache {
 struct SplitFolderRegistry {
     /// Splits owned by the local split store, which reside in the split_store_folder.
     ///
-    /// `SplitFolder`s are ordered by creation time (see their `Ord` impl), so iteration order
+    /// Entries are ordered by `SplitFolderOrderKey` (see its `Ord` impl), so iteration order
     /// matches creation order and the oldest split is the set's first element. We evict the oldest
     /// split first. Note this is not an LRU strategy because we do not care about the last access
     /// time, but we only consider the creation time.
-    split_folders: BTreeMap<SplitFolderKey, ByteSize>,
+    split_folders: BTreeMap<SplitFolderOrderKey, SplitFolder>,
+    /// Index from `split_id` to the key used in `split_folders`, so that a split can be
+    /// removed by id without recomputing `created_at` (which is not deterministic for split ids
+    /// that do not parse as a ULID).
+    key_by_split_id: HashMap<SplitId, SplitFolderOrderKey>,
+    /// Monotonically increasing counter used as the tiebreaker component of `SplitFolderOrderKey`.
+    next_insertion_seq: u64,
     /// The split store quota shared among all indexing split stores.
     split_store_quota: SplitStoreQuota,
 }
@@ -188,6 +194,8 @@ impl SplitFolderRegistry {
     pub fn with_quota(split_store_quota: SplitStoreQuota) -> SplitFolderRegistry {
         SplitFolderRegistry {
             split_folders: BTreeMap::default(),
+            key_by_split_id: HashMap::default(),
+            next_insertion_seq: 0,
             split_store_quota,
         }
     }
@@ -195,60 +203,52 @@ impl SplitFolderRegistry {
     /// Returns an iterator over the split folders sorted by creation time.
     #[cfg(any(test, feature = "testsuite"))]
     fn iter(&self) -> impl Iterator<Item = SplitFolder> + '_ {
-        self.split_folders
-            .iter()
-            .map(|(key, num_bytes)| SplitFolder {
-                created_at: key.created_at,
-                split_id: key.split_id.clone(),
-                num_bytes: *num_bytes,
-            })
+        self.split_folders.values().cloned()
     }
 
     /// Returns whether the element was inserted or was already present
     fn insert(&mut self, split_folder: SplitFolder) -> bool {
-        let split_folder_key = SplitFolderKey {
-            created_at: split_folder.created_at,
-            split_id: split_folder.split_id.clone(),
-        };
-        if let Entry::Vacant(entry) = self.split_folders.entry(split_folder_key) {
-            entry.insert(split_folder.num_bytes);
-            self.split_store_quota.add_split(split_folder.num_bytes);
-            true
-        } else {
-            false
+        if self.key_by_split_id.contains_key(&split_folder.split_id) {
+            return false;
         }
+        let split_folder_key = SplitFolderOrderKey {
+            created_at: split_folder.created_at,
+            insertion_seq: self.next_insertion_seq,
+        };
+        self.next_insertion_seq = self.next_insertion_seq.wrapping_add(1);
+        self.key_by_split_id
+            .insert(split_folder.split_id.clone(), split_folder_key.clone());
+        self.split_store_quota.add_split(split_folder.num_bytes);
+        self.split_folders.insert(split_folder_key, split_folder);
+        true
     }
 
     /// Returns the split folder if it was indeed present in the registry.
     fn remove(&mut self, split_id: &SplitId) -> Option<SplitFolder> {
-        // A `SplitFolder` carries its own ordering key, so to find one by split id we build a
-        // lower-bound probe — `num_bytes` is the last and only unknown component of the key — and
-        // take the first entry that actually matches the id. `created_at` is derived
-        // deterministically from the id (see `split_creation_time`).
-        let created_at = split_creation_time(split_id);
-        let split_folder_key = SplitFolderKey {
-            created_at,
-            split_id: split_id.clone(),
-        };
-        let num_bytes = self.split_folders.remove(&split_folder_key)?;
-        self.split_store_quota.remove_split(num_bytes);
-        Some(SplitFolder {
-            num_bytes,
-            split_id: split_id.clone(),
-            created_at,
-        })
+        let split_folder_key = self.key_by_split_id.remove(split_id)?;
+        let split_folder = self
+            .split_folders
+            .remove(&split_folder_key)
+            .expect("key_by_split_id and split_folders must stay in sync");
+        self.split_store_quota.remove_split(split_folder.num_bytes);
+        Some(split_folder)
     }
 
-    /// Returns the oldest split (oldest in the sense of the creation time).
-    fn oldest_split(&self) -> Option<SplitFolderKey> {
-        let (key, _num_bytes) = self.split_folders.first_key_value()?;
-        Some(key.clone())
+    /// Returns the creation time of the oldest split in the registry.
+    fn oldest_split_folder_key(&self) -> Option<SplitFolderOrderKey> {
+        self.split_folders.keys().next().cloned()
     }
 
     /// Removes the oldest split.
     fn pop_oldest(&mut self) -> Option<SplitFolder> {
-        let oldest_split_folder = self.oldest_split()?;
-        self.remove(&oldest_split_folder.split_id)
+        let oldest_key = self.oldest_split_folder_key()?;
+        let split_folder = self
+            .split_folders
+            .remove(&oldest_key)
+            .expect("key was just read from split_folders");
+        self.key_by_split_id.remove(&split_folder.split_id);
+        self.split_store_quota.remove_split(split_folder.num_bytes);
+        Some(split_folder)
     }
 
     fn quota(&self) -> &SplitStoreQuota {
@@ -360,8 +360,8 @@ impl InnerSplitCache {
 
     /// Removes all splits that have a creation date older than `limit`.
     async fn remove_splits_older_than_limit(&mut self, limit: SystemTime) -> io::Result<()> {
-        while let Some(oldest_split) = self.split_registry.oldest_split() {
-            if oldest_split.created_at >= limit {
+        while let Some(oldest_split_folder_key) = self.split_registry.oldest_split_folder_key() {
+            if oldest_split_folder_key.created_at >= limit {
                 break;
             }
             self.evict_one_split().await?;
@@ -923,5 +923,37 @@ mod tests {
         assert!(!was_accepted);
         let quota = split_store.inspect_quota().await;
         assert_eq!(quota.used_num_bytes(), ByteSize(15));
+    }
+
+    #[tokio::test]
+    async fn test_store_and_fetch_non_ulid_split_id() {
+        // `split_creation_time` falls back to `SystemTime::now()` for split ids that do not
+        // parse as a ULID. Before the fix, the registry recomputed the key at removal time by
+        // calling `split_creation_time` again, so a split whose id does not parse as a ULID could
+        // never be found again: the two `SystemTime::now()` calls (at insertion and at removal)
+        // essentially never return the same value.
+        let temp_dir_in = tempfile::tempdir().unwrap();
+        let split_id: SplitId = SplitId::from("this-is-not-a-valid-ulid!!");
+        let cache_dir = tempfile::tempdir().unwrap();
+        let quota = SplitStoreQuota::default();
+        let local_store = IndexingSplitCache::open(cache_dir.path().to_path_buf(), quota)
+            .await
+            .unwrap();
+
+        let split_dir = temp_dir_in.path().join("scratch");
+        tokio::fs::create_dir(&split_dir).await.unwrap();
+        assert!(
+            local_store
+                .move_into_cache(split_id.clone(), &split_dir)
+                .await
+                .unwrap()
+        );
+
+        let split_path = local_store
+            .get_cached_split(&split_id, temp_dir_in.path())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(split_path.try_exists().unwrap());
     }
 }

@@ -762,10 +762,9 @@ mod test_setup_helper {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId};
     use quickwit_metastore::{CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt};
     use quickwit_proto::metastore::{CreateIndexRequest, PublishSplitsRequest, StageSplitsRequest};
-    use quickwit_proto::types::Position;
+    use quickwit_proto::types::{Position, SplitId};
 
     use super::*;
-    use crate::new_split_id;
 
     pub async fn setup_index(
         metastore: MetastoreServiceClient,
@@ -790,7 +789,7 @@ mod test_setup_helper {
         if partition_deltas.is_empty() {
             return index_uid;
         }
-        let split_id = new_split_id();
+        let split_id = SplitId::new();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)

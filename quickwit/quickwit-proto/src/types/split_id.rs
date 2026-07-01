@@ -15,7 +15,6 @@
 use std::borrow::Borrow;
 use std::convert::Infallible;
 use std::fmt;
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -78,12 +77,6 @@ impl SplitId {
     /// Returns the id as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl AsRef<Path> for SplitId {
-    fn as_ref(&self) -> &Path {
-        Path::new(self.as_str())
     }
 }
 

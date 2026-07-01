@@ -262,7 +262,7 @@ mod tests {
         let split_id2: SplitId = SplitId::new();
 
         {
-            let split1_dir = temp_dir.path().join(&split_id1);
+            let split1_dir = temp_dir.path().join(split_id1.as_str());
             fs::create_dir_all(&split1_dir).await?;
             let split_metadata1 = create_test_split_metadata(&split_id1);
             fs::write(split1_dir.join("splitfile"), b"1234").await?;
@@ -284,7 +284,7 @@ mod tests {
             );
         }
         {
-            let split2_dir = temp_dir.path().join(&split_id2);
+            let split2_dir = temp_dir.path().join(split_id2.as_str());
             fs::create_dir_all(&split2_dir).await?;
             fs::write(split2_dir.join("splitfile"), b"567").await?;
             let split_metadata2 = create_test_split_metadata(&split_id2);
@@ -354,7 +354,7 @@ mod tests {
         let split_payload2 = SplitPayloadBuilder::get_split_payload(&[], &[], &[5, 5, 5, 5])?;
 
         {
-            let split_path = temp_dir.path().join(&split_id1);
+            let split_path = temp_dir.path().join(split_id1.as_str());
             fs::create_dir_all(&split_path).await?;
             fs::write(split_path.join("splitdatafile"), b"hello-world").await?;
             let split_metadata1 = create_test_split_metadata(&split_id1);
@@ -380,7 +380,7 @@ mod tests {
             );
         }
         {
-            let split_path = temp_dir.path().join(&split_id2);
+            let split_path = temp_dir.path().join(split_id2.as_str());
             fs::create_dir_all(&split_path).await?;
             fs::write(split_path.join("splitdatafile2"), b"hello-world2").await?;
             let split_metadata2 = create_test_split_metadata(&split_id2);

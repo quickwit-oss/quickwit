@@ -123,7 +123,7 @@ impl ConstWriteAmplificationMergePolicy {
         splits.sort_by(|left, right| {
             left.create_timestamp
                 .cmp(&right.create_timestamp)
-                .then_with(|| left.split_id().cmp(&right.split_id()))
+                .then_with(|| left.split_id().cmp(right.split_id()))
         });
         let mut merge_operations = Vec::new();
         while let Some(merge_op) =
@@ -194,7 +194,7 @@ impl MergePolicy for ConstWriteAmplificationMergePolicy {
             left.create_timestamp
                 .cmp(&right.create_timestamp)
                 .reverse()
-                .then_with(|| left.split_id().cmp(&right.split_id()))
+                .then_with(|| left.split_id().cmp(right.split_id()))
         });
         let mut merge_operations = Vec::new();
         while merge_operations.len() < self.config.max_finalize_merge_operations {

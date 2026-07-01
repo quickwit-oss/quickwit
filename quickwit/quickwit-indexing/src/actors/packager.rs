@@ -126,7 +126,7 @@ impl Handler<IndexedSplitBatch> for Packager {
         let split_ids: Vec<String> = batch
             .splits
             .iter()
-            .map(|split| split.split_id_str().to_string())
+            .map(|split| split.split_id().to_string())
             .collect_vec();
         debug!(
             split_ids=?split_ids,
@@ -272,12 +272,12 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    debug!(split_id = split.split_id_str(), "create-packaged-split");
+    debug!(split_id = %split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
-    debug!(split_id = split.split_id_str(), tag_fields =? tag_fields, "extract-tags-values");
+    debug!(split_id = %split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
     let index_reader = split
         .index
         .reader_builder()
@@ -307,7 +307,7 @@ fn create_packaged_split(
 
     ctx.record_progress();
 
-    debug!(split_id = split.split_id_str(), "build-hotcache");
+    debug!(split_id = %split.split_id(), "build-hotcache");
     let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
