@@ -577,7 +577,7 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
 }
 
 fn build_cors(cors_origins: &[String]) -> CorsLayer {
-    let debug_mode = quickwit_common::get_bool_from_env("QW_ENABLE_CORS_DEBUG", false);
+    let debug_mode = quickwit_common::get_bool_from_env_cached!("QW_ENABLE_CORS_DEBUG", false);
     if debug_mode {
         info!("CORS debug mode is enabled, localhost and 127.0.0.1 origins will be allowed");
         return CorsLayer::new()

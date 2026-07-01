@@ -16,7 +16,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -87,10 +87,12 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
 const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 
 fn get_batch_num_bytes() -> usize {
-    static BATCH_NUM_BYTES_CELL: LazyLock<usize> = LazyLock::new(|| {
-        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES, false)
-    });
-    *BATCH_NUM_BYTES_CELL
+    quickwit_common::get_from_env_cached!(
+        usize,
+        "QW_INGEST_BATCH_NUM_BYTES",
+        DEFAULT_BATCH_NUM_BYTES,
+        false
+    )
 }
 
 #[derive(Clone)]

@@ -189,15 +189,13 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
 }
 
 fn get_default_load_per_shard() -> NonZeroU32 {
-    static DEFAULT_LOAD_PER_SHARD: LazyLock<NonZeroU32> = LazyLock::new(|| {
-        let default_load_per_shard = quickwit_common::get_from_env(
-            "QW_DEFAULT_LOAD_PER_SHARD",
-            PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
-            false,
-        );
-        NonZeroU32::new(default_load_per_shard).unwrap()
-    });
-    *DEFAULT_LOAD_PER_SHARD
+    let default_load_per_shard = quickwit_common::get_from_env_cached!(
+        u32,
+        "QW_DEFAULT_LOAD_PER_SHARD",
+        PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+        false
+    );
+    NonZeroU32::new(default_load_per_shard).unwrap()
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
