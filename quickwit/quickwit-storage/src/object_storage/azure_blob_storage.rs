@@ -43,7 +43,6 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
 use tracing::{instrument, warn};
 
-use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
@@ -72,7 +71,7 @@ impl StorageFactory for AzureBlobStorageFactory {
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = AzureBlobStorage::from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(Arc::new(storage))
     }
 }
 

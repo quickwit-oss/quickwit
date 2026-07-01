@@ -14,8 +14,8 @@
 
 //! This crate contains all of the building pieces that make quickwit's IO possible.
 //!
-//! - The `StorageDirectory` just wraps a `Storage` trait to make it compatible with tantivy's
-//!   Directory API.
+//! - The `DownloadManagerDirectory` is the search read-path directory: it serves reads through the
+//!   storage download manager (static hotcache + unified caches + a single thin download).
 //! - The `BundleDirectory` bundles multiple files into a single file.
 //! - The `HotDirectory` wraps another directory with a static cache.
 //! - The `CachingDirectory` wraps a Directory with a dynamic cache.
@@ -27,15 +27,15 @@
 mod bundle_directory;
 mod caching_directory;
 mod debug_proxy_directory;
+mod download_manager_directory;
 mod hot_directory;
-mod storage_directory;
 mod union_directory;
 
 pub use self::bundle_directory::{BundleDirectory, get_hotcache_from_split, read_split_footer};
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
+pub use self::download_manager_directory::DownloadManagerDirectory;
 pub use self::hot_directory::{HotDirectory, write_hotcache};
-pub use self::storage_directory::StorageDirectory;
 pub use self::union_directory::UnionDirectory;
 
 macro_rules! read_only_directory {

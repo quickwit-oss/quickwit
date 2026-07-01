@@ -31,8 +31,8 @@ use tracing::warn;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DebouncedStorage, DeleteFailure, OwnedBytes, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
+    StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -376,7 +376,7 @@ impl StorageFactory for LocalFileStorageFactory {
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(Arc::new(storage))
     }
 }
 

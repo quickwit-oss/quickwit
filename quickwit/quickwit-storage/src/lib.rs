@@ -28,12 +28,14 @@
 mod cache;
 mod counting_storage;
 mod debouncer;
+mod download_manager;
 mod file_descriptor_cache;
 pub mod metrics;
 mod storage;
-mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
-pub(crate) use debouncer::DebouncedStorage;
+pub use download_manager::{
+    DownloadPlan, Resolution, SearchDownloadCaches, SplitDownloadView, fetch_split_footer,
+};
 
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
@@ -63,9 +65,7 @@ pub use versioned_component::VersionedComponent;
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
-pub use self::cache::{
-    ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
-};
+pub use self::cache::{ByteRangeCache, MemorySizedCache, StorageCache, wrap_storage_with_cache};
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
@@ -90,7 +90,6 @@ pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
 };
-pub use self::timeout_and_retry_storage::TimeoutAndRetryStorage;
 pub use crate::error::{
     BulkDeleteError, DeleteFailure, StorageError, StorageErrorKind, StorageResolverError,
     StorageResult,

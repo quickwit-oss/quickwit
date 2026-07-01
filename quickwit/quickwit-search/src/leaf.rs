@@ -29,7 +29,7 @@ use futures::future::try_join_all;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
-use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
+use quickwit_directories::DownloadManagerDirectory;
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
 use quickwit_metrics::{GaugeGuard, HistogramTimer};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
@@ -42,8 +42,8 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, BundleStorageFileOffsets, ByteRangeCache, CountingStorage, MemorySizedCache,
+    OwnedBytes, SplitCache, SplitDownloadView, Storage, StorageResolver, fetch_split_footer,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -190,61 +190,79 @@ pub(crate) async fn open_split_bundle(
     Ok((hotcache_bytes, bundle_storage))
 }
 
-/// Add a storage proxy to retry `get_slice` requests if they are taking too long,
-/// if configured in the searcher config.
+/// Opens a `tantivy::Index` for the given split, backed by the download manager.
 ///
-/// The goal here is too ensure a low latency.
-fn configure_storage_retries(
-    searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
-) -> Arc<dyn Storage> {
-    if let Some(storage_timeout_policy) = &searcher_context.searcher_config.storage_timeout_policy {
-        Arc::new(TimeoutAndRetryStorage::new(
-            index_storage,
-            storage_timeout_policy.clone(),
-        ))
-    } else {
-        index_storage
-    }
-}
-
-/// Opens a `tantivy::Index` for the given split with several cache layers:
-/// - A split footer cache given by `SearcherContext.split_footer_cache`.
-/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
-/// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
-///   `ByteRangeCache` is provided).
+/// The returned [`DownloadManagerDirectory`] unifies the former
+/// `StorageDirectory → CachingDirectory → HotDirectory` tower: the static
+/// hotcache, the long-term fast-field cache, the on-disk split cache and the
+/// ephemeral byte-range cache are all consulted through a single synchronous
+/// `resolve`, with a single thin async download on a miss.
+///
+/// - The split footer is cached by `SearcherContext.split_footer_cache`.
+/// - `ephemeral_unbounded_cache`, when provided, is the per-request short-lived byte-range cache
+///   populated during warmup.
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
-) -> anyhow::Result<(Index, HotDirectory)> {
-    let index_storage_with_retry_on_timeout =
-        configure_storage_retries(searcher_context, index_storage);
+) -> anyhow::Result<(Index, DownloadManagerDirectory)> {
+    let split_path = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let timeout_policy = searcher_context
+        .searcher_config
+        .storage_timeout_policy
+        .clone();
 
-    let (hotcache_bytes, bundle_storage) = open_split_bundle(
-        searcher_context,
-        index_storage_with_retry_on_timeout,
-        split_and_footer_offsets,
-    )
-    .await?;
+    // Fetch (or read from cache) the split footer, which holds both the hotcache
+    // and the bundle file offsets. On a cache miss the footer is fetched through
+    // the download manager (request dedup + the aggressive timeout policy).
+    let footer_cache = &searcher_context.split_footer_cache;
+    let footer_data =
+        if let Some(footer_data) = footer_cache.get(&split_and_footer_offsets.split_id) {
+            footer_data
+        } else {
+            let footer_range = split_and_footer_offsets.split_footer_start as usize
+                ..split_and_footer_offsets.split_footer_end as usize;
+            let footer_data = fetch_split_footer(
+                &searcher_context.download_caches,
+                index_storage.clone(),
+                timeout_policy.clone(),
+                split_path.clone(),
+                footer_range,
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to fetch hotcache and footer from {} for split `{}`",
+                    index_storage.uri(),
+                    split_and_footer_offsets.split_id
+                )
+            })?;
+            footer_cache.put(
+                split_and_footer_offsets.split_id.to_owned(),
+                footer_data.clone(),
+            );
+            footer_data
+        };
 
-    let bundle_storage_with_cache = wrap_storage_with_cache(
-        searcher_context.fast_fields_cache.clone(),
-        Arc::new(bundle_storage),
-    );
+    // Parse the hotcache and the bundle logical→physical offsets out of the
+    // footer. This is pure arithmetic + metadata lookup, no I/O.
+    let (hotcache_slice, bundle_offsets) =
+        BundleStorageFileOffsets::open_from_split_data(FileSlice::new(Arc::new(footer_data)))?;
+    let hotcache_bytes = hotcache_slice.read_bytes()?;
 
-    let directory = StorageDirectory::new(bundle_storage_with_cache);
+    let view = Arc::new(SplitDownloadView::new(
+        &searcher_context.download_caches,
+        index_storage,
+        timeout_policy,
+        Arc::new(bundle_offsets),
+        split_path,
+        ephemeral_unbounded_cache,
+    ));
+    let directory = DownloadManagerDirectory::open(view, hotcache_bytes)?;
 
-    let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
-        let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
-        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
-    } else {
-        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
-    };
-
-    let mut index = Index::open(hot_directory.clone())?;
+    let mut index = Index::open(directory.clone())?;
     if let Some(tokenizer_manager) = tokenizer_manager {
         index.set_tokenizers(tokenizer_manager.tantivy_manager().clone());
     }
@@ -253,7 +271,7 @@ pub(crate) async fn open_index_with_caches(
             .tantivy_manager()
             .clone(),
     );
-    Ok((index, hot_directory))
+    Ok((index, directory))
 }
 
 /// Outcome of [`warmup`].
@@ -611,9 +629,8 @@ fn leaf_resource_stats_for_split(split_stats: SplitResourceStats) -> LeafResourc
 }
 
 /// Compute the size of the index, store excluded.
-fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
-    let size_bytes = hot_directory
-        .get_file_lengths()
+fn compute_index_size(file_lengths: &[(PathBuf, u64)]) -> ByteSize {
+    let size_bytes = file_lengths
         .iter()
         .filter(|(path, _)| !path.to_string_lossy().ends_with("store"))
         .map(|(_, size)| *size)
@@ -662,7 +679,7 @@ async fn leaf_search_single_split(
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
-    let (index, hot_directory) = open_index_with_caches(
+    let (index, directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
         &split,
@@ -671,7 +688,7 @@ async fn leaf_search_single_split(
     )
     .await?;
 
-    let index_size = compute_index_size(&hot_directory);
+    let index_size = compute_index_size(&directory.get_file_lengths());
     if index_size < search_permit.memory_allocation() {
         search_permit.update_memory_usage(index_size);
     }
@@ -2164,7 +2181,7 @@ mod tests {
     use async_trait::async_trait;
     use bytes::BufMut;
     use quickwit_config::{LambdaConfig, SearcherConfig};
-    use quickwit_directories::write_hotcache;
+    use quickwit_directories::{HotDirectory, write_hotcache};
     use quickwit_proto::search::LambdaSingleSplitResult;
     use rand::RngExt;
     use tantivy::TantivyDocument;
@@ -2678,14 +2695,15 @@ mod tests {
                 &payload,
             );
         let size_with_stored_payload =
-            compute_index_size(&hotcache_directory_stored_payload).as_u64();
+            compute_index_size(&hotcache_directory_stored_payload.get_file_lengths()).as_u64();
 
         let (hotcache_directory_index_only, directory_size_index_only) =
             create_tantivy_dir_with_hotcache(
                 FieldEntry::new_bytes("payload".to_string(), BytesOptions::default()),
                 &payload,
             );
-        let size_index_only = compute_index_size(&hotcache_directory_index_only).as_u64();
+        let size_index_only =
+            compute_index_size(&hotcache_directory_index_only.get_file_lengths()).as_u64();
 
         assert!(directory_size_stored_payload > directory_size_index_only + 1000);
         assert!(size_with_stored_payload.abs_diff(size_index_only) < 10);
@@ -2714,13 +2732,15 @@ mod tests {
              iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, \
              vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?",
         );
-        let larger_size = compute_index_size(&hotcache_directory_larger).as_u64();
+        let larger_size =
+            compute_index_size(&hotcache_directory_larger.get_file_lengths()).as_u64();
 
         let (hotcache_directory_smaller, directory_size_smaller) = create_tantivy_dir_with_hotcache(
             FieldEntry::new_text("text".to_string(), indexing_options),
             "hi",
         );
-        let smaller_size = compute_index_size(&hotcache_directory_smaller).as_u64();
+        let smaller_size =
+            compute_index_size(&hotcache_directory_smaller.get_file_lengths()).as_u64();
 
         assert!(directory_size_larger > directory_size_smaller + 100);
         assert!(larger_size > smaller_size + 100);

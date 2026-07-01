@@ -22,7 +22,6 @@ use regex::Regex;
 use tracing::info;
 
 use super::OpendalStorage;
-use crate::debouncer::DebouncedStorage;
 use crate::{Storage, StorageFactory, StorageResolverError};
 
 /// Google cloud storage resolver.
@@ -45,7 +44,7 @@ impl StorageFactory for GoogleCloudStorageFactory {
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(Arc::new(storage))
     }
 }
 

@@ -138,7 +138,7 @@ impl BundleStorageFileOffsets {
     /// See docs/internals/split-format.md
     /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
     /// Returns (Hotcache, Self)
-    fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
+    pub fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
         let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
             file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
         let hotcache_num_bytes: u32 = u32::from_le_bytes(

@@ -165,7 +165,7 @@ impl StaticDirectoryCacheBuilder {
 }
 
 #[derive(Debug)]
-struct StaticDirectoryCache {
+pub(crate) struct StaticDirectoryCache {
     file_lengths: HashMap<PathBuf, u64>,
     slices: HashMap<PathBuf, Arc<StaticSliceCache>>,
 }

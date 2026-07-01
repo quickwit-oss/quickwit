@@ -21,9 +21,7 @@ use quickwit_config::{S3StorageConfig, StorageBackend};
 use tokio::sync::OnceCell;
 
 use super::s3_compatible_storage::create_s3_client;
-use crate::{
-    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
-};
+use crate::{S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError};
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
@@ -61,6 +59,8 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         let storage =
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        // Request debouncing now lives in the search download manager, so the
+        // resolver hands out the raw backend (see analysis.md §2.5).
+        Ok(Arc::new(storage))
     }
 }

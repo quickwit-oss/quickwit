@@ -28,9 +28,7 @@ use quickwit_proto::search::{
     ReportSplitsRequest, ReportSplitsResponse, RootResourceStats, ScrollRequest,
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
-use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
-};
+use quickwit_storage::{MemorySizedCache, SearchDownloadCaches, SplitCache, StorageResolver};
 use tantivy::aggregation::AggregationLimitsGuard;
 
 use crate::invoker::LambdaLeafSearchInvoker;
@@ -414,8 +412,9 @@ pub(crate) async fn scroll(
 pub struct SearcherContext {
     /// Searcher config.
     pub searcher_config: SearcherConfig,
-    /// Fast fields cache.
-    pub fast_fields_cache: Arc<dyn StorageCache>,
+    /// Shared, cross-request download-path caches (long-term fast-field cache,
+    /// on-disk split cache, and request debouncer) used by the search read path.
+    pub download_caches: SearchDownloadCaches,
     /// Counting semaphore to limit concurrent leaf search split requests.
     pub search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
@@ -477,8 +476,8 @@ impl SearcherContext {
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let storage_long_term_cache =
-            Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));
+        let download_caches =
+            SearchDownloadCaches::new(&searcher_config.fast_field_cache, split_cache_opt.clone());
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
@@ -492,7 +491,7 @@ impl SearcherContext {
 
         Self {
             searcher_config,
-            fast_fields_cache: storage_long_term_cache,
+            download_caches,
             predicate_cache: predicate_cache.into(),
             search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,

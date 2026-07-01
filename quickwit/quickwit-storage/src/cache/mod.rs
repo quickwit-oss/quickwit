@@ -15,7 +15,6 @@
 mod base_cache;
 mod byte_range_cache;
 mod memory_sized_cache;
-mod quickwit_cache;
 mod slice_address;
 mod storage_with_cache;
 mod stored_item;
@@ -25,7 +24,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
 
 pub use self::byte_range_cache::ByteRangeCache;

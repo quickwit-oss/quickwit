@@ -12,23 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::hash::Hash;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use ahash::HashMap;
-use async_trait::async_trait;
 use futures::future::{BoxFuture, Shared, WeakShared};
 use futures::{Future, FutureExt};
-use quickwit_common::uri::Uri;
-use tantivy::directory::OwnedBytes;
-use tokio::io::AsyncRead;
-
-use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, Storage, StorageResult};
 
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
 /// source can be deduplicated.
@@ -87,7 +77,11 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
     /// Holding the lock across both the lookup and the insert is deliberate: it makes the
     /// lookup-then-insert atomic, so two concurrent callers for the same key cannot both build
     /// and race to insert. The lock is always released before the future is awaited.
-    fn get_or_create<T, F>(&self, key: K, build_a_future_fast: T) -> Shared<BoxFuture<'static, V>>
+    pub(crate) fn get_or_create<T, F>(
+        &self,
+        key: K,
+        build_a_future_fast: T,
+    ) -> Shared<BoxFuture<'static, V>>
     where
         T: FnOnce() -> F,
         F: Future<Output = V> + Send + 'static,
@@ -123,106 +117,6 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
         }
 
         fut
-    }
-}
-
-type DebouncerKey = (PathBuf, Range<usize>);
-
-/// Just to keep in mind there is a race condition on debouncing, when combined with delete
-///
-/// All on the same key
-/// start get R1
-/// start delete R2
-/// end delete R2
-/// start get R3
-/// end get R1
-/// end get R3
-///
-/// ==> R3 would return the cached result, although the resource has been deleted.
-pub(crate) struct DebouncedStorage<T> {
-    // wrap both in Arc, because the Future is stored in the cache, which has 'static lifetime
-    // associated
-    underlying: Arc<T>,
-    slice_debouncer: Arc<AsyncDebouncer<DebouncerKey, StorageResult<OwnedBytes>>>,
-}
-
-impl<T> fmt::Debug for DebouncedStorage<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DebouncedStorage").finish()
-    }
-}
-
-impl<T: Storage> DebouncedStorage<T> {
-    pub(crate) fn new(underlying: T) -> Self {
-        Self {
-            underlying: Arc::new(underlying),
-            slice_debouncer: Arc::new(AsyncDebouncer::default()),
-        }
-    }
-}
-
-#[async_trait]
-impl<T: Storage> Storage for DebouncedStorage<T> {
-    async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.underlying.check_connectivity().await
-    }
-
-    async fn put(
-        &self,
-        path: &Path,
-        payload: Box<dyn crate::PutPayload>,
-    ) -> crate::StorageResult<()> {
-        self.underlying.put(path, payload).await
-    }
-
-    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
-        self.underlying.copy_to(path, output).await
-    }
-
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let (debouncer, underlying) = (self.slice_debouncer.clone(), self.underlying.clone());
-        let key = (path.to_owned(), range);
-        debouncer
-            .get_or_create(key.clone(), || async move {
-                underlying.get_slice(&key.0, key.1).await
-            })
-            .await
-    }
-
-    async fn get_slice_stream(
-        &self,
-        path: &Path,
-        range: Range<usize>,
-    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        // Getting a stream bypasses the debouncer
-        self.underlying.get_slice_stream(path, range).await
-    }
-
-    async fn delete(&self, path: &Path) -> StorageResult<()> {
-        self.underlying.delete(path).await
-    }
-
-    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        self.underlying.bulk_delete(paths).await
-    }
-
-    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        let (debouncer, underlying) = (self.slice_debouncer.clone(), self.underlying.clone());
-        let key = (path.to_owned(), 0..usize::MAX);
-        debouncer
-            .get_or_create(
-                key.clone(),
-                || async move { underlying.get_all(&key.0).await },
-            )
-            .await
-    }
-
-    fn uri(&self) -> &Uri {
-        self.underlying.uri()
-    }
-
-    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        self.underlying.file_num_bytes(path).await
     }
 }
 

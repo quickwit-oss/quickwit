@@ -152,7 +152,11 @@ impl SplitCache {
 
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
-    async fn get_split_file(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFile> {
+    pub(crate) async fn get_split_file(
+        &self,
+        split_id: Ulid,
+        storage_uri: &Uri,
+    ) -> Option<SplitFile> {
         // We touch before even checking the fd cache in order to update the file's last access time
         // for the file cache.
         let num_bytes_opt: Option<u64> = self
@@ -186,7 +190,7 @@ fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
     }
 }
 
-fn split_id_from_path(split_path: &Path) -> Option<Ulid> {
+pub(crate) fn split_id_from_path(split_path: &Path) -> Option<Ulid> {
     let split_filename = split_path.file_name()?.to_str()?;
     let split_id_str = split_filename.strip_suffix(".split")?;
     Ulid::from_str(split_id_str).ok()
