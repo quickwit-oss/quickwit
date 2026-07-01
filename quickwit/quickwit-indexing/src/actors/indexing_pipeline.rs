@@ -288,7 +288,7 @@ impl IndexingPipeline {
         let index_id = &self.params.pipeline_id.index_uid.index_id;
         let source_id = &self.params.pipeline_id.source_id;
 
-        info!(
+        debug!(
             index_id,
             source_id,
             pipeline_uid=%self.params.pipeline_id.pipeline_uid,
@@ -499,7 +499,8 @@ impl Handler<AssignShards> for IndexingPipeline {
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &self.handles_opt {
-            info!(
+            quickwit_common::rate_limited_info!(
+                limit_per_min = 1,
                 shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline"
             );

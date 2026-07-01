@@ -240,7 +240,8 @@ async fn balance_channel_for_service(
             match cluster_change {
                 ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
-                    info!(
+                    quickwit_common::rate_limited_info!(
+                        limit_per_min = 1,
                         node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
@@ -1121,7 +1122,8 @@ fn build_ingester_insert_change(
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
 ) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
-    info!(
+    quickwit_common::rate_limited_info!(
+        limit_per_min = 1,
         node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "adding/updating node `{}` with ingester status `{}` to ingester pool",
@@ -1209,7 +1211,8 @@ async fn setup_searcher(
             match cluster_change {
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
-                    info!(
+                    quickwit_common::rate_limited_info!(
+                        limit_per_min = 1,
                         node_id = %chitchat_id.node_id,
                         generation_id = chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
@@ -1355,7 +1358,8 @@ fn build_indexer_insert_change(
     grpc_max_message_size: ByteSize,
 ) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
-    info!(
+    quickwit_common::rate_limited_info!(
+        limit_per_min = 1,
         node_id = %chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
         "adding node `{}` with ingester status `{}` to indexer pool",

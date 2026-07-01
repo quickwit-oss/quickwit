@@ -598,7 +598,8 @@ impl FullyLockedIngesterState<'_> {
                 }
             }
         }
-        info!(
+        quickwit_common::rate_limited_info!(
+            limit_per_min = 1,
             "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} initiated via \
              `{initiator}`"
         );

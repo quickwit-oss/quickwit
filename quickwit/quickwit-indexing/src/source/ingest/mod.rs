@@ -430,7 +430,7 @@ impl IngestSource {
             });
             return Ok(());
         }
-        info!(
+        debug!(
             index_uid=%self.client_id.source_uid.index_uid,
             pipeline_uid=%self.client_id.pipeline_uid,
             "resetting indexing pipeline"
@@ -531,7 +531,7 @@ impl Source for IngestSource {
             .collect();
 
         assert!(!added_shard_ids.is_empty());
-        info!(added_shards=?added_shard_ids, "adding shards assignment");
+        debug!(added_shards=?added_shard_ids, "adding shards assignment");
 
         let acquire_shards_request = AcquireShardsRequest {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),

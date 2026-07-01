@@ -23,7 +23,7 @@ use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::types::DocMappingUid;
 use tantivy::Inventory;
 use time::OffsetDateTime;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use super::merge_scheduler_service::schedule_merge;
 use super::{MergeSchedulerService, MergeSplitDownloader};
@@ -331,7 +331,7 @@ impl MergePlanner {
         // index as well.
         let merge_ops = self.compute_merge_ops(is_finalize, ctx).await?;
         for merge_operation in merge_ops {
-            info!(merge_operation=?merge_operation, "schedule merge operation");
+            debug!(merge_operation=?merge_operation, "schedule merge operation");
             let tracked_merge_operation = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);
