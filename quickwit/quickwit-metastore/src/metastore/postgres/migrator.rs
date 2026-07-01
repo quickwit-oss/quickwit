@@ -14,12 +14,18 @@
 
 use std::collections::BTreeMap;
 
+use quickwit_common::get_bool_from_env;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::migrate::{Migrate, Migrator};
 use sqlx::{Acquire, PgConnection, Postgres};
 use tracing::{error, info};
 
+use super::metrics::DEFERRED_MIGRATIONS_APPLY_ERRORS;
 use super::pool::TrackedPool;
+use super::{
+    QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+};
 
 // The deferred migrations should be attempted by only one metastore pod. We do that by having
 // metastore pods try to acquire a lock to run the deferred migrations. Pods that don't get the lock
@@ -39,85 +45,149 @@ fn get_deferred_migrations() -> Migrator {
     sqlx::migrate!("migrations/postgresql_deferred")
 }
 
-/// Initializes the database and runs the SQL migrations stored in the
-/// `quickwit-metastore/migrations` directory.
-///
-/// Runs on a raw pooled connection -- not wrapped in an outer transaction.
-/// sqlx's `Migrator::run_direct` handles per-migration transactionality
-/// itself, honoring each migration's `no_tx` flag (set by a
-/// `-- no-transaction` directive as the first line of the migration file).
-/// Wrapping the run in our own transaction would defeat that for migrations
-/// that must execute outside a transaction block (e.g. `CREATE INDEX
-/// CONCURRENTLY`).
-///
-/// Atomicity is per-migration, not per-run: a failure on migration N leaves
-/// migrations 1..N-1 applied and committed in `_sqlx_migrations`. The
-/// operator fixes the failing migration and re-runs.
-// #[instrument(skip_all)]
-pub(super) async fn run_migrations(
-    pool: &TrackedPool<Postgres>,
-    skip_migrations: bool,
-    skip_locking: bool,
-) -> MetastoreResult<()> {
-    let mut conn = pool.acquire().await?;
-    let mut migrator = get_migrations();
-
-    // ignore_missing will throw if any migrations applied to the DB are not present in the set of
-    // migrations it's given to run. Given that we also have deferred migrations, that will never be
-    // true.
-    migrator.set_ignore_missing(true);
-
-    if skip_locking {
-        migrator.set_locking(false);
-    }
-
-    if skip_migrations {
-        return check_migrations(migrator, &mut conn).await;
-    }
-
-    // this is a hidden function, made to get "around the annoying "implementation of `Acquire`
-    // is not general enough" error", which is the error we get otherwise.
-    if let Err(migrate_error) = migrator.run_direct(&mut *conn).await {
-        error!(error=%migrate_error, "failed to run PostgreSQL migrations");
-        return Err(MetastoreError::Internal {
-            message: "failed to run PostgreSQL migrations".to_string(),
-            cause: migrate_error.to_string(),
-        });
-    }
-    Ok(())
+enum DeferredOutcome {
+    LockNotAcquired,
+    Applied,
+    Failed,
 }
 
-async fn check_migrations(migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
-    let dirty = match conn.dirty_version().await {
-        Ok(dirty) => dirty,
-        Err(migrate_error) => {
-            error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
+/// Runs the PostgreSQL metastore migrations: the required ones synchronously (gating readiness)
+/// and, unless disabled, the deferred ones in a detached background task.
+pub(super) struct Migrations {
+    connection_pool: TrackedPool<Postgres>,
+    skip_migrations: bool,
+    skip_locking: bool,
+    skip_deferred: bool,
+}
 
-            return Err(MetastoreError::Internal {
-                message: "failed to validate PostgreSQL migrations".to_string(),
-                cause: migrate_error.to_string(),
-            });
+impl Migrations {
+    pub(super) fn new(connection_pool: TrackedPool<Postgres>) -> Self {
+        Migrations {
+            connection_pool,
+            skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
+            skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
+            skip_deferred: get_bool_from_env(QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, false),
         }
-    };
+    }
+
+    /// Runs the required migrations, then spawns the deferred migrations unless disabled. Deferred
+    /// election relies on advisory locks, so it is skipped whenever migration locking is.
+    pub(super) async fn run(&self) -> MetastoreResult<()> {
+        self.run_required(get_migrations()).await?;
+
+        if !self.skip_migrations && !self.skip_locking && !self.skip_deferred {
+            self.spawn_deferred();
+        }
+        Ok(())
+    }
+
+    async fn run_required(&self, mut migrator: Migrator) -> MetastoreResult<()> {
+        let mut conn = self.connection_pool.acquire().await?;
+
+        if self.skip_locking {
+            migrator.set_locking(false);
+        }
+        if self.skip_migrations {
+            return check_migrations(&migrator, &mut conn).await;
+        }
+        do_migrations(migrator, &mut conn).await
+    }
+
+    /// Spawns the one-shot, detached deferred-migration attempt. Fire-and-forget: it self-terminates
+    /// after one attempt or when the process exits. A failed attempt is logged and counted (see
+    /// run_deferred); it is not retried until the next restart.
+    fn spawn_deferred(&self) {
+        let connection_pool = self.connection_pool.clone();
+        quickwit_common::spawn_named_task(
+            async move {
+                match Self::run_deferred(&connection_pool, get_deferred_migrations()).await {
+                    DeferredOutcome::Applied => info!("deferred PostgreSQL migrations applied successfully"),
+                    DeferredOutcome::LockNotAcquired => {
+                        info!("deferred PostgreSQL migrations handled by another node")
+                    }
+                    DeferredOutcome::Failed => {}
+                }
+            },
+            "postgres_deferred_migrations",
+        );
+    }
+
+    async fn run_deferred(pool: &TrackedPool<Postgres>, mut migrator: Migrator) -> DeferredOutcome {
+        let mut conn: PgConnection = match pool.acquire().await {
+            Ok(connection) => connection.detach(),
+            Err(error) => {
+                error!(%error, "failed to acquire connection for deferred PostgreSQL migrations");
+                return DeferredOutcome::Failed;
+            }
+        };
+
+        // this query returns either true or false: we got the lock, or we didn't. It's dropped when
+        // the connection is dropped.
+        let acquired: bool = match sqlx::query_scalar("SELECT pg_try_advisory_lock($1, $2)")
+            .bind(DEFERRED_MIGRATIONS_LOCK_KEY_1)
+            .bind(DEFERRED_MIGRATIONS_LOCK_KEY_2)
+            .fetch_one(&mut conn)
+            .await
+        {
+            Ok(acquired) => acquired,
+            Err(error) => {
+                error!(%error, "failed to query deferred-migration advisory lock");
+                return DeferredOutcome::Failed;
+            }
+        };
+        if !acquired {
+            return DeferredOutcome::LockNotAcquired;
+        }
+
+        // we've taken out our own lock; we don't need sqlx to also get one
+        migrator.set_locking(false);
+        match do_migrations(migrator, &mut conn).await {
+            Ok(()) => DeferredOutcome::Applied,
+            Err(_) => {
+                DEFERRED_MIGRATIONS_APPLY_ERRORS.inc();
+                DeferredOutcome::Failed
+            }
+        }
+    }
+}
+
+fn internal_error(message: &'static str, cause: impl std::fmt::Display) -> MetastoreError {
+    MetastoreError::Internal {
+        message: message.to_string(),
+        cause: cause.to_string(),
+    }
+}
+
+/// Runs a migrator's pending up-migrations on `conn`. Shared by the required and deferred tracks.
+///
+/// `ignore_missing` tolerates applied rows absent from this migrator's set: rows from the other
+/// track, or migrations from a newer image after a rollback.
+async fn do_migrations(mut migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
+    migrator.set_ignore_missing(true);
+    // run_direct takes a Migrate connection directly, sidestepping run()'s Acquire bound that our
+    // pooled connection type doesn't satisfy.
+    migrator.run_direct(conn).await.map_err(|migrate_error| {
+        error!(error=%migrate_error, "failed to run PostgreSQL migrations");
+        internal_error("failed to run PostgreSQL migrations", migrate_error)
+    })
+}
+
+async fn check_migrations(migrator: &Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
+    let dirty = conn.dirty_version().await.map_err(|migrate_error| {
+        error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
+        internal_error("failed to validate PostgreSQL migrations", migrate_error)
+    })?;
     if let Some(dirty) = dirty {
         error!("migration {dirty} is dirty");
-
-        return Err(MetastoreError::Internal {
-            message: "failed to validate PostgreSQL migrations".to_string(),
-            cause: format!("migration {dirty} is dirty"),
-        });
-    };
-    let applied_migrations = match conn.list_applied_migrations().await {
-        Ok(applied_migrations) => applied_migrations,
-        Err(migrate_error) => {
-            error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
-
-            return Err(MetastoreError::Internal {
-                message: "failed to validate PostgreSQL migrations".to_string(),
-                cause: migrate_error.to_string(),
-            });
-        }
-    };
+        return Err(internal_error(
+            "failed to validate PostgreSQL migrations",
+            format!("migration {dirty} is dirty"),
+        ));
+    }
+    let applied_migrations = conn.list_applied_migrations().await.map_err(|migrate_error| {
+        error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
+        internal_error("failed to validate PostgreSQL migrations", migrate_error)
+    })?;
     let applied_by_version: BTreeMap<_, _> = applied_migrations
         .iter()
         .map(|applied_migration| (applied_migration.version, applied_migration))
@@ -128,89 +198,26 @@ async fn check_migrations(migrator: Migrator, conn: &mut PgConnection) -> Metast
     {
         let Some(applied_migration) = applied_by_version.get(&expected_migration.version) else {
             error!("missing required migration {}", expected_migration.version);
-
-            return Err(MetastoreError::Internal {
-                message: "failed to validate PostgreSQL migrations".to_string(),
-                cause: format!("missing required migration {}", expected_migration.version),
-            });
+            return Err(internal_error(
+                "failed to validate PostgreSQL migrations",
+                format!("missing required migration {}", expected_migration.version),
+            ));
         };
         if expected_migration.checksum != applied_migration.checksum {
             error!(
                 "migration {} differs between database and expected value",
                 expected_migration.version
             );
-
-            return Err(MetastoreError::Internal {
-                message: "failed to validate PostgreSQL migrations".to_string(),
-                cause: format!(
+            return Err(internal_error(
+                "failed to validate PostgreSQL migrations",
+                format!(
                     "migration {} differs between database and expected value",
                     expected_migration.version
                 ),
-            });
+            ));
         }
     }
     Ok(())
-}
-
-enum DeferredOutcome {
-    LockNotAcquired,
-    Applied,
-}
-
-pub(super) async fn run_deferred_migrations(
-    pool: &TrackedPool<Postgres>,
-    mut migrator: Migrator,
-) -> MetastoreResult<DeferredOutcome> {
-    let mut conn: PgConnection = pool.acquire().await?.detach();
-
-    // this query returns either true or false: we got the lock, or we didn't.
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1, $2)")
-        .bind(DEFERRED_MIGRATIONS_LOCK_KEY_1)
-        .bind(DEFERRED_MIGRATIONS_LOCK_KEY_2)
-        .fetch_one(&mut conn)
-        .await
-        .map_err(|error| MetastoreError::Internal {
-            message: "failed to query deferred-migration advisory lock".to_string(),
-            cause: error.to_string(),
-        })?;
-    if !acquired {
-        return Ok(DeferredOutcome::LockNotAcquired);
-    }
-    
-    // we've taken out our own lock; we don't need sqlx to also try to do so.  
-    migrator.set_locking(false);
-    migrator.set_ignore_missing(true);
-    let run_result = migrator.run_direct(&mut conn).await;
-
-    // dropping the detached connection closes the session, which also releases the lock
-    drop(conn);
-
-    if let Err(migrate_error) = run_result {
-        error!(error=%migrate_error, "failed to run deferred PostgreSQL migrations");
-        return Err(MetastoreError::Internal {
-            message: "failed to run deferred PostgreSQL migrations".to_string(),
-            cause: migrate_error.to_string(),
-        });
-    }
-    Ok(DeferredOutcome::Applied)
-}
-
-/// Spawns the one-shot, detached deferred-migration attempt. Fire-and-forget:
-/// self-terminates after one attempt or when the process exits.
-/// TODO: Figure out what to do here on error etc.
-pub(super) fn spawn_deferred_migrations(pool: TrackedPool<Postgres>) {
-    quickwit_common::spawn_named_task(
-        async move {
-            match run_deferred_migrations(&pool, get_deferred_migrations()).await {
-                Ok(DeferredOutcome::Applied) => info!("deferred PostgreSQL migrations applied"),
-                Ok(DeferredOutcome::LockNotAcquired) => {
-                    info!("deferred PostgreSQL migrations handled by another node")
-                }
-                Err(error) => error!(%error, "deferred PostgreSQL migrations failed"),
-            }
-        },
-        "postgres_deferred_migrations",
-    );
 }
 
 #[cfg(test)]
@@ -218,140 +225,239 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_common::uri::Uri;
-    use sqlx::Acquire;
     use sqlx::migrate::{Migrate, Migrator};
+    use sqlx::{Acquire, Postgres};
 
-    use super::{DeferredOutcome, get_migrations, run_deferred_migrations, run_migrations};
+    use super::{DeferredOutcome, Migrations, TrackedPool};
     use crate::metastore::postgres::utils::establish_connection;
+
+    fn test_uri() -> Uri {
+        dotenvy::dotenv().ok();
+        std::env::var("QW_TEST_DATABASE_URL")
+            .expect("environment variable `QW_TEST_DATABASE_URL` should be set")
+            .parse()
+            .expect("environment variable `QW_TEST_DATABASE_URL` should be a valid URI")
+    }
+
+    async fn test_pool(read_only: bool) -> TrackedPool<Postgres> {
+        establish_connection(&test_uri(), 1, 5, Duration::from_secs(2), None, None, read_only)
+            .await
+            .unwrap()
+    }
+
+    fn migrations(connection_pool: &TrackedPool<Postgres>, skip_migrations: bool) -> Migrations {
+        Migrations {
+            connection_pool: connection_pool.clone(),
+            skip_migrations,
+            skip_locking: false,
+            skip_deferred: false,
+        }
+    }
+
+    // A single controlled migration so these tests don't depend on the production migration set.
+    // Migrator::new loads the SQL into memory, so the tempdir can be dropped afterward.
+    async fn test_migrator() -> Migrator {
+        let migrations_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            migrations_dir.path().join("90000_test.up.sql"),
+            "CREATE TABLE IF NOT EXISTS qw_test_migration_marker (id INT)",
+        )
+        .unwrap();
+        std::fs::write(
+            migrations_dir.path().join("90000_test.down.sql"),
+            "DROP TABLE IF EXISTS qw_test_migration_marker",
+        )
+        .unwrap();
+        Migrator::new(migrations_dir.path()).await.unwrap()
+    }
+
+    // Removes a bookkeeping row, tolerating a fresh database where the table doesn't exist yet.
+    async fn delete_migration_row(connection_pool: &TrackedPool<Postgres>, version: i64) {
+        let migrations_table_exists: bool =
+            sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+                .fetch_one(connection_pool)
+                .await
+                .unwrap();
+        if migrations_table_exists {
+            sqlx::query("DELETE FROM _sqlx_migrations WHERE version = $1")
+                .bind(version)
+                .execute(connection_pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    // Pre-clean so run_required has to (re)apply the test migration from scratch.
+    async fn reset_test_migration(connection_pool: &TrackedPool<Postgres>) {
+        sqlx::query("DROP TABLE IF EXISTS qw_test_migration_marker")
+            .execute(connection_pool)
+            .await
+            .unwrap();
+        delete_migration_row(connection_pool, 90000).await;
+    }
 
     #[tokio::test]
     #[serial_test::file_serial]
-    async fn test_metastore_check_migration() {
+    async fn test_run_required_applies_migrations() {
         let _ = tracing_subscriber::fmt::try_init();
+        let pool = test_pool(false).await;
+        reset_test_migration(&pool).await;
 
-        dotenvy::dotenv().ok();
-        let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
-            .expect("environment variable `QW_TEST_DATABASE_URL` should be set")
-            .parse()
-            .expect("environment variable `QW_TEST_DATABASE_URL` should be a valid URI");
-
-        {
-            let connection_pool =
-                establish_connection(&uri, 1, 5, Duration::from_secs(2), None, None, false)
-                    .await
-                    .unwrap();
-            // make sure migrations are run
-            run_migrations(&connection_pool, false, false)
-                .await
-                .unwrap();
-
-            // we just ran migration, nothing else to run
-            run_migrations(&connection_pool, true, false).await.unwrap();
-
-            // an unknown high-version row (a deferred migration, or a newer rolled-back image) is
-            // tolerated: the required-track check only asserts required migrations are present
-            sqlx::query(
-                "INSERT INTO _sqlx_migrations (version, description, success, checksum, \
-                 execution_time) VALUES (999999, 'tolerance test row', true, '\\x00'::bytea, 0)",
-            )
-            .execute(&connection_pool)
+        migrations(&pool, false)
+            .run_required(test_migrator().await)
             .await
             .unwrap();
-            run_migrations(&connection_pool, true, false).await.unwrap();
-            sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 999999")
-                .execute(&connection_pool)
-                .await
-                .unwrap();
 
-            let migrations = get_migrations();
-            let last_migration = migrations
-                .iter()
-                .map(|migration| migration.version)
-                .max()
-                .expect("no migration exists?");
-            let up_migration = migrations
-                .iter()
-                .find(|migration| {
-                    migration.version == last_migration
-                        && migration.migration_type.is_up_migration()
-                })
-                .unwrap();
-            let down_migration = migrations
-                .iter()
-                .find(|migration| {
-                    migration.version == last_migration
-                        && migration.migration_type.is_down_migration()
-                })
-                .unwrap();
-            let mut conn = connection_pool.acquire().await.unwrap();
+        // the migration actually ran: its marker table now exists (we dropped it above, so this
+        // proves run_required recreated it)
+        sqlx::query("SELECT 1 FROM qw_test_migration_marker LIMIT 1")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    }
 
-            conn.revert(down_migration).await.unwrap();
+    #[tokio::test]
+    #[serial_test::file_serial]
+    async fn test_run_required_validates_applied_migrations() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = test_pool(false).await;
+        reset_test_migration(&pool).await;
+        migrations(&pool, false)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
+        // nothing left to run; validation passes
+        migrations(&pool, true)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
+    }
 
-            run_migrations(&connection_pool, true, false)
-                .await
-                .unwrap_err();
+    #[tokio::test]
+    #[serial_test::file_serial]
+    async fn test_run_required_tolerates_unknown_migration() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = test_pool(false).await;
+        reset_test_migration(&pool).await;
+        migrations(&pool, false)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
 
-            conn.apply(up_migration).await.unwrap();
-        }
+        // an unknown high-version row (a deferred migration, or a newer rolled-back image) is
+        // tolerated: the required-track check only asserts required migrations are present
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, \
+             execution_time) VALUES (999999, 'tolerance test row', true, '\\x00'::bytea, 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let result = migrations(&pool, true)
+            .run_required(test_migrator().await)
+            .await;
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 999999")
+            .execute(&pool)
+            .await
+            .unwrap();
+        result.unwrap();
+    }
 
-        {
-            let connection_pool =
-                establish_connection(&uri, 1, 5, Duration::from_secs(2), None, None, true)
-                    .await
-                    .unwrap();
-            // error because we are in read only mode, and we try to run migrations
-            run_migrations(&connection_pool, false, false)
-                .await
-                .unwrap_err();
-            // okay because all migrations were already run before
-            run_migrations(&connection_pool, true, false).await.unwrap();
-        }
+    #[tokio::test]
+    #[serial_test::file_serial]
+    async fn test_run_required_fails_on_missing_required_migration() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = test_pool(false).await;
+        reset_test_migration(&pool).await;
+        migrations(&pool, false)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
+
+        // revert the only migration so validation finds it missing
+        let migrator = test_migrator().await;
+        let down_migration = migrator
+            .iter()
+            .find(|migration| migration.migration_type.is_down_migration())
+            .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        conn.revert(down_migration).await.unwrap();
+
+        let result = migrations(&pool, true)
+            .run_required(test_migrator().await)
+            .await;
+        reset_test_migration(&pool).await;
+        result.unwrap_err();
+    }
+
+    #[tokio::test]
+    #[serial_test::file_serial]
+    async fn test_run_required_apply_fails_when_read_only() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = test_pool(true).await;
+        // writing migrations fails in read-only mode
+        migrations(&pool, false)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap_err();
+    }
+
+    #[tokio::test]
+    #[serial_test::file_serial]
+    async fn test_run_required_validates_when_read_only() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let writable_pool = test_pool(false).await;
+        reset_test_migration(&writable_pool).await;
+        // apply the test migration first, using a writable connection
+        migrations(&writable_pool, false)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
+        // validation only reads, so it succeeds even when read-only
+        migrations(&test_pool(true).await, true)
+            .run_required(test_migrator().await)
+            .await
+            .unwrap();
+        reset_test_migration(&writable_pool).await;
     }
 
     #[tokio::test]
     #[serial_test::file_serial]
     async fn test_deferred_migrations_elect_single_runner() {
         let _ = tracing_subscriber::fmt::try_init();
-
-        dotenvy::dotenv().ok();
-        let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
-            .expect("environment variable `QW_TEST_DATABASE_URL` should be set")
-            .parse()
-            .expect("environment variable `QW_TEST_DATABASE_URL` should be a valid URI");
         let connection_pool =
-            establish_connection(&uri, 2, 5, Duration::from_secs(5), None, None, false)
+            establish_connection(&test_uri(), 2, 5, Duration::from_secs(5), None, None, false)
                 .await
                 .unwrap();
 
-        // in case a previous attempt ran before us
-        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 90001")
+        // in case a previous attempt left state behind
+        sqlx::query("DROP TABLE IF EXISTS qw_test_deferred_marker")
             .execute(&connection_pool)
             .await
             .unwrap();
+        delete_migration_row(&connection_pool, 90001).await;
 
-        // keeps the lock winner busy while the other node tries to acquire it
+        // the migration creates a marker table (to prove it ran) and sleeps (to keep the lock
+        // winner busy while the other node tries to acquire the lock)
         let migrations_dir = tempfile::tempdir().unwrap();
         std::fs::write(
             migrations_dir.path().join("90001_slow_marker.up.sql"),
-            "SELECT pg_sleep(1)",
+            "CREATE TABLE IF NOT EXISTS qw_test_deferred_marker (id INT); SELECT pg_sleep(1)",
         )
         .unwrap();
 
         let (result_1, result_2) = tokio::join!(
-            run_deferred_migrations(
+            Migrations::run_deferred(
                 &connection_pool,
                 Migrator::new(migrations_dir.path()).await.unwrap()
             ),
-            run_deferred_migrations(
+            Migrations::run_deferred(
                 &connection_pool,
                 Migrator::new(migrations_dir.path()).await.unwrap()
             ),
         );
 
-        let outcomes = [
-            result_1.expect("first deferred run should not error"),
-            result_2.expect("second deferred run should not error"),
-        ];
+        let outcomes = [result_1, result_2];
         let applied = outcomes
             .iter()
             .filter(|outcome| matches!(outcome, DeferredOutcome::Applied))
@@ -362,5 +468,11 @@ mod tests {
             .count();
         assert_eq!(applied, 1, "exactly one runner should win the lock and apply");
         assert_eq!(not_acquired, 1, "the other runner should not acquire the lock");
+
+        // the winning runner actually applied the migration: its marker table now exists
+        sqlx::query("SELECT 1 FROM qw_test_deferred_marker LIMIT 1")
+            .fetch_optional(&connection_pool)
+            .await
+            .unwrap();
     }
 }
