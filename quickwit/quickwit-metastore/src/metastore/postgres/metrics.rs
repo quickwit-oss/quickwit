@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_metrics::{LazyGauge, lazy_gauge};
+use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
+
+pub(super) static DEFERRED_MIGRATIONS_APPLY_ERRORS: LazyCounter = lazy_counter!(
+        name: "deferred_migrations_apply_errors_total",
+        description: "Number of failed deferred PostgreSQL migration attempts.",
+        subsystem: "metastore",
+);
 
 pub(super) static ACQUIRE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "acquire_connections",
