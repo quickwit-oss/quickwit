@@ -19,7 +19,7 @@ use quickwit_common::retry::Retryable;
 use quickwit_common::tower::{MakeLoadShedError, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId};
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -67,7 +67,7 @@ pub enum EntityKind {
     /// A split.
     Split {
         /// Split ID.
-        split_id: SplitId,
+        split_id: String,
     },
     /// A set of splits.
     Splits {
@@ -371,10 +371,13 @@ impl IndexMetadataRequest {
 }
 
 impl MarkSplitsForDeletionRequest {
-    pub fn new(index_uid: IndexUid, split_ids: Vec<String>) -> Self {
+    pub fn new(
+        index_uid: IndexUid,
+        split_ids: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         Self {
             index_uid: index_uid.into(),
-            split_ids,
+            split_ids: split_ids.into_iter().map(Into::into).collect(),
         }
     }
 }

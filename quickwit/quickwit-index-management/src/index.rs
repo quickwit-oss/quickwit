@@ -230,7 +230,7 @@ impl IndexService {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Staged, SplitState::Published]);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
-        let split_ids: Vec<SplitId> = self
+        let split_ids = self
             .metastore
             .list_splits(list_splits_request)
             .await?
@@ -477,7 +477,7 @@ impl IndexService {
             .await?;
         let split_ids: Vec<SplitId> = splits_metadata
             .iter()
-            .map(|split| split.split_id.to_string())
+            .map(|split| split.split_id.clone())
             .collect();
         let mark_splits_for_deletion_request =
             MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
@@ -771,7 +771,7 @@ mod tests {
 
         let split_id = "test-split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };

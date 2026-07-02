@@ -17,7 +17,6 @@ use std::convert::Infallible;
 use std::ops::Bound;
 use std::sync::Arc;
 
-use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
     BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
     QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
@@ -158,7 +157,7 @@ impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
 pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
-    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, SplitId)>,
+    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
 

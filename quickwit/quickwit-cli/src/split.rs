@@ -261,9 +261,10 @@ impl SplitCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
-        let split_id = matches
+        let split_id: SplitId = matches
             .remove_one::<String>("split")
-            .expect("`split` should be a required arg.");
+            .expect("`split` should be a required arg.")
+            .into();
         let client_args = ClientArgs::parse(&mut matches)?;
         let verbose = matches.get_flag("verbose");
 
@@ -345,7 +346,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
         .await
         .expect("Failed to fetch splits.")
         .into_iter()
-        .find(|split| split.split_id() == args.split_id)
+        .find(|split| split.split_id() == args.split_id.as_str())
         .with_context(|| {
             format!(
                 "could not find split metadata in metastore {}",

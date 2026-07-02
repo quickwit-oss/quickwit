@@ -343,7 +343,7 @@ mod tests {
     fn make_split(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Split {
         Split {
             split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
+                split_id: split_id.into(),
                 footer_offsets: 5..20,
                 time_range,
                 ..Default::default()

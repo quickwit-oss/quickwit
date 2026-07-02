@@ -55,10 +55,6 @@ pub use self::source::check_source_connectivity;
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct IndexingApiSchemas;
 
-pub fn new_split_id() -> String {
-    ulid::Ulid::new().to_string()
-}
-
 #[allow(clippy::too_many_arguments)]
 pub async fn start_indexing_service(
     universe: &Universe,

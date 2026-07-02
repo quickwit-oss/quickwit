@@ -101,7 +101,7 @@ impl MergeSplitDownloader {
         for split in splits {
             if ctx.kill_switch().is_dead() {
                 debug!(
-                    split_id = split.split_id(),
+                    split_id = %split.split_id(),
                     "Kill switch was activated. Cancelling download."
                 );
                 return Err(ActorExitStatus::Killed);
@@ -114,7 +114,7 @@ impl MergeSplitDownloader {
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .split_store
-                .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
+                .fetch_and_open_split(split.split_id().clone(), download_directory, &io_controls)
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();
@@ -133,17 +133,17 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
+    use quickwit_proto::types::SplitId;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     use super::*;
     use crate::merge_policy::MergeOperation;
-    use crate::new_split_id;
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
         let scratch_directory = TempDirectory::for_test();
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
-            let split_id = new_split_id();
+            let split_id = SplitId::new();
             SplitMetadata {
                 split_id,
                 ..Default::default()

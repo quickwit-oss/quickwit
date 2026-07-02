@@ -63,9 +63,9 @@ pub async fn run_execute_retention_policy(
         .partition(|split_metadata| split_metadata.time_range.is_some());
 
     if !ignored_splits.is_empty() {
-        let ignored_split_ids: Vec<String> = ignored_splits
-            .into_iter()
-            .map(|split_metadata| split_metadata.split_id)
+        let ignored_split_ids: Vec<&str> = ignored_splits
+            .iter()
+            .map(|split_metadata| split_metadata.split_id().as_str())
             .collect();
         warn!(
             index_id=%index_uid.index_id,
@@ -80,7 +80,7 @@ pub async fn run_execute_retention_policy(
     // Mark the expired splits for deletion.
     let expired_split_ids: Vec<SplitId> = expired_splits
         .iter()
-        .map(|split_metadata| split_metadata.split_id.to_string())
+        .map(|split_metadata| split_metadata.split_id.clone())
         .collect();
     info!(
         index_id=%index_uid.index_id,

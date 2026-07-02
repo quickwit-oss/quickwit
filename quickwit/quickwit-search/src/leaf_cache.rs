@@ -19,7 +19,6 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 use tantivy::index::SegmentId;
 
@@ -86,7 +85,7 @@ impl LeafSearchCache {
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
-    split_id: SplitId,
+    split_id: String,
     /// The request this matches. The timerange of the request was removed.
     request: SearchRequest,
     /// The effective time range of the request, that is, the intersection of the timerange
@@ -196,7 +195,7 @@ impl RangeBounds<i64> for HalfOpenRange {
 }
 
 pub struct PredicateCacheImpl {
-    content: MemorySizedCache<(SplitId, String)>,
+    content: MemorySizedCache<(String, String)>,
 }
 
 impl PredicateCacheImpl {
@@ -213,7 +212,7 @@ impl PredicateCacheImpl {
 impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
     fn get(
         &self,
-        split_id: SplitId,
+        split_id: String,
         query_ast_json: String,
     ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
         let encoded_result = self.content.get(&(split_id, query_ast_json))?;
@@ -226,7 +225,7 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
 
     fn put(
         &self,
-        split_id: SplitId,
+        split_id: String,
         query_ast_json: String,
         segment: SegmentId,
         hits: quickwit_query::query_ast::HitSet,

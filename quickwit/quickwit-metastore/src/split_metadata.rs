@@ -47,7 +47,7 @@ pub struct Split {
 
 impl Split {
     /// Returns the split_id.
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_metadata.split_id
     }
 }
@@ -201,7 +201,7 @@ impl SplitMetadata {
     }
 
     /// Returns the split_id.
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_id
     }
 
@@ -264,7 +264,7 @@ pub struct SplitInfo {
 impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
-            split_id: "split".to_string(),
+            split_id: "split".into(),
             index_uid: IndexUid::for_test("my-index", 1),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn test_split_metadata_debug() {
         let split_metadata = SplitMetadata {
-            split_id: "split-1".to_string(),
+            split_id: "split-1".into(),
             index_uid: IndexUid::for_test("00000000-0000-0000-0000-000000000000", 0),
             partition_id: 0,
             source_id: "source-1".to_string(),

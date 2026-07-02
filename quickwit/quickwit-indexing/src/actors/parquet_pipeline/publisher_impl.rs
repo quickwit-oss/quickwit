@@ -60,7 +60,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
                 let publish_request = PublishSketchSplitsRequest {
                     index_uid: Some(index_uid.clone()),
                     staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
                     index_checkpoint_delta_json_opt,
                     publish_token_opt: publish_token_opt.clone(),
                 };
@@ -71,7 +71,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
                 let publish_request = PublishMetricsSplitsRequest {
                     index_uid: Some(index_uid.clone()),
                     staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
                     index_checkpoint_delta_json_opt,
                     publish_token_opt: publish_token_opt.clone(),
                 };
@@ -116,7 +116,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
                     index_uid: index_uid_str.clone(),
                     merge_id: split.split_id.as_str().to_string(),
                     output_split_id: split.split_id.as_str().to_string(),
-                    replaced_split_ids: replaced_split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
                     output_window: window,
                     output_merge_ops: split.num_merge_ops,
                 });
