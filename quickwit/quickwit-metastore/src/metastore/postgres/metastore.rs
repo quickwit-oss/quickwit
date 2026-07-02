@@ -132,7 +132,7 @@ impl PostgresqlMetastore {
         )
         .await?;
 
-        Migrations::new(connection_pool.clone()).run().await?;
+        Migrations::from_env(connection_pool.clone()).run().await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),

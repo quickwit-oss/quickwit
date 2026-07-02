@@ -14,9 +14,10 @@
 
 use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
 
-pub(super) static DEFERRED_MIGRATIONS_APPLY_ERRORS: LazyCounter = lazy_counter!(
-        name: "deferred_migrations_apply_errors_total",
-        description: "Number of failed deferred PostgreSQL migration attempts.",
+// Counts deferred-migration apply attempts, labeled by `result` ("success"/"failure").
+pub(super) static DEFERRED_MIGRATIONS_APPLY: LazyCounter = lazy_counter!(
+        name: "deferred_migrations_apply_total",
+        description: "Number of deferred PostgreSQL migration attempts, by result.",
         subsystem: "metastore",
 );
 
