@@ -36,6 +36,7 @@ rustc-hash = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
