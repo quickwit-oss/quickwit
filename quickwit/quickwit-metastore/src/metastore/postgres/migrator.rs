@@ -15,12 +15,13 @@
 use std::collections::BTreeMap;
 
 use quickwit_common::get_bool_from_env;
+use quickwit_metrics::{counter, labels};
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::migrate::{Migrate, Migrator};
 use sqlx::{Acquire, PgConnection, Postgres};
 use tracing::{error, info};
 
-use super::metrics::DEFERRED_MIGRATIONS_APPLY_ERRORS;
+use super::metrics::DEFERRED_MIGRATIONS_APPLY;
 use super::pool::TrackedPool;
 use super::{
     QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
@@ -35,7 +36,7 @@ use super::{
 // These two ints are arbitrary magic (but stable) numbers that make up the key for the deferred
 // migrations lock.
 const DEFERRED_MIGRATIONS_LOCK_KEY_1: i32 = 424242;
-const DEFERRED_MIGRATIONS_LOCK_KEY_2: i32 = 1;
+const DEFERRED_MIGRATIONS_LOCK_KEY_2: i32 = 1789;
 
 fn get_migrations() -> Migrator {
     sqlx::migrate!("migrations/postgresql")
@@ -47,8 +48,8 @@ fn get_deferred_migrations() -> Migrator {
 
 enum DeferredOutcome {
     LockNotAcquired,
-    Applied,
-    Failed,
+    Success,
+    Failure,
 }
 
 pub(super) struct Migrations {
@@ -59,8 +60,8 @@ pub(super) struct Migrations {
 }
 
 impl Migrations {
-    pub(super) fn new(connection_pool: TrackedPool<Postgres>) -> Self {
-        Migrations {
+    pub(super) fn from_env(connection_pool: TrackedPool<Postgres>) -> Self {
+        Self {
             connection_pool,
             skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
             skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
@@ -73,7 +74,13 @@ impl Migrations {
         self.run_required(get_migrations()).await?;
 
         if !self.skip_migrations && !self.skip_locking && !self.skip_deferred {
-            self.spawn_deferred();
+            let connection_pool = self.connection_pool.clone();
+            quickwit_common::spawn_named_task(
+                async move {
+                    Self::run_deferred(&connection_pool, get_deferred_migrations()).await;
+                },
+                "postgres_deferred_migrations",
+            );
         }
         Ok(())
     }
@@ -88,27 +95,7 @@ impl Migrations {
         if self.skip_migrations {
             return check_migrations(&migrator, &mut conn).await;
         }
-        do_migrations(migrator, &mut conn).await
-    }
-
-    /// Spawns the task to apply deferred migrations. A failure in applying these migrations is not
-    /// fatal.
-    fn spawn_deferred(&self) {
-        let connection_pool = self.connection_pool.clone();
-        quickwit_common::spawn_named_task(
-            async move {
-                match Self::run_deferred(&connection_pool, get_deferred_migrations()).await {
-                    DeferredOutcome::Applied => {
-                        info!("deferred PostgreSQL migrations applied successfully")
-                    }
-                    DeferredOutcome::LockNotAcquired => {
-                        info!("deferred PostgreSQL migrations handled by another node")
-                    }
-                    DeferredOutcome::Failed => {}
-                }
-            },
-            "postgres_deferred_migrations",
-        );
+        run_migrations(migrator, &mut conn).await
     }
 
     /// Apply the deferred migrations. We try to get the lock; if we do, we're the migration leader
@@ -116,14 +103,17 @@ impl Migrations {
     /// day.
     async fn run_deferred(pool: &TrackedPool<Postgres>, mut migrator: Migrator) -> DeferredOutcome {
         let mut conn: PgConnection = match pool.acquire().await {
+            // Postgres will automatically unlock the advisory lock on a session end/conn drop.
+            // Detaching the connection scopes it to this one session, which guarantees Postgres
+            // will automatically unlock for us, including on failure/panic.
             Ok(connection) => connection.detach(),
             Err(error) => {
                 error!(%error, "failed to acquire connection for deferred PostgreSQL migrations");
-                return DeferredOutcome::Failed;
+                return DeferredOutcome::Failure;
             }
         };
 
-        // this query returns either true or false: we got the lock, or we didn't. It's dropped when
+        // This query returns either true or false: we got the lock, or we didn't. It's dropped when
         // the connection is dropped.
         let acquired: bool = match sqlx::query_scalar("SELECT pg_try_advisory_lock($1, $2)")
             .bind(DEFERRED_MIGRATIONS_LOCK_KEY_1)
@@ -134,50 +124,63 @@ impl Migrations {
             Ok(acquired) => acquired,
             Err(error) => {
                 error!(%error, "failed to query deferred-migration advisory lock");
-                return DeferredOutcome::Failed;
+                return DeferredOutcome::Failure;
             }
         };
         if !acquired {
+            info!("deferred PostgreSQL migrations handled by another node");
             return DeferredOutcome::LockNotAcquired;
         }
 
-        // we've taken out our own lock; we don't need sqlx to also get one
+        // We've taken out our own lock; we don't need sqlx to also get one
         migrator.set_locking(false);
-        match do_migrations(migrator, &mut conn).await {
-            Ok(()) => DeferredOutcome::Applied,
+        match run_migrations(migrator, &mut conn).await {
+            Ok(()) => {
+                info!("deferred PostgreSQL migrations applied successfully");
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "success")])
+                    .inc();
+                DeferredOutcome::Success
+            }
             Err(error) => {
                 error!(%error, "failed to apply deferred migrations");
-                DEFERRED_MIGRATIONS_APPLY_ERRORS.inc();
-                DeferredOutcome::Failed
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "failure")])
+                    .inc();
+                DeferredOutcome::Failure
             }
         }
     }
 }
 
-fn internal_error(message: &'static str, cause: impl std::fmt::Display) -> MetastoreError {
+fn internal_error(message: &'static str, cause: String) -> MetastoreError {
     MetastoreError::Internal {
         message: message.to_string(),
-        cause: cause.to_string(),
+        cause,
     }
 }
 
 /// Runs a migrator's pending up-migrations on `conn`.
 /// `ignore_missing` is how we are able to ensure forwards/backwards compatibility - we don't error
 /// in the case a migration in the db is not present in our migration set.
-async fn do_migrations(mut migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
+async fn run_migrations(mut migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
     migrator.set_ignore_missing(true);
     // run_direct takes a Migrate connection directly, sidestepping run()'s Acquire bound that our
     // pooled connection type doesn't satisfy.
     migrator.run_direct(conn).await.map_err(|migrate_error| {
         error!(error=%migrate_error, "failed to run PostgreSQL migrations");
-        internal_error("failed to run PostgreSQL migrations", migrate_error)
+        internal_error(
+            "failed to run PostgreSQL migrations",
+            migrate_error.to_string(),
+        )
     })
 }
 
 async fn check_migrations(migrator: &Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
     let dirty = conn.dirty_version().await.map_err(|migrate_error| {
         error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
-        internal_error("failed to validate PostgreSQL migrations", migrate_error)
+        internal_error(
+            "failed to validate PostgreSQL migrations",
+            migrate_error.to_string(),
+        )
     })?;
     if let Some(dirty) = dirty {
         error!("migration {dirty} is dirty");
@@ -191,7 +194,10 @@ async fn check_migrations(migrator: &Migrator, conn: &mut PgConnection) -> Metas
         .await
         .map_err(|migrate_error| {
             error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
-            internal_error("failed to validate PostgreSQL migrations", migrate_error)
+            internal_error(
+                "failed to validate PostgreSQL migrations",
+                migrate_error.to_string(),
+            )
         })?;
     let applied_by_version: BTreeMap<_, _> = applied_migrations
         .iter()
@@ -472,7 +478,7 @@ mod tests {
         let outcomes = [result_1, result_2];
         let applied = outcomes
             .iter()
-            .filter(|outcome| matches!(outcome, DeferredOutcome::Applied))
+            .filter(|outcome| matches!(outcome, DeferredOutcome::Success))
             .count();
         let not_acquired = outcomes
             .iter()
