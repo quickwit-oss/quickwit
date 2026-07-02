@@ -20,7 +20,7 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
     MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexId, IndexUid};
+use quickwit_proto::types::{IndexId, IndexUid, SplitId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use warp::{Filter, Rejection};
@@ -180,10 +180,10 @@ pub async fn mark_splits_for_deletion(
         .deserialize_index_metadata()?
         .index_uid;
     info!(index_id = %index_id, splits_ids = ?splits_for_deletion.split_ids, "mark-splits-for-deletion");
-    let split_ids: Vec<String> = splits_for_deletion
+    let split_ids: Vec<SplitId> = splits_for_deletion
         .split_ids
         .iter()
-        .map(|split_id| split_id.to_string())
+        .map(|split_id| SplitId::from(split_id.as_str()))
         .collect();
     let mark_splits_for_deletion_request =
         MarkSplitsForDeletionRequest::new(index_uid, split_ids.clone());

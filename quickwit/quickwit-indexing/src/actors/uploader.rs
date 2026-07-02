@@ -323,7 +323,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     ) {
                         Ok(split_streamer) => split_streamer,
                         Err(e) => {
-                            warn!(cause=?e, split_id=packaged_split.split_id(), "could not create split streamer");
+                            warn!(cause=?e, split_id=packaged_split.split_id_str(), "could not create split streamer");
                             return;
                         }
                     };
@@ -337,7 +337,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
-                        split_id: packaged_split.split_id().to_string(),
+                        split_id: packaged_split.split_id_str().to_string(),
                     });
 
                     split_metadata_list.push(split_metadata);
@@ -376,7 +376,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     .await;
 
                     if let Err(cause) = upload_result {
-                        warn!(cause=?cause, split_id=packaged_split.split_id(), "Failed to upload split. Killing!");
+                        warn!(cause=?cause, split_id=packaged_split.split_id_str(), "Failed to upload split. Killing!");
                         kill_switch.kill();
                         return;
                     }
@@ -516,7 +516,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
-    use quickwit_proto::types::{DocMappingUid, NodeId};
+    use quickwit_proto::types::{DocMappingUid, NodeId, SplitId};
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -586,7 +586,7 @@ mod tests {
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
-                        split_id: "test-split".to_string(),
+                        split_id: "test-split".into(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
@@ -658,7 +658,7 @@ mod tests {
             .withf(move |stage_splits_request| -> bool {
                 let splits_metadata = stage_splits_request.deserialize_splits_metadata().unwrap();
                 let is_metadata_valid = splits_metadata.iter().all(|metadata| {
-                    ["test-split-1", "test-split-2"].contains(&metadata.split_id())
+                    ["test-split-1", "test-split-2"].contains(&metadata.split_id().as_str())
                         && metadata.time_range == Some(1628203589..=1628203640)
                 });
                 let index_uid: IndexUid = stage_splits_request.index_uid().clone();
@@ -689,7 +689,7 @@ mod tests {
                 index_uid: index_uid.clone(),
                 source_id: source_id.clone(),
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split-1".to_string(),
+                split_id: "test-split-1".into(),
                 partition_id: 3u64,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
@@ -698,8 +698,8 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
+                    SplitId::from("replaced-split-1"),
+                    SplitId::from("replaced-split-2"),
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
@@ -716,7 +716,7 @@ mod tests {
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split-2".to_string(),
+                split_id: "test-split-2".into(),
                 partition_id: 3u64,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
@@ -725,8 +725,8 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
+                    SplitId::from("replaced-split-1"),
+                    SplitId::from("replaced-split-2"),
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
@@ -778,8 +778,8 @@ mod tests {
         assert_eq!(
             &replaced_split_ids,
             &[
-                "replaced-split-1".to_string(),
-                "replaced-split-2".to_string()
+                SplitId::from("replaced-split-1"),
+                SplitId::from("replaced-split-2"),
             ]
         );
         assert!(checkpoint_delta_opt.is_none());
@@ -842,7 +842,7 @@ mod tests {
                         index_uid,
                         source_id,
                         doc_mapping_uid: DocMappingUid::default(),
-                        split_id: "test-split".to_string(),
+                        split_id: "test-split".into(),
                         partition_id: 3u64,
                         time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
@@ -1029,7 +1029,7 @@ mod tests {
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
-                        split_id: SPLIT_ULID_STR.to_string(),
+                        split_id: SPLIT_ULID_STR.into(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },

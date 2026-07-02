@@ -33,7 +33,7 @@ use quickwit_doc_mapper::{ArrowRowContext, RoutingExpr};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::types::{IndexUid, PublishToken, SourceId};
+use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
@@ -122,7 +122,7 @@ pub struct ParquetSplitBatch {
     pub publish_token_opt: Option<PublishToken>,
     /// Split IDs being replaced by this batch (non-empty for merges).
     /// Empty for the ingest path.
-    pub replaced_split_ids: Vec<String>,
+    pub replaced_split_ids: Vec<SplitId>,
     /// Holds the temp directory alive until the uploader finishes reading.
     /// `None` for the ingest path (packager manages its own temp dir).
     /// `Some` for the merge path (executor's scratch directory).

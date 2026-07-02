@@ -319,7 +319,7 @@ mod tests {
     fn test_const_write_merge_policy_single_split() {
         let merge_policy = ConstWriteAmplificationMergePolicy::for_test();
         let mut splits = vec![SplitMetadata {
-            split_id: "01GE1R0KBFQHJ76030RYRAS8QA".to_string(),
+            split_id: "01GE1R0KBFQHJ76030RYRAS8QA".into(),
             num_docs: 1,
             create_timestamp: 1665000000,
             maturity: merge_policy.split_maturity(1, 0),
@@ -337,7 +337,7 @@ mod tests {
         let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits = (0..merge_policy.config.merge_factor)
             .map(|i| SplitMetadata {
-                split_id: format!("split-{i}"),
+                split_id: format!("split-{i}").into(),
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp,
@@ -361,7 +361,7 @@ mod tests {
         let mut splits =
             (0..merge_policy.config.max_merge_factor + merge_policy.config.merge_factor - 1)
                 .map(|i| SplitMetadata {
-                    split_id: format!("split-{i}"),
+                    split_id: format!("split-{i}").into(),
                     num_docs: 1_000,
                     num_merge_ops: 1,
                     create_timestamp,
@@ -384,7 +384,7 @@ mod tests {
         let now_timestamp: i64 = OffsetDateTime::now_utc().unix_timestamp();
         let mut splits: Vec<SplitMetadata> = (0..merge_policy.config.max_merge_factor)
             .map(|i| SplitMetadata {
-                split_id: format!("split-{i}"),
+                split_id: format!("split-{i}").into(),
                 num_docs: 1_000,
                 num_merge_ops: 1,
                 create_timestamp: now_timestamp + i as i64,
@@ -402,7 +402,7 @@ mod tests {
         let split_ids: Vec<&str> = operations[0]
             .splits_as_slice()
             .iter()
-            .map(|split| split.split_id())
+            .map(|split| split.split_id().as_str())
             .collect();
         assert_eq!(
             &split_ids[..],
@@ -419,7 +419,7 @@ mod tests {
                 let num_docs = merge_policy.split_num_docs_target.div_ceil(3);
                 let time_to_maturity = merge_policy.split_maturity(num_docs, 1);
                 SplitMetadata {
-                    split_id: format!("split-{i}"),
+                    split_id: format!("split-{i}").into(),
                     num_docs,
                     num_merge_ops: 1,
                     create_timestamp,

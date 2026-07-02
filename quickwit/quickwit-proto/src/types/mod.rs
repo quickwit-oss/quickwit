@@ -28,6 +28,7 @@ mod index_uid;
 mod pipeline_uid;
 mod position;
 mod shard_id;
+mod split_id;
 
 pub use doc_mapping_uid::DocMappingUid;
 pub use doc_uid::{DocUid, DocUidGenerator};
@@ -35,6 +36,7 @@ pub use index_uid::IndexUid;
 pub use pipeline_uid::PipelineUid;
 pub use position::Position;
 pub use shard_id::ShardId;
+pub use split_id::SplitId;
 
 /// The size of an ULID in bytes. Use `ULID_LEN` for the length of Base32 encoded ULID strings.
 pub(crate) const ULID_SIZE: usize = 16;
@@ -42,8 +44,6 @@ pub(crate) const ULID_SIZE: usize = 16;
 pub type IndexId = String;
 
 pub type SourceId = String;
-
-pub type SplitId = String;
 
 pub type SubrequestId = u32;
 

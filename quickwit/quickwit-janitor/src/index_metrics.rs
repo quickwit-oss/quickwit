@@ -145,7 +145,7 @@ mod tests {
 
         let split_id = format!("{index_id}--split-1");
         let split_metadata = SplitMetadata {
-            split_id: split_id.clone(),
+            split_id: split_id.clone().into(),
             index_uid: index_uid.clone(),
             footer_offsets: 0..2048,
             ..Default::default()

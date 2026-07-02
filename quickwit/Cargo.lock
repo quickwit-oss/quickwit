@@ -2284,9 +2284,8 @@ dependencies = [
 
 [[package]]
 name = "chitchat"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec9d05384b0f3f305c5a379b1ec8e716cae107a66eae27e46b120f0a91b7f5ef"
+version = "0.11.1"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=c2b98cbea3162a4353c1fc1ffa7fd1e5985aee3a#c2b98cbea3162a4353c1fc1ffa7fd1e5985aee3a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2298,6 +2297,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing 0.1.44",
+ "tracing-subscriber",
  "zstd",
 ]
 
