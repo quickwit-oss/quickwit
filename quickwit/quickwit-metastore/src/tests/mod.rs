@@ -113,7 +113,7 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
 fn collect_split_ids(splits: &[Split]) -> Vec<&str> {
     splits
         .iter()
-        .map(|split| split.split_id())
+        .map(|split| split.split_id().as_str())
         .sorted()
         .collect()
 }

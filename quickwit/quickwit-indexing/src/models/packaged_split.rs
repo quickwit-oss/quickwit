@@ -39,8 +39,8 @@ impl PackagedSplit {
         &self.split_attrs.index_uid
     }
 
-    pub fn split_id(&self) -> &str {
-        &self.split_attrs.split_id
+    pub fn split_id_str(&self) -> &str {
+        self.split_attrs.split_id.as_str()
     }
 }
 

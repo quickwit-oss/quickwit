@@ -947,11 +947,11 @@ pub(crate) async fn fetch_docs_phase(
 
     // Build map of Split ID > index ID to add the index ID to the hits.
     // Used for ES compatibility.
-    let split_id_to_index_id_map: HashMap<&SplitId, &str> = split_metadatas
+    let split_id_to_index_id_map: HashMap<SplitId, &str> = split_metadatas
         .iter()
         .map(|split_metadata| {
             (
-                &split_metadata.split_id,
+                split_metadata.split_id().clone(),
                 split_metadata.index_uid.index_id.as_str(),
             )
         })
@@ -984,7 +984,7 @@ pub(crate) async fn fetch_docs_phase(
 
 fn build_hit_with_position(
     mut leaf_hit: LeafHit,
-    split_id_to_index_id_map: &HashMap<&SplitId, &str>,
+    split_id_to_index_id_map: &HashMap<SplitId, &str>,
     hit_order: &HashMap<(String, u32, u32), usize>,
     sort_field_1_datetime_format_opt: &Option<SortDatetimeFormat>,
     sort_field_2_datetime_format_opt: &Option<SortDatetimeFormat>,
@@ -1018,7 +1018,7 @@ fn build_hit_with_position(
     }
     let position = *hit_order.get(&key).expect("hit order must be present");
     let index_id = split_id_to_index_id_map
-        .get(&partial_hit_ref.split_id)
+        .get(partial_hit_ref.split_id.as_str())
         .map(|split_id| split_id.to_string())
         .unwrap_or_default();
 

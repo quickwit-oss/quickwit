@@ -15,7 +15,6 @@
 use std::sync::Arc;
 
 use bitpacking::{BitPacker, BitPacker1x};
-use quickwit_proto::types::SplitId;
 use serde::{Deserialize, Serialize};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
@@ -485,9 +484,9 @@ impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
 
 // we use a trait to dodge circular dependancies with quickwit-storage
 pub trait PredicateCache: Send + Sync + 'static {
-    fn get(&self, split_id: SplitId, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
+    fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
 
-    fn put(&self, split_id: SplitId, query_ast_json: String, segment: SegmentId, results: HitSet);
+    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, results: HitSet);
 }
 
 #[cfg(test)]
@@ -504,8 +503,8 @@ mod tests {
         BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
     };
 
-    impl PredicateCache for Mutex<HashMap<(SplitId, String), (SegmentId, HitSet)>> {
-        fn get(&self, split_id: SplitId, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
+    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet)>> {
+        fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
             self.lock()
                 .unwrap()
                 .get(&(split_id, query_ast_json))
@@ -514,7 +513,7 @@ mod tests {
 
         fn put(
             &self,
-            split_id: SplitId,
+            split_id: String,
             query_ast_json: String,
             segment: SegmentId,
             results: HitSet,

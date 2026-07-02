@@ -800,7 +800,7 @@ pub async fn test_metastore_delete_index<
 
     let split_id = format!("{index_id}--split");
     let split_metadata = SplitMetadata {
-        split_id: split_id.clone(),
+        split_id: split_id.into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
@@ -844,7 +844,7 @@ pub async fn test_metastore_list_index_stats<
 
     let split_id_1 = format!("{index_id_1}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid_1.clone(),
         footer_offsets: 0..2048,
         ..Default::default()
@@ -852,7 +852,7 @@ pub async fn test_metastore_list_index_stats<
 
     let split_id_2 = format!("{index_id_1}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid_1.clone(),
         footer_offsets: 0..2048,
         ..Default::default()
@@ -860,7 +860,7 @@ pub async fn test_metastore_list_index_stats<
 
     let split_id_3 = format!("{index_id_1}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid_2.clone(),
         footer_offsets: 0..1000,
         ..Default::default()
@@ -884,7 +884,7 @@ pub async fn test_metastore_list_index_stats<
 
     let publish_splits_request = PublishSplitsRequest {
         index_uid: Some(index_uid_1.clone()),
-        staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
+        staged_split_ids: vec![split_id_1, split_id_2],
         ..Default::default()
     };
     metastore

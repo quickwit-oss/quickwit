@@ -17,7 +17,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::SplitMetadata;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::{IndexUid, PublishToken, SplitId};
 use tracing::Span;
 
 use crate::merge_policy::MergeTask;
@@ -26,7 +26,7 @@ use crate::models::PublishLock;
 pub struct SplitsUpdate {
     pub index_uid: IndexUid,
     pub new_splits: Vec<SplitMetadata>,
-    pub replaced_split_ids: Vec<String>,
+    pub replaced_split_ids: Vec<SplitId>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,

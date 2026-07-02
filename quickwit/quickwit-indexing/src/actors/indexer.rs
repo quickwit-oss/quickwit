@@ -665,7 +665,7 @@ impl Indexer {
             return Ok(());
         }
         let num_splits = splits.len() as u64;
-        let split_ids = splits.iter().map(|split| split.split_id()).join(",");
+        let split_ids: String = splits.iter().map(|split| split.split_id()).join(",");
         info!(
             index=%self.indexer_state.pipeline_id.index_uid,
             source=self.indexer_state.pipeline_id.source_id.as_str(),

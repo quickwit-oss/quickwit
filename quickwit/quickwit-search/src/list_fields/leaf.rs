@@ -21,7 +21,7 @@ use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FIL
 use quickwit_proto::search::{
     ListFieldsEntry, ListFieldsMetadata, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::types::{IndexId, SplitId};
+use quickwit_proto::types::IndexId;
 use quickwit_storage::{OwnedBytes, Storage};
 use tracing::{Span, instrument};
 
@@ -154,7 +154,7 @@ async fn fetch_fields_metadata(
 async fn process_fields_metadata(
     serialized_entries: OwnedBytes,
     index_id: IndexId,
-    split_id: SplitId,
+    split_id: String,
     field_patterns: FieldPatterns,
 ) -> anyhow::Result<Vec<ListFieldsEntry>> {
     let parent_span = Span::current();
